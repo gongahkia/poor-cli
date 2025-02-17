@@ -1,8 +1,10 @@
 ![](https://img.shields.io/badge/seuss_1.0-passing-green)
 
 > [!IMPORTANT]  
-> If you have experience in language development *(programmatic/linguistic)*, please drop me a message on LinkedIn. I would be really interested in developing `Seuss` into a more robust representative syntax that fixes the many archiac issues `.gf` and its contemporaries suffers from.  
-> ~ Gabriel
+> If you have experience in language development *(programmatic/linguistic)*, please drop me an email or a message on LinkedIn.    
+> I would be really interested in collaborating on `Seuss` to develop a more robust system that can represent context-free and  
+> context-rich grammers. The many archiac issues `.gf` and its contemporaries suffer from really pisses me off. A lot.  
+> *~* *Gabriel*
 
 # `Seuss`
 
