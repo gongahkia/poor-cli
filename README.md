@@ -1,4 +1,4 @@
-# poor-cli
+# `poor-cli`
 
 A CLI tool similar to Claude Code but powered by Gemini's free API and capable of general-purpose tasks.
 
