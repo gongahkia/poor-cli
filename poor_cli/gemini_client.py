@@ -47,8 +47,9 @@ Available capabilities:
 Be concise but thorough. Ask for clarification if needed."""
 
         # Initialize model with tools
+        # Using gemini-1.5-flash for fast and cost-effective responses
         self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash-latest",
+            model_name="gemini-1.5-flash",
             tools=self.tools if self.tools else None,
             system_instruction=system_instruction,
         )
