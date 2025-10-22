@@ -51,9 +51,9 @@ $ ./uninstall.sh
 
 `poor-cli` can currently use these tools.
 
-- **read_file**: Read file contents with optional line ranges
-- **write_file**: Create or overwrite files
-- **edit_file**: Edit files using string replacement or line-based editing
-- **glob_files**: Find files matching patterns (e.g., `**/*.py`)
-- **grep_files**: Search for text in files using regex
-- **bash**: Execute bash commands with timeout support
+- read_file: Read file contents with optional line ranges
+- write_file: Create or overwrite files
+- edit_file: Edit files using string replacement or line-based editing
+- glob_files: Find files matching patterns (e.g., `**/*.py`)
+- grep_files: Search for text in files using regex
+- bash: Execute bash commands with timeout support
