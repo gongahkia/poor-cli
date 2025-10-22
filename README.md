@@ -20,64 +20,33 @@ Agentic Coding CLI Helper similar powered by Gemini's free API and capable of ge
 
 ...
 
-## Installation
+## Usage
 
-### Quick Install (Recommended)
+The below instructions are for locally hosting `poor-cli`.
 
-1. Clone and navigate to the repository:
-```console
-$ git clone https://github.com/gongahkia/poor-cli && cd poor-cli
-```
-
-2. Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-
-3. Set the API key as an environment variable:
-```console
-$ export GEMINI_API_KEY="your-api-key-here"
-```
-
-Or add it to your `~/.bashrc` or `~/.zshrc` for permanent setup:
-```bash
-export GEMINI_API_KEY="your-api-key-here"
-```
-
-4. Run the installation script:
-```console
-$ chmod +x install.sh
-$ ./install.sh
-```
-
-5. **Use poor-cli from anywhere!**
-```console
-$ cd ~/any/directory
-$ poor-cli
-```
-
-### Manual Installation
-
-If you prefer manual installation:
+1. First run the below.
 
 ```console
-$ git clone https://github.com/gongahkia/poor-cli && cd poor-cli
+$ git clone && cd poor-cli
 $ python3 -m venv .venv && source .venv/bin/activate
+$ pip install -r requirements.txt
+```
+
+2. Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey) and 
+3. Set the below values within `.env`.
+
+```env
+GEMINI_API_KEY="your-api-key-here"
+```
+
+4. Now run the below.
+
+```console
+$ ./run.sh
+$ python -m poor_cli
 $ pip install -e .
-```
-
-Then set your `GEMINI_API_KEY` environment variable and run:
-```console
 $ poor-cli
-```
-
-### Uninstallation
-
-To uninstall poor-cli:
-```console
 $ ./uninstall.sh
-```
-
-Or manually:
-```console
-$ pip uninstall poor-cli
 ```
 
 ## Available Commands
