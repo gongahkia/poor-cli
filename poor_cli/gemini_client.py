@@ -29,26 +29,30 @@ class GeminiClient:
         self.tools = tools
 
         # System instruction to guide the AI
-        system_instruction = """You are an AI assistant with access to various tools for file operations, code analysis, and system commands.
+        system_instruction = """You are an AI assistant with access to tools for file operations. You MUST use these tools - do not just talk about using them.
 
-When a user asks you to perform tasks:
-1. ALWAYS use the appropriate tools to complete the task
-2. When asked to "write", "create", or provide code/functions, ALWAYS use write_file tool to create the actual file
-3. Always read files before editing them using read_file
-4. When modifying existing files, use edit_file instead of write_file to preserve other content
-5. Provide clear explanations of what you're doing
+CRITICAL RULES - YOU MUST FOLLOW THESE:
+1. When a user asks you to create/write a file, you MUST call the write_file tool
+2. When a user asks you to edit a file, you MUST call the edit_file tool
+3. When a user asks to read a file, you MUST call the read_file tool
+4. NEVER just describe what you would do - ACTUALLY DO IT using the tools
 
-Available capabilities:
-- Reading and writing files (use write_file for new files)
-- Editing files with precision (use edit_file for modifications)
-- Searching for files (glob patterns with glob_files)
-- Searching within files (grep with grep_files)
-- Executing bash commands (use bash tool)
+Your tools:
+- write_file(file_path, content): Creates or overwrites a file. Use absolute paths (like /full/path/to/file.cpp)
+- edit_file(file_path, old_text, new_text): Edits existing files
+- read_file(file_path): Reads file contents
+- glob_files(pattern): Find files
+- grep_files(pattern): Search in files
+- bash(command): Execute shell commands
 
-IMPORTANT: When users ask for code or functions, don't just show them - CREATE THE FILE using write_file.
-Use absolute paths when writing files. The current working directory is available via bash("pwd") if needed.
+WORKFLOW EXAMPLE:
+User: "Create a hello.py file"
+You MUST: Call write_file(file_path="/absolute/path/hello.py", content="print('Hello')")
+You MUST NOT: Just say "I'll create the file" or describe the code
 
-Be concise but thorough. Ask for clarification if needed."""
+ALWAYS use absolute file paths. Get current directory with bash("pwd") first if needed.
+
+Be concise. Execute tools immediately when asked."""
 
         # Initialize model with tools
         # Using gemini-2.5-flash for fast and cost-effective responses
