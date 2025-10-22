@@ -2,6 +2,7 @@
 REPL interface for poor-cli
 """
 
+import os
 import sys
 from typing import Optional
 from rich.console import Console
@@ -30,7 +31,9 @@ class PoorCLI:
         try:
             self.client = GeminiClient()
             tool_declarations = self.tool_registry.get_tool_declarations()
-            self.client.set_tools(tool_declarations)
+            # Pass the current working directory to the client
+            current_dir = os.getcwd()
+            self.client.set_tools(tool_declarations, current_dir=current_dir)
 
             self.console.print(Panel.fit(
                 "[bold cyan]poor-cli[/bold cyan] v0.1.0\n"
@@ -104,7 +107,8 @@ class PoorCLI:
 
         elif cmd == "/clear":
             # Reinitialize to clear history
-            self.client.set_tools(self.tool_registry.get_tool_declarations())
+            current_dir = os.getcwd()
+            self.client.set_tools(self.tool_registry.get_tool_declarations(), current_dir=current_dir)
             self.console.print("[green]Conversation history cleared[/green]")
 
         else:

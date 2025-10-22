@@ -24,12 +24,18 @@ class GeminiClient:
         self.chat = None
         self.tools = []
 
-    def set_tools(self, tools: List[Dict[str, Any]]):
+    def set_tools(self, tools: List[Dict[str, Any]], current_dir: Optional[str] = None):
         """Set available tools for function calling"""
         self.tools = tools
 
+        # Get current working directory
+        if not current_dir:
+            current_dir = os.getcwd()
+
         # System instruction to guide the AI
-        system_instruction = """You are an AI assistant with access to tools for file operations. You MUST use these tools - do not just talk about using them.
+        system_instruction = f"""You are an AI assistant with access to tools for file operations. You MUST use these tools - do not just talk about using them.
+
+CURRENT WORKING DIRECTORY: {current_dir}
 
 CRITICAL RULES - YOU MUST FOLLOW THESE:
 1. When a user asks you to create/write a file, you MUST call the write_file tool
@@ -38,19 +44,25 @@ CRITICAL RULES - YOU MUST FOLLOW THESE:
 4. NEVER just describe what you would do - ACTUALLY DO IT using the tools
 
 Your tools:
-- write_file(file_path, content): Creates or overwrites a file. Use absolute paths (like /full/path/to/file.cpp)
-- edit_file(file_path, old_text, new_text): Edits existing files
-- read_file(file_path): Reads file contents
+- write_file(file_path, content): Creates or overwrites a file. Always use ABSOLUTE paths.
+- edit_file(file_path, old_text, new_text): Edits existing files. Always use ABSOLUTE paths.
+- read_file(file_path): Reads file contents. Always use ABSOLUTE paths.
 - glob_files(pattern): Find files
 - grep_files(pattern): Search in files
 - bash(command): Execute shell commands
 
+FILE PATH RULES:
+- ALWAYS create files in the current working directory: {current_dir}
+- When user says "create file.cpp", use path: {current_dir}/file.cpp
+- When user says "create foo/bar.py", use path: {current_dir}/foo/bar.py
+- NEVER call bash("pwd") - the current directory is already provided above
+- Just construct the absolute path directly by combining current directory with filename
+
 WORKFLOW EXAMPLE:
 User: "Create a hello.py file"
-You MUST: Call write_file(file_path="/absolute/path/hello.py", content="print('Hello')")
+You MUST: Call write_file(file_path="{current_dir}/hello.py", content="print('Hello')")
 You MUST NOT: Just say "I'll create the file" or describe the code
-
-ALWAYS use absolute file paths. Get current directory with bash("pwd") first if needed.
+You MUST NOT: Call bash("pwd") first
 
 Be concise. Execute tools immediately when asked."""
 
