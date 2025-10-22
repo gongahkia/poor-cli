@@ -8,14 +8,6 @@ Agentic Coding CLI Helper similar powered by Gemini's free API and capable of ge
     <img src="./asset/logo/1.png" width="35%">
 </div>
 
-## Features
-
-- **Interactive REPL**: Conversational AI interface powered by Gemini
-- **File Operations**: Read, write, and edit files with AI assistance
-- **Code Search**: Glob and grep functionality for finding files and searching code
-- **Bash Execution**: Run shell commands directly from the AI
-- **Rich Terminal UI**: Beautiful markdown rendering and syntax highlighting
-
 ## Stack
 
 ...
