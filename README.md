@@ -16,7 +16,7 @@ Agentic Coding CLI Helper similar powered by Gemini's free API and capable of ge
 
 The below instructions are for locally hosting `poor-cli`.
 
-1. First run the below.
+1. First run the below
 
 ```console
 $ git clone && cd poor-cli
@@ -24,14 +24,14 @@ $ python3 -m venv .venv && source .venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
-2. Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey) and 
-3. Set the below values within `.env`.
+2. Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+3. Set the below values within `.env`
 
 ```env
 GEMINI_API_KEY="your-api-key-here"
 ```
 
-4. Now run the below.
+4. Now run the below
 
 ```console
 $ ./run.sh
