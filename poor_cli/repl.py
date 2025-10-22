@@ -110,8 +110,10 @@ class PoorCLI:
     def process_request(self, user_input: str):
         """Process user request with AI"""
         try:
-            # Send message to Gemini
-            response = self.client.send_message(user_input)
+            # Show loading indicator
+            with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
+                # Send message to Gemini
+                response = self.client.send_message(user_input)
 
             # Handle function calls
             while response.candidates[0].content.parts:
@@ -120,7 +122,10 @@ class PoorCLI:
                 # Check if this is a function call
                 if hasattr(part, 'function_call') and part.function_call:
                     tool_result_content = self.execute_function_calls(response)
-                    response = self.client.send_message(tool_result_content)
+
+                    # Show loading indicator while processing tool results
+                    with self.console.status("[cyan]Processing results...[/cyan]", spinner="dots"):
+                        response = self.client.send_message(tool_result_content)
 
                 # Check if this is text response
                 elif hasattr(part, 'text'):
