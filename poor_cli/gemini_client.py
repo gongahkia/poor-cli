@@ -55,8 +55,8 @@ Be concise but thorough. Ask for clarification if needed."""
         )
         self.chat = self.model.start_chat(enable_automatic_function_calling=False)
 
-    def send_message(self, message: str) -> Any:
-        """Send a message and get response"""
+    def send_message(self, message) -> Any:
+        """Send a message and get response (accepts str or Content objects)"""
         if not self.chat:
             self.set_tools([])
 

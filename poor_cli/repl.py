@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich import print as rprint
+from google.generativeai import types
 
 from .gemini_client import GeminiClient
 from .tools import ToolRegistry
@@ -118,8 +119,8 @@ class PoorCLI:
 
                 # Check if this is a function call
                 if hasattr(part, 'function_call') and part.function_call:
-                    tool_results = self.execute_function_calls(response)
-                    response = self.client.send_message_with_tools(None, tool_results)
+                    tool_result_content = self.execute_function_calls(response)
+                    response = self.client.send_message(tool_result_content)
 
                 # Check if this is text response
                 elif hasattr(part, 'text'):
@@ -133,7 +134,7 @@ class PoorCLI:
 
     def execute_function_calls(self, response):
         """Execute function calls from Gemini response"""
-        tool_results = []
+        function_response_parts = []
 
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'function_call') and part.function_call:
@@ -155,16 +156,19 @@ class PoorCLI:
                         expand=False
                     ))
 
-                # Prepare result for Gemini
-                tool_results.append({
-                    "function_call": fc,
-                    "function_response": {
-                        "name": tool_name,
-                        "response": {"result": result}
-                    }
-                })
+                # Prepare result for Gemini using proper SDK types
+                function_response_parts.append(
+                    types.Part.from_function_response(
+                        name=tool_name,
+                        response={"result": result}
+                    )
+                )
 
-        return tool_results
+        # Return as a Content object with role="user"
+        return types.Content(
+            role="user",
+            parts=function_response_parts
+        )
 
     def display_response(self, text: str):
         """Display AI response with markdown formatting"""
