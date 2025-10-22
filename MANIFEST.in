@@ -1,0 +1,23 @@
+# Include important files in source distribution
+include README.md
+include LICENSE
+include requirements.txt
+include requirements-dev.txt
+include pytest.ini
+include pyproject.toml
+include .ruff.toml
+
+# Include configuration examples
+include .env.example
+
+# Include asset files
+recursive-include asset *.png *.jpg *.jpeg
+
+# Include test files
+recursive-include tests *.py
+
+# Exclude unwanted files
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
+global-exclude *.swp
