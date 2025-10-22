@@ -18,6 +18,7 @@ from .gemini_client_async import GeminiClientAsync
 from .tools_async import ToolRegistryAsync
 from .config import get_config_manager, Config
 from .history import HistoryManager
+from .error_recovery import ErrorRecoveryManager
 from .exceptions import (
     PoorCLIError,
     APIError,
@@ -42,6 +43,7 @@ class PoorCLIAsync:
         self.config_manager = get_config_manager()
         self.config: Config = self.config_manager.config
         self.history_manager: Optional[HistoryManager] = None
+        self.error_recovery = ErrorRecoveryManager()
         self.running = False
 
     async def initialize(self):
@@ -424,10 +426,21 @@ class PoorCLIAsync:
             self._handle_api_error("API Error", str(e), e)
 
     def _handle_api_error(self, title: str, message: str, exception: Exception):
-        """Helper to display API errors consistently"""
+        """Helper to display API errors consistently with recovery suggestions"""
+        # Get recovery suggestions
+        suggestions = self.error_recovery.get_suggestions(exception)
+        suggestion_text = ""
+
+        if suggestions:
+            suggestion_text = "\n\n[bold cyan]Suggestions:[/bold cyan]\n"
+            for i, sug in enumerate(suggestions[:3], 1):
+                suggestion_text += f"{i}. {sug.title}: {sug.description}\n"
+                if sug.commands:
+                    suggestion_text += f"   Try: [dim]{sug.commands[0]}[/dim]\n"
+
         self.console.print(
             Panel(
-                f"[bold red]{title}[/bold red]\n\n{message}",
+                f"[bold red]{title}[/bold red]\n\n{message}{suggestion_text}",
                 title=f"⚠️  {title}",
                 border_style="yellow" if "Rate Limit" in title or "Timeout" in title else "red",
             )
