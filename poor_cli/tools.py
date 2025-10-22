@@ -26,18 +26,18 @@ class ToolRegistry:
                     "name": "read_file",
                     "description": "Read contents of a file from the filesystem",
                     "parameters": {
-                        "type": "object",
+                        "type": "OBJECT",
                         "properties": {
                             "file_path": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Absolute path to the file to read"
                             },
                             "start_line": {
-                                "type": "integer",
+                                "type": "INTEGER",
                                 "description": "Optional starting line number (1-indexed)"
                             },
                             "end_line": {
-                                "type": "integer",
+                                "type": "INTEGER",
                                 "description": "Optional ending line number (1-indexed)"
                             }
                         },
@@ -51,14 +51,14 @@ class ToolRegistry:
                     "name": "write_file",
                     "description": "Write content to a file (creates new or overwrites existing)",
                     "parameters": {
-                        "type": "object",
+                        "type": "OBJECT",
                         "properties": {
                             "file_path": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Absolute path to the file to write"
                             },
                             "content": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Content to write to the file"
                             }
                         },
@@ -72,26 +72,26 @@ class ToolRegistry:
                     "name": "edit_file",
                     "description": "Edit a file by replacing specific text or lines",
                     "parameters": {
-                        "type": "object",
+                        "type": "OBJECT",
                         "properties": {
                             "file_path": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Absolute path to the file to edit"
                             },
                             "old_text": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Text to find and replace (for string replacement mode)"
                             },
                             "new_text": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Text to replace with"
                             },
                             "start_line": {
-                                "type": "integer",
+                                "type": "INTEGER",
                                 "description": "Starting line number for line-based editing (1-indexed)"
                             },
                             "end_line": {
-                                "type": "integer",
+                                "type": "INTEGER",
                                 "description": "Ending line number for line-based editing (1-indexed)"
                             }
                         },
@@ -105,14 +105,14 @@ class ToolRegistry:
                     "name": "glob_files",
                     "description": "Find files matching a glob pattern (e.g., '**/*.py', 'src/**/*.js')",
                     "parameters": {
-                        "type": "object",
+                        "type": "OBJECT",
                         "properties": {
                             "pattern": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Glob pattern to match files"
                             },
                             "path": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Directory to search in (defaults to current directory)"
                             }
                         },
@@ -126,22 +126,22 @@ class ToolRegistry:
                     "name": "grep_files",
                     "description": "Search for pattern in files using regex",
                     "parameters": {
-                        "type": "object",
+                        "type": "OBJECT",
                         "properties": {
                             "pattern": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Regex pattern to search for"
                             },
                             "path": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "File or directory to search in (defaults to current directory)"
                             },
                             "file_pattern": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "Glob pattern to filter files (e.g., '*.py')"
                             },
                             "case_sensitive": {
-                                "type": "boolean",
+                                "type": "BOOLEAN",
                                 "description": "Whether search is case sensitive (default: true)"
                             }
                         },
@@ -155,14 +155,14 @@ class ToolRegistry:
                     "name": "bash",
                     "description": "Execute a bash command and return output",
                     "parameters": {
-                        "type": "object",
+                        "type": "OBJECT",
                         "properties": {
                             "command": {
-                                "type": "string",
+                                "type": "STRING",
                                 "description": "The bash command to execute"
                             },
                             "timeout": {
-                                "type": "integer",
+                                "type": "INTEGER",
                                 "description": "Optional timeout in seconds (default: 120)"
                             }
                         },
