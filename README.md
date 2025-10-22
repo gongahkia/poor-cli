@@ -1,3 +1,5 @@
+[![](https://img.shields.io/badge/poor-cli_1.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
+
 # `poor-cli`
 
 A CLI tool similar to Claude Code but powered by Gemini's free API and capable of general-purpose tasks.
@@ -10,36 +12,35 @@ A CLI tool similar to Claude Code but powered by Gemini's free API and capable o
 - **Bash Execution**: Run shell commands directly from the AI
 - **Rich Terminal UI**: Beautiful markdown rendering and syntax highlighting
 
-## Installation
+## Stack
 
-1. Clone this repository
-2. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Set your Gemini API key as an environment variable:
-
-```bash
-export GEMINI_API_KEY="your-api-key-here"
-```
-
-Get a free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+...
 
 ## Usage
 
-Run the REPL:
+The below instructions are for locally hosting `poor-cli`.
 
-```bash
-python -m poor_cli
+1. First run the below.
+
+```console
+$ git clone && cd poor-cli
+$ python3 -m venv .venv && source .venv/bin/activate
+$ pip install -r requirements.txt
 ```
 
-Or install and use as a command:
+2. Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey) and 
+3. Set the below values within `.env`.
 
-```bash
-pip install -e .
-poor-cli
+```env
+GEMINI_API_KEY="your-api-key-here"
+```
+
+4. Now run the below.
+
+```console
+$ python -m poor_cli
+$ pip install -e .
+$ poor-cli
 ```
 
 ## Available Commands
@@ -50,7 +51,7 @@ poor-cli
 
 ## Available Tools
 
-The AI can use these tools automatically:
+`poor-cli` can currently use these tools.
 
 - **read_file**: Read file contents with optional line ranges
 - **write_file**: Create or overwrite files
@@ -58,78 +59,3 @@ The AI can use these tools automatically:
 - **glob_files**: Find files matching patterns (e.g., `**/*.py`)
 - **grep_files**: Search for text in files using regex
 - **bash**: Execute bash commands with timeout support
-
-## Example Usage
-
-### Answer General Questions
-```
-You: What is the time complexity of quicksort?
-Assistant: Quicksort has an average time complexity of O(n log n)...
-```
-
-### File Operations
-```
-You: Create a Python file that implements a binary search algorithm
-
-→ Calling tool: write_file
-Assistant: I've created binary_search.py with the implementation.
-```
-
-### Code Analysis
-```
-You: Find all Python files in this directory
-
-→ Calling tool: glob_files
-[Shows list of .py files]
-```
-
-### Search Code
-```
-You: Search for all TODO comments in my Python files
-
-→ Calling tool: grep_files
-[Shows matching lines with file:line_number format]
-```
-
-### Run Commands
-```
-You: Run the tests using pytest
-
-→ Calling tool: bash
-[Shows test output]
-```
-
-## Project Structure
-
-```
-poor-cli/
-├── poor_cli/
-│   ├── __init__.py
-│   ├── __main__.py
-│   ├── gemini_client.py  # Gemini API wrapper
-│   ├── repl.py            # Main REPL interface
-│   └── tools.py           # Tool implementations
-├── README.md
-├── requirements.txt
-├── setup.py
-└── run.sh                 # Quick start script
-```
-
-## Development
-
-To contribute or modify:
-
-1. Fork the repository
-2. Create a virtual environment: `python -m venv venv`
-3. Activate it: `source venv/bin/activate`
-4. Install in development mode: `pip install -e .`
-5. Make your changes
-6. Test thoroughly
-
-## License
-
-MIT
-
-## Acknowledgments
-
-Inspired by Claude Code, powered by Google's Gemini API.
