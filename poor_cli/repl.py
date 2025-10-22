@@ -54,12 +54,14 @@ class PoorCLI:
   [cyan]/clear[/cyan] - Clear conversation history
 """
 
-            self.console.print(Panel.fit(
-                welcome_text,
-                title="[bold cyan]Welcome[/bold cyan]",
-                border_style="cyan",
-                padding=(0, 1)
-            ))
+            self.console.print(
+                Panel.fit(
+                    welcome_text,
+                    title="[bold cyan]Welcome[/bold cyan]",
+                    border_style="cyan",
+                    padding=(0, 1),
+                )
+            )
 
         except ValueError as e:
             self.console.print(f"[bold red]Error:[/bold red] {e}", style="red")
@@ -101,29 +103,33 @@ class PoorCLI:
             self.running = False
 
         elif cmd == "/help":
-            self.console.print(Panel.fit(
-                "[bold]Available Commands:[/bold]\n\n"
-                "/help  - Show this help message\n"
-                "/quit  - Exit the REPL\n"
-                "/clear - Clear conversation history\n\n"
-                "[bold]Available Tools:[/bold]\n"
-                "- read_file: Read file contents (no permission required)\n"
-                "- write_file: Write to files (requires permission)\n"
-                "- edit_file: Edit files (requires permission)\n"
-                "- glob_files: Find files by pattern (no permission required)\n"
-                "- grep_files: Search in files (no permission required)\n"
-                "- bash: Execute bash commands (requires permission for unsafe commands)\n\n"
-                "[dim]Note: File write/edit operations and potentially unsafe\n"
-                "bash commands require your explicit permission before execution.\n"
-                "Safe read-only commands (pwd, ls, etc.) run automatically.[/dim]",
-                title="Help",
-                border_style="cyan"
-            ))
+            self.console.print(
+                Panel.fit(
+                    "[bold]Available Commands:[/bold]\n\n"
+                    "/help  - Show this help message\n"
+                    "/quit  - Exit the REPL\n"
+                    "/clear - Clear conversation history\n\n"
+                    "[bold]Available Tools:[/bold]\n"
+                    "- read_file: Read file contents (no permission required)\n"
+                    "- write_file: Write to files (requires permission)\n"
+                    "- edit_file: Edit files (requires permission)\n"
+                    "- glob_files: Find files by pattern (no permission required)\n"
+                    "- grep_files: Search in files (no permission required)\n"
+                    "- bash: Execute bash commands (requires permission for unsafe commands)\n\n"
+                    "[dim]Note: File write/edit operations and potentially unsafe\n"
+                    "bash commands require your explicit permission before execution.\n"
+                    "Safe read-only commands (pwd, ls, etc.) run automatically.[/dim]",
+                    title="Help",
+                    border_style="cyan",
+                )
+            )
 
         elif cmd == "/clear":
             # Reinitialize to clear history
             current_dir = os.getcwd()
-            self.client.set_tools(self.tool_registry.get_tool_declarations(), current_dir=current_dir)
+            self.client.set_tools(
+                self.tool_registry.get_tool_declarations(), current_dir=current_dir
+            )
             self.console.print("[green]Conversation history cleared[/green]")
 
         else:
@@ -142,15 +148,17 @@ class PoorCLI:
                 part = response.candidates[0].content.parts[0]
 
                 # Check if this is a function call
-                if hasattr(part, 'function_call') and part.function_call:
+                if hasattr(part, "function_call") and part.function_call:
                     tool_result_content = self.execute_function_calls(response)
 
                     # Show loading indicator while processing tool results
-                    with self.console.status("[cyan]Processing results...[/cyan]", spinner="dots"):
+                    with self.console.status(
+                        "[cyan]Processing results...[/cyan]", spinner="dots"
+                    ):
                         response = self.client.send_message(tool_result_content)
 
                 # Check if this is text response
-                elif hasattr(part, 'text'):
+                elif hasattr(part, "text"):
                     self.display_response(part.text)
                     break
                 else:
@@ -171,7 +179,18 @@ class PoorCLI:
         if tool_name == "bash":
             command = tool_args.get("command", "").strip().lower()
             # List of safe read-only commands that don't need permission
-            safe_commands = ["pwd", "ls", "echo", "cat", "head", "tail", "grep", "find", "which", "whoami"]
+            safe_commands = [
+                "pwd",
+                "ls",
+                "echo",
+                "cat",
+                "head",
+                "tail",
+                "grep",
+                "find",
+                "which",
+                "whoami",
+            ]
             # Check if command starts with a safe command
             if any(command.startswith(cmd) for cmd in safe_commands):
                 return True
@@ -200,17 +219,17 @@ class PoorCLI:
             return True
 
         # Display permission request
-        self.console.print(Panel(
-            f"{action_desc}\n{details}\n\n[bold]Allow this operation?[/bold]",
-            title="⚠️  Permission Required",
-            border_style="yellow"
-        ))
+        self.console.print(
+            Panel(
+                f"{action_desc}\n{details}\n\n[bold]Allow this operation?[/bold]",
+                title="⚠️  Permission Required",
+                border_style="yellow",
+            )
+        )
 
         # Get user response
         response = Prompt.ask(
-            "[bold]Choice[/bold]",
-            choices=["y", "n", "yes", "no"],
-            default="y"
+            "[bold]Choice[/bold]", choices=["y", "n", "yes", "no"], default="y"
         )
 
         return response.lower() in ["y", "yes"]
@@ -220,7 +239,7 @@ class PoorCLI:
         function_response_parts = []
 
         for part in response.candidates[0].content.parts:
-            if hasattr(part, 'function_call') and part.function_call:
+            if hasattr(part, "function_call") and part.function_call:
                 fc = part.function_call
                 tool_name = fc.name
                 tool_args = dict(fc.args)
@@ -237,32 +256,30 @@ class PoorCLI:
 
                 # Display tool output
                 if result:
-                    self.console.print(Panel(
-                        result[:1000] + ("..." if len(result) > 1000 else ""),
-                        title=f"Tool Output: {tool_name}",
-                        border_style="dim",
-                        expand=False
-                    ))
+                    self.console.print(
+                        Panel(
+                            result[:1000] + ("..." if len(result) > 1000 else ""),
+                            title=f"Tool Output: {tool_name}",
+                            border_style="dim",
+                            expand=False,
+                        )
+                    )
 
                 # Prepare result for Gemini using proper protos
                 function_response_parts.append(
                     protos.Part(
                         function_response=protos.FunctionResponse(
-                            name=tool_name,
-                            response={"result": result}
+                            name=tool_name, response={"result": result}
                         )
                     )
                 )
 
         # Return as a Content object with role="user"
-        return protos.Content(
-            role="user",
-            parts=function_response_parts
-        )
+        return protos.Content(role="user", parts=function_response_parts)
 
     def display_response(self, text: str):
         """Display AI response with markdown formatting"""
-        self.console.print("\n[bold green]Assistant[/bold green]")
+        self.console.print("\n[bold green]Poor AI[/bold green]")
 
         # Try to render as markdown
         try:
