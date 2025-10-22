@@ -94,9 +94,10 @@ class PoorCLI:
                 "- edit_file: Edit files (requires permission)\n"
                 "- glob_files: Find files by pattern (no permission required)\n"
                 "- grep_files: Search in files (no permission required)\n"
-                "- bash: Execute bash commands (requires permission)\n\n"
-                "[dim]Note: File write/edit operations and bash commands\n"
-                "require your explicit permission before execution.[/dim]",
+                "- bash: Execute bash commands (requires permission for unsafe commands)\n\n"
+                "[dim]Note: File write/edit operations and potentially unsafe\n"
+                "bash commands require your explicit permission before execution.\n"
+                "Safe read-only commands (pwd, ls, etc.) run automatically.[/dim]",
                 title="Help",
                 border_style="cyan"
             ))
@@ -146,6 +147,15 @@ class PoorCLI:
 
         if tool_name not in file_operation_tools:
             return True
+
+        # For bash commands, check if it's a safe read-only command
+        if tool_name == "bash":
+            command = tool_args.get("command", "").strip().lower()
+            # List of safe read-only commands that don't need permission
+            safe_commands = ["pwd", "ls", "echo", "cat", "head", "tail", "grep", "find", "which", "whoami"]
+            # Check if command starts with a safe command
+            if any(command.startswith(cmd) for cmd in safe_commands):
+                return True
 
         # Build permission message based on tool type
         if tool_name == "write_file":
