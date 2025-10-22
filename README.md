@@ -4,6 +4,10 @@
 
 A CLI tool similar to Claude Code but powered by Gemini's free API and capable of general-purpose tasks.
 
+<div align="center">
+    <img src="./asset/logo/1.png" width="35%">
+</div>
+
 ## Features
 
 - **Interactive REPL**: Conversational AI interface powered by Gemini
