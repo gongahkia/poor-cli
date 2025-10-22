@@ -25,7 +25,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "poor-cli=poor_cli.repl:main",
+            "poor-cli=poor_cli.repl_async:main",
+            "poor-cli-sync=poor_cli.repl:main",
         ],
     },
     classifiers=[
