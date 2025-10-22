@@ -40,3 +40,20 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# poor-cli specific
+.poor-cli/
+poor-cli.log
+
+# Test / Coverage
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Linting
+.ruff_cache/
