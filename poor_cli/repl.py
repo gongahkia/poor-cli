@@ -35,15 +35,30 @@ class PoorCLI:
             current_dir = os.getcwd()
             self.client.set_tools(tool_declarations, current_dir=current_dir)
 
+            # ASCII art mascot - friendly character with beret and mustache
+            mascot = """[dim blue]        ___
+      /     \\
+     | () () |
+      \\  ^  /
+       |||||
+      '-----'[/dim blue]
+"""
+
+            welcome_text = f"""{mascot}
+[bold cyan]poor-cli[/bold cyan] [dim]v0.1.0[/dim]
+[dim]AI-powered CLI tool using Gemini[/dim]
+
+[bold]Commands:[/bold]
+  [cyan]/help[/cyan]  - Show this help
+  [cyan]/quit[/cyan]  - Exit the REPL
+  [cyan]/clear[/cyan] - Clear conversation history
+"""
+
             self.console.print(Panel.fit(
-                "[bold cyan]poor-cli[/bold cyan] v0.1.0\n"
-                "AI-powered CLI tool using Gemini\n\n"
-                "Commands:\n"
-                "  /help  - Show this help\n"
-                "  /quit  - Exit the REPL\n"
-                "  /clear - Clear conversation history",
-                title="Welcome",
-                border_style="cyan"
+                welcome_text,
+                title="[bold cyan]Welcome[/bold cyan]",
+                border_style="cyan",
+                padding=(0, 1)
             ))
 
         except ValueError as e:
