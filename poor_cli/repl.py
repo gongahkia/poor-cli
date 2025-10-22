@@ -15,6 +15,18 @@ from google.generativeai.types import protos
 
 from .gemini_client import GeminiClient
 from .tools import ToolRegistry
+from .exceptions import (
+    PoorCLIError,
+    APIError,
+    APIConnectionError,
+    APITimeoutError,
+    APIRateLimitError,
+    ConfigurationError,
+    setup_logger,
+)
+
+# Setup logger
+logger = setup_logger(__name__)
 
 
 class PoorCLI:
@@ -27,15 +39,44 @@ class PoorCLI:
         self.running = False
 
     def initialize(self):
-        """Initialize the Gemini client and tools"""
+        """Initialize the Gemini client and tools with proper error handling"""
         try:
-            self.client = GeminiClient()
-            tool_declarations = self.tool_registry.get_tool_declarations()
-            # Pass the current working directory to the client
-            current_dir = os.getcwd()
-            self.client.set_tools(tool_declarations, current_dir=current_dir)
+            logger.info("Initializing poor-cli...")
 
-            # ASCII art mascot - friendly character with beret and mustache
+            # Initialize Gemini client
+            try:
+                self.client = GeminiClient()
+                logger.info("Gemini client initialized successfully")
+            except ConfigurationError as e:
+                self.console.print(
+                    Panel(
+                        f"[bold red]Configuration Error:[/bold red]\n{e}\n\n"
+                        "[yellow]Please check:[/yellow]\n"
+                        "1. GEMINI_API_KEY is set in your environment or .env file\n"
+                        "2. Your API key is valid\n"
+                        "3. Get a key from: https://makersuite.google.com/app/apikey",
+                        title="⚠️  Configuration Error",
+                        border_style="red",
+                    )
+                )
+                logger.error(f"Configuration error: {e}")
+                sys.exit(1)
+
+            # Get tool declarations and initialize
+            try:
+                tool_declarations = self.tool_registry.get_tool_declarations()
+                current_dir = os.getcwd()
+                self.client.set_tools(tool_declarations, current_dir=current_dir)
+                logger.info(f"Initialized with {len(tool_declarations)} tools")
+            except Exception as e:
+                self.console.print(
+                    f"[bold red]Error initializing tools:[/bold red] {e}",
+                    style="red"
+                )
+                logger.error(f"Tool initialization error: {e}")
+                sys.exit(1)
+
+            # Display welcome message
             mascot = """[dim blue]        ___
       /     \\
      | () () |
@@ -62,9 +103,19 @@ class PoorCLI:
                     padding=(0, 1),
                 )
             )
+            logger.info("Initialization complete")
 
-        except ValueError as e:
-            self.console.print(f"[bold red]Error:[/bold red] {e}", style="red")
+        except Exception as e:
+            # Catch any unexpected errors during initialization
+            self.console.print(
+                Panel(
+                    f"[bold red]Unexpected Error:[/bold red]\n{type(e).__name__}: {e}\n\n"
+                    "[yellow]Please check the logs for more details.[/yellow]",
+                    title="⚠️  Initialization Failed",
+                    border_style="red",
+                )
+            )
+            logger.exception("Unexpected error during initialization")
             sys.exit(1)
 
     def run(self):
@@ -136,36 +187,139 @@ class PoorCLI:
             self.console.print(f"[red]Unknown command: {command}[/red]")
 
     def process_request(self, user_input: str):
-        """Process user request with AI"""
+        """Process user request with AI and comprehensive error handling"""
         try:
+            logger.info(f"Processing user request: {user_input[:100]}...")
+
             # Show loading indicator
             with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
-                # Send message to Gemini
-                response = self.client.send_message(user_input)
+                try:
+                    # Send message to Gemini
+                    response = self.client.send_message(user_input)
+                except APIRateLimitError as e:
+                    self.console.print(
+                        Panel(
+                            "[bold red]Rate Limit Exceeded[/bold red]\n\n"
+                            "You've exceeded the API rate limit. Please:\n"
+                            "1. Wait a few minutes before trying again\n"
+                            "2. Consider using a different API key\n"
+                            "3. Check your quota at: https://makersuite.google.com/",
+                            title="⚠️  Rate Limit",
+                            border_style="yellow",
+                        )
+                    )
+                    logger.warning(f"Rate limit exceeded: {e}")
+                    return
+                except APITimeoutError as e:
+                    self.console.print(
+                        Panel(
+                            "[bold red]Request Timeout[/bold red]\n\n"
+                            "The request took too long to complete.\n"
+                            "Please try again or simplify your request.",
+                            title="⚠️  Timeout",
+                            border_style="yellow",
+                        )
+                    )
+                    logger.warning(f"Request timeout: {e}")
+                    return
+                except APIConnectionError as e:
+                    self.console.print(
+                        Panel(
+                            "[bold red]Connection Error[/bold red]\n\n"
+                            "Could not connect to the Gemini API.\n"
+                            "Please check your internet connection and try again.",
+                            title="⚠️  Connection Error",
+                            border_style="yellow",
+                        )
+                    )
+                    logger.error(f"Connection error: {e}")
+                    return
+                except APIError as e:
+                    self.console.print(
+                        Panel(
+                            f"[bold red]API Error[/bold red]\n\n{e}",
+                            title="⚠️  API Error",
+                            border_style="red",
+                        )
+                    )
+                    logger.error(f"API error: {e}")
+                    return
 
-            # Handle function calls
-            while response.candidates[0].content.parts:
-                part = response.candidates[0].content.parts[0]
+            # Handle function calls and responses
+            try:
+                while response.candidates[0].content.parts:
+                    part = response.candidates[0].content.parts[0]
 
-                # Check if this is a function call
-                if hasattr(part, "function_call") and part.function_call:
-                    tool_result_content = self.execute_function_calls(response)
+                    # Check if this is a function call
+                    if hasattr(part, "function_call") and part.function_call:
+                        tool_result_content = self.execute_function_calls(response)
 
-                    # Show loading indicator while processing tool results
-                    with self.console.status(
-                        "[cyan]Processing results...[/cyan]", spinner="dots"
-                    ):
-                        response = self.client.send_message(tool_result_content)
+                        # Show loading indicator while processing tool results
+                        with self.console.status(
+                            "[cyan]Processing results...[/cyan]", spinner="dots"
+                        ):
+                            try:
+                                response = self.client.send_message(tool_result_content)
+                            except APIError as e:
+                                self.console.print(
+                                    f"[bold red]Error processing tool results:[/bold red] {e}",
+                                    style="red"
+                                )
+                                logger.error(f"Error processing tool results: {e}")
+                                break
 
-                # Check if this is text response
-                elif hasattr(part, "text"):
-                    self.display_response(part.text)
-                    break
-                else:
-                    break
+                    # Check if this is text response
+                    elif hasattr(part, "text"):
+                        self.display_response(part.text)
+                        break
+                    else:
+                        break
+
+                logger.info("Request processed successfully")
+
+            except (IndexError, AttributeError) as e:
+                self.console.print(
+                    Panel(
+                        "[bold red]Response Parse Error[/bold red]\n\n"
+                        "Received an unexpected response format from the API.\n"
+                        "This might be a temporary issue. Please try again.",
+                        title="⚠️  Parse Error",
+                        border_style="yellow",
+                    )
+                )
+                logger.error(f"Error parsing API response: {e}", exc_info=True)
+
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Request cancelled[/yellow]")
+            logger.info("Request cancelled by user")
+            raise  # Re-raise to be handled by main loop
+
+        except PoorCLIError as e:
+            # Handle known application errors
+            self.console.print(
+                Panel(
+                    f"[bold red]Error[/bold red]\n\n{e}",
+                    title="⚠️  Error",
+                    border_style="red",
+                )
+            )
+            logger.error(f"Application error: {e}")
 
         except Exception as e:
-            self.console.print(f"[bold red]Error:[/bold red] {str(e)}", style="red")
+            # Handle unexpected errors with detailed information
+            error_type = type(e).__name__
+            error_msg = str(e)
+            self.console.print(
+                Panel(
+                    f"[bold red]Unexpected Error[/bold red]\n\n"
+                    f"Type: {error_type}\n"
+                    f"Message: {error_msg}\n\n"
+                    "[yellow]Please check the logs for more details.[/yellow]",
+                    title="⚠️  Unexpected Error",
+                    border_style="red",
+                )
+            )
+            logger.exception("Unexpected error processing request")
 
     def request_permission(self, tool_name: str, tool_args: dict) -> bool:
         """Request user permission for file operations"""
