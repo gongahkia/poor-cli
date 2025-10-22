@@ -49,7 +49,7 @@ class ToolRegistry:
                 "function": self.write_file,
                 "declaration": {
                     "name": "write_file",
-                    "description": "Write content to a file (creates new or overwrites existing)",
+                    "description": "REQUIRED: Use this to actually create/write a file. Call this whenever the user asks to create, write, or generate a file. Do NOT just describe the content - call this function to create the actual file.",
                     "parameters": {
                         "type": "OBJECT",
                         "properties": {
