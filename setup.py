@@ -19,6 +19,9 @@ setup(
     install_requires=[
         "google-generativeai>=0.3.0",
         "rich>=13.0.0",
+        "PyYAML>=6.0",
+        "aiofiles>=23.0.0",
+        "aiohttp>=3.9.0",
     ],
     entry_points={
         "console_scripts": [
