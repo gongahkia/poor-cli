@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich import print as rprint
-from google.generativeai import types
+from google.generativeai.types import protos
 
 from .gemini_client import GeminiClient
 from .tools import ToolRegistry
@@ -161,16 +161,18 @@ class PoorCLI:
                         expand=False
                     ))
 
-                # Prepare result for Gemini using proper SDK types
+                # Prepare result for Gemini using proper protos
                 function_response_parts.append(
-                    types.Part.from_function_response(
-                        name=tool_name,
-                        response={"result": result}
+                    protos.Part(
+                        function_response=protos.FunctionResponse(
+                            name=tool_name,
+                            response={"result": result}
+                        )
                     )
                 )
 
         # Return as a Content object with role="user"
-        return types.Content(
+        return protos.Content(
             role="user",
             parts=function_response_parts
         )
