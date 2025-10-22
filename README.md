@@ -1,4 +1,4 @@
-[![](https://img.shields.io/badge/poor-cli_1.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
+[![](https://img.shields.io/badge/poor_cli_1.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
 
 # `poor-cli`
 
