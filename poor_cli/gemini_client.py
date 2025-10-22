@@ -48,7 +48,7 @@ Be concise but thorough. Ask for clarification if needed."""
 
         # Initialize model with tools
         self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-1.5-flash-latest",
             tools=self.tools if self.tools else None,
             system_instruction=system_instruction,
         )
