@@ -186,6 +186,162 @@ class ToolRegistryAsync:
                         "required": ["command"]
                     }
                 }
+            },
+            "list_directory": {
+                "function": self.list_directory,
+                "declaration": {
+                    "name": "list_directory",
+                    "description": "List directory contents with detailed metadata",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Directory path (defaults to current)"
+                            },
+                            "show_hidden": {
+                                "type": "BOOLEAN",
+                                "description": "Show hidden files (default false)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "copy_file": {
+                "function": self.copy_file,
+                "declaration": {
+                    "name": "copy_file",
+                    "description": "Copy a file to another location",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "source": {
+                                "type": "STRING",
+                                "description": "Source file path"
+                            },
+                            "destination": {
+                                "type": "STRING",
+                                "description": "Destination file path"
+                            }
+                        },
+                        "required": ["source", "destination"]
+                    }
+                }
+            },
+            "move_file": {
+                "function": self.move_file,
+                "declaration": {
+                    "name": "move_file",
+                    "description": "Move or rename a file",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "source": {
+                                "type": "STRING",
+                                "description": "Source file path"
+                            },
+                            "destination": {
+                                "type": "STRING",
+                                "description": "Destination file path"
+                            }
+                        },
+                        "required": ["source", "destination"]
+                    }
+                }
+            },
+            "delete_file": {
+                "function": self.delete_file,
+                "declaration": {
+                    "name": "delete_file",
+                    "description": "Delete a file",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "file_path": {
+                                "type": "STRING",
+                                "description": "Path to file to delete"
+                            }
+                        },
+                        "required": ["file_path"]
+                    }
+                }
+            },
+            "diff_files": {
+                "function": self.diff_files,
+                "declaration": {
+                    "name": "diff_files",
+                    "description": "Compare two files and show differences",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "file1": {
+                                "type": "STRING",
+                                "description": "First file path"
+                            },
+                            "file2": {
+                                "type": "STRING",
+                                "description": "Second file path"
+                            }
+                        },
+                        "required": ["file1", "file2"]
+                    }
+                }
+            },
+            "git_status": {
+                "function": self.git_status,
+                "declaration": {
+                    "name": "git_status",
+                    "description": "Get git repository status",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Repository path (defaults to current)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "git_diff": {
+                "function": self.git_diff,
+                "declaration": {
+                    "name": "git_diff",
+                    "description": "Show git differences",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Repository path"
+                            },
+                            "file_path": {
+                                "type": "STRING",
+                                "description": "Specific file to diff"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "create_directory": {
+                "function": self.create_directory,
+                "declaration": {
+                    "name": "create_directory",
+                    "description": "Create a new directory",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Directory path to create"
+                            }
+                        },
+                        "required": ["path"]
+                    }
+                }
             }
         }
 
@@ -506,3 +662,251 @@ class ToolRegistryAsync:
             raise
         except Exception as e:
             raise CommandExecutionError(f"Failed to execute command: {str(e)}")
+
+    async def list_directory(self, path: Optional[str] = None, show_hidden: bool = False) -> str:
+        """List directory contents with metadata
+
+        Args:
+            path: Directory path (defaults to current)
+            show_hidden: Show hidden files
+
+        Returns:
+            Directory listing
+
+        Raises:
+            FileOperationError: If listing fails
+        """
+        try:
+            dir_path = path or os.getcwd()
+
+            if not os.path.isdir(dir_path):
+                raise FileOperationError(f"Not a directory: {dir_path}")
+
+            # Get directory entries
+            entries = []
+            for entry in os.listdir(dir_path):
+                if not show_hidden and entry.startswith('.'):
+                    continue
+
+                full_path = os.path.join(dir_path, entry)
+                stat = os.stat(full_path)
+
+                # Format size
+                size = stat.st_size
+                if size < 1024:
+                    size_str = f"{size}B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size / 1024:.1f}KB"
+                else:
+                    size_str = f"{size / (1024 * 1024):.1f}MB"
+
+                # Get type
+                if os.path.isdir(full_path):
+                    type_str = "DIR"
+                elif os.path.islink(full_path):
+                    type_str = "LINK"
+                else:
+                    type_str = "FILE"
+
+                entries.append(f"{type_str:6} {size_str:10} {entry}")
+
+            result = f"Contents of {dir_path}:\n" + "\n".join(sorted(entries))
+            logger.info(f"Listed directory: {dir_path}")
+            return result
+
+        except Exception as e:
+            raise FileOperationError(f"Failed to list directory: {str(e)}")
+
+    async def copy_file(self, source: str, destination: str) -> str:
+        """Copy file to another location
+
+        Args:
+            source: Source file path
+            destination: Destination file path
+
+        Returns:
+            Success message
+
+        Raises:
+            FileOperationError: If copy fails
+        """
+        try:
+            source = validate_file_path(source, must_exist=True, must_be_file=True)
+            destination = validate_file_path(destination, must_exist=False)
+
+            # Read source
+            async with aiofiles.open(source, 'rb') as f:
+                content = await f.read()
+
+            # Write destination
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            async with aiofiles.open(destination, 'wb') as f:
+                await f.write(content)
+
+            logger.info(f"Copied {source} to {destination}")
+            return f"Successfully copied {source} to {destination}"
+
+        except Exception as e:
+            raise FileOperationError(f"Failed to copy file: {str(e)}")
+
+    async def move_file(self, source: str, destination: str) -> str:
+        """Move or rename file
+
+        Args:
+            source: Source file path
+            destination: Destination file path
+
+        Returns:
+            Success message
+
+        Raises:
+            FileOperationError: If move fails
+        """
+        try:
+            source = validate_file_path(source, must_exist=True)
+            destination = validate_file_path(destination, must_exist=False)
+
+            # Create destination directory if needed
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+
+            # Move file
+            await asyncio.to_thread(os.rename, source, destination)
+
+            logger.info(f"Moved {source} to {destination}")
+            return f"Successfully moved {source} to {destination}"
+
+        except Exception as e:
+            raise FileOperationError(f"Failed to move file: {str(e)}")
+
+    async def delete_file(self, file_path: str) -> str:
+        """Delete a file
+
+        Args:
+            file_path: Path to file
+
+        Returns:
+            Success message
+
+        Raises:
+            FileOperationError: If delete fails
+        """
+        try:
+            file_path = validate_file_path(file_path, must_exist=True, must_be_file=True)
+
+            # Delete file
+            await asyncio.to_thread(os.remove, file_path)
+
+            logger.info(f"Deleted file: {file_path}")
+            return f"Successfully deleted {file_path}"
+
+        except Exception as e:
+            raise FileOperationError(f"Failed to delete file: {str(e)}")
+
+    async def diff_files(self, file1: str, file2: str) -> str:
+        """Compare two files and show differences
+
+        Args:
+            file1: First file path
+            file2: Second file path
+
+        Returns:
+            Diff output
+
+        Raises:
+            FileOperationError: If diff fails
+        """
+        try:
+            import difflib
+
+            file1 = validate_file_path(file1, must_exist=True, must_be_file=True)
+            file2 = validate_file_path(file2, must_exist=True, must_be_file=True)
+
+            # Read both files
+            async with aiofiles.open(file1, 'r', encoding='utf-8') as f:
+                content1 = (await f.read()).splitlines(keepends=True)
+
+            async with aiofiles.open(file2, 'r', encoding='utf-8') as f:
+                content2 = (await f.read()).splitlines(keepends=True)
+
+            # Generate diff
+            diff = difflib.unified_diff(content1, content2, fromfile=file1, tofile=file2)
+            result = ''.join(diff)
+
+            if not result:
+                return "Files are identical"
+
+            logger.info(f"Generated diff between {file1} and {file2}")
+            return result
+
+        except Exception as e:
+            raise FileOperationError(f"Failed to diff files: {str(e)}")
+
+    async def git_status(self, path: Optional[str] = None) -> str:
+        """Get git repository status
+
+        Args:
+            path: Repository path
+
+        Returns:
+            Git status output
+
+        Raises:
+            CommandExecutionError: If git command fails
+        """
+        try:
+            work_dir = path or os.getcwd()
+            command = f"cd {work_dir} && git status"
+
+            result = await self.bash(command, timeout=30)
+            return result
+
+        except Exception as e:
+            raise CommandExecutionError(f"Git status failed: {str(e)}")
+
+    async def git_diff(self, path: Optional[str] = None, file_path: Optional[str] = None) -> str:
+        """Show git differences
+
+        Args:
+            path: Repository path
+            file_path: Specific file to diff
+
+        Returns:
+            Git diff output
+
+        Raises:
+            CommandExecutionError: If git command fails
+        """
+        try:
+            work_dir = path or os.getcwd()
+            file_arg = file_path if file_path else ""
+            command = f"cd {work_dir} && git diff {file_arg}"
+
+            result = await self.bash(command, timeout=30)
+            return result if result.strip() else "No changes"
+
+        except Exception as e:
+            raise CommandExecutionError(f"Git diff failed: {str(e)}")
+
+    async def create_directory(self, path: str) -> str:
+        """Create a new directory
+
+        Args:
+            path: Directory path to create
+
+        Returns:
+            Success message
+
+        Raises:
+            FileOperationError: If creation fails
+        """
+        try:
+            path = validate_file_path(path, must_exist=False)
+
+            # Create directory
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Created directory: {path}")
+            return f"Successfully created directory {path}"
+
+        except Exception as e:
+            raise FileOperationError(f"Failed to create directory: {str(e)}")
