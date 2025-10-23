@@ -18,6 +18,7 @@ from .gemini_client_async import GeminiClientAsync
 from .tools_async import ToolRegistryAsync
 from .config import get_config_manager, Config
 from .history import HistoryManager
+from .repo_config import get_repo_config, RepoConfig
 from .error_recovery import ErrorRecoveryManager
 from .exceptions import (
     PoorCLIError,
@@ -45,9 +46,18 @@ class PoorCLIAsync:
         self.config_manager = get_config_manager()
         self.config: Config = self.config_manager.config
         self.history_manager: Optional[HistoryManager] = None
+        self.repo_config: Optional[RepoConfig] = None  # For local JSON history
         self.error_recovery = ErrorRecoveryManager()
         self.running = False
         self.verbose_mode = self.config.ui.verbose_logging
+
+        # Initialize repo config for local history
+        try:
+            self.repo_config = get_repo_config()
+            logger.info(f"Initialized repo config at {self.repo_config.config_dir}")
+        except Exception as e:
+            logger.error(f"Failed to initialize repo config: {e}", exc_info=True)
+            self.repo_config = None
 
         # Enable verbose logging if set in config
         if self.verbose_mode:
@@ -63,6 +73,14 @@ class PoorCLIAsync:
                 self.history_manager = HistoryManager()
                 self.history_manager.start_session(self.config.model.model_name)
                 logger.info("History manager initialized")
+
+            # Start repo config session for local JSON history
+            if self.repo_config:
+                try:
+                    self.repo_config.start_session(model=self.config.model.model_name)
+                    logger.info("Started repo config history session")
+                except Exception as e:
+                    logger.error(f"Failed to start repo config session: {e}")
 
             # Initialize Gemini client
             try:
@@ -188,6 +206,14 @@ class PoorCLIAsync:
         if self.history_manager:
             self.history_manager.end_session()
 
+        # End repo config session and save history
+        if self.repo_config:
+            try:
+                self.repo_config.end_session()
+                logger.info("Repo config session ended and history saved")
+            except Exception as e:
+                logger.error(f"Failed to end repo config session: {e}")
+
         self.console.print("\n[cyan]Goodbye![/cyan]")
 
     async def handle_command(self, command: str):
@@ -201,12 +227,13 @@ class PoorCLIAsync:
             self.console.print(
                 Panel.fit(
                     "[bold]Available Commands:[/bold]\n\n"
-                    "/help    - Show this help message\n"
-                    "/quit    - Exit the REPL\n"
-                    "/clear   - Clear conversation history\n"
-                    "/config  - Show current configuration\n"
-                    "/history - Show session statistics\n"
-                    "/verbose - Toggle verbose logging (INFO/DEBUG messages)\n\n"
+                    "/help          - Show this help message\n"
+                    "/quit          - Exit the REPL\n"
+                    "/clear         - Clear conversation history\n"
+                    "/config        - Show current configuration\n"
+                    "/history       - Show chat history statistics\n"
+                    "/history show  - Show recent messages from current session\n"
+                    "/verbose       - Toggle verbose logging (INFO/DEBUG messages)\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents\n"
                     "- write_file: Write to files (requires permission)\n"
@@ -237,24 +264,80 @@ class PoorCLIAsync:
                 )
             )
 
-        elif cmd == "/history":
-            if self.history_manager:
-                total_tokens = self.history_manager.get_total_tokens()
-                msg_count = self.history_manager.get_message_count()
-                session_id = self.history_manager.current_session.session_id
+        elif cmd == "/history" or cmd.startswith("/history "):
+            # Show chat history and statistics (using repo_config for local JSON history)
+            if not self.repo_config:
+                self.console.print("[yellow]History tracking not available[/yellow]")
+                logger.warning("History command called but repo_config is None")
+                return
+
+            try:
+                # Parse optional count argument
+                parts = cmd.split()
+                show_messages = False
+                message_count = 10  # default
+
+                if len(parts) > 1:
+                    if parts[1].lower() == "show":
+                        show_messages = True
+                        if len(parts) > 2:
+                            try:
+                                message_count = int(parts[2])
+                            except ValueError:
+                                pass
+
+                session_stats = self.repo_config.get_session_stats()
+                all_stats = self.repo_config.get_all_sessions_stats()
+
+                # Build stats text
+                if session_stats:
+                    history_text = (
+                        f"[bold]Current Session:[/bold]\n"
+                        f"  Session ID: {session_stats['session_id']}\n"
+                        f"  Started: {session_stats['started_at']}\n"
+                        f"  Messages: {session_stats['message_count']}\n"
+                        f"  Tokens (est): {session_stats['tokens_estimate']}\n"
+                        f"  Model: {session_stats['model']}\n\n"
+                    )
+                else:
+                    history_text = "[yellow]No active session[/yellow]\n\n"
+
+                history_text += (
+                    f"[bold]All Sessions:[/bold]\n"
+                    f"  Total Sessions: {all_stats['total_sessions']}\n"
+                    f"  Total Messages: {all_stats['total_messages']}\n"
+                    f"  Total Tokens (est): {all_stats['total_tokens_estimate']}\n"
+                    f"  Repo: {all_stats['repo_path']}\n\n"
+                )
+
+                # Show recent messages if requested
+                if show_messages and self.repo_config.current_session:
+                    recent_msgs = self.repo_config.get_recent_messages(message_count)
+                    if recent_msgs:
+                        history_text += f"[bold]Recent Messages (last {len(recent_msgs)}):[/bold]\n"
+                        for msg in recent_msgs:
+                            role_color = "cyan" if msg.role == "user" else "green"
+                            role_name = "You" if msg.role == "user" else "AI"
+                            content_preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+                            history_text += f"  [{role_color}]{role_name}:[/{role_color}] {content_preview}\n"
+                        history_text += "\n"
+
+                history_text += (
+                    f"[dim]History file: {self.repo_config.history_file}[/dim]\n"
+                    f"[dim]Use '/history show' to see recent messages[/dim]"
+                )
 
                 self.console.print(
                     Panel(
-                        f"[bold]Session ID:[/bold] {session_id}\n"
-                        f"[bold]Messages:[/bold] {msg_count}\n"
-                        f"[bold]Tokens (estimated):[/bold] {total_tokens}\n"
-                        f"[bold]Model:[/bold] {self.config.model.model_name}",
-                        title="Session History",
+                        history_text,
+                        title="Chat History",
                         border_style="cyan",
                     )
                 )
-            else:
-                self.console.print("[yellow]History tracking is disabled[/yellow]")
+
+            except Exception as e:
+                self.console.print(f"[red]Error displaying history: {e}[/red]")
+                logger.exception("Error in /history command")
 
         elif cmd == "/verbose":
             # Toggle verbose mode
@@ -281,6 +364,13 @@ class PoorCLIAsync:
             # Save user message to history
             if self.history_manager:
                 self.history_manager.add_message("user", user_input)
+
+            # Save to repo config history as well
+            if self.repo_config:
+                try:
+                    self.repo_config.add_message("user", user_input)
+                except Exception as e:
+                    logger.error(f"Failed to log user message to repo config: {e}")
 
             # Check if we should prune history
             if self.history_manager:
@@ -375,6 +465,13 @@ class PoorCLIAsync:
             if self.history_manager and accumulated_text:
                 self.history_manager.add_message("model", accumulated_text)
 
+            # Save to repo config history as well
+            if self.repo_config and accumulated_text:
+                try:
+                    self.repo_config.add_message("assistant", accumulated_text)
+                except Exception as e:
+                    logger.error(f"Failed to log assistant message to repo config: {e}")
+
         except APIRateLimitError as e:
             self._handle_api_error("Rate Limit Exceeded",
                                  "You've exceeded the API rate limit.", e)
@@ -417,6 +514,13 @@ class PoorCLIAsync:
                         # Save to history
                         if self.history_manager:
                             self.history_manager.add_message("model", text)
+
+                        # Save to repo config history as well
+                        if self.repo_config:
+                            try:
+                                self.repo_config.add_message("assistant", text)
+                            except Exception as e:
+                                logger.error(f"Failed to log assistant message to repo config: {e}")
 
                         break
                     else:
