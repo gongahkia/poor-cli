@@ -100,6 +100,11 @@ class PoorCLIAsync:
                     system_instruction=system_instruction
                 )
                 logger.info(f"Initialized with {len(tool_declarations)} tools")
+
+                # Restore previous conversation history if enabled
+                if self.config.history.restore_on_startup:
+                    await self._restore_conversation_history()
+
             except Exception as e:
                 self.console.print(
                     f"[bold red]Error initializing tools:[/bold red] {e}",
@@ -238,13 +243,13 @@ If the user just asks for a solution/code without mentioning a file, show the co
 {status}
 
 [bold]Commands:[/bold]
-  [cyan]/help[/cyan]         - Show this help
-  [cyan]/quit[/cyan]         - Exit the REPL
-  [cyan]/clear[/cyan]        - Clear conversation history
-  [cyan]/config[/cyan]       - Show configuration
-  [cyan]/history[/cyan]      - Show session history
+  [cyan]/help[/cyan]         - Show all commands
+  [cyan]/sessions[/cyan]     - View previous sessions
+  [cyan]/new-session[/cyan]  - Start fresh conversation
   [cyan]/provider[/cyan]     - Show current provider
   [cyan]/switch[/cyan]       - Switch AI provider
+
+[dim]Tip: History automatically persists across sessions in .poor-cli/[/dim]
 """
 
         self.console.print(
@@ -326,6 +331,117 @@ If the user just asks for a solution/code without mentioning a file, show the co
             self.console.print(f"[red]Error switching provider: {e}[/red]")
             logger.error(f"Provider switch error: {e}", exc_info=True)
 
+    async def _restore_conversation_history(self):
+        """Restore conversation history from previous session"""
+        try:
+            if not self.repo_config:
+                logger.debug("No repo config, skipping history restoration")
+                return
+
+            # Get recent messages from repo config
+            max_messages = self.config.history.max_messages_to_restore
+            recent_messages = self.repo_config.get_recent_messages(max_messages)
+
+            if not recent_messages:
+                logger.debug("No previous messages to restore")
+                return
+
+            # Convert messages to provider format and send them
+            restored_count = 0
+            provider_name = self.config.model.provider.lower()
+
+            self.console.print(f"[dim]Restoring {len(recent_messages)} messages from previous session...[/dim]")
+
+            for msg in recent_messages:
+                try:
+                    # Format message for provider
+                    if provider_name == "gemini":
+                        # Gemini needs to add to internal history differently
+                        # We'll use the raw API to add to chat history
+                        if hasattr(self.provider, 'chat') and hasattr(self.provider.chat, 'history'):
+                            # Add to Gemini's internal history
+                            role = "user" if msg.role == "user" else "model"
+                            # Note: This is a workaround - ideally providers should support history injection
+                            pass  # Gemini's history is managed internally through send_message
+
+                    elif provider_name == "openai":
+                        # OpenAI stores messages as list
+                        if hasattr(self.provider, 'messages'):
+                            role_map = {"user": "user", "assistant": "assistant", "model": "assistant"}
+                            self.provider.messages.append({
+                                "role": role_map.get(msg.role, msg.role),
+                                "content": msg.content
+                            })
+                            restored_count += 1
+
+                    elif provider_name in ["anthropic", "claude"]:
+                        # Anthropic stores messages as list
+                        if hasattr(self.provider, 'messages'):
+                            role_map = {"user": "user", "assistant": "assistant", "model": "assistant"}
+                            self.provider.messages.append({
+                                "role": role_map.get(msg.role, msg.role),
+                                "content": msg.content
+                            })
+                            restored_count += 1
+
+                    elif provider_name == "ollama":
+                        # Ollama stores messages as list (OpenAI-compatible)
+                        if hasattr(self.provider, 'messages'):
+                            role_map = {"user": "user", "assistant": "assistant", "model": "assistant"}
+                            self.provider.messages.append({
+                                "role": role_map.get(msg.role, msg.role),
+                                "content": msg.content
+                            })
+                            restored_count += 1
+
+                except Exception as e:
+                    logger.warning(f"Failed to restore message: {e}")
+                    continue
+
+            if restored_count > 0:
+                self.console.print(f"[dim green]✓ Restored {restored_count} messages from previous session[/dim green]")
+                logger.info(f"Restored {restored_count} messages to provider history")
+            else:
+                logger.debug("No messages were restored to provider")
+
+        except Exception as e:
+            logger.error(f"Error restoring conversation history: {e}", exc_info=True)
+            self.console.print(f"[dim yellow]⚠ Could not restore previous session: {e}[/dim yellow]")
+
+    async def _list_sessions(self):
+        """List all previous sessions from history database"""
+        try:
+            if not self.history_manager:
+                self.console.print("[yellow]History tracking not enabled[/yellow]")
+                return
+
+            sessions = self.history_manager.list_sessions(limit=10)
+
+            if not sessions:
+                self.console.print("[yellow]No previous sessions found[/yellow]")
+                return
+
+            # Display sessions
+            from datetime import datetime
+            session_text = "[bold]Recent Sessions:[/bold]\n\n"
+
+            for session_id, started_at, message_count in sessions:
+                # Parse and format date
+                try:
+                    dt = datetime.fromisoformat(started_at)
+                    date_str = dt.strftime("%Y-%m-%d %H:%M")
+                except:
+                    date_str = started_at
+
+                session_text += f"[cyan]{session_id}[/cyan] - {date_str}\n"
+                session_text += f"  Messages: {message_count}\n\n"
+
+            self.console.print(Panel(session_text.strip(), title="Session History", border_style="cyan"))
+
+        except Exception as e:
+            self.console.print(f"[red]Error listing sessions: {e}[/red]")
+            logger.error(f"Error listing sessions: {e}", exc_info=True)
+
     async def run(self):
         """Main async REPL loop"""
         await self.initialize()
@@ -380,12 +496,19 @@ If the user just asks for a solution/code without mentioning a file, show the co
             self.console.print(
                 Panel.fit(
                     "[bold]Available Commands:[/bold]\n\n"
+                    "[cyan]Session Management:[/cyan]\n"
                     "/help          - Show this help message\n"
                     "/quit          - Exit the REPL\n"
-                    "/clear         - Clear conversation history\n"
+                    "/clear         - Clear current conversation\n"
+                    "/history [N]   - Show recent messages (default: 10)\n"
+                    "/sessions      - List all previous sessions\n"
+                    "/new-session   - Start fresh (clear history)\n\n"
+                    "[cyan]Provider Management:[/cyan]\n"
+                    "/provider      - Show current provider info\n"
+                    "/switch        - Switch AI provider\n\n"
+                    "[cyan]Configuration:[/cyan]\n"
                     "/config        - Show current configuration\n"
-                    "/history [N]   - Show recent messages from current session (default: 10)\n"
-                    "/verbose       - Toggle verbose logging (INFO/DEBUG messages)\n\n"
+                    "/verbose       - Toggle verbose logging\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents\n"
                     "- write_file: Write to files (requires permission)\n"
@@ -393,7 +516,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "- glob_files: Find files by pattern\n"
                     "- grep_files: Search in files\n"
                     "- bash: Execute bash commands (requires permission)\n\n"
-                    "[dim]Note: File write/edit operations require permission.\n"
+                    "[dim]Note: History persists across sessions in .poor-cli/\n"
+                    "File write/edit operations require permission.\n"
                     "Streaming mode is enabled for faster responses.[/dim]",
                     title="Help",
                     border_style="cyan",
@@ -423,6 +547,21 @@ If the user just asks for a solution/code without mentioning a file, show the co
         elif cmd == "/switch":
             # Switch provider
             await self._switch_provider()
+
+        elif cmd == "/sessions":
+            # List all previous sessions
+            await self._list_sessions()
+
+        elif cmd == "/new-session":
+            # Start a completely new session (clear history)
+            await self.provider.clear_history()
+            if self.history_manager:
+                self.history_manager.end_session()
+                self.history_manager.start_session(self.config.model.model_name)
+            if self.repo_config:
+                self.repo_config.end_session()
+                self.repo_config.start_session(model=self.config.model.model_name)
+            self.console.print("[green]✓ Started new session (previous history cleared)[/green]")
 
         elif cmd == "/config":
             config_display = self.config_manager.display_config()

@@ -68,6 +68,11 @@ class HistoryConfig:
     save_directory: str = "~/.poor-cli/history"
     max_token_limit: int = 100000  # Context window limit
 
+    # History restoration settings
+    restore_on_startup: bool = True  # Load previous session on startup
+    max_messages_to_restore: int = 20  # How many messages to restore from previous session
+    continue_last_session: bool = True  # Continue last session or start new one
+
 
 @dataclass
 class UIConfig:
