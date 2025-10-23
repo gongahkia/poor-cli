@@ -672,6 +672,113 @@ If the user just asks for a solution/code without mentioning a file, show the co
             self.config.ui.verbose_logging = self.verbose_mode
             self.config_manager.save()
 
+        elif cmd == "/plan-mode":
+            # Toggle plan mode
+            self.config.plan_mode.enabled = not self.config.plan_mode.enabled
+            if self.config.plan_mode.enabled:
+                self.console.print("[green]Plan mode enabled (preview before execution)[/green]")
+            else:
+                self.console.print("[yellow]Plan mode disabled (direct execution)[/yellow]")
+            self.config_manager.save()
+
+        elif cmd == "/checkpoints":
+            # List all checkpoints
+            if not self.checkpoint_manager or not self.checkpoint_display:
+                self.console.print("[red]Checkpoint system not available[/red]")
+                return
+
+            checkpoints = self.checkpoint_manager.list_checkpoints(limit=20)
+            self.checkpoint_display.display_checkpoint_list(checkpoints, show_details=True)
+            self.checkpoint_display.display_storage_info(self.checkpoint_manager)
+
+        elif cmd == "/checkpoint":
+            # Create manual checkpoint
+            if not self.checkpoint_manager or not self.checkpoint_display:
+                self.console.print("[red]Checkpoint system not available[/red]")
+                return
+
+            # Get files in current directory
+            from pathlib import Path
+            current_files = list(Path.cwd().rglob("*.py"))[:10]  # First 10 Python files
+            file_paths = [str(f) for f in current_files if f.is_file()]
+
+            if not file_paths:
+                self.console.print("[yellow]No files found to checkpoint[/yellow]")
+                return
+
+            # Create checkpoint
+            try:
+                checkpoint = self.checkpoint_manager.create_checkpoint(
+                    file_paths=file_paths,
+                    description="Manual checkpoint",
+                    operation_type="manual"
+                )
+                self.checkpoint_display.display_checkpoint_created(checkpoint)
+            except Exception as e:
+                self.console.print(f"[red]Failed to create checkpoint: {e}[/red]")
+
+        elif cmd.startswith("/rewind"):
+            # Restore checkpoint
+            if not self.checkpoint_manager or not self.checkpoint_display:
+                self.console.print("[red]Checkpoint system not available[/red]")
+                return
+
+            parts = cmd.split()
+            checkpoint_id = None
+
+            if len(parts) > 1:
+                if parts[1] == "last":
+                    # Get last checkpoint
+                    checkpoints = self.checkpoint_manager.list_checkpoints(limit=1)
+                    if checkpoints:
+                        checkpoint_id = checkpoints[0].checkpoint_id
+                else:
+                    checkpoint_id = parts[1]
+
+            if not checkpoint_id:
+                # Show list and prompt
+                checkpoints = self.checkpoint_manager.list_checkpoints(limit=10)
+                if not checkpoints:
+                    self.console.print("[yellow]No checkpoints available[/yellow]")
+                    return
+
+                self.checkpoint_display.display_checkpoint_list(checkpoints)
+                from rich.prompt import Prompt
+                checkpoint_id = Prompt.ask("[bold]Enter checkpoint ID to restore[/bold]")
+
+            # Get checkpoint
+            checkpoint = self.checkpoint_manager.get_checkpoint(checkpoint_id)
+            if not checkpoint:
+                self.console.print(f"[red]Checkpoint not found: {checkpoint_id}[/red]")
+                return
+
+            # Confirm restore
+            if not self.checkpoint_display.confirm_restore(checkpoint):
+                self.console.print("[yellow]Restore cancelled[/yellow]")
+                return
+
+            # Restore checkpoint
+            try:
+                restored = self.checkpoint_manager.restore_checkpoint(checkpoint_id)
+                self.checkpoint_display.display_restore_summary(checkpoint, restored)
+            except Exception as e:
+                self.console.print(f"[red]Failed to restore checkpoint: {e}[/red]")
+
+        elif cmd.startswith("/diff"):
+            # Compare files
+            parts = cmd.split()
+            if len(parts) < 3:
+                self.console.print("[yellow]Usage: /diff <file1> <file2>[/yellow]")
+                return
+
+            file1 = parts[1]
+            file2 = parts[2]
+
+            try:
+                self.diff_preview.compare_files(file1, file2, display=True)
+            except Exception as e:
+                self.console.print(f"[red]Error comparing files: {e}[/red]")
+
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]")
 
