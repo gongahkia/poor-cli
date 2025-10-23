@@ -231,8 +231,7 @@ class PoorCLIAsync:
                     "/quit          - Exit the REPL\n"
                     "/clear         - Clear conversation history\n"
                     "/config        - Show current configuration\n"
-                    "/history       - Show chat history statistics\n"
-                    "/history show  - Show recent messages from current session\n"
+                    "/history [N]   - Show recent messages from current session (default: 10)\n"
                     "/verbose       - Toggle verbose logging (INFO/DEBUG messages)\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents\n"
@@ -265,7 +264,7 @@ class PoorCLIAsync:
             )
 
         elif cmd == "/history" or cmd.startswith("/history "):
-            # Show chat history and statistics (using repo_config for local JSON history)
+            # Show recent messages from chat history
             if not self.repo_config:
                 self.console.print("[yellow]History tracking not available[/yellow]")
                 logger.warning("History command called but repo_config is None")
@@ -274,63 +273,36 @@ class PoorCLIAsync:
             try:
                 # Parse optional count argument
                 parts = cmd.split()
-                show_messages = False
                 message_count = 10  # default
 
                 if len(parts) > 1:
-                    if parts[1].lower() == "show":
-                        show_messages = True
-                        if len(parts) > 2:
-                            try:
-                                message_count = int(parts[2])
-                            except ValueError:
-                                pass
+                    try:
+                        message_count = int(parts[1])
+                    except ValueError:
+                        self.console.print(f"[yellow]Invalid number: {parts[1]}. Using default (10)[/yellow]")
 
-                session_stats = self.repo_config.get_session_stats()
-                all_stats = self.repo_config.get_all_sessions_stats()
+                # Get recent messages
+                if not self.repo_config.current_session:
+                    self.console.print("[yellow]No active session[/yellow]")
+                    return
 
-                # Build stats text
-                if session_stats:
-                    history_text = (
-                        f"[bold]Current Session:[/bold]\n"
-                        f"  Session ID: {session_stats['session_id']}\n"
-                        f"  Started: {session_stats['started_at']}\n"
-                        f"  Messages: {session_stats['message_count']}\n"
-                        f"  Tokens (est): {session_stats['tokens_estimate']}\n"
-                        f"  Model: {session_stats['model']}\n\n"
-                    )
-                else:
-                    history_text = "[yellow]No active session[/yellow]\n\n"
+                recent_msgs = self.repo_config.get_recent_messages(message_count)
 
-                history_text += (
-                    f"[bold]All Sessions:[/bold]\n"
-                    f"  Total Sessions: {all_stats['total_sessions']}\n"
-                    f"  Total Messages: {all_stats['total_messages']}\n"
-                    f"  Total Tokens (est): {all_stats['total_tokens_estimate']}\n"
-                    f"  Repo: {all_stats['repo_path']}\n\n"
-                )
+                if not recent_msgs:
+                    self.console.print("[yellow]No messages in current session[/yellow]")
+                    return
 
-                # Show recent messages if requested
-                if show_messages and self.repo_config.current_session:
-                    recent_msgs = self.repo_config.get_recent_messages(message_count)
-                    if recent_msgs:
-                        history_text += f"[bold]Recent Messages (last {len(recent_msgs)}):[/bold]\n"
-                        for msg in recent_msgs:
-                            role_color = "cyan" if msg.role == "user" else "green"
-                            role_name = "You" if msg.role == "user" else "AI"
-                            content_preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
-                            history_text += f"  [{role_color}]{role_name}:[/{role_color}] {content_preview}\n"
-                        history_text += "\n"
-
-                history_text += (
-                    f"[dim]History file: {self.repo_config.history_file}[/dim]\n"
-                    f"[dim]Use '/history show' to see recent messages[/dim]"
-                )
+                # Display messages
+                history_text = ""
+                for msg in recent_msgs:
+                    role_color = "cyan" if msg.role == "user" else "green"
+                    role_name = "You" if msg.role == "user" else "AI"
+                    history_text += f"[{role_color}]{role_name}:[/{role_color}] {msg.content}\n\n"
 
                 self.console.print(
                     Panel(
-                        history_text,
-                        title="Chat History",
+                        history_text.strip(),
+                        title=f"Chat History (last {len(recent_msgs)} messages)",
                         border_style="cyan",
                     )
                 )
