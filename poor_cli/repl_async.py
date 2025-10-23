@@ -1053,42 +1053,107 @@ If the user just asks for a solution/code without mentioning a file, show the co
         if not response.function_calls:
             return None
 
-        # Execute all function calls
-        tool_results = []
-
-        for fc in response.function_calls:
-            tool_name = fc.name
-            tool_args = fc.arguments
-
-            self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
-
-            # Request permission for file operations
-            if not await self.request_permission(tool_name, tool_args):
-                result = "Operation cancelled by user"
-                self.console.print("[yellow]Operation cancelled[/yellow]")
-            else:
-                # Execute the tool asynchronously
-                result = await self.tool_registry.execute_tool(tool_name, tool_args)
-
-            # Display tool output
-            if result:
-                self.console.print(
-                    Panel(
-                        result[:1000] + ("..." if len(result) > 1000 else ""),
-                        title=f"Tool Output: {tool_name}",
-                        border_style="dim",
-                        expand=False,
-                    )
-                )
-
-            tool_results.append({
+        # Convert function calls to dict format for plan mode
+        function_calls_list = [
+            {
                 "id": fc.id,
-                "name": tool_name,
-                "result": result
-            })
+                "name": fc.name,
+                "arguments": fc.arguments
+            }
+            for fc in response.function_calls
+        ]
+
+        # Check if we should use plan mode
+        use_plan_mode = self.plan_executor.should_use_plan_mode(
+            function_calls_list,
+            self.config
+        )
+
+        # Execute with or without plan mode
+        if use_plan_mode:
+            # Use plan mode - creates plan and requests approval
+            success, results = await self.plan_executor.execute_with_plan(
+                user_request="[AI-generated operations]",
+                function_calls=function_calls_list,
+                tool_executor=self._execute_single_tool_with_permission,
+                ai_summary=response.content or None
+            )
+
+            if not success:
+                # Plan was rejected
+                tool_results = [
+                    {
+                        "id": fc.id,
+                        "name": fc.name,
+                        "result": "Plan rejected by user"
+                    }
+                    for fc in response.function_calls
+                ]
+            else:
+                # Create tool results from plan execution
+                tool_results = []
+                for i, fc in enumerate(response.function_calls):
+                    result = results[i] if i < len(results) else "No result"
+                    tool_results.append({
+                        "id": fc.id,
+                        "name": fc.name,
+                        "result": result
+                    })
+        else:
+            # Normal execution without plan mode
+            tool_results = []
+
+            for fc in response.function_calls:
+                tool_name = fc.name
+                tool_args = fc.arguments
+
+                self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
+
+                # Request permission for file operations
+                if not await self.request_permission(tool_name, tool_args):
+                    result = "Operation cancelled by user"
+                    self.console.print("[yellow]Operation cancelled[/yellow]")
+                else:
+                    # Execute the tool asynchronously
+                    result = await self.tool_registry.execute_tool(tool_name, tool_args)
+
+                # Display tool output
+                if result:
+                    self.console.print(
+                        Panel(
+                            result[:1000] + ("..." if len(result) > 1000 else ""),
+                            title=f"Tool Output: {tool_name}",
+                            border_style="dim",
+                            expand=False,
+                        )
+                    )
+
+                tool_results.append({
+                    "id": fc.id,
+                    "name": tool_name,
+                    "result": result
+                })
 
         # Format results based on provider type
         return self._format_tool_results(tool_results)
+
+    async def _execute_single_tool_with_permission(self, tool_name: str, tool_args: dict) -> str:
+        """Execute a single tool with permission check (for plan executor)
+
+        Args:
+            tool_name: Name of the tool
+            tool_args: Tool arguments
+
+        Returns:
+            Tool execution result
+        """
+        # Request permission for file operations
+        if not await self.request_permission(tool_name, tool_args):
+            return "Operation cancelled by user"
+
+        # Execute the tool
+        result = await self.tool_registry.execute_tool(tool_name, tool_args)
+        return result
 
     def _format_tool_results(self, tool_results: List[Dict[str, Any]]):
         """Format tool results for provider consumption"""
