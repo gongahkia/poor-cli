@@ -45,6 +45,10 @@ Thumbs.db
 .poor-cli/
 poor-cli.log
 
+# Checkpoints (stored in .poor-cli/checkpoints/)
+# Note: checkpoint_index.json can be committed for sharing checkpoint metadata
+# but actual snapshot files should not be committed
+
 # Test / Coverage
 htmlcov/
 .coverage
