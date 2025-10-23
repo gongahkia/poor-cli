@@ -53,7 +53,9 @@ class PoorCLI:
             self.repo_config = get_repo_config()
             logger.info(f"Initialized repo config at {self.repo_config.config_dir}")
         except Exception as e:
-            logger.warning(f"Could not initialize repo config: {e}")
+            logger.error(f"Failed to initialize repo config: {e}", exc_info=True)
+            self.repo_config = None
+            # Don't fail completely, just log the error
 
         # Check config for verbose setting
         if CONFIG_AVAILABLE:
@@ -134,8 +136,13 @@ class PoorCLI:
 
             # Start a new session for history tracking
             if self.repo_config:
-                self.repo_config.start_session(model="gemini-2.5-flash")
-                logger.info("Started new history session")
+                try:
+                    self.repo_config.start_session(model="gemini-2.5-flash")
+                    logger.info("Started new history session")
+                except Exception as e:
+                    logger.error(f"Failed to start history session: {e}", exc_info=True)
+            else:
+                logger.warning("No repo_config available, history will not be tracked")
 
         except Exception as e:
             # Catch any unexpected errors during initialization
@@ -178,8 +185,11 @@ class PoorCLI:
 
         # End the session and save history
         if self.repo_config:
-            self.repo_config.end_session()
-            logger.info("Session ended and history saved")
+            try:
+                self.repo_config.end_session()
+                logger.info("Session ended and history saved")
+            except Exception as e:
+                logger.error(f"Failed to end session: {e}", exc_info=True)
 
         self.console.print("\n[cyan]Goodbye![/cyan]")
 
@@ -194,12 +204,13 @@ class PoorCLI:
             self.console.print(
                 Panel.fit(
                     "[bold]Available Commands:[/bold]\n\n"
-                    "/help        - Show this help message\n"
-                    "/quit        - Exit the REPL\n"
-                    "/clear       - Clear conversation history\n"
-                    "/verbose     - Toggle verbose logging (INFO/DEBUG messages)\n"
-                    "/history     - Show chat history and statistics\n"
-                    "/preferences - Manage repo-level auto-approve settings\n\n"
+                    "/help          - Show this help message\n"
+                    "/quit          - Exit the REPL\n"
+                    "/clear         - Clear conversation history\n"
+                    "/verbose       - Toggle verbose logging (INFO/DEBUG messages)\n"
+                    "/history       - Show chat history statistics\n"
+                    "/history show  - Show recent messages from current session\n"
+                    "/preferences   - Manage repo-level auto-approve settings\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents (no permission required)\n"
                     "- write_file: Write to files (requires permission)\n"
@@ -245,47 +256,80 @@ class PoorCLI:
                 self.repo_config.clear_history()
             self.console.print("[green]Conversation history cleared[/green]")
 
-        elif cmd == "/history":
+        elif cmd == "/history" or cmd.startswith("/history "):
             # Show chat history and statistics
             if not self.repo_config:
                 self.console.print("[yellow]History tracking not available[/yellow]")
+                logger.warning("History command called but repo_config is None")
                 return
 
-            session_stats = self.repo_config.get_session_stats()
-            all_stats = self.repo_config.get_all_sessions_stats()
+            try:
+                # Parse optional count argument
+                parts = cmd.split()
+                show_messages = False
+                message_count = 10  # default
 
-            if session_stats:
-                history_text = (
-                    f"[bold]Current Session:[/bold]\n"
-                    f"  Session ID: {session_stats['session_id']}\n"
-                    f"  Started: {session_stats['started_at']}\n"
-                    f"  Messages: {session_stats['message_count']}\n"
-                    f"  Tokens (est): {session_stats['tokens_estimate']}\n"
-                    f"  Model: {session_stats['model']}\n\n"
+                if len(parts) > 1:
+                    if parts[1].lower() == "show":
+                        show_messages = True
+                        if len(parts) > 2:
+                            try:
+                                message_count = int(parts[2])
+                            except ValueError:
+                                pass
+
+                session_stats = self.repo_config.get_session_stats()
+                all_stats = self.repo_config.get_all_sessions_stats()
+
+                # Build stats text
+                if session_stats:
+                    history_text = (
+                        f"[bold]Current Session:[/bold]\n"
+                        f"  Session ID: {session_stats['session_id']}\n"
+                        f"  Started: {session_stats['started_at']}\n"
+                        f"  Messages: {session_stats['message_count']}\n"
+                        f"  Tokens (est): {session_stats['tokens_estimate']}\n"
+                        f"  Model: {session_stats['model']}\n\n"
+                    )
+                else:
+                    history_text = "[yellow]No active session[/yellow]\n\n"
+
+                history_text += (
                     f"[bold]All Sessions:[/bold]\n"
                     f"  Total Sessions: {all_stats['total_sessions']}\n"
                     f"  Total Messages: {all_stats['total_messages']}\n"
                     f"  Total Tokens (est): {all_stats['total_tokens_estimate']}\n"
                     f"  Repo: {all_stats['repo_path']}\n\n"
-                    f"[dim]History saved to: {self.repo_config.history_file}[/dim]"
-                )
-            else:
-                history_text = (
-                    f"[bold]All Sessions:[/bold]\n"
-                    f"  Total Sessions: {all_stats['total_sessions']}\n"
-                    f"  Total Messages: {all_stats['total_messages']}\n"
-                    f"  Total Tokens (est): {all_stats['total_tokens_estimate']}\n"
-                    f"  Repo: {all_stats['repo_path']}\n\n"
-                    f"[dim]History saved to: {self.repo_config.history_file}[/dim]"
                 )
 
-            self.console.print(
-                Panel(
-                    history_text,
-                    title="Chat History",
-                    border_style="cyan",
+                # Show recent messages if requested
+                if show_messages and self.repo_config.current_session:
+                    recent_msgs = self.repo_config.get_recent_messages(message_count)
+                    if recent_msgs:
+                        history_text += f"[bold]Recent Messages (last {len(recent_msgs)}):[/bold]\n"
+                        for msg in recent_msgs:
+                            role_color = "cyan" if msg.role == "user" else "green"
+                            role_name = "You" if msg.role == "user" else "AI"
+                            content_preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+                            history_text += f"  [{role_color}]{role_name}:[/{role_color}] {content_preview}\n"
+                        history_text += "\n"
+
+                history_text += (
+                    f"[dim]History file: {self.repo_config.history_file}[/dim]\n"
+                    f"[dim]Use '/history show' to see recent messages[/dim]"
                 )
-            )
+
+                self.console.print(
+                    Panel(
+                        history_text,
+                        title="Chat History",
+                        border_style="cyan",
+                    )
+                )
+
+            except Exception as e:
+                self.console.print(f"[red]Error displaying history: {e}[/red]")
+                logger.exception("Error in /history command")
 
         elif cmd == "/preferences":
             # Show and manage preferences
@@ -358,7 +402,10 @@ class PoorCLI:
 
             # Log user message to history
             if self.repo_config:
-                self.repo_config.add_message("user", user_input)
+                try:
+                    self.repo_config.add_message("user", user_input)
+                except Exception as e:
+                    logger.error(f"Failed to log user message: {e}")
 
             # Show loading indicator
             with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
@@ -621,7 +668,10 @@ class PoorCLI:
 
         # Log AI response to history
         if self.repo_config:
-            self.repo_config.add_message("assistant", text)
+            try:
+                self.repo_config.add_message("assistant", text)
+            except Exception as e:
+                logger.error(f"Failed to log assistant message: {e}")
 
 
 def main():
