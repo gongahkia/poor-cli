@@ -1,5 +1,21 @@
+# Core dependencies (required)
 google-generativeai>=0.3.0
 rich>=13.0.0
 PyYAML>=6.0
 aiofiles>=23.0.0
 aiohttp>=3.9.0
+
+# Optional provider dependencies
+# Install only the providers you want to use:
+#
+# For OpenAI (GPT-4, GPT-3.5):
+#   pip install openai>=1.0.0
+#
+# For Anthropic (Claude):
+#   pip install anthropic>=0.18.0
+#
+# For Ollama (local models):
+#   (no additional dependencies - uses aiohttp)
+#
+# To install all providers:
+#   pip install openai>=1.0.0 anthropic>=0.18.0

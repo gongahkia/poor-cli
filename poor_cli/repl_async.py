@@ -14,7 +14,8 @@ from rich.live import Live
 from rich import print as rprint
 from google.generativeai.types import protos
 
-from .gemini_client_async import GeminiClientAsync
+from .providers.provider_factory import ProviderFactory
+from .providers.base import BaseProvider, ProviderResponse
 from .tools_async import ToolRegistryAsync
 from .config import get_config_manager, Config
 from .history import HistoryManager
@@ -37,11 +38,11 @@ logger = setup_logger(__name__)
 
 
 class PoorCLIAsync:
-    """Async REPL interface with streaming support"""
+    """Async REPL interface with streaming support and multi-provider support"""
 
     def __init__(self):
         self.console = Console()
-        self.client: Optional[GeminiClientAsync] = None
+        self.provider: Optional[BaseProvider] = None
         self.tool_registry = ToolRegistryAsync()
         self.config_manager = get_config_manager()
         self.config: Config = self.config_manager.config
@@ -64,7 +65,7 @@ class PoorCLIAsync:
             enable_verbose_logging()
 
     async def initialize(self):
-        """Initialize the Gemini client and tools with proper error handling"""
+        """Initialize the AI provider and tools with proper error handling"""
         try:
             logger.info("Initializing poor-cli (async)...")
 
@@ -82,34 +83,22 @@ class PoorCLIAsync:
                 except Exception as e:
                     logger.error(f"Failed to start repo config session: {e}")
 
-            # Initialize Gemini client
-            try:
-                api_key = self.config_manager.get_api_key(self.config.model.provider)
-                self.client = GeminiClientAsync(
-                    api_key=api_key,
-                    model_name=self.config.model.model_name
-                )
-                logger.info("Gemini client initialized successfully (async)")
-            except ConfigurationError as e:
-                self.console.print(
-                    Panel(
-                        f"[bold red]Configuration Error:[/bold red]\n{e}\n\n"
-                        "[yellow]Please check:[/yellow]\n"
-                        "1. GEMINI_API_KEY is set in your environment or .env file\n"
-                        "2. Your API key is valid\n"
-                        "3. Get a key from: https://makersuite.google.com/app/apikey",
-                        title="⚠️  Configuration Error",
-                        border_style="red",
-                    )
-                )
-                logger.error(f"Configuration error: {e}")
-                sys.exit(1)
+            # Initialize AI provider
+            await self._initialize_provider()
 
-            # Get tool declarations and initialize
+            # Get tool declarations and initialize provider with tools
             try:
                 tool_declarations = self.tool_registry.get_tool_declarations()
                 current_dir = os.getcwd()
-                await self.client.set_tools(tool_declarations, current_dir=current_dir)
+
+                # Build system instruction
+                system_instruction = self._build_system_instruction(current_dir)
+
+                # Initialize provider with tools
+                await self.provider.initialize(
+                    tools=tool_declarations,
+                    system_instruction=system_instruction
+                )
                 logger.info(f"Initialized with {len(tool_declarations)} tools")
             except Exception as e:
                 self.console.print(
@@ -120,45 +109,7 @@ class PoorCLIAsync:
                 sys.exit(1)
 
             # Display welcome message
-            mascot = """[dim blue]        ___
-      /     \\
-     | () () |
-      \\  ^  /
-       |||||
-      '-----'[/dim blue]
-"""
-
-            status_line = []
-            if self.config.ui.enable_streaming:
-                status_line.append("[green]streaming[/green]")
-            if self.history_manager:
-                status_line.append("[cyan]history[/cyan]")
-            if self.config.ui.show_token_count:
-                status_line.append("[yellow]tokens[/yellow]")
-
-            status = " | ".join(status_line) if status_line else ""
-
-            welcome_text = f"""{mascot}
-[bold cyan]poor-cli[/bold cyan] [dim]v0.1.0[/dim] [dim blue](async)[/dim blue]
-[dim]AI-powered CLI tool using {self.config.model.model_name}[/dim]
-{status}
-
-[bold]Commands:[/bold]
-  [cyan]/help[/cyan]    - Show this help
-  [cyan]/quit[/cyan]    - Exit the REPL
-  [cyan]/clear[/cyan]   - Clear conversation history
-  [cyan]/config[/cyan]  - Show configuration
-  [cyan]/history[/cyan] - Show session history
-"""
-
-            self.console.print(
-                Panel.fit(
-                    welcome_text,
-                    title="[bold cyan]Welcome[/bold cyan]",
-                    border_style="cyan",
-                    padding=(0, 1),
-                )
-            )
+            self._display_welcome()
             logger.info("Initialization complete")
 
         except Exception as e:
@@ -172,6 +123,208 @@ class PoorCLIAsync:
             )
             logger.exception("Unexpected error during initialization")
             sys.exit(1)
+
+    async def _initialize_provider(self):
+        """Initialize the AI provider using factory"""
+        try:
+            # Get API key for provider
+            api_key = self.config_manager.get_api_key(self.config.model.provider)
+
+            if not api_key and self.config.model.provider != "ollama":
+                self.console.print(
+                    Panel(
+                        f"[bold red]API Key Not Found:[/bold red]\n\n"
+                        f"No API key found for provider: {self.config.model.provider}\n\n"
+                        f"[yellow]Please set the environment variable:[/yellow]\n"
+                        f"{self.config.model.providers[self.config.model.provider].api_key_env_var}\n\n"
+                        f"Or add it to your .env file.",
+                        title="⚠️  Configuration Error",
+                        border_style="red",
+                    )
+                )
+                logger.error(f"No API key for provider: {self.config.model.provider}")
+                sys.exit(1)
+
+            # Create provider
+            logger.info(f"Creating {self.config.model.provider} provider...")
+
+            # Get provider config for additional settings
+            provider_config = self.config_manager.get_provider_config(self.config.model.provider)
+            extra_kwargs = {}
+
+            if provider_config and provider_config.base_url:
+                extra_kwargs["base_url"] = provider_config.base_url
+
+            self.provider = ProviderFactory.create(
+                provider_name=self.config.model.provider,
+                api_key=api_key or "",  # Ollama doesn't need API key
+                model_name=self.config.model.model_name,
+                **extra_kwargs
+            )
+
+            logger.info(f"Provider {self.config.model.provider} initialized successfully")
+
+        except ConfigurationError as e:
+            self.console.print(
+                Panel(
+                    f"[bold red]Configuration Error:[/bold red]\n{e}\n\n"
+                    f"[yellow]Provider:[/yellow] {self.config.model.provider}\n"
+                    f"[yellow]Model:[/yellow] {self.config.model.model_name}",
+                    title="⚠️  Configuration Error",
+                    border_style="red",
+                )
+            )
+            logger.error(f"Configuration error: {e}")
+            sys.exit(1)
+
+    def _build_system_instruction(self, current_dir: str) -> str:
+        """Build system instruction for the AI"""
+        return f"""You are an AI assistant with TOOL CALLING capabilities. You have been given tools to perform file operations and system commands.
+
+CRITICAL: When a user asks you to write/create a file, you MUST immediately call the write_file tool. DO NOT just show the code to the user. DO NOT say "write this to a file". Actually call the tool.
+
+CURRENT WORKING DIRECTORY: {current_dir}
+
+MANDATORY TOOL USAGE RULES:
+1. File creation/writing: IMMEDIATELY call write_file(file_path, content)
+2. File editing: IMMEDIATELY call edit_file(file_path, old_text, new_text)
+3. File reading: IMMEDIATELY call read_file(file_path)
+4. NEVER respond with just code snippets when asked to create a file
+5. NEVER say "write this to a file" - YOU must call the tool yourself
+
+Your available tools:
+- write_file(file_path, content): Creates or overwrites a file
+- edit_file(file_path, old_text, new_text): Edits existing files
+- read_file(file_path): Reads file contents
+- glob_files(pattern): Find files matching pattern
+- grep_files(pattern): Search for text in files
+- bash(command): Execute shell commands
+
+FILE PATH RULES:
+- ALWAYS use ABSOLUTE paths: {current_dir}/filename
+- User says "create test.py" → use path: {current_dir}/test.py
+- User says "create src/main.py" → use path: {current_dir}/src/main.py
+
+IMPORTANT: Only call write_file if the user:
+1. Explicitly asks to "create", "write", "save" a file, OR
+2. Confirms they want to save code after you show it
+
+If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
+
+    def _display_welcome(self):
+        """Display welcome message"""
+        mascot = """[dim blue]        ___
+      /     \\
+     | () () |
+      \\  ^  /
+       |||||
+      '-----'[/dim blue]
+"""
+
+        status_line = []
+        status_line.append(f"[magenta]{self.config.model.provider}[/magenta]")
+        if self.config.ui.enable_streaming:
+            status_line.append("[green]streaming[/green]")
+        if self.history_manager:
+            status_line.append("[cyan]history[/cyan]")
+        if self.config.ui.show_token_count:
+            status_line.append("[yellow]tokens[/yellow]")
+
+        status = " | ".join(status_line) if status_line else ""
+
+        welcome_text = f"""{mascot}
+[bold cyan]poor-cli[/bold cyan] [dim]v0.1.0[/dim] [dim blue](async)[/dim blue]
+[dim]AI-powered CLI tool using {self.config.model.model_name}[/dim]
+{status}
+
+[bold]Commands:[/bold]
+  [cyan]/help[/cyan]         - Show this help
+  [cyan]/quit[/cyan]         - Exit the REPL
+  [cyan]/clear[/cyan]        - Clear conversation history
+  [cyan]/config[/cyan]       - Show configuration
+  [cyan]/history[/cyan]      - Show session history
+  [cyan]/provider[/cyan]     - Show current provider
+  [cyan]/switch[/cyan]       - Switch AI provider
+"""
+
+        self.console.print(
+            Panel.fit(
+                welcome_text,
+                title="[bold cyan]Welcome[/bold cyan]",
+                border_style="cyan",
+                padding=(0, 1),
+            )
+        )
+
+    async def _switch_provider(self):
+        """Switch to a different AI provider"""
+        # Get list of available providers
+        available_providers = ProviderFactory.list_providers()
+
+        if not available_providers:
+            self.console.print("[red]No providers available[/red]")
+            return
+
+        # Display available providers
+        self.console.print("\n[bold]Available Providers:[/bold]")
+        provider_list = list(available_providers.keys())
+
+        for i, provider_name in enumerate(provider_list, 1):
+            current = " [green](current)[/green]" if provider_name == self.config.model.provider else ""
+            prov_config = self.config.model.providers.get(provider_name)
+            default_model = prov_config.default_model if prov_config else "N/A"
+            self.console.print(f"  {i}. {provider_name} - {default_model}{current}")
+
+        # Get user choice
+        try:
+            choice = await asyncio.to_thread(
+                Prompt.ask,
+                "\n[bold]Select provider[/bold]",
+                choices=[str(i) for i in range(1, len(provider_list) + 1)] + ["c"],
+                default="c"
+            )
+
+            if choice == "c":
+                self.console.print("[yellow]Cancelled[/yellow]")
+                return
+
+            selected_provider = provider_list[int(choice) - 1]
+
+            # Get model name
+            prov_config = self.config.model.providers.get(selected_provider)
+            default_model = prov_config.default_model if prov_config else ""
+
+            model_name = await asyncio.to_thread(
+                Prompt.ask,
+                f"\n[bold]Model name[/bold]",
+                default=default_model
+            )
+
+            # Update config
+            self.config.model.provider = selected_provider
+            self.config.model.model_name = model_name
+            self.config_manager.save()
+
+            # Reinitialize provider
+            self.console.print(f"\n[cyan]Switching to {selected_provider} ({model_name})...[/cyan]")
+
+            await self._initialize_provider()
+
+            # Reinitialize with tools
+            tool_declarations = self.tool_registry.get_tool_declarations()
+            current_dir = os.getcwd()
+            system_instruction = self._build_system_instruction(current_dir)
+
+            await self.provider.initialize(
+                tools=tool_declarations,
+                system_instruction=system_instruction
+            )
+
+            self.console.print(f"[green]✓ Switched to {selected_provider}[/green]")
+
+        except Exception as e:
+            self.console.print(f"[red]Error switching provider: {e}[/red]")
+            logger.error(f"Provider switch error: {e}", exc_info=True)
 
     async def run(self):
         """Main async REPL loop"""
@@ -248,10 +401,28 @@ class PoorCLIAsync:
             )
 
         elif cmd == "/clear":
-            await self.client.clear_history()
+            await self.provider.clear_history()
             if self.history_manager:
                 self.history_manager.clear_current_session()
             self.console.print("[green]Conversation history cleared[/green]")
+
+        elif cmd == "/provider":
+            # Show current provider info
+            caps = self.provider.get_capabilities()
+            provider_info = f"""[bold]Current Provider:[/bold] {self.config.model.provider}
+[bold]Model:[/bold] {self.config.model.model_name}
+
+[bold]Capabilities:[/bold]
+  Streaming: {'✓' if caps.supports_streaming else '✗'}
+  Function Calling: {'✓' if caps.supports_function_calling else '✗'}
+  Vision: {'✓' if caps.supports_vision else '✗'}
+  Max Context: {caps.max_context_tokens:,} tokens
+"""
+            self.console.print(Panel(provider_info, title="Provider Info", border_style="cyan"))
+
+        elif cmd == "/switch":
+            # Switch provider
+            await self._switch_provider()
 
         elif cmd == "/config":
             config_display = self.config_manager.display_config()
@@ -396,42 +567,39 @@ class PoorCLIAsync:
             self.console.print("\n[bold green]Poor AI[/bold green]")
 
             accumulated_text = ""
+            has_function_calls = False
 
             # Stream the response
-            async for chunk in self.client.send_message_stream(user_input):
+            async for chunk in self.provider.send_message_stream(user_input):
                 try:
-                    # Check if chunk has parts
-                    if hasattr(chunk, 'candidates') and chunk.candidates:
-                        part = chunk.candidates[0].content.parts[0]
+                    # Check for function calls
+                    if chunk.function_calls:
+                        has_function_calls = True
+                        # Handle function calls (need to break streaming)
+                        tool_result_content = await self.execute_function_calls_provider(chunk)
 
-                        # Handle function calls
-                        if hasattr(part, "function_call") and part.function_call:
-                            # For function calls, we need to handle them synchronously
-                            # Collect all chunks first
-                            full_response = chunk
-                            tool_result_content = await self.execute_function_calls(full_response)
+                        # Send tool results and get final response
+                        response = await self.provider.send_message(tool_result_content)
 
-                            # Send tool results and continue
-                            response = await self.client.send_message(tool_result_content)
+                        # Display the final response
+                        if response.content:
+                            accumulated_text += response.content
+                            self.display_response(response.content)
 
-                            # Display the final response
-                            if hasattr(response.candidates[0].content.parts[0], "text"):
-                                text = response.candidates[0].content.parts[0].text
-                                accumulated_text += text
-                                self.display_response(text)
+                        break  # Exit streaming loop
 
-                        # Handle text streaming
-                        elif hasattr(part, "text"):
-                            text = part.text
-                            accumulated_text += text
-                            self.console.print(text, end="")
+                    # Handle text streaming
+                    elif chunk.content:
+                        accumulated_text += chunk.content
+                        self.console.print(chunk.content, end="")
 
                 except Exception as e:
                     logger.error(f"Error processing chunk: {e}")
                     continue
 
-            # Newline after streaming
-            self.console.print()
+            # Newline after streaming (only if not function call)
+            if not has_function_calls:
+                self.console.print()
 
             # Save assistant response to history
             if self.history_manager and accumulated_text:
@@ -461,42 +629,34 @@ class PoorCLIAsync:
         try:
             # Show loading indicator
             with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
-                response = await self.client.send_message(user_input)
+                response = await self.provider.send_message(user_input)
 
             # Handle function calls and responses
             try:
-                while response.candidates[0].content.parts:
-                    part = response.candidates[0].content.parts[0]
+                while response.function_calls:
+                    # Handle function calls
+                    tool_result_content = await self.execute_function_calls_provider(response)
 
-                    # Check if this is a function call
-                    if hasattr(part, "function_call") and part.function_call:
-                        tool_result_content = await self.execute_function_calls(response)
+                    # Show loading indicator while processing tool results
+                    with self.console.status(
+                        "[cyan]Processing results...[/cyan]", spinner="dots"
+                    ):
+                        response = await self.provider.send_message(tool_result_content)
 
-                        # Show loading indicator while processing tool results
-                        with self.console.status(
-                            "[cyan]Processing results...[/cyan]", spinner="dots"
-                        ):
-                            response = await self.client.send_message(tool_result_content)
+                # Display text response
+                if response.content:
+                    self.display_response(response.content)
 
-                    # Check if this is text response
-                    elif hasattr(part, "text"):
-                        text = part.text
-                        self.display_response(text)
+                    # Save to history
+                    if self.history_manager:
+                        self.history_manager.add_message("model", response.content)
 
-                        # Save to history
-                        if self.history_manager:
-                            self.history_manager.add_message("model", text)
-
-                        # Save to repo config history as well
-                        if self.repo_config:
-                            try:
-                                self.repo_config.add_message("assistant", text)
-                            except Exception as e:
-                                logger.error(f"Failed to log assistant message to repo config: {e}")
-
-                        break
-                    else:
-                        break
+                    # Save to repo config history as well
+                    if self.repo_config:
+                        try:
+                            self.repo_config.add_message("assistant", response.content)
+                        except Exception as e:
+                            logger.error(f"Failed to log assistant message to repo config: {e}")
 
                 logger.info("Request processed successfully")
 
@@ -605,47 +765,107 @@ class PoorCLIAsync:
 
         return response.lower() in ["y", "yes"]
 
-    async def execute_function_calls(self, response):
-        """Execute function calls from Gemini response"""
-        function_response_parts = []
+    async def execute_function_calls_provider(self, response: ProviderResponse):
+        """Execute function calls from any provider response"""
+        if not response.function_calls:
+            return None
 
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, "function_call") and part.function_call:
-                fc = part.function_call
-                tool_name = fc.name
-                tool_args = dict(fc.args)
+        # Execute all function calls
+        tool_results = []
 
-                self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
+        for fc in response.function_calls:
+            tool_name = fc.name
+            tool_args = fc.arguments
 
-                # Request permission for file operations
-                if not await self.request_permission(tool_name, tool_args):
-                    result = f"Operation cancelled by user"
-                    self.console.print("[yellow]Operation cancelled[/yellow]")
-                else:
-                    # Execute the tool asynchronously
-                    result = await self.tool_registry.execute_tool(tool_name, tool_args)
+            self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
 
-                # Display tool output
-                if result:
-                    self.console.print(
-                        Panel(
-                            result[:1000] + ("..." if len(result) > 1000 else ""),
-                            title=f"Tool Output: {tool_name}",
-                            border_style="dim",
-                            expand=False,
-                        )
-                    )
+            # Request permission for file operations
+            if not await self.request_permission(tool_name, tool_args):
+                result = "Operation cancelled by user"
+                self.console.print("[yellow]Operation cancelled[/yellow]")
+            else:
+                # Execute the tool asynchronously
+                result = await self.tool_registry.execute_tool(tool_name, tool_args)
 
-                # Prepare result for Gemini
-                function_response_parts.append(
-                    protos.Part(
-                        function_response=protos.FunctionResponse(
-                            name=tool_name, response={"result": result}
-                        )
+            # Display tool output
+            if result:
+                self.console.print(
+                    Panel(
+                        result[:1000] + ("..." if len(result) > 1000 else ""),
+                        title=f"Tool Output: {tool_name}",
+                        border_style="dim",
+                        expand=False,
                     )
                 )
 
-        return protos.Content(role="user", parts=function_response_parts)
+            tool_results.append({
+                "id": fc.id,
+                "name": tool_name,
+                "result": result
+            })
+
+        # Format results based on provider type
+        return self._format_tool_results(tool_results)
+
+    def _format_tool_results(self, tool_results: List[Dict[str, Any]]):
+        """Format tool results for provider consumption"""
+        provider_name = self.config.model.provider.lower()
+
+        if provider_name == "gemini":
+            # Gemini format
+            function_response_parts = []
+            for tr in tool_results:
+                function_response_parts.append(
+                    protos.Part(
+                        function_response=protos.FunctionResponse(
+                            name=tr["name"],
+                            response={"result": tr["result"]}
+                        )
+                    )
+                )
+            return protos.Content(role="user", parts=function_response_parts)
+
+        elif provider_name == "openai":
+            # OpenAI format
+            return {
+                "role": "tool",
+                "tool_call_id": tool_results[0]["id"],  # OpenAI expects one at a time
+                "content": tool_results[0]["result"]
+            }
+
+        elif provider_name in ["anthropic", "claude"]:
+            # Anthropic format
+            return {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tr["id"],
+                        "content": tr["result"]
+                    }
+                    for tr in tool_results
+                ]
+            }
+
+        elif provider_name == "ollama":
+            # Ollama uses OpenAI-compatible format
+            return {
+                "role": "tool",
+                "content": tool_results[0]["result"]
+            }
+
+        else:
+            # Default: return as-is
+            return tool_results
+
+    async def execute_function_calls(self, response):
+        """
+        DEPRECATED: Execute function calls from Gemini response
+
+        This method is kept for backward compatibility but should not be used.
+        Use execute_function_calls_provider instead.
+        """
+        return await self.execute_function_calls_provider(response)
 
     def display_response(self, text: str):
         """Display AI response with markdown formatting"""

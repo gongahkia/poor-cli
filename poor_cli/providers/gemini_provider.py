@@ -3,11 +3,12 @@ Gemini AI Provider Implementation
 """
 
 import asyncio
+import json
 from typing import List, Dict, Any, Optional, AsyncIterator
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
-from .base import BaseProvider, ProviderCapabilities
+from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -24,7 +25,7 @@ class GeminiProvider(BaseProvider):
     """Gemini AI provider implementation"""
 
     def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash-exp",
-                 max_retries: int = 3, retry_delay: float = 1.0):
+                 max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0):
         """Initialize Gemini provider
 
         Args:
@@ -32,10 +33,12 @@ class GeminiProvider(BaseProvider):
             model_name: Model to use
             max_retries: Maximum retries for failed requests
             retry_delay: Initial retry delay in seconds
+            timeout: Request timeout in seconds (not used by Gemini SDK directly)
         """
         super().__init__(api_key, model_name)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.timeout = timeout
         self.model = None
         self.chat = None
 
@@ -65,19 +68,21 @@ class GeminiProvider(BaseProvider):
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Gemini model: {e}")
 
-    async def send_message(self, message: str) -> Any:
+    async def send_message(self, message: Any) -> ProviderResponse:
         """Send message to Gemini
 
         Args:
-            message: Message to send
+            message: Message to send (str or Content object)
 
         Returns:
-            Gemini response object
+            Normalized ProviderResponse object
         """
         for attempt in range(self.max_retries):
             try:
                 response = await asyncio.to_thread(self.chat.send_message, message)
-                return response
+
+                # Parse Gemini response into ProviderResponse
+                return self._parse_response(response)
 
             except google_exceptions.ResourceExhausted as e:
                 if attempt < self.max_retries - 1:
@@ -96,14 +101,14 @@ class GeminiProvider(BaseProvider):
             except Exception as e:
                 raise APIError(f"Failed to send message: {e}", str(e))
 
-    async def send_message_stream(self, message: str) -> AsyncIterator[Any]:
+    async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from Gemini
 
         Args:
             message: Message to send
 
         Yields:
-            Response chunks
+            ProviderResponse chunks
         """
         try:
             def _stream():
@@ -112,13 +117,71 @@ class GeminiProvider(BaseProvider):
             stream_gen = await asyncio.to_thread(_stream)
 
             for chunk in stream_gen:
-                yield chunk
+                yield self._parse_response(chunk, is_chunk=True)
                 await asyncio.sleep(0)
 
         except google_exceptions.ResourceExhausted as e:
             raise APIRateLimitError("Rate limit exceeded", str(e))
         except Exception as e:
             raise APIError(f"Streaming failed: {e}", str(e))
+
+    def _parse_response(self, response: Any, is_chunk: bool = False) -> ProviderResponse:
+        """
+        Parse Gemini response into normalized ProviderResponse
+
+        Args:
+            response: Gemini response object
+            is_chunk: Whether this is a streaming chunk
+
+        Returns:
+            Normalized ProviderResponse
+        """
+        try:
+            # Extract content and function calls
+            content = ""
+            function_calls = []
+            finish_reason = None
+
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+
+                # Get finish reason
+                if hasattr(candidate, 'finish_reason'):
+                    finish_reason = str(candidate.finish_reason)
+
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    for part in candidate.content.parts:
+                        # Extract text
+                        if hasattr(part, 'text') and part.text:
+                            content += part.text
+
+                        # Extract function calls
+                        if hasattr(part, 'function_call') and part.function_call:
+                            fc = part.function_call
+                            function_calls.append(FunctionCall(
+                                id=f"gemini_{fc.name}",  # Gemini doesn't provide IDs
+                                name=fc.name,
+                                arguments=dict(fc.args) if fc.args else {}
+                            ))
+
+            return ProviderResponse(
+                content=content,
+                role="assistant",
+                finish_reason=finish_reason,
+                function_calls=function_calls if function_calls else None,
+                raw_response=response,
+                metadata={"is_chunk": is_chunk}
+            )
+
+        except Exception as e:
+            logger.error(f"Error parsing Gemini response: {e}")
+            # Return minimal response on error
+            return ProviderResponse(
+                content="",
+                role="assistant",
+                raw_response=response,
+                metadata={"parse_error": str(e)}
+            )
 
     async def clear_history(self):
         """Clear Gemini conversation history"""
@@ -164,5 +227,7 @@ class GeminiProvider(BaseProvider):
             supports_function_calling=True,
             supports_system_instructions=True,
             max_context_tokens=1000000,  # Gemini 2.0 has 1M context
-            supports_vision=True
+            supports_vision=True,
+            supports_json_mode=True,
+            supports_code_interpreter=False
         )

@@ -15,14 +15,49 @@ logger = setup_logger(__name__)
 
 
 @dataclass
+class ProviderConfig:
+    """Configuration for a specific provider"""
+    name: str  # Provider name
+    api_key_env_var: str  # Environment variable for API key
+    default_model: str  # Default model to use
+    enabled: bool = True  # Whether provider is available
+    base_url: Optional[str] = None  # For providers like Ollama
+
+
+@dataclass
 class ModelConfig:
     """Configuration for AI model settings"""
-    provider: str = "gemini"  # gemini, openai, claude, ollama
+    provider: str = "gemini"  # Active provider: gemini, openai, anthropic, ollama
     model_name: str = "gemini-2.0-flash-exp"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
     top_p: float = 0.95
     top_k: int = 40
+
+    # Provider registry
+    providers: Dict[str, ProviderConfig] = field(default_factory=lambda: {
+        "gemini": ProviderConfig(
+            name="gemini",
+            api_key_env_var="GEMINI_API_KEY",
+            default_model="gemini-2.0-flash-exp"
+        ),
+        "openai": ProviderConfig(
+            name="openai",
+            api_key_env_var="OPENAI_API_KEY",
+            default_model="gpt-4-turbo"
+        ),
+        "anthropic": ProviderConfig(
+            name="anthropic",
+            api_key_env_var="ANTHROPIC_API_KEY",
+            default_model="claude-3-5-sonnet-20241022"
+        ),
+        "ollama": ProviderConfig(
+            name="ollama",
+            api_key_env_var="OLLAMA_API_KEY",  # Usually not needed
+            default_model="llama3",
+            base_url="http://localhost:11434"
+        ),
+    })
 
 
 @dataclass
@@ -285,25 +320,49 @@ class ConfigManager:
         """Get API key for provider from environment or config
 
         Args:
-            provider: Provider name (gemini, openai, claude, ollama)
+            provider: Provider name (gemini, openai, anthropic, claude, ollama)
 
         Returns:
             API key or None
         """
-        # Check environment variables first
-        env_key_map = {
-            "gemini": "GEMINI_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "claude": "ANTHROPIC_API_KEY",
-            "ollama": "OLLAMA_API_KEY",
-        }
+        provider = provider.lower()
 
-        env_var = env_key_map.get(provider.lower())
-        if env_var and os.getenv(env_var):
-            return os.getenv(env_var)
+        # Handle claude as alias for anthropic
+        if provider == "claude":
+            provider = "anthropic"
 
-        # Check config
-        return self.config.api_keys.get(provider.lower())
+        # Get provider config
+        provider_config = self.config.model.providers.get(provider)
+        if not provider_config:
+            logger.warning(f"Unknown provider: {provider}")
+            return None
+
+        # Check environment variable first
+        env_var = provider_config.api_key_env_var
+        api_key = os.getenv(env_var)
+        if api_key:
+            return api_key
+
+        # Check config api_keys dict (backward compatibility)
+        if hasattr(self.config, 'api_keys'):
+            return self.config.api_keys.get(provider)
+
+        return None
+
+    def get_provider_config(self, provider: str) -> Optional['ProviderConfig']:
+        """Get configuration for a specific provider
+
+        Args:
+            provider: Provider name
+
+        Returns:
+            ProviderConfig or None
+        """
+        provider = provider.lower()
+        if provider == "claude":
+            provider = "anthropic"
+
+        return self.config.model.providers.get(provider)
 
     def display_config(self) -> str:
         """Get formatted configuration display
