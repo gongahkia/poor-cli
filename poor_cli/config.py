@@ -42,6 +42,7 @@ class UIConfig:
     enable_streaming: bool = True
     markdown_rendering: bool = True
     show_tool_calls: bool = True
+    verbose_logging: bool = False  # Show INFO/DEBUG logs in console
 
 
 @dataclass

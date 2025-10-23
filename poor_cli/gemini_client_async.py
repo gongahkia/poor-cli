@@ -84,38 +84,53 @@ class GeminiClientAsync:
                 current_dir = os.getcwd()
 
             # System instruction to guide the AI
-            system_instruction = f"""You are an AI assistant with access to tools for file operations. You MUST use these tools - do not just talk about using them.
+            system_instruction = f"""You are an AI assistant with TOOL CALLING capabilities. You have been given tools to perform file operations and system commands.
+
+CRITICAL: When a user asks you to write/create a file, you MUST immediately call the write_file tool. DO NOT just show the code to the user. DO NOT say "write this to a file". Actually call the tool.
 
 CURRENT WORKING DIRECTORY: {current_dir}
 
-CRITICAL RULES - YOU MUST FOLLOW THESE:
-1. When a user asks you to create/write a file, you MUST call the write_file tool
-2. When a user asks you to edit a file, you MUST call the edit_file tool
-3. When a user asks to read a file, you MUST call the read_file tool
-4. NEVER just describe what you would do - ACTUALLY DO IT using the tools
+MANDATORY TOOL USAGE RULES:
+1. File creation/writing: IMMEDIATELY call write_file(file_path, content)
+2. File editing: IMMEDIATELY call edit_file(file_path, old_text, new_text)
+3. File reading: IMMEDIATELY call read_file(file_path)
+4. NEVER respond with just code snippets when asked to create a file
+5. NEVER say "write this to a file" - YOU must call the tool yourself
 
-Your tools:
-- write_file(file_path, content): Creates or overwrites a file. Always use ABSOLUTE paths.
-- edit_file(file_path, old_text, new_text): Edits existing files. Always use ABSOLUTE paths.
-- read_file(file_path): Reads file contents. Always use ABSOLUTE paths.
-- glob_files(pattern): Find files matching patterns
-- grep_files(pattern): Search in files with regex
+Your available tools:
+- write_file(file_path, content): Creates or overwrites a file
+- edit_file(file_path, old_text, new_text): Edits existing files
+- read_file(file_path): Reads file contents
+- glob_files(pattern): Find files matching pattern
+- grep_files(pattern): Search for text in files
 - bash(command): Execute shell commands
 
 FILE PATH RULES:
-- ALWAYS create files in the current working directory: {current_dir}
-- When user says "create file.cpp", use path: {current_dir}/file.cpp
-- When user says "create foo/bar.py", use path: {current_dir}/foo/bar.py
-- NEVER call bash("pwd") - the current directory is already provided above
-- Just construct the absolute path directly by combining current directory with filename
+- ALWAYS use ABSOLUTE paths: {current_dir}/filename
+- User says "create test.py" → use path: {current_dir}/test.py
+- User says "create src/main.py" → use path: {current_dir}/src/main.py
 
-WORKFLOW EXAMPLE:
-User: "Create a hello.py file"
-You MUST: Call write_file(file_path="{current_dir}/hello.py", content="print('Hello')")
-You MUST NOT: Just say "I'll create the file" or describe the code
-You MUST NOT: Call bash("pwd") first
+CORRECT BEHAVIOR EXAMPLES:
 
-Be concise. Execute tools immediately when asked."""
+Example 1 - File creation:
+User: "Create a hello.py file with a hello world program"
+❌ WRONG: Display code and say "Save this as hello.py"
+✅ CORRECT: Call write_file(file_path="{current_dir}/hello.py", content="print('Hello, World!')")
+
+Example 2 - Code solution:
+User: "Give me the solution for 3sum"
+❌ WRONG: Show code and say "Write this code to a file named three_sum.py"
+✅ CORRECT: First explain the solution, THEN ask "Would you like me to save this to a file?" If they say yes OR if they originally asked to "create"/"write" a file, call write_file()
+
+Example 3 - Explicit file request:
+User: "Write the quicksort algorithm to sort.py"
+✅ CORRECT: Immediately call write_file(file_path="{current_dir}/sort.py", content="def quicksort(arr):...")
+
+IMPORTANT: Only call write_file if the user:
+1. Explicitly asks to "create", "write", "save" a file, OR
+2. Confirms they want to save code after you show it
+
+If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
 
             # Initialize model with tools (run in thread pool since it's sync)
             def _init_model():

@@ -27,6 +27,8 @@ from .exceptions import (
     APIRateLimitError,
     ConfigurationError,
     setup_logger,
+    enable_verbose_logging,
+    disable_verbose_logging,
 )
 
 # Setup logger
@@ -45,6 +47,11 @@ class PoorCLIAsync:
         self.history_manager: Optional[HistoryManager] = None
         self.error_recovery = ErrorRecoveryManager()
         self.running = False
+        self.verbose_mode = self.config.ui.verbose_logging
+
+        # Enable verbose logging if set in config
+        if self.verbose_mode:
+            enable_verbose_logging()
 
     async def initialize(self):
         """Initialize the Gemini client and tools with proper error handling"""
@@ -198,7 +205,8 @@ class PoorCLIAsync:
                     "/quit    - Exit the REPL\n"
                     "/clear   - Clear conversation history\n"
                     "/config  - Show current configuration\n"
-                    "/history - Show session statistics\n\n"
+                    "/history - Show session statistics\n"
+                    "/verbose - Toggle verbose logging (INFO/DEBUG messages)\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents\n"
                     "- write_file: Write to files (requires permission)\n"
@@ -247,6 +255,20 @@ class PoorCLIAsync:
                 )
             else:
                 self.console.print("[yellow]History tracking is disabled[/yellow]")
+
+        elif cmd == "/verbose":
+            # Toggle verbose mode
+            self.verbose_mode = not self.verbose_mode
+            if self.verbose_mode:
+                enable_verbose_logging()
+                self.console.print("[green]Verbose logging enabled (INFO/DEBUG messages will be shown)[/green]")
+            else:
+                disable_verbose_logging()
+                self.console.print("[green]Verbose logging disabled (only WARNING/ERROR messages will be shown)[/green]")
+
+            # Save to config
+            self.config.ui.verbose_logging = self.verbose_mode
+            self.config_manager.save()
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]")

@@ -94,20 +94,21 @@ class ConfigurationError(PoorCLIError):
 
 
 def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
-                 level: int = logging.INFO) -> logging.Logger:
+                 level: int = logging.INFO, console_level: Optional[int] = None) -> logging.Logger:
     """
     Setup a logger with consistent formatting
 
     Args:
         name: Logger name
         log_file: Optional file path for logging
-        level: Logging level
+        level: Base logging level for file handler
+        console_level: Console logging level (defaults to WARNING to reduce noise)
 
     Returns:
         Configured logger instance
     """
     logger = logging.getLogger(name)
-    logger.setLevel(level)
+    logger.setLevel(logging.DEBUG)  # Capture all levels, filter at handler level
 
     # Clear existing handlers
     logger.handlers.clear()
@@ -118,13 +119,13 @@ def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Console handler
+    # Console handler - defaults to WARNING to reduce verbosity
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
+    console_handler.setLevel(console_level if console_level is not None else logging.WARNING)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # File handler if specified
+    # File handler if specified - captures all INFO+ messages
     if log_file:
         try:
             file_handler = logging.FileHandler(log_file)
@@ -132,9 +133,37 @@ def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
         except Exception as e:
-            logger.warning(f"Could not create log file {log_file}: {e}")
+            # Can't use logger.warning here as it might not be set up yet
+            pass
 
     return logger
+
+
+def set_console_log_level(level: int, logger_prefix: str = "poor_cli") -> None:
+    """
+    Update console log level for all loggers with the given prefix
+
+    Args:
+        level: New logging level (logging.DEBUG, INFO, WARNING, ERROR)
+        logger_prefix: Logger name prefix to match
+    """
+    # Update all existing loggers
+    for name in logging.Logger.manager.loggerDict:
+        if name.startswith(logger_prefix):
+            logger = logging.getLogger(name)
+            for handler in logger.handlers:
+                if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                    handler.setLevel(level)
+
+
+def enable_verbose_logging() -> None:
+    """Enable verbose (INFO level) logging to console"""
+    set_console_log_level(logging.INFO)
+
+
+def disable_verbose_logging() -> None:
+    """Disable verbose logging (WARNING level) to console"""
+    set_console_log_level(logging.WARNING)
 
 
 def validate_file_path(file_path: str, base_path: Optional[Path] = None,

@@ -23,7 +23,14 @@ from .exceptions import (
     APIRateLimitError,
     ConfigurationError,
     setup_logger,
+    enable_verbose_logging,
+    disable_verbose_logging,
 )
+try:
+    from .config import get_config_manager
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
 
 # Setup logger
 logger = setup_logger(__name__)
@@ -37,6 +44,17 @@ class PoorCLI:
         self.client = None
         self.tool_registry = ToolRegistry()
         self.running = False
+        self.verbose_mode = False
+
+        # Check config for verbose setting
+        if CONFIG_AVAILABLE:
+            try:
+                config_manager = get_config_manager()
+                if config_manager.config.ui.verbose_logging:
+                    self.verbose_mode = True
+                    enable_verbose_logging()
+            except Exception:
+                pass  # Config not available or error loading
 
     def initialize(self):
         """Initialize the Gemini client and tools with proper error handling"""
@@ -157,9 +175,10 @@ class PoorCLI:
             self.console.print(
                 Panel.fit(
                     "[bold]Available Commands:[/bold]\n\n"
-                    "/help  - Show this help message\n"
-                    "/quit  - Exit the REPL\n"
-                    "/clear - Clear conversation history\n\n"
+                    "/help    - Show this help message\n"
+                    "/quit    - Exit the REPL\n"
+                    "/clear   - Clear conversation history\n"
+                    "/verbose - Toggle verbose logging (INFO/DEBUG messages)\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents (no permission required)\n"
                     "- write_file: Write to files (requires permission)\n"
@@ -174,6 +193,25 @@ class PoorCLI:
                     border_style="cyan",
                 )
             )
+
+        elif cmd == "/verbose":
+            # Toggle verbose mode
+            self.verbose_mode = not self.verbose_mode
+            if self.verbose_mode:
+                enable_verbose_logging()
+                self.console.print("[green]Verbose logging enabled (INFO/DEBUG messages will be shown)[/green]")
+            else:
+                disable_verbose_logging()
+                self.console.print("[green]Verbose logging disabled (only WARNING/ERROR messages will be shown)[/green]")
+
+            # Save to config if available
+            if CONFIG_AVAILABLE:
+                try:
+                    config_manager = get_config_manager()
+                    config_manager.config.ui.verbose_logging = self.verbose_mode
+                    config_manager.save()
+                except Exception as e:
+                    logger.debug(f"Could not save verbose setting to config: {e}")
 
         elif cmd == "/clear":
             # Reinitialize to clear history
