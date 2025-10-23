@@ -15,6 +15,7 @@ from google.generativeai.types import protos
 
 from .gemini_client import GeminiClient
 from .tools import ToolRegistry
+from .repo_config import get_repo_config, RepoConfig
 from .exceptions import (
     PoorCLIError,
     APIError,
@@ -45,6 +46,14 @@ class PoorCLI:
         self.tool_registry = ToolRegistry()
         self.running = False
         self.verbose_mode = False
+        self.repo_config: Optional[RepoConfig] = None
+
+        # Initialize repo config for local history
+        try:
+            self.repo_config = get_repo_config()
+            logger.info(f"Initialized repo config at {self.repo_config.config_dir}")
+        except Exception as e:
+            logger.warning(f"Could not initialize repo config: {e}")
 
         # Check config for verbose setting
         if CONFIG_AVAILABLE:
@@ -123,6 +132,11 @@ class PoorCLI:
             )
             logger.info("Initialization complete")
 
+            # Start a new session for history tracking
+            if self.repo_config:
+                self.repo_config.start_session(model="gemini-2.5-flash")
+                logger.info("Started new history session")
+
         except Exception as e:
             # Catch any unexpected errors during initialization
             self.console.print(
@@ -162,6 +176,11 @@ class PoorCLI:
             except EOFError:
                 break
 
+        # End the session and save history
+        if self.repo_config:
+            self.repo_config.end_session()
+            logger.info("Session ended and history saved")
+
         self.console.print("\n[cyan]Goodbye![/cyan]")
 
     def handle_command(self, command: str):
@@ -175,10 +194,12 @@ class PoorCLI:
             self.console.print(
                 Panel.fit(
                     "[bold]Available Commands:[/bold]\n\n"
-                    "/help    - Show this help message\n"
-                    "/quit    - Exit the REPL\n"
-                    "/clear   - Clear conversation history\n"
-                    "/verbose - Toggle verbose logging (INFO/DEBUG messages)\n\n"
+                    "/help        - Show this help message\n"
+                    "/quit        - Exit the REPL\n"
+                    "/clear       - Clear conversation history\n"
+                    "/verbose     - Toggle verbose logging (INFO/DEBUG messages)\n"
+                    "/history     - Show chat history and statistics\n"
+                    "/preferences - Manage repo-level auto-approve settings\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents (no permission required)\n"
                     "- write_file: Write to files (requires permission)\n"
@@ -186,8 +207,9 @@ class PoorCLI:
                     "- glob_files: Find files by pattern (no permission required)\n"
                     "- grep_files: Search in files (no permission required)\n"
                     "- bash: Execute bash commands (requires permission for unsafe commands)\n\n"
-                    "[dim]Note: File write/edit operations and potentially unsafe\n"
-                    "bash commands require your explicit permission before execution.\n"
+                    "[dim]Note: Chat history is saved to .poor-cli/history.json\n"
+                    "File write/edit operations and potentially unsafe bash commands\n"
+                    "require your explicit permission before execution.\n"
                     "Safe read-only commands (pwd, ls, etc.) run automatically.[/dim]",
                     title="Help",
                     border_style="cyan",
@@ -219,7 +241,112 @@ class PoorCLI:
             self.client.set_tools(
                 self.tool_registry.get_tool_declarations(), current_dir=current_dir
             )
+            if self.repo_config:
+                self.repo_config.clear_history()
             self.console.print("[green]Conversation history cleared[/green]")
+
+        elif cmd == "/history":
+            # Show chat history and statistics
+            if not self.repo_config:
+                self.console.print("[yellow]History tracking not available[/yellow]")
+                return
+
+            session_stats = self.repo_config.get_session_stats()
+            all_stats = self.repo_config.get_all_sessions_stats()
+
+            if session_stats:
+                history_text = (
+                    f"[bold]Current Session:[/bold]\n"
+                    f"  Session ID: {session_stats['session_id']}\n"
+                    f"  Started: {session_stats['started_at']}\n"
+                    f"  Messages: {session_stats['message_count']}\n"
+                    f"  Tokens (est): {session_stats['tokens_estimate']}\n"
+                    f"  Model: {session_stats['model']}\n\n"
+                    f"[bold]All Sessions:[/bold]\n"
+                    f"  Total Sessions: {all_stats['total_sessions']}\n"
+                    f"  Total Messages: {all_stats['total_messages']}\n"
+                    f"  Total Tokens (est): {all_stats['total_tokens_estimate']}\n"
+                    f"  Repo: {all_stats['repo_path']}\n\n"
+                    f"[dim]History saved to: {self.repo_config.history_file}[/dim]"
+                )
+            else:
+                history_text = (
+                    f"[bold]All Sessions:[/bold]\n"
+                    f"  Total Sessions: {all_stats['total_sessions']}\n"
+                    f"  Total Messages: {all_stats['total_messages']}\n"
+                    f"  Total Tokens (est): {all_stats['total_tokens_estimate']}\n"
+                    f"  Repo: {all_stats['repo_path']}\n\n"
+                    f"[dim]History saved to: {self.repo_config.history_file}[/dim]"
+                )
+
+            self.console.print(
+                Panel(
+                    history_text,
+                    title="Chat History",
+                    border_style="cyan",
+                )
+            )
+
+        elif cmd == "/preferences":
+            # Show and manage preferences
+            if not self.repo_config:
+                self.console.print("[yellow]Preferences not available[/yellow]")
+                return
+
+            prefs = self.repo_config.preferences
+            pref_text = (
+                f"[bold]Auto-Approve Settings:[/bold]\n"
+                f"  Read operations:  {'✓ Enabled' if prefs.auto_approve_read else '✗ Disabled'}\n"
+                f"  Write operations: {'✓ Enabled' if prefs.auto_approve_write else '✗ Disabled'}\n"
+                f"  Edit operations:  {'✓ Enabled' if prefs.auto_approve_edit else '✗ Disabled'}\n"
+                f"  Bash commands:    {'✓ Enabled' if prefs.auto_approve_bash else '✗ Disabled'}\n\n"
+                f"[bold]Statistics:[/bold]\n"
+                f"  Total Sessions: {prefs.total_sessions}\n"
+                f"  Created: {prefs.created_at}\n"
+                f"  Updated: {prefs.updated_at}\n\n"
+                f"[dim]To toggle: /preferences <setting> (e.g., /preferences write)\n"
+                f"Settings saved to: {self.repo_config.preferences_file}[/dim]"
+            )
+
+            self.console.print(
+                Panel(
+                    pref_text,
+                    title="Repository Preferences",
+                    border_style="cyan",
+                )
+            )
+
+        elif cmd.startswith("/preferences "):
+            # Toggle a specific preference
+            if not self.repo_config:
+                self.console.print("[yellow]Preferences not available[/yellow]")
+                return
+
+            parts = cmd.split()
+            if len(parts) != 2:
+                self.console.print("[red]Usage: /preferences <read|write|edit|bash>[/red]")
+                return
+
+            setting = parts[1].lower()
+            pref_map = {
+                "read": "auto_approve_read",
+                "write": "auto_approve_write",
+                "edit": "auto_approve_edit",
+                "bash": "auto_approve_bash"
+            }
+
+            if setting not in pref_map:
+                self.console.print(f"[red]Unknown setting: {setting}[/red]")
+                self.console.print("[yellow]Available: read, write, edit, bash[/yellow]")
+                return
+
+            pref_key = pref_map[setting]
+            current_value = self.repo_config.get_preference(pref_key)
+            new_value = not current_value
+            self.repo_config.update_preference(pref_key, new_value)
+
+            status = "enabled" if new_value else "disabled"
+            self.console.print(f"[green]Auto-approve for {setting} operations {status}[/green]")
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]")
@@ -228,6 +355,10 @@ class PoorCLI:
         """Process user request with AI and comprehensive error handling"""
         try:
             logger.info(f"Processing user request: {user_input[:100]}...")
+
+            # Log user message to history
+            if self.repo_config:
+                self.repo_config.add_message("user", user_input)
 
             # Show loading indicator
             with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
@@ -360,29 +491,36 @@ class PoorCLI:
             logger.exception("Unexpected error processing request")
 
     def request_permission(self, tool_name: str, tool_args: dict) -> bool:
-        """Request user permission for file operations"""
+        """Request user permission for file operations with repo-level auto-approve"""
         # Define which tools require permission
         file_operation_tools = {"write_file", "edit_file", "bash"}
 
         if tool_name not in file_operation_tools:
             return True
 
+        # Check repo-level auto-approve preferences
+        if self.repo_config:
+            operation_map = {
+                "write_file": "write",
+                "edit_file": "edit",
+                "bash": "bash"
+            }
+            operation = operation_map.get(tool_name)
+            if operation and self.repo_config.should_auto_approve(operation):
+                logger.info(f"Auto-approved {operation} operation (repo preference)")
+                return True
+
         # For bash commands, check if it's a safe read-only command
         if tool_name == "bash":
             command = tool_args.get("command", "").strip().lower()
-            # List of safe read-only commands that don't need permission
-            safe_commands = [
-                "pwd",
-                "ls",
-                "echo",
-                "cat",
-                "head",
-                "tail",
-                "grep",
-                "find",
-                "which",
-                "whoami",
-            ]
+            # Get safe commands from repo config if available
+            if self.repo_config:
+                safe_commands = self.repo_config.preferences.safe_bash_commands
+            else:
+                safe_commands = [
+                    "pwd", "ls", "echo", "cat", "head", "tail",
+                    "grep", "find", "which", "whoami", "date"
+                ]
             # Check if command starts with a safe command
             if any(command.startswith(cmd) for cmd in safe_commands):
                 return True
@@ -480,6 +618,10 @@ class PoorCLI:
         except Exception:
             # Fallback to plain text
             self.console.print(text)
+
+        # Log AI response to history
+        if self.repo_config:
+            self.repo_config.add_message("assistant", text)
 
 
 def main():
