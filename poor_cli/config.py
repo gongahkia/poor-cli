@@ -86,6 +86,29 @@ class UIConfig:
 
 
 @dataclass
+class PlanModeConfig:
+    """Configuration for plan mode"""
+    enabled: bool = True  # Enable plan mode by default
+    auto_plan_threshold: int = 2  # Auto-enable plan for operations affecting N+ files
+    require_approval_for_high_risk: bool = True
+    show_diff_in_plan: bool = True
+    allow_step_modification: bool = True
+    default_context_lines: int = 3  # Lines of context in diffs
+
+
+@dataclass
+class CheckpointConfig:
+    """Configuration for checkpoint system"""
+    enabled: bool = True  # Enable automatic checkpoints
+    auto_checkpoint_before_write: bool = True
+    auto_checkpoint_before_edit: bool = True
+    auto_checkpoint_before_delete: bool = True
+    max_checkpoints: int = 50  # Maximum checkpoints to keep
+    checkpoint_on_session_start: bool = False  # Create checkpoint at start
+    checkpoint_on_session_end: bool = False  # Create checkpoint at end
+
+
+@dataclass
 class SecurityConfig:
     """Configuration for security settings"""
     safe_commands: list = field(default_factory=lambda: [
@@ -117,6 +140,8 @@ class Config:
     ui: UIConfig = field(default_factory=UIConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
+    plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
+    checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
@@ -129,6 +154,8 @@ class Config:
             "ui": asdict(self.ui),
             "security": asdict(self.security),
             "tools": asdict(self.tools),
+            "plan_mode": asdict(self.plan_mode),
+            "checkpoint": asdict(self.checkpoint),
         }
         return config_dict
 
@@ -141,6 +168,8 @@ class Config:
             ui=UIConfig(**data.get("ui", {})),
             security=SecurityConfig(**data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
+            plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
+            checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
         )
 
 
