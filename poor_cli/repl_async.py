@@ -17,10 +17,15 @@ from google.generativeai.types import protos
 from .providers.provider_factory import ProviderFactory
 from .providers.base import BaseProvider, ProviderResponse
 from .tools_async import ToolRegistryAsync
+from .enhanced_tools import EnhancedToolRegistry
 from .config import get_config_manager, Config
 from .history import HistoryManager
 from .repo_config import get_repo_config, RepoConfig
 from .error_recovery import ErrorRecoveryManager
+from .checkpoint import CheckpointManager
+from .checkpoint_display import CheckpointDisplay
+from .diff_preview import DiffPreview
+from .plan_executor import PlanExecutor
 from .exceptions import (
     PoorCLIError,
     APIError,
@@ -43,7 +48,6 @@ class PoorCLIAsync:
     def __init__(self):
         self.console = Console()
         self.provider: Optional[BaseProvider] = None
-        self.tool_registry = ToolRegistryAsync()
         self.config_manager = get_config_manager()
         self.config: Config = self.config_manager.config
         self.history_manager: Optional[HistoryManager] = None
@@ -51,6 +55,33 @@ class PoorCLIAsync:
         self.error_recovery = ErrorRecoveryManager()
         self.running = False
         self.verbose_mode = self.config.ui.verbose_logging
+
+        # Initialize checkpoint system
+        try:
+            self.checkpoint_manager = CheckpointManager()
+            self.checkpoint_display = CheckpointDisplay(console=self.console)
+            logger.info("Initialized checkpoint system")
+        except Exception as e:
+            logger.error(f"Failed to initialize checkpoint system: {e}", exc_info=True)
+            self.checkpoint_manager = None
+            self.checkpoint_display = None
+
+        # Initialize diff preview
+        self.diff_preview = DiffPreview(console=self.console)
+
+        # Initialize enhanced tool registry
+        self.tool_registry = EnhancedToolRegistry(
+            config=self.config,
+            checkpoint_manager=self.checkpoint_manager,
+            diff_preview=self.diff_preview
+        )
+
+        # Initialize plan executor
+        self.plan_executor = PlanExecutor(
+            console=self.console,
+            checkpoint_manager=self.checkpoint_manager,
+            diff_preview=self.diff_preview
+        )
 
         # Initialize repo config for local history
         try:
