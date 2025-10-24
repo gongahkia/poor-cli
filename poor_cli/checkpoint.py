@@ -9,10 +9,15 @@ import os
 import json
 import shutil
 import hashlib
+import zlib
+import asyncio
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Thread, Event
+import time
 
 from poor_cli.exceptions import FileOperationError, setup_logger
 
@@ -27,15 +32,22 @@ class FileSnapshot:
     content_hash: str
     size_bytes: int
     modified_time: str
+    compressed: bool = False
+    compressed_size: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary (excluding content)"""
-        return {
+        result = {
             "file_path": self.file_path,
             "content_hash": self.content_hash,
             "size_bytes": self.size_bytes,
-            "modified_time": self.modified_time
+            "modified_time": self.modified_time,
+            "compressed": self.compressed
         }
+        if self.compressed:
+            result["compressed_size"] = self.compressed_size
+            result["compression_ratio"] = f"{(1 - self.compressed_size/self.size_bytes) * 100:.1f}%"
+        return result
 
 
 @dataclass
@@ -78,16 +90,29 @@ class CheckpointManager:
     CHECKPOINTS_DIR = ".poor-cli/checkpoints"
     INDEX_FILE = "checkpoint_index.json"
     MAX_CHECKPOINTS = 50  # Keep last 50 checkpoints
+    COMPRESSION_THRESHOLD = 1024  # Compress files larger than 1KB
+    MAX_WORKERS = 4  # Parallel processing workers
 
-    def __init__(self, workspace_root: Optional[Path] = None):
+    def __init__(
+        self,
+        workspace_root: Optional[Path] = None,
+        enable_compression: bool = True,
+        enable_parallel: bool = True,
+        enable_background_cleanup: bool = True
+    ):
         """Initialize checkpoint manager
 
         Args:
             workspace_root: Root directory of workspace (defaults to current directory)
+            enable_compression: Enable compression for checkpoints
+            enable_parallel: Enable parallel checkpoint creation
+            enable_background_cleanup: Enable background cleanup thread
         """
         self.workspace_root = workspace_root or Path.cwd()
         self.checkpoints_dir = self.workspace_root / self.CHECKPOINTS_DIR
         self.index_file = self.checkpoints_dir / self.INDEX_FILE
+        self.enable_compression = enable_compression
+        self.enable_parallel = enable_parallel
 
         # Ensure checkpoints directory exists
         self._ensure_checkpoints_dir()
@@ -95,6 +120,12 @@ class CheckpointManager:
         # Load checkpoint index
         self.checkpoints: List[Checkpoint] = []
         self._load_index()
+
+        # Background cleanup
+        self._cleanup_thread: Optional[Thread] = None
+        self._cleanup_stop_event = Event()
+        if enable_background_cleanup:
+            self._start_background_cleanup()
 
         logger.info(f"Initialized checkpoint manager at {self.checkpoints_dir}")
 
@@ -134,7 +165,9 @@ class CheckpointManager:
                             original_content=b"",  # Don't load content in memory
                             content_hash=snap_data["content_hash"],
                             size_bytes=snap_data["size_bytes"],
-                            modified_time=snap_data["modified_time"]
+                            modified_time=snap_data["modified_time"],
+                            compressed=snap_data.get("compressed", False),
+                            compressed_size=snap_data.get("compressed_size", 0)
                         )
                         snapshots.append(snapshot)
 
@@ -212,16 +245,19 @@ class CheckpointManager:
             # Create checkpoint directory
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create snapshots
-            snapshots = []
-            for file_path in file_paths:
-                try:
-                    snapshot = self._create_file_snapshot(file_path, checkpoint_dir)
-                    if snapshot:
-                        snapshots.append(snapshot)
-                except Exception as e:
-                    logger.warning(f"Failed to snapshot {file_path}: {e}")
-                    continue
+            # Create snapshots (parallel or sequential)
+            if self.enable_parallel and len(file_paths) > 1:
+                snapshots = self._create_snapshots_parallel(file_paths, checkpoint_dir)
+            else:
+                snapshots = []
+                for file_path in file_paths:
+                    try:
+                        snapshot = self._create_file_snapshot(file_path, checkpoint_dir)
+                        if snapshot:
+                            snapshots.append(snapshot)
+                    except Exception as e:
+                        logger.warning(f"Failed to snapshot {file_path}: {e}")
+                        continue
 
             # Create checkpoint
             checkpoint = Checkpoint(
@@ -282,6 +318,32 @@ class CheckpointManager:
             # Compute hash
             content_hash = self._compute_file_hash(content)
 
+            # Determine if compression should be used
+            should_compress = (
+                self.enable_compression and
+                len(content) > self.COMPRESSION_THRESHOLD
+            )
+
+            # Compress if needed
+            compressed = False
+            compressed_size = len(content)
+            snapshot_content = content
+
+            if should_compress:
+                try:
+                    compressed_content = zlib.compress(content, level=9)
+                    # Only use compression if it actually reduces size
+                    if len(compressed_content) < len(content):
+                        snapshot_content = compressed_content
+                        compressed = True
+                        compressed_size = len(compressed_content)
+                        logger.debug(
+                            f"Compressed {file_path}: {len(content)} -> {compressed_size} bytes "
+                            f"({(1 - compressed_size/len(content)) * 100:.1f}% reduction)"
+                        )
+                except Exception as e:
+                    logger.warning(f"Compression failed for {file_path}: {e}")
+
             # Save snapshot to checkpoint directory
             snapshot_filename = f"{content_hash}.snapshot"
             snapshot_path = checkpoint_dir / snapshot_filename
@@ -289,7 +351,7 @@ class CheckpointManager:
             # Only save if not already saved (deduplication)
             if not snapshot_path.exists():
                 with open(snapshot_path, 'wb') as f:
-                    f.write(content)
+                    f.write(snapshot_content)
 
             # Get file stats
             stat = path.stat()
@@ -300,7 +362,9 @@ class CheckpointManager:
                 original_content=content,
                 content_hash=content_hash,
                 size_bytes=len(content),
-                modified_time=datetime.fromtimestamp(stat.st_mtime).isoformat()
+                modified_time=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                compressed=compressed,
+                compressed_size=compressed_size
             )
 
             return snapshot
@@ -308,6 +372,42 @@ class CheckpointManager:
         except Exception as e:
             logger.error(f"Failed to snapshot file {file_path}: {e}")
             return None
+
+    def _create_snapshots_parallel(
+        self,
+        file_paths: List[str],
+        checkpoint_dir: Path
+    ) -> List[FileSnapshot]:
+        """Create snapshots for multiple files in parallel
+
+        Args:
+            file_paths: List of file paths to snapshot
+            checkpoint_dir: Directory to store snapshots
+
+        Returns:
+            List of FileSnapshot objects
+        """
+        snapshots = []
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            # Submit all snapshot tasks
+            future_to_path = {
+                executor.submit(self._create_file_snapshot, path, checkpoint_dir): path
+                for path in file_paths
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_path):
+                file_path = future_to_path[future]
+                try:
+                    snapshot = future.result()
+                    if snapshot:
+                        snapshots.append(snapshot)
+                except Exception as e:
+                    logger.warning(f"Failed to snapshot {file_path}: {e}")
+
+        logger.info(f"Created {len(snapshots)} snapshots in parallel")
+        return snapshots
 
     def restore_checkpoint(
         self,
@@ -372,7 +472,16 @@ class CheckpointManager:
         with open(snapshot_path, 'rb') as f:
             content = f.read()
 
-        # Verify hash
+        # Decompress if needed
+        if snapshot.compressed:
+            try:
+                content = zlib.decompress(content)
+                logger.debug(f"Decompressed snapshot for {snapshot.file_path}")
+            except Exception as e:
+                logger.error(f"Failed to decompress snapshot: {e}")
+                raise FileOperationError(f"Snapshot decompression failed: {e}")
+
+        # Verify hash (of decompressed content)
         actual_hash = self._compute_file_hash(content)
         if actual_hash != snapshot.content_hash:
             raise FileOperationError(f"Snapshot corrupted: hash mismatch")
@@ -493,3 +602,73 @@ class CheckpointManager:
                     except:
                         continue
         return total_size
+
+    def _start_background_cleanup(self):
+        """Start background cleanup thread"""
+        def cleanup_worker():
+            """Background worker for periodic cleanup"""
+            while not self._cleanup_stop_event.is_set():
+                try:
+                    # Wait 5 minutes before each cleanup check
+                    if self._cleanup_stop_event.wait(timeout=300):
+                        break
+
+                    # Run cleanup
+                    if len(self.checkpoints) > self.MAX_CHECKPOINTS:
+                        logger.info("Running background checkpoint cleanup")
+                        self._cleanup_old_checkpoints()
+
+                except Exception as e:
+                    logger.error(f"Background cleanup error: {e}")
+
+        self._cleanup_thread = Thread(target=cleanup_worker, daemon=True, name="CheckpointCleanup")
+        self._cleanup_thread.start()
+        logger.info("Started background cleanup thread")
+
+    def stop_background_cleanup(self):
+        """Stop background cleanup thread"""
+        if self._cleanup_thread and self._cleanup_thread.is_alive():
+            self._cleanup_stop_event.set()
+            self._cleanup_thread.join(timeout=2.0)
+            logger.info("Stopped background cleanup thread")
+
+    def get_compression_stats(self) -> Dict[str, Any]:
+        """Get compression statistics for all checkpoints
+
+        Returns:
+            Dictionary with compression statistics
+        """
+        total_snapshots = 0
+        compressed_snapshots = 0
+        total_original_size = 0
+        total_compressed_size = 0
+
+        for checkpoint in self.checkpoints:
+            for snapshot in checkpoint.snapshots:
+                total_snapshots += 1
+                total_original_size += snapshot.size_bytes
+
+                if snapshot.compressed:
+                    compressed_snapshots += 1
+                    total_compressed_size += snapshot.compressed_size
+                else:
+                    total_compressed_size += snapshot.size_bytes
+
+        compression_ratio = 0
+        if total_original_size > 0:
+            compression_ratio = (1 - total_compressed_size / total_original_size) * 100
+
+        return {
+            "total_snapshots": total_snapshots,
+            "compressed_snapshots": compressed_snapshots,
+            "uncompressed_snapshots": total_snapshots - compressed_snapshots,
+            "compression_percentage": f"{(compressed_snapshots/total_snapshots*100) if total_snapshots > 0 else 0:.1f}%",
+            "total_original_size_bytes": total_original_size,
+            "total_compressed_size_bytes": total_compressed_size,
+            "space_saved_bytes": total_original_size - total_compressed_size,
+            "overall_compression_ratio": f"{compression_ratio:.1f}%"
+        }
+
+    def __del__(self):
+        """Cleanup on destruction"""
+        self.stop_background_cleanup()
