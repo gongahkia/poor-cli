@@ -23,6 +23,9 @@ from .plan_executor import PlanExecutor
 from .transactional_plan import TransactionalPlanExecutor
 from .diff_preview import DiffPreview
 from .file_cache import FileCache, get_file_cache
+from .audit_log import AuditLogger, get_audit_logger
+from .command_validator import CommandValidator, get_command_validator
+from .api_key_manager import APIKeyManager, get_api_key_manager
 
 __all__ = [
     "PoorCLIAsync",
@@ -38,5 +41,11 @@ __all__ = [
     "DiffPreview",
     "FileCache",
     "get_file_cache",
+    "AuditLogger",
+    "get_audit_logger",
+    "CommandValidator",
+    "get_command_validator",
+    "APIKeyManager",
+    "get_api_key_manager",
     "__version__"
 ]
