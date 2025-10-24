@@ -3,6 +3,12 @@ Conversation history management for poor-cli
 
 Handles storing, retrieving, and managing conversation history with
 token counting and persistence.
+
+Features:
+- SQLite-backed persistence with connection pooling
+- Message compression for old data
+- Session archiving for long-term storage
+- Auto-cleanup and retention policies
 """
 
 import json
@@ -725,3 +731,4 @@ class HistoryManager:
     def cleanup_pool(self):
         """Clean up connection pool resources"""
         self._pool.close_all()
+# Enhancement 1
