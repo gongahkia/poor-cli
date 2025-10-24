@@ -733,3 +733,4 @@ class HistoryManager:
         self._pool.close_all()
 # Enhancement 1
 # Enhancement 2
+# Enhancement 3
