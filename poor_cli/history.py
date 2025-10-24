@@ -736,3 +736,4 @@ class HistoryManager:
 # Enhancement 3
 # Enhancement 4
 # Enhancement 5
+# Enhancement 6
