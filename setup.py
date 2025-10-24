@@ -9,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="poor-cli",
-    version="0.1.0",
+    version="0.4.0",
     author="Your Name",
     description="AI-powered CLI tool using Gemini",
     long_description=long_description,
