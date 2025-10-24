@@ -61,3 +61,13 @@ dmypy.json
 
 # Linting
 .ruff_cache/
+# Security Configuration Examples
+
+# Add audit log directory to gitignore
+/.poor-cli/audit/
+
+# Add encrypted keys to gitignore  
+/.poor-cli/keys/
+
+# Add file cache to gitignore
+/.poor-cli/cache/
