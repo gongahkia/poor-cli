@@ -4,6 +4,7 @@ rich>=13.0.0
 PyYAML>=6.0
 aiofiles>=23.0.0
 aiohttp>=3.9.0
+cryptography>=41.0.0
 
 # Optional provider dependencies
 # Install only the providers you want to use:
