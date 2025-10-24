@@ -8,10 +8,12 @@ Features:
 - Checkpoint system for version control
 - Diff preview before applying changes
 - Transactional execution with automatic rollback
-- Performance optimizations (caching, async operations)
+- Performance optimizations (caching, async operations, connection pooling)
+- Security features (audit logging, command validation, encrypted API keys)
+- Comprehensive error handling and recovery
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from .repl_async import PoorCLIAsync
 from .exceptions import PoorCLIError
