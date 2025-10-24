@@ -732,3 +732,4 @@ class HistoryManager:
         """Clean up connection pool resources"""
         self._pool.close_all()
 # Enhancement 1
+# Enhancement 2
