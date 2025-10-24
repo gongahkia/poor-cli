@@ -731,19 +731,3 @@ class HistoryManager:
     def cleanup_pool(self):
         """Clean up connection pool resources"""
         self._pool.close_all()
-# Enhancement 1
-# Enhancement 2
-# Enhancement 3
-# Enhancement 4
-# Enhancement 5
-# Enhancement 6
-# Enhancement 7
-# Enhancement 8
-# Enhancement 9
-# Enhancement 10
-# Enhancement 11
-# Enhancement 12
-# Enhancement 13
-# Enhancement 14
-# Enhancement 15
-# Enhancement 16
