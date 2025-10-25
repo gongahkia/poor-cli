@@ -10,7 +10,7 @@
 
 ## Stack
 
-...
+* *Script*: [Python](https://www.python.org/)
 
 ## Usage
 
