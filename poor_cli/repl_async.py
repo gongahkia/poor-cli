@@ -596,7 +596,7 @@ If the user just asks for a solution/code without mentioning a file, show the co
                 return
 
             # Get all messages from current session
-            messages = self.repo_config.get_recent_messages(limit=10000)  # Get all messages
+            messages = self.repo_config.get_recent_messages(count=10000)  # Get all messages
 
             if not messages:
                 self.console.print("[yellow]No messages in current session[/yellow]")
