@@ -12,6 +12,20 @@
 
 ...
 
+## Screenshots
+
+<div align="centre">
+    <img src="" width="32%">
+    <img src="" width="32%">
+    <img src="" width="32%">
+</div>
+
+<div align="centre">
+    <img src="" width="32%">
+    <img src="" width="32%">
+    <img src="" width="32%">
+</div>
+
 ## Usage
 
 The below instructions are for locally hosting `poor-cli`.
@@ -24,15 +38,13 @@ $ python3 -m venv .venv && source .venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
-2. Copy `.env.example` to `.env` and configure your preferred LLM provider(s)
-3. Set your API key(s) in `.env` - supports Gemini (free tier), OpenAI, Anthropic, or Ollama (local)
+2. Copy `.env.example` to `.env` and configure your preferred LLM providers by setting your API keys in `.env`. `poor-cli` supports [Gemini](https://aistudio.google.com/) *(free tier)*, [OpenAI](https://platform.openai.com/docs/models), [Anthropic](https://docs.claude.com/en/docs/about-claude/models/overview) and [Ollama](https://ollama.com/) *(local)*.
 
 ```console
 $ cp .env.example .env
-# Edit .env with your API key(s)
 ```
 
-4. Now run the below
+3. Now run the below
 
 ```console
 $ ./run.sh
