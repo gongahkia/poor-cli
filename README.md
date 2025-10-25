@@ -2,7 +2,7 @@
 
 # `poor-cli`
 
-Agentic Coding CLI Helper similar powered by Gemini's free API and capable of general-purpose tasks.
+[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal.
 
 <div align="center">
     <img src="./asset/logo/1.png" width="35%">
