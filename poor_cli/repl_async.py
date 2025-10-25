@@ -5,7 +5,7 @@ Async REPL interface for poor-cli with streaming support
 import os
 import sys
 import asyncio
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -201,11 +201,40 @@ class PoorCLIAsync:
             logger.info(f"Provider {self.config.model.provider} initialized successfully")
 
         except ConfigurationError as e:
+            error_msg = str(e)
+            recovery_steps = []
+
+            # Provide specific recovery suggestions based on error type
+            if "API key" in error_msg or "GEMINI_API_KEY" in error_msg:
+                recovery_steps = [
+                    "1. Get a free API key from https://makersuite.google.com/app/apikey",
+                    "2. Add it to your .env file: GEMINI_API_KEY=your-key-here",
+                    "3. Or set environment variable: export GEMINI_API_KEY=your-key-here",
+                    "4. Restart poor-cli"
+                ]
+            elif "provider" in error_msg.lower():
+                recovery_steps = [
+                    "1. Use /providers to see available providers",
+                    "2. Use /switch to change providers",
+                    "3. Check ~/.poor-cli/config.yaml for configuration",
+                    "4. Ensure API keys are set in .env file"
+                ]
+            else:
+                recovery_steps = [
+                    "1. Check ~/.poor-cli/config.yaml for errors",
+                    "2. Verify all required environment variables are set",
+                    "3. Try: poor-cli --verbose for detailed logs",
+                    "4. Reset config: rm ~/.poor-cli/config.yaml"
+                ]
+
+            recovery_text = "\n\n[bold cyan]How to fix this:[/bold cyan]\n" + "\n".join(recovery_steps)
+
             self.console.print(
                 Panel(
                     f"[bold red]Configuration Error:[/bold red]\n{e}\n\n"
                     f"[yellow]Provider:[/yellow] {self.config.model.provider}\n"
-                    f"[yellow]Model:[/yellow] {self.config.model.model_name}",
+                    f"[yellow]Model:[/yellow] {self.config.model.model_name}"
+                    f"{recovery_text}",
                     title="⚠️  Configuration Error",
                     border_style="red",
                 )
@@ -268,8 +297,10 @@ If the user just asks for a solution/code without mentioning a file, show the co
 
         status = " | ".join(status_line) if status_line else ""
 
+        from poor_cli import __version__
+
         welcome_text = f"""{mascot}
-[bold cyan]poor-cli[/bold cyan] [dim]v0.1.0[/dim] [dim blue](async)[/dim blue]
+[bold cyan]poor-cli[/bold cyan] [dim]v{__version__}[/dim]
 [dim]AI-powered CLI tool using {self.config.model.model_name}[/dim]
 {status}
 
@@ -473,6 +504,194 @@ If the user just asks for a solution/code without mentioning a file, show the co
             self.console.print(f"[red]Error listing sessions: {e}[/red]")
             logger.error(f"Error listing sessions: {e}", exc_info=True)
 
+    async def _list_all_providers(self):
+        """List all available providers and their models"""
+        try:
+            from rich.table import Table
+
+            table = Table(title="Available AI Providers", show_header=True, header_style="bold cyan")
+            table.add_column("Provider", style="cyan", width=12)
+            table.add_column("Status", width=10)
+            table.add_column("Default Model", style="green", width=30)
+            table.add_column("API Key", width=15)
+            table.add_column("Base URL", width=25)
+
+            # Get all configured providers
+            for provider_name, provider_config in self.config.model.providers.items():
+                # Check if API key is available
+                api_key_var = provider_config.api_key_env_var
+                api_key_value = os.getenv(api_key_var, "")
+
+                # Determine status
+                if provider_name == self.config.model.provider:
+                    status = "[green]● Active[/green]"
+                elif api_key_value or provider_name == "ollama":
+                    status = "[yellow]○ Ready[/yellow]"
+                else:
+                    status = "[red]○ No Key[/red]"
+
+                # API key status
+                if provider_name == "ollama":
+                    key_status = "[dim]Not needed[/dim]"
+                elif api_key_value:
+                    masked_key = f"{api_key_value[:8]}...{api_key_value[-4:]}" if len(api_key_value) > 12 else "***"
+                    key_status = f"[green]{masked_key}[/green]"
+                else:
+                    key_status = f"[red]{api_key_var}[/red]"
+
+                # Base URL (if applicable)
+                base_url = provider_config.base_url if provider_config.base_url else "[dim]Default[/dim]"
+
+                table.add_row(
+                    provider_name.capitalize(),
+                    status,
+                    provider_config.default_model,
+                    key_status,
+                    base_url
+                )
+
+            self.console.print(table)
+
+            # Show additional info
+            info_text = (
+                "\n[bold]Available Models by Provider:[/bold]\n\n"
+                "[cyan]Gemini (Free):[/cyan] gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.5-flash\n"
+                "[cyan]OpenAI (Paid):[/cyan] gpt-4-turbo, gpt-4, gpt-3.5-turbo\n"
+                "[cyan]Anthropic (Paid):[/cyan] claude-3-5-sonnet-20241022, claude-3-opus, claude-3-sonnet\n"
+                "[cyan]Ollama (Local):[/cyan] llama3, codellama, mistral, phi3\n\n"
+                "[dim]Use /switch to change providers or set DEFAULT_PROVIDER in .env[/dim]"
+            )
+
+            self.console.print(Panel(info_text, title="Model Information", border_style="cyan"))
+
+        except Exception as e:
+            self.console.print(f"[red]Error listing providers: {e}[/red]")
+            logger.error(f"Error listing providers: {e}", exc_info=True)
+
+    async def _export_conversation(self, cmd: str):
+        """Export conversation history to file"""
+        try:
+            # Parse format
+            parts = cmd.split()
+            export_format = parts[1].lower() if len(parts) > 1 else "json"
+
+            if export_format not in ["json", "md", "txt", "markdown"]:
+                self.console.print(
+                    "[yellow]Invalid format. Supported formats: json, md, txt[/yellow]\n"
+                    "[dim]Usage: /export [json|md|txt][/dim]"
+                )
+                return
+
+            # Normalize markdown format
+            if export_format == "markdown":
+                export_format = "md"
+
+            # Check if history exists
+            if not self.repo_config:
+                self.console.print("[yellow]No conversation history available to export[/yellow]")
+                return
+
+            if not self.repo_config.current_session:
+                self.console.print("[yellow]No active session to export[/yellow]")
+                return
+
+            # Get all messages from current session
+            messages = self.repo_config.get_recent_messages(limit=10000)  # Get all messages
+
+            if not messages:
+                self.console.print("[yellow]No messages in current session[/yellow]")
+                return
+
+            # Generate filename
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            session_id = self.repo_config.current_session[:8]
+            filename = f"conversation_{session_id}_{timestamp}.{export_format}"
+
+            # Export based on format
+            import json
+
+            if export_format == "json":
+                # JSON export
+                export_data = {
+                    "session_id": self.repo_config.current_session,
+                    "exported_at": datetime.now().isoformat(),
+                    "provider": self.config.model.provider,
+                    "model": self.config.model.model_name,
+                    "message_count": len(messages),
+                    "messages": [
+                        {
+                            "role": msg.role,
+                            "content": msg.content,
+                            "timestamp": msg.timestamp
+                        }
+                        for msg in messages
+                    ]
+                }
+
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+            elif export_format == "md":
+                # Markdown export
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(f"# Conversation Export\n\n")
+                    f.write(f"**Session ID:** {self.repo_config.current_session}\n")
+                    f.write(f"**Provider:** {self.config.model.provider}\n")
+                    f.write(f"**Model:** {self.config.model.model_name}\n")
+                    f.write(f"**Exported:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"**Messages:** {len(messages)}\n\n")
+                    f.write("---\n\n")
+
+                    for i, msg in enumerate(messages, 1):
+                        role_name = "User" if msg.role == "user" else "Assistant"
+                        f.write(f"## Message {i}: {role_name}\n\n")
+                        f.write(f"*{msg.timestamp}*\n\n")
+                        f.write(f"{msg.content}\n\n")
+                        f.write("---\n\n")
+
+            elif export_format == "txt":
+                # Plain text export
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write("=" * 60 + "\n")
+                    f.write("CONVERSATION EXPORT\n")
+                    f.write("=" * 60 + "\n\n")
+                    f.write(f"Session ID: {self.repo_config.current_session}\n")
+                    f.write(f"Provider: {self.config.model.provider}\n")
+                    f.write(f"Model: {self.config.model.model_name}\n")
+                    f.write(f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Messages: {len(messages)}\n\n")
+                    f.write("=" * 60 + "\n\n")
+
+                    for i, msg in enumerate(messages, 1):
+                        role_name = "USER" if msg.role == "user" else "ASSISTANT"
+                        f.write(f"[{role_name}] {msg.timestamp}\n")
+                        f.write("-" * 60 + "\n")
+                        f.write(f"{msg.content}\n\n")
+
+            # Success message
+            file_size = os.path.getsize(filename)
+            self.console.print(
+                Panel(
+                    f"[green]✓ Conversation exported successfully[/green]\n\n"
+                    f"[bold]File:[/bold] {filename}\n"
+                    f"[bold]Format:[/bold] {export_format.upper()}\n"
+                    f"[bold]Messages:[/bold] {len(messages)}\n"
+                    f"[bold]Size:[/bold] {file_size:,} bytes",
+                    title="Export Complete",
+                    border_style="green"
+                )
+            )
+
+            logger.info(f"Exported conversation to {filename} ({len(messages)} messages)")
+
+        except Exception as e:
+            self.console.print(
+                f"[red]Failed to export conversation:[/red] {e}\n"
+                f"[dim]Please check file permissions and try again[/dim]"
+            )
+            logger.error(f"Error exporting conversation: {e}", exc_info=True)
+
     async def run(self):
         """Main async REPL loop"""
         await self.initialize()
@@ -541,7 +760,10 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/diff <f1> <f2> - Compare two files\n\n"
                     "[cyan]Provider Management:[/cyan]\n"
                     "/provider      - Show current provider info\n"
+                    "/providers     - List all available providers and models\n"
                     "/switch        - Switch AI provider\n\n"
+                    "[cyan]Export & Archive:[/cyan]\n"
+                    "/export [format] - Export conversation (json, md, txt)\n\n"
                     "[cyan]Configuration:[/cyan]\n"
                     "/config        - Show current configuration\n"
                     "/verbose       - Toggle verbose logging\n"
@@ -584,6 +806,10 @@ If the user just asks for a solution/code without mentioning a file, show the co
         elif cmd == "/switch":
             # Switch provider
             await self._switch_provider()
+
+        elif cmd == "/providers":
+            # List all available providers and their models
+            await self._list_all_providers()
 
         elif cmd == "/sessions":
             # List all previous sessions
@@ -779,8 +1005,13 @@ If the user just asks for a solution/code without mentioning a file, show the co
             except Exception as e:
                 self.console.print(f"[red]Error comparing files: {e}[/red]")
 
+        elif cmd.startswith("/export"):
+            # Export conversation history
+            await self._export_conversation(cmd)
+
         else:
-            self.console.print(f"[red]Unknown command: {command}[/red]")
+            self.console.print(f"[red]Unknown command: {command}[/red]\n"
+                             "[dim]Type /help to see available commands[/dim]")
 
     async def process_request(self, user_input: str):
         """Process user request with AI, streaming, and comprehensive error handling"""
