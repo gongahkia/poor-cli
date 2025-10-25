@@ -24,11 +24,12 @@ $ python3 -m venv .venv && source .venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
-2. Get your free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-3. Set the below values within `.env`
+2. Copy `.env.example` to `.env` and configure your preferred LLM provider(s)
+3. Set your API key(s) in `.env` - supports Gemini (free tier), OpenAI, Anthropic, or Ollama (local)
 
-```env
-GEMINI_API_KEY="your-api-key-here"
+```console
+$ cp .env.example .env
+# Edit .env with your API key(s)
 ```
 
 4. Now run the below
@@ -43,9 +44,32 @@ $ ./uninstall.sh
 
 ## Available Commands
 
+**Session Management:**
 - `/help` - Show help message
 - `/quit` - Exit the REPL
-- `/clear` - Clear conversation history
+- `/clear` - Clear current conversation
+- `/history [N]` - Show recent messages (default: 10)
+- `/sessions` - List all previous sessions
+- `/new-session` - Start fresh session
+
+**Checkpoints & Undo:**
+- `/checkpoints` - List all checkpoints
+- `/checkpoint` - Create manual checkpoint
+- `/rewind [ID]` - Restore checkpoint (ID or 'last')
+- `/diff <f1> <f2>` - Compare two files
+
+**Provider Management:**
+- `/provider` - Show current provider info
+- `/providers` - List all available providers and models
+- `/switch` - Switch AI provider
+
+**Export & Archive:**
+- `/export [format]` - Export conversation (json, md, txt)
+
+**Configuration:**
+- `/config` - Show current configuration
+- `/verbose` - Toggle verbose logging
+- `/plan-mode` - Toggle plan mode
 
 ## Available Tools
 
