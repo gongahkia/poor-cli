@@ -59,6 +59,27 @@ class ModelConfig:
         ),
     })
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'ModelConfig':
+        """Create ModelConfig from dictionary with proper provider deserialization"""
+        # Make a copy to avoid modifying the input
+        data = data.copy()
+
+        # Extract providers data if present
+        providers_data = data.pop("providers", None)
+
+        # Create ModelConfig with other fields
+        config = cls(**data)
+
+        # Convert providers dict to ProviderConfig objects if provided
+        if providers_data:
+            config.providers = {
+                name: ProviderConfig(**provider_dict) if isinstance(provider_dict, dict) else provider_dict
+                for name, provider_dict in providers_data.items()
+            }
+
+        return config
+
 
 @dataclass
 class HistoryConfig:
@@ -163,7 +184,7 @@ class Config:
     def from_dict(cls, data: Dict[str, Any]) -> 'Config':
         """Create config from dictionary"""
         return cls(
-            model=ModelConfig(**data.get("model", {})),
+            model=ModelConfig.from_dict(data.get("model", {})),
             history=HistoryConfig(**data.get("history", {})),
             ui=UIConfig(**data.get("ui", {})),
             security=SecurityConfig(**data.get("security", {})),

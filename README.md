@@ -12,23 +12,9 @@
 
 ...
 
-## Screenshots
-
-<div align="centre">
-    <img src="" width="32%">
-    <img src="" width="32%">
-    <img src="" width="32%">
-</div>
-
-<div align="centre">
-    <img src="" width="32%">
-    <img src="" width="32%">
-    <img src="" width="32%">
-</div>
-
 ## Usage
 
-The below instructions are for locally hosting `poor-cli`.
+The below instructions are for locally hosting `poor-cli`. See screenshots [here](#screenshots).
 
 1. First run the below
 
@@ -93,3 +79,12 @@ $ ./uninstall.sh
 - glob_files: Find files matching patterns (e.g., `**/*.py`)
 - grep_files: Search for text in files using regex
 - bash: Execute bash commands with timeout support
+
+## Screenshots
+
+![](./asset/reference/1.png)
+![](./asset/reference/2.png)
+![](./asset/reference/3.png)
+![](./asset/reference/6.png)
+![](./asset/reference/4.png)
+![](./asset/reference/5.png)
