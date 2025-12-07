@@ -5,6 +5,7 @@ Async REPL interface for poor-cli with streaming support
 import os
 import sys
 import asyncio
+import time
 from typing import Optional, List, Dict, Any
 from rich.console import Console
 from rich.markdown import Markdown
@@ -1228,6 +1229,9 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
 
     async def process_request(self, user_input: str):
         """Process user request with AI, streaming, and comprehensive error handling"""
+        # Track execution time
+        start_time = time.time()
+
         try:
             logger.info(f"Processing user request: {user_input[:100]}...")
 
@@ -1262,6 +1266,11 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
                 await self._process_request_streaming(user_input)
             else:
                 await self._process_request_normal(user_input)
+
+            # Display execution time
+            elapsed_time = time.time() - start_time
+            if elapsed_time > 0.5:  # Only show if > 0.5 seconds
+                self.console.print(f"[dim]⏱ {elapsed_time:.2f}s[/dim]")
 
         except KeyboardInterrupt:
             self.console.print("\n[yellow]Request cancelled[/yellow]")
