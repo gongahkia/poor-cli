@@ -796,7 +796,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/config        - Show current configuration\n"
                     "/verbose       - Toggle verbose logging\n"
                     "/plan-mode     - Toggle plan mode\n"
-                    "/cost          - Show API usage and cost estimates\n\n"
+                    "/cost          - Show API usage and cost estimates\n"
+                    "/model-info    - Show detailed model capabilities\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents\n"
                     "- write_file: Write to files (automatic checkpoint)\n"
@@ -1222,6 +1223,68 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
                     self.console.print(f"[red]Failed to copy to clipboard: {e}[/red]")
             except Exception as e:
                 self.console.print(f"[red]Failed to copy to clipboard: {e}[/red]")
+
+        elif cmd == "/model-info":
+            # Display detailed model capabilities and information
+            caps = self.provider.get_capabilities()
+            provider_info = self.config.model.provider
+            model_info = self.config.model.model_name
+
+            # Build detailed info panel
+            info_text = f"""[bold cyan]Current Model Configuration[/bold cyan]
+
+[bold]Provider:[/bold] {provider_info}
+[bold]Model:[/bold] {model_info}
+
+[bold cyan]Capabilities[/bold cyan]
+
+[bold]Streaming:[/bold] {'✓ Enabled' if caps.supports_streaming else '✗ Not Available'}
+  Real-time token-by-token response generation
+
+[bold]Function Calling:[/bold] {'✓ Enabled' if caps.supports_function_calling else '✗ Not Available'}
+  Can execute tools (read_file, write_file, bash, etc.)
+
+[bold]Vision:[/bold] {'✓ Enabled' if caps.supports_vision else '✗ Not Available'}
+  Can process and understand images
+
+[bold]Context Window:[/bold] {caps.max_context_tokens:,} tokens
+  Maximum conversation length before pruning
+
+[bold cyan]Performance Characteristics[/bold cyan]
+
+"""
+            # Add provider-specific info
+            if provider_info.lower() == "gemini":
+                info_text += """[bold]Gemini Models:[/bold]
+  • Free tier available
+  • Fast inference
+  • Good at code generation
+  • Strong multilingual support
+"""
+            elif provider_info.lower() == "openai":
+                info_text += """[bold]OpenAI Models:[/bold]
+  • GPT-4: Most capable, slower, higher cost
+  • GPT-3.5: Fast, cost-effective, good quality
+  • Strong reasoning and instruction following
+"""
+            elif provider_info.lower() == "anthropic":
+                info_text += """[bold]Anthropic Models:[/bold]
+  • Claude 3.5 Sonnet: Balanced capability
+  • Strong at analysis and code review
+  • Large context windows (200k tokens)
+"""
+            elif provider_info.lower() == "ollama":
+                info_text += """[bold]Ollama (Local):[/bold]
+  • Runs entirely on your machine
+  • No API costs
+  • Privacy-focused (no data sent externally)
+  • Speed depends on hardware
+"""
+
+            info_text += f"""\n[dim]Use /switch to change providers or models
+Use /provider for a quick capability summary[/dim]"""
+
+            self.console.print(Panel(info_text, title="Model Information", border_style="cyan"))
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
