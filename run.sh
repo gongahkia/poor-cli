@@ -14,4 +14,4 @@ fi
 export $(cat .env | xargs)
 
 # Run poor-cli
-python3 -m poor_cli
+clear && python3 -m poor_cli
