@@ -775,7 +775,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/new-session   - Start fresh (clear history)\n"
                     "/retry         - Retry last request\n"
                     "/search <term> - Search conversation history\n"
-                    "/edit-last     - Edit and resend last message\n\n"
+                    "/edit-last     - Edit and resend last message\n"
+                    "/copy          - Copy last response to clipboard\n\n"
                     "[cyan]Checkpoints & Undo:[/cyan]\n"
                     "/checkpoints   - List all checkpoints\n"
                     "/checkpoint    - Create manual checkpoint\n"
@@ -1184,6 +1185,42 @@ Token estimates use ~4 chars per token heuristic.
 Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
 
             self.console.print(Panel(cost_info, title="Usage & Cost", border_style="yellow"))
+
+        elif cmd == "/copy":
+            # Copy last assistant response to clipboard
+            if not self.last_assistant_response:
+                self.console.print("[yellow]No response to copy[/yellow]")
+                return
+
+            try:
+                # Try using pyperclip if available
+                import pyperclip
+                pyperclip.copy(self.last_assistant_response)
+                self.console.print(f"[green]✓ Copied {len(self.last_assistant_response)} characters to clipboard[/green]")
+            except ImportError:
+                # Fallback: try using pbcopy (macOS) or xclip (Linux)
+                import subprocess
+                import platform
+
+                try:
+                    if platform.system() == "Darwin":  # macOS
+                        process = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
+                        process.communicate(self.last_assistant_response.encode('utf-8'))
+                        self.console.print(f"[green]✓ Copied {len(self.last_assistant_response)} characters to clipboard[/green]")
+                    elif platform.system() == "Linux":
+                        process = subprocess.Popen(['xclip', '-selection', 'clipboard'], stdin=subprocess.PIPE)
+                        process.communicate(self.last_assistant_response.encode('utf-8'))
+                        self.console.print(f"[green]✓ Copied {len(self.last_assistant_response)} characters to clipboard[/green]")
+                    else:
+                        # Windows or unsupported platform
+                        self.console.print(
+                            "[yellow]Clipboard copy not available. Install pyperclip:[/yellow]\n"
+                            "[dim]pip install pyperclip[/dim]"
+                        )
+                except Exception as e:
+                    self.console.print(f"[red]Failed to copy to clipboard: {e}[/red]")
+            except Exception as e:
+                self.console.print(f"[red]Failed to copy to clipboard: {e}[/red]")
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
