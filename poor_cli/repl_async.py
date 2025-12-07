@@ -1241,6 +1241,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
         except APIRateLimitError as e:
             self._handle_api_error("Rate Limit Exceeded",
                                  "You've exceeded the API rate limit.", e)
+            # Suggest provider failover
+            self.console.print("\n[dim]Hint: Use /switch to try a different provider[/dim]")
         except APITimeoutError as e:
             self._handle_api_error("Request Timeout",
                                  "The request took too long to complete.", e)
@@ -1300,6 +1302,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
         except APIRateLimitError as e:
             self._handle_api_error("Rate Limit Exceeded",
                                  "You've exceeded the API rate limit.", e)
+            # Suggest provider failover
+            self.console.print("\n[dim]Hint: Use /switch to try a different provider[/dim]")
         except APITimeoutError as e:
             self._handle_api_error("Request Timeout",
                                  "The request took too long to complete.", e)
