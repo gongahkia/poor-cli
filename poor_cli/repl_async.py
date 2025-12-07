@@ -1093,35 +1093,44 @@ If the user just asks for a solution/code without mentioning a file, show the co
             has_function_calls = False
 
             # Stream the response
-            async for chunk in self.provider.send_message_stream(user_input):
-                try:
-                    # Check for function calls
-                    if chunk.function_calls:
-                        has_function_calls = True
-                        # Handle function calls (need to break streaming)
-                        tool_result_content = await self.execute_function_calls_provider(chunk)
+            try:
+                async for chunk in self.provider.send_message_stream(user_input):
+                    try:
+                        # Check for function calls
+                        if chunk.function_calls:
+                            has_function_calls = True
+                            # Handle function calls (need to break streaming)
+                            tool_result_content = await self.execute_function_calls_provider(chunk)
 
-                        # Send tool results and get final response
-                        response = await self.provider.send_message(tool_result_content)
+                            # Send tool results and get final response
+                            response = await self.provider.send_message(tool_result_content)
 
-                        # Display the final response
-                        if response.content:
-                            accumulated_text += response.content
-                            self.display_response(response.content)
+                            # Display the final response
+                            if response.content:
+                                accumulated_text += response.content
+                                self.display_response(response.content)
 
-                        break  # Exit streaming loop
+                            break  # Exit streaming loop
 
-                    # Handle text streaming
-                    elif chunk.content:
-                        accumulated_text += chunk.content
-                        self.console.print(chunk.content, end="")
+                        # Handle text streaming
+                        elif chunk.content:
+                            accumulated_text += chunk.content
+                            self.console.print(chunk.content, end="")
 
-                except Exception as e:
-                    logger.error(f"Error processing chunk: {e}")
-                    continue
+                    except Exception as e:
+                        logger.error(f"Error processing chunk: {e}")
+                        continue
+
+            except KeyboardInterrupt:
+                # Handle Ctrl+C during streaming
+                self.console.print("\n\n[yellow]⚠ Streaming interrupted by user[/yellow]")
+                logger.info("Streaming interrupted by Ctrl+C")
+                # Still save whatever was accumulated
+                if accumulated_text:
+                    self.console.print(f"[dim]Partial response received ({len(accumulated_text)} chars)[/dim]")
 
             # Newline after streaming (only if not function call)
-            if not has_function_calls:
+            if not has_function_calls and accumulated_text:
                 self.console.print()
 
             # Save assistant response to history
