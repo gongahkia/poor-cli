@@ -720,10 +720,10 @@ If the user just asks for a solution/code without mentioning a file, show the co
                 model_short = self.config.model.model_name.split('-')[-1][:8]  # Last part of model name
                 prompt_text = f"\nYou ({provider_short}/{model_short}): "
 
-                # Use enhanced input manager with smart history (arrow keys)
+                # Use enhanced input manager with smart history (arrow keys) and file path autocomplete
                 user_input = await self.input_manager.get_input(
                     prompt_text=prompt_text,
-                    enable_completer=False  # Main prompt doesn't need file completion
+                    enable_completer=True  # Enable file path autocomplete with Tab key
                 )
 
                 if not user_input.strip():
