@@ -56,6 +56,16 @@ class PoorCLIAsync:
         self.running = False
         self.verbose_mode = self.config.ui.verbose_logging
         self.last_user_input: Optional[str] = None  # Track last user input for /retry
+        self.last_assistant_response: Optional[str] = None  # Track last response for /copy
+
+        # Usage tracking for /cost
+        self.session_stats = {
+            "requests": 0,
+            "input_chars": 0,
+            "output_chars": 0,
+            "input_tokens_estimate": 0,
+            "output_tokens_estimate": 0
+        }
 
         # Initialize checkpoint system
         try:
@@ -780,7 +790,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "[cyan]Configuration:[/cyan]\n"
                     "/config        - Show current configuration\n"
                     "/verbose       - Toggle verbose logging\n"
-                    "/plan-mode     - Toggle plan mode\n\n"
+                    "/plan-mode     - Toggle plan mode\n"
+                    "/cost          - Show API usage and cost estimates\n\n"
                     "[bold]Available Tools:[/bold]\n"
                     "- read_file: Read file contents\n"
                     "- write_file: Write to files (automatic checkpoint)\n"
@@ -1112,6 +1123,58 @@ If the user just asks for a solution/code without mentioning a file, show the co
             self.console.print(f"[dim]Sending edited request...[/dim]")
             await self.process_request(edited_input)
 
+        elif cmd == "/cost":
+            # Display usage stats and estimated costs
+            stats = self.session_stats
+
+            # Cost estimates (approximate, as of 2024)
+            costs_per_million = {
+                "gemini": {"input": 0.00, "output": 0.00},  # Free tier
+                "openai-gpt4": {"input": 30.00, "output": 60.00},
+                "openai-gpt3.5": {"input": 0.50, "output": 1.50},
+                "anthropic": {"input": 3.00, "output": 15.00},
+                "ollama": {"input": 0.00, "output": 0.00},  # Local
+            }
+
+            provider = self.config.model.provider.lower()
+            model_name = self.config.model.model_name.lower()
+
+            # Determine cost tier
+            if provider == "gemini" or provider == "ollama":
+                cost_key = provider
+            elif provider == "openai":
+                cost_key = "openai-gpt4" if "gpt-4" in model_name else "openai-gpt3.5"
+            elif provider == "anthropic":
+                cost_key = "anthropic"
+            else:
+                cost_key = "openai-gpt4"  # Default estimate
+
+            costs = costs_per_million.get(cost_key, {"input": 0, "output": 0})
+
+            # Calculate estimated cost
+            input_cost = (stats["input_tokens_estimate"] / 1_000_000) * costs["input"]
+            output_cost = (stats["output_tokens_estimate"] / 1_000_000) * costs["output"]
+            total_cost = input_cost + output_cost
+
+            # Build cost display
+            cost_info = f"""[bold]Session Usage Statistics:[/bold]
+
+[cyan]Requests:[/cyan] {stats['requests']}
+[cyan]Input:[/cyan] {stats['input_chars']:,} chars (~{stats['input_tokens_estimate']:,} tokens)
+[cyan]Output:[/cyan] {stats['output_chars']:,} chars (~{stats['output_tokens_estimate']:,} tokens)
+
+[bold]Estimated Cost:[/bold]
+[cyan]Provider:[/cyan] {self.config.model.provider} ({self.config.model.model_name})
+[cyan]Input Cost:[/cyan] ${input_cost:.4f}
+[cyan]Output Cost:[/cyan] ${output_cost:.4f}
+[cyan]Total:[/cyan] [bold yellow]${total_cost:.4f}[/bold yellow]
+
+[dim]Note: Costs are estimates based on approximate pricing.
+Token estimates use ~4 chars per token heuristic.
+Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
+
+            self.console.print(Panel(cost_info, title="Usage & Cost", border_style="yellow"))
+
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
                              "[dim]Type /help to see available commands[/dim]")
@@ -1120,6 +1183,11 @@ If the user just asks for a solution/code without mentioning a file, show the co
         """Process user request with AI, streaming, and comprehensive error handling"""
         try:
             logger.info(f"Processing user request: {user_input[:100]}...")
+
+            # Track usage stats
+            self.session_stats["requests"] += 1
+            self.session_stats["input_chars"] += len(user_input)
+            self.session_stats["input_tokens_estimate"] += len(user_input) // 4
 
             # Save user message to history
             if self.history_manager:
@@ -1233,6 +1301,12 @@ If the user just asks for a solution/code without mentioning a file, show the co
                 # Rough token estimate: ~4 chars per token
                 token_estimate = char_count // 4
                 self.console.print(f"[dim]({char_count} chars, ~{token_estimate} tokens)[/dim]")
+
+            # Track output stats
+            if accumulated_text:
+                self.session_stats["output_chars"] += len(accumulated_text)
+                self.session_stats["output_tokens_estimate"] += len(accumulated_text) // 4
+                self.last_assistant_response = accumulated_text
 
             # Save assistant response to history
             if self.history_manager and accumulated_text:
