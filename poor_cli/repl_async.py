@@ -1644,15 +1644,19 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
         return await self.execute_function_calls_provider(response)
 
     def display_response(self, text: str):
-        """Display AI response with markdown formatting"""
+        """Display AI response with markdown formatting and syntax highlighting"""
         self.console.print("\n[bold green]Poor AI[/bold green]")
 
-        # Try to render as markdown if enabled
+        # Try to render as markdown if enabled (includes syntax highlighting for code blocks)
         if self.config.ui.markdown_rendering:
             try:
-                md = Markdown(text)
+                # Rich's Markdown automatically applies syntax highlighting to code blocks
+                # using the Pygments library with the default theme
+                md = Markdown(text, code_theme="monokai", inline_code_theme="monokai")
                 self.console.print(md)
-            except Exception:
+            except Exception as e:
+                # Fallback to plain text if markdown rendering fails
+                logger.debug(f"Markdown rendering failed: {e}")
                 self.console.print(text)
         else:
             self.console.print(text)
