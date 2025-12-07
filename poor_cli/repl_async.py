@@ -1478,12 +1478,16 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
         if tool_name not in file_operation_tools:
             return True
 
-        # For bash commands, check if it's a safe read-only command
+        # For bash commands, check if it's a safe read-only command or destructive
         if tool_name == "bash":
             command = tool_args.get("command", "").strip().lower()
             safe_commands = self.config.security.safe_commands
 
-            if any(command.startswith(cmd) for cmd in safe_commands):
+            # Check for destructive commands
+            destructive_commands = ["rm", "del", "format", "dd", "mkfs", "fdisk", ">", "sudo rm"]
+            is_destructive = any(cmd in command for cmd in destructive_commands)
+
+            if any(command.startswith(cmd) for cmd in safe_commands) and not is_destructive:
                 return True
 
         # Build permission message
@@ -1499,8 +1503,19 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
 
         elif tool_name == "bash":
             command = tool_args.get("command", "unknown")
-            action_desc = f"[yellow]Execute bash command:[/yellow] {command}"
-            details = f"[dim]This will run a shell command.[/dim]"
+
+            # Check if destructive
+            destructive_commands = ["rm", "del", "format", "dd", "mkfs", "fdisk", ">", "sudo rm"]
+            is_destructive = any(cmd in command.lower() for cmd in destructive_commands)
+
+            if is_destructive:
+                action_desc = f"[red bold]⚠️  DESTRUCTIVE COMMAND:[/red bold] {command}"
+                details = f"[red]This command may delete or modify files/data![/red]\n[dim]Proceed with caution.[/dim]"
+                border_color = "red"
+            else:
+                action_desc = f"[yellow]Execute bash command:[/yellow] {command}"
+                details = f"[dim]This will run a shell command.[/dim]"
+                border_color = "yellow"
         else:
             return True
 
@@ -1509,7 +1524,7 @@ Free tiers (Gemini, Ollama) show $0.00.[/dim]"""
             Panel(
                 f"{action_desc}\n{details}\n\n[bold]Allow this operation?[/bold]",
                 title="⚠️  Permission Required",
-                border_style="yellow",
+                border_style=border_color if tool_name == "bash" else "yellow",
             )
         )
 
