@@ -762,7 +762,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/history [N]   - Show recent messages (default: 10)\n"
                     "/sessions      - List all previous sessions\n"
                     "/new-session   - Start fresh (clear history)\n"
-                    "/retry         - Retry last request\n\n"
+                    "/retry         - Retry last request\n"
+                    "/search <term> - Search conversation history\n\n"
                     "[cyan]Checkpoints & Undo:[/cyan]\n"
                     "/checkpoints   - List all checkpoints\n"
                     "/checkpoint    - Create manual checkpoint\n"
@@ -1036,6 +1037,55 @@ If the user just asks for a solution/code without mentioning a file, show the co
 
             self.console.print(f"[dim]Retrying: {self.last_user_input[:50]}...[/dim]")
             await self.process_request(self.last_user_input)
+
+        elif cmd.startswith("/search"):
+            # Search conversation history
+            if not self.repo_config:
+                self.console.print("[yellow]History tracking not available[/yellow]")
+                return
+
+            parts = cmd.split(maxsplit=1)
+            if len(parts) < 2:
+                self.console.print("[yellow]Usage: /search <search_term>[/yellow]")
+                return
+
+            search_term = parts[1].lower()
+            messages = self.repo_config.get_recent_messages(count=1000)  # Search last 1000 messages
+
+            if not messages:
+                self.console.print("[yellow]No messages to search[/yellow]")
+                return
+
+            # Search for matches
+            matches = []
+            for msg in messages:
+                if search_term in msg.content.lower():
+                    matches.append(msg)
+
+            if not matches:
+                self.console.print(f"[yellow]No matches found for: {search_term}[/yellow]")
+                return
+
+            # Display matches
+            from rich.table import Table
+            table = Table(title=f"Search Results: '{search_term}' ({len(matches)} matches)", show_header=True, header_style="bold cyan")
+            table.add_column("Role", style="cyan", width=10)
+            table.add_column("Preview", style="white", width=60)
+            table.add_column("Time", style="dim", width=20)
+
+            for msg in matches[:20]:  # Show first 20 matches
+                role_name = "User" if msg.role == "user" else "Assistant"
+                # Get preview with search term highlighted
+                preview = msg.content[:150]
+                if len(msg.content) > 150:
+                    preview += "..."
+
+                table.add_row(role_name, preview, msg.timestamp)
+
+            self.console.print(table)
+
+            if len(matches) > 20:
+                self.console.print(f"[dim]Showing 20 of {len(matches)} matches[/dim]")
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
