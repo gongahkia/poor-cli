@@ -778,8 +778,10 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "[cyan]Checkpoints & Undo:[/cyan]\n"
                     "/checkpoints   - List all checkpoints\n"
                     "/checkpoint    - Create manual checkpoint\n"
+                    "/save          - Quick checkpoint (alias)\n"
                     "/rewind [ID]   - Restore checkpoint (ID or 'last')\n"
                     "/undo          - Quick restore last checkpoint\n"
+                    "/restore       - Quick restore (alias for /undo)\n"
                     "/diff <f1> <f2> - Compare two files\n\n"
                     "[cyan]Provider Management:[/cyan]\n"
                     "/provider      - Show current provider info\n"
@@ -941,8 +943,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
             self.checkpoint_display.display_checkpoint_list(checkpoints, show_details=True)
             self.checkpoint_display.display_storage_info(self.checkpoint_manager)
 
-        elif cmd == "/checkpoint":
-            # Create manual checkpoint
+        elif cmd == "/checkpoint" or cmd == "/save":
+            # Create manual checkpoint (/save is alias for /checkpoint)
             if not self.checkpoint_manager or not self.checkpoint_display:
                 self.console.print("[red]Checkpoint system not available[/red]")
                 return
@@ -960,15 +962,15 @@ If the user just asks for a solution/code without mentioning a file, show the co
             try:
                 checkpoint = self.checkpoint_manager.create_checkpoint(
                     file_paths=file_paths,
-                    description="Manual checkpoint",
+                    description="Manual checkpoint" if cmd == "/checkpoint" else "Quick save",
                     operation_type="manual"
                 )
                 self.checkpoint_display.display_checkpoint_created(checkpoint)
             except Exception as e:
                 self.console.print(f"[red]Failed to create checkpoint: {e}[/red]")
 
-        elif cmd.startswith("/rewind") or cmd == "/undo":
-            # Restore checkpoint (/undo is alias for /rewind last)
+        elif cmd.startswith("/rewind") or cmd == "/undo" or cmd == "/restore":
+            # Restore checkpoint (/undo and /restore are aliases for /rewind last)
             if not self.checkpoint_manager or not self.checkpoint_display:
                 self.console.print("[red]Checkpoint system not available[/red]")
                 return
@@ -976,13 +978,14 @@ If the user just asks for a solution/code without mentioning a file, show the co
             parts = cmd.split()
             checkpoint_id = None
 
-            # Handle /undo command (always uses last checkpoint)
-            if cmd == "/undo":
+            # Handle /undo and /restore commands (always use last checkpoint)
+            if cmd == "/undo" or cmd == "/restore":
                 checkpoints = self.checkpoint_manager.list_checkpoints(limit=1)
                 if checkpoints:
                     checkpoint_id = checkpoints[0].checkpoint_id
                 else:
-                    self.console.print("[yellow]No checkpoints available to undo[/yellow]")
+                    action = "undo" if cmd == "/undo" else "restore"
+                    self.console.print(f"[yellow]No checkpoints available to {action}[/yellow]")
                     return
             elif len(parts) > 1:
                 if parts[1] == "last":
