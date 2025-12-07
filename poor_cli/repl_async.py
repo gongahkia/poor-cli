@@ -1227,6 +1227,13 @@ If the user just asks for a solution/code without mentioning a file, show the co
             if not has_function_calls and accumulated_text:
                 self.console.print()
 
+            # Show token/character count if enabled
+            if self.config.ui.show_token_count and accumulated_text:
+                char_count = len(accumulated_text)
+                # Rough token estimate: ~4 chars per token
+                token_estimate = char_count // 4
+                self.console.print(f"[dim]({char_count} chars, ~{token_estimate} tokens)[/dim]")
+
             # Save assistant response to history
             if self.history_manager and accumulated_text:
                 self.history_manager.add_message("model", accumulated_text)
