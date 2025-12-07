@@ -38,6 +38,7 @@ from .exceptions import (
     enable_verbose_logging,
     disable_verbose_logging,
 )
+from .enhanced_input import EnhancedInputManager
 
 # Setup logger
 logger = setup_logger(__name__)
@@ -80,6 +81,9 @@ class PoorCLIAsync:
 
         # Initialize diff preview
         self.diff_preview = DiffPreview(console=self.console)
+
+        # Initialize enhanced input manager for smart history
+        self.input_manager = EnhancedInputManager()
 
         # Initialize enhanced tool registry
         self.tool_registry = EnhancedToolRegistry(
@@ -714,11 +718,12 @@ If the user just asks for a solution/code without mentioning a file, show the co
                 # Build prompt with provider and model info (PS1-style)
                 provider_short = self.config.model.provider[:4].upper()  # e.g., "GEMI", "OPEN", "ANTH"
                 model_short = self.config.model.model_name.split('-')[-1][:8]  # Last part of model name
-                prompt_text = f"\n[bold cyan]You[/bold cyan] [dim]({provider_short}/{model_short})[/dim]"
+                prompt_text = f"\nYou ({provider_short}/{model_short}): "
 
-                # Use asyncio-friendly input (run in thread to avoid blocking)
-                user_input = await asyncio.to_thread(
-                    Prompt.ask, prompt_text
+                # Use enhanced input manager with smart history (arrow keys)
+                user_input = await self.input_manager.get_input(
+                    prompt_text=prompt_text,
+                    enable_completer=False  # Main prompt doesn't need file completion
                 )
 
                 if not user_input.strip():
