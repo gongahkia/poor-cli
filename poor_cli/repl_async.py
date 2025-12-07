@@ -769,6 +769,7 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/help          - Show this help message\n"
                     "/quit          - Exit the REPL\n"
                     "/clear         - Clear current conversation\n"
+                    "/clear-output  - Clear screen, keep history\n"
                     "/history [N]   - Show recent messages (default: 10)\n"
                     "/sessions      - List all previous sessions\n"
                     "/new-session   - Start fresh (clear history)\n"
@@ -814,6 +815,12 @@ If the user just asks for a solution/code without mentioning a file, show the co
             if self.history_manager:
                 self.history_manager.clear_current_session()
             self.console.print("[green]Conversation history cleared[/green]")
+
+        elif cmd == "/clear-output":
+            # Clear screen but keep history
+            import os
+            os.system('clear' if os.name != 'nt' else 'cls')
+            self.console.print("[dim]Screen cleared (history preserved)[/dim]")
 
         elif cmd == "/provider":
             # Show current provider info
