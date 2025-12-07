@@ -763,7 +763,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/sessions      - List all previous sessions\n"
                     "/new-session   - Start fresh (clear history)\n"
                     "/retry         - Retry last request\n"
-                    "/search <term> - Search conversation history\n\n"
+                    "/search <term> - Search conversation history\n"
+                    "/edit-last     - Edit and resend last message\n\n"
                     "[cyan]Checkpoints & Undo:[/cyan]\n"
                     "/checkpoints   - List all checkpoints\n"
                     "/checkpoint    - Create manual checkpoint\n"
@@ -1086,6 +1087,30 @@ If the user just asks for a solution/code without mentioning a file, show the co
 
             if len(matches) > 20:
                 self.console.print(f"[dim]Showing 20 of {len(matches)} matches[/dim]")
+
+        elif cmd == "/edit-last":
+            # Edit and resend last message
+            if not self.last_user_input:
+                self.console.print("[yellow]No previous request to edit[/yellow]")
+                return
+
+            self.console.print(f"[dim]Last request: {self.last_user_input}[/dim]\n")
+
+            # Get edited input from user
+            edited_input = await asyncio.to_thread(
+                Prompt.ask,
+                "[bold]Edit message[/bold]",
+                default=self.last_user_input
+            )
+
+            if not edited_input.strip():
+                self.console.print("[yellow]Edit cancelled[/yellow]")
+                return
+
+            # Update last_user_input and process
+            self.last_user_input = edited_input
+            self.console.print(f"[dim]Sending edited request...[/dim]")
+            await self.process_request(edited_input)
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
