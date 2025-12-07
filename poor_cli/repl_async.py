@@ -55,6 +55,7 @@ class PoorCLIAsync:
         self.error_recovery = ErrorRecoveryManager()
         self.running = False
         self.verbose_mode = self.config.ui.verbose_logging
+        self.last_user_input: Optional[str] = None  # Track last user input for /retry
 
         # Initialize checkpoint system
         try:
@@ -717,6 +718,9 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     await self.handle_command(user_input)
                     continue
 
+                # Save user input for potential /retry
+                self.last_user_input = user_input
+
                 # Process AI request
                 await self.process_request(user_input)
 
@@ -757,7 +761,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/clear         - Clear current conversation\n"
                     "/history [N]   - Show recent messages (default: 10)\n"
                     "/sessions      - List all previous sessions\n"
-                    "/new-session   - Start fresh (clear history)\n\n"
+                    "/new-session   - Start fresh (clear history)\n"
+                    "/retry         - Retry last request\n\n"
                     "[cyan]Checkpoints & Undo:[/cyan]\n"
                     "/checkpoints   - List all checkpoints\n"
                     "/checkpoint    - Create manual checkpoint\n"
@@ -1022,6 +1027,15 @@ If the user just asks for a solution/code without mentioning a file, show the co
         elif cmd.startswith("/export"):
             # Export conversation history
             await self._export_conversation(cmd)
+
+        elif cmd == "/retry":
+            # Retry last user request
+            if not self.last_user_input:
+                self.console.print("[yellow]No previous request to retry[/yellow]")
+                return
+
+            self.console.print(f"[dim]Retrying: {self.last_user_input[:50]}...[/dim]")
+            await self.process_request(self.last_user_input)
 
         else:
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
