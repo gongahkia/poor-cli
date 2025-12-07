@@ -699,9 +699,14 @@ If the user just asks for a solution/code without mentioning a file, show the co
 
         while self.running:
             try:
+                # Build prompt with provider and model info (PS1-style)
+                provider_short = self.config.model.provider[:4].upper()  # e.g., "GEMI", "OPEN", "ANTH"
+                model_short = self.config.model.model_name.split('-')[-1][:8]  # Last part of model name
+                prompt_text = f"\n[bold cyan]You[/bold cyan] [dim]({provider_short}/{model_short})[/dim]"
+
                 # Use asyncio-friendly input (run in thread to avoid blocking)
                 user_input = await asyncio.to_thread(
-                    Prompt.ask, "\n[bold cyan]You[/bold cyan]"
+                    Prompt.ask, prompt_text
                 )
 
                 if not user_input.strip():
