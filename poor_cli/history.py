@@ -222,6 +222,15 @@ class HistoryManager:
                     )
                 """)
 
+                # Migration: Add archived column if it doesn't exist
+                try:
+                    cursor.execute("SELECT archived FROM sessions LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, add it
+                    logger.info("Migrating database: adding archived column to sessions table")
+                    cursor.execute("ALTER TABLE sessions ADD COLUMN archived INTEGER DEFAULT 0")
+                    conn.commit()
+
                 # Messages table with compression support
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS messages (
