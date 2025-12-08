@@ -183,19 +183,58 @@ class PoorCLIAsync:
             api_key = self.config_manager.get_api_key(self.config.model.provider)
 
             if not api_key and self.config.model.provider != "ollama":
+                # Check which providers have API keys available
+                available_providers = []
+                for prov_name in self.config.model.providers.keys():
+                    if prov_name == "ollama":
+                        available_providers.append(prov_name)
+                    elif self.config_manager.get_api_key(prov_name):
+                        available_providers.append(prov_name)
+
+                if not available_providers:
+                    # No providers available at all
+                    self.console.print(
+                        Panel(
+                            f"[bold red]API Key Not Found:[/bold red]\n\n"
+                            f"No API key found for provider: {self.config.model.provider}\n\n"
+                            f"[yellow]Please set the environment variable:[/yellow]\n"
+                            f"{self.config.model.providers[self.config.model.provider].api_key_env_var}\n\n"
+                            f"Or add it to your .env file.",
+                            title="⚠️  Configuration Error",
+                            border_style="red",
+                        )
+                    )
+                    logger.error(f"No API key for provider: {self.config.model.provider}")
+                    sys.exit(1)
+
+                # Providers are available, prompt user to switch
                 self.console.print(
                     Panel(
-                        f"[bold red]API Key Not Found:[/bold red]\n\n"
-                        f"No API key found for provider: {self.config.model.provider}\n\n"
-                        f"[yellow]Please set the environment variable:[/yellow]\n"
-                        f"{self.config.model.providers[self.config.model.provider].api_key_env_var}\n\n"
-                        f"Or add it to your .env file.",
-                        title="⚠️  Configuration Error",
-                        border_style="red",
+                        f"[yellow]No API key found for provider: {self.config.model.provider}[/yellow]\n\n"
+                        f"[cyan]Available providers with API keys:[/cyan]\n"
+                        + "\n".join([f"  • {p}" for p in available_providers]) +
+                        f"\n\n[bold]Would you like to switch to an available provider?[/bold]",
+                        title="⚠️  Provider Configuration",
+                        border_style="yellow",
                     )
                 )
-                logger.error(f"No API key for provider: {self.config.model.provider}")
-                sys.exit(1)
+
+                # Prompt user to switch
+                response = await asyncio.to_thread(
+                    Prompt.ask,
+                    "[bold]Switch provider?[/bold]",
+                    choices=["y", "n", "yes", "no"],
+                    default="y"
+                )
+
+                if response.lower() in ["y", "yes"]:
+                    # Let user switch provider
+                    await self._switch_provider()
+                    # _switch_provider already reinitializes, so just return
+                    return
+                else:
+                    self.console.print("[yellow]Exiting. Please set an API key and try again.[/yellow]")
+                    sys.exit(0)
 
             # Create provider
             logger.info(f"Creating {self.config.model.provider} provider...")
@@ -356,7 +395,12 @@ If the user just asks for a solution/code without mentioning a file, show the co
             current = " [green](current)[/green]" if provider_name == self.config.model.provider else ""
             prov_config = self.config.model.providers.get(provider_name)
             default_model = prov_config.default_model if prov_config else "N/A"
-            self.console.print(f"  {i}. {provider_name} - {default_model}{current}")
+
+            # Check if API key is available
+            has_key = provider_name == "ollama" or self.config_manager.get_api_key(provider_name) is not None
+            key_status = "[green]✓[/green]" if has_key else "[red]✗ (no key)[/red]"
+
+            self.console.print(f"  {i}. {provider_name} - {default_model}{current} {key_status}")
 
         # Get user choice
         try:
