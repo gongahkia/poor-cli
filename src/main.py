@@ -8,9 +8,10 @@ from graphviz import Digraph
 
 # ----- DATA MODELS -----
 class Rule:
-    def __init__(self, production, weight=1.0):
+    def __init__(self, production, weight=1.0, optional=False):
         self.production = production
         self.weight = weight
+        self.optional = optional
 
 class Function:
     def __init__(self, name):
@@ -74,6 +75,9 @@ class Tokenizer:
                     self.position += 1
                 self.position += 1
                 self.tokens.append(('weight', float(weight)))
+            elif self.code[self.position] == '?':
+                self.tokens.append(('optional', '?'))
+                self.position += 1
             elif self.code[self.position].isalpha():
                 identifier = ''
                 while self.position < len(self.code) and (self.code[self.position].isalnum() or self.code[self.position] == '_'):
@@ -136,14 +140,17 @@ def parse_gf(file_path, visited=None):
                         i += 1
                         rhs = []
                         weight = 1.0
+                        optional = False
                         while i < len(tokens) and tokens[i][0] != 'semicolon':
                             if tokens[i][0] == 'identifier':
                                 rhs.append(tokens[i][1])
                             elif tokens[i][0] == 'weight':
                                 weight = tokens[i][1]
+                            elif tokens[i][0] == 'optional':
+                                optional = True
                             i += 1
                         
-                        function.add_rule(Rule(rhs, weight))
+                        function.add_rule(Rule(rhs, weight, optional))
                     grammar.add_function(function)
                 i += 1
         else:
@@ -205,6 +212,13 @@ def generate_sentences(grammar, start_symbol='Meal'):
             return
 
         rules = grammar.functions[symbol].rules
+        
+        # Handle optional rules
+        if len(rules) == 1 and rules[0].optional:
+            if random.random() < 0.5:
+                yield []
+                return
+        
         productions = [rule.production for rule in rules]
         weights = [rule.weight for rule in rules]
         chosen_production = random.choices(productions, weights=weights, k=1)[0]
