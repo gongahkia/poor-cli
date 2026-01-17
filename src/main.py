@@ -170,28 +170,31 @@ def generate_sentences(categories, rules, start_symbol='Meal'):
 
     def expand(symbol):
         if symbol not in rules:
-            return [[symbol]]
-        
+            yield [symbol]
+            return
+
         productions, weights = zip(*rules[symbol])
         chosen_production = random.choices(productions, weights=weights, k=1)[0]
         
-        expansions = []
         for production in chosen_production:
             if production.strip() == start_symbol:
-                continue  
+                continue
+            
             symbols = production.strip().split()
-            symbol_expansions = [expand(s) for s in symbols]
-            expansions.extend(itertools.product(*symbol_expansions))
-        return expansions
-    
+            if not symbols:
+                yield []
+                continue
+
+            iterators = [expand(s) for s in symbols]
+            for combination in itertools.product(*iterators):
+                yield [item for sublist in combination for item in sublist]
+
     meal_function = next(func for func in rules if rules[func][-1][0][-1].strip() == start_symbol)
     meal_components = [item[0] for item in rules[meal_function][:-1]]
     
-    sentences = []
     for combination in itertools.product(*[expand(comp.strip()) for comp in meal_components]):
         sentence = f"{meal_function} " + " ".join([item for sublist in combination for item in sublist])
-        sentences.append(sentence)
-    return sentences
+        yield sentence
 
 def create_mermaid(sentences):
     dot = Digraph(comment='Sentence Permutations')
@@ -209,11 +212,18 @@ def create_mermaid(sentences):
 def main(gf_file_path, output_format='png', limit=150):
     categories, rules = parse_gf(gf_file_path)
     validate_grammar(categories, rules)
-    sentences = generate_sentences(categories, rules)
-    sentences = sentences[:limit]
+    
+    sentences = []
+    sentence_generator = generate_sentences(categories, rules)
+    for i, sentence in enumerate(sentence_generator):
+        if i >= limit:
+            break
+        sentences.append(sentence)
+    
     print(f"Generated sentences (limited to {limit}):")
     for sentence in sentences:
         print(sentence)
+    
     flowchart = create_mermaid(sentences)
     flowchart.render('sentence_permutations', format=output_format, cleanup=True)
     print(f"\nFlowchart saved as 'sentence_permutations.{output_format}'")
