@@ -6,6 +6,35 @@ import itertools
 import random
 from graphviz import Digraph
 
+# ----- DATA MODELS -----
+class Rule:
+    def __init__(self, production, weight=1.0):
+        self.production = production
+        self.weight = weight
+
+class Function:
+    def __init__(self, name):
+        self.name = name
+        self.rules = []
+
+    def add_rule(self, rule):
+        self.rules.append(rule)
+
+class Category:
+    def __init__(self, name):
+        self.name = name
+
+class Grammar:
+    def __init__(self):
+        self.categories = []
+        self.functions = {}
+
+    def add_category(self, category):
+        self.categories.append(category)
+
+    def add_function(self, function):
+        self.functions[function.name] = function
+
 # ----- TOKENIZER CLASS -----
 
 class Tokenizer:
@@ -68,8 +97,7 @@ def parse_gf(file_path, visited=None):
     tokenizer = Tokenizer(content)
     tokens = tokenizer.tokenize()
     
-    categories = []
-    rules = {}
+    grammar = Grammar()
     
     i = 0
     while i < len(tokens):
@@ -77,28 +105,31 @@ def parse_gf(file_path, visited=None):
             i += 1
             imported_file = tokens[i][1] + '.gf'
             if imported_file not in visited:
-                imported_categories, imported_rules = parse_gf(imported_file, visited)
-                categories.extend(imported_categories)
-                for key, value in imported_rules.items():
-                    if key not in rules:
-                        rules[key] = []
-                    rules[key].extend(value)
+                imported_grammar = parse_gf(imported_file, visited)
+                for category in imported_grammar.categories:
+                    grammar.add_category(category)
+                for func_name, function in imported_grammar.functions.items():
+                    if func_name not in grammar.functions:
+                        grammar.add_function(function)
+                    else:
+                        for rule in function.rules:
+                            grammar.functions[func_name].add_rule(rule)
             i += 1
         elif tokens[i][0] == 'cat':
             i += 1
             while i < len(tokens) and tokens[i][0] != 'fun':
                 if tokens[i][0] == 'identifier':
-                    categories.append(tokens[i][1])
+                    grammar.add_category(Category(tokens[i][1]))
                 i += 1
         elif tokens[i][0] == 'fun':
             i += 1
             while i < len(tokens) and tokens[i][0] != '----':
                 if tokens[i][0] == 'identifier':
-                    lhs = [tokens[i][1]]
+                    function = Function(tokens[i][1])
                     i += 1
                     while tokens[i][0] == 'colon':
                         i += 1
-                        lhs.append(tokens[i][1])
+                        function.add_rule(Rule([tokens[i][1]]))
                         i+=1
                     
                     if tokens[i][0] == 'colon':
@@ -112,22 +143,21 @@ def parse_gf(file_path, visited=None):
                                 weight = tokens[i][1]
                             i += 1
                         
-                        for item in lhs:
-                            if item not in rules:
-                                rules[item] = []
-                            rules[item].append((rhs, weight))
+                        function.add_rule(Rule(rhs, weight))
+                    grammar.add_function(function)
                 i += 1
         else:
             i += 1
             
-    return categories, rules
+    return grammar
 
-def validate_grammar(categories, rules):
-    defined_categories = set(categories)
-    used_categories = set(rules.keys())
-    for rhs in rules.values():
-        for symbol in rhs:
-            used_categories.add(symbol)
+def validate_grammar(grammar):
+    defined_categories = {cat.name for cat in grammar.categories}
+    used_categories = set(grammar.functions.keys())
+    for func in grammar.functions.values():
+        for rule in func.rules:
+            for symbol in rule.production:
+                used_categories.add(symbol)
 
     # Check for undefined categories
     for category in used_categories:
@@ -138,42 +168,45 @@ def validate_grammar(categories, rules):
     reachable_rules = set()
     q = ['Meal'] 
     while q:
-        rule = q.pop(0)
-        if rule not in reachable_rules:
-            reachable_rules.add(rule)
-            if rule in rules:
-                for symbol in rules[rule]:
-                    q.append(symbol)
+        rule_name = q.pop(0)
+        if rule_name not in reachable_rules:
+            reachable_rules.add(rule_name)
+            if rule_name in grammar.functions:
+                for rule in grammar.functions[rule_name].rules:
+                    for symbol in rule.production:
+                        q.append(symbol)
     
-    for rule in rules:
-        if rule not in reachable_rules:
-            print(f"Warning: Rule '{rule}' is unreachable.")
+    for func_name in grammar.functions:
+        if func_name not in reachable_rules:
+            print(f"Warning: Rule '{func_name}' is unreachable.")
 
     # Check for circular references
-    for category in rules:
-        path = [category]
-        q = [iter(rules.get(category, []))]
+    for func_name in grammar.functions:
+        path = [func_name]
+        q = [iter(rule.production for rule in grammar.functions.get(func_name, Function(func_name)).rules)]
         while q:
             try:
                 child = next(q[-1])
                 if child in path:
                     print(f"Warning: Circular reference detected: {' -> '.join(path)} -> {child}")
                     continue
-                if child in rules:
+                if child in grammar.functions:
                     path.append(child)
-                    q.append(iter(rules.get(child, [])))
+                    q.append(iter(rule.production for rule in grammar.functions.get(child, Function(child)).rules))
             except StopIteration:
                 path.pop()
                 q.pop()
 
-def generate_sentences(categories, rules, start_symbol='Meal'):
+def generate_sentences(grammar, start_symbol='Meal'):
 
     def expand(symbol):
-        if symbol not in rules:
+        if symbol not in grammar.functions:
             yield [symbol]
             return
 
-        productions, weights = zip(*rules[symbol])
+        rules = grammar.functions[symbol].rules
+        productions = [rule.production for rule in rules]
+        weights = [rule.weight for rule in rules]
         chosen_production = random.choices(productions, weights=weights, k=1)[0]
         
         for production in chosen_production:
@@ -189,11 +222,11 @@ def generate_sentences(categories, rules, start_symbol='Meal'):
             for combination in itertools.product(*iterators):
                 yield [item for sublist in combination for item in sublist]
 
-    meal_function = next(func for func in rules if rules[func][-1][0][-1].strip() == start_symbol)
-    meal_components = [item[0] for item in rules[meal_function][:-1]]
+    meal_function = next(func for func in grammar.functions.values() if func.rules[-1].production[-1].strip() == start_symbol)
+    meal_components = [rule.production[0] for rule in meal_function.rules[:-1]]
     
     for combination in itertools.product(*[expand(comp.strip()) for comp in meal_components]):
-        sentence = f"{meal_function} " + " ".join([item for sublist in combination for item in sublist])
+        sentence = f"{meal_function.name} " + " ".join([item for sublist in combination for item in sublist])
         yield sentence
 
 def create_mermaid(sentences):
@@ -210,11 +243,11 @@ def create_mermaid(sentences):
     return dot
 
 def main(gf_file_path, output_format='png', limit=150):
-    categories, rules = parse_gf(gf_file_path)
-    validate_grammar(categories, rules)
+    grammar = parse_gf(gf_file_path)
+    validate_grammar(grammar)
     
     sentences = []
-    sentence_generator = generate_sentences(categories, rules)
+    sentence_generator = generate_sentences(grammar)
     for i, sentence in enumerate(sentence_generator):
         if i >= limit:
             break
