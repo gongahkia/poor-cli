@@ -1,6 +1,7 @@
 # ----- REQUIRED IMPORTS -----
 
 import re
+import argparse
 import itertools
 from graphviz import Digraph
 
@@ -42,7 +43,7 @@ def generate_sentences(categories, rules, start_symbol='Meal'):
     for combination in itertools.product(*[expand(comp.strip()) for comp in meal_components]):
         sentence = f"{meal_function} " + " ".join([item for sublist in combination for item in sublist])
         sentences.append(sentence)
-    return sentences[:150] # rn im limiting to 150 sentences, probably want to dynamically update this value in the future? but tbh whose goddamn gf file is going to be 200+ lines ah
+    return sentences
 
 def create_mermaid(sentences):
     dot = Digraph(comment='Sentence Permutations')
@@ -57,18 +58,29 @@ def create_mermaid(sentences):
                 dot.edge(prev_node_id, node_id)
     return dot
 
-def main(gf_file_path):
+def main(gf_file_path, output_format='png', limit=150):
     categories, rules = parse_gf(gf_file_path)
     sentences = generate_sentences(categories, rules)
-    print("Generated sentences (limited to 100):")
+    sentences = sentences[:limit]
+    print(f"Generated sentences (limited to {limit}):")
     for sentence in sentences:
         print(sentence)
     flowchart = create_mermaid(sentences)
-    flowchart.render('sentence_permutations', format='png', cleanup=True)
-    print("\nMermaid flowchart has been saved as 'sentence_permutations.png'")
+    flowchart.render('sentence_permutations', format=output_format, cleanup=True)
+    print(f"\nFlowchart saved as 'sentence_permutations.{output_format}'")
 
 # ----- EXECUTION CODE -----
 
 if __name__ == "__main__":
-    gf_file_path = input("GF file path: ")
-    main(gf_file_path)
+    parser = argparse.ArgumentParser(
+        description='Seuss - GF grammar file visualizer',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument('input', help='Path to the .gf grammar file')
+    parser.add_argument('-f', '--format', default='png',
+                        choices=['png', 'pdf', 'svg'],
+                        help='Output format (default: png)')
+    parser.add_argument('-l', '--limit', type=int, default=150,
+                        help='Maximum number of sentences to generate (default: 150)')
+    args = parser.parse_args()
+    main(args.input, args.format, args.limit)
