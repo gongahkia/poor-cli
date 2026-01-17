@@ -90,6 +90,50 @@ def parse_gf(file_path):
             
     return categories, rules
 
+def validate_grammar(categories, rules):
+    defined_categories = set(categories)
+    used_categories = set(rules.keys())
+    for rhs in rules.values():
+        for symbol in rhs:
+            used_categories.add(symbol)
+
+    # Check for undefined categories
+    for category in used_categories:
+        if category not in defined_categories:
+            print(f"Warning: Category '{category}' is used but not defined.")
+
+    # Check for unreachable rules
+    reachable_rules = set()
+    q = ['Meal'] 
+    while q:
+        rule = q.pop(0)
+        if rule not in reachable_rules:
+            reachable_rules.add(rule)
+            if rule in rules:
+                for symbol in rules[rule]:
+                    q.append(symbol)
+    
+    for rule in rules:
+        if rule not in reachable_rules:
+            print(f"Warning: Rule '{rule}' is unreachable.")
+
+    # Check for circular references
+    for category in rules:
+        path = [category]
+        q = [iter(rules.get(category, []))]
+        while q:
+            try:
+                child = next(q[-1])
+                if child in path:
+                    print(f"Warning: Circular reference detected: {' -> '.join(path)} -> {child}")
+                    continue
+                if child in rules:
+                    path.append(child)
+                    q.append(iter(rules.get(child, [])))
+            except StopIteration:
+                path.pop()
+                q.pop()
+
 def generate_sentences(categories, rules, start_symbol='Meal'):
 
     def expand(symbol):
@@ -126,6 +170,7 @@ def create_mermaid(sentences):
 
 def main(gf_file_path, output_format='png', limit=150):
     categories, rules = parse_gf(gf_file_path)
+    validate_grammar(categories, rules)
     sentences = generate_sentences(categories, rules)
     sentences = sentences[:limit]
     print(f"Generated sentences (limited to {limit}):")
