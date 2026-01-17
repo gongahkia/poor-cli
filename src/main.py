@@ -5,23 +5,89 @@ import argparse
 import itertools
 from graphviz import Digraph
 
+# ----- TOKENIZER CLASS -----
+
+class Tokenizer:
+    def __init__(self, code):
+        self.code = code
+        self.position = 0
+        self.tokens = []
+
+    def tokenize(self):
+        while self.position < len(self.code):
+            if self.code[self.position].isspace():
+                self.position += 1
+                continue
+            elif self.code[self.position:self.position+3] == 'cat':
+                self.tokens.append(('cat', 'cat'))
+                self.position += 3
+            elif self.code[self.position:self.position+3] == 'fun':
+                self.tokens.append(('fun', 'fun'))
+                self.position += 3
+            elif self.code[self.position:self.position+2] == '->':
+                self.tokens.append(('arrow', '->'))
+                self.position += 2
+            elif self.code[self.position] == ':':
+                self.tokens.append(('colon', ':'))
+                self.position += 1
+            elif self.code[self.position] == ';':
+                self.tokens.append(('semicolon', ';'))
+                self.position += 1
+            elif self.code[self.position].isalpha():
+                identifier = ''
+                while self.position < len(self.code) and (self.code[self.position].isalnum() or self.code[self.position] == '_'):
+                    identifier += self.code[self.position]
+                    self.position += 1
+                self.tokens.append(('identifier', identifier))
+            else:
+                self.position += 1
+        return self.tokens
+
 # ----- HELPER FUNCTIONS -----
 
 def parse_gf(file_path):
     with open(file_path, 'r') as file:
         content = file.read()
-    categories = re.findall(r'cat\s+([\s\S]*?)fun', content)[0].strip().split(';')
-    categories = [cat.strip() for cat in categories if cat.strip()]
-    functions = re.findall(r'fun\s+([\s\S]*?)----', content)[0].strip().split(';')
-    functions = [func.strip() for func in functions if func.strip()]
+    
+    tokenizer = Tokenizer(content)
+    tokens = tokenizer.tokenize()
+    
+    categories = []
     rules = {}
-    for func in functions:
-        if ':' in func:
-            lhs, rhs = func.split(':')
-            lhs = lhs.strip().split(',')
-            rhs = rhs.strip().split('->')
-            for item in lhs:
-                rules[item.strip()] = rhs
+    
+    i = 0
+    while i < len(tokens):
+        if tokens[i][0] == 'cat':
+            i += 1
+            while i < len(tokens) and tokens[i][0] != 'fun':
+                if tokens[i][0] == 'identifier':
+                    categories.append(tokens[i][1])
+                i += 1
+        elif tokens[i][0] == 'fun':
+            i += 1
+            while i < len(tokens) and tokens[i][0] != '----':
+                if tokens[i][0] == 'identifier':
+                    lhs = [tokens[i][1]]
+                    i += 1
+                    while tokens[i][0] == 'colon':
+                        i += 1
+                        lhs.append(tokens[i][1])
+                        i+=1
+                    
+                    if tokens[i][0] == 'colon':
+                        i += 1
+                        rhs = []
+                        while i < len(tokens) and tokens[i][0] != 'semicolon':
+                            if tokens[i][0] == 'identifier':
+                                rhs.append(tokens[i][1])
+                            i += 1
+                        
+                        for item in lhs:
+                            rules[item] = rhs
+                i += 1
+        else:
+            i += 1
+            
     return categories, rules
 
 def generate_sentences(categories, rules, start_symbol='Meal'):
