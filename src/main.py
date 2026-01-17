@@ -19,6 +19,9 @@ class Tokenizer:
             if self.code[self.position].isspace():
                 self.position += 1
                 continue
+            elif self.code[self.position:self.position+6] == 'import':
+                self.tokens.append(('import', 'import'))
+                self.position += 6
             elif self.code[self.position:self.position+3] == 'cat':
                 self.tokens.append(('cat', 'cat'))
                 self.position += 3
@@ -54,7 +57,11 @@ class Tokenizer:
 
 # ----- HELPER FUNCTIONS -----
 
-def parse_gf(file_path):
+def parse_gf(file_path, visited=None):
+    if visited is None:
+        visited = set()
+    visited.add(file_path)
+
     with open(file_path, 'r') as file:
         content = file.read()
     
@@ -66,7 +73,18 @@ def parse_gf(file_path):
     
     i = 0
     while i < len(tokens):
-        if tokens[i][0] == 'cat':
+        if tokens[i][0] == 'import':
+            i += 1
+            imported_file = tokens[i][1] + '.gf'
+            if imported_file not in visited:
+                imported_categories, imported_rules = parse_gf(imported_file, visited)
+                categories.extend(imported_categories)
+                for key, value in imported_rules.items():
+                    if key not in rules:
+                        rules[key] = []
+                    rules[key].extend(value)
+            i += 1
+        elif tokens[i][0] == 'cat':
             i += 1
             while i < len(tokens) and tokens[i][0] != 'fun':
                 if tokens[i][0] == 'identifier':
