@@ -3,6 +3,7 @@
 import re
 import argparse
 import itertools
+import random
 from graphviz import Digraph
 
 # ----- TOKENIZER CLASS -----
@@ -33,6 +34,14 @@ class Tokenizer:
             elif self.code[self.position] == ';':
                 self.tokens.append(('semicolon', ';'))
                 self.position += 1
+            elif self.code[self.position] == '(':
+                self.position += 1
+                weight = ''
+                while self.position < len(self.code) and self.code[self.position] != ')':
+                    weight += self.code[self.position]
+                    self.position += 1
+                self.position += 1
+                self.tokens.append(('weight', float(weight)))
             elif self.code[self.position].isalpha():
                 identifier = ''
                 while self.position < len(self.code) and (self.code[self.position].isalnum() or self.code[self.position] == '_'):
@@ -77,13 +86,18 @@ def parse_gf(file_path):
                     if tokens[i][0] == 'colon':
                         i += 1
                         rhs = []
+                        weight = 1.0
                         while i < len(tokens) and tokens[i][0] != 'semicolon':
                             if tokens[i][0] == 'identifier':
                                 rhs.append(tokens[i][1])
+                            elif tokens[i][0] == 'weight':
+                                weight = tokens[i][1]
                             i += 1
                         
                         for item in lhs:
-                            rules[item] = rhs
+                            if item not in rules:
+                                rules[item] = []
+                            rules[item].append((rhs, weight))
                 i += 1
         else:
             i += 1
@@ -139,16 +153,22 @@ def generate_sentences(categories, rules, start_symbol='Meal'):
     def expand(symbol):
         if symbol not in rules:
             return [[symbol]]
+        
+        productions, weights = zip(*rules[symbol])
+        chosen_production = random.choices(productions, weights=weights, k=1)[0]
+        
         expansions = []
-        for production in rules[symbol]:
+        for production in chosen_production:
             if production.strip() == start_symbol:
                 continue  
             symbols = production.strip().split()
             symbol_expansions = [expand(s) for s in symbols]
             expansions.extend(itertools.product(*symbol_expansions))
         return expansions
-    meal_function = next(func for func in rules if rules[func][-1].strip() == start_symbol)
-    meal_components = rules[meal_function][:-1]  
+    
+    meal_function = next(func for func in rules if rules[func][-1][0][-1].strip() == start_symbol)
+    meal_components = [item[0] for item in rules[meal_function][:-1]]
+    
     sentences = []
     for combination in itertools.product(*[expand(comp.strip()) for comp in meal_components]):
         sentence = f"{meal_function} " + " ".join([item for sublist in combination for item in sublist])
