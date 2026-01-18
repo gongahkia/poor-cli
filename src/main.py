@@ -19,7 +19,8 @@ from gf_lib import (
     Category,
     generate_random_ast,
     validate_grammar,
-    deduplicate_sentences
+    deduplicate_sentences,
+    calculate_complexity
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -138,6 +139,10 @@ def main():
     parser_watch.add_argument('-l', '--limit', type=int, default=150)
     parser_watch.add_argument('--interval', type=float, default=1.0, help='Polling interval in seconds')
 
+    # Complexity command
+    parser_complexity = subparsers.add_parser('complexity', help='Analyze grammar complexity')
+    parser_complexity.add_argument('input', help='Path to the abstract .gf grammar file')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -166,6 +171,16 @@ def main():
         export_grammar_json(args.input, args.output)
     elif args.command == 'watch':
         watch_and_regenerate(args.abstract, args.concrete, args.format, args.limit, args.interval)
+    elif args.command == 'complexity':
+        display_complexity(args.input)
+
+def display_complexity(input_path):
+    grammar = parse_grammar(input_path)
+    metrics = calculate_complexity(grammar)
+    print(f"--- Complexity Analysis for {input_path} ---")
+    for key, value in metrics.items():
+        print(f"  {key}: {value}")
+    print("--------------------------------------------")
 
 def watch_and_regenerate(abstract_path, concrete_path, output_format, limit, interval):
     """Watch grammar files and regenerate visualization when they change."""

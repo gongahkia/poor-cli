@@ -497,6 +497,93 @@ def generate_random_ast(grammar, category, context=None, max_depth=20):
     return AST(func.name, children)
 
 
+def calculate_complexity(grammar):
+    """
+    Calculate grammar complexity metrics.
+    Returns dict with branching_factor, max_depth, estimated_sentences, reachability.
+    """
+    if not isinstance(grammar, AbstractGrammar):
+        return {"error": "Complexity analysis only supported for abstract grammars"}
+
+    # Find start category (Sentence by default)
+    start_cat = "Sentence"
+
+    # Calculate productions per category
+    cat_productions = {}
+    for func in grammar.functions.values():
+        ret_type = func.return_type.name if isinstance(func.return_type, Category) else str(func.return_type)
+        cat_productions[ret_type] = cat_productions.get(ret_type, 0) + 1
+
+    # Branching factor
+    if cat_productions:
+        branching_factor = sum(cat_productions.values()) / len(cat_productions)
+    else:
+        branching_factor = 0
+
+    # Calculate max depth via BFS
+    def get_max_depth(cat_name, visited=None):
+        if visited is None:
+            visited = set()
+        if cat_name in visited:
+            return 0  # Cycle
+        visited.add(cat_name)
+
+        funcs = [f for f in grammar.functions.values()
+                 if (f.return_type.name if isinstance(f.return_type, Category) else str(f.return_type)) == cat_name]
+
+        if not funcs:
+            return 1
+
+        max_child_depth = 0
+        for func in funcs:
+            for arg_type in func.arg_types:
+                arg_name = arg_type.name if isinstance(arg_type, Category) else str(arg_type)
+                child_depth = get_max_depth(arg_name, visited.copy())
+                max_child_depth = max(max_child_depth, child_depth)
+
+        return 1 + max_child_depth
+
+    max_depth = get_max_depth(start_cat)
+
+    # Estimate sentence count (product of productions per required category)
+    def estimate_sentences(cat_name, visited=None):
+        if visited is None:
+            visited = set()
+        if cat_name in visited:
+            return 1
+
+        visited.add(cat_name)
+        funcs = [f for f in grammar.functions.values()
+                 if (f.return_type.name if isinstance(f.return_type, Category) else str(f.return_type)) == cat_name]
+
+        if not funcs:
+            return 1
+
+        total = 0
+        for func in funcs:
+            prod = 1
+            for arg_type in func.arg_types:
+                arg_name = arg_type.name if isinstance(arg_type, Category) else str(arg_type)
+                prod *= estimate_sentences(arg_name, visited.copy())
+            total += prod
+        return total
+
+    estimated_sentences = estimate_sentences(start_cat)
+
+    # Reachability
+    minimized = minimize_grammar(grammar)
+    reachability = len(minimized.functions) / len(grammar.functions) if grammar.functions else 1.0
+
+    return {
+        "branching_factor": round(branching_factor, 2),
+        "max_depth": max_depth,
+        "estimated_sentences": estimated_sentences,
+        "reachability": round(reachability, 2),
+        "total_functions": len(grammar.functions),
+        "total_categories": len(grammar.categories)
+    }
+
+
 def deduplicate_sentences(sentences, normalize=True):
     """
     Remove duplicate sentences from a list.
