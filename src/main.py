@@ -271,7 +271,7 @@ def main():
     parser_generate = subparsers.add_parser('generate', help='Generate sentences and visualize')
     parser_generate.add_argument('input', help='Path to the .gf grammar file')
     parser_generate.add_argument('-f', '--format', default='png',
-                        choices=['png', 'pdf', 'svg'],
+                        choices=['png', 'pdf', 'svg', 'ascii'],
                         help='Output format (default: png)')
     parser_generate.add_argument('-l', '--limit', type=int, default=150,
                         help='Maximum number of sentences to generate (default: 150)')
@@ -303,9 +303,34 @@ def generate_and_visualize(gf_file_path, output_format='png', limit=150, filter_
     for sentence in sentences:
         print(sentence)
     
-    flowchart = create_mermaid(sentences)
-    flowchart.render('sentence_permutations', format=output_format, cleanup=True)
-    print(f"\nFlowchart saved as 'sentence_permutations.{output_format}'")
+    graph = create_graph(sentences)
+
+    if output_format == 'ascii':
+        from graph_easy import EasyGraph
+        easy_graph = EasyGraph()
+        for edge in graph.body:
+            if '->' in edge:
+                parts = edge.split('->')
+                node1 = parts[0].strip().split(' ')[0]
+                node2 = parts[1].strip().split(' ')[0]
+                easy_graph.add_edge(node1, node2)
+        print(easy_graph.to_ascii())
+    else:
+        graph.render('sentence_permutations', format=output_format, cleanup=True)
+        print(f"\nFlowchart saved as 'sentence_permutations.{output_format}'")
+
+def create_graph(sentences):
+    dot = Digraph(comment='Sentence Permutations')
+    dot.attr(rankdir='LR')
+    for i, sentence in enumerate(sentences):
+        words = sentence.split()
+        for j, word in enumerate(words):
+            node_id = f"s{i}_{j}"
+            dot.node(node_id, word)
+            if j > 0:
+                prev_node_id = f"s{i}_{j-1}"
+                dot.edge(prev_node_id, node_id)
+    return dot
 
 def calculate_and_display_stats(gf_file_path):
     grammar = parse_gf(gf_file_path)

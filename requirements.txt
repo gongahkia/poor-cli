@@ -1,1 +1,2 @@
 graphviz
+graph-easy
