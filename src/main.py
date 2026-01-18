@@ -286,6 +286,11 @@ def main():
     parser_diff.add_argument('file1', help='Path to the first .gf grammar file')
     parser_diff.add_argument('file2', help='Path to the second .gf grammar file')
 
+    # Parse command
+    parser_parse = subparsers.add_parser('parse', help='Check if a sentence matches the grammar')
+    parser_parse.add_argument('input', help='Path to the .gf grammar file')
+    parser_parse.add_argument('sentence', help='The sentence to parse')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -294,6 +299,8 @@ def main():
         calculate_and_display_stats(args.input)
     elif args.command == 'diff':
         diff_grammars(args.file1, args.file2)
+    elif args.command == 'parse':
+        reverse_parse_and_display(args.input, args.sentence)
 
 def generate_and_visualize(gf_file_path, output_format='png', limit=150, filter_pattern=None):
     grammar = parse_gf(gf_file_path)
@@ -394,15 +401,61 @@ def diff_grammars(file1_path, file2_path):
             
     print("\n------------------------")
 
-def compare_rules(rules1, rules2):
-    if len(rules1) != len(rules2):
-        return False
+def reverse_parse_and_display(gf_file_path, sentence):
+    grammar = parse_gf(gf_file_path)
+    derivation = reverse_parse(grammar, sentence.split())
     
-    for r1, r2 in zip(rules1, rules2):
-        if r1.production != r2.production or r1.weight != r2.weight or r1.optional != r2.optional:
-            return False
+    if derivation:
+        print("Sentence is valid. Derivation path:")
+        for rule in derivation:
+            print(rule)
+    else:
+        print("Sentence is not valid according to the grammar.")
+
+def reverse_parse(grammar, words, start_symbol='Meal'):
+    
+    memo = {}
+
+    def parse_recursive(symbol, index):
+        if (symbol, index) in memo:
+            return memo[(symbol, index)]
+
+        if index >= len(words):
+            return None # Reached end of input
+
+        if symbol not in grammar.functions:
+            if words[index] == symbol:
+                return [(symbol, words[index])], index + 1
+            else:
+                return None
+
+        for rule in grammar.functions[symbol].rules:
+            path = []
+            current_index = index
+            match = True
             
-    return True
+            for sub_symbol in rule.production:
+                result = parse_recursive(sub_symbol, current_index)
+                if result:
+                    sub_path, next_index = result
+                    path.extend(sub_path)
+                    current_index = next_index
+                else:
+                    match = False
+                    break
+            
+            if match:
+                memo[(symbol, index)] = ([(symbol, rule.production)] + path, current_index)
+                return ([(symbol, rule.production)] + path, current_index)
+
+        memo[(symbol, index)] = None
+        return None
+
+    result = parse_recursive(start_symbol, 0)
+    if result and result[1] == len(words):
+        return result[0]
+    else:
+        return None
 
 def calculate_permutations(grammar, symbol, memo):
     if symbol in memo:
