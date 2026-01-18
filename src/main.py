@@ -130,6 +130,14 @@ def main():
     parser_export.add_argument('input', help='Path to the .gf grammar file')
     parser_export.add_argument('-o', '--output', help='Path to save the JSON file')
 
+    # Watch command
+    parser_watch = subparsers.add_parser('watch', help='Watch grammar files and regenerate on change')
+    parser_watch.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
+    parser_watch.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
+    parser_watch.add_argument('-f', '--format', default='png', choices=['png', 'pdf', 'svg', 'ascii'])
+    parser_watch.add_argument('-l', '--limit', type=int, default=150)
+    parser_watch.add_argument('--interval', type=float, default=1.0, help='Polling interval in seconds')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -156,6 +164,32 @@ def main():
         generate_template_and_display(args.name, args.categories, args.output)
     elif args.command == 'export':
         export_grammar_json(args.input, args.output)
+    elif args.command == 'watch':
+        watch_and_regenerate(args.abstract, args.concrete, args.format, args.limit, args.interval)
+
+def watch_and_regenerate(abstract_path, concrete_path, output_format, limit, interval):
+    """Watch grammar files and regenerate visualization when they change."""
+    import time
+    from gf_lib import clear_grammar_cache
+
+    def get_mtimes():
+        return (os.path.getmtime(abstract_path), os.path.getmtime(concrete_path))
+
+    last_mtimes = get_mtimes()
+    print(f"Watching {abstract_path} and {concrete_path} (Ctrl+C to stop)")
+    generate_and_visualize(abstract_path, concrete_path, output_format, limit)
+
+    try:
+        while True:
+            time.sleep(interval)
+            current_mtimes = get_mtimes()
+            if current_mtimes != last_mtimes:
+                print("\nChange detected, regenerating...")
+                clear_grammar_cache()
+                generate_and_visualize(abstract_path, concrete_path, output_format, limit)
+                last_mtimes = current_mtimes
+    except KeyboardInterrupt:
+        print("\nStopped watching.")
 
 def export_grammar_json(input_path, output_path):
     grammar = parse_grammar(input_path)

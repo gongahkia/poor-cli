@@ -1,9 +1,15 @@
 # src/gf_lib.py
 
 import re
+import os
 import json
 import random
+import hashlib
 import unicodedata
+from pathlib import Path
+
+# Grammar cache for incremental parsing
+_grammar_cache = {}  # file_path -> (mtime, hash, grammar)
 
 class Type:
     """Base class for grammar types."""
@@ -131,8 +137,45 @@ def normalize_unicode(text, form='NFC'):
     return unicodedata.normalize(form, text)
 
 
-def parse_grammar(file_path):
-    """Parses a .gf file and returns either an AbstractGrammar or a ConcreteGrammar."""
+def _get_file_hash(content):
+    """Calculate hash of file content for change detection."""
+    return hashlib.md5(content.encode('utf-8')).hexdigest()
+
+
+def _is_cache_valid(file_path):
+    """Check if cached grammar is still valid."""
+    if file_path not in _grammar_cache:
+        return False
+    cached_mtime, cached_hash, _ = _grammar_cache[file_path]
+    try:
+        current_mtime = os.path.getmtime(file_path)
+        if current_mtime != cached_mtime:
+            return False
+        return True
+    except OSError:
+        return False
+
+
+def clear_grammar_cache(file_path=None):
+    """Clear grammar cache. If file_path provided, only clear that entry."""
+    global _grammar_cache
+    if file_path:
+        _grammar_cache.pop(file_path, None)
+    else:
+        _grammar_cache.clear()
+
+
+def parse_grammar(file_path, use_cache=True):
+    """
+    Parses a .gf file and returns either an AbstractGrammar or a ConcreteGrammar.
+    Uses incremental parsing with caching for performance.
+    """
+    file_path = str(Path(file_path).resolve())
+
+    # Check cache
+    if use_cache and _is_cache_valid(file_path):
+        return _grammar_cache[file_path][2]
+
     with open(file_path, 'r', encoding='utf-8') as f:
         content = normalize_unicode(f.read())
     
@@ -140,11 +183,19 @@ def parse_grammar(file_path):
     first_line = lines[0].strip()
 
     if first_line.startswith('abstract'):
-        return _parse_abstract_grammar(lines)
+        grammar = _parse_abstract_grammar(lines)
     elif first_line.startswith('concrete'):
-        return _parse_concrete_grammar(lines)
+        grammar = _parse_concrete_grammar(lines)
     else:
         raise ValueError("Invalid grammar file: must start with 'abstract' or 'concrete'")
+
+    # Cache the result
+    if use_cache:
+        mtime = os.path.getmtime(file_path)
+        file_hash = _get_file_hash(content)
+        _grammar_cache[file_path] = (mtime, file_hash, grammar)
+
+    return grammar
 
 def _parse_abstract_grammar(lines):
     grammar_name = lines[0].strip().split()[1]
