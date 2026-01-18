@@ -64,7 +64,8 @@ def main():
 
     # Sample command
     parser_sample = subparsers.add_parser('sample', help='Generate random valid sentences')
-    parser_sample.add_argument('input', help='Path to the .gf grammar file')
+    parser_sample.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
+    parser_sample.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
     parser_sample.add_argument('-n', '--num_samples', type=int, default=1,
                         help='Number of random sentences to generate (default: 1)')
 
@@ -79,7 +80,7 @@ def main():
     elif args.command == 'parse':
         reverse_parse_and_display(args.input, args.sentence)
     elif args.command == 'sample':
-        sample_and_display(args.input, args.num_samples)
+        sample_and_display(args.abstract, args.concrete, args.num_samples)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -121,18 +122,61 @@ def generate_and_visualize(abstract_path, concrete_path, output_format='png', li
     else:
         graph.render('sentence_permutations', format=output_format, cleanup=True)
         print(f"\nFlowchart saved as 'sentence_permutations.{output_format}'")
-    
 
 def calculate_and_display_stats(gf_file_path):
     grammar = parse_grammar(gf_file_path)
-    # This command also needs to be updated.
-    print("Stats command needs to be updated for the new grammar structure.")
+    
+    print(f"--- Statistics for {gf_file_path} ---")
+
+    if isinstance(grammar, AbstractGrammar):
+        print("Type: Abstract Grammar")
+        print(f"Name: {grammar.name}")
+        print(f"Categories: {len(grammar.categories)}")
+        print(f"Functions: {len(grammar.functions)}")
+    elif isinstance(grammar, ConcreteGrammar):
+        print("Type: Concrete Grammar")
+        print(f"Name: {grammar.name}")
+        print(f"Abstract Grammar: {grammar.abstract_name}")
+        print(f"Linearization Rules: {len(grammar.linearization_rules)}")
+        print(f"Lincat Rules: {len(grammar.lincat_rules)}")
+    else:
+        print("Unknown grammar type.")
+        
+    print("------------------------------------")
 
 def diff_grammars(file1_path, file2_path):
     grammar1 = parse_grammar(file1_path)
     grammar2 = parse_grammar(file2_path)
-    # This command also needs to be updated.
-    print("Diff command needs to be updated for the new grammar structure.")
+
+    print(f"--- Diffing {file1_path} and {file2_path} ---")
+
+    if type(grammar1) != type(grammar2):
+        print("Error: Cannot diff grammars of different types.")
+        return
+
+    if isinstance(grammar1, AbstractGrammar):
+        # Compare Abstract Grammars
+        cats1 = set(grammar1.categories.keys())
+        cats2 = set(grammar2.categories.keys())
+        
+        print(f"Added Categories: {cats2 - cats1}")
+        print(f"Removed Categories: {cats1 - cats2}")
+
+        funcs1 = set(grammar1.functions.keys())
+        funcs2 = set(grammar2.functions.keys())
+
+        print(f"Added Functions: {funcs2 - funcs1}")
+        print(f"Removed Functions: {funcs1 - funcs2}")
+
+    elif isinstance(grammar1, ConcreteGrammar):
+        # Compare Concrete Grammars
+        rules1 = set(grammar1.linearization_rules.keys())
+        rules2 = set(grammar2.linearization_rules.keys())
+
+        print(f"Added Linearization Rules: {rules2 - rules1}")
+        print(f"Removed Linearization Rules: {rules1 - rules2}")
+
+    print("------------------------------------")
 
 def reverse_parse_and_display(gf_file_path, sentence):
     concrete_grammar = parse_grammar(gf_file_path)
@@ -150,10 +194,23 @@ def reverse_parse_and_display(gf_file_path, sentence):
     else:
         print("Sentence is not valid according to the grammar.")
 
-def sample_and_display(gf_file_path, num_samples):
-    grammar = parse_grammar(gf_file_path)
-    # This command needs to be updated.
-    print("Sample command needs to be updated for bidirectional grammars.")
+def sample_and_display(abstract_path, concrete_path, num_samples):
+    abstract_grammar = parse_grammar(abstract_path)
+    concrete_grammar = parse_grammar(concrete_path)
+
+    if not isinstance(abstract_grammar, AbstractGrammar):
+        print("Error: --abstract requires an abstract grammar file.")
+        return
+    if not isinstance(concrete_grammar, ConcreteGrammar):
+        print("Error: --concrete requires a concrete grammar file.")
+        return
+
+    print(f"--- Generating {num_samples} random sentences ---")
+    for i in range(num_samples):
+        ast = generate_random_ast(abstract_grammar)
+        sentence = linearize(ast, concrete_grammar)
+        print(f"({i+1}) {sentence}")
+    print("------------------------------------")
 
 # ----- EXECUTION CODE -----
 
