@@ -1,5 +1,7 @@
 # ----- REQUIRED IMPORTS -----
 
+import cmd
+import readline
 import re
 import argparse
 import itertools
@@ -81,6 +83,10 @@ def main():
     parser_minimize.add_argument('input', help='Path to the .gf grammar file')
     parser_minimize.add_argument('-o', '--output', help='Path to save the minimized grammar file')
 
+    # REPL command
+    parser_repl = subparsers.add_parser('repl', help='Start an interactive REPL session')
+    parser_repl.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
+    parser_repl.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
 
     args = parser.parse_args()
 
@@ -98,6 +104,8 @@ def main():
         validate_grammar_and_display(args.input)
     elif args.command == 'minimize':
         minimize_grammar_and_display(args.input, args.output)
+    elif args.command == 'repl':
+        start_repl(args.abstract, args.concrete)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -211,20 +219,67 @@ def reverse_parse_and_display(gf_file_path, sentence):
     else:
         print("Sentence is not valid according to the grammar.")
 
-def minimize_grammar_and_display(gf_file_path, output_path):
-    grammar = parse_grammar(gf_file_path)
-    minimized_grammar = minimize_grammar(grammar)
+import cmd
+import readline
+
+class Repl(cmd.Cmd):
+    """Interactive REPL for exploring grammars."""
     
-    minimized_grammar_str = minimized_grammar.to_string()
+    prompt = '> '
     
-    if output_path:
-        with open(output_path, 'w') as f:
-            f.write(minimized_grammar_str)
-        print(f"Minimized grammar saved to {output_path}")
-    else:
-        print("--- Minimized Grammar ---")
-        print(minimized_grammar_str)
-        print("-------------------------")
+    def __init__(self, abstract_grammar, concrete_grammar):
+        super().__init__()
+        self.abstract_grammar = abstract_grammar
+        self.concrete_grammar = concrete_grammar
+        self.last_ast = None
+
+    def do_ls(self, arg):
+        """List all functions in the abstract grammar."""
+        for func_name in self.abstract_grammar.functions:
+            print(func_name)
+
+    def do_info(self, arg):
+        """Show information about a function."""
+        if arg in self.abstract_grammar.functions:
+            func = self.abstract_grammar.functions[arg]
+            print(f"Function: {func.name}")
+            print(f"Type: {' -> '.join(map(str, func.arg_types))} -> {func.return_type}")
+        else:
+            print(f"Unknown function: {arg}")
+
+    def complete_info(self, text, line, begidx, endidx):
+        return [f for f in self.abstract_grammar.functions if f.startswith(text)]
+
+    def do_generate(self, arg):
+        """Generate a random AST from a category."""
+        cat = Category(arg) if arg else Category("Sentence")
+        self.last_ast = generate_random_ast(self.abstract_grammar, cat)
+        print(self.last_ast)
+
+    def complete_generate(self, text, line, begidx, endidx):
+        return [c for c in self.abstract_grammar.categories if c.startswith(text)]
+        
+    def do_linearize(self, arg):
+        """Linearize the last generated AST."""
+        if self.last_ast:
+            sentence = linearize(self.last_ast, self.concrete_grammar)
+            print(sentence)
+        else:
+            print("No AST generated yet. Use 'generate' first.")
+
+    def do_exit(self, arg):
+        """Exit the REPL."""
+        return True
+
+def start_repl(abstract_path, concrete_path):
+    abstract_grammar = parse_grammar(abstract_path)
+    concrete_grammar = parse_grammar(concrete_path)
+    
+    # Setup readline for tab completion
+    readline.set_completer_delims(' \t\n;')
+    
+    repl = Repl(abstract_grammar, concrete_grammar)
+    repl.cmdloop()
 
 
 def sample_and_display(abstract_path, concrete_path, num_samples):
