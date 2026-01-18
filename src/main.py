@@ -204,7 +204,7 @@ def validate_grammar(grammar):
                 path.pop()
                 q.pop()
 
-def generate_sentences(grammar, start_symbol='Meal'):
+def generate_sentences(grammar, start_symbol='Meal', filter_pattern=None):
 
     def expand(symbol):
         if symbol not in grammar.functions:
@@ -241,7 +241,11 @@ def generate_sentences(grammar, start_symbol='Meal'):
     
     for combination in itertools.product(*[expand(comp.strip()) for comp in meal_components]):
         sentence = f"{meal_function.name} " + " ".join([item for sublist in combination for item in sublist])
-        yield sentence
+        if filter_pattern:
+            if re.search(filter_pattern, sentence):
+                yield sentence
+        else:
+            yield sentence
 
 def create_mermaid(sentences):
     dot = Digraph(comment='Sentence Permutations')
@@ -271,6 +275,7 @@ def main():
                         help='Output format (default: png)')
     parser_generate.add_argument('-l', '--limit', type=int, default=150,
                         help='Maximum number of sentences to generate (default: 150)')
+    parser_generate.add_argument('--filter', help='Regex pattern to filter sentences')
 
     # Stats command
     parser_stats = subparsers.add_parser('stats', help='Calculate and display grammar statistics')
@@ -279,16 +284,16 @@ def main():
     args = parser.parse_args()
 
     if args.command == 'generate':
-        generate_and_visualize(args.input, args.format, args.limit)
+        generate_and_visualize(args.input, args.format, args.limit, args.filter)
     elif args.command == 'stats':
         calculate_and_display_stats(args.input)
 
-def generate_and_visualize(gf_file_path, output_format='png', limit=150):
+def generate_and_visualize(gf_file_path, output_format='png', limit=150, filter_pattern=None):
     grammar = parse_gf(gf_file_path)
     validate_grammar(grammar)
     
     sentences = []
-    sentence_generator = generate_sentences(grammar)
+    sentence_generator = generate_sentences(grammar, filter_pattern=filter_pattern)
     for i, sentence in enumerate(sentence_generator):
         if i >= limit:
             break
