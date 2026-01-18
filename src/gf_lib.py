@@ -115,6 +115,12 @@ def _parse_abstract_grammar(lines):
             
     return grammar
 
+class ConcreteRule:
+    """Represents a concrete linearization rule."""
+    def __init__(self, abstract_func_name, body_tokens):
+        self.abstract_func_name = abstract_func_name
+        self.body_tokens = body_tokens
+
 def _parse_concrete_grammar(lines):
     header_parts = lines[0].strip().split()
     grammar_name = header_parts[1]
@@ -129,13 +135,13 @@ def _parse_concrete_grammar(lines):
         parts = line.split()
         if parts[0] == 'lincat':
             cat_name = parts[1]
-            # Further processing of lincat would be needed for complex cases
             grammar.lincat_rules[cat_name] = " ".join(parts[3:])
         elif parts[0] == 'lin':
             func_name = parts[1]
-            # Simplified parsing of the rule body
-            body = " ".join(parts[3:])
-            grammar.linearization_rules[func_name] = ConcreteRule(func_name, body)
+            body_str = " ".join(parts[3:])
+            # Tokenize the body by the '++' operator
+            body_tokens = [t.strip() for t in body_str.split('++')]
+            grammar.linearization_rules[func_name] = ConcreteRule(func_name, body_tokens)
             
     return grammar
 
@@ -201,19 +207,21 @@ def linearize(ast, concrete_grammar):
     if ast.func_name in concrete_grammar.linearization_rules:
         rule = concrete_grammar.linearization_rules[ast.func_name]
         
-        # This is a very simplified placeholder for variable substitution.
-        # A real implementation would need to parse the rule body and substitute children's
-        # linearizations correctly.
+        result = []
+        child_index = 0
+        for token in rule.body_tokens:
+            if token in [f.name for f in ast.children]:
+                # This is a simplification. It assumes token directly maps to a child's func_name
+                # A proper implementation would need to handle variables like 'x', 'y'
+                result.append(linearize(ast.children[child_index], concrete_grammar))
+                child_index += 1
+            else:
+                # The token is a literal string
+                result.append(token.strip('"'))
         
-        # For now, let's assume rules are simple concatenations of children's linearizations
+        return " ".join(result)
         
-        linearized_children = [linearize(child, concrete_grammar) for child in ast.children]
-        
-        # Placeholder logic: just join the linearized children
-        # This will not work for most GF grammars but is a start.
-        return " ".join(linearized_children)
-        
-    # If there is no rule, it might be a literal.
+    # If there is no rule, it might be a literal from the abstract syntax.
     return ast.func_name
 
 def string_to_ast(sentence, concrete_grammar, abstract_grammar):
