@@ -1,4 +1,3 @@
-Add exhaustive sentence generation up to a specified depth limit
 Add grammar merge command to combine two abstract grammars
 Add sentence ambiguity detection to check if sentences parse multiple ways
 Add export to LaTeX/HTML documentation format
