@@ -71,20 +71,36 @@ def _parse_abstract_grammar(lines):
             
     return grammar
 
-def generate_random_ast(grammar, category='Sentence'):
-    """Generates a random AST from an abstract grammar."""
-    
-    # Find functions that can produce the given category
-    candidate_funcs = [f for f in grammar.functions.values() if f.return_type == category]
-    
-    if not candidate_funcs:
-        # This is a simplification. A real implementation might need to handle this differently.
-        return AST(category) 
+def validate_grammar(grammar):
+    """
+    Performs validation checks on a grammar, starting with cycle detection for abstract grammars.
+    Returns a list of validation warnings.
+    """
+    warnings = []
+    if isinstance(grammar, AbstractGrammar):
+        for func_name in grammar.functions:
+            path = [func_name]
+            
+            # This is a simplified cycle detection and may not cover all complex cases.
+            q = [iter(grammar.functions[func_name].arg_types)]
+            
+            while q:
+                try:
+                    child_cat = next(q[-1])
+                    
+                    # Find functions that produce this category
+                    producing_funcs = [f.name for f in grammar.functions.values() if f.return_type == child_cat]
+                    
+                    for p_func in producing_funcs:
+                        if p_func in path:
+                            warnings.append(f"Cycle detected: {' -> '.join(path)} -> {p_func}")
+                            continue
+                        
+                        path.append(p_func)
+                        q.append(iter(grammar.functions[p_func].arg_types))
 
-    # Choose a random function
-    chosen_func = random.choice(candidate_funcs)
-    
-    # Recursively generate children
-    children = [generate_random_ast(grammar, arg_type) for arg_type in chosen_func.arg_types]
-    
-    return AST(chosen_func.name, children)
+                except StopIteration:
+                    path.pop()
+                    q.pop()
+                    
+    return warnings

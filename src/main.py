@@ -69,6 +69,10 @@ def main():
     parser_sample.add_argument('-n', '--num_samples', type=int, default=1,
                         help='Number of random sentences to generate (default: 1)')
 
+    # Validate command
+    parser_validate = subparsers.add_parser('validate', help='Validate a grammar file')
+    parser_validate.add_argument('input', help='Path to the .gf grammar file')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -81,6 +85,8 @@ def main():
         reverse_parse_and_display(args.input, args.sentence)
     elif args.command == 'sample':
         sample_and_display(args.abstract, args.concrete, args.num_samples)
+    elif args.command == 'validate':
+        validate_grammar_and_display(args.input)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -194,23 +200,18 @@ def reverse_parse_and_display(gf_file_path, sentence):
     else:
         print("Sentence is not valid according to the grammar.")
 
-def sample_and_display(abstract_path, concrete_path, num_samples):
-    abstract_grammar = parse_grammar(abstract_path)
-    concrete_grammar = parse_grammar(concrete_path)
+def validate_grammar_and_display(gf_file_path):
+    grammar = parse_grammar(gf_file_path)
+    warnings = validate_grammar(grammar)
+    
+    if warnings:
+        print("--- Validation Warnings ---")
+        for warning in warnings:
+            print(warning)
+        print("---------------------------")
+    else:
+        print("Grammar validation successful: No issues found.")
 
-    if not isinstance(abstract_grammar, AbstractGrammar):
-        print("Error: --abstract requires an abstract grammar file.")
-        return
-    if not isinstance(concrete_grammar, ConcreteGrammar):
-        print("Error: --concrete requires a concrete grammar file.")
-        return
-
-    print(f"--- Generating {num_samples} random sentences ---")
-    for i in range(num_samples):
-        ast = generate_random_ast(abstract_grammar)
-        sentence = linearize(ast, concrete_grammar)
-        print(f"({i+1}) {sentence}")
-    print("------------------------------------")
 
 # ----- EXECUTION CODE -----
 
