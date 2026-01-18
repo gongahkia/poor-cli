@@ -1,2 +1,10 @@
-Seperate gf_lib.py and main.py into further smaller files if it makes sense to do so 
-Brainstorm additional functionality that could make Seuss useful for practitioners and write it to this todo.txt document, each task/feature as an additional line in this document
+Add exhaustive sentence generation up to a specified depth limit
+Add grammar merge command to combine two abstract grammars
+Add sentence ambiguity detection to check if sentences parse multiple ways
+Add export to LaTeX/HTML documentation format
+Add import from EBNF/BNF grammar notation
+Add grammar linting with common issue detection (unused categories, unreachable rules)
+Add category dependency graph visualization
+Add test suite auto-generation from grammar
+Add multi-concrete parallel generation for side-by-side multilingual output
+Add interactive web UI for browser-based grammar exploration
