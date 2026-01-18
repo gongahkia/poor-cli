@@ -1,1 +1,0 @@
-Create subgraph extraction to visualize only a specific portion of a large grammar
