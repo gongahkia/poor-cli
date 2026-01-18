@@ -1,5 +1,6 @@
 # ----- REQUIRED IMPORTS -----
 
+import os
 import cmd
 import readline
 import re
@@ -94,6 +95,17 @@ def main():
     parser_coverage.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
     parser_coverage.add_argument('sentences_file', help='Path to a file with test sentences')
 
+    # Batch command
+    parser_batch = subparsers.add_parser('batch', help='Batch process a directory of .gf files')
+    parser_batch.add_argument('input_dir', help='Path to the input directory')
+    parser_batch.add_argument('output_dir', help='Path to the output directory')
+    parser_batch.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
+    parser_batch.add_argument('-f', '--format', default='png',
+                        choices=['png', 'pdf', 'svg', 'ascii'],
+                        help='Output format (default: png)')
+    parser_batch.add_argument('-l', '--limit', type=int, default=150,
+                        help='Maximum number of sentences to generate (default: 150)')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -114,6 +126,8 @@ def main():
         start_repl(args.abstract, args.concrete)
     elif args.command == 'coverage':
         analyze_coverage_and_display(args.abstract, args.concrete, args.sentences_file)
+    elif args.command == 'batch':
+        batch_visualize(args.input_dir, args.output_dir, args.abstract, args.format, args.limit)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -279,39 +293,46 @@ class Repl(cmd.Cmd):
         """Exit the REPL."""
         return True
 
-def analyze_coverage_and_display(abstract_path, concrete_path, sentences_file):
-    abstract_grammar = parse_grammar(abstract_path)
-    concrete_grammar = parse_grammar(concrete_path)
+import os
 
-    with open(sentences_file, 'r') as f:
-        sentences = f.read().splitlines()
+def batch_visualize(input_dir, output_dir, abstract_path, output_format, limit):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    all_rules = set(abstract_grammar.functions.keys())
-    used_rules = set()
-
-    for sentence in sentences:
-        ast, rules = string_to_ast(sentence, concrete_grammar, abstract_grammar)
-        if ast:
-            used_rules.update(rules)
-
-    coverage = len(used_rules) / len(all_rules) * 100 if all_rules else 0
-    unused_rules = all_rules - used_rules
-
-    print("--- Grammar Coverage Analysis ---")
-    print(f"Total Rules: {len(all_rules)}")
-    print(f"Used Rules: {len(used_rules)}")
-    print(f"Coverage: {coverage:.2f}%")
-    
-    print("\nUsed Rules:")
-    for rule in sorted(list(used_rules)):
-        print(f"- {rule}")
-        
-    if unused_rules:
-        print("\nUnused Rules:")
-        for rule in sorted(list(unused_rules)):
-            print(f"- {rule}")
+    for filename in os.listdir(input_dir):
+        if filename.endswith(".gf"):
+            concrete_path = os.path.join(input_dir, filename)
             
-    print("-------------------------------")
+            # To avoid saving files with a generic name, we can adapt the
+            # generate_and_visualize function or create a new helper.
+            # For now, let's just call it and accept it will overwrite the output file.
+            
+            print(f"--- Processing {filename} ---")
+            
+            # We need to adjust generate_and_visualize to accept an output path
+            # Let's assume for now it saves based on the concrete grammar name
+            
+            output_filename = os.path.splitext(filename)[0] + f".{output_format}"
+            output_filepath = os.path.join(output_dir, output_filename)
+            
+            # This is a conceptual change, as generate_and_visualize doesn't
+            # currently support specifying an output path.
+            # We will simulate the behavior here.
+            
+            abstract_grammar = parse_grammar(abstract_path)
+            concrete_grammar = parse_grammar(concrete_path)
+            
+            sentences = []
+            for _ in range(limit):
+                ast = generate_random_ast(abstract_grammar, Category("Sentence"))
+                sentence = linearize(ast, concrete_grammar)
+                sentences.append(sentence)
+
+            graph = create_graph(sentences)
+            graph.render(os.path.join(output_dir, os.path.splitext(filename)[0]), format=output_format, cleanup=True)
+            
+            print(f"Saved visualization to {output_filepath}")
+            print("--------------------------")
 
 
 def sample_and_display(abstract_path, concrete_path, num_samples):
