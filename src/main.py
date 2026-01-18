@@ -22,7 +22,8 @@ from gf_lib import (
     validate_grammar,
     deduplicate_sentences,
     calculate_complexity,
-    extract_subgraph
+    extract_subgraph,
+    merge_grammars
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -158,6 +159,13 @@ def main():
     parser_exhaust.add_argument('-d', '--depth', type=int, default=5, help='Maximum derivation depth (default: 5)')
     parser_exhaust.add_argument('--deduplicate', action='store_true', help='Remove duplicate sentences')
 
+    # Merge command
+    parser_merge = subparsers.add_parser('merge', help='Merge two abstract grammars')
+    parser_merge.add_argument('grammar1', help='Path to first abstract .gf grammar file')
+    parser_merge.add_argument('grammar2', help='Path to second abstract .gf grammar file')
+    parser_merge.add_argument('-n', '--name', help='Name for merged grammar')
+    parser_merge.add_argument('-o', '--output', help='Path to save merged grammar file')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -192,6 +200,31 @@ def main():
         extract_and_display_subgraph(args.input, args.category, args.output)
     elif args.command == 'exhaust':
         exhaust_and_display(args.abstract, args.concrete, args.depth, args.deduplicate)
+    elif args.command == 'merge':
+        merge_and_display(args.grammar1, args.grammar2, args.name, args.output)
+
+
+def merge_and_display(grammar1_path, grammar2_path, name, output_path):
+    grammar1 = parse_grammar(grammar1_path)
+    grammar2 = parse_grammar(grammar2_path)
+
+    if not isinstance(grammar1, AbstractGrammar) or not isinstance(grammar2, AbstractGrammar):
+        print("Error: Both inputs must be abstract grammar files.")
+        return
+
+    merged = merge_grammars(grammar1, grammar2, name)
+    print(f"--- Merged Grammar ---")
+    print(f"Name: {merged.name}")
+    print(f"Categories: {len(merged.categories)}")
+    print(f"Functions: {len(merged.functions)}")
+    if output_path:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(merged.to_string())
+        print(f"Saved to {output_path}")
+    else:
+        print(merged.to_string())
+    print("----------------------")
+
 
 def exhaust_and_display(abstract_path, concrete_path, max_depth, deduplicate):
     abstract_grammar = parse_grammar(abstract_path)

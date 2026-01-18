@@ -119,6 +119,41 @@ def extract_subgraph(grammar, start_category):
     return subgraph
 
 
+def merge_grammars(grammar1, grammar2, name=None):
+    """
+    Merge two abstract grammars into one.
+    Categories and functions from both grammars are combined.
+    Conflicting function names are prefixed with grammar name.
+    """
+    if not isinstance(grammar1, AbstractGrammar) or not isinstance(grammar2, AbstractGrammar):
+        raise ValueError("Both grammars must be abstract grammars")
+
+    merged_name = name or f"{grammar1.name}_{grammar2.name}_merged"
+    merged = AbstractGrammar(merged_name)
+
+    for cat_name, cat in grammar1.categories.items():
+        merged.categories[cat_name] = cat
+    for cat_name, cat in grammar2.categories.items():
+        merged.categories[cat_name] = cat
+
+    for func_name, func in grammar1.functions.items():
+        merged.functions[func_name] = func
+    for func_name, func in grammar2.functions.items():
+        if func_name in merged.functions:
+            new_name = f"{grammar2.name}_{func_name}"
+            from .grammar import AbstractFunction
+            merged.functions[new_name] = AbstractFunction(new_name, func.arg_types, func.return_type)
+        else:
+            merged.functions[func_name] = func
+
+    for func_name, constraint in grammar1.constraints.items():
+        merged.constraints[func_name] = constraint
+    for func_name, constraint in grammar2.constraints.items():
+        merged.constraints[func_name] = constraint
+
+    return merged
+
+
 def calculate_complexity(grammar):
     """
     Calculate grammar complexity metrics.
