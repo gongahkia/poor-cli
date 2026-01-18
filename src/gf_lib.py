@@ -3,6 +3,7 @@
 import re
 import json
 import random
+import unicodedata
 
 class Type:
     """Base class for grammar types."""
@@ -125,10 +126,15 @@ class AbstractFunction:
 
 
 
+def normalize_unicode(text, form='NFC'):
+    """Normalize Unicode text to specified form (NFC, NFD, NFKC, NFKD)."""
+    return unicodedata.normalize(form, text)
+
+
 def parse_grammar(file_path):
     """Parses a .gf file and returns either an AbstractGrammar or a ConcreteGrammar."""
-    with open(file_path, 'r') as f:
-        content = f.read()
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = normalize_unicode(f.read())
     
     lines = content.splitlines()
     first_line = lines[0].strip()
@@ -444,14 +450,14 @@ def deduplicate_sentences(sentences, normalize=True):
     """
     Remove duplicate sentences from a list.
     If normalize=True, also removes semantically equivalent sentences
-    by normalizing whitespace and case.
+    by normalizing whitespace, case, and Unicode.
     """
     seen = set()
     unique = []
     for sentence in sentences:
         key = sentence
         if normalize:
-            key = ' '.join(sentence.lower().split())
+            key = normalize_unicode(' '.join(sentence.lower().split()))
         if key not in seen:
             seen.add(key)
             unique.append(sentence)

@@ -24,9 +24,20 @@ from gf_lib import (
 
 # ----- HELPER FUNCTIONS -----
 
+def is_rtl_text(text):
+    """Detect if text contains RTL characters (Arabic, Hebrew, etc.)."""
+    import unicodedata
+    for char in text:
+        if unicodedata.bidirectional(char) in ('R', 'AL', 'AN'):
+            return True
+    return False
+
 def create_graph(sentences):
     dot = Digraph(comment='Sentence Permutations')
-    dot.attr(rankdir='LR')
+    # Detect RTL and adjust layout
+    has_rtl = any(is_rtl_text(s) for s in sentences)
+    dot.attr(rankdir='RL' if has_rtl else 'LR')
+    dot.attr('node', fontname='Noto Sans')  # Unicode-friendly font
     for i, sentence in enumerate(sentences):
         words = sentence.split()
         for j, word in enumerate(words):
