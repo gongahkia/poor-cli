@@ -18,7 +18,8 @@ from gf_lib import (
     ConcreteGrammar,
     Category,
     generate_random_ast,
-    validate_grammar
+    validate_grammar,
+    deduplicate_sentences
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -53,6 +54,7 @@ def main():
     parser_generate.add_argument('-l', '--limit', type=int, default=150,
                         help='Maximum number of sentences to generate (default: 150)')
     parser_generate.add_argument('--filter', help='Regex pattern to filter sentences')
+    parser_generate.add_argument('--deduplicate', action='store_true', help='Remove duplicate sentences')
 
     # Stats command
     parser_stats = subparsers.add_parser('stats', help='Calculate and display grammar statistics')
@@ -120,7 +122,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == 'generate':
-        generate_and_visualize(args.abstract, args.concrete, args.format, args.limit, args.filter)
+        generate_and_visualize(args.abstract, args.concrete, args.format, args.limit, args.filter, args.deduplicate)
     elif args.command == 'stats':
         calculate_and_display_stats(args.input)
     elif args.command == 'diff':
@@ -154,7 +156,7 @@ def export_grammar_json(input_path, output_path):
     else:
         print(json_output)
 
-def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
+def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None, deduplicate=False):
     abstract_grammar = parse_grammar(abstract_path)
     concrete_grammar = parse_grammar(concrete_path)
 
@@ -164,7 +166,7 @@ def generate_and_visualize(abstract_path, concrete_path, output_format='png', li
     if not isinstance(concrete_grammar, ConcreteGrammar):
         print("Error: --concrete requires a concrete grammar file.")
         return
-        
+
     sentences = []
     for _ in range(limit):
         ast = generate_random_ast(abstract_grammar, Category("Sentence"))
@@ -175,7 +177,10 @@ def generate_and_visualize(abstract_path, concrete_path, output_format='png', li
         else:
             sentences.append(sentence)
 
-    print(f"Generated sentences (limited to {limit}):")
+    if deduplicate:
+        sentences = deduplicate_sentences(sentences)
+
+    print(f"Generated {len(sentences)} sentences:")
     for sentence in sentences:
         print(sentence)
 

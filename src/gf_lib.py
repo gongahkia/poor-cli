@@ -438,3 +438,21 @@ def generate_random_ast(grammar, category, context=None, max_depth=20):
         children.append(child)
 
     return AST(func.name, children)
+
+
+def deduplicate_sentences(sentences, normalize=True):
+    """
+    Remove duplicate sentences from a list.
+    If normalize=True, also removes semantically equivalent sentences
+    by normalizing whitespace and case.
+    """
+    seen = set()
+    unique = []
+    for sentence in sentences:
+        key = sentence
+        if normalize:
+            key = ' '.join(sentence.lower().split())
+        if key not in seen:
+            seen.add(key)
+            unique.append(sentence)
+    return unique

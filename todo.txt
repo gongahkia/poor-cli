@@ -1,4 +1,3 @@
-Implement grammar serialization to export parsed grammars as JSON for external tool integration
 Add sentence deduplication to remove semantically equivalent outputs from generation
 Support Unicode and multilingual characters properly in both parsing and visualization
 Implement incremental parsing to update visualizations when grammar files change
