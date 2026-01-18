@@ -76,6 +76,12 @@ def main():
     parser_validate = subparsers.add_parser('validate', help='Validate a grammar file')
     parser_validate.add_argument('input', help='Path to the .gf grammar file')
 
+    # Minimize command
+    parser_minimize = subparsers.add_parser('minimize', help='Minimize a grammar file')
+    parser_minimize.add_argument('input', help='Path to the .gf grammar file')
+    parser_minimize.add_argument('-o', '--output', help='Path to save the minimized grammar file')
+
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -90,6 +96,8 @@ def main():
         sample_and_display(args.abstract, args.concrete, args.num_samples)
     elif args.command == 'validate':
         validate_grammar_and_display(args.input)
+    elif args.command == 'minimize':
+        minimize_grammar_and_display(args.input, args.output)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -203,17 +211,21 @@ def reverse_parse_and_display(gf_file_path, sentence):
     else:
         print("Sentence is not valid according to the grammar.")
 
-def validate_grammar_and_display(gf_file_path):
+def minimize_grammar_and_display(gf_file_path, output_path):
     grammar = parse_grammar(gf_file_path)
-    warnings = validate_grammar(grammar)
+    minimized_grammar = minimize_grammar(grammar)
     
-    if warnings:
-        print("--- Validation Warnings ---")
-        for warning in warnings:
-            print(warning)
-        print("---------------------------")
+    minimized_grammar_str = minimized_grammar.to_string()
+    
+    if output_path:
+        with open(output_path, 'w') as f:
+            f.write(minimized_grammar_str)
+        print(f"Minimized grammar saved to {output_path}")
     else:
-        print("Grammar validation successful: No issues found.")
+        print("--- Minimized Grammar ---")
+        print(minimized_grammar_str)
+        print("-------------------------")
+
 
 def sample_and_display(abstract_path, concrete_path, num_samples):
     abstract_grammar = parse_grammar(abstract_path)

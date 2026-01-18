@@ -40,6 +40,17 @@ class AbstractGrammar:
         self.categories = {}
         self.functions = {}
 
+    def to_string(self):
+        s = f"abstract {self.name}\n\n"
+        s += "cat\n"
+        for cat_name in self.categories:
+            s += f"  {cat_name} ;\n"
+        s += "\nfun\n"
+        for func in self.functions.values():
+            args = " -> ".join(map(str, func.arg_types))
+            s += f"  {func.name} : {args} -> {func.return_type} ;\n"
+        return s
+
 class ConcreteGrammar:
     """Represents a concrete grammar."""
     def __init__(self, name, abstract_name):
@@ -235,25 +246,70 @@ def string_to_ast(sentence, concrete_grammar, abstract_grammar):
     
     return AST(func_name, children)
 
-def generate_random_ast(grammar, category):
-    """Generates a random AST from an abstract grammar."""
+def minimize_grammar(grammar):
+
+    """
+
+    Minimizes an abstract grammar by removing unreachable rules.
+
+    """
+
+    if not isinstance(grammar, AbstractGrammar):
+
+        return grammar # Minimization only supported for abstract grammars for now.
+
+
+
+    reachable_funcs = set()
+
     
-    # Find functions that can produce the given category
+
+    # Start traversal from functions that produce 'Sentence'
+
+    q = [f.name for f in grammar.functions.values() if f.return_type.name == 'Sentence']
+
     
-    if isinstance(category, ParameterizedCategory):
-        # This is a simplification. A real implementation would need a robust way
-        # to handle generic types. For now, we just look for functions that return
-        # the base of the parameterized type.
+
+    while q:
+
+        func_name = q.pop(0)
+
+        if func_name in reachable_funcs:
+
+            continue
+
+            
+
+        reachable_funcs.add(func_name)
+
         
-        candidate_funcs = [f for f in grammar.functions.values() if f.return_type.name == category.base]
-    else:
-        candidate_funcs = [f for f in grammar.functions.values() if f.return_type.name == category.name]
 
-    if not candidate_funcs:
-        return AST(category.name) 
+        func = grammar.functions[func_name]
 
-    chosen_func = random.choice(candidate_funcs)
-    
-    children = [generate_random_ast(grammar, arg_type) for arg_type in chosen_func.arg_types]
-    
-    return AST(chosen_func.name, children)
+        for arg_type in func.arg_types:
+
+            
+
+            # Find functions that produce this argument type
+
+            producing_funcs = [f.name for f in grammar.functions.values() if f.return_type.name == arg_type.name]
+
+            q.extend(producing_funcs)
+
+
+
+    # Create a new minimized grammar
+
+    minimized_grammar = AbstractGrammar(grammar.name)
+
+    minimized_grammar.categories = grammar.categories # For now, keep all categories
+
+
+
+    for func_name in reachable_funcs:
+
+        minimized_grammar.functions[func_name] = grammar.functions[func_name]
+
+        
+
+    return minimized_grammar
