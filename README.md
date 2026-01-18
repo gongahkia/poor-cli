@@ -1,4 +1,5 @@
-![](https://img.shields.io/badge/seuss_1.0-passing-green)
+[![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/1.0.0)
+[![](https://img.shields.io/badge/seuss_2.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/2.0.0)
 
 > [!IMPORTANT]  
 > If you have experience in language development *(programmatic/linguistic)*, please drop me an email or a message on LinkedIn.    
