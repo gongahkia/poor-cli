@@ -20,7 +20,8 @@ from gf_lib import (
     generate_random_ast,
     validate_grammar,
     deduplicate_sentences,
-    calculate_complexity
+    calculate_complexity,
+    extract_subgraph
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -143,6 +144,12 @@ def main():
     parser_complexity = subparsers.add_parser('complexity', help='Analyze grammar complexity')
     parser_complexity.add_argument('input', help='Path to the abstract .gf grammar file')
 
+    # Subgraph command
+    parser_subgraph = subparsers.add_parser('subgraph', help='Extract and visualize a subgraph')
+    parser_subgraph.add_argument('input', help='Path to the abstract .gf grammar file')
+    parser_subgraph.add_argument('category', help='Starting category for subgraph')
+    parser_subgraph.add_argument('-o', '--output', help='Path to save the subgraph grammar file')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -173,6 +180,21 @@ def main():
         watch_and_regenerate(args.abstract, args.concrete, args.format, args.limit, args.interval)
     elif args.command == 'complexity':
         display_complexity(args.input)
+    elif args.command == 'subgraph':
+        extract_and_display_subgraph(args.input, args.category, args.output)
+
+def extract_and_display_subgraph(input_path, category, output_path):
+    grammar = parse_grammar(input_path)
+    subgraph = extract_subgraph(grammar, category)
+    print(f"--- Subgraph from '{category}' ---")
+    print(f"Categories: {len(subgraph.categories)}")
+    print(f"Functions: {len(subgraph.functions)}")
+    if output_path:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(subgraph.to_string())
+        print(f"Saved to {output_path}")
+    else:
+        print(subgraph.to_string())
 
 def display_complexity(input_path):
     grammar = parse_grammar(input_path)

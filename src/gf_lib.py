@@ -497,6 +497,52 @@ def generate_random_ast(grammar, category, context=None, max_depth=20):
     return AST(func.name, children)
 
 
+def extract_subgraph(grammar, start_category):
+    """
+    Extract a subgraph of the grammar starting from a specific category.
+    Returns a new AbstractGrammar containing only reachable functions from that category.
+    """
+    if not isinstance(grammar, AbstractGrammar):
+        raise ValueError("Subgraph extraction only supported for abstract grammars")
+
+    subgraph = AbstractGrammar(f"{grammar.name}_{start_category}_subgraph")
+    reachable_funcs = set()
+    reachable_cats = set()
+
+    def collect_reachable(cat_name, visited=None):
+        if visited is None:
+            visited = set()
+        if cat_name in visited:
+            return
+        visited.add(cat_name)
+        reachable_cats.add(cat_name)
+
+        funcs = [f for f in grammar.functions.values()
+                 if (f.return_type.name if isinstance(f.return_type, Category) else str(f.return_type)) == cat_name]
+
+        for func in funcs:
+            reachable_funcs.add(func.name)
+            for arg_type in func.arg_types:
+                arg_name = arg_type.name if isinstance(arg_type, Category) else str(arg_type)
+                collect_reachable(arg_name, visited)
+
+    collect_reachable(start_category)
+
+    for cat_name in reachable_cats:
+        if cat_name in grammar.categories:
+            subgraph.categories[cat_name] = grammar.categories[cat_name]
+
+    for func_name in reachable_funcs:
+        if func_name in grammar.functions:
+            subgraph.functions[func_name] = grammar.functions[func_name]
+
+    for func_name in reachable_funcs:
+        if func_name in grammar.constraints:
+            subgraph.constraints[func_name] = grammar.constraints[func_name]
+
+    return subgraph
+
+
 def calculate_complexity(grammar):
     """
     Calculate grammar complexity metrics.

@@ -1,2 +1,1 @@
-Add grammar complexity scoring to estimate computational cost before running generation
 Create subgraph extraction to visualize only a specific portion of a large grammar
