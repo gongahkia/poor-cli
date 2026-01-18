@@ -18,6 +18,7 @@ from gf_lib import (
     ConcreteGrammar,
     Category,
     generate_random_ast,
+    generate_exhaustive_asts,
     validate_grammar,
     deduplicate_sentences,
     calculate_complexity,
@@ -150,6 +151,13 @@ def main():
     parser_subgraph.add_argument('category', help='Starting category for subgraph')
     parser_subgraph.add_argument('-o', '--output', help='Path to save the subgraph grammar file')
 
+    # Exhaust command
+    parser_exhaust = subparsers.add_parser('exhaust', help='Generate all sentences up to a depth limit')
+    parser_exhaust.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
+    parser_exhaust.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
+    parser_exhaust.add_argument('-d', '--depth', type=int, default=5, help='Maximum derivation depth (default: 5)')
+    parser_exhaust.add_argument('--deduplicate', action='store_true', help='Remove duplicate sentences')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -182,6 +190,32 @@ def main():
         display_complexity(args.input)
     elif args.command == 'subgraph':
         extract_and_display_subgraph(args.input, args.category, args.output)
+    elif args.command == 'exhaust':
+        exhaust_and_display(args.abstract, args.concrete, args.depth, args.deduplicate)
+
+def exhaust_and_display(abstract_path, concrete_path, max_depth, deduplicate):
+    abstract_grammar = parse_grammar(abstract_path)
+    concrete_grammar = parse_grammar(concrete_path)
+
+    if not isinstance(abstract_grammar, AbstractGrammar):
+        print("Error: --abstract requires an abstract grammar file.")
+        return
+    if not isinstance(concrete_grammar, ConcreteGrammar):
+        print("Error: --concrete requires a concrete grammar file.")
+        return
+
+    asts = generate_exhaustive_asts(abstract_grammar, Category("Sentence"), max_depth)
+    sentences = [linearize(ast, concrete_grammar) for ast in asts]
+
+    if deduplicate:
+        sentences = deduplicate_sentences(sentences)
+
+    print(f"--- Exhaustive generation (depth={max_depth}) ---")
+    print(f"Total sentences: {len(sentences)}")
+    for i, sentence in enumerate(sentences, 1):
+        print(f"({i}) {sentence}")
+    print("------------------------------------")
+
 
 def extract_and_display_subgraph(input_path, category, output_path):
     grammar = parse_grammar(input_path)

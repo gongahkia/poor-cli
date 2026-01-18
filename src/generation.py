@@ -108,6 +108,59 @@ def string_to_ast(sentence, concrete_grammar, abstract_grammar):
     return AST(func_name, children), used_rules
 
 
+def generate_exhaustive_asts(grammar, category, max_depth=5, context=None):
+    """
+    Generate ALL possible ASTs for the given category up to a specified depth.
+    Returns a list of AST objects representing all valid derivations.
+    """
+    if context is None:
+        context = {}
+
+    if max_depth <= 0:
+        return []
+
+    cat_name = category.name if isinstance(category, Category) else str(category)
+
+    producing_funcs = [
+        f for f in grammar.functions.values()
+        if (f.return_type.name if isinstance(f.return_type, Category) else str(f.return_type)) == cat_name
+    ]
+
+    valid_funcs = []
+    for func in producing_funcs:
+        if func.name in grammar.constraints:
+            if grammar.constraints[func.name].is_satisfied(context):
+                valid_funcs.append(func)
+        else:
+            valid_funcs.append(func)
+
+    if not valid_funcs:
+        return []
+
+    all_asts = []
+    for func in valid_funcs:
+        new_context = context.copy()
+        new_context[cat_name] = func.name
+
+        if not func.arg_types:
+            all_asts.append(AST(func.name, []))
+            continue
+
+        children_options = []
+        for arg_type in func.arg_types:
+            child_asts = generate_exhaustive_asts(grammar, arg_type, max_depth - 1, new_context)
+            if not child_asts:
+                break
+            children_options.append(child_asts)
+
+        if len(children_options) == len(func.arg_types):
+            import itertools
+            for combo in itertools.product(*children_options):
+                all_asts.append(AST(func.name, list(combo)))
+
+    return all_asts
+
+
 def deduplicate_sentences(sentences, normalize=True):
     """
     Remove duplicate sentences from a list.

@@ -29,6 +29,7 @@ from .analysis import (
 
 from .generation import (
     generate_random_ast,
+    generate_exhaustive_asts,
     linearize,
     string_to_ast,
     deduplicate_sentences,
@@ -60,6 +61,7 @@ __all__ = [
     'calculate_complexity',
     # Generation
     'generate_random_ast',
+    'generate_exhaustive_asts',
     'linearize',
     'string_to_ast',
     'deduplicate_sentences',
