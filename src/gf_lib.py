@@ -1,6 +1,7 @@
 # src/gf_lib.py
 
 import re
+import json
 import random
 
 class Type:
@@ -13,6 +14,8 @@ class Category(Type):
         self.name = name
     def __repr__(self):
         return self.name
+    def to_dict(self):
+        return {"type": "Category", "name": self.name}
 
 class ParameterizedCategory(Type):
     """Represents a parameterized category, e.g., List[Protein]."""
@@ -21,6 +24,8 @@ class ParameterizedCategory(Type):
         self.params = params
     def __repr__(self):
         return f"{self.base}[{', '.join(map(str, self.params))}]"
+    def to_dict(self):
+        return {"type": "ParameterizedCategory", "base": self.base, "params": [p.to_dict() for p in self.params]}
 
 class AST:
     """Represents a node in the Abstract Syntax Tree."""
@@ -32,6 +37,9 @@ class AST:
         if not self.children:
             return self.func_name
         return f"{self.func_name}({', '.join(map(str, self.children))})"
+
+    def to_dict(self):
+        return {"func_name": self.func_name, "children": [c.to_dict() for c in self.children]}
 
 class Constraint:
     """Represents a conditional constraint on function application."""
@@ -45,6 +53,9 @@ class Constraint:
             if cat in context and context[cat] not in allowed:
                 return False
         return True
+
+    def to_dict(self):
+        return {"func_name": self.func_name, "requires": self.requires}
 
 
 class AbstractGrammar:
@@ -66,6 +77,18 @@ class AbstractGrammar:
             s += f"  {func.name} : {args} -> {func.return_type} ;\n"
         return s
 
+    def to_dict(self):
+        return {
+            "grammar_type": "abstract",
+            "name": self.name,
+            "categories": list(self.categories.keys()),
+            "functions": {k: v.to_dict() for k, v in self.functions.items()},
+            "constraints": {k: v.to_dict() for k, v in self.constraints.items()}
+        }
+
+    def to_json(self, indent=2):
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+
 class ConcreteGrammar:
     """Represents a concrete grammar."""
     def __init__(self, name, abstract_name):
@@ -74,6 +97,18 @@ class ConcreteGrammar:
         self.linearization_rules = {}
         self.lincat_rules = {}
 
+    def to_dict(self):
+        return {
+            "grammar_type": "concrete",
+            "name": self.name,
+            "abstract_name": self.abstract_name,
+            "linearization_rules": {k: v.to_dict() for k, v in self.linearization_rules.items()},
+            "lincat_rules": self.lincat_rules
+        }
+
+    def to_json(self, indent=2):
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+
 class AbstractFunction:
     """Represents an abstract function signature."""
     def __init__(self, name, arg_types, return_type):
@@ -81,11 +116,13 @@ class AbstractFunction:
         self.arg_types = arg_types
         self.return_type = return_type
 
-class ConcreteRule:
-    """Represents a concrete linearization rule."""
-    def __init__(self, abstract_func_name, body):
-        self.abstract_func_name = abstract_func_name
-        self.body = body
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "arg_types": [t.to_dict() for t in self.arg_types],
+            "return_type": self.return_type.to_dict()
+        }
+
 
 
 def parse_grammar(file_path):
@@ -150,6 +187,9 @@ class ConcreteRule:
     def __init__(self, abstract_func_name, body_tokens):
         self.abstract_func_name = abstract_func_name
         self.body_tokens = body_tokens
+
+    def to_dict(self):
+        return {"abstract_func_name": self.abstract_func_name, "body_tokens": self.body_tokens}
 
 def _parse_concrete_grammar(lines):
     header_parts = lines[0].strip().split()

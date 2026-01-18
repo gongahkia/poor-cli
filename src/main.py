@@ -112,6 +112,10 @@ def main():
     parser_template.add_argument('categories', nargs='+', help='List of categories for the new grammar')
     parser_template.add_argument('-o', '--output', help='Path to save the new grammar file')
 
+    # Export command
+    parser_export = subparsers.add_parser('export', help='Export grammar as JSON')
+    parser_export.add_argument('input', help='Path to the .gf grammar file')
+    parser_export.add_argument('-o', '--output', help='Path to save the JSON file')
 
     args = parser.parse_args()
 
@@ -137,6 +141,18 @@ def main():
         batch_visualize(args.input_dir, args.output_dir, args.abstract, args.format, args.limit)
     elif args.command == 'template':
         generate_template_and_display(args.name, args.categories, args.output)
+    elif args.command == 'export':
+        export_grammar_json(args.input, args.output)
+
+def export_grammar_json(input_path, output_path):
+    grammar = parse_grammar(input_path)
+    json_output = grammar.to_json()
+    if output_path:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(json_output)
+        print(f"Grammar exported to {output_path}")
+    else:
+        print(json_output)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
