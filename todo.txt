@@ -1,18 +1,3 @@
-Implement grammar statistics command showing total permutations, rule coverage, and complexity metrics
-Add sentence filtering by providing constraint patterns to generate only matching sentences
-Support multiple output formats including SVG, PDF, and ASCII art diagram rendering
-Implement grammar diff tool to compare two .gf files and show structural differences
-Add reverse parsing to check if a given sentence matches the grammar and show its derivation path
-Create grammar sampling mode that generates random valid sentences without exhaustive enumeration
-Implement bidirectional grammar support for translating between abstract and multiple concrete syntaxes
-Add cycle detection and warning for recursive grammar rules that could cause infinite expansion
-Support parameterized categories allowing categories to take arguments like List[Protein]
-Implement grammar minimization to remove redundant or unreachable rules automatically
-Add interactive REPL mode for exploring grammar step-by-step with tab completion
-Support inline string concatenation operators for building complex concrete syntax mappings
-Implement grammar coverage analysis showing which rules are exercised by a set of test sentences
-Add batch processing mode to convert entire directories of .gf files to visualizations
-Create grammar template generator that scaffolds new domain grammars from category prompts
 Support conditional rules that only apply based on previously selected categories
 Implement grammar serialization to export parsed grammars as JSON for external tool integration
 Add sentence deduplication to remove semantically equivalent outputs from generation
