@@ -1,0 +1,2 @@
+Seperate gf_lib.py and main.py into further smaller files if it makes sense to do so 
+Brainstorm additional functionality that could make Seuss useful for practitioners and write it to this todo.txt document, each task/feature as an additional line in this document
