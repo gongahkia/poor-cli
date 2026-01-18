@@ -106,6 +106,13 @@ def main():
     parser_batch.add_argument('-l', '--limit', type=int, default=150,
                         help='Maximum number of sentences to generate (default: 150)')
 
+    # Template command
+    parser_template = subparsers.add_parser('template', help='Generate a new grammar template')
+    parser_template.add_argument('name', help='Name of the new grammar')
+    parser_template.add_argument('categories', nargs='+', help='List of categories for the new grammar')
+    parser_template.add_argument('-o', '--output', help='Path to save the new grammar file')
+
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -128,6 +135,8 @@ def main():
         analyze_coverage_and_display(args.abstract, args.concrete, args.sentences_file)
     elif args.command == 'batch':
         batch_visualize(args.input_dir, args.output_dir, args.abstract, args.format, args.limit)
+    elif args.command == 'template':
+        generate_template_and_display(args.name, args.categories, args.output)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -295,44 +304,27 @@ class Repl(cmd.Cmd):
 
 import os
 
-def batch_visualize(input_dir, output_dir, abstract_path, output_format, limit):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    for filename in os.listdir(input_dir):
-        if filename.endswith(".gf"):
-            concrete_path = os.path.join(input_dir, filename)
-            
-            # To avoid saving files with a generic name, we can adapt the
-            # generate_and_visualize function or create a new helper.
-            # For now, let's just call it and accept it will overwrite the output file.
-            
-            print(f"--- Processing {filename} ---")
-            
-            # We need to adjust generate_and_visualize to accept an output path
-            # Let's assume for now it saves based on the concrete grammar name
-            
-            output_filename = os.path.splitext(filename)[0] + f".{output_format}"
-            output_filepath = os.path.join(output_dir, output_filename)
-            
-            # This is a conceptual change, as generate_and_visualize doesn't
-            # currently support specifying an output path.
-            # We will simulate the behavior here.
-            
-            abstract_grammar = parse_grammar(abstract_path)
-            concrete_grammar = parse_grammar(concrete_path)
-            
-            sentences = []
-            for _ in range(limit):
-                ast = generate_random_ast(abstract_grammar, Category("Sentence"))
-                sentence = linearize(ast, concrete_grammar)
-                sentences.append(sentence)
-
-            graph = create_graph(sentences)
-            graph.render(os.path.join(output_dir, os.path.splitext(filename)[0]), format=output_format, cleanup=True)
-            
-            print(f"Saved visualization to {output_filepath}")
-            print("--------------------------")
+def generate_template_and_display(name, categories, output_path):
+    
+    template = f"abstract {name} =\n"
+    template += "cat\n"
+    for cat in categories:
+        template += f"  {cat} ;\n"
+    
+    template += "\nfun\n"
+    
+    # Add some example functions
+    for i, cat in enumerate(categories):
+        template += f"  Make{cat} : {cat} -> {cat} ;\n"
+    
+    if output_path:
+        with open(output_path, 'w') as f:
+            f.write(template)
+        print(f"Grammar template saved to {output_path}")
+    else:
+        print("--- Grammar Template ---")
+        print(template)
+        print("------------------------")
 
 
 def sample_and_display(abstract_path, concrete_path, num_samples):
