@@ -256,7 +256,34 @@ def create_mermaid(sentences):
                 dot.edge(prev_node_id, node_id)
     return dot
 
-def main(gf_file_path, output_format='png', limit=150):
+def main():
+    parser = argparse.ArgumentParser(
+        description='Seuss - GF grammar file visualizer',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # Generate command
+    parser_generate = subparsers.add_parser('generate', help='Generate sentences and visualize')
+    parser_generate.add_argument('input', help='Path to the .gf grammar file')
+    parser_generate.add_argument('-f', '--format', default='png',
+                        choices=['png', 'pdf', 'svg'],
+                        help='Output format (default: png)')
+    parser_generate.add_argument('-l', '--limit', type=int, default=150,
+                        help='Maximum number of sentences to generate (default: 150)')
+
+    # Stats command
+    parser_stats = subparsers.add_parser('stats', help='Calculate and display grammar statistics')
+    parser_stats.add_argument('input', help='Path to the .gf grammar file')
+
+    args = parser.parse_args()
+
+    if args.command == 'generate':
+        generate_and_visualize(args.input, args.format, args.limit)
+    elif args.command == 'stats':
+        calculate_and_display_stats(args.input)
+
+def generate_and_visualize(gf_file_path, output_format='png', limit=150):
     grammar = parse_gf(gf_file_path)
     validate_grammar(grammar)
     
@@ -275,18 +302,85 @@ def main(gf_file_path, output_format='png', limit=150):
     flowchart.render('sentence_permutations', format=output_format, cleanup=True)
     print(f"\nFlowchart saved as 'sentence_permutations.{output_format}'")
 
+def calculate_and_display_stats(gf_file_path):
+    grammar = parse_gf(gf_file_path)
+    validate_grammar(grammar)
+
+    # --- Metrics Calculation ---
+    
+    # 1. Total Permutations (using a helper function)
+    memo = {}
+    total_permutations = calculate_permutations(grammar, 'Meal', memo)
+
+    # 2. Rule Coverage
+    reachable_rules, all_rules = get_rule_coverage(grammar)
+    unreachable_rules = all_rules - reachable_rules
+    coverage_percentage = (len(reachable_rules) / len(all_rules)) * 100 if all_rules else 0
+
+    # 3. Complexity Metrics
+    total_rules = len(all_rules)
+    avg_rules_per_cat = total_rules / len(grammar.categories) if grammar.categories else 0
+    
+    # --- Displaying Statistics ---
+    
+    print("--- Grammar Statistics ---")
+    print(f"Total Possible Sentences (Permutations): {total_permutations}")
+    print("\n--- Rule Coverage ---")
+    print(f"Reachable Rules: {len(reachable_rules)}/{len(all_rules)} ({coverage_percentage:.2f}%)")
+    if-unreachable_rules:
+        print("Unreachable Rules:")
+        for rule in sorted(list(unreachable_rules)):
+            print(f"- {rule}")
+
+    print("\n--- Complexity Metrics ---")
+    print(f"Total Categories: {len(grammar.categories)}")
+    print(f"Total Rules: {total_rules}")
+    print(f"Average Rules per Category: {avg_rules_per_cat:.2f}")
+    print("------------------------")
+
+def calculate_permutations(grammar, symbol, memo):
+    if symbol in memo:
+        return memo[symbol]
+    
+    if symbol not in grammar.functions:
+        return 1
+    
+    count = 0
+    for rule in grammar.functions[symbol].rules:
+        if rule.optional:
+            # Optional rules can either be present or absent
+            count += 1 
+        
+        production_count = 1
+        for sub_symbol in rule.production:
+            # To prevent infinite recursion on cycles
+            if sub_symbol == symbol:
+                continue
+            production_count *= calculate_permutations(grammar, sub_symbol, memo)
+        count += production_count
+
+    memo[symbol] = count
+    return count
+
+def get_rule_coverage(grammar):
+    all_rules = set(grammar.functions.keys())
+    reachable_rules = set()
+    q = ['Meal'] 
+    
+    visited = set()
+    while q:
+        rule_name = q.pop(0)
+        if rule_name not in visited:
+            visited.add(rule_name)
+            reachable_rules.add(rule_name)
+            if rule_name in grammar.functions:
+                for rule in grammar.functions[rule_name].rules:
+                    for symbol in rule.production:
+                        q.append(symbol)
+                        
+    return reachable_rules, all_rules
+
 # ----- EXECUTION CODE -----
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description='Seuss - GF grammar file visualizer',
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument('input', help='Path to the .gf grammar file')
-    parser.add_argument('-f', '--format', default='png',
-                        choices=['png', 'pdf', 'svg'],
-                        help='Output format (default: png)')
-    parser.add_argument('-l', '--limit', type=int, default=150,
-                        help='Maximum number of sentences to generate (default: 150)')
-    args = parser.parse_args()
-    main(args.input, args.format, args.limit)
+    main()
