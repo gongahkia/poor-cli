@@ -12,7 +12,10 @@ from gf_lib import (
     string_to_ast,
     AST,
     AbstractGrammar,
-    ConcreteGrammar
+    ConcreteGrammar,
+    Category,
+    generate_random_ast,
+    validate_grammar
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -101,7 +104,7 @@ def generate_and_visualize(abstract_path, concrete_path, output_format='png', li
         
     sentences = []
     for _ in range(limit):
-        ast = generate_random_ast(abstract_grammar)
+        ast = generate_random_ast(abstract_grammar, Category("Sentence"))
         sentence = linearize(ast, concrete_grammar)
         if filter_pattern:
             if re.search(filter_pattern, sentence):
@@ -212,6 +215,23 @@ def validate_grammar_and_display(gf_file_path):
     else:
         print("Grammar validation successful: No issues found.")
 
+def sample_and_display(abstract_path, concrete_path, num_samples):
+    abstract_grammar = parse_grammar(abstract_path)
+    concrete_grammar = parse_grammar(concrete_path)
+
+    if not isinstance(abstract_grammar, AbstractGrammar):
+        print("Error: --abstract requires an abstract grammar file.")
+        return
+    if not isinstance(concrete_grammar, ConcreteGrammar):
+        print("Error: --concrete requires a concrete grammar file.")
+        return
+
+    print(f"--- Generating {num_samples} random sentences ---")
+    for i in range(num_samples):
+        ast = generate_random_ast(abstract_grammar, Category("Sentence"))
+        sentence = linearize(ast, concrete_grammar)
+        print(f"({i+1}) {sentence}")
+    print("------------------------------------")
 
 # ----- EXECUTION CODE -----
 
