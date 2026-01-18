@@ -88,6 +88,12 @@ def main():
     parser_repl.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
     parser_repl.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
 
+    # Coverage command
+    parser_coverage = subparsers.add_parser('coverage', help='Analyze grammar coverage')
+    parser_coverage.add_argument('--abstract', required=True, help='Path to the abstract .gf grammar file')
+    parser_coverage.add_argument('--concrete', required=True, help='Path to the concrete .gf grammar file')
+    parser_coverage.add_argument('sentences_file', help='Path to a file with test sentences')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -106,6 +112,8 @@ def main():
         minimize_grammar_and_display(args.input, args.output)
     elif args.command == 'repl':
         start_repl(args.abstract, args.concrete)
+    elif args.command == 'coverage':
+        analyze_coverage_and_display(args.abstract, args.concrete, args.sentences_file)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None):
     abstract_grammar = parse_grammar(abstract_path)
@@ -271,15 +279,39 @@ class Repl(cmd.Cmd):
         """Exit the REPL."""
         return True
 
-def start_repl(abstract_path, concrete_path):
+def analyze_coverage_and_display(abstract_path, concrete_path, sentences_file):
     abstract_grammar = parse_grammar(abstract_path)
     concrete_grammar = parse_grammar(concrete_path)
+
+    with open(sentences_file, 'r') as f:
+        sentences = f.read().splitlines()
+
+    all_rules = set(abstract_grammar.functions.keys())
+    used_rules = set()
+
+    for sentence in sentences:
+        ast, rules = string_to_ast(sentence, concrete_grammar, abstract_grammar)
+        if ast:
+            used_rules.update(rules)
+
+    coverage = len(used_rules) / len(all_rules) * 100 if all_rules else 0
+    unused_rules = all_rules - used_rules
+
+    print("--- Grammar Coverage Analysis ---")
+    print(f"Total Rules: {len(all_rules)}")
+    print(f"Used Rules: {len(used_rules)}")
+    print(f"Coverage: {coverage:.2f}%")
     
-    # Setup readline for tab completion
-    readline.set_completer_delims(' \t\n;')
-    
-    repl = Repl(abstract_grammar, concrete_grammar)
-    repl.cmdloop()
+    print("\nUsed Rules:")
+    for rule in sorted(list(used_rules)):
+        print(f"- {rule}")
+        
+    if unused_rules:
+        print("\nUnused Rules:")
+        for rule in sorted(list(unused_rules)):
+            print(f"- {rule}")
+            
+    print("-------------------------------")
 
 
 def sample_and_display(abstract_path, concrete_path, num_samples):

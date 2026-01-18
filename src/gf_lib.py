@@ -225,34 +225,32 @@ def linearize(ast, concrete_grammar):
     return ast.func_name
 
 def string_to_ast(sentence, concrete_grammar, abstract_grammar):
-    """Parses a string into an AST. This is a placeholder for a real parsing algorithm."""
+    """
+    Parses a string into an AST and returns the AST and a set of used rule names.
+    This is a placeholder for a real parsing algorithm.
+    """
     
     words = sentence.split()
     
-    # This is a highly simplified and incomplete stub. A real implementation
-    # would need a proper parsing algorithm (e.g., Earley, CYK) to handle ambiguity,
-    # and to correctly match linearization rules.
+    # This is a highly simplified and incomplete stub.
+    # A real implementation would need a proper parsing algorithm.
     
     def find_func_for_word(word):
-        # Reverse lookup: find which function could produce this word.
-        # This is non-trivial. For now, assume a direct match.
         for func, rule in concrete_grammar.linearization_rules.items():
-            # This is a massive oversimplification.
-            if word in rule.body:
+            if word in " ".join(rule.body_tokens): # Simplification
                 return func
         return None
 
-    # A very basic attempt to build an AST
-    # This will only work for the simplest of grammars.
-    
     func_name = find_func_for_word(words[0])
     if not func_name:
-        return None
+        return None, set()
         
-    # This part is also a stub. A real parser would recursively build the tree.
     children = [AST(w) for w in words[1:]]
     
-    return AST(func_name, children)
+    # For now, we'll just claim the top-level function was used.
+    used_rules = {func_name}
+    
+    return AST(func_name, children), used_rules
 
 def minimize_grammar(grammar):
 
