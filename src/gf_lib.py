@@ -33,12 +33,27 @@ class AST:
             return self.func_name
         return f"{self.func_name}({', '.join(map(str, self.children))})"
 
+class Constraint:
+    """Represents a conditional constraint on function application."""
+    def __init__(self, func_name, requires):
+        self.func_name = func_name
+        self.requires = requires  # dict of {category_name: [allowed_values]}
+
+    def is_satisfied(self, context):
+        """Check if constraint is satisfied given current context."""
+        for cat, allowed in self.requires.items():
+            if cat in context and context[cat] not in allowed:
+                return False
+        return True
+
+
 class AbstractGrammar:
     """Represents an abstract grammar."""
     def __init__(self, name):
         self.name = name
         self.categories = {}
         self.functions = {}
+        self.constraints = {}  # func_name -> Constraint
 
     def to_string(self):
         s = f"abstract {self.name}\n\n"
@@ -91,28 +106,43 @@ def parse_grammar(file_path):
 def _parse_abstract_grammar(lines):
     grammar_name = lines[0].strip().split()[1]
     grammar = AbstractGrammar(grammar_name)
+    in_constraints = False
 
     for line in lines[1:]:
         line = line.strip()
         if not line or line.startswith('--'):
             continue
-        
+
         parts = line.split()
         if parts[0] == 'cat':
+            in_constraints = False
             for cat_name in parts[1:]:
                 if cat_name != ';':
                     grammar.categories[cat_name] = {}
         elif parts[0] == 'fun':
+            in_constraints = False
             name = parts[1]
             signature = " ".join(parts[3:])
-            
+
             arg_types_str, return_type_str = signature.rsplit('->', 1)
-            
+
             arg_types = _parse_type_list(arg_types_str.strip())
             return_type = _parse_type(return_type_str.strip())
 
             grammar.functions[name] = AbstractFunction(name, arg_types, return_type)
-            
+        elif parts[0] == 'constraints':
+            in_constraints = True
+        elif in_constraints and 'requires' in line:
+            # Parse: FuncName requires Category=Value ;
+            match = re.match(r'(\w+)\s+requires\s+(\w+)\s*=\s*(\w+)', line)
+            if match:
+                func_name, cat_name, value = match.groups()
+                if func_name not in grammar.constraints:
+                    grammar.constraints[func_name] = Constraint(func_name, {})
+                if cat_name not in grammar.constraints[func_name].requires:
+                    grammar.constraints[func_name].requires[cat_name] = []
+                grammar.constraints[func_name].requires[cat_name].append(value)
+
     return grammar
 
 class ConcreteRule:
@@ -319,3 +349,52 @@ def minimize_grammar(grammar):
         
 
     return minimized_grammar
+
+
+def generate_random_ast(grammar, category, context=None, max_depth=20):
+    """
+    Generate a random AST for the given category.
+    Respects constraints based on previously selected categories.
+    """
+    if context is None:
+        context = {}
+
+    if max_depth <= 0:
+        return None
+
+    cat_name = category.name if isinstance(category, Category) else str(category)
+
+    # Find all functions that produce this category
+    producing_funcs = [
+        f for f in grammar.functions.values()
+        if (f.return_type.name if isinstance(f.return_type, Category) else str(f.return_type)) == cat_name
+    ]
+
+    # Filter by constraints
+    valid_funcs = []
+    for func in producing_funcs:
+        if func.name in grammar.constraints:
+            if grammar.constraints[func.name].is_satisfied(context):
+                valid_funcs.append(func)
+        else:
+            valid_funcs.append(func)
+
+    if not valid_funcs:
+        return None
+
+    # Pick a random function
+    func = random.choice(valid_funcs)
+
+    # Update context with this selection
+    new_context = context.copy()
+    new_context[cat_name] = func.name
+
+    # Recursively generate children
+    children = []
+    for arg_type in func.arg_types:
+        child = generate_random_ast(grammar, arg_type, new_context, max_depth - 1)
+        if child is None:
+            return None
+        children.append(child)
+
+    return AST(func.name, children)
