@@ -291,6 +291,12 @@ def main():
     parser_parse.add_argument('input', help='Path to the .gf grammar file')
     parser_parse.add_argument('sentence', help='The sentence to parse')
 
+    # Sample command
+    parser_sample = subparsers.add_parser('sample', help='Generate random valid sentences')
+    parser_sample.add_argument('input', help='Path to the .gf grammar file')
+    parser_sample.add_argument('-n', '--num_samples', type=int, default=1,
+                        help='Number of random sentences to generate (default: 1)')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -301,6 +307,8 @@ def main():
         diff_grammars(args.file1, args.file2)
     elif args.command == 'parse':
         reverse_parse_and_display(args.input, args.sentence)
+    elif args.command == 'sample':
+        sample_and_display(args.input, args.num_samples)
 
 def generate_and_visualize(gf_file_path, output_format='png', limit=150, filter_pattern=None):
     grammar = parse_gf(gf_file_path)
@@ -401,16 +409,47 @@ def diff_grammars(file1_path, file2_path):
             
     print("\n------------------------")
 
-def reverse_parse_and_display(gf_file_path, sentence):
+def sample_and_display(gf_file_path, num_samples):
     grammar = parse_gf(gf_file_path)
-    derivation = reverse_parse(grammar, sentence.split())
+    validate_grammar(grammar)
     
-    if derivation:
-        print("Sentence is valid. Derivation path:")
-        for rule in derivation:
-            print(rule)
-    else:
-        print("Sentence is not valid according to the grammar.")
+    print(f"--- Generating {num_samples} random sentences ---")
+    for i in range(num_samples):
+        sentence = generate_random_sentence(grammar)
+        print(f"({i+1}) {sentence}")
+    print("------------------------------------")
+
+def generate_random_sentence(grammar, start_symbol='Meal'):
+
+    def expand_random(symbol):
+        if symbol not in grammar.functions:
+            return [symbol]
+
+        rules = grammar.functions[symbol].rules
+        
+        if len(rules) == 1 and rules[0].optional and random.random() < 0.5:
+            return []
+        
+        productions = [rule.production for rule in rules]
+        weights = [rule.weight for rule in rules]
+        chosen_production = random.choices(productions, weights=weights, k=1)[0]
+        
+        result = []
+        for sub_symbol in chosen_production:
+            result.extend(expand_random(sub_symbol))
+        return result
+
+    meal_function = next(func for func in grammar.functions.values() if func.rules[-1].production[-1].strip() == start_symbol)
+    
+    # This assumes the meal composition is defined in the rules of the 'Meal' function
+    # and we randomly pick one of these rules to start.
+    initial_rule = random.choice(meal_function.rules)
+    
+    sentence_parts = [meal_function.name]
+    for symbol in initial_rule.production:
+        sentence_parts.extend(expand_random(symbol.strip()))
+        
+    return " ".join(sentence_parts)
 
 def reverse_parse(grammar, words, start_symbol='Meal'):
     
