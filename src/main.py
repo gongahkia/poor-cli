@@ -281,12 +281,19 @@ def main():
     parser_stats = subparsers.add_parser('stats', help='Calculate and display grammar statistics')
     parser_stats.add_argument('input', help='Path to the .gf grammar file')
 
+    # Diff command
+    parser_diff = subparsers.add_parser('diff', help='Compare two .gf files and show structural differences')
+    parser_diff.add_argument('file1', help='Path to the first .gf grammar file')
+    parser_diff.add_argument('file2', help='Path to the second .gf grammar file')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
         generate_and_visualize(args.input, args.format, args.limit, args.filter)
     elif args.command == 'stats':
         calculate_and_display_stats(args.input)
+    elif args.command == 'diff':
+        diff_grammars(args.file1, args.file2)
 
 def generate_and_visualize(gf_file_path, output_format='png', limit=150, filter_pattern=None):
     grammar = parse_gf(gf_file_path)
@@ -332,41 +339,70 @@ def create_graph(sentences):
                 dot.edge(prev_node_id, node_id)
     return dot
 
-def calculate_and_display_stats(gf_file_path):
-    grammar = parse_gf(gf_file_path)
-    validate_grammar(grammar)
+def diff_grammars(file1_path, file2_path):
+    grammar1 = parse_gf(file1_path)
+    grammar2 = parse_gf(file2_path)
 
-    # --- Metrics Calculation ---
+    print(f"--- Diffing {file1_path} and {file2_path} ---")
+
+    # Compare Categories
+    cats1 = {cat.name for cat in grammar1.categories}
+    cats2 = {cat.name for cat in grammar2.categories}
     
-    # 1. Total Permutations (using a helper function)
-    memo = {}
-    total_permutations = calculate_permutations(grammar, 'Meal', memo)
+    added_cats = cats2 - cats1
+    removed_cats = cats1 - cats2
 
-    # 2. Rule Coverage
-    reachable_rules, all_rules = get_rule_coverage(grammar)
-    unreachable_rules = all_rules - reachable_rules
-    coverage_percentage = (len(reachable_rules) / len(all_rules)) * 100 if all_rules else 0
-
-    # 3. Complexity Metrics
-    total_rules = len(all_rules)
-    avg_rules_per_cat = total_rules / len(grammar.categories) if grammar.categories else 0
+    if added_cats:
+        print("\nAdded Categories:")
+        for cat in added_cats:
+            print(f"+ {cat}")
     
-    # --- Displaying Statistics ---
-    
-    print("--- Grammar Statistics ---")
-    print(f"Total Possible Sentences (Permutations): {total_permutations}")
-    print("\n--- Rule Coverage ---")
-    print(f"Reachable Rules: {len(reachable_rules)}/{len(all_rules)} ({coverage_percentage:.2f}%)")
-    if-unreachable_rules:
-        print("Unreachable Rules:")
-        for rule in sorted(list(unreachable_rules)):
-            print(f"- {rule}")
+    if removed_cats:
+        print("\nRemoved Categories:")
+        for cat in removed_cats:
+            print(f"- {cat}")
 
-    print("\n--- Complexity Metrics ---")
-    print(f"Total Categories: {len(grammar.categories)}")
-    print(f"Total Rules: {total_rules}")
-    print(f"Average Rules per Category: {avg_rules_per_cat:.2f}")
-    print("------------------------")
+    # Compare Functions
+    funcs1 = set(grammar1.functions.keys())
+    funcs2 = set(grammar2.functions.keys())
+
+    added_funcs = funcs2 - funcs1
+    removed_funcs = funcs1 - funcs2
+    common_funcs = funcs1.intersection(funcs2)
+
+    if added_funcs:
+        print("\nAdded Functions:")
+        for func in added_funcs:
+            print(f"+ {func}")
+
+    if removed_funcs:
+        print("\nRemoved Functions:")
+        for func in removed_funcs:
+            print(f"- {func}")
+            
+    modified_funcs = []
+    for func_name in common_funcs:
+        func1 = grammar1.functions[func_name]
+        func2 = grammar2.functions[func_name]
+        if not compare_rules(func1.rules, func2.rules):
+            modified_funcs.append(func_name)
+
+    if modified_funcs:
+        print("\nModified Functions:")
+        for func in modified_funcs:
+            print(f"~ {func}")
+            
+    print("\n------------------------")
+
+def compare_rules(rules1, rules2):
+    if len(rules1) != len(rules2):
+        return False
+    
+    for r1, r2 in zip(rules1, rules2):
+        if r1.production != r2.production or r1.weight != r2.weight or r1.optional != r2.optional:
+            return False
+            
+    return True
 
 def calculate_permutations(grammar, symbol, memo):
     if symbol in memo:
