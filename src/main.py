@@ -11,6 +11,7 @@ from graphviz import Digraph
 
 from gf_lib import (
     parse_grammar,
+    parse_ebnf_file,
     linearize,
     string_to_ast,
     AST,
@@ -177,6 +178,12 @@ def main():
     parser_ambiguity.add_argument('--concrete', required=True, help='Path to concrete .gf grammar file')
     parser_ambiguity.add_argument('sentence', help='The sentence to check for ambiguity')
 
+    # Import command (EBNF/BNF)
+    parser_import = subparsers.add_parser('import', help='Import grammar from EBNF/BNF notation')
+    parser_import.add_argument('input', help='Path to EBNF/BNF file')
+    parser_import.add_argument('-n', '--name', help='Name for the imported grammar')
+    parser_import.add_argument('-o', '--output', help='Path to save the .gf grammar file')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -215,6 +222,25 @@ def main():
         merge_and_display(args.grammar1, args.grammar2, args.name, args.output)
     elif args.command == 'ambiguity':
         check_ambiguity_and_display(args.abstract, args.concrete, args.sentence)
+    elif args.command == 'import':
+        import_ebnf_and_display(args.input, args.name, args.output)
+
+
+def import_ebnf_and_display(input_path, name, output_path):
+    grammar = parse_ebnf_file(input_path, name)
+
+    print(f"--- Imported Grammar ---")
+    print(f"Name: {grammar.name}")
+    print(f"Categories: {len(grammar.categories)}")
+    print(f"Functions: {len(grammar.functions)}")
+
+    if output_path:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(grammar.to_string())
+        print(f"Saved to {output_path}")
+    else:
+        print(grammar.to_string())
+    print("------------------------")
 
 
 def check_ambiguity_and_display(abstract_path, concrete_path, sentence):

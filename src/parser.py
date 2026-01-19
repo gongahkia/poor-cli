@@ -115,6 +115,171 @@ def _parse_type_list(s):
     return [_parse_type(t.strip()) for t in s.split('->')]
 
 
+def parse_ebnf(content, grammar_name="Imported"):
+    """
+    Parse EBNF/BNF notation and convert to AbstractGrammar.
+
+    Supports formats:
+    - BNF: <rule> ::= <term1> | <term2>
+    - EBNF: rule = term1 | term2 ;
+    """
+    grammar = AbstractGrammar(grammar_name)
+
+    lines = content.strip().split('\n')
+    current_rule = ""
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#') or line.startswith('//') or line.startswith('--'):
+            continue
+
+        current_rule += " " + line
+
+        # Check if rule is complete (ends with ; for EBNF or no continuation)
+        if ';' in current_rule or '::=' in current_rule:
+            _parse_ebnf_rule(current_rule.strip(), grammar)
+            current_rule = ""
+
+    # Handle any remaining rule
+    if current_rule.strip():
+        _parse_ebnf_rule(current_rule.strip(), grammar)
+
+    return grammar
+
+
+def _parse_ebnf_rule(rule_text, grammar):
+    """Parse a single EBNF/BNF rule and add to grammar."""
+    from .grammar import AbstractFunction
+
+    rule_text = rule_text.rstrip(';').strip()
+
+    # Detect format: BNF uses ::=, EBNF uses =
+    if '::=' in rule_text:
+        parts = rule_text.split('::=', 1)
+        separator = '::='
+    elif '=' in rule_text:
+        parts = rule_text.split('=', 1)
+        separator = '='
+    else:
+        return
+
+    if len(parts) != 2:
+        return
+
+    lhs = parts[0].strip()
+    rhs = parts[1].strip()
+
+    # Clean up BNF angle brackets
+    lhs = lhs.strip('<>').strip()
+
+    # Add category
+    grammar.categories[lhs] = {}
+
+    # Parse alternatives
+    alternatives = [alt.strip() for alt in rhs.split('|')]
+
+    for i, alt in enumerate(alternatives):
+        if not alt:
+            continue
+
+        # Parse the alternative to extract referenced categories
+        tokens = _tokenize_ebnf_alt(alt)
+        arg_types = []
+
+        for token in tokens:
+            # Check if it's a non-terminal (reference to another rule)
+            clean_token = token.strip('<>').strip('"\'')
+            if token.startswith('<') and token.endswith('>'):
+                # BNF non-terminal
+                arg_types.append(Category(clean_token))
+                if clean_token not in grammar.categories:
+                    grammar.categories[clean_token] = {}
+            elif token.startswith('"') or token.startswith("'"):
+                # Terminal - skip for now (linearization would handle this)
+                pass
+            elif token.isalnum() or '_' in token:
+                # Could be a non-terminal reference
+                if token[0].isupper():
+                    arg_types.append(Category(token))
+                    if token not in grammar.categories:
+                        grammar.categories[token] = {}
+
+        # Create function name
+        func_name = f"{lhs}_{i+1}" if len(alternatives) > 1 else f"Make{lhs}"
+
+        # Add function
+        grammar.functions[func_name] = AbstractFunction(
+            func_name,
+            arg_types,
+            Category(lhs)
+        )
+
+
+def _tokenize_ebnf_alt(alt):
+    """Tokenize an EBNF/BNF alternative."""
+    tokens = []
+    current = ""
+    in_string = False
+    string_char = None
+
+    i = 0
+    while i < len(alt):
+        char = alt[i]
+
+        if in_string:
+            current += char
+            if char == string_char:
+                tokens.append(current)
+                current = ""
+                in_string = False
+        elif char in '"\'':
+            if current:
+                tokens.append(current)
+                current = ""
+            current = char
+            in_string = True
+            string_char = char
+        elif char == '<':
+            if current:
+                tokens.append(current)
+                current = ""
+            # Find closing >
+            end = alt.find('>', i)
+            if end != -1:
+                tokens.append(alt[i:end+1])
+                i = end
+            else:
+                current = char
+        elif char.isspace():
+            if current:
+                tokens.append(current)
+                current = ""
+        else:
+            current += char
+
+        i += 1
+
+    if current:
+        tokens.append(current)
+
+    return tokens
+
+
+def parse_ebnf_file(file_path, grammar_name=None):
+    """Parse an EBNF/BNF file and return an AbstractGrammar."""
+    from pathlib import Path
+
+    file_path = str(Path(file_path).resolve())
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    if grammar_name is None:
+        grammar_name = Path(file_path).stem
+
+    return parse_ebnf(content, grammar_name)
+
+
 def _parse_type(s):
     # This function parses a type string, including parameterized types
     match = re.match(r'(\w+)(\[.+\])?', s)

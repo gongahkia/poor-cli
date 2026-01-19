@@ -18,6 +18,8 @@ from .grammar import (
 
 from .parser import (
     parse_grammar,
+    parse_ebnf,
+    parse_ebnf_file,
 )
 
 from .analysis import (
@@ -61,6 +63,8 @@ __all__ = [
     'ConcreteRule',
     # Parser
     'parse_grammar',
+    'parse_ebnf',
+    'parse_ebnf_file',
     # Analysis
     'validate_grammar',
     'minimize_grammar',
