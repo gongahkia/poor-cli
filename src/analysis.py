@@ -256,6 +256,63 @@ def detect_ambiguity(abstract_grammar, concrete_grammar, sentence):
     return unique_parses
 
 
+def build_dependency_graph(grammar):
+    """
+    Build a category dependency graph for visualization.
+    Returns a dict mapping each category to its dependencies.
+    """
+    if not isinstance(grammar, AbstractGrammar):
+        raise ValueError("Dependency graph only supported for abstract grammars")
+
+    dependencies = {}
+
+    for cat_name in grammar.categories:
+        dependencies[cat_name] = set()
+
+    for func in grammar.functions.values():
+        ret_name = func.return_type.name if isinstance(func.return_type, Category) else str(func.return_type)
+
+        for arg_type in func.arg_types:
+            arg_name = arg_type.name if isinstance(arg_type, Category) else str(arg_type)
+            if ret_name in dependencies:
+                dependencies[ret_name].add(arg_name)
+
+    return {k: list(v) for k, v in dependencies.items()}
+
+
+def visualize_dependencies(grammar, output_path=None, output_format='png'):
+    """
+    Create a visual dependency graph of categories.
+    Returns the Graphviz Digraph object.
+    """
+    from graphviz import Digraph
+
+    deps = build_dependency_graph(grammar)
+
+    dot = Digraph(comment='Category Dependency Graph')
+    dot.attr(rankdir='TB')
+    dot.attr('node', shape='box', style='rounded,filled', fillcolor='#e3f2fd')
+
+    # Add nodes
+    for cat_name in deps:
+        # Highlight Sentence as entry point
+        if cat_name == 'Sentence':
+            dot.node(cat_name, cat_name, fillcolor='#c8e6c9', penwidth='2')
+        else:
+            dot.node(cat_name, cat_name)
+
+    # Add edges
+    for cat_name, dep_cats in deps.items():
+        for dep in dep_cats:
+            if dep in deps:  # Only add edges to known categories
+                dot.edge(cat_name, dep)
+
+    if output_path:
+        dot.render(output_path, format=output_format, cleanup=True)
+
+    return dot
+
+
 def calculate_complexity(grammar):
     """
     Calculate grammar complexity metrics.

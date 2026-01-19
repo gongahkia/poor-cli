@@ -28,7 +28,8 @@ from gf_lib import (
     detect_ambiguity,
     export_to_latex,
     export_to_html,
-    lint_grammar
+    lint_grammar,
+    visualize_dependencies
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -190,6 +191,13 @@ def main():
     parser_lint.add_argument('input', help='Path to the .gf grammar file')
     parser_lint.add_argument('--json', action='store_true', help='Output as JSON')
 
+    # Depgraph command
+    parser_depgraph = subparsers.add_parser('depgraph', help='Visualize category dependency graph')
+    parser_depgraph.add_argument('input', help='Path to the abstract .gf grammar file')
+    parser_depgraph.add_argument('-o', '--output', default='dependency_graph', help='Output file name')
+    parser_depgraph.add_argument('-f', '--format', default='png', choices=['png', 'pdf', 'svg'],
+                        help='Output format (default: png)')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -232,6 +240,19 @@ def main():
         import_ebnf_and_display(args.input, args.name, args.output)
     elif args.command == 'lint':
         lint_and_display(args.input, args.json)
+    elif args.command == 'depgraph':
+        generate_depgraph(args.input, args.output, args.format)
+
+
+def generate_depgraph(input_path, output_path, output_format):
+    grammar = parse_grammar(input_path)
+
+    if not isinstance(grammar, AbstractGrammar):
+        print("Error: Dependency graph requires an abstract grammar file.")
+        return
+
+    visualize_dependencies(grammar, output_path, output_format)
+    print(f"Dependency graph saved as '{output_path}.{output_format}'")
 
 
 def lint_and_display(input_path, as_json):

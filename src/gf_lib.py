@@ -29,6 +29,8 @@ from .analysis import (
     calculate_complexity,
     merge_grammars,
     detect_ambiguity,
+    build_dependency_graph,
+    visualize_dependencies,
 )
 
 from .generation import (
@@ -77,6 +79,8 @@ __all__ = [
     'calculate_complexity',
     'merge_grammars',
     'detect_ambiguity',
+    'build_dependency_graph',
+    'visualize_dependencies',
     # Generation
     'generate_random_ast',
     'generate_exhaustive_asts',
