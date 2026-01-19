@@ -1,12 +1,6 @@
 [![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/1.0.0)
 [![](https://img.shields.io/badge/seuss_2.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/2.0.0)
 
-> [!IMPORTANT]  
-> If you have experience in language development *(programmatic/linguistic)*, please drop me an email or a message on LinkedIn.    
-> I would be really interested in collaborating on `Seuss` to develop a more robust system that can represent context-free and  
-> context-rich grammers. The many archiac issues `.gf` and its contemporaries suffer from really pisses me off. A lot.  
-> *~* *Gabriel*
-
 # `Seuss`
 
 What started as my attempt to use the rigid `.gf` syntax to arrive at a [universal language](https://en.wikipedia.org/wiki/Universal_language) has morphed into a simple Python script that visualises that syntax.
