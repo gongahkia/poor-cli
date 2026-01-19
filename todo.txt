@@ -1,4 +1,3 @@
-Add sentence ambiguity detection to check if sentences parse multiple ways
 Add export to LaTeX/HTML documentation format
 Add import from EBNF/BNF grammar notation
 Add grammar linting with common issue detection (unused categories, unreachable rules)

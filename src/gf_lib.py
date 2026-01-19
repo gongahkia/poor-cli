@@ -42,6 +42,11 @@ from .utils import (
     clear_grammar_cache,
 )
 
+from .export import (
+    export_to_latex,
+    export_to_html,
+)
+
 __all__ = [
     # Types
     'Type',
@@ -72,4 +77,7 @@ __all__ = [
     # Utils
     'normalize_unicode',
     'clear_grammar_cache',
+    # Export
+    'export_to_latex',
+    'export_to_html',
 ]

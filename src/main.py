@@ -24,7 +24,9 @@ from gf_lib import (
     calculate_complexity,
     extract_subgraph,
     merge_grammars,
-    detect_ambiguity
+    detect_ambiguity,
+    export_to_latex,
+    export_to_html
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -131,9 +133,11 @@ def main():
     parser_template.add_argument('-o', '--output', help='Path to save the new grammar file')
 
     # Export command
-    parser_export = subparsers.add_parser('export', help='Export grammar as JSON')
+    parser_export = subparsers.add_parser('export', help='Export grammar to various formats')
     parser_export.add_argument('input', help='Path to the .gf grammar file')
-    parser_export.add_argument('-o', '--output', help='Path to save the JSON file')
+    parser_export.add_argument('-f', '--format', default='json', choices=['json', 'latex', 'html'],
+                        help='Output format (default: json)')
+    parser_export.add_argument('-o', '--output', help='Path to save the output file')
 
     # Watch command
     parser_watch = subparsers.add_parser('watch', help='Watch grammar files and regenerate on change')
@@ -198,7 +202,7 @@ def main():
     elif args.command == 'template':
         generate_template_and_display(args.name, args.categories, args.output)
     elif args.command == 'export':
-        export_grammar_json(args.input, args.output)
+        export_grammar(args.input, args.format, args.output)
     elif args.command == 'watch':
         watch_and_regenerate(args.abstract, args.concrete, args.format, args.limit, args.interval)
     elif args.command == 'complexity':
@@ -333,15 +337,25 @@ def watch_and_regenerate(abstract_path, concrete_path, output_format, limit, int
     except KeyboardInterrupt:
         print("\nStopped watching.")
 
-def export_grammar_json(input_path, output_path):
+def export_grammar(input_path, output_format, output_path):
     grammar = parse_grammar(input_path)
-    json_output = grammar.to_json()
+
+    if output_format == 'json':
+        output = grammar.to_json()
+    elif output_format == 'latex':
+        output = export_to_latex(grammar)
+    elif output_format == 'html':
+        output = export_to_html(grammar)
+    else:
+        print(f"Unknown format: {output_format}")
+        return
+
     if output_path:
         with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(json_output)
+            f.write(output)
         print(f"Grammar exported to {output_path}")
     else:
-        print(json_output)
+        print(output)
 
 def generate_and_visualize(abstract_path, concrete_path, output_format='png', limit=150, filter_pattern=None, deduplicate=False):
     abstract_grammar = parse_grammar(abstract_path)
