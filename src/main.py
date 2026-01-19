@@ -23,7 +23,8 @@ from gf_lib import (
     deduplicate_sentences,
     calculate_complexity,
     extract_subgraph,
-    merge_grammars
+    merge_grammars,
+    detect_ambiguity
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -166,6 +167,12 @@ def main():
     parser_merge.add_argument('-n', '--name', help='Name for merged grammar')
     parser_merge.add_argument('-o', '--output', help='Path to save merged grammar file')
 
+    # Ambiguity command
+    parser_ambiguity = subparsers.add_parser('ambiguity', help='Check if a sentence parses multiple ways')
+    parser_ambiguity.add_argument('--abstract', required=True, help='Path to abstract .gf grammar file')
+    parser_ambiguity.add_argument('--concrete', required=True, help='Path to concrete .gf grammar file')
+    parser_ambiguity.add_argument('sentence', help='The sentence to check for ambiguity')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -202,6 +209,37 @@ def main():
         exhaust_and_display(args.abstract, args.concrete, args.depth, args.deduplicate)
     elif args.command == 'merge':
         merge_and_display(args.grammar1, args.grammar2, args.name, args.output)
+    elif args.command == 'ambiguity':
+        check_ambiguity_and_display(args.abstract, args.concrete, args.sentence)
+
+
+def check_ambiguity_and_display(abstract_path, concrete_path, sentence):
+    abstract_grammar = parse_grammar(abstract_path)
+    concrete_grammar = parse_grammar(concrete_path)
+
+    if not isinstance(abstract_grammar, AbstractGrammar):
+        print("Error: --abstract requires an abstract grammar file.")
+        return
+    if not isinstance(concrete_grammar, ConcreteGrammar):
+        print("Error: --concrete requires a concrete grammar file.")
+        return
+
+    parses = detect_ambiguity(abstract_grammar, concrete_grammar, sentence)
+
+    print(f"--- Ambiguity Analysis ---")
+    print(f"Sentence: \"{sentence}\"")
+    print(f"Parse count: {len(parses)}")
+
+    if len(parses) == 0:
+        print("Result: Sentence does not match the grammar.")
+    elif len(parses) == 1:
+        print("Result: Sentence is unambiguous.")
+        print(f"AST: {parses[0]}")
+    else:
+        print("Result: Sentence is AMBIGUOUS!")
+        for i, ast in enumerate(parses, 1):
+            print(f"  Parse {i}: {ast}")
+    print("--------------------------")
 
 
 def merge_and_display(grammar1_path, grammar2_path, name, output_path):

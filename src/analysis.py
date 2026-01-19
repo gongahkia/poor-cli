@@ -154,6 +154,108 @@ def merge_grammars(grammar1, grammar2, name=None):
     return merged
 
 
+def detect_ambiguity(abstract_grammar, concrete_grammar, sentence):
+    """
+    Detect if a sentence is ambiguous (can be parsed multiple ways).
+    Returns a list of all possible ASTs that produce the sentence.
+    """
+    from .types import Category, AST
+    from .generation import linearize
+
+    words = sentence.lower().split()
+    all_parses = []
+
+    def find_all_parses(target_cat, remaining_words, depth=0):
+        """Find all ASTs of target_cat that linearize to remaining_words."""
+        if depth > 20:
+            return []
+
+        cat_name = target_cat.name if isinstance(target_cat, Category) else str(target_cat)
+
+        # Find functions producing this category
+        producing_funcs = [
+            f for f in abstract_grammar.functions.values()
+            if (f.return_type.name if isinstance(f.return_type, Category) else str(f.return_type)) == cat_name
+        ]
+
+        results = []
+        for func in producing_funcs:
+            # Terminal function (no args)
+            if not func.arg_types:
+                if func.name in concrete_grammar.linearization_rules:
+                    rule = concrete_grammar.linearization_rules[func.name]
+                    lin_words = []
+                    for token in rule.body_tokens:
+                        lin_words.extend(token.strip('"').lower().split())
+                    if lin_words == remaining_words:
+                        results.append((AST(func.name, []), []))
+                continue
+
+            # Non-terminal: try to match children
+            child_parses = try_match_children(func, remaining_words, depth)
+            for children, leftover in child_parses:
+                results.append((AST(func.name, children), leftover))
+
+        return results
+
+    def try_match_children(func, words, depth):
+        """Try to match function arguments against words."""
+        if not func.arg_types:
+            return [([], words)]
+
+        if not words:
+            return []
+
+        # Get linearization rule
+        if func.name not in concrete_grammar.linearization_rules:
+            return []
+
+        rule = concrete_grammar.linearization_rules[func.name]
+
+        # Simple case: just children concatenated
+        def recurse_children(arg_idx, remaining):
+            if arg_idx >= len(func.arg_types):
+                return [([], remaining)]
+
+            results = []
+            child_parses = find_all_parses(func.arg_types[arg_idx], remaining, depth + 1)
+
+            for child_ast, leftover in child_parses:
+                sub_results = recurse_children(arg_idx + 1, leftover)
+                for sub_children, final_leftover in sub_results:
+                    results.append(([child_ast] + sub_children, final_leftover))
+
+            # Also try consuming more words for this child
+            for split in range(1, len(remaining) + 1):
+                child_parses = find_all_parses(func.arg_types[arg_idx], remaining[:split], depth + 1)
+                for child_ast, leftover in child_parses:
+                    if not leftover:  # Consumed exactly these words
+                        sub_results = recurse_children(arg_idx + 1, remaining[split:])
+                        for sub_children, final_leftover in sub_results:
+                            results.append(([child_ast] + sub_children, final_leftover))
+
+            return results
+
+        return recurse_children(0, words)
+
+    # Start parsing from Sentence category
+    parses = find_all_parses(Category("Sentence"), words)
+
+    # Filter to only complete parses (no leftover words)
+    complete_parses = [ast for ast, leftover in parses if not leftover]
+
+    # Deduplicate by AST string representation
+    seen = set()
+    unique_parses = []
+    for ast in complete_parses:
+        ast_str = str(ast)
+        if ast_str not in seen:
+            seen.add(ast_str)
+            unique_parses.append(ast)
+
+    return unique_parses
+
+
 def calculate_complexity(grammar):
     """
     Calculate grammar complexity metrics.

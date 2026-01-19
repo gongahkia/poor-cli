@@ -26,6 +26,7 @@ from .analysis import (
     extract_subgraph,
     calculate_complexity,
     merge_grammars,
+    detect_ambiguity,
 )
 
 from .generation import (
@@ -61,6 +62,7 @@ __all__ = [
     'extract_subgraph',
     'calculate_complexity',
     'merge_grammars',
+    'detect_ambiguity',
     # Generation
     'generate_random_ast',
     'generate_exhaustive_asts',
