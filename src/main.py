@@ -31,7 +31,9 @@ from gf_lib import (
     lint_grammar,
     visualize_dependencies,
     generate_pytest_suite,
-    generate_json_test_suite
+    generate_json_test_suite,
+    generate_parallel_sentences,
+    format_parallel_output
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -210,6 +212,14 @@ def main():
                         help='Output format (default: json)')
     parser_testgen.add_argument('-o', '--output', help='Output file path')
 
+    # Parallel command
+    parser_parallel = subparsers.add_parser('parallel', help='Generate sentences with multiple concrete grammars')
+    parser_parallel.add_argument('--abstract', required=True, help='Path to abstract .gf grammar file')
+    parser_parallel.add_argument('--concrete', required=True, nargs='+', help='Paths to concrete .gf grammar files')
+    parser_parallel.add_argument('-n', '--num', type=int, default=10, help='Number of sentences')
+    parser_parallel.add_argument('-f', '--format', default='table', choices=['table', 'markdown', 'json'],
+                        help='Output format (default: table)')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -256,6 +266,31 @@ def main():
         generate_depgraph(args.input, args.output, args.format)
     elif args.command == 'testgen':
         generate_tests(args.abstract, args.concrete, args.depth, args.max_tests, args.format, args.output)
+    elif args.command == 'parallel':
+        parallel_generate(args.abstract, args.concrete, args.num, args.format)
+
+
+def parallel_generate(abstract_path, concrete_paths, num_sentences, output_format):
+    abstract_grammar = parse_grammar(abstract_path)
+
+    if not isinstance(abstract_grammar, AbstractGrammar):
+        print("Error: --abstract requires an abstract grammar file.")
+        return
+
+    concrete_grammars = []
+    for path in concrete_paths:
+        grammar = parse_grammar(path)
+        if not isinstance(grammar, ConcreteGrammar):
+            print(f"Error: {path} is not a concrete grammar file.")
+            return
+        concrete_grammars.append(grammar)
+
+    results = generate_parallel_sentences(abstract_grammar, concrete_grammars, num_sentences)
+    output = format_parallel_output(results, output_format)
+
+    print(f"--- Parallel Generation ({len(concrete_grammars)} grammars) ---")
+    print(output)
+    print("------------------------------------------------")
 
 
 def generate_tests(abstract_path, concrete_path, depth, max_tests, output_format, output_path):

@@ -1,3 +1,2 @@
-Add test suite auto-generation from grammar
 Add multi-concrete parallel generation for side-by-side multilingual output
 Add interactive web UI for browser-based grammar exploration

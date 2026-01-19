@@ -39,6 +39,9 @@ from .generation import (
     linearize,
     string_to_ast,
     deduplicate_sentences,
+    parallel_linearize,
+    generate_parallel_sentences,
+    format_parallel_output,
 )
 
 from .utils import (
@@ -93,6 +96,9 @@ __all__ = [
     'linearize',
     'string_to_ast',
     'deduplicate_sentences',
+    'parallel_linearize',
+    'generate_parallel_sentences',
+    'format_parallel_output',
     # Utils
     'normalize_unicode',
     'clear_grammar_cache',

@@ -161,6 +161,93 @@ def generate_exhaustive_asts(grammar, category, max_depth=5, context=None):
     return all_asts
 
 
+def parallel_linearize(ast, concrete_grammars):
+    """
+    Linearize an AST using multiple concrete grammars in parallel.
+    Returns a dict mapping grammar name to linearized sentence.
+    """
+    results = {}
+    for grammar in concrete_grammars:
+        results[grammar.name] = linearize(ast, grammar)
+    return results
+
+
+def generate_parallel_sentences(abstract_grammar, concrete_grammars, num_sentences=10):
+    """
+    Generate sentences in parallel across multiple concrete grammars.
+    Returns a list of dicts with AST and linearizations for each grammar.
+    """
+    results = []
+
+    for _ in range(num_sentences):
+        ast = generate_random_ast(abstract_grammar, Category("Sentence"))
+        if ast is None:
+            continue
+
+        entry = {
+            "ast": str(ast),
+            "linearizations": {}
+        }
+
+        for grammar in concrete_grammars:
+            entry["linearizations"][grammar.name] = linearize(ast, grammar)
+
+        results.append(entry)
+
+    return results
+
+
+def format_parallel_output(results, format_type='table'):
+    """
+    Format parallel generation results.
+    format_type: 'table', 'markdown', or 'json'
+    """
+    if not results:
+        return ""
+
+    grammar_names = list(results[0]["linearizations"].keys())
+
+    if format_type == 'json':
+        import json
+        return json.dumps(results, indent=2, ensure_ascii=False)
+
+    elif format_type == 'markdown':
+        lines = []
+        # Header
+        header = "| # | " + " | ".join(grammar_names) + " |"
+        separator = "|" + "|".join(["---"] * (len(grammar_names) + 1)) + "|"
+        lines.append(header)
+        lines.append(separator)
+
+        for i, entry in enumerate(results, 1):
+            row = f"| {i} | "
+            row += " | ".join(entry["linearizations"].get(name, "") for name in grammar_names)
+            row += " |"
+            lines.append(row)
+
+        return "\n".join(lines)
+
+    else:  # table
+        lines = []
+        # Calculate column widths
+        widths = [5] + [max(len(name), max(len(e["linearizations"].get(name, "")) for e in results))
+                       for name in grammar_names]
+
+        # Header
+        header = f"{'#':^5} | "
+        header += " | ".join(f"{name:^{widths[i+1]}}" for i, name in enumerate(grammar_names))
+        lines.append(header)
+        lines.append("-" * len(header))
+
+        for i, entry in enumerate(results, 1):
+            row = f"{i:^5} | "
+            row += " | ".join(f"{entry['linearizations'].get(name, ''):^{widths[j+1]}}"
+                             for j, name in enumerate(grammar_names))
+            lines.append(row)
+
+        return "\n".join(lines)
+
+
 def deduplicate_sentences(sentences, normalize=True):
     """
     Remove duplicate sentences from a list.
