@@ -19,7 +19,7 @@ What started as my attempt to use the rigid `.gf` syntax to arrive at a [univers
 2. Run `main.py` to generate the below flowchart.
 
 ```mermaid
-graph LR
+graph TD
     GeiWo --> Carb
     Carb --> ProteinFlavour
     ProteinFlavour --> Protein
@@ -77,7 +77,7 @@ graph LR
 3. Specify a **concrete** implementation of that same syntax file to further generate a highlighted flowchart.
 
 ```mermaid
-graph LR
+graph TD
     GeiWo --> Carb
     Carb --> ProteinFlavour
     ProteinFlavour --> Protein
@@ -134,13 +134,52 @@ graph LR
 
 ## Usage
 
+The below instructions are for locally running `Seuss`.
+
+1. First execute the below commands to install the repository locally.
+
 ```console
-$ git clone https://github.com/gongahkia/seuss
-$ python3 -m venv senv
-$ source senv/bin/activate
+$ git clone https://github.com/gongahkia/seuss && cd seuss
+$ python3 -m venv senv && source senv/bin/activate
 $ pip install -r requirements.txt
-$ python3 src/main.py
 ```
+
+2. Then run any of the below `Seuss` commands.
+    1. `python3 src/main.py generate --abstract <abstract_definition_file> --concrete <instance_file>`: Generate sentences
+        1. `-f png|pdf|svg|ascii`: Output format
+        2. `-l <limit>`: Limit number of sentences
+        3. `--filter <pattern>`: Filter sentences by pattern
+        4. `--deduplicate`: Remove duplicate sentences
+    2. `python3 src/main.py stats <abstract_definition_file>`: Show grammar statistics
+    3. `python3 src/main.py validate <abstract_definition_file>`: Validate grammar
+    4. `python3 src/main.py lint <abstract_definition_file>`: Lint grammar
+        1. `--json`: Output lint results in JSON
+    5. `python3 src/main.py export <abstract_definition_file> -f json`: Export grammar as JSON
+    6. `python3 src/main.py export <abstract_definition_file> -f latex -o grammar.tex`: Export grammar as LaTeX
+    7. `python3 src/main.py export <abstract_definition_file> -f html -o grammar.html`: Export grammar as HTML
+    8. `python3 src/main.py import grammar.ebnf -o output.gf`: Import from EBNF
+    9. `python3 src/main.py import grammar.bnf -n MyGrammar -o output.gf`: Import from BNF with grammar name
+    10. `python3 src/main.py depgraph <abstract_definition_file> -o deps -f png`: Generate dependency graph
+    11. `python3 src/main.py testgen --abstract <abstract_definition_file> --concrete <instance_file> -f json`: Generate test suite (JSON)
+    12. `python3 src/main.py testgen --abstract <abstract_definition_file> --concrete <instance_file> -f pytest -o tests.py`: Generate test suite (pytest)
+        1. `-d <depth>`: Set test depth
+        2. `-n <max-tests>`: Set max number of tests
+    13. `python3 src/main.py parallel --abstract <abstract_definition_file> --concrete <instance_file> grammers/caifan/english.gf -n 10`: Parallel generation (multilingual)
+        1. `-f table|markdown|json`: Output format
+    14. `python3 src/main.py ambiguity --abstract grammar.gf --concrete concrete.gf "your sentence here"`: Ambiguity detection
+    15. `python3 src/main.py exhaust --abstract <abstract_definition_file> --concrete <instance_file> -d 5`: Exhaustive generation
+    16. `python3 src/main.py merge grammar1.gf grammar2.gf -n MergedGrammar -o merged.gf`: Merge grammars
+    17. `python3 src/main.py repl --abstract <abstract_definition_file> --concrete <instance_file>`: Interactive REPL
+    18. `python3 src/main.py web -p 8080`: Launch web UI
+    19. `python3 src/main.py watch --abstract <abstract_definition_file> --concrete <instance_file>`: Watch mode
+    20. `diff`: Compare two grammars
+    21. `parse`: Check if sentence matches grammar
+    22. `sample`: Generate N random sentences
+    23. `minimize`: Remove unreachable rules
+    24. `batch`: Process directory of .gf files
+    25. `template`: Generate new grammar template
+    26. `subgraph`: Extract subgraph from category
+    27. `complexity`: Analyze grammar complexity
 
 ## Sidenote
 
