@@ -65,6 +65,10 @@ from .testgen import (
     generate_json_test_suite,
 )
 
+from .web import (
+    start_web_server,
+)
+
 __all__ = [
     # Types
     'Type',
@@ -112,4 +116,6 @@ __all__ = [
     'generate_test_suite',
     'generate_pytest_suite',
     'generate_json_test_suite',
+    # Web
+    'start_web_server',
 ]

@@ -33,7 +33,8 @@ from gf_lib import (
     generate_pytest_suite,
     generate_json_test_suite,
     generate_parallel_sentences,
-    format_parallel_output
+    format_parallel_output,
+    start_web_server
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -220,6 +221,10 @@ def main():
     parser_parallel.add_argument('-f', '--format', default='table', choices=['table', 'markdown', 'json'],
                         help='Output format (default: table)')
 
+    # Web command
+    parser_web = subparsers.add_parser('web', help='Start interactive web UI')
+    parser_web.add_argument('-p', '--port', type=int, default=8080, help='Port number (default: 8080)')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -268,6 +273,8 @@ def main():
         generate_tests(args.abstract, args.concrete, args.depth, args.max_tests, args.format, args.output)
     elif args.command == 'parallel':
         parallel_generate(args.abstract, args.concrete, args.num, args.format)
+    elif args.command == 'web':
+        start_web_server(args.port)
 
 
 def parallel_generate(abstract_path, concrete_paths, num_sentences, output_format):
