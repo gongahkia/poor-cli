@@ -27,7 +27,8 @@ from gf_lib import (
     merge_grammars,
     detect_ambiguity,
     export_to_latex,
-    export_to_html
+    export_to_html,
+    lint_grammar
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -184,6 +185,11 @@ def main():
     parser_import.add_argument('-n', '--name', help='Name for the imported grammar')
     parser_import.add_argument('-o', '--output', help='Path to save the .gf grammar file')
 
+    # Lint command
+    parser_lint = subparsers.add_parser('lint', help='Check grammar for common issues')
+    parser_lint.add_argument('input', help='Path to the .gf grammar file')
+    parser_lint.add_argument('--json', action='store_true', help='Output as JSON')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -224,6 +230,29 @@ def main():
         check_ambiguity_and_display(args.abstract, args.concrete, args.sentence)
     elif args.command == 'import':
         import_ebnf_and_display(args.input, args.name, args.output)
+    elif args.command == 'lint':
+        lint_and_display(args.input, args.json)
+
+
+def lint_and_display(input_path, as_json):
+    import json
+    grammar = parse_grammar(input_path)
+    issues = lint_grammar(grammar)
+
+    if as_json:
+        print(json.dumps([i.to_dict() for i in issues], indent=2))
+    else:
+        print(f"--- Lint Results for {input_path} ---")
+        if not issues:
+            print("No issues found.")
+        else:
+            errors = [i for i in issues if i.severity == "error"]
+            warnings = [i for i in issues if i.severity == "warning"]
+            print(f"Errors: {len(errors)}, Warnings: {len(warnings)}")
+            print()
+            for issue in issues:
+                print(f"  {issue}")
+        print("-------------------------------------")
 
 
 def import_ebnf_and_display(input_path, name, output_path):

@@ -49,6 +49,11 @@ from .export import (
     export_to_html,
 )
 
+from .lint import (
+    lint_grammar,
+    LintIssue,
+)
+
 __all__ = [
     # Types
     'Type',
@@ -84,4 +89,7 @@ __all__ = [
     # Export
     'export_to_latex',
     'export_to_html',
+    # Lint
+    'lint_grammar',
+    'LintIssue',
 ]
