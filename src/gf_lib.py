@@ -56,6 +56,12 @@ from .lint import (
     LintIssue,
 )
 
+from .testgen import (
+    generate_test_suite,
+    generate_pytest_suite,
+    generate_json_test_suite,
+)
+
 __all__ = [
     # Types
     'Type',
@@ -96,4 +102,8 @@ __all__ = [
     # Lint
     'lint_grammar',
     'LintIssue',
+    # Test generation
+    'generate_test_suite',
+    'generate_pytest_suite',
+    'generate_json_test_suite',
 ]

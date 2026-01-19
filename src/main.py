@@ -29,7 +29,9 @@ from gf_lib import (
     export_to_latex,
     export_to_html,
     lint_grammar,
-    visualize_dependencies
+    visualize_dependencies,
+    generate_pytest_suite,
+    generate_json_test_suite
 )
 
 # ----- HELPER FUNCTIONS -----
@@ -198,6 +200,16 @@ def main():
     parser_depgraph.add_argument('-f', '--format', default='png', choices=['png', 'pdf', 'svg'],
                         help='Output format (default: png)')
 
+    # Testgen command
+    parser_testgen = subparsers.add_parser('testgen', help='Generate test suite from grammar')
+    parser_testgen.add_argument('--abstract', required=True, help='Path to abstract .gf grammar file')
+    parser_testgen.add_argument('--concrete', required=True, help='Path to concrete .gf grammar file')
+    parser_testgen.add_argument('-d', '--depth', type=int, default=5, help='Max derivation depth')
+    parser_testgen.add_argument('-n', '--max-tests', type=int, default=50, help='Max number of tests')
+    parser_testgen.add_argument('-f', '--format', default='json', choices=['json', 'pytest'],
+                        help='Output format (default: json)')
+    parser_testgen.add_argument('-o', '--output', help='Output file path')
+
     args = parser.parse_args()
 
     if args.command == 'generate':
@@ -242,6 +254,32 @@ def main():
         lint_and_display(args.input, args.json)
     elif args.command == 'depgraph':
         generate_depgraph(args.input, args.output, args.format)
+    elif args.command == 'testgen':
+        generate_tests(args.abstract, args.concrete, args.depth, args.max_tests, args.format, args.output)
+
+
+def generate_tests(abstract_path, concrete_path, depth, max_tests, output_format, output_path):
+    abstract_grammar = parse_grammar(abstract_path)
+    concrete_grammar = parse_grammar(concrete_path)
+
+    if not isinstance(abstract_grammar, AbstractGrammar):
+        print("Error: --abstract requires an abstract grammar file.")
+        return
+    if not isinstance(concrete_grammar, ConcreteGrammar):
+        print("Error: --concrete requires a concrete grammar file.")
+        return
+
+    if output_format == 'json':
+        output = generate_json_test_suite(abstract_grammar, concrete_grammar, depth, max_tests)
+    else:
+        output = generate_pytest_suite(abstract_grammar, concrete_grammar, depth, max_tests)
+
+    if output_path:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(output)
+        print(f"Test suite saved to {output_path}")
+    else:
+        print(output)
 
 
 def generate_depgraph(input_path, output_path, output_format):
