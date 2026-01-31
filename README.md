@@ -5,7 +5,7 @@
 
 # `poor-cli`
 
-[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal.
+[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal *(now also available in [Neovim](https://neovim.io/))*!
 
 <div align="center">
     <img src="./asset/logo/1.png" width="35%">
@@ -89,6 +89,12 @@ $ ./uninstall.sh
 - glob_files: Find files matching patterns (e.g., `**/*.py`)
 - grep_files: Search for text in files using regex
 - bash: Execute bash commands with timeout support
+
+## Architecture
+
+```mermaid
+
+```
 
 ## Screenshots
 
