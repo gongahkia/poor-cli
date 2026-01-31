@@ -103,10 +103,10 @@
 [x] 4.4 Update poor_cli/core.py send_message() to use ContextManager for automatically including relevant file context in prompts
 [x] 4.5 Create file install_nvim_plugin.sh that copies nvim-poor-cli/ to ~/.local/share/nvim/site/pack/poor-cli/start/nvim-poor-cli/ for manual installation
 [ ] 4.6 Update README.md in project root to add section about Neovim integration with installation instructions, link to nvim-poor-cli docs
-[ ] 4.7 Create file nvim-poor-cli/tests/minimal_init.lua with minimal Neovim config for testing the plugin in isolation
-[ ] 4.8 Create file nvim-poor-cli/tests/test_rpc.lua with plenary.nvim tests for RPC client functionality
-[ ] 4.9 Create file nvim-poor-cli/tests/test_inline.lua with plenary.nvim tests for inline completion functionality
-[ ] 4.10 Create GitHub Actions workflow .github/workflows/test-nvim.yml that runs Neovim plugin tests on push
+[x] 4.7 Create file nvim-poor-cli/tests/minimal_init.lua with minimal Neovim config for testing the plugin in isolation
+[x] 4.8 Create file nvim-poor-cli/tests/test_rpc.lua with plenary.nvim tests for RPC client functionality
+[x] 4.9 Create file nvim-poor-cli/tests/test_inline.lua with plenary.nvim tests for inline completion functionality
+[x] 4.10 Create GitHub Actions workflow .github/workflows/test-nvim.yml that runs Neovim plugin tests on push
 [x] 4.11 Update requirements.txt to add aiohttp>=3.9.0 if not present (needed for HTTP server in phase 2)
 [ ] 4.12 Create file CHANGELOG.md with entry for v0.5.0 documenting new Neovim integration features
 
