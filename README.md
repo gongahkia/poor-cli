@@ -76,11 +76,56 @@ $ poor-cli
 $ ./uninstall.sh
 ```
 
-4. Alternatively ...
+4. Alternatively, install via pip for system-wide access:
 
 ```console
-
+$ pip install poor-cli
+$ pip install poor-cli[openai]      # with OpenAI support
+$ pip install poor-cli[anthropic]   # with Claude support
+$ pip install poor-cli[all]         # with all providers
 ```
+
+5. Or run with Docker:
+
+```console
+$ docker build -t poor-cli .
+$ docker run -it --env-file .env poor-cli
+```
+
+### Neovim Plugin
+
+The Neovim plugin provides inline ghost text completion (like Copilot/Windsurf) and a chat panel. See full documentation in [nvim-poor-cli/README.md](./nvim-poor-cli/README.md).
+
+#### Quick Install (lazy.nvim)
+
+```lua
+{
+    "gongahkia/poor-cli",
+    submodules = false,
+    config = function()
+        require("poor-cli").setup({
+            trigger_key = "<C-Space>",  -- Trigger completion
+            accept_key = "<Tab>",       -- Accept completion
+            chat_key = "<leader>pc",    -- Toggle chat panel
+            provider = nil,             -- Auto-detect from env
+        })
+    end,
+}
+```
+
+#### Key Neovim Commands
+
+| Command | Description |
+|---------|-------------|
+| `:PoorCliStart` | Start the AI server |
+| `:PoorCliStop` | Stop the AI server |
+| `:PoorCliStatus` | Show server status |
+| `:PoorCliChat` | Toggle chat panel |
+| `:PoorCliComplete` | Trigger inline completion |
+| `:'<,'>PoorCliExplain` | Explain selected code |
+| `:'<,'>PoorCliRefactor` | Refactor selected code |
+
+Run `:checkhealth poor-cli` to verify your Neovim setup.
 
 ## Available Commands
 
