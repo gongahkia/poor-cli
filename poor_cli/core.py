@@ -15,6 +15,8 @@ from .providers.provider_factory import ProviderFactory
 from .tools_async import ToolRegistryAsync
 from .checkpoint import CheckpointManager
 from .history import HistoryManager
+from .context import ContextManager, get_context_manager
+from .prompts import build_fim_prompt as _build_fim_prompt, get_system_instruction
 from .exceptions import (
     PoorCLIError,
     ConfigurationError,
@@ -62,6 +64,9 @@ class PoorCLICore:
         # Permission callback for file operations
         # Set this to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool]
         self._permission_callback: Optional[Callable[[str, Dict], Any]] = None
+        
+        # Context manager for intelligent context gathering
+        self._context_manager: Optional[ContextManager] = None
         
         logger.info("PoorCLICore instance created")
     
@@ -155,6 +160,10 @@ class PoorCLICore:
                 self.checkpoint_manager = CheckpointManager()
                 logger.info("Checkpoint manager initialized")
             
+            # Initialize context manager
+            self._context_manager = get_context_manager()
+            logger.info("Context manager initialized")
+            
             self._initialized = True
             logger.info("PoorCLICore initialization complete")
             
@@ -234,15 +243,36 @@ If the user just asks for a solution/code without mentioning a file, show the co
         # Build context from files if provided
         full_message = message
         if context_files:
-            context_parts = []
-            for file_path in context_files:
-                try:
-                    content = await self.tool_registry.read_file(file_path)
-                    context_parts.append(f"=== {file_path} ===\n{content}")
-                except Exception as e:
-                    logger.warning(f"Failed to read context file {file_path}: {e}")
-            if context_parts:
-                full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+            # Use context manager for intelligent context gathering
+            if self._context_manager:
+                primary_file = context_files[0] if context_files else None
+                additional_files = context_files[1:] if len(context_files) > 1 else None
+                
+                context_result = await self._context_manager.gather_context(
+                    primary_file=primary_file,
+                    additional_files=additional_files,
+                    include_imports=True
+                )
+                
+                if context_result.files:
+                    context_str = self._context_manager.format_context_for_prompt(
+                        context_result,
+                        include_paths=True
+                    )
+                    full_message = f"{context_str}\n\nUser request: {message}"
+                    logger.info(context_result.message)
+            else:
+                # Fallback to simple file reading
+                context_parts = []
+                for file_path in context_files:
+                    try:
+                        content = await self.tool_registry.read_file(file_path)
+                        context_parts.append(f"=== {file_path} ===\n{content}")
+                    except Exception as e:
+                        logger.warning(f"Failed to read context file {file_path}: {e}")
+                if context_parts:
+                    full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+
         
         # Save to history
         if self.history_manager:
@@ -530,27 +560,18 @@ If the user just asks for a solution/code without mentioning a file, show the co
         import os
         filename = os.path.basename(file_path) if file_path else "unknown"
         
-        prompt = f"""You are a code completion assistant. Complete the code at the cursor position.
-
-File: {filename}
-Language: {language}
-
-Instructions: {instruction if instruction else "Complete the code naturally based on context."}
-
-RULES:
-1. ONLY output the code to insert at the cursor position
-2. Do NOT repeat any code from before or after the cursor
-3. Do NOT include explanations or markdown formatting
-4. Output ONLY the raw code to insert
-5. Keep the code style consistent with surrounding code
-
-<|fim_prefix|>
-{code_before}<|fim_cursor|><|fim_suffix|>
-{code_after}
-
-Code to insert at cursor:"""
+        # Determine provider for native FIM format selection
+        provider_name = self.config.model.model_name if self.config else "generic"
         
-        return prompt
+        # Use the prompts module for consistent FIM formatting
+        return _build_fim_prompt(
+            code_before=code_before,
+            code_after=code_after,
+            instruction=instruction,
+            filename=filename,
+            language=language,
+            provider=provider_name
+        )
 
     async def inline_complete(
         self,
