@@ -136,6 +136,12 @@ function M.setup()
     vim.api.nvim_create_user_command("PoorCliDoc", function()
         M.generate_docs()
     end, { desc = "Generate documentation for current function" })
+    
+    -- LSP integration command
+    vim.api.nvim_create_user_command("PoorCliFixDiagnostics", function()
+        local lsp = require("poor-cli.lsp")
+        lsp.fix_diagnostics()
+    end, { desc = "Fix LSP diagnostics with AI" })
 end
 
 -- Explain code (line range or current line)
