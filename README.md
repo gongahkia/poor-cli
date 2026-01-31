@@ -13,8 +13,40 @@
 
 ## Stack
 
-* *Script*: [Python](https://www.python.org/), [Lua]()
-* ...
+### Languages
+* [Python](https://www.python.org/) 3.8+ - Core application (51 modules, 22,000+ lines)
+* [Lua](https://www.lua.org/) - Neovim plugin (14 modules)
+* [Vim Script](https://vimhelp.org/usr_41.txt.html) - Plugin entry point
+
+### Core Dependencies
+| Package | Version | Purpose |
+|---------|---------|---------|
+| [google-generativeai](https://pypi.org/project/google-generativeai/) | ≥0.3.0 | Gemini API client |
+| [rich](https://pypi.org/project/rich/) | ≥13.0.0 | Terminal formatting & UI |
+| [PyYAML](https://pypi.org/project/PyYAML/) | ≥6.0 | Configuration parsing |
+| [aiofiles](https://pypi.org/project/aiofiles/) | ≥23.0.0 | Async file operations |
+| [aiohttp](https://pypi.org/project/aiohttp/) | ≥3.9.0 | Async HTTP client |
+| [cryptography](https://pypi.org/project/cryptography/) | ≥41.0.0 | API key encryption |
+| [prompt_toolkit](https://pypi.org/project/prompt_toolkit/) | ≥3.0.0 | Interactive input |
+
+### Optional Provider Dependencies
+| Package | Version | Purpose |
+|---------|---------|---------|
+| [openai](https://pypi.org/project/openai/) | ≥1.0.0 | OpenAI/GPT-4 support |
+| [anthropic](https://pypi.org/project/anthropic/) | ≥0.18.0 | Claude/Anthropic support |
+
+### Development Tools
+| Tool | Purpose |
+|------|---------|
+| [black](https://black.readthedocs.io/) | Code formatting |
+| [ruff](https://docs.astral.sh/ruff/) | Linting |
+| [mypy](https://mypy.readthedocs.io/) | Type checking |
+| [pytest](https://docs.pytest.org/) | Testing |
+
+### Infrastructure
+* [SQLite 3](https://www.sqlite.org/) - History, cache, and audit log storage
+* [Docker](https://www.docker.com/) - Containerization (Python 3.11-slim base)
+* [GitHub Actions](https://github.com/features/actions) - CI/CD pipeline
 
 ## Usage
 
