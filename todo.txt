@@ -115,11 +115,9 @@
 # Nice-to-have features for later
 # ============================================================================
 
-[ ] 5.1 Add LSP integration in nvim-poor-cli to use LSP diagnostics as context for AI suggestions
 [ ] 5.2 Add treesitter integration in nvim-poor-cli to get semantic code context (function names, class structure)
 [ ] 5.3 Add support for multiple cursors / multi-line ghost text in inline.lua
 [ ] 5.4 Add cmp-poor-cli source for nvim-cmp completion framework integration
 [ ] 5.5 Add lualine component in nvim-poor-cli showing current provider and server status
 [ ] 5.6 Add VS Code extension skeleton in vscode-poor-cli/ using same JSON-RPC server
 [ ] 5.7 Add support for image context (screenshots) for vision-capable models
-[ ] 5.10 Add session persistence - save/restore chat sessions across Neovim restarts
