@@ -15,20 +15,20 @@
 [x] 1.5 In poor_cli/core.py add async method execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str that wraps tool_registry.execute_tool and returns result string
 [x] 1.6 In poor_cli/core.py add async method inline_complete(self, code_before: str, code_after: str, instruction: str, file_path: str, language: str) -> AsyncIterator[str] that creates a FIM (fill-in-middle) prompt asking the AI to generate code to insert between code_before and code_after based on instruction, yields streaming completion chunks
 [x] 1.7 In poor_cli/core.py add method build_fim_prompt(self, code_before: str, code_after: str, instruction: str, file_path: str, language: str) -> str that constructs a prompt like "Complete the code between <|fim_prefix|> and <|fim_suffix|> markers. File: {file_path}, Language: {language}. Instruction: {instruction}\n<|fim_prefix|>{code_before}<|fim_cursor|><|fim_suffix|>{code_after}" 
-[ ] 1.8 In poor_cli/core.py add async method handle_function_calls(self, response: ProviderResponse, require_permission: bool = True) -> Tuple[bool, List[Dict]] that processes function calls from response, optionally requiring permission callback, returns (success, results) - extract logic from repl_async.py lines 1662-1749
-[ ] 1.9 In poor_cli/core.py add property permission_callback that can be set to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool] for requesting user permission on file operations
-[ ] 1.10 In poor_cli/core.py add async method apply_edit(self, file_path: str, old_text: str, new_text: str) -> str that uses tool_registry.edit_file to apply a code edit and returns success/error message
-[ ] 1.11 In poor_cli/core.py add async method read_file(self, file_path: str, start_line: int = None, end_line: int = None) -> str that uses tool_registry.read_file and returns file contents
-[ ] 1.12 In poor_cli/core.py add async method write_file(self, file_path: str, content: str) -> str that uses tool_registry.write_file and returns success message
-[ ] 1.13 In poor_cli/core.py add method get_available_tools(self) -> List[Dict] that returns tool_registry.get_tool_declarations()
-[ ] 1.14 In poor_cli/core.py add method get_provider_info(self) -> Dict with keys 'name', 'model', 'capabilities' from current provider
-[ ] 1.15 In poor_cli/core.py add async method clear_history(self) that calls provider.clear_history() and resets conversation state
-[ ] 1.16 In poor_cli/core.py add method get_history(self) -> List[Dict] that returns provider.get_history() in normalized format with 'role' and 'content' keys
-[ ] 1.17 In poor_cli/core.py add async method switch_provider(self, provider_name: str, model_name: str = None) that switches to a new provider while preserving configuration
-[ ] 1.18 In poor_cli/core.py add method set_system_instruction(self, instruction: str) that updates the system instruction for the current provider
-[ ] 1.19 In poor_cli/core.py add async method create_checkpoint(self, file_paths: List[str], description: str) -> str that uses checkpoint_manager to create checkpoint and returns checkpoint_id
-[ ] 1.20 In poor_cli/core.py add async method restore_checkpoint(self, checkpoint_id: str) -> bool that uses checkpoint_manager to restore and returns success status
-[ ] 1.21 Update poor_cli/__init__.py to export PoorCLICore class by adding "from .core import PoorCLICore" and adding "PoorCLICore" to __all__ list
+[x] 1.8 In poor_cli/core.py add async method handle_function_calls(self, response: ProviderResponse, require_permission: bool = True) -> Tuple[bool, List[Dict]] that processes function calls from response, optionally requiring permission callback, returns (success, results) - extract logic from repl_async.py lines 1662-1749
+[x] 1.9 In poor_cli/core.py add property permission_callback that can be set to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool] for requesting user permission on file operations
+[x] 1.10 In poor_cli/core.py add async method apply_edit(self, file_path: str, old_text: str, new_text: str) -> str that uses tool_registry.edit_file to apply a code edit and returns success/error message
+[x] 1.11 In poor_cli/core.py add async method read_file(self, file_path: str, start_line: int = None, end_line: int = None) -> str that uses tool_registry.read_file and returns file contents
+[x] 1.12 In poor_cli/core.py add async method write_file(self, file_path: str, content: str) -> str that uses tool_registry.write_file and returns success message
+[x] 1.13 In poor_cli/core.py add method get_available_tools(self) -> List[Dict] that returns tool_registry.get_tool_declarations()
+[x] 1.14 In poor_cli/core.py add method get_provider_info(self) -> Dict with keys 'name', 'model', 'capabilities' from current provider
+[x] 1.15 In poor_cli/core.py add async method clear_history(self) that calls provider.clear_history() and resets conversation state
+[x] 1.16 In poor_cli/core.py add method get_history(self) -> List[Dict] that returns provider.get_history() in normalized format with 'role' and 'content' keys
+[x] 1.17 In poor_cli/core.py add async method switch_provider(self, provider_name: str, model_name: str = None) that switches to a new provider while preserving configuration
+[x] 1.18 In poor_cli/core.py add method set_system_instruction(self, instruction: str) that updates the system instruction for the current provider
+[x] 1.19 In poor_cli/core.py add async method create_checkpoint(self, file_paths: List[str], description: str) -> str that uses checkpoint_manager to create checkpoint and returns checkpoint_id
+[x] 1.20 In poor_cli/core.py add async method restore_checkpoint(self, checkpoint_id: str) -> bool that uses checkpoint_manager to restore and returns success status
+[x] 1.21 Update poor_cli/__init__.py to export PoorCLICore class by adding "from .core import PoorCLICore" and adding "PoorCLICore" to __all__ list
 [ ] 1.22 Refactor poor_cli/repl_async.py class PoorCLIAsync to use PoorCLICore internally - replace direct provider/tool calls with self.core.send_message(), self.core.execute_tool(), etc. to avoid code duplication
 [ ] 1.23 Create file poor_cli/core_test.py with pytest async tests for PoorCLICore: test_initialize, test_send_message, test_inline_complete, test_execute_tool, test_switch_provider using mock provider
 
