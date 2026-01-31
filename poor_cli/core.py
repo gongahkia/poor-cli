@@ -604,3 +604,144 @@ Code to insert at cursor:"""
             logger.exception("Error in inline completion")
             raise PoorCLIError(f"Inline completion failed: {e}")
 
+    @property
+    def permission_callback(self) -> Optional[Callable[[str, Dict], Any]]:
+        """
+        Get the permission callback for file operations.
+        
+        Returns:
+            The permission callback function or None.
+        """
+        return self._permission_callback
+    
+    @permission_callback.setter
+    def permission_callback(self, callback: Optional[Callable[[str, Dict], Any]]) -> None:
+        """
+        Set the permission callback for file operations.
+        
+        The callback should be an async function that takes:
+            - tool_name: str - Name of the tool being executed
+            - tool_args: dict - Arguments to the tool
+        
+        And returns:
+            - bool - True to allow, False to deny
+        
+        Args:
+            callback: The permission callback function.
+        """
+        self._permission_callback = callback
+        logger.info("Permission callback updated")
+
+    async def apply_edit(
+        self,
+        file_path: str,
+        old_text: str,
+        new_text: str
+    ) -> str:
+        """
+        Apply a code edit to a file.
+        
+        Args:
+            file_path: Path to the file to edit.
+            old_text: Text to replace.
+            new_text: Replacement text.
+        
+        Returns:
+            Success or error message.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Applying edit to {file_path}")
+        
+        try:
+            result = await self.tool_registry.execute_tool(
+                "edit_file",
+                {
+                    "file_path": file_path,
+                    "old_text": old_text,
+                    "new_text": new_text
+                }
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Edit failed: {e}")
+            return f"Error: {e}"
+
+    async def read_file(
+        self,
+        file_path: str,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None
+    ) -> str:
+        """
+        Read file contents.
+        
+        Args:
+            file_path: Path to the file to read.
+            start_line: Optional start line (1-indexed).
+            end_line: Optional end line (1-indexed).
+        
+        Returns:
+            File contents as string.
+        
+        Raises:
+            PoorCLIError: If not initialized or file read fails.
+        """
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Reading file: {file_path}")
+        
+        try:
+            args = {"file_path": file_path}
+            if start_line is not None:
+                args["start_line"] = start_line
+            if end_line is not None:
+                args["end_line"] = end_line
+            
+            result = await self.tool_registry.execute_tool("read_file", args)
+            return result
+        except Exception as e:
+            logger.error(f"File read failed: {e}")
+            raise PoorCLIError(f"Failed to read file: {e}")
+
+    async def write_file(
+        self,
+        file_path: str,
+        content: str
+    ) -> str:
+        """
+        Write content to a file.
+        
+        Args:
+            file_path: Path to the file to write.
+            content: Content to write.
+        
+        Returns:
+            Success message.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Writing file: {file_path}")
+        
+        try:
+            result = await self.tool_registry.execute_tool(
+                "write_file",
+                {
+                    "file_path": file_path,
+                    "content": content
+                }
+            )
+            return result
+        except Exception as e:
+            logger.error(f"File write failed: {e}")
+            raise PoorCLIError(f"Failed to write file: {e}")
+
