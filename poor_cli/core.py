@@ -475,3 +475,132 @@ If the user just asks for a solution/code without mentioning a file, show the co
             logger.exception("Error sending message (sync)")
             raise PoorCLIError(f"Failed to send message: {e}")
 
+    async def execute_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any]
+    ) -> str:
+        """
+        Execute a tool with given arguments.
+        
+        Args:
+            tool_name: Name of the tool to execute.
+            arguments: Tool arguments as a dictionary.
+        
+        Returns:
+            Tool execution result as string.
+        
+        Raises:
+            PoorCLIError: If not initialized or tool execution fails.
+        """
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Executing tool: {tool_name}")
+        
+        try:
+            result = await self.tool_registry.execute_tool(tool_name, arguments)
+            logger.info(f"Tool {tool_name} completed successfully")
+            return result
+        except Exception as e:
+            logger.error(f"Tool execution failed: {e}")
+            raise PoorCLIError(f"Tool execution failed: {e}")
+
+    def build_fim_prompt(
+        self,
+        code_before: str,
+        code_after: str,
+        instruction: str,
+        file_path: str,
+        language: str
+    ) -> str:
+        """
+        Build a Fill-in-Middle (FIM) prompt for code completion.
+        
+        Args:
+            code_before: Code before the cursor position.
+            code_after: Code after the cursor position.
+            instruction: Optional instruction for what to generate.
+            file_path: Path to the current file.
+            language: Programming language of the file.
+        
+        Returns:
+            FIM prompt string for the AI.
+        """
+        import os
+        filename = os.path.basename(file_path) if file_path else "unknown"
+        
+        prompt = f"""You are a code completion assistant. Complete the code at the cursor position.
+
+File: {filename}
+Language: {language}
+
+Instructions: {instruction if instruction else "Complete the code naturally based on context."}
+
+RULES:
+1. ONLY output the code to insert at the cursor position
+2. Do NOT repeat any code from before or after the cursor
+3. Do NOT include explanations or markdown formatting
+4. Output ONLY the raw code to insert
+5. Keep the code style consistent with surrounding code
+
+<|fim_prefix|>
+{code_before}<|fim_cursor|><|fim_suffix|>
+{code_after}
+
+Code to insert at cursor:"""
+        
+        return prompt
+
+    async def inline_complete(
+        self,
+        code_before: str,
+        code_after: str,
+        instruction: str,
+        file_path: str,
+        language: str
+    ) -> AsyncIterator[str]:
+        """
+        Generate inline code completion (FIM - Fill in Middle).
+        
+        This is the main method for Windsurf-like ghost text completion.
+        
+        Args:
+            code_before: Code before the cursor position.
+            code_after: Code after the cursor position.
+            instruction: Optional instruction for what to generate.
+            file_path: Path to the current file.
+            language: Programming language of the file.
+        
+        Yields:
+            Code completion chunks as they arrive.
+        
+        Raises:
+            PoorCLIError: If not initialized or completion fails.
+        """
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Inline complete for {file_path} ({language})")
+        
+        # Build FIM prompt
+        prompt = self.build_fim_prompt(
+            code_before=code_before,
+            code_after=code_after,
+            instruction=instruction,
+            file_path=file_path,
+            language=language
+        )
+        
+        try:
+            # Stream the completion
+            async for chunk in self.provider.send_message_stream(prompt):
+                if chunk.content:
+                    yield chunk.content
+            
+            logger.info("Inline completion finished")
+            
+        except Exception as e:
+            logger.exception("Error in inline completion")
+            raise PoorCLIError(f"Inline completion failed: {e}")
+
