@@ -206,3 +206,207 @@ IMPORTANT: Only call write_file if the user:
 
 If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
 
+    async def send_message(
+        self,
+        message: str,
+        context_files: Optional[List[str]] = None
+    ) -> AsyncIterator[str]:
+        """
+        Send a message and yield streaming text chunks.
+        
+        This method handles function calls internally and yields only text content.
+        
+        Args:
+            message: The message to send to the AI.
+            context_files: Optional list of file paths to include as context.
+        
+        Yields:
+            Text chunks as they arrive from the AI.
+        
+        Raises:
+            PoorCLIError: If not initialized or message sending fails.
+        """
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Sending message: {message[:100]}...")
+        
+        # Build context from files if provided
+        full_message = message
+        if context_files:
+            context_parts = []
+            for file_path in context_files:
+                try:
+                    content = await self.tool_registry.read_file(file_path)
+                    context_parts.append(f"=== {file_path} ===\n{content}")
+                except Exception as e:
+                    logger.warning(f"Failed to read context file {file_path}: {e}")
+            if context_parts:
+                full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+        
+        # Save to history
+        if self.history_manager:
+            self.history_manager.add_message("user", message)
+        
+        try:
+            accumulated_text = ""
+            
+            async for chunk in self.provider.send_message_stream(full_message):
+                # Check for function calls
+                if chunk.function_calls:
+                    # Handle function calls
+                    tool_results = await self._handle_function_calls(chunk)
+                    
+                    # Send tool results and get final response
+                    response = await self.provider.send_message(tool_results)
+                    
+                    if response.content:
+                        accumulated_text += response.content
+                        yield response.content
+                    
+                    # Check for more function calls in the response
+                    while response.function_calls:
+                        tool_results = await self._handle_function_calls(response)
+                        response = await self.provider.send_message(tool_results)
+                        if response.content:
+                            accumulated_text += response.content
+                            yield response.content
+                    
+                    break  # Exit streaming after handling function calls
+                
+                # Yield text content
+                elif chunk.content:
+                    accumulated_text += chunk.content
+                    yield chunk.content
+            
+            # Save assistant response to history
+            if self.history_manager and accumulated_text:
+                self.history_manager.add_message("model", accumulated_text)
+            
+            logger.info(f"Message complete, {len(accumulated_text)} chars")
+            
+        except Exception as e:
+            logger.exception("Error sending message")
+            raise PoorCLIError(f"Failed to send message: {e}")
+
+    async def _handle_function_calls(
+        self,
+        response: ProviderResponse
+    ) -> Any:
+        """
+        Handle function calls from a provider response.
+        
+        Args:
+            response: The provider response containing function calls.
+        
+        Returns:
+            Formatted tool results for the provider.
+        """
+        if not response.function_calls:
+            return None
+        
+        tool_results = []
+        
+        for fc in response.function_calls:
+            tool_name = fc.name
+            tool_args = fc.arguments
+            
+            logger.info(f"Executing tool: {tool_name}")
+            
+            # Check permission if callback is set
+            if self._permission_callback:
+                try:
+                    permitted = await self._permission_callback(tool_name, tool_args)
+                    if not permitted:
+                        result = "Operation cancelled by user"
+                        tool_results.append({
+                            "id": fc.id,
+                            "name": tool_name,
+                            "result": result
+                        })
+                        continue
+                except Exception as e:
+                    logger.error(f"Permission callback error: {e}")
+            
+            # Execute the tool
+            try:
+                result = await self.tool_registry.execute_tool(tool_name, tool_args)
+            except Exception as e:
+                result = f"Error: {e}"
+                logger.error(f"Tool execution failed: {e}")
+            
+            tool_results.append({
+                "id": fc.id,
+                "name": tool_name,
+                "result": result
+            })
+        
+        # Format results based on provider
+        return self._format_tool_results(tool_results)
+
+    def _format_tool_results(self, tool_results: List[Dict[str, Any]]) -> Any:
+        """
+        Format tool results for provider consumption.
+        
+        Args:
+            tool_results: List of tool result dicts with id, name, result.
+        
+        Returns:
+            Provider-specific formatted tool results.
+        """
+        provider_name = self.config.model.provider.lower()
+        
+        if provider_name == "gemini":
+            # Gemini format using protos
+            import google.generativeai as genai
+            from google.generativeai import protos
+            
+            function_response_parts = []
+            for tr in tool_results:
+                function_response_parts.append(
+                    protos.Part(
+                        function_response=protos.FunctionResponse(
+                            name=tr["name"],
+                            response={"result": tr["result"]}
+                        )
+                    )
+                )
+            return protos.Content(role="user", parts=function_response_parts)
+        
+        elif provider_name == "openai":
+            # OpenAI expects tool results one at a time in conversation
+            return [
+                {
+                    "role": "tool",
+                    "tool_call_id": tr["id"],
+                    "content": tr["result"]
+                }
+                for tr in tool_results
+            ]
+        
+        elif provider_name in ["anthropic", "claude"]:
+            # Anthropic format
+            return [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tr["id"],
+                    "content": tr["result"]
+                }
+                for tr in tool_results
+            ]
+        
+        elif provider_name == "ollama":
+            # Ollama uses OpenAI-compatible format
+            return [
+                {
+                    "role": "tool",
+                    "tool_call_id": tr["id"],
+                    "content": tr["result"]
+                }
+                for tr in tool_results
+            ]
+        
+        else:
+            # Default: return as string
+            return "\n".join([f"{tr['name']}: {tr['result']}" for tr in tool_results])
+

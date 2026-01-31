@@ -9,7 +9,7 @@
 # ============================================================================
 
 [x] 1.1 Create file poor_cli/core.py with class PoorCLICore that has __init__ accepting optional config_path parameter and initializing empty provider, tool_registry, history, checkpoint_manager, and config attributes
-[ ] 1.2 In poor_cli/core.py add async method initialize(self, provider_name: str = None, model_name: str = None, api_key: str = None) that loads config from ConfigManager, creates provider via ProviderFactory.create(), initializes ToolRegistryAsync, and sets up system instruction - extract logic from repl_async.py lines 114-298
+[x] 1.2 In poor_cli/core.py add async method initialize(self, provider_name: str = None, model_name: str = None, api_key: str = None) that loads config from ConfigManager, creates provider via ProviderFactory.create(), initializes ToolRegistryAsync, and sets up system instruction - extract logic from repl_async.py lines 114-298
 [ ] 1.3 In poor_cli/core.py add async method send_message(self, message: str, context_files: List[str] = None) -> AsyncIterator[str] that yields streaming text chunks from provider.send_message_stream(), handling function calls internally - extract logic from repl_async.py lines 1417-1502
 [ ] 1.4 In poor_cli/core.py add async method send_message_sync(self, message: str, context_files: List[str] = None) -> str that returns complete response text without streaming, handling function calls internally - extract logic from repl_async.py lines 1504-1563
 [ ] 1.5 In poor_cli/core.py add async method execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str that wraps tool_registry.execute_tool and returns result string
