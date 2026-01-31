@@ -5,7 +5,7 @@
 
 # `poor-cli`
 
-[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal *(now also available in [Neovim](https://neovim.io/))*!
+[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal *(now also available in **[Neovim](https://neovim.io/)**)*.
 
 <div align="center">
     <img src="./asset/logo/1.png" width="35%">
@@ -13,40 +13,11 @@
 
 ## Stack
 
-### Languages
-* [Python](https://www.python.org/) 3.8+ - Core application (51 modules, 22,000+ lines)
-* [Lua](https://www.lua.org/) - Neovim plugin (14 modules)
-* [Vim Script](https://vimhelp.org/usr_41.txt.html) - Plugin entry point
-
-### Core Dependencies
-| Package | Version | Purpose |
-|---------|---------|---------|
-| [google-generativeai](https://pypi.org/project/google-generativeai/) | ≥0.3.0 | Gemini API client |
-| [rich](https://pypi.org/project/rich/) | ≥13.0.0 | Terminal formatting & UI |
-| [PyYAML](https://pypi.org/project/PyYAML/) | ≥6.0 | Configuration parsing |
-| [aiofiles](https://pypi.org/project/aiofiles/) | ≥23.0.0 | Async file operations |
-| [aiohttp](https://pypi.org/project/aiohttp/) | ≥3.9.0 | Async HTTP client |
-| [cryptography](https://pypi.org/project/cryptography/) | ≥41.0.0 | API key encryption |
-| [prompt_toolkit](https://pypi.org/project/prompt_toolkit/) | ≥3.0.0 | Interactive input |
-
-### Optional Provider Dependencies
-| Package | Version | Purpose |
-|---------|---------|---------|
-| [openai](https://pypi.org/project/openai/) | ≥1.0.0 | OpenAI/GPT-4 support |
-| [anthropic](https://pypi.org/project/anthropic/) | ≥0.18.0 | Claude/Anthropic support |
-
-### Development Tools
-| Tool | Purpose |
-|------|---------|
-| [black](https://black.readthedocs.io/) | Code formatting |
-| [ruff](https://docs.astral.sh/ruff/) | Linting |
-| [mypy](https://mypy.readthedocs.io/) | Type checking |
-| [pytest](https://docs.pytest.org/) | Testing |
-
-### Infrastructure
-* [SQLite 3](https://www.sqlite.org/) - History, cache, and audit log storage
-* [Docker](https://www.docker.com/) - Containerization (Python 3.11-slim base)
-* [GitHub Actions](https://github.com/features/actions) - CI/CD pipeline
+* *Script*: [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html) 
+* *Core Dependencies*: [google-generativeai](https://pypi.org/project/google-generativeai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/), [prompt_toolkit](https://pypi.org/project/prompt_toolkit/)
+* *Optional Provider Dependencies*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
+* *Development Tools*: [black](https://black.readthedocs.io/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy.readthedocs.io/), [pytest](https://docs.pytest.org/)
+* *Infrastructure*: [SQLite 3](https://www.sqlite.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
 
 ## Usage
 
@@ -76,27 +47,20 @@ $ poor-cli
 $ ./uninstall.sh
 ```
 
-4. Alternatively, install via pip for system-wide access:
+4. Alternatively, install via [pip](https://pypi.org/project/pip/) for system-wide access.
 
 ```console
 $ pip install poor-cli
-$ pip install poor-cli[openai]      # with OpenAI support
-$ pip install poor-cli[anthropic]   # with Claude support
-$ pip install poor-cli[all]         # with all providers
 ```
 
-5. Or run with Docker:
+5. You can also run `poor-cli` with [Docker](https://www.docker.com/).
 
 ```console
 $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
 
-### Neovim Plugin
-
-The Neovim plugin provides inline ghost text completion (like Copilot/Windsurf) and a chat panel. See full documentation in [nvim-poor-cli/README.md](./nvim-poor-cli/README.md).
-
-#### Quick Install (lazy.nvim)
+6. Finally, you can also use `poor-cli` directly through a [Neovim plugin](https://neovim.io/), where it provides inline ghost text completion and a chat panel similar to [Windsurf](https://windsurf.com/) or [Copilot](https://copilot.microsoft.com/). The easiest way to install this is through the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
 
 ```lua
 {
@@ -112,20 +76,6 @@ The Neovim plugin provides inline ghost text completion (like Copilot/Windsurf) 
     end,
 }
 ```
-
-#### Key Neovim Commands
-
-| Command | Description |
-|---------|-------------|
-| `:PoorCliStart` | Start the AI server |
-| `:PoorCliStop` | Stop the AI server |
-| `:PoorCliStatus` | Show server status |
-| `:PoorCliChat` | Toggle chat panel |
-| `:PoorCliComplete` | Trigger inline completion |
-| `:'<,'>PoorCliExplain` | Explain selected code |
-| `:'<,'>PoorCliRefactor` | Refactor selected code |
-
-Run `:checkhealth poor-cli` to verify your Neovim setup.
 
 ## Available Commands
 
@@ -155,6 +105,16 @@ Run `:checkhealth poor-cli` to verify your Neovim setup.
 - `/config` - Show current configuration
 - `/verbose` - Toggle verbose logging
 - `/plan-mode` - Toggle plan mode
+
+**Neovim Commands:**
+- `:PoorCliStart`: Start the AI server
+- `:PoorCliStop`: Stop the AI server
+- `:PoorCliStatus`: Show server status
+- `:PoorCliChat`: Toggle chat panel
+- `:PoorCliComplete`: Trigger inline completion
+- `:'<,'>PoorCliExplain`: Explain selected code
+- `:'<,'>PoorCliRefactor`: Refactor selected code
+- `:checkhealth poor-cli`: Verify your Neovim setup
 
 ## Available Tools
 
