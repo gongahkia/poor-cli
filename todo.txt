@@ -114,6 +114,3 @@
 # OPTIONAL ENHANCEMENTS
 # Nice-to-have features for later
 # ============================================================================
-
-[ ] 5.6 Add VS Code extension skeleton in vscode-poor-cli/ using same JSON-RPC server
-[ ] 5.7 Add support for image context (screenshots) for vision-capable models
