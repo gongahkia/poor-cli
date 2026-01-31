@@ -745,3 +745,226 @@ Code to insert at cursor:"""
             logger.error(f"File write failed: {e}")
             raise PoorCLIError(f"Failed to write file: {e}")
 
+    def get_available_tools(self) -> List[Dict[str, Any]]:
+        """
+        Get list of available tools.
+        
+        Returns:
+            List of tool declarations.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        return self.tool_registry.get_tool_declarations()
+
+    def get_provider_info(self) -> Dict[str, Any]:
+        """
+        Get information about the current provider.
+        
+        Returns:
+            Dict with keys: name, model, capabilities.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized or not self.provider or not self.config:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        capabilities = {}
+        if hasattr(self.provider, 'capabilities') and self.provider.capabilities:
+            caps = self.provider.capabilities
+            capabilities = {
+                "streaming": caps.supports_streaming,
+                "function_calling": caps.supports_function_calling,
+                "vision": caps.supports_vision,
+            }
+        
+        return {
+            "name": self.config.model.provider,
+            "model": self.config.model.model_name,
+            "capabilities": capabilities
+        }
+
+    async def clear_history(self) -> None:
+        """
+        Clear conversation history.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info("Clearing history")
+        
+        if hasattr(self.provider, 'clear_history'):
+            await self.provider.clear_history()
+        
+        if self.history_manager:
+            self.history_manager.clear_current_session()
+
+    def get_history(self) -> List[Dict[str, Any]]:
+        """
+        Get conversation history in normalized format.
+        
+        Returns:
+            List of dicts with 'role' and 'content' keys.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        history = []
+        
+        if hasattr(self.provider, 'get_history'):
+            raw_history = self.provider.get_history()
+            for entry in raw_history:
+                if isinstance(entry, dict):
+                    history.append({
+                        "role": entry.get("role", "unknown"),
+                        "content": entry.get("content", "")
+                    })
+        
+        return history
+
+    async def switch_provider(
+        self,
+        provider_name: str,
+        model_name: Optional[str] = None
+    ) -> None:
+        """
+        Switch to a different AI provider.
+        
+        Args:
+            provider_name: Name of the provider to switch to.
+            model_name: Optional model name. If None, uses provider default.
+        
+        Raises:
+            ConfigurationError: If switch fails.
+        """
+        logger.info(f"Switching to provider: {provider_name}")
+        
+        # Get API key for new provider
+        api_key = self._config_manager.get_api_key(provider_name)
+        
+        if not api_key and provider_name != "ollama":
+            raise ConfigurationError(f"No API key found for provider: {provider_name}")
+        
+        # Determine model name
+        if not model_name:
+            provider_config = self.config.model.providers.get(provider_name)
+            if provider_config:
+                model_name = provider_config.default_model
+            else:
+                raise ConfigurationError(f"Unknown provider: {provider_name}")
+        
+        # Get provider config for additional settings
+        provider_config = self._config_manager.get_provider_config(provider_name)
+        extra_kwargs = {}
+        if provider_config and provider_config.base_url:
+            extra_kwargs["base_url"] = provider_config.base_url
+        
+        # Create new provider
+        self.provider = ProviderFactory.create(
+            provider_name=provider_name,
+            api_key=api_key or "",
+            model_name=model_name,
+            **extra_kwargs
+        )
+        
+        # Update config
+        self.config.model.provider = provider_name
+        self.config.model.model_name = model_name
+        
+        # Re-initialize provider with tools
+        tool_declarations = self.tool_registry.get_tool_declarations()
+        await self.provider.initialize(
+            tools=tool_declarations,
+            system_instruction=self._system_instruction
+        )
+        
+        logger.info(f"Switched to {provider_name}/{model_name}")
+
+    def set_system_instruction(self, instruction: str) -> None:
+        """
+        Update the system instruction.
+        
+        Note: Takes effect on next message, not retroactively.
+        
+        Args:
+            instruction: New system instruction.
+        """
+        self._system_instruction = instruction
+        logger.info("System instruction updated")
+
+    async def create_checkpoint(
+        self,
+        file_paths: List[str],
+        description: str
+    ) -> Optional[str]:
+        """
+        Create a checkpoint for the given files.
+        
+        Args:
+            file_paths: List of file paths to checkpoint.
+            description: Description of the checkpoint.
+        
+        Returns:
+            Checkpoint ID or None if checkpointing is disabled.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        if not self.checkpoint_manager:
+            logger.warning("Checkpoint manager not enabled")
+            return None
+        
+        logger.info(f"Creating checkpoint for {len(file_paths)} files")
+        
+        try:
+            checkpoint_id = await self.checkpoint_manager.create_checkpoint(
+                file_paths,
+                description
+            )
+            return checkpoint_id
+        except Exception as e:
+            logger.error(f"Checkpoint creation failed: {e}")
+            raise PoorCLIError(f"Failed to create checkpoint: {e}")
+
+    async def restore_checkpoint(self, checkpoint_id: str) -> bool:
+        """
+        Restore a checkpoint.
+        
+        Args:
+            checkpoint_id: ID of the checkpoint to restore.
+        
+        Returns:
+            True if successful, False otherwise.
+        
+        Raises:
+            PoorCLIError: If not initialized.
+        """
+        if not self._initialized:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        if not self.checkpoint_manager:
+            logger.warning("Checkpoint manager not enabled")
+            return False
+        
+        logger.info(f"Restoring checkpoint: {checkpoint_id}")
+        
+        try:
+            success = await self.checkpoint_manager.restore_checkpoint(checkpoint_id)
+            return success
+        except Exception as e:
+            logger.error(f"Checkpoint restore failed: {e}")
+            raise PoorCLIError(f"Failed to restore checkpoint: {e}")
+
