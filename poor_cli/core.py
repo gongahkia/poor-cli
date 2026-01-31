@@ -410,3 +410,68 @@ If the user just asks for a solution/code without mentioning a file, show the co
             # Default: return as string
             return "\n".join([f"{tr['name']}: {tr['result']}" for tr in tool_results])
 
+    async def send_message_sync(
+        self,
+        message: str,
+        context_files: Optional[List[str]] = None
+    ) -> str:
+        """
+        Send a message and return complete response text.
+        
+        This is a non-streaming version that waits for the complete response.
+        Handles function calls internally.
+        
+        Args:
+            message: The message to send to the AI.
+            context_files: Optional list of file paths to include as context.
+        
+        Returns:
+            Complete response text from the AI.
+        
+        Raises:
+            PoorCLIError: If not initialized or message sending fails.
+        """
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        
+        logger.info(f"Sending message (sync): {message[:100]}...")
+        
+        # Build context from files if provided
+        full_message = message
+        if context_files:
+            context_parts = []
+            for file_path in context_files:
+                try:
+                    content = await self.tool_registry.read_file(file_path)
+                    context_parts.append(f"=== {file_path} ===\n{content}")
+                except Exception as e:
+                    logger.warning(f"Failed to read context file {file_path}: {e}")
+            if context_parts:
+                full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+        
+        # Save to history
+        if self.history_manager:
+            self.history_manager.add_message("user", message)
+        
+        try:
+            response = await self.provider.send_message(full_message)
+            accumulated_text = response.content or ""
+            
+            # Handle function calls
+            while response.function_calls:
+                tool_results = await self._handle_function_calls(response)
+                response = await self.provider.send_message(tool_results)
+                if response.content:
+                    accumulated_text += response.content
+            
+            # Save assistant response to history
+            if self.history_manager and accumulated_text:
+                self.history_manager.add_message("model", accumulated_text)
+            
+            logger.info(f"Message complete (sync), {len(accumulated_text)} chars")
+            return accumulated_text
+            
+        except Exception as e:
+            logger.exception("Error sending message (sync)")
+            raise PoorCLIError(f"Failed to send message: {e}")
+
