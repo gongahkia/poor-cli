@@ -1,0 +1,180 @@
+*poor-cli.txt*  AI-powered inline completion and chat for Neovim
+
+Author:  gongahkia
+License: MIT
+
+INTRODUCTION                                            *poor-cli*
+
+poor-cli is an AI-powered coding assistant plugin for Neovim that provides
+inline ghost text completion (like Copilot/Windsurf) and a chat panel for
+conversational AI interactions.
+
+Features:
+- Inline ghost text completion with multi-line support
+- Chat panel with markdown rendering
+- Multi-provider support (Gemini, OpenAI, Claude, Ollama)
+- AI-powered code commands (explain, refactor, test, docs)
+
+REQUIREMENTS                                            *poor-cli-requirements*
+
+- Neovim 0.9+
+- Python 3.8+
+- poor-cli installed: `pip install poor-cli`
+- API key for at least one provider
+
+SETUP                                                   *poor-cli-setup*
+
+Add to your init.lua:
+>lua
+    require("poor-cli").setup({
+        -- options
+    })
+<
+
+CONFIGURATION                                           *poor-cli-config*
+
+                                                        *poor-cli-config.server_cmd*
+server_cmd ~
+    Default: "poor-cli-server --stdio"
+    Command to start the server.
+
+                                                        *poor-cli-config.auto_start*
+auto_start ~
+    Default: true
+    Auto-start server when setup() is called.
+
+                                                        *poor-cli-config.ghost_text_hl*
+ghost_text_hl ~
+    Default: "Comment"
+    Highlight group for ghost text completions.
+
+                                                        *poor-cli-config.trigger_key*
+trigger_key ~
+    Default: "<C-Space>"
+    Key to trigger inline completion in insert mode.
+
+                                                        *poor-cli-config.accept_key*
+accept_key ~
+    Default: "<Tab>"
+    Key to accept completion. Falls back to normal Tab if no completion.
+
+                                                        *poor-cli-config.dismiss_key*
+dismiss_key ~
+    Default: "<Esc>"
+    Key to dismiss completion. Falls back to normal Esc if no completion.
+
+                                                        *poor-cli-config.chat_key*
+chat_key ~
+    Default: "<leader>pc"
+    Key to toggle chat panel.
+
+                                                        *poor-cli-config.provider*
+provider ~
+    Default: nil (auto-detect)
+    AI provider: "gemini", "openai", "anthropic", "ollama"
+
+                                                        *poor-cli-config.model*
+model ~
+    Default: nil (provider default)
+    Specific model name to use.
+
+                                                        *poor-cli-config.auto_trigger*
+auto_trigger ~
+    Default: false
+    Automatically trigger completion on CursorHoldI.
+
+COMMANDS                                                *poor-cli-commands*
+
+:PoorCliStart                                           *:PoorCliStart*
+    Start the AI server.
+
+:PoorCliStop                                            *:PoorCliStop*
+    Stop the AI server.
+
+:PoorCliStatus                                          *:PoorCliStatus*
+    Show server status and current provider info.
+
+:PoorCliChat                                            *:PoorCliChat*
+    Toggle the chat panel.
+
+:PoorCliSend [message]                                  *:PoorCliSend*
+    Send a message to chat. If no message provided, prompts for input.
+
+:PoorCliClear                                           *:PoorCliClear*
+    Clear chat history.
+
+:PoorCliComplete                                        *:PoorCliComplete*
+    Trigger inline completion at cursor.
+
+:PoorCliAccept                                          *:PoorCliAccept*
+    Accept the current inline completion.
+
+:PoorCliDismiss                                         *:PoorCliDismiss*
+    Dismiss the current inline completion.
+
+:PoorCliSwitchProvider [provider] [model]               *:PoorCliSwitchProvider*
+    Switch to a different AI provider. If no provider given, shows picker.
+
+:PoorCliExplain                                         *:PoorCliExplain*
+    Explain the current line or visual selection.
+
+:PoorCliRefactor                                        *:PoorCliRefactor*
+    Refactor the visual selection. Prompts for instruction.
+
+:PoorCliTest                                            *:PoorCliTest*
+    Generate unit tests for the current function.
+
+:PoorCliDoc                                             *:PoorCliDoc*
+    Generate documentation for the current function.
+
+KEYMAPS                                                 *poor-cli-keymaps*
+
+Insert mode:
+    <C-Space>       Trigger inline completion
+    <Tab>           Accept completion (or normal Tab)
+    <Esc>           Dismiss completion (or normal Esc)
+    <M-CR>          Trigger completion with instruction
+
+Normal mode:
+    <leader>pc      Toggle chat panel
+    gc              Start insert and trigger completion
+
+Visual mode:
+    <leader>pc      Send selection to chat
+    <leader>pr      Refactor selection
+    <leader>pe      Explain selection
+
+API                                                     *poor-cli-api*
+
+Lua API for custom integrations:
+>lua
+    local poor_cli = require("poor-cli")
+    
+    poor_cli.start()           -- Start server
+    poor_cli.stop()            -- Stop server
+    poor_cli.is_running()      -- Check if server running
+    poor_cli.complete()        -- Trigger completion
+    poor_cli.accept()          -- Accept completion
+    poor_cli.dismiss()         -- Dismiss completion
+    poor_cli.toggle_chat()     -- Toggle chat panel
+    poor_cli.send("message")   -- Send message to chat
+<
+
+HEALTH CHECK                                            *poor-cli-health*
+
+Run `:checkhealth poor-cli` to verify your setup.
+
+TROUBLESHOOTING                                         *poor-cli-troubleshooting*
+
+Server won't start:
+1. Check `poor-cli-server` is in PATH: `which poor-cli-server`
+2. Install if missing: `pip install poor-cli`
+3. Check Python version: `python3 --version` (needs 3.8+)
+
+No completions:
+1. Verify API key: `echo $GEMINI_API_KEY`
+2. Check status: `:PoorCliStatus`
+3. Enable debug: `setup({ debug = true })`
+4. Check `:messages` for errors
+
+vim:tw=78:ts=8:ft=help:norl:
