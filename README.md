@@ -170,7 +170,96 @@ Run `:checkhealth poor-cli` to verify your Neovim setup.
 ## Architecture
 
 ```mermaid
+flowchart TB
+    subgraph Clients["Client Interfaces"]
+        CLI["CLI REPL<br/>(repl_async.py)"]
+        NVIM["Neovim Plugin<br/>(Lua)"]
+        EXT["Other Editors<br/>(VSCode, etc.)"]
+    end
 
+    subgraph Server["JSON-RPC Server"]
+        RPC["server.py<br/>JSON-RPC 2.0"]
+    end
+
+    subgraph Core["Core Engine"]
+        ENGINE["PoorCLICore<br/>(core.py)"]
+        CTX["Context Manager<br/>(context.py)"]
+        PROMPTS["Prompt Templates<br/>(prompts.py)"]
+    end
+
+    subgraph Providers["AI Providers"]
+        FACTORY["Provider Factory<br/>(provider_factory.py)"]
+        GEMINI["Gemini Provider<br/>(free tier)"]
+        OPENAI["OpenAI Provider<br/>(GPT-4)"]
+        CLAUDE["Anthropic Provider<br/>(Claude)"]
+        OLLAMA["Ollama Provider<br/>(local)"]
+    end
+
+    subgraph Tools["Tool System"]
+        REGISTRY["Tool Registry<br/>(tools_async.py)"]
+        READ["read_file"]
+        WRITE["write_file"]
+        EDIT["edit_file"]
+        GLOB["glob_files"]
+        GREP["grep_files"]
+        BASH["bash"]
+    end
+
+    subgraph Safety["Safety & Versioning"]
+        CHECKPOINT["Checkpoint System<br/>(checkpoint.py)"]
+        PLAN["Plan Mode<br/>(plan_mode.py)"]
+        AUDIT["Audit Logger<br/>(audit_log.py)"]
+        VALIDATE["Command Validator<br/>(command_validator.py)"]
+    end
+
+    subgraph Storage["Data Storage (SQLite)"]
+        HISTORY["History DB<br/>~/.poor-cli/history.db"]
+        CACHE["File Cache<br/>~/.poor-cli/cache/"]
+        AUDITDB["Audit Log<br/>~/.poor-cli/audit/"]
+        CHECKDB["Checkpoints<br/>~/.poor-cli/checkpoints/"]
+    end
+
+    subgraph Config["Configuration"]
+        YAML["config.yaml"]
+        ENV[".env<br/>(API Keys)"]
+    end
+
+    CLI --> ENGINE
+    NVIM --> RPC
+    EXT --> RPC
+    RPC --> ENGINE
+
+    ENGINE --> CTX
+    ENGINE --> PROMPTS
+    ENGINE --> FACTORY
+    ENGINE --> REGISTRY
+
+    FACTORY --> GEMINI
+    FACTORY --> OPENAI
+    FACTORY --> CLAUDE
+    FACTORY --> OLLAMA
+
+    REGISTRY --> READ
+    REGISTRY --> WRITE
+    REGISTRY --> EDIT
+    REGISTRY --> GLOB
+    REGISTRY --> GREP
+    REGISTRY --> BASH
+
+    WRITE --> CHECKPOINT
+    EDIT --> CHECKPOINT
+    BASH --> VALIDATE
+
+    ENGINE --> PLAN
+    PLAN --> AUDIT
+    CHECKPOINT --> CHECKDB
+
+    ENGINE --> HISTORY
+    CTX --> CACHE
+    AUDIT --> AUDITDB
+
+    ENGINE --> YAML
+    FACTORY --> ENV
 ```
 
 ## Screenshots
