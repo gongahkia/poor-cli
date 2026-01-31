@@ -13,7 +13,8 @@
 
 ## Stack
 
-* *Script*: [Python](https://www.python.org/)
+* *Script*: [Python](https://www.python.org/), [Lua]()
+* ...
 
 ## Usage
 
@@ -33,7 +34,7 @@ $ pip install -r requirements.txt
 $ cp .env.example .env
 ```
 
-3. Now run the below
+3. Now run the below to use the `poor-cli` CLI client.
 
 ```console
 $ ./run.sh
@@ -41,6 +42,12 @@ $ python -m poor_cli
 $ pip install -e .
 $ poor-cli
 $ ./uninstall.sh
+```
+
+4. Alternatively ...
+
+```console
+
 ```
 
 ## Available Commands
