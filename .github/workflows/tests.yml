@@ -34,7 +34,7 @@ jobs:
 
       - name: Run Python tests
         run: |
-          pytest tests/ -v --cov=poor_cli --cov-report=xml
+          pytest tests/ -v
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
