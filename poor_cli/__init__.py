@@ -17,6 +17,7 @@ __version__ = "0.4.0"
 
 from .repl_async import PoorCLIAsync
 from .core import PoorCLICore
+from .server import PoorCLIServer
 from .exceptions import PoorCLIError
 from .checkpoint import CheckpointManager, Checkpoint
 from .async_checkpoint import AsyncCheckpointManager
@@ -33,6 +34,7 @@ from .api_key_manager import APIKeyManager, get_api_key_manager
 __all__ = [
     "PoorCLIAsync",
     "PoorCLICore",
+    "PoorCLIServer",
     "PoorCLIError",
     "CheckpointManager",
     "AsyncCheckpointManager",
