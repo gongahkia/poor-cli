@@ -1,0 +1,119 @@
+(A) Define core token set: keywords (timeline, entity, rel, if, else, for, while, fn, let, type, import), operators (+, -, *, /, ==, !=, <, >, &&, ||, .., @), delimiters ({, }, [, ], (, ), :, ;, ->), literals (int, float, string, date, duration, bool, identifier) +lang
+(A) Define grammar for timeline declarations: `timeline <name> { kind: linear|branch|parallel|loop, start: <date>, end: <date>, parent: <timeline>?, fork_from: <timeline>@<date>?, merge_into: <timeline>@<date>?, loop_count: <int>?, body: <stmt>* }` +lang
+(A) Define grammar for entity declarations: `entity <name> : <type> { <attr>: <expr>, ... , appears_on: <timeline>@<time_range> }` with type being built-in (character, event, location, artifact, org) or user-defined +lang
+(A) Define grammar for relationship declarations: `rel <entity> -[<label>]-> <entity> @ <time_range>?` supporting directed and undirected edges with optional temporal scoping +lang
+(A) Define grammar for temporal expressions: absolute dates (2024-01-15), relative (3 days after <event>), ranges (start..end), fuzzy (~1800s), era references (<timeline>::<era>::<point>) +lang
+(A) Define grammar for conditionals: `if <expr> { <stmt>* } else if <expr> { <stmt>* } else { <stmt>* }` and pattern match `match <expr> { <pattern> => <stmt>*, ... }` +lang
+(A) Define grammar for loops: `for <ident> in <iterable> { <stmt>* }`, `while <expr> { <stmt>* }`, `repeat <int> { <stmt>* }` where iterables include entity queries and range expressions +lang
+(A) Define grammar for variable bindings: `let <ident> = <expr>` with lexical block scoping, shadowing allowed, immutable by default, `let mut` for mutable +lang
+(A) Define grammar for function definitions: `fn <name>(<params>) -> <type>? { <stmt>* }` with closures `|<params>| <expr>` for inline use in filters/maps +lang
+(A) Define grammar for custom type definitions: `type <name> { <field>: <type_annotation>, ... }` extending base entity with additional attributes and optional rendering hints +lang
+(A) Implement lexer using pest PEG grammar file (.pest): tokenize source into stream handling whitespace, comments (// line, /* block */), string escapes, date literals, and Unicode identifiers +lang
+(A) Implement recursive descent parser that consumes pest token pairs and builds typed AST nodes, with precedence climbing for expressions +lang
+(A) Define complete AST node enum: Program, TimelineDecl, EntityDecl, RelDecl, TypeDecl, FnDecl, LetStmt, IfExpr, MatchExpr, ForLoop, WhileLoop, RepeatLoop, BinOp, UnaryOp, Call, FieldAccess, Literal, Ident, Block, TimeExpr, RangeExpr +lang
+(A) Implement Span tracking on every AST node storing byte offset start/end and source file path for error reporting +lang
+(A) Implement parse error recovery: collect multiple errors per parse instead of failing on first, report all with line:col and context snippet +lang
+(A) Register .chron file extension as canonical DSL source format, implement file reader that handles UTF-8 BOM and normalizes line endings +lang
+(A) Define Timeline struct with fields: id, name, kind (enum: Linear, Branch, Parallel, Loop, Nested), time_bounds (start, end), parent_id, fork_point, merge_point, loop_config (count, entry_time, exit_time), children vec, event_markers vec +model
+(A) Define Entity struct with fields: id, name, type_id, attributes (HashMap<String, Value>), timeline_appearances (Vec<(TimelineId, TimeRange)>), lifecycle_events (Vec<LifecycleEvent>) +model
+(A) Define Relationship struct with fields: id, source_entity_id, target_entity_id, label (String), directed (bool), temporal_scope (Option<TimeRange>), attributes (HashMap<String, Value>) +model
+(A) Define TimePoint enum: Absolute(NaiveDate), Relative { anchor: EntityOrEventRef, offset: Duration }, Fuzzy { center: NaiveDate, radius: Duration }, EraRef { timeline: TimelineId, era: String, point: String } +model
+(A) Define TimeRange struct with fields: start (TimePoint), end (TimePoint), inclusive_end (bool); implement contains(), overlaps(), intersection(), union() methods +model
+(A) Define World struct as top-level container: timelines (BTreeMap<Id, Timeline>), entities (BTreeMap<Id, Entity>), relationships (Vec<Relationship>), type_registry (HashMap<String, TypeDef>), fn_registry (HashMap<String, FnDef>) +model
+(A) Implement entity registry with lookup by id, name, type; support querying entities_on_timeline(timeline_id, time_range) and entities_of_type(type_id) +model
+(A) Implement relationship adjacency list graph: neighbors(entity_id), edges_between(e1, e2), edges_at_time(time_point), filter_by_label(label) +model
+(A) Implement timeline tree structure: children_of(timeline_id), ancestors_of(timeline_id), branches_at(time_point), detect_loops() +model
+(A) Implement variable environment as stack of HashMap frames: push_scope(), pop_scope(), bind(name, value), lookup(name) with lexical chain traversal +eval
+(A) Implement Value enum: Int(i64), Float(f64), String(String), Bool(bool), Date(TimePoint), Duration(Duration), Entity(EntityId), Timeline(TimelineId), List(Vec<Value>), Fn(closure), Null +eval
+(A) Implement expression evaluator: arithmetic ops on numeric types, string concatenation, comparison operators, logical operators, field access on entities/timelines, function calls +eval
+(A) Implement conditional evaluation: evaluate if/else chains, match expressions with pattern destructuring on Value variants +eval
+(A) Implement loop evaluation: for-in over lists/entity queries/timeline queries with loop variable binding, while with condition re-eval, repeat with counter, break/continue support +eval
+(A) Implement function call evaluation: resolve fn name in registry, bind args to params in new scope, evaluate body, return result; support recursion with stack depth limit +eval
+(A) Implement timeline construction pass: evaluate TimelineDecl nodes, resolve parent/fork/merge references, register in World, validate temporal consistency (fork time within parent bounds) +eval
+(A) Implement entity instantiation pass: evaluate EntityDecl nodes, resolve type from registry, validate required attributes, resolve timeline appearances, register in World +eval
+(A) Implement relationship binding pass: evaluate RelDecl nodes, resolve source/target entity refs, validate temporal scope falls within both entities' lifetimes, register in World +eval
+(A) Implement built-in functions: before(t1, t2), after(t1, t2), overlaps(r1, r2), concurrent(e1, e2), duration(range), entities_at(timeline, time), relationships_of(entity), type_of(entity) +eval
+(A) Implement temporal query evaluator: entities_at(time) filters World entities by timeline_appearances containing time, relationships_at(time) filters by temporal_scope +eval
+(A) Implement runtime error reporting: type mismatch, undefined variable, undefined entity/timeline ref, temporal paradox, stack overflow — all with source Span context +eval
+(A) Implement horizontal time axis layout: map TimeRange to pixel/cell coordinates using configurable scale (auto-fit or user-specified units-per-cell), support both date-labeled and abstract tick marks +layout
+(A) Implement swim lane allocation: assign each entity a vertical lane, group by timeline membership, minimize lane crossings using barycenter heuristic +layout
+(A) Implement branching layout: at fork_point, split parent timeline visually into diverging horizontal paths with angled connector lines, allocate vertical space for each branch proportional to entity count +layout
+(A) Implement merging layout: at merge_point, converge branch paths back with angled connector lines into target timeline, handle entity deduplication at merge +layout
+(A) Implement parallel timeline stacking: vertically stack independent timelines with labeled separators, align shared time axis across all +layout
+(A) Implement time loop layout: render loop region as a visually distinct bounded box with cycle arrow indicator, show iteration count badge, connect loop entry/exit points to surrounding timeline +layout
+(A) Implement nested timeline zoom model: define zoom levels (era overview → period detail → event granularity), compute layout at each level, track which level is currently visible +layout
+(A) Implement relationship edge routing: draw labeled edges between entity swim lane positions, use simple spline routing to avoid crossing entity labels, bundle parallel edges +layout
+(A) Implement auto-spacing for labels: detect label collisions in layout, apply force-directed micro-adjustment or staggered vertical offset to resolve overlaps +layout
+(A) Implement viewport model: define visible region as (time_start, time_end, lane_start, lane_end), support pan (shift region), zoom (scale factor), focus (center on entity/time) +layout
+(A) Set up ratatui application scaffold: terminal init/restore, main event loop (tick + input), App state struct holding World, Layout, ViewState, InputMode +tui
+(A) Implement main timeline view widget: render horizontal time axis with tick marks and date labels, render entity swim lanes as horizontal bars colored by type, render entity name labels +tui
+(A) Implement entity detail panel: side panel showing selected entity's name, type, all attributes, timeline appearances, and connected relationships; updates on selection change +tui
+(A) Implement relationship overlay: draw connecting lines/arrows between entity bars in timeline view using ratatui canvas or braille characters, color-code by relationship label +tui
+(A) Implement keyboard navigation: hjkl/arrows for panning viewport, +/- for zoom, Tab to cycle focus between panes, Enter to select/inspect entity, Esc to deselect, q to quit +tui
+(A) Implement entity selection: highlight selected entity bar, dim non-connected entities, show relationship edges only for selected entity's neighborhood +tui
+(B) Implement time scrubber: bottom bar showing current time cursor position, left/right to step through time, animate mode (play/pause) that auto-advances cursor showing entity state changes over time +tui
+(B) Implement filter panel: popup/sidebar listing entity types and relationship labels as toggleable checkboxes, time range slider; applying filters updates layout to hide/show matching elements +tui
+(B) Implement layer toggle: keybinding to cycle through visibility layers — all relationships, per-label relationship layers, timeline branch layers; show active layers in status bar +tui
+(B) Implement search: / to open search prompt, fuzzy-find entities by name, jump viewport to center on matched entity and select it +tui
+(B) Implement branch navigation: list available timeline branches in a popup, select to switch viewport focus to that branch's region +tui
+(B) Implement time loop viz in TUI: render loop boundaries as box-drawing characters enclosing the loop region, show iteration number, animate cycling through loop iterations +tui
+(B) Implement nested drill-down: Enter on a nested timeline region zooms into that level showing finer granularity, Backspace/Esc zooms back out to parent level +tui
+(B) Implement status bar: bottom line showing current time position, zoom level, active filters count, total entity/relationship count, current file path +tui
+(B) Implement help overlay: ? key toggles help popup listing all keybindings grouped by category (navigation, selection, filtering, export) +tui
+(B) Implement mouse support: click to select entity, scroll wheel for zoom, click-drag for pan, right-click for context menu (inspect, filter, export) +tui
+(B) Implement color theming: load theme from config defining colors per entity type, per relationship label, timeline background, selection highlight; ship default dark and light themes +tui
+(A) Implement scene-to-SVG converter: transform Layout output into SVG elements — timelines as horizontal path elements, entity bars as rounded rects, labels as text elements, with viewBox matching layout bounds +render
+(A) Implement SVG relationship edge rendering: draw edges as SVG path elements with arrowhead markers for directed relationships, apply stroke color per label, render label text at edge midpoint +render
+(A) Implement SVG label placement: position entity names avoiding overlap with bars and edges, use text-anchor and dominant-baseline for alignment, truncate with ellipsis if space-constrained +render
+(A) Implement SVG theming: apply color palette from theme config to all SVG elements via inline styles or CSS class attributes embedded in SVG defs +render
+(B) Implement SVG-to-PNG conversion using resvg crate: rasterize SVG at configurable DPI (default 150), handle font fallback, output to specified path +render
+(B) Implement SVG-to-PDF conversion: embed SVG into single-page PDF using printpdf or svg2pdf crate, set page dimensions from layout bounds +render
+(B) Implement export CLI subcommand: `chron export <file.chron> --format svg|pdf|png --output <path> --width <px> --height <px> --time-range <start>..<end> --theme <name>` +cli
+(B) Implement configurable export dimensions: --width and --height flags, auto-aspect-ratio if only one specified, fit-content default if neither specified +render
+(B) Implement export time-range selection: --time-range flag crops layout to specified window before rendering, useful for exporting specific acts/eras +render
+(B) Set up axum localhost HTTP server: serve on configurable port (default 8888), CORS for local dev, graceful shutdown on Ctrl-C +web
+(B) Implement file watcher using notify crate: watch .chron source files for changes, trigger re-parse + re-eval + re-layout on save +web
+(B) Implement WebSocket channel: push re-rendered timeline data to connected browser clients on file change for live reload without manual refresh +web
+(B) Serve interactive HTML timeline viewer: single-page app with inline SVG rendering of timeline, pan/zoom via CSS transforms and mouse/touch events +web
+(B) Implement web entity click-to-inspect: click entity bar to show detail popup (same data as TUI detail panel) positioned near click point +web
+(B) Implement web time scrubber: horizontal slider below timeline, drag to set current time cursor, entities/relationships fade based on temporal proximity to cursor +web
+(B) Implement web filter sidebar: collapsible sidebar with entity type checkboxes, relationship label checkboxes, time range slider; changes trigger re-render of visible elements +web
+(B) Implement web relationship hover: highlight connected edges and dim unconnected entities on entity hover, show relationship label tooltip +web
+(B) Implement web export button: toolbar button to download current view as SVG/PDF/PNG using existing render pipeline, opens save dialog +web
+(B) Implement CSV entity importer: parse CSV with columns (name, type, timeline, start, end, attr1, attr2, ...), map rows to EntityDecl AST nodes, validate required fields, report row-level errors +import
+(B) Implement CSV relationship importer: parse CSV with columns (source, target, label, start, end), resolve entity refs by name, create RelDecl AST nodes +import
+(B) Implement GEDCOM parser: tokenize GEDCOM 5.5.1 format into level-tag-value triples, handle CONC/CONT continuation, INDI and FAM record types +import
+(B) Implement GEDCOM-to-model mapper: map INDI records to character entities with birth/death lifecycle events, FAM records to parent/child/spouse relationships, generate linear timeline from earliest to latest date +import
+(B) Implement JSON-LD importer: parse JSON-LD documents, recognize schema.org Person (name, birthDate, deathDate) and Event (name, startDate, endDate, location) types, map to entities +import
+(B) Implement import CLI subcommand: `chron import <input_file> --from csv|gedcom|jsonld --output <file.chron>` generates .chron source from imported data +cli
+(B) Implement import validation: check for duplicate entity names, dangling relationship references, invalid date formats; report all errors with input line numbers +import
+(B) Implement custom entity type definitions in DSL: `type Weapon { damage: int, wielder: character?, forged_at: date }` registers in type_registry, validates instances against schema +ext
+(B) Implement custom attribute rendering hints: `type Weapon { @icon: "sword", @color: "#c0c0c0", ... }` meta-attributes prefixed with @ control visual representation in layout/render +ext
+(B) Implement module/import system: `import "other_file.chron"` resolves relative path, parses and evaluates imported file's declarations into current World, detect circular imports +ext
+(B) Implement entity lifecycle events: built-in events (born, died, created, destroyed, transformed) that auto-create timeline markers and can be queried in expressions +model
+(B) Implement group/faction entity type: built-in type representing collections of entities with membership time ranges, `faction Rebels { members: [luke @ 0ABY..4ABY, leia @ 0ABY..4ABY] }` +model
+(B) Implement location entity type: built-in type with optional spatial coordinates, entities can be `at <location> @ <time_range>`, locations render as background regions on timeline +model
+(B) Implement artifact entity type: built-in type for objects that transfer between characters, `artifact Sword { owner: [aragorn @ T3.1..T3.6, frodo @ T3.6..T3.9] }` tracks provenance chain +model
+(B) Implement string interpolation in DSL: `"Hello {entity.name}, age {entity.age}"` within string literals, evaluate interpolated expressions in current scope +lang
+(A) Implement main CLI entry point using clap: subcommands (run, export, import, serve, check), global flags (--verbose, --config, --theme), version/help auto-generation +cli
+(A) Implement `run` subcommand: parse .chron file → evaluate → compute layout → launch TUI; handle file-not-found and parse errors gracefully before TUI init +cli
+(B) Implement `serve` subcommand: parse .chron file → evaluate → compute layout → start web server → open browser; combine with file watcher for live reload +cli
+(B) Implement `check` subcommand: parse .chron file → evaluate → validate (temporal consistency, dangling refs, type errors) → print diagnostics → exit with code 0/1 +cli
+(B) Implement config file loading: read .chronrc (TOML) from project dir or ~/.config/chron/config.toml, settings for default theme, export defaults, server port, key rebindings +cli
+(B) Implement temporal consistency validator: detect and report impossible orderings (entity appears before timeline starts), fork points outside parent bounds, merge of non-overlapping timelines +eval
+(B) Implement time loop paradox detection: warn when entity state at loop exit contradicts loop entry conditions, detect infinite loop potential (no exit condition), flag entities that exist only within loop scope +eval
+(B) Implement relationship path query: `path(entityA, entityB)` returns shortest relationship chain between two entities, `path(entityA, entityB, max_hops: 3)` with depth limit +eval
+(B) Implement batch entity creation via loops: `for i in 1..10 { entity Soldier_{i} : character { rank: "private" } }` with string interpolation in identifiers during eval +eval
+(B) Implement conditional relationship creation: `if timeline.kind == Branch { rel hero -[betrays]-> mentor }` relationships that exist only when conditions hold +eval
+(B) Implement REPL mode: `chron repl` starts interactive session, evaluate declarations incrementally, query World state, render ASCII mini-timeline on demand +cli
+(B) Implement timeline comparison view in TUI: side-by-side split pane showing two branches with shared entities highlighted and divergences color-coded +tui
+(B) Implement undo/redo stack for TUI interactions: track viewport state changes (pan, zoom, filter, selection), Ctrl-z/Ctrl-y to navigate history +tui
+(B) Implement TUI command palette: Ctrl-p opens fuzzy-find popup listing all available commands, type to filter, Enter to execute +tui
+(B) Implement bookmarks in TUI: Ctrl-b to bookmark current view state (viewport + filters + selection), numbered bookmarks 1-9 for quick jump +tui
+(C) Implement Markdown embedding preprocessor: scan .md files for ```chron fenced code blocks, extract DSL source, evaluate and render inline as SVG image, output processed .md with embedded images +embed
+(C) Implement LSP server for .chron files: textDocument/completion for keywords, entity names, timeline names; textDocument/diagnostics for parse/eval errors; textDocument/hover for entity info +tooling
+(C) Implement syntax highlighting definitions: generate TextMate grammar (.tmLanguage.json) and tree-sitter grammar for .chron files, ship for VSCode and Neovim +tooling
+(C) Implement timeline diff command: `chron diff file1.chron file2.chron` compares two World states, reports added/removed/modified entities, relationships, and timeline structure changes +cli
+(C) Implement animation export: render time scrubber progression as animated SVG (SMIL) or GIF sequence, showing entity appearances and relationship changes over time +render
+(C) Implement entity attribute inheritance: child types inherit parent type's fields, `type Knight : character { order: string }` gets all character fields plus order +ext
+(C) Implement query DSL subset: `select entities where type == "character" and appears_on("main") and alive_at(1500)` returns filtered entity list for use in expressions +eval
