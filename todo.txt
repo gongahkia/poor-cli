@@ -1,7 +1,0 @@
-(C) Implement Markdown embedding preprocessor: scan .md files for ```chron fenced code blocks, extract DSL source, evaluate and render inline as SVG image, output processed .md with embedded images +embed
-(C) Implement LSP server for .chron files: textDocument/completion for keywords, entity names, timeline names; textDocument/diagnostics for parse/eval errors; textDocument/hover for entity info +tooling
-(C) Implement syntax highlighting definitions: generate TextMate grammar (.tmLanguage.json) and tree-sitter grammar for .chron files, ship for VSCode and Neovim +tooling
-(C) Implement timeline diff command: `chron diff file1.chron file2.chron` compares two World states, reports added/removed/modified entities, relationships, and timeline structure changes +cli
-(C) Implement animation export: render time scrubber progression as animated SVG (SMIL) or GIF sequence, showing entity appearances and relationship changes over time +render
-(C) Implement entity attribute inheritance: child types inherit parent type's fields, `type Knight : character { order: string }` gets all character fields plus order +ext
-(C) Implement query DSL subset: `select entities where type == "character" and appears_on("main") and alive_at(1500)` returns filtered entity list for use in expressions +eval
