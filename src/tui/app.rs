@@ -10,6 +10,7 @@ pub enum InputMode {
     Filter,
     Help,
     BranchNav,
+    CommandPalette,
 }
 
 /// Viewport snapshot for undo/redo (Task 51)
@@ -48,6 +49,9 @@ pub struct App {
     bookmarks: HashMap<u8, ViewState>,
     // Drill-down stack (Task 7)
     drill_stack: Vec<ViewState>,
+    // Command palette (Task 52)
+    pub palette_query: String,
+    pub available_commands: Vec<(&'static str, &'static str)>,
 }
 
 impl App {
@@ -86,6 +90,22 @@ impl App {
             redo_stack: Vec::new(),
             bookmarks: HashMap::new(),
             drill_stack: Vec::new(),
+            palette_query: String::new(),
+            available_commands: vec![
+                ("quit", "Exit the application"),
+                ("search", "Search entities by name"),
+                ("filter", "Open filter panel"),
+                ("help", "Show keybindings"),
+                ("branches", "Browse timeline branches"),
+                ("zoom-in", "Zoom in"),
+                ("zoom-out", "Zoom out"),
+                ("reset", "Reset viewport"),
+                ("play", "Play/pause time scrubber"),
+                ("next-entity", "Select next entity"),
+                ("bookmark", "Save bookmark"),
+                ("undo", "Undo last viewport change"),
+                ("redo", "Redo viewport change"),
+            ],
         }
     }
 
@@ -226,6 +246,11 @@ impl App {
                 }
                 // Branch nav (Task 58)
                 KeyCode::Char('B') => self.input_mode = InputMode::BranchNav,
+                // Command palette (Task 52)
+                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.input_mode = InputMode::CommandPalette;
+                    self.palette_query.clear();
+                }
                 _ => {}
             },
             InputMode::Search => match key.code {
@@ -264,6 +289,16 @@ impl App {
                         self.input_mode = InputMode::Normal;
                     }
                 }
+                _ => {}
+            },
+            InputMode::CommandPalette => match key.code {
+                KeyCode::Esc => self.input_mode = InputMode::Normal,
+                KeyCode::Enter => {
+                    self.execute_palette_command();
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char(c) => self.palette_query.push(c),
+                KeyCode::Backspace => { self.palette_query.pop(); }
                 _ => {}
             },
         }
@@ -398,5 +433,74 @@ impl App {
     pub fn is_edge_visible(&self, label: &str) -> bool {
         if self.active_layer == 0 { return true; }
         self.layer_names.get(self.active_layer).map_or(true, |l| l == label)
+    }
+
+    fn execute_palette_command(&mut self) {
+        let q = self.palette_query.to_lowercase();
+        let matched = self.available_commands.iter()
+            .find(|(name, _)| name.contains(&q.as_str()));
+        if let Some((cmd, _)) = matched {
+            match *cmd {
+                "quit" => self.should_quit = true,
+                "search" => { self.input_mode = InputMode::Search; self.search_query.clear(); }
+                "filter" => self.input_mode = InputMode::Filter,
+                "help" => self.input_mode = InputMode::Help,
+                "branches" => self.input_mode = InputMode::BranchNav,
+                "zoom-in" => { self.save_view_state(); self.layout.viewport.zoom(1.2); }
+                "zoom-out" => { self.save_view_state(); self.layout.viewport.zoom(0.8); }
+                "reset" => {
+                    self.layout.viewport.scale = 1.0;
+                    self.status_message = "Reset".to_string();
+                }
+                "play" => {
+                    self.scrubber_playing = !self.scrubber_playing;
+                    self.status_message = if self.scrubber_playing { "▶".into() } else { "⏸".into() };
+                }
+                "next-entity" => self.cycle_selection(),
+                "bookmark" => {
+                    let idx = (self.bookmarks.len() as u8) + 1;
+                    if idx <= 9 {
+                        let vp = &self.layout.viewport;
+                        self.bookmarks.insert(idx, ViewState {
+                            time_start: vp.time_start, time_end: vp.time_end,
+                            lane_start: vp.lane_start, lane_end: vp.lane_end,
+                            scale: vp.scale, selected: self.selected_entity,
+                        });
+                        self.status_message = format!("Bookmark {} saved", idx);
+                    }
+                }
+                "undo" => {
+                    if let Some(state) = self.undo_stack.pop() {
+                        let cur = ViewState {
+                            time_start: self.layout.viewport.time_start,
+                            time_end: self.layout.viewport.time_end,
+                            lane_start: self.layout.viewport.lane_start,
+                            lane_end: self.layout.viewport.lane_end,
+                            scale: self.layout.viewport.scale,
+                            selected: self.selected_entity,
+                        };
+                        self.redo_stack.push(cur);
+                        self.restore_view_state(state);
+                    }
+                }
+                "redo" => {
+                    if let Some(state) = self.redo_stack.pop() {
+                        let cur = ViewState {
+                            time_start: self.layout.viewport.time_start,
+                            time_end: self.layout.viewport.time_end,
+                            lane_start: self.layout.viewport.lane_start,
+                            lane_end: self.layout.viewport.lane_end,
+                            scale: self.layout.viewport.scale,
+                            selected: self.selected_entity,
+                        };
+                        self.undo_stack.push(cur);
+                        self.restore_view_state(state);
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            self.status_message = format!("Unknown command: {}", self.palette_query);
+        }
     }
 }
