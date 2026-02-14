@@ -1,9 +1,7 @@
 (B) Implement string interpolation in DSL: `"Hello {entity.name}, age {entity.age}"` within string literals, evaluate interpolated expressions in current scope +lang
 (B) Implement batch entity creation via loops: `for i in 1..10 { entity Soldier_{i} : character { rank: "private" } }` with string interpolation in identifiers during eval +eval
 (B) Implement conditional relationship creation: `if timeline.kind == Branch { rel hero -[betrays]-> mentor }` relationships that exist only when conditions hold +eval
-(B) Implement REPL mode: `chron repl` starts interactive session, evaluate declarations incrementally, query World state, render ASCII mini-timeline on demand +cli
 (B) Implement timeline comparison view in TUI: side-by-side split pane showing two branches with shared entities highlighted and divergences color-coded +tui
-(B) Implement TUI command palette: Ctrl-p opens fuzzy-find popup listing all available commands, type to filter, Enter to execute +tui
 (C) Implement Markdown embedding preprocessor: scan .md files for ```chron fenced code blocks, extract DSL source, evaluate and render inline as SVG image, output processed .md with embedded images +embed
 (C) Implement LSP server for .chron files: textDocument/completion for keywords, entity names, timeline names; textDocument/diagnostics for parse/eval errors; textDocument/hover for entity info +tooling
 (C) Implement syntax highlighting definitions: generate TextMate grammar (.tmLanguage.json) and tree-sitter grammar for .chron files, ship for VSCode and Neovim +tooling
