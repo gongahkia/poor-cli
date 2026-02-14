@@ -56,6 +56,16 @@ impl Evaluator {
             Stmt::TypeDecl(decl) => self.eval_type_decl(decl),
             Stmt::FnDecl(decl) => self.eval_fn_decl(decl),
             Stmt::LetStmt(decl) => self.eval_let(decl),
+            Stmt::Assign { name, value } => {
+                let val = self.eval_expr(value)?;
+                if !self.env.set(name, val) {
+                    return Err(RuntimeError {
+                        message: format!("cannot assign to undefined variable: {}", name),
+                        span: Some(stmt.span.clone()),
+                    });
+                }
+                Ok(Value::Null)
+            }
             Stmt::Import(_path) => Ok(Value::Null), // handled in module system
             Stmt::If(if_expr) => self.eval_if(if_expr),
             Stmt::Match(match_expr) => self.eval_match(match_expr),
@@ -261,10 +271,22 @@ impl Evaluator {
 
     fn eval_match(&mut self, match_expr: &MatchExpr) -> Result<Value, RuntimeError> {
         let subject = self.eval_expr(&match_expr.subject)?;
+        let mut matched = false;
+        let has_wildcard = match_expr.arms.iter().any(|a| matches!(a.pattern.node, Pattern::Wildcard));
         for arm in &match_expr.arms {
             if self.pattern_matches(&arm.pattern.node, &subject) {
-                return self.eval_block(&arm.body);
+                self.env.push_scope();
+                if let Pattern::Ident(ref name) = arm.pattern.node {
+                    self.env.bind(name.clone(), subject.clone());
+                }
+                let result = self.eval_block(&arm.body);
+                self.env.pop_scope();
+                matched = true;
+                return result;
             }
+        }
+        if !matched && !has_wildcard {
+            eprintln!("warning: non-exhaustive match, no arm matched value {:?}", subject);
         }
         Ok(Value::Null)
     }
@@ -384,7 +406,10 @@ impl Evaluator {
             Expr::If(if_expr) => self.eval_if(if_expr),
             Expr::Match(match_expr) => self.eval_match(match_expr),
             Expr::Block(block) => self.eval_block(block),
-            Expr::Closure { .. } => Ok(Value::Null), // closures stored but not eval'd here
+            Expr::Closure { params, body } => {
+                let captured = self.env.snapshot();
+                Ok(Value::Closure { params: params.clone(), body: Box::new((**body).clone()), captured })
+            }
             Expr::TimeAt { entity, time } => {
                 let _t = self.eval_expr(time)?;
                 Ok(self.env.lookup(entity).cloned().unwrap_or(Value::Null))
@@ -394,9 +419,29 @@ impl Evaluator {
                 let idx = self.eval_expr(index)?;
                 match (&obj, &idx) {
                     (Value::List(items), Value::Int(i)) => {
-                        Ok(items.get(*i as usize).cloned().unwrap_or(Value::Null))
+                        let i = *i as usize;
+                        if i >= items.len() {
+                            return Err(RuntimeError {
+                                message: format!("index {} out of bounds for list of length {}", i, items.len()),
+                                span: Some(expr.span.clone()),
+                            });
+                        }
+                        Ok(items[i].clone())
                     }
-                    _ => Ok(Value::Null)
+                    (Value::String(s), Value::Int(i)) => {
+                        let i = *i as usize;
+                        if i >= s.len() {
+                            return Err(RuntimeError {
+                                message: format!("index {} out of bounds for string of length {}", i, s.len()),
+                                span: Some(expr.span.clone()),
+                            });
+                        }
+                        Ok(Value::String(s.chars().nth(i).unwrap().to_string()))
+                    }
+                    _ => Err(RuntimeError {
+                        message: format!("cannot index {:?} with {:?}", obj, idx),
+                        span: Some(expr.span.clone()),
+                    })
                 }
             }
         }
@@ -453,6 +498,17 @@ impl Evaluator {
             (BinOp::Gte, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
             (BinOp::And, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a && *b)),
             (BinOp::Or, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a || *b)),
+            (BinOp::Add, Value::Date(tp), Value::Duration(d)) => { // date + duration
+                Ok(Value::Date(tp.offset_days(*d)))
+            }
+            (BinOp::Sub, Value::Date(tp), Value::Duration(d)) => { // date - duration
+                Ok(Value::Date(tp.offset_days(-d)))
+            }
+            (BinOp::Sub, Value::Date(a), Value::Date(b)) => { // date - date = duration
+                Ok(Value::Duration(a.to_ordinal() - b.to_ordinal()))
+            }
+            (BinOp::Add, Value::Duration(a), Value::Duration(b)) => Ok(Value::Duration(a + b)),
+            (BinOp::Sub, Value::Duration(a), Value::Duration(b)) => Ok(Value::Duration(a - b)),
             (BinOp::Range, Value::Int(a), Value::Int(b)) => {
                 Ok(Value::List((*a..*b).map(Value::Int).collect()))
             }
@@ -511,14 +567,27 @@ impl Evaluator {
         if let Some(result) = builtins::register_builtins(&self.world, &arg_vals, &fn_name) {
             return Ok(result);
         }
-
+        // Check if it's a closure variable
+        if let Some(val) = self.env.lookup(&fn_name).cloned() {
+            if let Value::Closure { params, body, captured } = val {
+                let saved = self.env.snapshot();
+                self.env.with_snapshot(captured);
+                self.env.push_scope();
+                for (i, p) in params.iter().enumerate() {
+                    self.env.bind(p.name.clone(), arg_vals.get(i).cloned().unwrap_or(Value::Null));
+                }
+                let result = self.eval_expr(&body)?;
+                self.env.pop_scope();
+                self.env.with_snapshot(saved);
+                return Ok(result);
+            }
+        }
         // Look up user-defined function
         let fndef = self.world.fn_registry.get(&fn_name).cloned()
             .ok_or_else(|| RuntimeError {
                 message: format!("undefined function: {}", fn_name),
                 span: Some(span.clone()),
             })?;
-
         self.env.push_scope();
         for (i, (param_name, _)) in fndef.params.iter().enumerate() {
             let val = arg_vals.get(i).cloned().unwrap_or(Value::Null);
@@ -680,8 +749,19 @@ impl Evaluator {
 
     fn value_to_timepoint(&self, val: &Value) -> Result<TimePoint, RuntimeError> {
         match val {
-            Value::Date(tp) => Ok(tp.clone()),
+            Value::Date(tp) => {
+                if let TimePoint::Relative { anchor, offset_days } = tp {
+                    if let Some(ent) = self.world.entity_by_name(anchor) {
+                        if let Some((_, tr)) = ent.timeline_appearances.first() {
+                            let base = tr.start.to_ordinal();
+                            return Ok(TimePoint::Abstract(base + offset_days));
+                        }
+                    }
+                }
+                Ok(tp.clone())
+            }
             Value::Int(n) => Ok(TimePoint::Abstract(*n)),
+            Value::Duration(d) => Ok(TimePoint::Abstract(*d)),
             Value::String(s) => {
                 if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
                     Ok(TimePoint::Absolute(d))

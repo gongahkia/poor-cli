@@ -87,6 +87,12 @@ fn parse_stmt(pair: Pair<Rule>, file: &str) -> Result<Spanned<Stmt>, ParseError>
         Rule::for_loop => Stmt::ForLoop(parse_for_loop(inner, file)?),
         Rule::while_loop => Stmt::WhileLoop(parse_while_loop(inner, file)?),
         Rule::repeat_loop => Stmt::RepeatLoop(parse_repeat_loop(inner, file)?),
+        Rule::assign_stmt => {
+            let mut ai = inner.into_inner();
+            let name = ai.next().unwrap().as_str().to_string();
+            let value = parse_expr(ai.next().unwrap(), file)?;
+            Stmt::Assign { name, value }
+        }
         Rule::expr_stmt => {
             let e = parse_expr(inner.into_inner().next().unwrap(), file)?;
             Stmt::ExprStmt(e)
@@ -456,6 +462,12 @@ fn parse_stmt_inner(pair: Pair<Rule>, file: &str, sp: Span) -> Result<Spanned<St
         Rule::type_decl => Stmt::TypeDecl(parse_type_decl(pair, file)?),
         Rule::fn_decl => Stmt::FnDecl(parse_fn_decl(pair, file)?),
         Rule::let_stmt => Stmt::LetStmt(parse_let_stmt(pair, file)?),
+        Rule::assign_stmt => {
+            let mut ai = pair.into_inner();
+            let name = ai.next().unwrap().as_str().to_string();
+            let value = parse_expr(ai.next().unwrap(), file)?;
+            Stmt::Assign { name, value }
+        }
         Rule::import_stmt => {
             let s = pair.into_inner().next().unwrap();
             Stmt::Import(parse_string_value(s))
@@ -479,33 +491,26 @@ fn parse_stmt_inner(pair: Pair<Rule>, file: &str, sp: Span) -> Result<Spanned<St
     Ok(Spanned::new(stmt, sp))
 }
 
-/// Expression parser with precedence climbing (Task 12)
+/// Expression parser with precedence climbing
 fn parse_expr(pair: Pair<Rule>, file: &str) -> Result<Spanned<Expr>, ParseError> {
     let sp = span_from(&pair, file);
 
     match pair.as_rule() {
         Rule::expr => {
-            let mut inner: Vec<_> = pair.into_inner().collect();
+            let inner: Vec<_> = pair.into_inner().collect();
             if inner.len() == 1 {
-                return parse_expr(inner.remove(0), file);
+                return parse_expr(inner.into_iter().next().unwrap(), file);
             }
-            // Precedence climbing: collect unary_expr and bin_op alternating
-            let mut lhs = parse_expr(inner.remove(0), file)?;
-            while inner.len() >= 2 {
-                let op_pair = inner.remove(0);
-                let rhs = parse_expr(inner.remove(0), file)?;
-                let op = parse_bin_op(op_pair.as_str());
-                let new_sp = Span::new(lhs.span.start, rhs.span.end, file);
-                lhs = Spanned::new(
-                    Expr::BinOp {
-                        op,
-                        left: Box::new(lhs),
-                        right: Box::new(rhs),
-                    },
-                    new_sp,
-                );
+            let mut operands: Vec<Spanned<Expr>> = Vec::new();
+            let mut ops: Vec<BinOp> = Vec::new();
+            for (i, item) in inner.into_iter().enumerate() {
+                if i % 2 == 0 {
+                    operands.push(parse_expr(item, file)?);
+                } else {
+                    ops.push(parse_bin_op(item.as_str()));
+                }
             }
-            Ok(lhs)
+            Ok(build_expr_with_precedence(operands, ops, file))
         }
         Rule::unary_expr => {
             let mut inner: Vec<_> = pair.into_inner().collect();
@@ -709,6 +714,33 @@ fn parse_param_list(pair: Pair<Rule>) -> Vec<Param> {
         .collect()
 }
 
+fn op_precedence(op: &BinOp) -> u8 {
+    match op {
+        BinOp::Range => 0,
+        BinOp::Or => 1,
+        BinOp::And => 2,
+        BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte => 3,
+        BinOp::Add | BinOp::Sub => 4,
+        BinOp::Mul | BinOp::Div => 5,
+    }
+}
+fn build_expr_with_precedence(mut operands: Vec<Spanned<Expr>>, mut ops: Vec<BinOp>, file: &str) -> Spanned<Expr> {
+    for prec in (0..=5).rev() { // highest precedence first
+        let mut i = 0;
+        while i < ops.len() {
+            if op_precedence(&ops[i]) == prec {
+                let op = ops.remove(i);
+                let right = operands.remove(i + 1);
+                let left = operands.remove(i);
+                let new_sp = Span::new(left.span.start, right.span.end, file);
+                operands.insert(i, Spanned::new(Expr::BinOp { op, left: Box::new(left), right: Box::new(right) }, new_sp));
+            } else {
+                i += 1;
+            }
+        }
+    }
+    operands.into_iter().next().unwrap()
+}
 fn parse_bin_op(s: &str) -> BinOp {
     match s {
         "+" => BinOp::Add,

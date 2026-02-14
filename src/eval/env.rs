@@ -37,6 +37,12 @@ impl Environment {
         None
     }
 
+    pub fn snapshot(&self) -> Vec<HashMap<String, Value>> {
+        self.frames.clone()
+    }
+    pub fn with_snapshot(&mut self, snap: Vec<HashMap<String, Value>>) {
+        self.frames = snap;
+    }
     pub fn set(&mut self, name: &str, value: Value) -> bool {
         for frame in self.frames.iter_mut().rev() {
             if frame.contains_key(name) {

@@ -153,6 +153,19 @@ pub enum TimePoint {
 }
 
 impl TimePoint {
+    pub fn offset_days(&self, days: i64) -> TimePoint {
+        match self {
+            TimePoint::Absolute(d) => {
+                let new_d = *d + chrono::Duration::days(days);
+                TimePoint::Absolute(new_d)
+            }
+            TimePoint::Abstract(n) => TimePoint::Abstract(n + days),
+            TimePoint::Fuzzy { center, radius_days } => {
+                TimePoint::Fuzzy { center: *center + chrono::Duration::days(days), radius_days: *radius_days }
+            }
+            other => other.clone(), // relative/era refs can't easily offset
+        }
+    }
     pub fn to_ordinal(&self) -> i64 {
         match self {
             TimePoint::Absolute(d) => {
@@ -226,6 +239,11 @@ pub enum Value {
     Entity(Id),
     Timeline(Id),
     List(Vec<Value>),
+    Closure {
+        params: Vec<crate::lang::ast::Param>,
+        body: Box<crate::lang::ast::Spanned<crate::lang::ast::Expr>>,
+        captured: Vec<HashMap<String, Value>>,
+    },
     Null,
 }
 
@@ -241,6 +259,7 @@ impl std::fmt::Display for Value {
             Value::Entity(id) => write!(f, "entity#{}", id),
             Value::Timeline(id) => write!(f, "timeline#{}", id),
             Value::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ")),
+            Value::Closure { .. } => write!(f, "<closure>"),
             Value::Null => write!(f, "null"),
         }
     }

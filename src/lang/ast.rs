@@ -38,6 +38,7 @@ pub enum Stmt {
     TypeDecl(TypeDecl),
     FnDecl(FnDecl),
     LetStmt(LetStmt),
+    Assign { name: String, value: Spanned<Expr> },
     Import(String),
     If(IfExpr),
     Match(MatchExpr),

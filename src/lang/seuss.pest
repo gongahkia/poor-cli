@@ -15,6 +15,7 @@ stmt = {
   | type_decl
   | fn_decl
   | let_stmt
+  | assign_stmt
   | import_stmt
   | if_expr
   | match_expr
@@ -23,6 +24,7 @@ stmt = {
   | repeat_loop
   | expr_stmt
 }
+assign_stmt = { ident ~ "=" ~ expr ~ ";" }
 
 expr_stmt = { expr ~ ";" }
 
