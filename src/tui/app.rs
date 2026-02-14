@@ -359,8 +359,8 @@ impl App {
         let vp = &self.layout.viewport;
         let time_range = vp.time_end - vp.time_start;
         if time_range <= 0.0 { return; }
-        // Approximate: map col to time, row to lane
-        let time = vp.time_start + (col as f64 / 80.0) * time_range;
+        let term_cols = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80) as f64;
+        let time = vp.time_start + (col as f64 / term_cols) * time_range;
         let lane = vp.lane_start + row as usize;
 
         if let Some(ent) = self.layout.entities.iter().find(|e| {
@@ -371,7 +371,7 @@ impl App {
         }
     }
 
-    /// Advance time cursor when playing (Task 54)
+    /// Advance time cursor when playing
     pub fn tick(&mut self) {
         if self.scrubber_playing {
             self.time_cursor += 0.5;
@@ -379,6 +379,11 @@ impl App {
                 self.time_cursor = self.layout.viewport.time_start;
             }
         }
+    }
+    /// Check if entity is visible at current time cursor
+    pub fn entity_visible_at_cursor(&self, ent: &crate::layout::engine::LayoutEntity) -> bool {
+        if !self.scrubber_playing { return true; } // show all when not scrubbing
+        self.time_cursor >= ent.x_start && self.time_cursor <= ent.x_end
     }
 
     fn cycle_selection(&mut self) {

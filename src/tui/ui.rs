@@ -125,10 +125,11 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         }
     }
 
-    // Entity swim lanes as horizontal bars (Task 49)
+    // Entity swim lanes as horizontal bars
     for ent in &app.layout.entities {
         if ent.lane < vp.lane_start || ent.lane >= vp.lane_end { continue; }
         if lines.len() >= inner_height { break; }
+        if !app.entity_visible_at_cursor(ent) { continue; }
 
         let x_start = ((ent.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
         let x_end = ((ent.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
@@ -156,8 +157,9 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
             "█".repeat(bar_len),
             Style::default().fg(color),
         ));
+        let label = truncate_label(&ent.name, 24);
         spans.push(Span::styled(
-            format!(" {}", ent.name),
+            format!(" {}", label),
             Style::default().fg(if is_selected { Color::Yellow } else { Color::White })
                 .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }),
         ));
@@ -435,6 +437,15 @@ fn draw_command_palette(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
+fn truncate_label(name: &str, max_len: usize) -> String {
+    if name.len() <= max_len { return name.to_string(); }
+    let truncated = &name[..max_len.saturating_sub(3)];
+    if let Some(last_space) = truncated.rfind(' ') {
+        format!("{}...", &truncated[..last_space])
+    } else {
+        format!("{}...", truncated)
+    }
+}
 fn entity_color(entity_type: &str, connected: bool) -> Color {
     if !connected { return Color::DarkGray; }
     match entity_type {

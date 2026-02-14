@@ -249,8 +249,20 @@ fn run_check(file: &Path, verbose: bool) {
     }
 
     let w = &evaluator.world;
-    println!("✓ {} valid ({} timelines, {} entities, {} relationships)",
-        file.display(), w.timelines.len(), w.entities.len(), w.relationships.len());
+    let report = eval::validator::validate(w);
+    for warning in &report.warnings {
+        eprintln!("warning: {}", warning);
+    }
+    for error in &report.errors {
+        eprintln!("error: {}", error);
+    }
+    if !report.errors.is_empty() {
+        eprintln!("{} error(s), {} warning(s)", report.errors.len(), report.warnings.len());
+        std::process::exit(1);
+    }
+    println!("✓ {} valid ({} timelines, {} entities, {} relationships{})",
+        file.display(), w.timelines.len(), w.entities.len(), w.relationships.len(),
+        if report.warnings.is_empty() { String::new() } else { format!(", {} warning(s)", report.warnings.len()) });
 }
 
 fn run_import(file: &Path, from: &str, output: Option<&Path>) {

@@ -104,9 +104,14 @@ impl World {
 
     pub fn ancestors_of(&self, timeline_id: Id) -> Vec<Id> {
         let mut result = Vec::new();
+        let mut visited = std::collections::HashSet::new();
         let mut current = timeline_id;
+        visited.insert(current);
         while let Some(tl) = self.timelines.get(&current) {
             if let Some(pid) = tl.parent_id {
+                if !visited.insert(pid) {
+                    break; // cycle detected
+                }
                 result.push(pid);
                 current = pid;
             } else {
