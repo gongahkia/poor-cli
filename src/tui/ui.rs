@@ -99,6 +99,19 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                 format!("{}{}", label, suffix),
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             )));
+
+            // Loop boundary visualization (Task 6)
+            if tl.is_loop {
+                let x_start = ((tl.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
+                let x_end = ((tl.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
+                let box_width = x_end.saturating_sub(x_start).max(2);
+                let mut top = vec![Span::raw(" ".repeat(x_start.min(inner_width as usize)))];
+                top.push(Span::styled(
+                    format!("╔{}╗", "═".repeat(box_width.saturating_sub(2))),
+                    Style::default().fg(Color::Yellow),
+                ));
+                lines.push(Line::from(top));
+            }
         }
     }
 
@@ -153,6 +166,23 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                     ));
                     lines.push(Line::from(espans));
                 }
+            }
+        }
+    }
+
+    // Loop boundary closing (Task 6)
+    for tl in &app.layout.timelines {
+        if tl.is_loop && tl.lane_end >= vp.lane_start && tl.lane_end < vp.lane_end {
+            if lines.len() < inner_height {
+                let x_start = ((tl.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
+                let x_end = ((tl.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
+                let box_width = x_end.saturating_sub(x_start).max(2);
+                let mut bottom = vec![Span::raw(" ".repeat(x_start.min(inner_width as usize)))];
+                bottom.push(Span::styled(
+                    format!("╚{}╝", "═".repeat(box_width.saturating_sub(2))),
+                    Style::default().fg(Color::Yellow),
+                ));
+                lines.push(Line::from(bottom));
             }
         }
     }
