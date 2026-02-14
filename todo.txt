@@ -1,22 +1,5 @@
-(B) implement operator precedence in parser.rs: mul/div > add/sub > comparison (==,!=,<,>,<=,>=) > logical-and (&&) > logical-or (||), using precedence climbing or Pratt parsing +feature
-(B) implement closure evaluation in src/eval/evaluator.rs: capture environment at definition site, evaluate body with bound params when called, return result instead of Value::Null +feature
-(B) implement mutable variable rebinding in src/eval/evaluator.rs: when evaluating assignment to a `let mut` binding, call env.set() and propagate error if variable not found +feature
-(B) implement Duration arithmetic in src/model/types.rs: add Duration to TimePoint (Date + Duration = Date), subtract Duration from TimePoint, subtract two TimePoints to get Duration +feature
 (B) implement EraRef.to_ordinal() in src/model/types.rs: accept a &World parameter, resolve era name to timeline, look up era boundaries, compute absolute ordinal from era-relative offset +feature
-(B) implement relative time anchor resolution in src/eval/evaluator.rs value_to_timepoint(): resolve Relative{anchor, offset_days} by looking up the anchor entity's appears_on start/end in the World +feature
-(B) fix pattern matching in src/eval/evaluator.rs: Pattern::Ident should bind the matched value to a new variable in scope, Pattern::Literal should compare for equality, add exhaustiveness warning for non-exhaustive match +feature
-(B) implement overlaps(range1, range2) builtin in src/eval/builtins.rs: accept two Value::Date pairs or entity references, extract TimeRanges, return Value::Bool using TimeRange::overlaps() +feature
-(B) implement concurrent(entity1, entity2) builtin in src/eval/builtins.rs: look up both entities' appears_on ranges in the World, return Value::Bool(true) if ranges overlap on same timeline +feature
-(B) implement entities_at(timeline_name, timepoint) builtin in src/eval/builtins.rs: query World.entities_on_timeline() then filter by those whose appears_on range contains the given timepoint, return Value::List of entity names +feature
-(B) implement relationships_of(entity) builtin in src/eval/builtins.rs: query World for all relationships where source or target matches entity, return Value::List of structured values (not just labels) including source, target, label, directed flag +feature
-(B) fix TUI click selection in src/tui/app.rs: replace hardcoded col/80.0 with actual terminal column count from crossterm::terminal::size() divided by viewport width to compute correct entity index +feature
-(B) implement time scrubber entity filtering in src/tui/app.rs: when scrubber cursor advances (manual or play mode), compute current TimePoint from cursor position and filter displayed entities to those whose appears_on range contains that TimePoint +feature
 (B) implement compare mode diff view in src/tui/ui.rs: when CompareSelect state is active and two files are chosen, parse both, diff entity/timeline/relationship sets, render side-by-side diff panel with added/removed/changed items highlighted +feature
-(B) fix label truncation in src/tui/ui.rs: truncate long entity names at word boundaries and append ellipsis "..." instead of cutting mid-character +feature
-(B) wire validator into check command: in main.rs run_check(), after successful parse and eval, call validator::validate(&world) and print ValidationReport errors/warnings to stderr, exit(1) if errors found +feature
-(B) add relationship temporal scope validation in src/eval/validator.rs: for each relationship with a temporal_scope, verify both source and target entities' appears_on ranges overlap with the relationship's scope +feature
-(B) add timeline hierarchy cycle detection in src/model/world.rs ancestors_of(): maintain a HashSet of visited timeline IDs, return error if a cycle is detected instead of infinite looping +stability
-(B) add cross-timeline parallel consistency check in src/eval/validator.rs: for parallel timelines sharing a parent, warn if any entity appears_on overlapping time ranges across the parallel branches (potential narrative conflict) +feature
 (B) fix CSV import to handle quoted fields: replace manual comma split in src/import/csv_import.rs with a proper CSV field parser that respects double-quoted values containing commas and escaped quotes +feature
 (B) add CSV header validation in src/import/csv_import.rs: verify first row contains required columns (name, type, timeline, start, end), return descriptive error listing missing columns if not +feature
 (B) add CSV date format validation in src/import/csv_import.rs: attempt to parse start/end values as NaiveDate, return error with row number and column name if parsing fails +feature
@@ -43,7 +26,6 @@
 (B) replace unwrap() calls in src/eval/evaluator.rs with RuntimeError returns, especially in timeline/entity/relationship construction where field access can fail +stability
 (B) replace unwrap() calls in src/render/svg_render.rs with Result propagation, surfacing render errors to the caller instead of panicking on malformed layout data +stability
 (B) replace unwrap() calls in src/layout/engine.rs with Result propagation, returning LayoutError for edge cases like missing timeline references or empty entity lists +stability
-(B) return descriptive RuntimeError instead of Value::Null for list/string index-out-of-bounds access in src/eval/evaluator.rs, including the index value and collection length in the error message +stability
 (B) add error handling for file read failures after watcher change event in src/web/watcher.rs: catch io::Error and send error message over WebSocket channel instead of silently dropping the event +stability
 (B) add ordering support to query DSL in src/eval/query.rs: parse "order by <field> asc|desc" clause, sort query results by the specified entity attribute before returning +feature
 (B) add temporal range query support to query DSL in src/eval/query.rs: parse "overlaps <date>..<date>" clause to filter entities whose appears_on range overlaps the given range +feature
