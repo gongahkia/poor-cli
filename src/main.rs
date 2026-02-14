@@ -25,7 +25,7 @@ fn main() {
     match cli.command {
         Commands::Run { file } => run_tui(&file, cli.verbose),
         Commands::Export { file, format, output, width, height, time_range } => {
-            run_export(&file, &format, output.as_deref(), cli.verbose);
+            run_export(&file, &format, output.as_deref(), width, height, time_range.as_deref(), cli.verbose);
         }
         Commands::Check { file } => run_check(&file, cli.verbose),
         Commands::Import { file, from, output } => {
@@ -127,7 +127,7 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_export(file: &Path, format: &str, output: Option<&Path>, verbose: bool) {
+fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, verbose: bool) {
     let source = match read_chron_file(file) {
         Ok(s) => s,
         Err(e) => {
@@ -153,8 +153,29 @@ fn run_export(file: &Path, format: &str, output: Option<&Path>, verbose: bool) {
         std::process::exit(1);
     }
 
-    let layout = compute_layout(&evaluator.world);
+    let mut layout = compute_layout(&evaluator.world);
     let theme = Theme::default();
+
+    // Time-range cropping (Task 16)
+    if let Some(tr) = time_range {
+        if let Some((start_str, end_str)) = tr.split_once("..") {
+            if let (Ok(s), Ok(e)) = (start_str.parse::<f64>(), end_str.parse::<f64>()) {
+                layout.viewport.time_start = s;
+                layout.viewport.time_end = e;
+            }
+        }
+    }
+
+    // Configurable dimensions (Task 15)
+    let export_width = width.unwrap_or(layout.total_width.max(800.0) as u32);
+    let export_height = match (width, height) {
+        (_, Some(h)) => h,
+        (Some(w), None) => {
+            let aspect = layout.total_lanes as f64 * 40.0 / layout.total_width.max(1.0);
+            (w as f64 * aspect) as u32
+        }
+        _ => (layout.total_lanes as u32) * 40,
+    };
 
     match format {
         "svg" => {
