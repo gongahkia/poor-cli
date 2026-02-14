@@ -6,6 +6,7 @@ mod tui;
 mod render;
 mod cli;
 mod import;
+mod config;
 
 use clap::Parser;
 use std::path::Path;
