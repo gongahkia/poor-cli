@@ -71,8 +71,10 @@ pub fn import_jsonld(content: &str) -> Result<String, String> {
 
     for (etype, name, start, end) in &entities {
         let safe_name = name.replace(' ', "_").replace('-', "_").replace('\'', "");
-        let s = start.as_deref().unwrap_or(&format!("{}-01-01", min_year));
-        let e = end.as_deref().unwrap_or(&format!("{}-12-31", max_year));
+        let default_start = format!("{}-01-01", min_year);
+        let default_end = format!("{}-12-31", max_year);
+        let s = start.as_deref().unwrap_or(&default_start);
+        let e = end.as_deref().unwrap_or(&default_end);
         output.push_str(&format!("entity {} : {} {{\n", safe_name, etype));
         output.push_str(&format!("    full_name: \"{}\",\n", name));
         output.push_str(&format!("    appears_on: main @ {}..{},\n", s, e));
