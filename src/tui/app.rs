@@ -46,6 +46,8 @@ pub struct App {
     redo_stack: Vec<ViewState>,
     // Bookmarks (Task 53/112)
     bookmarks: HashMap<u8, ViewState>,
+    // Drill-down stack (Task 7)
+    drill_stack: Vec<ViewState>,
 }
 
 impl App {
@@ -83,6 +85,7 @@ impl App {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             bookmarks: HashMap::new(),
+            drill_stack: Vec::new(),
         }
     }
 
@@ -139,7 +142,8 @@ impl App {
                     self.layout.viewport.zoom(0.8);
                 }
                 KeyCode::Tab => self.cycle_selection(),
-                KeyCode::Enter => self.select_current(),
+                KeyCode::Enter => self.drill_down(),
+                KeyCode::Backspace => self.drill_up(),
                 KeyCode::Esc => {
                     self.selected_entity = None;
                     self.status_message = "Deselected".to_string();
@@ -323,6 +327,43 @@ impl App {
         let ent = &self.layout.entities[next];
         self.selected_entity = Some(ent.entity_id);
         self.status_message = format!("Selected: {}", ent.name);
+    }
+
+    fn drill_down(&mut self) {
+        // If an entity is selected, focus on it (old select_current behavior)
+        // Also push current viewport onto drill stack for back-navigation
+        if let Some(id) = self.selected_entity {
+            let coords = self.layout.entities.iter()
+                .find(|e| e.entity_id == id)
+                .map(|ent| (ent.timeline_id, (ent.x_start + ent.x_end) / 2.0, ent.lane));
+            if let Some((_tid, cx, lane)) = coords {
+                let vp = &self.layout.viewport;
+                self.drill_stack.push(ViewState {
+                    time_start: vp.time_start, time_end: vp.time_end,
+                    lane_start: vp.lane_start, lane_end: vp.lane_end,
+                    scale: vp.scale, selected: self.selected_entity,
+                });
+                // Find the timeline this entity belongs to and zoom to it
+                if let Some(tl) = self.layout.timelines.iter().find(|t| {
+                    self.layout.entities.iter().any(|e| e.entity_id == id && e.timeline_id == t.timeline_id)
+                }) {
+                    self.layout.viewport.time_start = tl.x_start;
+                    self.layout.viewport.time_end = tl.x_end;
+                    self.layout.viewport.lane_start = tl.lane_start;
+                    self.layout.viewport.lane_end = tl.lane_end + 2;
+                } else {
+                    self.layout.viewport.focus(cx, lane);
+                }
+                self.status_message = "Drilled in".to_string();
+            }
+        }
+    }
+
+    fn drill_up(&mut self) {
+        if let Some(state) = self.drill_stack.pop() {
+            self.restore_view_state(state);
+            self.status_message = "Drilled out".to_string();
+        }
     }
 
     fn select_current(&mut self) {
