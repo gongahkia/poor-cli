@@ -1,0 +1,22 @@
+[package]
+name = "chron"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pest = "2.7"
+pest_derive = "2.7"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+svg = "0.17"
+uuid = { version = "1", features = ["v4"] }
+
+[[bin]]
+name = "chron"
+path = "src/main.rs"
