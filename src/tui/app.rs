@@ -11,6 +11,7 @@ pub enum InputMode {
     Help,
     BranchNav,
     CommandPalette,
+    CompareSelect,
 }
 
 /// Viewport snapshot for undo/redo (Task 51)
@@ -52,6 +53,9 @@ pub struct App {
     // Command palette (Task 52)
     pub palette_query: String,
     pub available_commands: Vec<(&'static str, &'static str)>,
+    // Timeline comparison (Task 50)
+    pub compare_mode: bool,
+    pub compare_timeline_idx: Option<usize>,
 }
 
 impl App {
@@ -106,6 +110,8 @@ impl App {
                 ("undo", "Undo last viewport change"),
                 ("redo", "Redo viewport change"),
             ],
+            compare_mode: false,
+            compare_timeline_idx: None,
         }
     }
 
@@ -251,6 +257,14 @@ impl App {
                     self.input_mode = InputMode::CommandPalette;
                     self.palette_query.clear();
                 }
+                // Timeline comparison (Task 50)
+                KeyCode::Char('C') => {
+                    if self.layout.timelines.len() >= 2 {
+                        self.input_mode = InputMode::CompareSelect;
+                    } else {
+                        self.status_message = "Need 2+ timelines to compare".into();
+                    }
+                }
                 _ => {}
             },
             InputMode::Search => match key.code {
@@ -299,6 +313,23 @@ impl App {
                 }
                 KeyCode::Char(c) => self.palette_query.push(c),
                 KeyCode::Backspace => { self.palette_query.pop(); }
+                _ => {}
+            },
+            InputMode::CompareSelect => match key.code {
+                KeyCode::Esc => {
+                    self.compare_mode = false;
+                    self.compare_timeline_idx = None;
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char(c @ '0'..='9') => {
+                    let idx = (c as u8 - b'0') as usize;
+                    if idx < self.layout.timelines.len() {
+                        self.compare_timeline_idx = Some(idx);
+                        self.compare_mode = true;
+                        self.status_message = format!("Comparing with: {}", self.layout.timelines[idx].name);
+                        self.input_mode = InputMode::Normal;
+                    }
+                }
                 _ => {}
             },
         }
