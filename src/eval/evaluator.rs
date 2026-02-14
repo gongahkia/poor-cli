@@ -406,7 +406,7 @@ impl Evaluator {
         Ok(match lit {
             Literal::Int(n) => Value::Int(*n),
             Literal::Float(n) => Value::Float(*n),
-            Literal::String(s) => Value::String(s.clone()),
+            Literal::String(s) => Value::String(self.interpolate_string(s)),
             Literal::Bool(b) => Value::Bool(*b),
             Literal::Date(s) => {
                 if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
@@ -578,6 +578,65 @@ impl Evaluator {
     }
 
     // --- Helpers ---
+
+    /// String interpolation: replace {var} or {expr.field} with env values (Task 40)
+    fn interpolate_string(&self, s: &str) -> String {
+        let mut result = String::new();
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '{' {
+                let mut expr = String::new();
+                let mut depth = 1;
+                while let Some(&nc) = chars.peek() {
+                    chars.next();
+                    if nc == '{' { depth += 1; }
+                    if nc == '}' { depth -= 1; if depth == 0 { break; } }
+                    expr.push(nc);
+                }
+                // Try to resolve the expression
+                let val = self.resolve_interpolation(&expr);
+                result.push_str(&val);
+            } else {
+                result.push(c);
+            }
+        }
+
+        result
+    }
+
+    fn resolve_interpolation(&self, expr: &str) -> String {
+        let parts: Vec<&str> = expr.split('.').collect();
+        if parts.is_empty() { return String::new(); }
+
+        // Try simple variable lookup
+        if parts.len() == 1 {
+            if let Some(val) = self.env.lookup(parts[0]) {
+                return format!("{}", val);
+            }
+        }
+
+        // Try entity.field access
+        if parts.len() == 2 {
+            let var_name = parts[0];
+            let field = parts[1];
+            if let Some(Value::Entity(id)) = self.env.lookup(var_name) {
+                if let Some(ent) = self.world.entities.get(id) {
+                    match field {
+                        "name" => return ent.name.clone(),
+                        "type" => return ent.type_id.clone(),
+                        _ => {
+                            if let Some(val) = ent.attributes.get(field) {
+                                return format!("{}", val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        format!("{{{}}}", expr) // Return unresolved
+    }
 
     fn is_truthy(&self, v: &Value) -> bool {
         match v {
