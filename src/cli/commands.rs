@@ -72,4 +72,6 @@ pub enum Commands {
         /// Path to .chron source file
         file: PathBuf,
     },
+    /// Interactive REPL mode
+    Repl,
 }
