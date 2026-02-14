@@ -36,6 +36,7 @@ fn main() {
         Commands::Serve { file, port } => {
             run_serve(&file, port, cli.verbose);
         }
+        Commands::Repl => run_repl(),
     }
 }
 
@@ -343,4 +344,89 @@ fn run_serve(file: &Path, port: u16, verbose: bool) {
             std::process::exit(1);
         }
     });
+}
+
+fn run_repl() {
+    use std::io::{self, Write, BufRead};
+
+    println!("Chron REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit");
+    let mut evaluator = Evaluator::new();
+    let mut line_num = 0;
+
+    loop {
+        print!("chron> ");
+        io::stdout().flush().ok();
+
+        let mut input = String::new();
+        if io::stdin().lock().read_line(&mut input).is_err() || input.is_empty() {
+            break;
+        }
+        let trimmed = input.trim();
+        if trimmed.is_empty() { continue; }
+
+        // Meta-commands
+        match trimmed {
+            ":quit" | ":q" | ":exit" => break,
+            ":world" | ":w" => {
+                let w = &evaluator.world;
+                println!("Timelines: {}", w.timelines.len());
+                for tl in w.timelines.values() {
+                    println!("  {} ({:?})", tl.name, tl.kind);
+                }
+                println!("Entities: {}", w.entities.len());
+                for ent in w.entities.values() {
+                    println!("  {} : {}", ent.name, ent.type_id);
+                }
+                println!("Relationships: {}", w.relationships.len());
+                for rel in &w.relationships {
+                    let src = w.entities.get(&rel.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                    let tgt = w.entities.get(&rel.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                    println!("  {} -[{}]-> {}", src, rel.label, tgt);
+                }
+                continue;
+            }
+            ":timeline" | ":t" => {
+                // ASCII mini-timeline
+                let w = &evaluator.world;
+                if w.entities.is_empty() {
+                    println!("(no entities)");
+                } else {
+                    let layout = compute_layout(w);
+                    let width = 60;
+                    let time_range = layout.viewport.time_end - layout.viewport.time_start;
+                    if time_range > 0.0 {
+                        for ent in &layout.entities {
+                            let start = ((ent.x_start - layout.viewport.time_start) / time_range * width as f64) as usize;
+                            let end = ((ent.x_end - layout.viewport.time_start) / time_range * width as f64) as usize;
+                            let bar_start = start.min(width);
+                            let bar_len = end.saturating_sub(start).max(1).min(width - bar_start);
+                            println!("{:>15} |{}{}|",
+                                ent.name,
+                                " ".repeat(bar_start),
+                                "█".repeat(bar_len),
+                            );
+                        }
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+
+        line_num += 1;
+        let file_str = format!("repl:{}", line_num);
+        match parse_program(trimmed, &file_str) {
+            Ok(program) => {
+                match evaluator.eval_program(&program) {
+                    Ok(_) => println!("ok"),
+                    Err(e) => eprintln!("error: {}", e),
+                }
+            }
+            Err(errors) => {
+                for e in &errors {
+                    eprintln!("parse error: {}", e);
+                }
+            }
+        }
+    }
 }
