@@ -77,7 +77,7 @@ fn run_tui(file: &Path, verbose: bool) {
     }
 
     let layout = compute_layout(&evaluator.world);
-    let app = App::new(layout);
+    let app = App::new(layout, file.to_string_lossy().to_string());
 
     // Init terminal and run TUI
     if let Err(e) = run_tui_loop(app) {
@@ -88,15 +88,16 @@ fn run_tui(file: &Path, verbose: bool) {
 
 fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     use crossterm::{
-        event::{self, Event},
+        event::{self, Event, EnableMouseCapture, DisableMouseCapture},
         terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         execute,
     };
     use ratatui::prelude::*;
+    use std::time::Duration;
 
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -105,14 +106,23 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
             tui::ui::draw(frame, &app);
         })?;
 
-        if let Event::Key(key) = event::read()? {
-            app.handle_key(key);
-            if app.should_quit { break; }
+        if event::poll(Duration::from_millis(100))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    app.handle_key(key);
+                    if app.should_quit { break; }
+                }
+                Event::Mouse(mouse) => {
+                    app.handle_mouse(mouse);
+                }
+                _ => {}
+            }
         }
+        app.tick();
     }
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
 
