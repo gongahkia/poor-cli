@@ -8,6 +8,10 @@ A DSL for modeling and visualizing temporal narratives — timelines, entities, 
 
 Built in Rust with a PEG parser, evaluator, TUI (ratatui), and SVG renderer.
 
+<div align="center">
+    <img src="https://images.artbrokerage.com/artthumb/geisel_162877_9/632x632/Dr_Seuss_Oh_the_Stuff_You_Will_Learn_CP.jpg" width="50%">
+</div>
+
 ## Quick Start
 
 ```console
@@ -68,9 +72,3 @@ rel gandalf -["guides"]-> frodo;
 - **tui/** — ratatui terminal interface
 - **render/** — SVG output with theming
 - **cli/** — clap command definitions
-
-## Legacy
-
-What started as an attempt to use `.gf` syntax to arrive at a [universal language](https://en.wikipedia.org/wiki/Universal_language) has morphed into a temporal narrative DSL.
-
-![](https://images.artbrokerage.com/artthumb/geisel_162877_9/632x632/Dr_Seuss_Oh_the_Stuff_You_Will_Learn_CP.jpg)
