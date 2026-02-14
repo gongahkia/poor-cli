@@ -10,6 +10,7 @@ mod config;
 mod web;
 mod ext;
 mod embed;
+mod tooling;
 
 use clap::Parser;
 use std::path::Path;
