@@ -58,9 +58,76 @@ pub struct Entity {
 
 #[derive(Debug, Clone)]
 pub struct LifecycleEvent {
-    pub kind: String,
+    pub kind: LifecycleKind,
     pub time: TimePoint,
     pub description: String,
+}
+
+/// Built-in lifecycle event kinds (Task 36)
+#[derive(Debug, Clone, PartialEq)]
+pub enum LifecycleKind {
+    Born,
+    Died,
+    Created,
+    Destroyed,
+    Transformed,
+    Custom(String),
+}
+
+impl LifecycleKind {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "born" => Self::Born,
+            "died" => Self::Died,
+            "created" => Self::Created,
+            "destroyed" => Self::Destroyed,
+            "transformed" => Self::Transformed,
+            other => Self::Custom(other.to_string()),
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Born => "born",
+            Self::Died => "died",
+            Self::Created => "created",
+            Self::Destroyed => "destroyed",
+            Self::Transformed => "transformed",
+            Self::Custom(s) => s,
+        }
+    }
+}
+
+/// Faction/group entity type (Task 37)
+#[derive(Debug, Clone)]
+pub struct FactionMembership {
+    pub entity_id: Id,
+    pub time_range: TimeRange,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FactionData {
+    pub members: Vec<FactionMembership>,
+}
+
+/// Location entity type (Task 38)
+#[derive(Debug, Clone, Default)]
+pub struct LocationData {
+    pub coordinates: Option<(f64, f64)>,
+    pub occupants: Vec<(Id, TimeRange)>,
+}
+
+/// Artifact entity type (Task 39)
+#[derive(Debug, Clone)]
+pub struct ArtifactOwnership {
+    pub entity_id: Id,
+    pub time_range: TimeRange,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ArtifactData {
+    pub owners: Vec<ArtifactOwnership>,
 }
 
 /// Relationship struct (Task 19)
