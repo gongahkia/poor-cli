@@ -16,6 +16,8 @@ toml = "0.8"
 thiserror = "2"
 svg = "0.17"
 uuid = { version = "1", features = ["v4"] }
+resvg = "0.44"
+printpdf = "0.7"
 
 [[bin]]
 name = "chron"
