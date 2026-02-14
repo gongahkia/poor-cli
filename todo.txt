@@ -1,15 +1,3 @@
-(B) rename Cargo.toml [[bin]] name from "chron" to "seuss" and package name from "chron" to "seuss" +refactor
-(B) rename src/lang/chron.pest to src/lang/seuss.pest and update all pest_derive macro paths referencing it across src/ +refactor
-(B) update reader.rs to accept .seuss file extension instead of .chron +refactor
-(B) replace all CLI user-facing strings referencing "chron" with "seuss" in src/cli/commands.rs and src/main.rs (help text, error messages, binary name references) +refactor
-(B) rename example file examples/lotr.chron to examples/lotr.seuss and update its internal comments if any +refactor
-(B) rename config search paths from .chronrc to .seussrc and ~/.config/chron/ to ~/.config/seuss/ in src/config/loader.rs +refactor
-(B) update markdown embed code fence identifier from ```chron to ```seuss in src/embed/markdown.rs and update output filenames from chron_block_N to seuss_block_N +refactor
-(B) update web viewer HTML title, heading text, and all "Chron" references to "Seuss" in src/web/server.rs inlined HTML +refactor
-(B) update LSP language identifier from "chron" to "seuss" in src/tooling/lsp.rs +refactor
-(B) update TextMate and Tree-sitter grammar exports to use "seuss" as language name and .seuss as file extension in src/tooling/syntax.rs +refactor
-(B) grep all remaining string literals containing "chron" (case-insensitive) across src/ and replace with "seuss" where they are user-facing or identity references +refactor
-(B) update README.md: replace all "Chron"/"chron" references with "Seuss"/"seuss", update CLI examples to use seuss binary name and .seuss file extensions +refactor
 (B) implement operator precedence in parser.rs: mul/div > add/sub > comparison (==,!=,<,>,<=,>=) > logical-and (&&) > logical-or (||), using precedence climbing or Pratt parsing +feature
 (B) implement closure evaluation in src/eval/evaluator.rs: capture environment at definition site, evaluate body with bound params when called, return result instead of Value::Null +feature
 (B) implement mutable variable rebinding in src/eval/evaluator.rs: when evaluating assignment to a `let mut` binding, call env.set() and propagate error if variable not found +feature

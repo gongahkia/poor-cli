@@ -1,4 +1,4 @@
-// Chron DSL PEG Grammar
+// Seuss DSL PEG Grammar
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ line_comment | block_comment }
