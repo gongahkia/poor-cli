@@ -142,8 +142,10 @@ pub fn gedcom_to_chron(records: &[GedcomRecord]) -> String {
     // Generate entities
     for (id, name, birth, death) in &individuals {
         let safe_name = name.replace(' ', "_").replace('-', "_");
-        let start = birth.as_deref().unwrap_or(&format!("{}-01-01", min_year));
-        let end = death.as_deref().unwrap_or(&format!("{}-12-31", max_year));
+        let default_start = format!("{}-01-01", min_year);
+        let default_end = format!("{}-12-31", max_year);
+        let start = birth.as_deref().unwrap_or(&default_start);
+        let end = death.as_deref().unwrap_or(&default_end);
         output.push_str(&format!("entity {} : character {{\n", safe_name));
         output.push_str(&format!("    full_name: \"{}\",\n", name));
         output.push_str(&format!("    appears_on: main @ {}..{},\n", start, end));
