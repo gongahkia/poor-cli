@@ -63,12 +63,12 @@ impl TypeRegistry {
     /// Validate an entity's attributes against its registered type (Task 33)
     pub fn validate_entity(&self, type_name: &str, attrs: &HashMap<String, String>) -> Vec<String> {
         let mut errors = Vec::new();
-        let Some(typedef) = self.types.get(type_name) else {
+        let Some(typedef) = self.get_with_inheritance(type_name) else {
             return errors; // Unknown types are allowed (built-in types)
         };
 
         for field in &typedef.fields {
-            if field.name.starts_with('@') { continue; } // Skip render hints
+            if field.name.starts_with('@') { continue; }
             if !field.optional && !attrs.contains_key(&field.name) {
                 errors.push(format!("missing required field '{}' for type '{}'", field.name, type_name));
             }
@@ -82,6 +82,32 @@ impl TypeRegistry {
         }
 
         errors
+    }
+
+    /// Get type definition with inherited fields (Task 59)
+    pub fn get_with_inheritance(&self, type_name: &str) -> Option<CustomTypeDef> {
+        let typedef = self.types.get(type_name)?;
+        if let Some(ref parent_name) = typedef.parent {
+            if let Some(parent) = self.get_with_inheritance(parent_name) {
+                let mut merged = parent.clone();
+                merged.name = typedef.name.clone();
+                merged.parent = typedef.parent.clone();
+                // Child fields override parent
+                for field in &typedef.fields {
+                    if let Some(existing) = merged.fields.iter_mut().find(|f| f.name == field.name) {
+                        *existing = field.clone();
+                    } else {
+                        merged.fields.push(field.clone());
+                    }
+                }
+                // Merge render hints
+                if typedef.render_hints.icon.is_some() { merged.render_hints.icon = typedef.render_hints.icon.clone(); }
+                if typedef.render_hints.color.is_some() { merged.render_hints.color = typedef.render_hints.color.clone(); }
+                if typedef.render_hints.shape.is_some() { merged.render_hints.shape = typedef.render_hints.shape.clone(); }
+                return Some(merged);
+            }
+        }
+        Some(typedef.clone())
     }
 
     /// Get render hints for a type (Task 34)
