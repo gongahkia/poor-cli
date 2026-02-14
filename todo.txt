@@ -1,13 +1,5 @@
-(B) Implement time scrubber: bottom bar showing current time cursor position, left/right to step through time, animate mode (play/pause) that auto-advances cursor showing entity state changes over time +tui
-(B) Implement filter panel: popup/sidebar listing entity types and relationship labels as toggleable checkboxes, time range slider; applying filters updates layout to hide/show matching elements +tui
-(B) Implement layer toggle: keybinding to cycle through visibility layers — all relationships, per-label relationship layers, timeline branch layers; show active layers in status bar +tui
-(B) Implement search: / to open search prompt, fuzzy-find entities by name, jump viewport to center on matched entity and select it +tui
-(B) Implement branch navigation: list available timeline branches in a popup, select to switch viewport focus to that branch's region +tui
 (B) Implement time loop viz in TUI: render loop boundaries as box-drawing characters enclosing the loop region, show iteration number, animate cycling through loop iterations +tui
 (B) Implement nested drill-down: Enter on a nested timeline region zooms into that level showing finer granularity, Backspace/Esc zooms back out to parent level +tui
-(B) Implement status bar: bottom line showing current time position, zoom level, active filters count, total entity/relationship count, current file path +tui
-(B) Implement help overlay: ? key toggles help popup listing all keybindings grouped by category (navigation, selection, filtering, export) +tui
-(B) Implement mouse support: click to select entity, scroll wheel for zoom, click-drag for pan, right-click for context menu (inspect, filter, export) +tui
 (B) Implement color theming: load theme from config defining colors per entity type, per relationship label, timeline background, selection highlight; ship default dark and light themes +tui
 (B) Implement SVG-to-PNG conversion using resvg crate: rasterize SVG at configurable DPI (default 150), handle font fallback, output to specified path +render
 (B) Implement SVG-to-PDF conversion: embed SVG into single-page PDF using printpdf or svg2pdf crate, set page dimensions from layout bounds +render
@@ -23,13 +15,6 @@
 (B) Implement web filter sidebar: collapsible sidebar with entity type checkboxes, relationship label checkboxes, time range slider; changes trigger re-render of visible elements +web
 (B) Implement web relationship hover: highlight connected edges and dim unconnected entities on entity hover, show relationship label tooltip +web
 (B) Implement web export button: toolbar button to download current view as SVG/PDF/PNG using existing render pipeline, opens save dialog +web
-(B) Implement CSV entity importer: parse CSV with columns (name, type, timeline, start, end, attr1, attr2, ...), map rows to EntityDecl AST nodes, validate required fields, report row-level errors +import
-(B) Implement CSV relationship importer: parse CSV with columns (source, target, label, start, end), resolve entity refs by name, create RelDecl AST nodes +import
-(B) Implement GEDCOM parser: tokenize GEDCOM 5.5.1 format into level-tag-value triples, handle CONC/CONT continuation, INDI and FAM record types +import
-(B) Implement GEDCOM-to-model mapper: map INDI records to character entities with birth/death lifecycle events, FAM records to parent/child/spouse relationships, generate linear timeline from earliest to latest date +import
-(B) Implement JSON-LD importer: parse JSON-LD documents, recognize schema.org Person (name, birthDate, deathDate) and Event (name, startDate, endDate, location) types, map to entities +import
-(B) Implement import CLI subcommand: `chron import <input_file> --from csv|gedcom|jsonld --output <file.chron>` generates .chron source from imported data +cli
-(B) Implement import validation: check for duplicate entity names, dangling relationship references, invalid date formats; report all errors with input line numbers +import
 (B) Implement custom entity type definitions in DSL: `type Weapon { damage: int, wielder: character?, forged_at: date }` registers in type_registry, validates instances against schema +ext
 (B) Implement custom attribute rendering hints: `type Weapon { @icon: "sword", @color: "#c0c0c0", ... }` meta-attributes prefixed with @ control visual representation in layout/render +ext
 (B) Implement module/import system: `import "other_file.chron"` resolves relative path, parses and evaluates imported file's declarations into current World, detect circular imports +ext
@@ -48,9 +33,7 @@
 (B) Implement conditional relationship creation: `if timeline.kind == Branch { rel hero -[betrays]-> mentor }` relationships that exist only when conditions hold +eval
 (B) Implement REPL mode: `chron repl` starts interactive session, evaluate declarations incrementally, query World state, render ASCII mini-timeline on demand +cli
 (B) Implement timeline comparison view in TUI: side-by-side split pane showing two branches with shared entities highlighted and divergences color-coded +tui
-(B) Implement undo/redo stack for TUI interactions: track viewport state changes (pan, zoom, filter, selection), Ctrl-z/Ctrl-y to navigate history +tui
 (B) Implement TUI command palette: Ctrl-p opens fuzzy-find popup listing all available commands, type to filter, Enter to execute +tui
-(B) Implement bookmarks in TUI: Ctrl-b to bookmark current view state (viewport + filters + selection), numbered bookmarks 1-9 for quick jump +tui
 (C) Implement Markdown embedding preprocessor: scan .md files for ```chron fenced code blocks, extract DSL source, evaluate and render inline as SVG image, output processed .md with embedded images +embed
 (C) Implement LSP server for .chron files: textDocument/completion for keywords, entity names, timeline names; textDocument/diagnostics for parse/eval errors; textDocument/hover for entity info +tooling
 (C) Implement syntax highlighting definitions: generate TextMate grammar (.tmLanguage.json) and tree-sitter grammar for .chron files, ship for VSCode and Neovim +tooling
