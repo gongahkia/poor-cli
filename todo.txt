@@ -1,9 +1,3 @@
-(B) Implement time loop viz in TUI: render loop boundaries as box-drawing characters enclosing the loop region, show iteration number, animate cycling through loop iterations +tui
-(B) Implement nested drill-down: Enter on a nested timeline region zooms into that level showing finer granularity, Backspace/Esc zooms back out to parent level +tui
-(B) Implement color theming: load theme from config defining colors per entity type, per relationship label, timeline background, selection highlight; ship default dark and light themes +tui
-(B) Implement SVG-to-PNG conversion using resvg crate: rasterize SVG at configurable DPI (default 150), handle font fallback, output to specified path +render
-(B) Implement SVG-to-PDF conversion: embed SVG into single-page PDF using printpdf or svg2pdf crate, set page dimensions from layout bounds +render
-(B) Implement export CLI subcommand: `chron export <file.chron> --format svg|pdf|png --output <path> --width <px> --height <px> --time-range <start>..<end> --theme <name>` +cli
 (B) Implement configurable export dimensions: --width and --height flags, auto-aspect-ratio if only one specified, fit-content default if neither specified +render
 (B) Implement export time-range selection: --time-range flag crops layout to specified window before rendering, useful for exporting specific acts/eras +render
 (B) Set up axum localhost HTTP server: serve on configurable port (default 8888), CORS for local dev, graceful shutdown on Ctrl-C +web
