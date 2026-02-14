@@ -252,32 +252,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "chron"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "clap",
- "crossterm",
- "futures-util",
- "notify",
- "pest",
- "pest_derive",
- "printpdf",
- "ratatui",
- "resvg",
- "serde",
- "serde_json",
- "svg",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.26.2",
- "toml",
- "tower-http",
- "uuid",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1627,6 +1601,32 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "seuss"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "clap",
+ "crossterm",
+ "futures-util",
+ "notify",
+ "pest",
+ "pest_derive",
+ "printpdf",
+ "ratatui",
+ "resvg",
+ "serde",
+ "serde_json",
+ "svg",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+ "toml",
+ "tower-http",
+ "uuid",
 ]
 
 [[package]]
