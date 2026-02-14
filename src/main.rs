@@ -39,6 +39,7 @@ fn main() {
             run_serve(&file, port, cli.verbose);
         }
         Commands::Repl => run_repl(),
+        Commands::Diff { file1, file2 } => run_diff(&file1, &file2),
     }
 }
 
@@ -430,5 +431,97 @@ fn run_repl() {
                 }
             }
         }
+    }
+}
+
+fn run_diff(file1: &Path, file2: &Path) {
+    fn load_world(file: &Path) -> Result<crate::model::world::World, String> {
+        let source = read_chron_file(file).map_err(|e| format!("{}", e))?;
+        let file_str = file.to_string_lossy().to_string();
+        let program = parse_program(&source, &file_str)
+            .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;
+        let mut evaluator = Evaluator::new();
+        evaluator.eval_program(&program).map_err(|e| e.to_string())?;
+        Ok(evaluator.world)
+    }
+
+    let w1 = match load_world(file1) {
+        Ok(w) => w,
+        Err(e) => { eprintln!("Error in {}: {}", file1.display(), e); std::process::exit(1); }
+    };
+    let w2 = match load_world(file2) {
+        Ok(w) => w,
+        Err(e) => { eprintln!("Error in {}: {}", file2.display(), e); std::process::exit(1); }
+    };
+
+    let mut changes = 0;
+
+    // Compare timelines
+    let names1: std::collections::HashSet<_> = w1.timelines.values().map(|t| &t.name).collect();
+    let names2: std::collections::HashSet<_> = w2.timelines.values().map(|t| &t.name).collect();
+    for name in names2.difference(&names1) {
+        println!("+ timeline {}", name);
+        changes += 1;
+    }
+    for name in names1.difference(&names2) {
+        println!("- timeline {}", name);
+        changes += 1;
+    }
+
+    // Compare entities
+    let ents1: std::collections::HashMap<_, _> = w1.entities.values().map(|e| (&e.name, e)).collect();
+    let ents2: std::collections::HashMap<_, _> = w2.entities.values().map(|e| (&e.name, e)).collect();
+    for (name, _) in &ents2 {
+        if !ents1.contains_key(name) {
+            println!("+ entity {}", name);
+            changes += 1;
+        }
+    }
+    for (name, _) in &ents1 {
+        if !ents2.contains_key(name) {
+            println!("- entity {}", name);
+            changes += 1;
+        }
+    }
+    for (name, e1) in &ents1 {
+        if let Some(e2) = ents2.get(name) {
+            if e1.type_id != e2.type_id {
+                println!("~ entity {} type: {} → {}", name, e1.type_id, e2.type_id);
+                changes += 1;
+            }
+            if e1.attributes.len() != e2.attributes.len() {
+                println!("~ entity {} attrs: {} → {}", name, e1.attributes.len(), e2.attributes.len());
+                changes += 1;
+            }
+        }
+    }
+
+    // Compare relationships
+    let rels1: Vec<_> = w1.relationships.iter().map(|r| {
+        let src = w1.entities.get(&r.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        let tgt = w1.entities.get(&r.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        format!("{}-[{}]->{}", src, r.label, tgt)
+    }).collect();
+    let rels2: Vec<_> = w2.relationships.iter().map(|r| {
+        let src = w2.entities.get(&r.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        let tgt = w2.entities.get(&r.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        format!("{}-[{}]->{}", src, r.label, tgt)
+    }).collect();
+
+    let set1: std::collections::HashSet<_> = rels1.iter().collect();
+    let set2: std::collections::HashSet<_> = rels2.iter().collect();
+    for r in set2.difference(&set1) {
+        println!("+ rel {}", r);
+        changes += 1;
+    }
+    for r in set1.difference(&set2) {
+        println!("- rel {}", r);
+        changes += 1;
+    }
+
+    if changes == 0 {
+        println!("No differences found");
+    } else {
+        println!("\n{} change(s)", changes);
     }
 }
