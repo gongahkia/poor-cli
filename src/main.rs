@@ -8,6 +8,7 @@ mod cli;
 mod import;
 mod config;
 mod web;
+mod ext;
 
 use clap::Parser;
 use std::path::Path;
