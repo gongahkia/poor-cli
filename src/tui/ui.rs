@@ -48,6 +48,16 @@ pub fn draw(frame: &mut ratatui::Frame, app: &App) {
     if app.input_mode == InputMode::Search {
         draw_search_bar(frame, area, app);
     }
+
+    // Branch navigation popup (Task 58)
+    if app.input_mode == InputMode::BranchNav {
+        draw_branch_nav(frame, area, app);
+    }
+
+    // Filter panel (Task 55)
+    if app.input_mode == InputMode::Filter {
+        draw_filter_panel(frame, area, app);
+    }
 }
 
 /// Main timeline view widget (Task 49)
@@ -208,11 +218,12 @@ fn draw_entity_detail(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
 fn draw_status_bar(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let vp = &app.layout.viewport;
+    let layer = app.layer_names.get(app.active_layer).map(|s| s.as_str()).unwrap_or("All");
     let status = format!(
-        " Time: {:.0}..{:.0} | Zoom: {:.1}x | Entities: {} | Rels: {} | {} ",
-        vp.time_start, vp.time_end, vp.scale,
-        app.layout.entities.len(),
-        app.layout.edges.len(),
+        " {} | Time: {:.0}..{:.0} | Cursor: {:.0} | Zoom: {:.1}x | Layer: {} | E:{} R:{} | {} ",
+        app.file_path, vp.time_start, vp.time_end, app.time_cursor,
+        vp.scale, layer,
+        app.layout.entities.len(), app.layout.edges.len(),
         app.status_message,
     );
     let bar = Paragraph::new(status)
@@ -234,15 +245,22 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
         Line::from("  Enter  Focus selected"),
         Line::from("  Esc    Deselect"),
         Line::from(""),
-        Line::from("Other:"),
+        Line::from("Time:"),
+        Line::from("  [/]    Step time cursor"),
+        Line::from("  Space  Play/pause scrubber"),
+        Line::from(""),
+        Line::from("View:"),
         Line::from("  /    Search          ?    Toggle help"),
+        Line::from("  f    Filter panel    v    Cycle layers"),
+        Line::from("  B    Branch nav      1-9  Jump bookmark"),
+        Line::from("  C-b  Save bookmark   C-z  Undo  C-y  Redo"),
         Line::from("  q    Quit"),
     ];
 
     let block = Block::default().title("Help").borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
-    let w = area.width.min(50);
-    let h = area.height.min(18);
+    let w = area.width.min(52);
+    let h = area.height.min(24);
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
@@ -259,6 +277,62 @@ fn draw_search_bar(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let text = Paragraph::new(format!("/{}", app.search_query)).block(block);
     frame.render_widget(Clear, search_area);
     frame.render_widget(text, search_area);
+}
+
+/// Branch navigation popup (Task 58)
+fn draw_branch_nav(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let mut lines = vec![
+        Line::from(Span::styled("Select Timeline Branch", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(""),
+    ];
+    for (i, tl) in app.layout.timelines.iter().enumerate() {
+        lines.push(Line::from(format!("  [{}] {} ({:?})", i, tl.name, tl.kind)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press number to select, Esc to cancel"));
+
+    let w = area.width.min(45);
+    let h = area.height.min((lines.len() + 2) as u16);
+    let popup = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w, h,
+    );
+    let block = Block::default().title("Branches").borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+/// Filter panel (Task 55)
+fn draw_filter_panel(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let mut lines = vec![
+        Line::from(Span::styled("Filters", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from("Entity Types:"),
+    ];
+    for t in &app.type_filters {
+        lines.push(Line::from(format!("  [✓] {}", t)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Relationship Labels:"));
+    for l in &app.label_filters {
+        lines.push(Line::from(format!("  [✓] {}", l)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press Esc to close"));
+
+    let w = area.width.min(40);
+    let h = area.height.min((lines.len() + 2) as u16);
+    let popup = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w, h,
+    );
+    let block = Block::default().title("Filter").borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
 fn entity_color(entity_type: &str, connected: bool) -> Color {
