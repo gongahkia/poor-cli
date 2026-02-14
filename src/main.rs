@@ -7,6 +7,7 @@ mod render;
 mod cli;
 mod import;
 mod config;
+mod web;
 
 use clap::Parser;
 use std::path::Path;
@@ -32,8 +33,7 @@ fn main() {
             run_import(&file, &from, output.as_deref());
         }
         Commands::Serve { file, port } => {
-            eprintln!("serve not yet implemented");
-            std::process::exit(1);
+            run_serve(&file, port, cli.verbose);
         }
     }
 }
@@ -299,4 +299,47 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
             std::process::exit(1);
         }
     }
+}
+
+fn run_serve(file: &Path, port: u16, verbose: bool) {
+    let source = match read_chron_file(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let file_str = file.to_string_lossy().to_string();
+    let program = match parse_program(&source, &file_str) {
+        Ok(p) => p,
+        Err(errors) => {
+            for e in &errors {
+                eprintln!("Parse error: {}", e);
+            }
+            std::process::exit(1);
+        }
+    };
+
+    let mut evaluator = Evaluator::new();
+    if let Err(e) = evaluator.eval_program(&program) {
+        eprintln!("Runtime error: {}", e);
+        std::process::exit(1);
+    }
+
+    let layout = compute_layout(&evaluator.world);
+    let theme = Theme::default();
+    let svg = render_svg(&layout, &theme);
+
+    if verbose {
+        eprintln!("Starting server with {} entities on port {}", evaluator.world.entities.len(), port);
+    }
+
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async {
+        if let Err(e) = web::server::start_server(port, svg).await {
+            eprintln!("Server error: {}", e);
+            std::process::exit(1);
+        }
+    });
 }
