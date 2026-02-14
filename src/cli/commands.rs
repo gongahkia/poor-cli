@@ -74,4 +74,11 @@ pub enum Commands {
     },
     /// Interactive REPL mode
     Repl,
+    /// Diff two .chron files
+    Diff {
+        /// First .chron file
+        file1: PathBuf,
+        /// Second .chron file
+        file2: PathBuf,
+    },
 }
