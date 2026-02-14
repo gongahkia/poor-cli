@@ -58,6 +58,11 @@ pub fn draw(frame: &mut ratatui::Frame, app: &App) {
     if app.input_mode == InputMode::Filter {
         draw_filter_panel(frame, area, app);
     }
+
+    // Command palette (Task 52)
+    if app.input_mode == InputMode::CommandPalette {
+        draw_command_palette(frame, area, app);
+    }
 }
 
 /// Main timeline view widget (Task 49)
@@ -360,6 +365,41 @@ fn draw_filter_panel(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         w, h,
     );
     let block = Block::default().title("Filter").borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+/// Command palette (Task 52)
+fn draw_command_palette(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let query = &app.palette_query.to_lowercase();
+    let filtered: Vec<_> = app.available_commands.iter()
+        .filter(|(name, _)| query.is_empty() || name.contains(query.as_str()))
+        .collect();
+
+    let mut lines = vec![
+        Line::from(Span::styled("Command Palette", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(format!("> {}", app.palette_query)),
+        Line::from(""),
+    ];
+    for (name, desc) in &filtered {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {:<16}", name), Style::default().fg(Color::Yellow)),
+            Span::raw(*desc),
+        ]));
+    }
+    if filtered.is_empty() {
+        lines.push(Line::from("  (no matching commands)"));
+    }
+
+    let w = area.width.min(50);
+    let h = area.height.min((lines.len() + 2) as u16);
+    let popup = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w, h,
+    );
+    let block = Block::default().title("Commands").borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
