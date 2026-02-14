@@ -5,6 +5,7 @@ mod layout;
 mod tui;
 mod render;
 mod cli;
+mod import;
 
 use clap::Parser;
 use std::path::Path;
@@ -27,8 +28,7 @@ fn main() {
         }
         Commands::Check { file } => run_check(&file, cli.verbose),
         Commands::Import { file, from, output } => {
-            eprintln!("import not yet implemented");
-            std::process::exit(1);
+            run_import(&file, &from, output.as_deref());
         }
         Commands::Serve { file, port } => {
             eprintln!("serve not yet implemented");
@@ -200,4 +200,57 @@ fn run_check(file: &Path, verbose: bool) {
     let w = &evaluator.world;
     println!("✓ {} valid ({} timelines, {} entities, {} relationships)",
         file.display(), w.timelines.len(), w.entities.len(), w.relationships.len());
+}
+
+fn run_import(file: &Path, from: &str, output: Option<&Path>) {
+    let content = match std::fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading {}: {}", file.display(), e);
+            std::process::exit(1);
+        }
+    };
+
+    let result = match from {
+        "csv" | "csv-entities" => {
+            import::csv_import::import_entities_csv(&content)
+                .map_err(|errs| errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))
+        }
+        "csv-relationships" => {
+            import::csv_import::import_relationships_csv(&content)
+                .map_err(|errs| errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))
+        }
+        "gedcom" => {
+            let records = import::gedcom::parse_gedcom(&content);
+            Ok(import::gedcom::gedcom_to_chron(&records))
+        }
+        "jsonld" => {
+            import::jsonld::import_jsonld(&content)
+        }
+        _ => {
+            eprintln!("Unsupported format: {}. Use: csv, csv-relationships, gedcom, jsonld", from);
+            std::process::exit(1);
+        }
+    };
+
+    match result {
+        Ok(chron_source) => {
+            // Validate
+            let validation = import::validate::validate_chron_source(&chron_source);
+            for w in &validation.warnings {
+                eprintln!("warning: {}", w);
+            }
+            for e in &validation.errors {
+                eprintln!("error: {}", e);
+            }
+
+            let out_path = output.unwrap_or(Path::new("imported.chron"));
+            std::fs::write(out_path, &chron_source).expect("failed to write output");
+            println!("✓ Imported {} → {}", file.display(), out_path.display());
+        }
+        Err(e) => {
+            eprintln!("Import failed:\n{}", e);
+            std::process::exit(1);
+        }
+    }
 }
