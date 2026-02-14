@@ -9,6 +9,7 @@ mod import;
 mod config;
 mod web;
 mod ext;
+mod embed;
 
 use clap::Parser;
 use std::path::Path;
