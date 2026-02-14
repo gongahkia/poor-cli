@@ -63,6 +63,11 @@ pub fn draw(frame: &mut ratatui::Frame, app: &App) {
     if app.input_mode == InputMode::CommandPalette {
         draw_command_palette(frame, area, app);
     }
+
+    // Compare select popup (Task 50)
+    if app.input_mode == InputMode::CompareSelect {
+        draw_compare_select(frame, area, app);
+    }
 }
 
 /// Main timeline view widget (Task 49)
@@ -365,6 +370,31 @@ fn draw_filter_panel(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         w, h,
     );
     let block = Block::default().title("Filter").borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+/// Compare select popup (Task 50)
+fn draw_compare_select(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let mut lines = vec![
+        Line::from(Span::styled("Select Timeline to Compare", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(""),
+    ];
+    for (i, tl) in app.layout.timelines.iter().enumerate() {
+        lines.push(Line::from(format!("  [{}] {} ({:?})", i, tl.name, tl.kind)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from("Press number to select, Esc to cancel"));
+
+    let w = area.width.min(45);
+    let h = area.height.min((lines.len() + 2) as u16);
+    let popup = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w, h,
+    );
+    let block = Block::default().title("Compare").borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
