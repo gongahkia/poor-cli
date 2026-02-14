@@ -5,8 +5,8 @@ use pest::iterators::Pair;
 use super::ast::*;
 
 #[derive(Parser)]
-#[grammar = "lang/chron.pest"]
-pub struct ChronParser;
+#[grammar = "lang/seuss.pest"]
+pub struct SeussParser;
 
 /// Parse error with location context (Task 15)
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ impl std::fmt::Display for ParseError {
 }
 
 pub fn parse_program(source: &str, file: &str) -> Result<Program, Vec<ParseError>> {
-    let pairs = ChronParser::parse(Rule::program, source).map_err(|e| {
+    let pairs = SeussParser::parse(Rule::program, source).map_err(|e| {
         vec![ParseError {
             message: e.to_string(),
             span: Span::new(0, 0, file),

@@ -76,7 +76,7 @@ fn generate_viewer_html(svg: &str) -> String {
 <html>
 <head>
 <meta charset="utf-8">
-<title>Chron Timeline Viewer</title>
+<title>Seuss Timeline Viewer</title>
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{ background: #1a1a2e; color: #eee; font-family: system-ui; overflow: hidden; }}

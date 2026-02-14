@@ -5,46 +5,46 @@ use crate::layout::engine::compute_layout;
 use crate::render::svg_render::{render_svg, Theme};
 
 /// Markdown preprocessor (Task 54)
-/// Scans for ```chron fenced code blocks, evaluates them, and replaces with inline SVG images
+/// Scans for ```seuss fenced code blocks, evaluates them, and replaces with inline SVG images
 pub fn process_markdown(content: &str, base_dir: &Path) -> Result<String, String> {
     let mut output = String::new();
-    let mut in_chron_block = false;
-    let mut chron_source = String::new();
+    let mut in_seuss_block = false;
+    let mut seuss_source = String::new();
     let mut block_count = 0;
 
     for line in content.lines() {
-        if line.trim().starts_with("```chron") && !in_chron_block {
-            in_chron_block = true;
-            chron_source.clear();
+        if line.trim().starts_with("```seuss") && !in_seuss_block {
+            in_seuss_block = true;
+            seuss_source.clear();
             continue;
         }
 
-        if line.trim() == "```" && in_chron_block {
-            in_chron_block = false;
+        if line.trim() == "```" && in_seuss_block {
+            in_seuss_block = false;
             block_count += 1;
 
             // Evaluate and render
-            match render_chron_block(&chron_source, block_count) {
+            match render_seuss_block(&seuss_source, block_count) {
                 Ok(svg) => {
-                    let svg_filename = format!("chron_block_{}.svg", block_count);
+                    let svg_filename = format!("seuss_block_{}.svg", block_count);
                     let svg_path = base_dir.join(&svg_filename);
                     std::fs::write(&svg_path, &svg)
                         .map_err(|e| format!("failed to write SVG: {}", e))?;
-                    output.push_str(&format!("![Chron Timeline {}]({})\n", block_count, svg_filename));
+                    output.push_str(&format!("![Seuss Timeline {}]({})\n", block_count, svg_filename));
                 }
                 Err(e) => {
-                    output.push_str(&format!("<!-- chron error: {} -->\n", e));
-                    output.push_str("```chron\n");
-                    output.push_str(&chron_source);
+                    output.push_str(&format!("<!-- seuss error: {} -->\n", e));
+                    output.push_str("```seuss\n");
+                    output.push_str(&seuss_source);
                     output.push_str("```\n");
                 }
             }
             continue;
         }
 
-        if in_chron_block {
-            chron_source.push_str(line);
-            chron_source.push('\n');
+        if in_seuss_block {
+            seuss_source.push_str(line);
+            seuss_source.push('\n');
         } else {
             output.push_str(line);
             output.push('\n');
@@ -54,7 +54,7 @@ pub fn process_markdown(content: &str, base_dir: &Path) -> Result<String, String
     Ok(output)
 }
 
-fn render_chron_block(source: &str, block_num: usize) -> Result<String, String> {
+fn render_seuss_block(source: &str, block_num: usize) -> Result<String, String> {
     let file_str = format!("markdown:block{}", block_num);
     let program = parse_program(source, &file_str)
         .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;

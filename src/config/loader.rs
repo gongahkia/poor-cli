@@ -4,7 +4,7 @@ use super::theme::ThemeConfig;
 
 /// Config file structure (Task 43)
 #[derive(Debug, Deserialize, Default)]
-pub struct ChronConfig {
+pub struct SeussConfig {
     pub theme: Option<ThemeConfig>,
     pub export: Option<ExportConfig>,
     pub server: Option<ServerConfig>,
@@ -25,24 +25,24 @@ pub struct ServerConfig {
     pub open_browser: Option<bool>,
 }
 
-impl ChronConfig {
+impl SeussConfig {
     /// Load config from standard locations:
-    /// 1. .chronrc in current directory
-    /// 2. ~/.config/chron/config.toml
+    /// 1. .seussrc in current directory
+    /// 2. ~/.config/seuss/config.toml
     pub fn load(explicit_path: Option<&Path>) -> Self {
         if let Some(p) = explicit_path {
             return Self::load_file(p).unwrap_or_default();
         }
 
-        // Try .chronrc in cwd
-        let local = Path::new(".chronrc");
+        // Try .seussrc in cwd
+        let local = Path::new(".seussrc");
         if local.exists() {
             if let Ok(cfg) = Self::load_file(local) {
                 return cfg;
             }
         }
 
-        // Try ~/.config/chron/config.toml
+        // Try ~/.config/seuss/config.toml
         if let Some(home) = dirs_path() {
             let global = home.join("config.toml");
             if global.exists() {
@@ -65,5 +65,5 @@ impl ChronConfig {
 
 fn dirs_path() -> Option<PathBuf> {
     std::env::var("HOME").ok()
-        .map(|h| PathBuf::from(h).join(".config").join("chron"))
+        .map(|h| PathBuf::from(h).join(".config").join("seuss"))
 }

@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Chron: a DSL for modeling and visualizing temporal narratives
+/// Seuss: a DSL for modeling and visualizing temporal narratives
 #[derive(Parser)]
-#[command(name = "chron", version, about)]
+#[command(name = "seuss", version, about)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -23,14 +23,14 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Parse and visualize a .chron file in the terminal
+    /// Parse and visualize a .seuss file in the terminal
     Run {
-        /// Path to .chron source file
+        /// Path to .seuss source file
         file: PathBuf,
     },
     /// Export timeline as SVG/PDF/PNG
     Export {
-        /// Path to .chron source file
+        /// Path to .seuss source file
         file: PathBuf,
         /// Output format
         #[arg(short, long, default_value = "svg")]
@@ -55,30 +55,30 @@ pub enum Commands {
         /// Source format (csv, gedcom, jsonld)
         #[arg(long, default_value = "csv")]
         from: String,
-        /// Output .chron file path
+        /// Output .seuss file path
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
     /// Start live-reload web server
     Serve {
-        /// Path to .chron source file
+        /// Path to .seuss source file
         file: PathBuf,
         /// Server port
         #[arg(short, long, default_value = "8888")]
         port: u16,
     },
-    /// Validate a .chron file without rendering
+    /// Validate a .seuss file without rendering
     Check {
-        /// Path to .chron source file
+        /// Path to .seuss source file
         file: PathBuf,
     },
     /// Interactive REPL mode
     Repl,
-    /// Diff two .chron files
+    /// Diff two .seuss files
     Diff {
-        /// First .chron file
+        /// First .seuss file
         file1: PathBuf,
-        /// Second .chron file
+        /// Second .seuss file
         file2: PathBuf,
     },
 }

@@ -42,7 +42,7 @@ pub struct Position {
     pub character: u32,
 }
 
-/// Get keyword completions for .chron files
+/// Get keyword completions for .seuss files
 pub fn get_completions(prefix: &str) -> Vec<CompletionItem> {
     let keywords = vec![
         ("timeline", 14, "Declare a timeline"),
@@ -75,7 +75,7 @@ pub fn get_completions(prefix: &str) -> Vec<CompletionItem> {
         .collect()
 }
 
-/// Get diagnostics from parsing a .chron file
+/// Get diagnostics from parsing a .seuss file
 pub fn get_diagnostics(source: &str, file: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 

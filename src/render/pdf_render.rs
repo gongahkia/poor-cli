@@ -3,7 +3,7 @@ use printpdf::*;
 
 /// Render SVG to PDF (Task 13)
 pub fn render_pdf(svg_data: &str, output: &Path, width_mm: f32, height_mm: f32) -> Result<(), String> {
-    let (doc, page1, layer1) = PdfDocument::new("Chron Timeline", Mm(width_mm), Mm(height_mm), "Timeline");
+    let (doc, page1, layer1) = PdfDocument::new("Seuss Timeline", Mm(width_mm), Mm(height_mm), "Timeline");
     let current_layer = doc.get_page(page1).get_layer(layer1);
 
     // Embed SVG as text annotation since printpdf doesn't natively render SVG paths

@@ -16,7 +16,7 @@ use clap::Parser;
 use std::path::Path;
 
 use cli::commands::{Cli, Commands};
-use lang::reader::read_chron_file;
+use lang::reader::read_seuss_file;
 use lang::parser::parse_program;
 use eval::evaluator::Evaluator;
 use layout::engine::compute_layout;
@@ -45,7 +45,7 @@ fn main() {
 
 /// Run subcommand: parse → eval → layout → TUI (Task 99)
 fn run_tui(file: &Path, verbose: bool) {
-    let source = match read_chron_file(file) {
+    let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -133,7 +133,7 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, verbose: bool) {
-    let source = match read_chron_file(file) {
+    let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -223,7 +223,7 @@ fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u3
 }
 
 fn run_check(file: &Path, verbose: bool) {
-    let source = match read_chron_file(file) {
+    let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -273,7 +273,7 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
         }
         "gedcom" => {
             let records = import::gedcom::parse_gedcom(&content);
-            Ok(import::gedcom::gedcom_to_chron(&records))
+            Ok(import::gedcom::gedcom_to_seuss(&records))
         }
         "jsonld" => {
             import::jsonld::import_jsonld(&content)
@@ -285,9 +285,9 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
     };
 
     match result {
-        Ok(chron_source) => {
+        Ok(seuss_source) => {
             // Validate
-            let validation = import::validate::validate_chron_source(&chron_source);
+            let validation = import::validate::validate_seuss_source(&seuss_source);
             for w in &validation.warnings {
                 eprintln!("warning: {}", w);
             }
@@ -295,8 +295,8 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
                 eprintln!("error: {}", e);
             }
 
-            let out_path = output.unwrap_or(Path::new("imported.chron"));
-            std::fs::write(out_path, &chron_source).expect("failed to write output");
+            let out_path = output.unwrap_or(Path::new("imported.seuss"));
+            std::fs::write(out_path, &seuss_source).expect("failed to write output");
             println!("✓ Imported {} → {}", file.display(), out_path.display());
         }
         Err(e) => {
@@ -307,7 +307,7 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
 }
 
 fn run_serve(file: &Path, port: u16, verbose: bool) {
-    let source = match read_chron_file(file) {
+    let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -352,12 +352,12 @@ fn run_serve(file: &Path, port: u16, verbose: bool) {
 fn run_repl() {
     use std::io::{self, Write, BufRead};
 
-    println!("Chron REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit");
+    println!("Seuss REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit");
     let mut evaluator = Evaluator::new();
     let mut line_num = 0;
 
     loop {
-        print!("chron> ");
+        print!("seuss> ");
         io::stdout().flush().ok();
 
         let mut input = String::new();
@@ -436,7 +436,7 @@ fn run_repl() {
 
 fn run_diff(file1: &Path, file2: &Path) {
     fn load_world(file: &Path) -> Result<crate::model::world::World, String> {
-        let source = read_chron_file(file).map_err(|e| format!("{}", e))?;
+        let source = read_seuss_file(file).map_err(|e| format!("{}", e))?;
         let file_str = file.to_string_lossy().to_string();
         let program = parse_program(&source, &file_str)
             .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;

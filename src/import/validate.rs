@@ -6,7 +6,7 @@ pub struct ValidationResult {
     pub warnings: Vec<String>,
 }
 
-pub fn validate_chron_source(source: &str) -> ValidationResult {
+pub fn validate_seuss_source(source: &str) -> ValidationResult {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     let mut entity_names = HashSet::new();

@@ -1,9 +1,9 @@
 use std::path::Path;
 
-/// Read .chron file handling UTF-8 BOM and normalizing line endings (Task 16)
-pub fn read_chron_file(path: &Path) -> Result<String, String> {
-    if path.extension().and_then(|e| e.to_str()) != Some("chron") {
-        return Err(format!("expected .chron file, got: {}", path.display()));
+/// Read .seuss file handling UTF-8 BOM and normalizing line endings (Task 16)
+pub fn read_seuss_file(path: &Path) -> Result<String, String> {
+    if path.extension().and_then(|e| e.to_str()) != Some("seuss") {
+        return Err(format!("expected .seuss file, got: {}", path.display()));
     }
     let bytes = std::fs::read(path)
         .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;

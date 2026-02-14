@@ -13,7 +13,7 @@ impl std::fmt::Display for ImportError {
     }
 }
 
-/// Parse CSV into .chron entity declarations (Task 26)
+/// Parse CSV into .seuss entity declarations (Task 26)
 /// Columns: name, type, timeline, start, end, [attr1, attr2, ...]
 pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
     let mut output = String::new();
@@ -85,7 +85,7 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
     if errors.is_empty() { Ok(output) } else { Err(errors) }
 }
 
-/// Parse CSV into .chron relationship declarations (Task 27)
+/// Parse CSV into .seuss relationship declarations (Task 27)
 /// Columns: source, target, label, start, end
 pub fn import_relationships_csv(content: &str) -> Result<String, Vec<ImportError>> {
     let mut output = String::new();

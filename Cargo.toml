@@ -1,5 +1,5 @@
 [package]
-name = "chron"
+name = "seuss"
 version = "0.1.0"
 edition = "2021"
 
@@ -26,5 +26,5 @@ tower-http = { version = "0.6", features = ["cors"] }
 futures-util = "0.3"
 
 [[bin]]
-name = "chron"
+name = "seuss"
 path = "src/main.rs"

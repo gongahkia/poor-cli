@@ -80,8 +80,8 @@ pub fn parse_gedcom(content: &str) -> Vec<GedcomRecord> {
     records
 }
 
-/// Map GEDCOM to .chron source (Task 29)
-pub fn gedcom_to_chron(records: &[GedcomRecord]) -> String {
+/// Map GEDCOM to .seuss source (Task 29)
+pub fn gedcom_to_seuss(records: &[GedcomRecord]) -> String {
     let mut output = String::new();
     let mut min_year = 9999i32;
     let mut max_year = 0i32;

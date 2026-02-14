@@ -1,8 +1,8 @@
 [![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/1.0.0)
 [![](https://img.shields.io/badge/seuss_2.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/2.0.0)
-[![](https://img.shields.io/badge/chron_3.0.0-passing-blue)](https://github.com/gongahkia/seuss)
+[![](https://img.shields.io/badge/seuss_3.0.0-passing-blue)](https://github.com/gongahkia/seuss)
 
-# `Chron`
+# `Seuss`
 
 A DSL for modeling and visualizing temporal narratives — timelines, entities, relationships, and their evolution over time.
 
@@ -12,12 +12,12 @@ Built in Rust with a PEG parser, evaluator, TUI (ratatui), and SVG renderer.
 
 ```console
 $ cargo build --release
-$ ./target/release/chron check examples/lotr.chron
-$ ./target/release/chron run examples/lotr.chron
-$ ./target/release/chron export examples/lotr.chron --format svg --output timeline.svg
+$ ./target/release/seuss check examples/lotr.seuss
+$ ./target/release/seuss run examples/lotr.seuss
+$ ./target/release/seuss export examples/lotr.seuss --format svg --output timeline.svg
 ```
 
-## Example `.chron` File
+## Example `.seuss` File
 
 ```
 timeline main {
@@ -43,9 +43,9 @@ rel gandalf -["guides"]-> frodo;
 
 | Command | Description |
 |---------|-------------|
-| `chron run <file.chron>` | Parse and visualize in terminal TUI |
-| `chron export <file.chron> --format svg` | Export as SVG |
-| `chron check <file.chron>` | Validate without rendering |
+| `seuss run <file.seuss>` | Parse and visualize in terminal TUI |
+| `seuss export <file.seuss> --format svg` | Export as SVG |
+| `seuss check <file.seuss>` | Validate without rendering |
 
 ## TUI Keybindings
 
