@@ -165,8 +165,32 @@ fn run_export(file: &Path, format: &str, output: Option<&Path>, verbose: bool) {
                 eprintln!("Exported SVG to {}", out_path.display());
             }
         }
+        "png" => {
+            let svg = render_svg(&layout, &theme);
+            let out_path = output.unwrap_or(Path::new("output.png"));
+            if let Err(e) = render::png_render::render_png(&svg, out_path, 150) {
+                eprintln!("PNG export error: {}", e);
+                std::process::exit(1);
+            }
+            if verbose {
+                eprintln!("Exported PNG to {}", out_path.display());
+            }
+        }
+        "pdf" => {
+            let svg = render_svg(&layout, &theme);
+            let out_path = output.unwrap_or(Path::new("output.pdf"));
+            let w = layout.total_width as f32 * 0.264; // px to mm approx
+            let h = (layout.total_lanes as f32) * 10.0; // 10mm per lane
+            if let Err(e) = render::pdf_render::render_pdf(&svg, out_path, w.max(210.0), h.max(297.0)) {
+                eprintln!("PDF export error: {}", e);
+                std::process::exit(1);
+            }
+            if verbose {
+                eprintln!("Exported PDF to {}", out_path.display());
+            }
+        }
         _ => {
-            eprintln!("Unsupported export format: {}. Use: svg", format);
+            eprintln!("Unsupported export format: {}. Use: svg, png, pdf", format);
             std::process::exit(1);
         }
     }
