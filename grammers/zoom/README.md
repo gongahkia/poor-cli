@@ -1,1 +1,0 @@
-![](https://static.standard.co.uk/2021/03/11/10/zoommeeting110321v1.jpg?width=1200&auto=webp&quality=75)

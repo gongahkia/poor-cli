@@ -1,1 +1,0 @@
-![](https://www.marshallcavendish.com/images/default-source/default-album/book-cover/9789814794183.jpg?sfvrsn=b7d3987_2)

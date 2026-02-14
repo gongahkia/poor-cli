@@ -1,1 +1,0 @@
-![](https://media-cdn.tripadvisor.com/media/photo-s/07/6a/f0/5b/isle-eating-house.jpg)
