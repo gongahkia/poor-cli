@@ -1,5 +1,3 @@
-(B) Implement configurable export dimensions: --width and --height flags, auto-aspect-ratio if only one specified, fit-content default if neither specified +render
-(B) Implement export time-range selection: --time-range flag crops layout to specified window before rendering, useful for exporting specific acts/eras +render
 (B) Set up axum localhost HTTP server: serve on configurable port (default 8888), CORS for local dev, graceful shutdown on Ctrl-C +web
 (B) Implement file watcher using notify crate: watch .chron source files for changes, trigger re-parse + re-eval + re-layout on save +web
 (B) Implement WebSocket channel: push re-rendered timeline data to connected browser clients on file change for live reload without manual refresh +web
