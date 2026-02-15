@@ -1,17 +1,3 @@
-(B) implement EraRef.to_ordinal() in src/model/types.rs: accept a &World parameter, resolve era name to timeline, look up era boundaries, compute absolute ordinal from era-relative offset +feature
-(B) implement compare mode diff view in src/tui/ui.rs: when CompareSelect state is active and two files are chosen, parse both, diff entity/timeline/relationship sets, render side-by-side diff panel with added/removed/changed items highlighted +feature
-(B) fix CSV import to handle quoted fields: replace manual comma split in src/import/csv_import.rs with a proper CSV field parser that respects double-quoted values containing commas and escaped quotes +feature
-(B) add CSV header validation in src/import/csv_import.rs: verify first row contains required columns (name, type, timeline, start, end), return descriptive error listing missing columns if not +feature
-(B) add CSV date format validation in src/import/csv_import.rs: attempt to parse start/end values as NaiveDate, return error with row number and column name if parsing fails +feature
-(B) implement GEDCOM nested CONC/CONT handling in src/import/gedcom.rs: properly concatenate continuation lines that may appear at any nesting depth, not just immediately after the parent tag +feature
-(B) add GEDCOM structure validation in src/import/gedcom.rs: verify INDI records have at least a NAME tag, FAM records have at least one HUSB/WIFE/CHIL, emit warnings for records missing expected fields +feature
-(B) implement JSON-LD relationship import in src/import/jsonld.rs: recognize schema.org/knows, schema.org/parent, schema.org/spouse and similar relationship types, generate rel declarations in output +feature
-(B) implement JSON-LD @context resolution in src/import/jsonld.rs: expand compact IRIs using the @context object before matching against known schema.org types, instead of requiring exact full URIs +feature
-(B) improve import validation date regex in src/import/validate.rs: replace heuristic regex with chrono::NaiveDate::parse_from_str() attempt for accurate date validation +feature
-(B) add timeline and type reference validation to import validator in src/import/validate.rs: verify all timeline names referenced in entity appears_on exist, verify all type_ref values match defined types or known builtins +feature
-(B) implement lane compaction in src/layout/engine.rs: track occupied time ranges per lane, reuse lanes for entities whose time ranges don't overlap, reducing total vertical space for timelines with many sequential entities +feature
-(B) fix fork/merge lane assignment in src/layout/engine.rs: ensure connector lanes account for actual branch origin lane instead of using saturating_sub(1) which can place connectors at lane 0 incorrectly +feature
-(B) implement label collision avoidance in src/layout/engine.rs: after initial layout, detect overlapping label bounding boxes and shift colliding labels vertically or add leader lines +feature
 (B) implement SVG text wrapping for long entity names in src/render/svg_render.rs: split names exceeding a character threshold across multiple <tspan> elements with dy offsets +feature
 (B) add SVG clipping rects in src/render/svg_render.rs: wrap each timeline region in a <clipPath> element to prevent entity bars and labels from rendering outside their timeline's bounding box +feature
 (B) wire export width/height CLI args to SVG viewBox dimensions in src/render/svg_render.rs instead of hardcoded 1200px width, computing aspect ratio from layout total_width and total_lanes +feature
