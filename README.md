@@ -4,7 +4,7 @@
 
 # `Seuss`
 
-A DSL for modeling and visualizing temporal narratives — timelines, entities, relationships, and their evolution over time.
+[DSL](https://en.wikipedia.org/wiki/Domain-specific_language) for modeling and visualizing temporal narratives — timelines, entities, relationships, and their evolution over time.
 
 Built in Rust with a PEG parser, evaluator, TUI (ratatui), and SVG renderer.
 
