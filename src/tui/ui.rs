@@ -68,6 +68,11 @@ pub fn draw(frame: &mut ratatui::Frame, app: &App) {
     if app.input_mode == InputMode::CompareSelect {
         draw_compare_select(frame, area, app);
     }
+
+    // Compare diff panel when two timelines are chosen
+    if app.compare_mode && app.compare_timeline_idx.is_some() {
+        draw_compare_diff(frame, area, app);
+    }
 }
 
 /// Main timeline view widget (Task 49)
@@ -432,6 +437,88 @@ fn draw_command_palette(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         w, h,
     );
     let block = Block::default().title("Commands").borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(Clear, popup);
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+/// Compare diff view: side-by-side diff of two timelines' entities and relationships
+fn draw_compare_diff(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let compare_idx = match app.compare_timeline_idx {
+        Some(idx) if idx < app.layout.timelines.len() => idx,
+        _ => return,
+    };
+
+    // Use first timeline as "left", selected compare_timeline_idx as "right"
+    let focused_idx = app.layout.timelines.iter().position(|t| {
+        app.layout.viewport.time_start <= t.x_start && t.x_end <= app.layout.viewport.time_end
+    }).unwrap_or(0);
+
+    if focused_idx == compare_idx { return; }
+
+    let left_tl = &app.layout.timelines[focused_idx];
+    let right_tl = &app.layout.timelines[compare_idx];
+
+    let left_entities: Vec<&crate::layout::engine::LayoutEntity> = app.layout.entities.iter()
+        .filter(|e| e.timeline_id == left_tl.timeline_id)
+        .collect();
+    let right_entities: Vec<&crate::layout::engine::LayoutEntity> = app.layout.entities.iter()
+        .filter(|e| e.timeline_id == right_tl.timeline_id)
+        .collect();
+
+    let left_names: std::collections::HashSet<&str> = left_entities.iter().map(|e| e.name.as_str()).collect();
+    let right_names: std::collections::HashSet<&str> = right_entities.iter().map(|e| e.name.as_str()).collect();
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(format!(" {} ", left_tl.name), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" vs "),
+        Span::styled(format!(" {} ", right_tl.name), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(Span::styled("Entities:", Style::default().add_modifier(Modifier::BOLD))));
+
+    // Added (in right but not left)
+    for name in &right_names {
+        if !left_names.contains(name) {
+            lines.push(Line::from(Span::styled(format!("  + {}", name), Style::default().fg(Color::Green))));
+        }
+    }
+    // Removed (in left but not right)
+    for name in &left_names {
+        if !right_names.contains(name) {
+            lines.push(Line::from(Span::styled(format!("  - {}", name), Style::default().fg(Color::Red))));
+        }
+    }
+    // Shared (in both) - check for type/time changes
+    for name in &left_names {
+        if right_names.contains(name) {
+            let le = left_entities.iter().find(|e| e.name.as_str() == *name).unwrap();
+            let re = right_entities.iter().find(|e| e.name.as_str() == *name).unwrap();
+            if le.entity_type != re.entity_type
+                || (le.x_start - re.x_start).abs() > 0.5
+                || (le.x_end - re.x_end).abs() > 0.5
+            {
+                lines.push(Line::from(Span::styled(format!("  ~ {} (changed)", name), Style::default().fg(Color::Yellow))));
+            } else {
+                lines.push(Line::from(Span::styled(format!("    {}", name), Style::default().fg(Color::DarkGray))));
+            }
+        }
+    }
+
+    if left_names.is_empty() && right_names.is_empty() {
+        lines.push(Line::from("  (no entities)"));
+    }
+
+    let w = area.width.min(60);
+    let h = area.height.min((lines.len() + 2) as u16).max(6);
+    let popup = Rect::new(
+        area.x + (area.width - w) / 2,
+        area.y + (area.height - h) / 2,
+        w, h,
+    );
+    let block = Block::default().title("Diff").borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
