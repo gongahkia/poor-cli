@@ -60,10 +60,28 @@ async fn handle_ws(mut socket: axum::extract::ws::WebSocket, state: Arc<AppState
     }
 }
 
-/// Update SVG and notify WebSocket clients
+/// Update SVG and notify WebSocket clients with SVG and metadata
 pub fn update_svg(state: &Arc<AppState>, new_svg: String) {
-    *state.svg_content.write().unwrap() = new_svg.clone();
+    *state.svg_content.write().unwrap_or_else(|e| e.into_inner()) = new_svg.clone();
+    // Send JSON with SVG content and metadata for filter sidebar
     let _ = state.tx.send(new_svg);
+}
+
+/// Update SVG and send structured JSON to clients with filter data
+pub fn update_svg_with_metadata(
+    state: &Arc<AppState>,
+    new_svg: String,
+    entity_types: Vec<String>,
+    timeline_names: Vec<String>,
+) {
+    *state.svg_content.write().unwrap_or_else(|e| e.into_inner()) = new_svg.clone();
+    let msg = serde_json::json!({
+        "type": "update",
+        "svg": new_svg,
+        "entity_types": entity_types,
+        "timeline_names": timeline_names,
+    });
+    let _ = state.tx.send(msg.to_string());
 }
 
 async fn shutdown_signal() {
@@ -168,10 +186,46 @@ document.getElementById('time-slider').addEventListener('input', e => {{
   document.getElementById('time-label').textContent = e.target.value;
 }});
 
-// WebSocket live reload (Task 19)
+// WebSocket live reload with smooth SVG replacement and filter population
 const ws = new WebSocket('ws://'+location.host+'/ws');
-ws.onmessage = e => {{ timeline.innerHTML = e.data; }};
+ws.onmessage = e => {{
+  try {{
+    const data = JSON.parse(e.data);
+    if (data.type === 'update') {{
+      // Smooth in-place SVG replacement
+      timeline.innerHTML = data.svg;
+      // Populate filter sidebar dynamically
+      if (data.entity_types || data.timeline_names) {{
+        populateFilters(data.entity_types || [], data.timeline_names || []);
+      }}
+    }}
+  }} catch(err) {{
+    // Fallback: treat as raw SVG string
+    timeline.innerHTML = e.data;
+  }}
+}};
 ws.onclose = () => {{ setTimeout(() => location.reload(), 2000); }};
+
+function populateFilters(entityTypes, timelineNames) {{
+  const filterList = document.getElementById('filter-list');
+  filterList.innerHTML = '';
+  if (entityTypes.length > 0) {{
+    const h4e = document.createElement('h4'); h4e.textContent = 'Entity Types'; filterList.appendChild(h4e);
+    entityTypes.forEach(t => {{
+      const label = document.createElement('label');
+      label.innerHTML = '<input type="checkbox" checked data-filter="type" value="'+t+'"> '+t;
+      filterList.appendChild(label);
+    }});
+  }}
+  if (timelineNames.length > 0) {{
+    const h4t = document.createElement('h4'); h4t.textContent = 'Timelines'; filterList.appendChild(h4t);
+    timelineNames.forEach(t => {{
+      const label = document.createElement('label');
+      label.innerHTML = '<input type="checkbox" checked data-filter="timeline" value="'+t+'"> '+t;
+      filterList.appendChild(label);
+    }});
+  }}
+}}
 </script>
 </body>
 </html>"##)
