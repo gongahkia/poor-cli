@@ -79,7 +79,7 @@ fn parse_stmt(pair: Pair<Rule>, file: &str) -> Result<Spanned<Stmt>, ParseError>
         Rule::fn_decl => Stmt::FnDecl(parse_fn_decl(inner, file)?),
         Rule::let_stmt => Stmt::LetStmt(parse_let_stmt(inner, file)?),
         Rule::import_stmt => {
-            let s = inner.into_inner().next().unwrap();
+            let s = inner.into_inner().next().ok_or_else(|| ParseError { message: "expected import path".into(), span: sp.clone() })?;
             Stmt::Import(parse_string_value(s))
         }
         Rule::if_expr => Stmt::If(parse_if_expr(inner, file)?),
@@ -89,12 +89,12 @@ fn parse_stmt(pair: Pair<Rule>, file: &str) -> Result<Spanned<Stmt>, ParseError>
         Rule::repeat_loop => Stmt::RepeatLoop(parse_repeat_loop(inner, file)?),
         Rule::assign_stmt => {
             let mut ai = inner.into_inner();
-            let name = ai.next().unwrap().as_str().to_string();
-            let value = parse_expr(ai.next().unwrap(), file)?;
+            let name = ai.next().ok_or_else(|| ParseError { message: "expected assignment target".into(), span: sp.clone() })?.as_str().to_string();
+            let value = parse_expr(ai.next().ok_or_else(|| ParseError { message: "expected assignment value".into(), span: sp.clone() })?, file)?;
             Stmt::Assign { name, value }
         }
         Rule::expr_stmt => {
-            let e = parse_expr(inner.into_inner().next().unwrap(), file)?;
+            let e = parse_expr(inner.into_inner().next().ok_or_else(|| ParseError { message: "expected expression".into(), span: sp.clone() })?, file)?;
             Stmt::ExprStmt(e)
         }
         _ => {
@@ -108,8 +108,9 @@ fn parse_stmt(pair: Pair<Rule>, file: &str) -> Result<Spanned<Stmt>, ParseError>
 }
 
 fn parse_timeline_decl(pair: Pair<Rule>, file: &str) -> Result<TimelineDecl, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let name = inner.next().ok_or_else(|| ParseError { message: "expected timeline name".into(), span: sp.clone() })?.as_str().to_string();
     let mut decl = TimelineDecl {
         name,
         kind: TimelineKind::Linear,
@@ -127,7 +128,10 @@ fn parse_timeline_decl(pair: Pair<Rule>, file: &str) -> Result<TimelineDecl, Par
             continue;
         }
         let mut parts = field.into_inner();
-        let first = parts.next().unwrap();
+        let first = match parts.next() {
+            Some(f) => f,
+            None => continue,
+        };
         match first.as_str() {
             "kind" => {
                 if let Some(k) = parts.next() {
@@ -155,13 +159,13 @@ fn parse_timeline_decl(pair: Pair<Rule>, file: &str) -> Result<TimelineDecl, Par
                 }
             }
             "fork_from" => {
-                let tl = parts.next().unwrap().as_str().to_string();
-                let at = parse_expr(parts.next().unwrap(), file)?;
+                let tl = parts.next().ok_or_else(|| ParseError { message: "expected fork_from timeline".into(), span: sp.clone() })?.as_str().to_string();
+                let at = parse_expr(parts.next().ok_or_else(|| ParseError { message: "expected fork_from time".into(), span: sp.clone() })?, file)?;
                 decl.fork_from = Some((tl, at));
             }
             "merge_into" => {
-                let tl = parts.next().unwrap().as_str().to_string();
-                let at = parse_expr(parts.next().unwrap(), file)?;
+                let tl = parts.next().ok_or_else(|| ParseError { message: "expected merge_into timeline".into(), span: sp.clone() })?.as_str().to_string();
+                let at = parse_expr(parts.next().ok_or_else(|| ParseError { message: "expected merge_into time".into(), span: sp.clone() })?, file)?;
                 decl.merge_into = Some((tl, at));
             }
             "loop_count" => {
@@ -181,8 +185,9 @@ fn parse_timeline_decl(pair: Pair<Rule>, file: &str) -> Result<TimelineDecl, Par
 }
 
 fn parse_entity_decl(pair: Pair<Rule>, file: &str) -> Result<EntityDecl, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let name = inner.next().ok_or_else(|| ParseError { message: "expected entity name".into(), span: sp.clone() })?.as_str().to_string();
     let mut type_ref = None;
     let mut fields = Vec::new();
     let mut appears_on = Vec::new();
@@ -190,21 +195,21 @@ fn parse_entity_decl(pair: Pair<Rule>, file: &str) -> Result<EntityDecl, ParseEr
     for part in inner {
         match part.as_rule() {
             Rule::type_ref => {
-                type_ref = Some(part.into_inner().next().unwrap().as_str().to_string());
+                type_ref = Some(part.into_inner().next().ok_or_else(|| ParseError { message: "expected type reference".into(), span: sp.clone() })?.as_str().to_string());
             }
             Rule::entity_field => {
                 let mut fi = part.into_inner();
-                let first = fi.next().unwrap();
+                let first = fi.next().ok_or_else(|| ParseError { message: "expected entity field".into(), span: sp.clone() })?;
                 if first.as_str() == "appears_on" {
-                    let timeline = fi.next().unwrap().as_str().to_string();
-                    let range = fi.next().unwrap();
+                    let timeline = fi.next().ok_or_else(|| ParseError { message: "expected timeline name".into(), span: sp.clone() })?.as_str().to_string();
+                    let range = fi.next().ok_or_else(|| ParseError { message: "expected time range".into(), span: sp.clone() })?;
                     let mut ri = range.into_inner();
-                    let start = parse_expr(ri.next().unwrap(), file)?;
-                    let end = parse_expr(ri.next().unwrap(), file)?;
+                    let start = parse_expr(ri.next().ok_or_else(|| ParseError { message: "expected range start".into(), span: sp.clone() })?, file)?;
+                    let end = parse_expr(ri.next().ok_or_else(|| ParseError { message: "expected range end".into(), span: sp.clone() })?, file)?;
                     appears_on.push((timeline, start, end));
                 } else {
                     let fname = first.as_str().to_string();
-                    let val = parse_expr(fi.next().unwrap(), file)?;
+                    let val = parse_expr(fi.next().ok_or_else(|| ParseError { message: "expected field value".into(), span: sp.clone() })?, file)?;
                     fields.push((fname, val));
                 }
             }
@@ -216,9 +221,10 @@ fn parse_entity_decl(pair: Pair<Rule>, file: &str) -> Result<EntityDecl, ParseEr
 }
 
 fn parse_rel_decl(pair: Pair<Rule>, file: &str) -> Result<RelDecl, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let source = inner.next().unwrap().as_str().to_string();
-    let arrow = inner.next().unwrap();
+    let source = inner.next().ok_or_else(|| ParseError { message: "expected relation source".into(), span: sp.clone() })?.as_str().to_string();
+    let arrow = inner.next().ok_or_else(|| ParseError { message: "expected relation arrow".into(), span: sp.clone() })?;
     let arrow_str = arrow.as_str();
     let (label, directed) = if arrow_str.starts_with("-[") {
         let lbl = arrow.into_inner().next().map(|s| parse_string_value(s));
@@ -227,12 +233,12 @@ fn parse_rel_decl(pair: Pair<Rule>, file: &str) -> Result<RelDecl, ParseError> {
     } else {
         (None, arrow_str.contains('>'))
     };
-    let target = inner.next().unwrap().as_str().to_string();
+    let target = inner.next().ok_or_else(|| ParseError { message: "expected relation target".into(), span: sp.clone() })?.as_str().to_string();
     let temporal_scope = if let Some(range) = inner.next() {
         if range.as_rule() == Rule::time_range_expr {
             let mut ri = range.into_inner();
-            let start = parse_expr(ri.next().unwrap(), file)?;
-            let end = parse_expr(ri.next().unwrap(), file)?;
+            let start = parse_expr(ri.next().ok_or_else(|| ParseError { message: "expected range start".into(), span: sp.clone() })?, file)?;
+            let end = parse_expr(ri.next().ok_or_else(|| ParseError { message: "expected range end".into(), span: sp.clone() })?, file)?;
             Some((start, end))
         } else {
             None
@@ -245,8 +251,9 @@ fn parse_rel_decl(pair: Pair<Rule>, file: &str) -> Result<RelDecl, ParseError> {
 }
 
 fn parse_type_decl(pair: Pair<Rule>, file: &str) -> Result<TypeDecl, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let name = inner.next().ok_or_else(|| ParseError { message: "expected type name".into(), span: sp.clone() })?.as_str().to_string();
     let mut parent = None;
     let mut fields = Vec::new();
     let mut meta = std::collections::HashMap::new();
@@ -254,23 +261,23 @@ fn parse_type_decl(pair: Pair<Rule>, file: &str) -> Result<TypeDecl, ParseError>
     for part in inner {
         match part.as_rule() {
             Rule::type_ref => {
-                parent = Some(part.into_inner().next().unwrap().as_str().to_string());
+                parent = Some(part.into_inner().next().ok_or_else(|| ParseError { message: "expected type reference".into(), span: sp.clone() })?.as_str().to_string());
             }
             Rule::type_field => {
                 let mut fi = part.into_inner();
-                let first = fi.next().unwrap();
+                let first = fi.next().ok_or_else(|| ParseError { message: "expected type field".into(), span: sp.clone() })?;
                 match first.as_rule() {
                     Rule::meta_attr => {
                         let mut mi = first.into_inner();
-                        let key = mi.next().unwrap().as_str().to_string();
-                        let val = parse_expr(mi.next().unwrap(), file)?;
+                        let key = mi.next().ok_or_else(|| ParseError { message: "expected meta key".into(), span: sp.clone() })?.as_str().to_string();
+                        let val = parse_expr(mi.next().ok_or_else(|| ParseError { message: "expected meta value".into(), span: sp.clone() })?, file)?;
                         meta.insert(key, val);
                     }
                     Rule::ident => {
                         let fname = first.as_str().to_string();
-                        let ta = fi.next().unwrap();
+                        let ta = fi.next().ok_or_else(|| ParseError { message: "expected type annotation".into(), span: sp.clone() })?;
                         let mut tai = ta.into_inner();
-                        let type_name = tai.next().unwrap().as_str().to_string();
+                        let type_name = tai.next().ok_or_else(|| ParseError { message: "expected type name in annotation".into(), span: sp.clone() })?.as_str().to_string();
                         let optional = tai.next().is_some();
                         fields.push(TypeField { name: fname, type_ann: type_name, optional });
                     }
@@ -285,8 +292,9 @@ fn parse_type_decl(pair: Pair<Rule>, file: &str) -> Result<TypeDecl, ParseError>
 }
 
 fn parse_fn_decl(pair: Pair<Rule>, file: &str) -> Result<FnDecl, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let name = inner.next().ok_or_else(|| ParseError { message: "expected function name".into(), span: sp.clone() })?.as_str().to_string();
     let mut params = Vec::new();
     let mut return_type = None;
     let mut body = Vec::new();
@@ -297,7 +305,7 @@ fn parse_fn_decl(pair: Pair<Rule>, file: &str) -> Result<FnDecl, ParseError> {
                 params = parse_param_list(part);
             }
             Rule::type_annotation => {
-                return_type = Some(part.into_inner().next().unwrap().as_str().to_string());
+                return_type = Some(part.into_inner().next().ok_or_else(|| ParseError { message: "expected return type".into(), span: sp.clone() })?.as_str().to_string());
             }
             Rule::block => {
                 body = parse_block(part, file)?;
@@ -310,6 +318,7 @@ fn parse_fn_decl(pair: Pair<Rule>, file: &str) -> Result<FnDecl, ParseError> {
 }
 
 fn parse_let_stmt(pair: Pair<Rule>, file: &str) -> Result<LetStmt, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
     let mut mutable = false;
     let mut name = String::new();
@@ -326,7 +335,7 @@ fn parse_let_stmt(pair: Pair<Rule>, file: &str) -> Result<LetStmt, ParseError> {
                 }
             }
             Rule::type_annotation => {
-                type_ann = Some(part.into_inner().next().unwrap().as_str().to_string());
+                type_ann = Some(part.into_inner().next().ok_or_else(|| ParseError { message: "expected type annotation".into(), span: sp.clone() })?.as_str().to_string());
             }
             Rule::expr => {
                 value = Some(parse_expr(part, file)?);
@@ -339,14 +348,15 @@ fn parse_let_stmt(pair: Pair<Rule>, file: &str) -> Result<LetStmt, ParseError> {
         name,
         mutable,
         type_ann,
-        value: Box::new(value.unwrap()),
+        value: Box::new(value.ok_or_else(|| ParseError { message: "expected let value".into(), span: sp.clone() })?),
     })
 }
 
 fn parse_if_expr(pair: Pair<Rule>, file: &str) -> Result<IfExpr, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let condition = Box::new(parse_expr(inner.next().unwrap(), file)?);
-    let then_block = parse_block(inner.next().unwrap(), file)?;
+    let condition = Box::new(parse_expr(inner.next().ok_or_else(|| ParseError { message: "expected if condition".into(), span: sp.clone() })?, file)?);
+    let then_block = parse_block(inner.next().ok_or_else(|| ParseError { message: "expected then block".into(), span: sp.clone() })?, file)?;
     let mut else_if_branches = Vec::new();
     let mut else_block = None;
 
@@ -368,14 +378,15 @@ fn parse_if_expr(pair: Pair<Rule>, file: &str) -> Result<IfExpr, ParseError> {
 }
 
 fn parse_match_expr(pair: Pair<Rule>, file: &str) -> Result<MatchExpr, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let subject = Box::new(parse_expr(inner.next().unwrap(), file)?);
+    let subject = Box::new(parse_expr(inner.next().ok_or_else(|| ParseError { message: "expected match subject".into(), span: sp.clone() })?, file)?);
     let mut arms = Vec::new();
 
     for arm_pair in inner {
         if arm_pair.as_rule() == Rule::match_arm {
             let mut ai = arm_pair.into_inner();
-            let pat_pair = ai.next().unwrap();
+            let pat_pair = ai.next().ok_or_else(|| ParseError { message: "expected match pattern".into(), span: sp.clone() })?;
             let sp = span_from(&pat_pair, file);
             let pat = match pat_pair.as_str() {
                 "_" => Pattern::Wildcard,
@@ -392,7 +403,7 @@ fn parse_match_expr(pair: Pair<Rule>, file: &str) -> Result<MatchExpr, ParseErro
                     }
                 }
             };
-            let body_pair = ai.next().unwrap();
+            let body_pair = ai.next().ok_or_else(|| ParseError { message: "expected match arm body".into(), span: sp.clone() })?;
             let body = if body_pair.as_rule() == Rule::block {
                 parse_block(body_pair, file)?
             } else {
@@ -408,24 +419,27 @@ fn parse_match_expr(pair: Pair<Rule>, file: &str) -> Result<MatchExpr, ParseErro
 }
 
 fn parse_for_loop(pair: Pair<Rule>, file: &str) -> Result<ForLoop, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let var = inner.next().unwrap().as_str().to_string();
-    let iterable = Box::new(parse_expr(inner.next().unwrap(), file)?);
-    let body = parse_block(inner.next().unwrap(), file)?;
+    let var = inner.next().ok_or_else(|| ParseError { message: "expected loop variable".into(), span: sp.clone() })?.as_str().to_string();
+    let iterable = Box::new(parse_expr(inner.next().ok_or_else(|| ParseError { message: "expected iterable".into(), span: sp.clone() })?, file)?);
+    let body = parse_block(inner.next().ok_or_else(|| ParseError { message: "expected loop body".into(), span: sp.clone() })?, file)?;
     Ok(ForLoop { var, iterable, body })
 }
 
 fn parse_while_loop(pair: Pair<Rule>, file: &str) -> Result<WhileLoop, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let condition = Box::new(parse_expr(inner.next().unwrap(), file)?);
-    let body = parse_block(inner.next().unwrap(), file)?;
+    let condition = Box::new(parse_expr(inner.next().ok_or_else(|| ParseError { message: "expected while condition".into(), span: sp.clone() })?, file)?);
+    let body = parse_block(inner.next().ok_or_else(|| ParseError { message: "expected while body".into(), span: sp.clone() })?, file)?;
     Ok(WhileLoop { condition, body })
 }
 
 fn parse_repeat_loop(pair: Pair<Rule>, file: &str) -> Result<RepeatLoop, ParseError> {
+    let sp = span_from(&pair, file);
     let mut inner = pair.into_inner();
-    let count = Box::new(parse_expr(inner.next().unwrap(), file)?);
-    let body = parse_block(inner.next().unwrap(), file)?;
+    let count = Box::new(parse_expr(inner.next().ok_or_else(|| ParseError { message: "expected repeat count".into(), span: sp.clone() })?, file)?);
+    let body = parse_block(inner.next().ok_or_else(|| ParseError { message: "expected repeat body".into(), span: sp.clone() })?, file)?;
     Ok(RepeatLoop { count, body })
 }
 
@@ -436,10 +450,11 @@ fn parse_block(pair: Pair<Rule>, file: &str) -> Result<Block, ParseError> {
             Rule::stmt => {
                 // Parse inner rule of stmt
                 let sp = span_from(&inner, file);
-                let child = inner.into_inner().next().unwrap();
-                match parse_stmt_inner(child, file, sp) {
-                    Ok(s) => stmts.push(s),
-                    Err(_) => {} // skip errors in blocks for recovery
+                if let Some(child) = inner.into_inner().next() {
+                    match parse_stmt_inner(child, file, sp) {
+                        Ok(s) => stmts.push(s),
+                        Err(_) => {} // skip errors in blocks for recovery
+                    }
                 }
             }
             _ => {
@@ -464,12 +479,12 @@ fn parse_stmt_inner(pair: Pair<Rule>, file: &str, sp: Span) -> Result<Spanned<St
         Rule::let_stmt => Stmt::LetStmt(parse_let_stmt(pair, file)?),
         Rule::assign_stmt => {
             let mut ai = pair.into_inner();
-            let name = ai.next().unwrap().as_str().to_string();
-            let value = parse_expr(ai.next().unwrap(), file)?;
+            let name = ai.next().ok_or_else(|| ParseError { message: "expected assignment target".into(), span: sp.clone() })?.as_str().to_string();
+            let value = parse_expr(ai.next().ok_or_else(|| ParseError { message: "expected assignment value".into(), span: sp.clone() })?, file)?;
             Stmt::Assign { name, value }
         }
         Rule::import_stmt => {
-            let s = pair.into_inner().next().unwrap();
+            let s = pair.into_inner().next().ok_or_else(|| ParseError { message: "expected import path".into(), span: sp.clone() })?;
             Stmt::Import(parse_string_value(s))
         }
         Rule::if_expr => Stmt::If(parse_if_expr(pair, file)?),
@@ -478,7 +493,7 @@ fn parse_stmt_inner(pair: Pair<Rule>, file: &str, sp: Span) -> Result<Spanned<St
         Rule::while_loop => Stmt::WhileLoop(parse_while_loop(pair, file)?),
         Rule::repeat_loop => Stmt::RepeatLoop(parse_repeat_loop(pair, file)?),
         Rule::expr_stmt => {
-            let e = parse_expr(pair.into_inner().next().unwrap(), file)?;
+            let e = parse_expr(pair.into_inner().next().ok_or_else(|| ParseError { message: "expected expression".into(), span: sp.clone() })?, file)?;
             Stmt::ExprStmt(e)
         }
         _ => {
@@ -499,7 +514,7 @@ fn parse_expr(pair: Pair<Rule>, file: &str) -> Result<Spanned<Expr>, ParseError>
         Rule::expr => {
             let inner: Vec<_> = pair.into_inner().collect();
             if inner.len() == 1 {
-                return parse_expr(inner.into_iter().next().unwrap(), file);
+                return parse_expr(inner.into_iter().next().ok_or_else(|| ParseError { message: "empty expression".into(), span: sp.clone() })?, file);
             }
             let mut operands: Vec<Spanned<Expr>> = Vec::new();
             let mut ops: Vec<BinOp> = Vec::new();
@@ -562,8 +577,8 @@ fn parse_expr(pair: Pair<Rule>, file: &str) -> Result<Spanned<Expr>, ParseError>
                             }
                             Rule::time_range_expr => {
                                 let mut ri = next.into_inner();
-                                let start = parse_expr(ri.next().unwrap(), file)?;
-                                let end = parse_expr(ri.next().unwrap(), file)?;
+                                let start = parse_expr(ri.next().ok_or_else(|| ParseError { message: "expected range start".into(), span: sp.clone() })?, file)?;
+                                let end = parse_expr(ri.next().ok_or_else(|| ParseError { message: "expected range end".into(), span: sp.clone() })?, file)?;
                                 let ent = if let Expr::Ident(n) = &result.node {
                                     n.clone()
                                 } else {
@@ -590,7 +605,7 @@ fn parse_expr(pair: Pair<Rule>, file: &str) -> Result<Spanned<Expr>, ParseError>
                             _ => {}
                         }
                     }
-                    let body = parse_expr(body_pair.unwrap(), file)?;
+                    let body = parse_expr(body_pair.ok_or_else(|| ParseError { message: "expected closure body".into(), span: sp.clone() })?, file)?;
                     Ok(Spanned::new(Expr::Closure { params, body: Box::new(body) }, sp))
                 }
                 Rule::expr => {
@@ -609,7 +624,7 @@ fn parse_expr(pair: Pair<Rule>, file: &str) -> Result<Spanned<Expr>, ParseError>
         }
         Rule::time_expr | Rule::time_range_expr => {
             let mut inner = pair.into_inner();
-            let first = inner.next().unwrap();
+            let first = inner.next().ok_or_else(|| ParseError { message: "expected time expression".into(), span: sp.clone() })?;
             parse_expr(first, file)
         }
         Rule::literal => {
@@ -644,7 +659,7 @@ fn parse_expr(pair: Pair<Rule>, file: &str) -> Result<Spanned<Expr>, ParseError>
             Ok(Spanned::new(Expr::Literal(Literal::Duration(num, unit)), sp))
         }
         Rule::fuzzy_date => {
-            let inner = pair.into_inner().next().unwrap();
+            let inner = pair.into_inner().next().ok_or_else(|| ParseError { message: "expected fuzzy date".into(), span: sp.clone() })?;
             let date_str = format!("~{}", inner.as_str());
             Ok(Spanned::new(Expr::Literal(Literal::Date(date_str)), sp))
         }
@@ -673,7 +688,9 @@ fn parse_call_args(pair: Pair<Rule>, file: &str) -> Result<Vec<Spanned<Expr>>, P
 }
 
 fn parse_literal(pair: Pair<Rule>) -> Result<Literal, ParseError> {
-    let inner = pair.into_inner().next().unwrap();
+    let pair_span = pair.as_span();
+    let err_span = Span::new(pair_span.start(), pair_span.end(), "");
+    let inner = pair.into_inner().next().ok_or_else(|| ParseError { message: "expected literal value".into(), span: err_span })?;
     match inner.as_rule() {
         Rule::int_lit => Ok(Literal::Int(inner.as_str().parse().unwrap_or(0))),
         Rule::float_lit => Ok(Literal::Float(inner.as_str().parse().unwrap_or(0.0))),
@@ -705,11 +722,11 @@ fn parse_string_value(pair: Pair<Rule>) -> String {
 fn parse_param_list(pair: Pair<Rule>) -> Vec<Param> {
     pair.into_inner()
         .filter(|p| p.as_rule() == Rule::param)
-        .map(|p| {
+        .filter_map(|p| {
             let mut pi = p.into_inner();
-            let name = pi.next().unwrap().as_str().to_string();
-            let type_ann = pi.next().unwrap().into_inner().next().unwrap().as_str().to_string();
-            Param { name, type_ann }
+            let name = pi.next()?.as_str().to_string();
+            let type_ann = pi.next()?.into_inner().next()?.as_str().to_string();
+            Some(Param { name, type_ann })
         })
         .collect()
 }
@@ -739,7 +756,7 @@ fn build_expr_with_precedence(mut operands: Vec<Spanned<Expr>>, mut ops: Vec<Bin
             }
         }
     }
-    operands.into_iter().next().unwrap()
+    operands.into_iter().next().unwrap_or_else(|| Spanned::new(Expr::Literal(Literal::Int(0)), Span::new(0, 0, file)))
 }
 fn parse_bin_op(s: &str) -> BinOp {
     match s {

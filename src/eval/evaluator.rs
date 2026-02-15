@@ -436,7 +436,11 @@ impl Evaluator {
                                 span: Some(expr.span.clone()),
                             });
                         }
-                        Ok(Value::String(s.chars().nth(i).unwrap().to_string()))
+                        let ch = s.chars().nth(i).ok_or_else(|| RuntimeError {
+                            message: format!("index {} out of bounds for string of length {}", i, s.chars().count()),
+                            span: Some(expr.span.clone()),
+                        })?;
+                        Ok(Value::String(ch.to_string()))
                     }
                     _ => Err(RuntimeError {
                         message: format!("cannot index {:?} with {:?}", obj, idx),
