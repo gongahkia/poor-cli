@@ -1,4 +1,4 @@
-name: CI
+name: Seuss CI/CD on push
 
 on:
   push:
