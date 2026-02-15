@@ -476,7 +476,50 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
 fn run_repl() {
     use std::io::{self, BufRead, Write};
 
+    // Scan for .seuss files recursively from current directory
+    fn find_seuss_files() -> Vec<std::path::PathBuf> {
+        let mut files = Vec::new();
+        fn walk(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>, depth: usize) {
+            if depth > 10 {
+                return;
+            }
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        if !name.starts_with('.') && name != "target" && name != "node_modules" {
+                            walk(&path, files, depth + 1);
+                        }
+                    } else if path.extension().map_or(false, |e| e == "seuss") {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            walk(&cwd, &mut files, 0);
+        }
+        files.sort();
+        files
+    }
+
+    let seuss_files = find_seuss_files();
     println!("Seuss REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit");
+    if seuss_files.is_empty() {
+        println!("  No .seuss files found in current directory");
+    } else {
+        println!("  Found {} .seuss file(s):", seuss_files.len());
+        for (i, f) in seuss_files.iter().enumerate() {
+            let display = f
+                .strip_prefix(std::env::current_dir().unwrap_or_default())
+                .unwrap_or(f);
+            println!("    [{}] {}", i + 1, display.display());
+        }
+        println!("  Use :load <number> or :load <path> to load a file");
+    }
+    println!();
+
     let mut evaluator = Evaluator::new();
     let mut line_num = 0;
 
@@ -496,6 +539,61 @@ fn run_repl() {
         // Meta-commands
         match trimmed {
             ":quit" | ":q" | ":exit" => break,
+            ":files" | ":f" => {
+                let files = find_seuss_files();
+                if files.is_empty() {
+                    println!("No .seuss files found");
+                } else {
+                    for (i, f) in files.iter().enumerate() {
+                        let display = f
+                            .strip_prefix(std::env::current_dir().unwrap_or_default())
+                            .unwrap_or(f);
+                        println!("  [{}] {}", i + 1, display.display());
+                    }
+                }
+                continue;
+            }
+            _ if trimmed.starts_with(":load ") || trimmed.starts_with(":l ") => {
+                let arg = trimmed.splitn(2, ' ').nth(1).unwrap_or("").trim();
+                let path = if let Ok(n) = arg.parse::<usize>() {
+                    seuss_files.get(n.wrapping_sub(1)).cloned()
+                } else {
+                    Some(std::path::PathBuf::from(arg))
+                };
+                match path {
+                    Some(p) if p.exists() => {
+                        match read_seuss_file(&p) {
+                            Ok(source) => {
+                                let file_str = p.to_string_lossy().to_string();
+                                match parse_program(&source, &file_str) {
+                                    Ok(program) => match evaluator.eval_program(&program) {
+                                        Ok(_) => {
+                                            let w = &evaluator.world;
+                                            println!(
+                                                "✓ Loaded {} ({} timelines, {} entities, {} relationships)",
+                                                p.display(),
+                                                w.timelines.len(),
+                                                w.entities.len(),
+                                                w.relationships.len()
+                                            );
+                                        }
+                                        Err(e) => eprintln!("Runtime error: {}", e),
+                                    },
+                                    Err(errors) => {
+                                        for e in &errors {
+                                            eprintln!("Parse error: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => eprintln!("Error reading {}: {}", p.display(), e),
+                        }
+                    }
+                    Some(p) => eprintln!("File not found: {}", p.display()),
+                    None => eprintln!("Invalid file number: {}", arg),
+                }
+                continue;
+            }
             ":world" | ":w" => {
                 let w = &evaluator.world;
                 println!("Timelines: {}", w.timelines.len());
