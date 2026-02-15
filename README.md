@@ -165,5 +165,4 @@ Alternatively, refer to examples which live at [`./examples`](./examples/).
 ## Architecture
 
 <div align="center">
-    <img src="./asset/reference/architecture.png">
 </div>
