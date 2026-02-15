@@ -474,6 +474,61 @@ fn run_repl() {
                 }
                 continue;
             }
+            ":entities" | ":e" => {
+                let w = &evaluator.world;
+                if w.entities.is_empty() {
+                    println!("(no entities)");
+                } else {
+                    println!("{:<20} {:<15} {:<15} {}", "NAME", "TYPE", "TIMELINE", "TIME_RANGE");
+                    println!("{}", "-".repeat(70));
+                    for ent in w.entities.values() {
+                        let (tl_name, time_range) = ent.timeline_appearances.first()
+                            .map(|(tid, tr)| {
+                                let tl = w.timelines.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
+                                let range = format!("{}..{}", tr.start.to_ordinal(), tr.end.to_ordinal());
+                                (tl, range)
+                            })
+                            .unwrap_or(("-", "-".to_string()));
+                        println!("{:<20} {:<15} {:<15} {}", ent.name, ent.type_id, tl_name, time_range);
+                    }
+                }
+                continue;
+            }
+            ":rels" | ":r" => {
+                let w = &evaluator.world;
+                if w.relationships.is_empty() {
+                    println!("(no relationships)");
+                } else {
+                    println!("{:<15} {:<15} {:<15} {:<10} {}", "SOURCE", "LABEL", "TARGET", "DIRECTED", "SCOPE");
+                    println!("{}", "-".repeat(70));
+                    for rel in &w.relationships {
+                        let src = w.entities.get(&rel.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                        let tgt = w.entities.get(&rel.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                        let dir = if rel.directed { "→" } else { "─" };
+                        let scope = rel.temporal_scope.as_ref()
+                            .map(|ts| format!("{}..{}", ts.start.to_ordinal(), ts.end.to_ordinal()))
+                            .unwrap_or_else(|| "-".to_string());
+                        println!("{:<15} {:<15} {:<15} {:<10} {}", src, rel.label, tgt, dir, scope);
+                    }
+                }
+                continue;
+            }
+            ":validate" | ":v" => {
+                let w = &evaluator.world;
+                let report = eval::validator::validate(w);
+                if report.errors.is_empty() && report.warnings.is_empty() {
+                    println!("✓ No issues found");
+                } else {
+                    for err in &report.errors {
+                        println!("ERROR: {}", err);
+                    }
+                    for warn in &report.warnings {
+                        println!("WARN: {}", warn);
+                    }
+                    println!("Total: {} errors, {} warnings", report.errors.len(), report.warnings.len());
+                }
+                continue;
+            }
             ":timeline" | ":t" => {
                 // ASCII mini-timeline
                 let w = &evaluator.world;
@@ -512,8 +567,17 @@ fn run_repl() {
                 }
             }
             Err(errors) => {
+                // Improved error recovery: show line numbers relative to input block
+                let input_lines: Vec<&str> = trimmed.lines().collect();
                 for e in &errors {
-                    eprintln!("parse error: {}", e);
+                    let err_str = e.to_string();
+                    eprintln!("parse error: {}", err_str);
+                }
+                if input_lines.len() > 1 {
+                    eprintln!("  (multi-line input had {} lines, re-enter to try again)", input_lines.len());
+                    for (i, line) in input_lines.iter().enumerate() {
+                        eprintln!("  {:>3} | {}", i + 1, line);
+                    }
                 }
             }
         }
