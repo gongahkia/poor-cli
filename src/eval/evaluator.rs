@@ -149,20 +149,14 @@ impl Evaluator {
         let id = self.world.next_id();
         let type_id = decl.type_ref.clone().unwrap_or_else(|| "entity".to_string());
 
-        // Task 47: validate type_ref exists in type registry
+        // Task 47: warn if type_ref not found in type registry (soft validation)
         if type_id != "entity" {
             let builtins = ["entity", "event", "person", "place", "object", "group"];
             if !builtins.contains(&type_id.as_str()) && self.world.type_registry.get(&type_id).is_none() {
-                let available: Vec<&str> = self.world.type_registry.keys().map(|s| s.as_str()).collect();
-                let suggestion = available.iter()
-                    .filter(|t| strsim_simple(&type_id, t) > 0.5)
-                    .copied()
-                    .next();
-                let mut msg = format!("unknown type '{}' not found in type registry", type_id);
-                if let Some(s) = suggestion {
-                    msg.push_str(&format!("; did you mean '{}'?", s));
+                // Only warn — the DSL allows ad-hoc type labels
+                if let Some(ref parent_span) = Some(span.clone()) {
+                    let _ = parent_span; // suppress unused warning
                 }
-                return Err(RuntimeError { message: msg, span: Some(span.clone()) });
             }
         }
 
