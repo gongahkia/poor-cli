@@ -47,6 +47,9 @@ pub enum Commands {
         /// Time range (start..end)
         #[arg(long)]
         time_range: Option<String>,
+        /// DPI for PNG export
+        #[arg(long, default_value = "150")]
+        dpi: u32,
     },
     /// Import from external formats
     Import {

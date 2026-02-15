@@ -28,8 +28,8 @@ fn main() {
 
     match cli.command {
         Commands::Run { file } => run_tui(&file, cli.verbose),
-        Commands::Export { file, format, output, width, height, time_range } => {
-            run_export(&file, &format, output.as_deref(), width, height, time_range.as_deref(), cli.verbose);
+        Commands::Export { file, format, output, width, height, time_range, dpi } => {
+            run_export(&file, &format, output.as_deref(), width, height, time_range.as_deref(), dpi, cli.verbose);
         }
         Commands::Check { file } => run_check(&file, cli.verbose),
         Commands::Import { file, from, output } => {
@@ -132,7 +132,7 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, verbose: bool) {
+fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, dpi: u32, verbose: bool) {
     let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
@@ -194,7 +194,7 @@ fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u3
         "png" => {
             let svg = render_svg(&layout, &theme);
             let out_path = output.unwrap_or(Path::new("output.png"));
-            if let Err(e) = render::png_render::render_png(&svg, out_path, 150) {
+            if let Err(e) = render::png_render::render_png(&svg, out_path, dpi) {
                 eprintln!("PNG export error: {}", e);
                 std::process::exit(1);
             }
