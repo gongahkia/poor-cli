@@ -18,18 +18,15 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 ## Screenshots
 
 <div align="center">
-    <img src="" width="40%">
-    <img src="" width="40%">
+    <img src="./asset/reference/1.png" width="32%">
+    <img src="./asset/reference/6.png" width="32%">
+    <img src="./asset/reference/3.png" width="32%">
 </div>
 
 <div align="center">
-    <img src="" width="40%">
-    <img src="" width="40%">
-</div>
-
-<div align="center">
-    <img src="" width="40%">
-    <img src="" width="40%">
+    <img src="./asset/reference/4.png" width="32%">
+    <img src="./asset/reference/2.png" width="32%">
+    <img src="./asset/reference/5.png" width="32%">
 </div>
 
 ## Usage
