@@ -119,7 +119,7 @@ pub struct Layout {
 pub fn compute_layout(world: &World) -> Layout {
     let mut entities = Vec::new();
     let mut edges = Vec::new();
-    let mut timelines_layout = Vec::new();
+    let mut timelines_layout: Vec<LayoutTimeline> = Vec::new();
     let mut connectors = Vec::new();
     let mut ticks = Vec::new();
 
@@ -158,8 +158,21 @@ pub fn compute_layout(world: &World) -> Layout {
 
         for eid in &ent_ids {
             if !lane_map.contains_key(eid) {
-                lane_map.insert(*eid, current_lane);
-                current_lane += 1;
+                // Lane compaction: find a reusable lane with no time overlap
+                let entity_range = world.entity_by_id(*eid).and_then(|e| {
+                    e.timeline_appearances.iter()
+                        .find(|(tid, _)| *tid == tl.id)
+                        .map(|(_, tr)| (tr.start.to_ordinal() as f64, tr.end.to_ordinal() as f64))
+                });
+                let reused = entity_range.and_then(|(es, ee)| {
+                    find_reusable_lane(&entities, tl_lane_start, current_lane, es, ee)
+                });
+                let lane = reused.unwrap_or_else(|| {
+                    let l = current_lane;
+                    current_lane += 1;
+                    l
+                });
+                lane_map.insert(*eid, lane);
             }
         }
 
@@ -189,11 +202,12 @@ pub fn compute_layout(world: &World) -> Layout {
             }
         }
 
-        // Branch connector (Task 40)
+        // Branch connector (Task 40) - use actual parent lane
         if let Some((parent_id, ref fp)) = tl.fork_point {
-            let parent_lane = world.timelines.get(&parent_id)
-                .and_then(|_| Some(tl_lane_start.saturating_sub(1)))
-                .unwrap_or(0);
+            let parent_lane = timelines_layout.iter()
+                .find(|lt| lt.timeline_id == parent_id)
+                .map(|lt| lt.lane_start)
+                .unwrap_or(tl_lane_start.saturating_sub(1));
             connectors.push(LayoutConnector {
                 from_x: fp.to_ordinal() as f64,
                 from_lane: parent_lane,
@@ -203,11 +217,12 @@ pub fn compute_layout(world: &World) -> Layout {
             });
         }
 
-        // Merge connector (Task 41)
+        // Merge connector (Task 41) - use actual target lane
         if let Some((target_id, ref mp)) = tl.merge_point {
-            let target_lane = world.timelines.get(&target_id)
-                .and_then(|_| Some(tl_lane_start.saturating_sub(1)))
-                .unwrap_or(0);
+            let target_lane = timelines_layout.iter()
+                .find(|lt| lt.timeline_id == target_id)
+                .map(|lt| lt.lane_start)
+                .unwrap_or(tl_lane_start.saturating_sub(1));
             connectors.push(LayoutConnector {
                 from_x: mp.to_ordinal() as f64,
                 from_lane: tl_lane_end.saturating_sub(1),
@@ -312,11 +327,46 @@ pub fn compute_layout(world: &World) -> Layout {
     }
 }
 
-/// Simple label overlap resolution (Task 46)
+/// Lane compaction: find a lane in [lane_start..lane_end) that has no overlapping time range
+fn find_reusable_lane(
+    entities: &[LayoutEntity],
+    lane_start: usize,
+    lane_end: usize,
+    x_start: f64,
+    x_end: f64,
+) -> Option<usize> {
+    for lane in lane_start..lane_end {
+        let has_overlap = entities.iter().any(|e| {
+            e.lane == lane && e.x_start < x_end && e.x_end > x_start
+        });
+        if !has_overlap {
+            return Some(lane);
+        }
+    }
+    None
+}
+
+/// Label collision resolution: detect overlapping labels and shift them vertically
 fn resolve_label_collisions(entities: &mut [LayoutEntity]) {
     // Sort by lane then x_start
     entities.sort_by(|a, b| {
-        a.lane.cmp(&b.lane).then(a.x_start.partial_cmp(&b.x_start).unwrap_or(std::cmp::Ordering::Equal))
+        a.lane.cmp(&b.lane)
+            .then(a.x_start.partial_cmp(&b.x_start).unwrap_or(std::cmp::Ordering::Equal))
     });
-    // Nothing physical to adjust in data model; rendering handles offsets
+
+    // Detect overlapping entities on the same lane and nudge the shorter one
+    let label_width_estimate = 12.0; // approximate character width in time units
+    let len = entities.len();
+    for i in 0..len {
+        for j in (i + 1)..len {
+            if entities[i].lane != entities[j].lane { break; }
+            let i_label_end = entities[i].x_end + label_width_estimate;
+            if entities[j].x_start < i_label_end {
+                // Collision: offset the name with a leader marker
+                entities[j].name = format!("  {}", entities[j].name);
+            } else {
+                break;
+            }
+        }
+    }
 }
