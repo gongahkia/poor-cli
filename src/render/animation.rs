@@ -26,20 +26,49 @@ pub fn render_animated_svg(layout: &Layout, theme: &Theme, frames: usize) -> Str
         theme.bg
     ));
 
-    // Time cursor line with animation
-    output.push_str("<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"100%\" stroke=\"#ff0\" stroke-width=\"2\" opacity=\"0.7\">\n");
+    // CSS animation fallback (browsers that lack SMIL support)
+    let dur = frames as f64 / 10.0;
+    output.push_str("<style>\n");
+    output.push_str(&format!(
+        "@keyframes cursor-sweep {{ from {{ transform: translateX(0); }} to {{ transform: translateX({}px); }} }}\n",
+        total_width
+    ));
+    output.push_str(&format!(
+        ".anim-cursor {{ animation: cursor-sweep {}s linear infinite; }}\n", dur
+    ));
+    for (i, ent) in layout.entities.iter().enumerate() {
+        let x_start = ent.x_start - layout.viewport.time_start;
+        let x_end = ent.x_end - layout.viewport.time_start;
+        let begin_pct = (x_start / time_range * 100.0).max(0.0);
+        let end_pct = (x_end / time_range * 100.0).min(100.0);
+        let p0 = ((begin_pct - 5.0).max(0.0)) as u32;
+        let p1 = begin_pct as u32;
+        let p2 = end_pct as u32;
+        let p3 = ((end_pct + 5.0).min(100.0)) as u32;
+        output.push_str(&format!(
+            "@keyframes ent-{} {{ 0%,{}% {{ opacity:0.1; }} {}% {{ opacity:1; }} {}% {{ opacity:1; }} {}%,100% {{ opacity:0.3; }} }}\n",
+            i, p0, p1, p2, p3
+        ));
+        output.push_str(&format!(
+            ".anim-ent-{} {{ animation: ent-{} {}s linear infinite; }}\n", i, i, dur
+        ));
+    }
+    output.push_str("</style>\n");
+
+    // Time cursor line with animation (SMIL + CSS fallback)
+    output.push_str("<line class=\"anim-cursor\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"100%\" stroke=\"#ff0\" stroke-width=\"2\" opacity=\"0.7\">\n");
     output.push_str(&format!(
         "  <animate attributeName=\"x1\" from=\"0\" to=\"{}\" dur=\"{}s\" repeatCount=\"indefinite\"/>\n",
-        total_width, frames as f64 / 10.0
+        total_width, dur
     ));
     output.push_str(&format!(
         "  <animate attributeName=\"x2\" from=\"0\" to=\"{}\" dur=\"{}s\" repeatCount=\"indefinite\"/>\n",
-        total_width, frames as f64 / 10.0
+        total_width, dur
     ));
     output.push_str("</line>\n");
 
     // Entity bars with fade animation based on temporal position
-    for ent in &layout.entities {
+    for (i, ent) in layout.entities.iter().enumerate() {
         let x_start = ent.x_start - layout.viewport.time_start;
         let x_end = ent.x_end - layout.viewport.time_start;
         let x = (x_start / time_range * total_width).max(0.0);
@@ -48,15 +77,14 @@ pub fn render_animated_svg(layout: &Layout, theme: &Theme, frames: usize) -> Str
 
         let begin_pct = (x_start / time_range * 100.0).max(0.0);
         let end_pct = (x_end / time_range * 100.0).min(100.0);
-        let dur = frames as f64 / 10.0;
 
         let entity_fill = theme.entity_colors.get(&ent.entity_type)
             .map(|s| s.as_str())
             .unwrap_or("#4a9eff");
 
         output.push_str(&format!(
-            "<g>\n  <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"30\" rx=\"4\" fill=\"{}\" opacity=\"0.3\">\n",
-            x, y, w, entity_fill
+            "<g class=\"anim-ent-{}\">\n  <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"30\" rx=\"4\" fill=\"{}\" opacity=\"0.3\">\n",
+            i, x, y, w, entity_fill
         ));
         // Fade in at appearance, fade out after
         output.push_str(&format!(
