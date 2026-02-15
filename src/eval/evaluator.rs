@@ -653,10 +653,28 @@ impl Evaluator {
                     match field {
                         "name" => Ok(Value::String(entity.name.clone())),
                         "type" => Ok(Value::String(entity.type_id.clone())),
-                        _ => entity.attributes.get(field).cloned().ok_or_else(|| RuntimeError {
-                            message: format!("unknown field: {}", field),
-                            span: Some(span.clone()),
-                        }),
+                        _ => {
+                            // Direct attribute lookup first
+                            if let Some(val) = entity.attributes.get(field) {
+                                return Ok(val.clone());
+                            }
+                            // Task 51: walk type inheritance chain for default values
+                            let mut current_type = Some(entity.type_id.clone());
+                            while let Some(ref type_name) = current_type {
+                                if let Some(typedef) = self.world.type_registry.get(type_name) {
+                                    if let Some(default_val) = typedef.meta.get(field) {
+                                        return Ok(default_val.clone());
+                                    }
+                                    current_type = typedef.parent.clone();
+                                } else {
+                                    break;
+                                }
+                            }
+                            Err(RuntimeError {
+                                message: format!("unknown field: {}", field),
+                                span: Some(span.clone()),
+                            })
+                        }
                     }
                 } else {
                     Err(RuntimeError { message: format!("entity not found: {}", id), span: Some(span.clone()) })
