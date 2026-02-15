@@ -10,7 +10,6 @@ mod model;
 mod render;
 mod tooling;
 mod tui;
-mod web;
 
 use clap::Parser;
 use std::path::Path;
