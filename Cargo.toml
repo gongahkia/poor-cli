@@ -2,6 +2,12 @@
 name = "seuss"
 version = "0.1.0"
 edition = "2021"
+description = "A DSL for modeling and visualizing temporal narratives"
+license = "MIT"
+repository = "https://github.com/gongahkia/seuss"
+keywords = ["dsl", "timeline", "visualization", "narrative"]
+categories = ["command-line-utilities", "visualization"]
+readme = "README.md"
 
 [dependencies]
 pest = "2.7"
