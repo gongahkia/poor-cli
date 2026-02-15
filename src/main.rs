@@ -585,6 +585,8 @@ fn run_repl() {
 }
 
 fn run_diff(file1: &Path, file2: &Path) {
+    use crossterm::style::{Stylize};
+
     fn load_world(file: &Path) -> Result<crate::model::world::World, String> {
         let source = read_seuss_file(file).map_err(|e| format!("{}", e))?;
         let file_str = file.to_string_lossy().to_string();
@@ -593,6 +595,33 @@ fn run_diff(file1: &Path, file2: &Path) {
         let mut evaluator = Evaluator::new();
         evaluator.eval_program(&program).map_err(|e| e.to_string())?;
         Ok(evaluator.world)
+    }
+
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+
+    fn print_added(msg: &str, is_tty: bool) {
+        if is_tty {
+            use crossterm::style::Stylize;
+            println!("{}", format!("+ {}", msg).green());
+        } else {
+            println!("+ {}", msg);
+        }
+    }
+    fn print_removed(msg: &str, is_tty: bool) {
+        if is_tty {
+            use crossterm::style::Stylize;
+            println!("{}", format!("- {}", msg).red());
+        } else {
+            println!("- {}", msg);
+        }
+    }
+    fn print_changed(msg: &str, is_tty: bool) {
+        if is_tty {
+            use crossterm::style::Stylize;
+            println!("{}", format!("~ {}", msg).yellow());
+        } else {
+            println!("~ {}", msg);
+        }
     }
 
     let w1 = match load_world(file1) {
@@ -610,11 +639,11 @@ fn run_diff(file1: &Path, file2: &Path) {
     let names1: std::collections::HashSet<_> = w1.timelines.values().map(|t| &t.name).collect();
     let names2: std::collections::HashSet<_> = w2.timelines.values().map(|t| &t.name).collect();
     for name in names2.difference(&names1) {
-        println!("+ timeline {}", name);
+        print_added(&format!("timeline {}", name), is_tty);
         changes += 1;
     }
     for name in names1.difference(&names2) {
-        println!("- timeline {}", name);
+        print_removed(&format!("timeline {}", name), is_tty);
         changes += 1;
     }
 
@@ -623,24 +652,24 @@ fn run_diff(file1: &Path, file2: &Path) {
     let ents2: std::collections::HashMap<_, _> = w2.entities.values().map(|e| (&e.name, e)).collect();
     for (name, _) in &ents2 {
         if !ents1.contains_key(name) {
-            println!("+ entity {}", name);
+            print_added(&format!("entity {}", name), is_tty);
             changes += 1;
         }
     }
     for (name, _) in &ents1 {
         if !ents2.contains_key(name) {
-            println!("- entity {}", name);
+            print_removed(&format!("entity {}", name), is_tty);
             changes += 1;
         }
     }
     for (name, e1) in &ents1 {
         if let Some(e2) = ents2.get(name) {
             if e1.type_id != e2.type_id {
-                println!("~ entity {} type: {} → {}", name, e1.type_id, e2.type_id);
+                print_changed(&format!("entity {} type: {} → {}", name, e1.type_id, e2.type_id), is_tty);
                 changes += 1;
             }
             if e1.attributes.len() != e2.attributes.len() {
-                println!("~ entity {} attrs: {} → {}", name, e1.attributes.len(), e2.attributes.len());
+                print_changed(&format!("entity {} attrs: {} → {}", name, e1.attributes.len(), e2.attributes.len()), is_tty);
                 changes += 1;
             }
         }
@@ -661,12 +690,27 @@ fn run_diff(file1: &Path, file2: &Path) {
     let set1: std::collections::HashSet<_> = rels1.iter().collect();
     let set2: std::collections::HashSet<_> = rels2.iter().collect();
     for r in set2.difference(&set1) {
-        println!("+ rel {}", r);
+        print_added(&format!("rel {}", r), is_tty);
         changes += 1;
     }
     for r in set1.difference(&set2) {
-        println!("- rel {}", r);
+        print_removed(&format!("rel {}", r), is_tty);
         changes += 1;
+    }
+
+    // Compare relationship directionality changes
+    for r2 in &w2.relationships {
+        let src2 = w2.entities.get(&r2.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        let tgt2 = w2.entities.get(&r2.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        for r1 in &w1.relationships {
+            let src1 = w1.entities.get(&r1.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+            let tgt1 = w1.entities.get(&r1.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+            if src1 == src2 && tgt1 == tgt2 && r1.label == r2.label && r1.directed != r2.directed {
+                let dir = if r2.directed { "directed" } else { "undirected" };
+                print_changed(&format!("rel {}-[{}]->{} now {}", src2, r2.label, tgt2, dir), is_tty);
+                changes += 1;
+            }
+        }
     }
 
     if changes == 0 {
