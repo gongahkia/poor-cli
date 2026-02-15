@@ -61,16 +61,24 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
     }
 
     let headers: Vec<String> = parse_csv_fields(lines[0]);
+    let required = ["name", "type", "timeline", "start", "end"];
+    let missing: Vec<&str> = required.iter()
+        .filter(|r| !headers.iter().any(|h| h == **r))
+        .copied()
+        .collect();
+    if !missing.is_empty() {
+        errors.push(ImportError {
+            line: 1,
+            message: format!("missing required columns: {}", missing.join(", ")),
+        });
+        return Err(errors);
+    }
+
     let name_idx = headers.iter().position(|h| h == "name");
     let type_idx = headers.iter().position(|h| h == "type");
     let timeline_idx = headers.iter().position(|h| h == "timeline");
     let start_idx = headers.iter().position(|h| h == "start");
     let end_idx = headers.iter().position(|h| h == "end");
-
-    if name_idx.is_none() {
-        errors.push(ImportError { line: 1, message: "missing 'name' column".into() });
-        return Err(errors);
-    }
 
     let extra_attrs: Vec<(usize, String)> = headers.iter().enumerate()
         .filter(|(_, h)| !["name", "type", "timeline", "start", "end"].contains(&h.as_str()))
@@ -94,6 +102,18 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
         let timeline = timeline_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
         let start = start_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
         let end = end_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
+
+        // Validate date formats
+        if !start.is_empty() {
+            if chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").is_err() {
+                errors.push(ImportError { line: line_no, message: format!("invalid date in 'start': {}", start) });
+            }
+        }
+        if !end.is_empty() {
+            if chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d").is_err() {
+                errors.push(ImportError { line: line_no, message: format!("invalid date in 'end': {}", end) });
+            }
+        }
 
         output.push_str(&format!("entity {} : {} {{\n", name, entity_type));
 
