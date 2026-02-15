@@ -181,6 +181,39 @@ impl TimePoint {
             TimePoint::EraRef { .. } => 0,
         }
     }
+
+    /// Resolve EraRef to an absolute ordinal using World context.
+    /// For non-EraRef variants, delegates to to_ordinal().
+    pub fn to_ordinal_in_world(&self, world: &crate::model::world::World) -> i64 {
+        match self {
+            TimePoint::EraRef { timeline, era, point } => {
+                let tl = match world.timeline_by_name(timeline) {
+                    Some(t) => t,
+                    None => return 0,
+                };
+                let matching: Vec<&EventMarker> = tl
+                    .event_markers
+                    .iter()
+                    .filter(|m| m.label == *era)
+                    .collect();
+                if matching.is_empty() {
+                    return tl.start.as_ref().map_or(0, |s| s.to_ordinal());
+                }
+                match point.as_str() {
+                    "start" => matching.first().unwrap().time.to_ordinal(),
+                    "end" => matching.last().unwrap().time.to_ordinal(),
+                    _ => {
+                        if let Ok(offset) = point.parse::<i64>() {
+                            matching.first().unwrap().time.to_ordinal() + offset
+                        } else {
+                            matching.first().unwrap().time.to_ordinal()
+                        }
+                    }
+                }
+            }
+            _ => self.to_ordinal(),
+        }
+    }
 }
 
 /// TimeRange struct (Task 21)
