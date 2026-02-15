@@ -76,7 +76,8 @@ pub fn render_svg_with_options(
         2.0
     };
     let svg_height = height.unwrap_or_else(|| {
-        (MARGIN_TOP + (layout.total_lanes as f64) * LANE_HEIGHT + 40.0).max(svg_width / aspect_ratio)
+        (MARGIN_TOP + (layout.total_lanes as f64) * LANE_HEIGHT + 40.0)
+            .max(svg_width / aspect_ratio)
     });
     let scale_x = (svg_width - MARGIN_LEFT * 2.0) / time_range;
 
@@ -126,13 +127,19 @@ pub fn render_svg_with_options(
         };
         svg.push_str(&format!(
             r#"<text x="{:.1}" y="{:.1}" fill="{}" font-size="{}" font-weight="bold">{}</text>"#,
-            x + 4.0, y + 14.0, theme.text, FONT_SIZE, escape_xml(&label)
+            x + 4.0,
+            y + 14.0,
+            theme.text,
+            FONT_SIZE,
+            escape_xml(&label)
         ));
 
         // Entity bars clipped to timeline region
         svg.push_str(&format!(r#"<g clip-path="url(#tl-clip-{})">"#, i));
         for ent in &layout.entities {
-            if ent.timeline_id != tl.timeline_id { continue; }
+            if ent.timeline_id != tl.timeline_id {
+                continue;
+            }
             render_entity_bar(&mut svg, ent, vp, scale_x, theme, type_hints);
         }
         svg.push_str("</g>");
@@ -155,7 +162,11 @@ pub fn render_svg_with_options(
             ));
             svg.push_str(&format!(
                 r#"<text x="{:.1}" y="{}" fill="{}" font-size="{}" text-anchor="middle">{}</text>"#,
-                x, MARGIN_TOP - 25.0, theme.axis, FONT_SIZE - 2.0, escape_xml(&tick.label)
+                x,
+                MARGIN_TOP - 25.0,
+                theme.axis,
+                FONT_SIZE - 2.0,
+                escape_xml(&tick.label)
             ));
         }
     }
@@ -167,7 +178,9 @@ pub fn render_svg_with_options(
         let src_x = MARGIN_LEFT + (edge.source_x - vp.time_start) * scale_x;
         let tgt_x = MARGIN_LEFT + (edge.target_x - vp.time_start) * scale_x;
 
-        let color = theme.rel_colors.get(&edge.label)
+        let color = theme
+            .rel_colors
+            .get(&edge.label)
             .cloned()
             .unwrap_or_else(|| "#ff4aff".into());
 
@@ -175,13 +188,21 @@ pub fn render_svg_with_options(
         let ctrl_offset = (tgt_y - src_y).abs() * 0.3;
         let path = format!(
             "M {:.1},{:.1} C {:.1},{:.1} {:.1},{:.1} {:.1},{:.1}",
-            src_x, src_y,
-            mid_x - ctrl_offset, src_y,
-            mid_x + ctrl_offset, tgt_y,
-            tgt_x, tgt_y
+            src_x,
+            src_y,
+            mid_x - ctrl_offset,
+            src_y,
+            mid_x + ctrl_offset,
+            tgt_y,
+            tgt_x,
+            tgt_y
         );
 
-        let marker = if edge.directed { r#" marker-end="url(#arrow)""# } else { "" };
+        let marker = if edge.directed {
+            r#" marker-end="url(#arrow)""#
+        } else {
+            ""
+        };
         svg.push_str(&format!(
             r#"<path d="{}" stroke="{}" stroke-width="1.5" fill="none" opacity="0.7"{}"/>"#,
             path, color, marker
@@ -231,10 +252,13 @@ fn render_entity_bar(
 
     // Apply type registry render hints: @color, @shape, @icon
     let hints = type_hints.and_then(|h| h.get(&ent.entity_type));
-    let color = hints.and_then(|h| h.color.clone())
+    let color = hints
+        .and_then(|h| h.color.clone())
         .or_else(|| theme.entity_colors.get(&ent.entity_type).cloned())
         .unwrap_or_else(|| "#888888".into());
-    let shape = hints.and_then(|h| h.shape.clone()).unwrap_or_else(|| "rect".into());
+    let shape = hints
+        .and_then(|h| h.shape.clone())
+        .unwrap_or_else(|| "rect".into());
     let icon = hints.and_then(|h| h.icon.clone()).unwrap_or_default();
 
     // Render shape based on @shape hint
@@ -287,7 +311,9 @@ fn render_entity_bar(
             } else {
                 svg.push_str(&format!(
                     r#"<tspan x="{:.1}" dy="{:.1}">{}</tspan>"#,
-                    label_x, FONT_SIZE + 2.0, escape_xml(line)
+                    label_x,
+                    FONT_SIZE + 2.0,
+                    escape_xml(line)
                 ));
             }
         }
@@ -328,13 +354,17 @@ fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
 
 fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len { return s.to_string(); }
-    if max_len <= 3 { return "...".to_string(); }
+    if s.len() <= max_len {
+        return s.to_string();
+    }
+    if max_len <= 3 {
+        return "...".to_string();
+    }
     format!("{}...", &s[..max_len - 3])
 }

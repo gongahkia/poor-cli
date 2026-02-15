@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use chrono::NaiveDate;
+use std::collections::HashMap;
 
 pub type Id = u64;
 
@@ -146,9 +146,19 @@ pub struct Relationship {
 #[derive(Debug, Clone)]
 pub enum TimePoint {
     Absolute(NaiveDate),
-    Relative { anchor: String, offset_days: i64 },
-    Fuzzy { center: NaiveDate, radius_days: i64 },
-    EraRef { timeline: String, era: String, point: String },
+    Relative {
+        anchor: String,
+        offset_days: i64,
+    },
+    Fuzzy {
+        center: NaiveDate,
+        radius_days: i64,
+    },
+    EraRef {
+        timeline: String,
+        era: String,
+        point: String,
+    },
     Abstract(i64),
 }
 
@@ -160,9 +170,13 @@ impl TimePoint {
                 TimePoint::Absolute(new_d)
             }
             TimePoint::Abstract(n) => TimePoint::Abstract(n + days),
-            TimePoint::Fuzzy { center, radius_days } => {
-                TimePoint::Fuzzy { center: *center + chrono::Duration::days(days), radius_days: *radius_days }
-            }
+            TimePoint::Fuzzy {
+                center,
+                radius_days,
+            } => TimePoint::Fuzzy {
+                center: *center + chrono::Duration::days(days),
+                radius_days: *radius_days,
+            },
             other => other.clone(), // relative/era refs can't easily offset
         }
     }
@@ -186,7 +200,11 @@ impl TimePoint {
     /// For non-EraRef variants, delegates to to_ordinal().
     pub fn to_ordinal_in_world(&self, world: &crate::model::world::World) -> i64 {
         match self {
-            TimePoint::EraRef { timeline, era, point } => {
+            TimePoint::EraRef {
+                timeline,
+                era,
+                point,
+            } => {
                 let tl = match world.timeline_by_name(timeline) {
                     Some(t) => t,
                     None => return 0,
@@ -229,7 +247,11 @@ impl TimeRange {
         let p = point.to_ordinal();
         let s = self.start.to_ordinal();
         let e = self.end.to_ordinal();
-        if self.inclusive_end { p >= s && p <= e } else { p >= s && p < e }
+        if self.inclusive_end {
+            p >= s && p <= e
+        } else {
+            p >= s && p < e
+        }
     }
 
     pub fn overlaps(&self, other: &TimeRange) -> bool {
@@ -291,7 +313,15 @@ impl std::fmt::Display for Value {
             Value::Duration(d) => write!(f, "{}days", d),
             Value::Entity(id) => write!(f, "entity#{}", id),
             Value::Timeline(id) => write!(f, "timeline#{}", id),
-            Value::List(items) => write!(f, "[{}]", items.iter().map(|i| format!("{}", i)).collect::<Vec<_>>().join(", ")),
+            Value::List(items) => write!(
+                f,
+                "[{}]",
+                items
+                    .iter()
+                    .map(|i| format!("{}", i))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             Value::Closure { .. } => write!(f, "<closure>"),
             Value::Null => write!(f, "null"),
         }

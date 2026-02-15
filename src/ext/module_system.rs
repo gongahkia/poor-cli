@@ -10,7 +10,9 @@ pub struct ModuleSystem {
 
 impl ModuleSystem {
     pub fn new() -> Self {
-        Self { loaded: HashSet::new() }
+        Self {
+            loaded: HashSet::new(),
+        }
     }
 
     /// Resolve an import path relative to the current file
@@ -22,12 +24,15 @@ impl ModuleSystem {
             return Err(format!("import not found: {}", resolved.display()));
         }
 
-        Ok(resolved.canonicalize().map_err(|e| format!("path error: {}", e))?)
+        Ok(resolved
+            .canonicalize()
+            .map_err(|e| format!("path error: {}", e))?)
     }
 
     /// Check and mark a file as loaded; returns error if circular
     pub fn load(&mut self, path: &Path) -> Result<(), String> {
-        let canonical = path.canonicalize()
+        let canonical = path
+            .canonicalize()
             .map_err(|e| format!("path error: {}", e))?;
 
         if self.loaded.contains(&canonical) {

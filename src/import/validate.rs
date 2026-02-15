@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 /// Import validation (Task 32)
 pub struct ValidationResult {
@@ -33,7 +33,10 @@ pub fn validate_seuss_source(source: &str) -> ValidationResult {
             if parts.len() >= 2 {
                 let name = parts[1];
                 if !entity_names.insert(name.to_string()) {
-                    errors.push(format!("line {}: duplicate entity name '{}'", line_no, name));
+                    errors.push(format!(
+                        "line {}: duplicate entity name '{}'",
+                        line_no, name
+                    ));
                 }
                 // Check for type reference after ':'
                 if let Some(colon_pos) = parts.iter().position(|p| *p == ":") {
@@ -48,8 +51,13 @@ pub fn validate_seuss_source(source: &str) -> ValidationResult {
         // Collect appears_on timeline references
         if trimmed.contains("appears_on:") || trimmed.contains("appears_on :") {
             if let Some(tl_ref) = trimmed.split("appears_on").nth(1) {
-                let tl_name = tl_ref.trim_start_matches(':').trim().split_whitespace().next()
-                    .unwrap_or("").trim_end_matches(',');
+                let tl_name = tl_ref
+                    .trim_start_matches(':')
+                    .trim()
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches(',');
                 if !tl_name.is_empty() && !tl_name.starts_with('@') {
                     timeline_refs.push((line_no, tl_name.to_string()));
                 }
@@ -64,7 +72,11 @@ pub fn validate_seuss_source(source: &str) -> ValidationResult {
             }
             if let Some(arrow_end) = trimmed.find("-> ").or(trimmed.find("- ")) {
                 let after = &trimmed[arrow_end + 2..].trim();
-                let target = after.split_whitespace().next().unwrap_or("").trim_end_matches(';');
+                let target = after
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches(';');
                 rel_refs.push((line_no, target.to_string()));
             }
         }
@@ -72,14 +84,20 @@ pub fn validate_seuss_source(source: &str) -> ValidationResult {
         // Check date format using chrono
         let date_issues = validate_dates_in_line(trimmed);
         for bad_date in date_issues {
-            warnings.push(format!("line {}: invalid date '{}' (expected YYYY-MM-DD)", line_no, bad_date));
+            warnings.push(format!(
+                "line {}: invalid date '{}' (expected YYYY-MM-DD)",
+                line_no, bad_date
+            ));
         }
     }
 
     // Check for dangling entity references
     for (line_no, ref_name) in &rel_refs {
         if !ref_name.is_empty() && !entity_names.contains(ref_name) {
-            errors.push(format!("line {}: dangling entity reference '{}'", line_no, ref_name));
+            errors.push(format!(
+                "line {}: dangling entity reference '{}'",
+                line_no, ref_name
+            ));
         }
     }
 
@@ -91,11 +109,24 @@ pub fn validate_seuss_source(source: &str) -> ValidationResult {
     }
 
     // Check type references against known builtins
-    let builtins: HashSet<&str> = ["character", "event", "location", "artifact", "faction", "org", "entity"]
-        .iter().copied().collect();
+    let builtins: HashSet<&str> = [
+        "character",
+        "event",
+        "location",
+        "artifact",
+        "faction",
+        "org",
+        "entity",
+    ]
+    .iter()
+    .copied()
+    .collect();
     for (line_no, type_name) in &type_refs {
         if !builtins.contains(type_name.as_str()) {
-            warnings.push(format!("line {}: type '{}' is not a known builtin (may be user-defined)", line_no, type_name));
+            warnings.push(format!(
+                "line {}: type '{}' is not a known builtin (may be user-defined)",
+                line_no, type_name
+            ));
         }
     }
 
@@ -108,8 +139,11 @@ fn validate_dates_in_line(line: &str) -> Vec<String> {
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
     while i + 9 < chars.len() {
-        if chars[i].is_ascii_digit() && chars[i + 4] == '-' && chars[i + 7] == '-'
-            && chars[i + 5].is_ascii_digit() && chars[i + 8].is_ascii_digit()
+        if chars[i].is_ascii_digit()
+            && chars[i + 4] == '-'
+            && chars[i + 7] == '-'
+            && chars[i + 5].is_ascii_digit()
+            && chars[i + 8].is_ascii_digit()
         {
             let date_str: String = chars[i..i + 10].iter().collect();
             if chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").is_err() {

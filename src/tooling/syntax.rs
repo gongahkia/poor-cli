@@ -91,5 +91,6 @@ pub fn generate_treesitter_highlights() -> String {
 
 (identifier) @variable
 (meta_attribute) @attribute
-"#.to_string()
+"#
+    .to_string()
 }

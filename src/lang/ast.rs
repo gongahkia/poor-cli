@@ -10,7 +10,11 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: usize, end: usize, file: &str) -> Self {
-        Self { start, end, file: file.to_string() }
+        Self {
+            start,
+            end,
+            file: file.to_string(),
+        }
     }
 }
 
@@ -235,9 +239,18 @@ pub enum Literal {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div,
-    Eq, Neq, Lt, Gt, Lte, Gte,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Lte,
+    Gte,
+    And,
+    Or,
     Range,
 }
 

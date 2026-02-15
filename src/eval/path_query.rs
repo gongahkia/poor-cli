@@ -1,10 +1,15 @@
-use std::collections::{HashMap, HashSet, VecDeque};
-use crate::model::world::World;
 use crate::model::types::Id;
+use crate::model::world::World;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Relationship path query (Task 46)
 /// Returns shortest path between two entities via relationships
-pub fn find_path(world: &World, source_id: Id, target_id: Id, max_hops: Option<usize>) -> Option<Vec<(Id, String, Id)>> {
+pub fn find_path(
+    world: &World,
+    source_id: Id,
+    target_id: Id,
+    max_hops: Option<usize>,
+) -> Option<Vec<(Id, String, Id)>> {
     if source_id == target_id {
         return Some(Vec::new());
     }
@@ -60,8 +65,16 @@ pub fn format_path(world: &World, path: &[(Id, String, Id)]) -> String {
 
     let mut parts = Vec::new();
     for (from, label, to) in path {
-        let from_name = world.entities.get(from).map(|e| e.name.as_str()).unwrap_or("?");
-        let to_name = world.entities.get(to).map(|e| e.name.as_str()).unwrap_or("?");
+        let from_name = world
+            .entities
+            .get(from)
+            .map(|e| e.name.as_str())
+            .unwrap_or("?");
+        let to_name = world
+            .entities
+            .get(to)
+            .map(|e| e.name.as_str())
+            .unwrap_or("?");
         parts.push(format!("{} -[{}]-> {}", from_name, label, to_name));
     }
     parts.join(" → ")

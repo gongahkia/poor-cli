@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::model::types::Value;
+use std::collections::HashMap;
 
 /// Variable environment as stack of HashMap frames (Task 26)
 #[derive(Debug)]
@@ -9,7 +9,9 @@ pub struct Environment {
 
 impl Environment {
     pub fn new() -> Self {
-        Self { frames: vec![HashMap::new()] }
+        Self {
+            frames: vec![HashMap::new()],
+        }
     }
 
     pub fn push_scope(&mut self) {

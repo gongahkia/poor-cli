@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use serde::Deserialize;
 use ratatui::style::Color;
+use serde::Deserialize;
+use std::collections::HashMap;
 
 /// TUI color theme (Task 11)
 #[derive(Debug, Clone)]
@@ -59,12 +59,20 @@ impl TuiTheme {
     }
 
     pub fn entity_color(&self, entity_type: &str, connected: bool) -> Color {
-        if !connected { return Color::DarkGray; }
-        self.entity_colors.get(entity_type).copied().unwrap_or(self.text)
+        if !connected {
+            return Color::DarkGray;
+        }
+        self.entity_colors
+            .get(entity_type)
+            .copied()
+            .unwrap_or(self.text)
     }
 
     pub fn rel_color(&self, label: &str) -> Color {
-        self.rel_colors.get(label).copied().unwrap_or(Color::Magenta)
+        self.rel_colors
+            .get(label)
+            .copied()
+            .unwrap_or(Color::Magenta)
     }
 }
 
@@ -101,10 +109,14 @@ impl ThemeConfig {
             }
         }
         if let Some(ref s) = self.selection {
-            if let Some(c) = parse_color(s) { theme.selection = c; }
+            if let Some(c) = parse_color(s) {
+                theme.selection = c;
+            }
         }
         if let Some(ref t) = self.text {
-            if let Some(c) = parse_color(t) { theme.text = c; }
+            if let Some(c) = parse_color(t) {
+                theme.text = c;
+            }
         }
         theme
     }

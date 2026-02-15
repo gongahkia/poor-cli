@@ -4,8 +4,7 @@ use std::collections::HashMap;
 /// JSON-LD importer (Task 30)
 /// Recognizes schema.org Person and Event types, relationships, and @context
 pub fn import_jsonld(content: &str) -> Result<String, String> {
-    let json: Value = serde_json::from_str(content)
-        .map_err(|e| format!("invalid JSON: {}", e))?;
+    let json: Value = serde_json::from_str(content).map_err(|e| format!("invalid JSON: {}", e))?;
 
     // Resolve @context for compact IRI expansion
     let context = extract_context(&json);
@@ -49,7 +48,12 @@ pub fn import_jsonld(content: &str) -> Result<String, String> {
                 update_year_range(birth, &mut min_year, &mut max_year);
                 update_year_range(death, &mut min_year, &mut max_year);
 
-                entities.push(("character", name.to_string(), birth.map(String::from), death.map(String::from)));
+                entities.push((
+                    "character",
+                    name.to_string(),
+                    birth.map(String::from),
+                    death.map(String::from),
+                ));
 
                 // Extract relationship properties
                 extract_relationships(item, name, &context, &id_to_name, &mut relationships);
@@ -60,7 +64,12 @@ pub fn import_jsonld(content: &str) -> Result<String, String> {
 
                 update_year_range(start, &mut min_year, &mut max_year);
 
-                entities.push(("event", name.to_string(), start.map(String::from), end.map(String::from)));
+                entities.push((
+                    "event",
+                    name.to_string(),
+                    start.map(String::from),
+                    end.map(String::from),
+                ));
             }
             _ => {}
         }
@@ -71,8 +80,10 @@ pub fn import_jsonld(content: &str) -> Result<String, String> {
         max_year = 2000;
     }
 
-    output.push_str(&format!("timeline main {{\n    kind: linear,\n    start: {}-01-01,\n    end: {}-12-31,\n}}\n\n",
-        min_year, max_year));
+    output.push_str(&format!(
+        "timeline main {{\n    kind: linear,\n    start: {}-01-01,\n    end: {}-12-31,\n}}\n\n",
+        min_year, max_year
+    ));
 
     for (etype, name, start, end) in &entities {
         let safe_name = sanitize_name(name);
@@ -112,7 +123,9 @@ fn extract_context(json: &Value) -> HashMap<String, String> {
 
 /// Expand a compact IRI using @context (e.g., "schema:Person" -> "http://schema.org/Person")
 fn expand_iri(iri: &str, context: &HashMap<String, String>) -> String {
-    if iri.contains("://") { return iri.to_string(); }
+    if iri.contains("://") {
+        return iri.to_string();
+    }
     if let Some(colon_pos) = iri.find(':') {
         let prefix = &iri[..colon_pos];
         let suffix = &iri[colon_pos + 1..];
@@ -127,7 +140,7 @@ fn expand_iri(iri: &str, context: &HashMap<String, String>) -> String {
 const REL_PROPERTIES: &[(&str, &str)] = &[
     ("knows", "knows"),
     ("parent", "parent"),
-    ("children", "parent"),   // reverse: target is parent of source
+    ("children", "parent"), // reverse: target is parent of source
     ("spouse", "spouse"),
     ("sibling", "sibling"),
     ("colleague", "colleague"),
@@ -147,8 +160,7 @@ fn extract_relationships(
     for (prop, label) in REL_PROPERTIES {
         let expanded = expand_iri(&format!("schema:{}", prop), context);
         // Check both compact and expanded forms
-        let val = item.get(*prop)
-            .or_else(|| item.get(&expanded));
+        let val = item.get(*prop).or_else(|| item.get(&expanded));
         if let Some(v) = val {
             let targets = if v.is_array() {
                 v.as_array().cloned().unwrap_or_default()
@@ -157,11 +169,17 @@ fn extract_relationships(
             };
             for target in targets {
                 let target_name = if let Some(name) = target.as_str() {
-                    id_to_name.get(name).cloned().unwrap_or_else(|| name.to_string())
+                    id_to_name
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_else(|| name.to_string())
                 } else if let Some(name) = target.get("name").and_then(|n| n.as_str()) {
                     name.to_string()
                 } else if let Some(id) = target.get("@id").and_then(|n| n.as_str()) {
-                    id_to_name.get(id).cloned().unwrap_or_else(|| id.to_string())
+                    id_to_name
+                        .get(id)
+                        .cloned()
+                        .unwrap_or_else(|| id.to_string())
                 } else {
                     continue;
                 };

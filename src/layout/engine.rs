@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::model::types::*;
 use crate::model::world::World;
+use std::collections::HashMap;
 
 /// Viewport model (Task 47)
 #[derive(Debug, Clone)]
@@ -14,7 +14,13 @@ pub struct Viewport {
 
 impl Viewport {
     pub fn new(time_start: f64, time_end: f64, lanes: usize) -> Self {
-        Self { time_start, time_end, lane_start: 0, lane_end: lanes, scale: 1.0 }
+        Self {
+            time_start,
+            time_end,
+            lane_start: 0,
+            lane_end: lanes,
+            scale: 1.0,
+        }
     }
 
     pub fn pan(&mut self, dt: f64, dl: i32) {
@@ -150,8 +156,16 @@ pub fn compute_layout(world: &World) -> Layout {
         let tl_lane_start = current_lane;
         let ent_ids = timeline_entities.get(&tl.id).cloned().unwrap_or_default();
 
-        let tl_x_start = tl.start.as_ref().map(|t| t.to_ordinal() as f64).unwrap_or(0.0);
-        let tl_x_end = tl.end.as_ref().map(|t| t.to_ordinal() as f64).unwrap_or(100.0);
+        let tl_x_start = tl
+            .start
+            .as_ref()
+            .map(|t| t.to_ordinal() as f64)
+            .unwrap_or(0.0);
+        let tl_x_end = tl
+            .end
+            .as_ref()
+            .map(|t| t.to_ordinal() as f64)
+            .unwrap_or(100.0);
 
         global_min = global_min.min(tl_x_start);
         global_max = global_max.max(tl_x_end);
@@ -160,7 +174,8 @@ pub fn compute_layout(world: &World) -> Layout {
             if !lane_map.contains_key(eid) {
                 // Lane compaction: find a reusable lane with no time overlap
                 let entity_range = world.entity_by_id(*eid).and_then(|e| {
-                    e.timeline_appearances.iter()
+                    e.timeline_appearances
+                        .iter()
                         .find(|(tid, _)| *tid == tl.id)
                         .map(|(_, tr)| (tr.start.to_ordinal() as f64, tr.end.to_ordinal() as f64))
                 });
@@ -204,7 +219,8 @@ pub fn compute_layout(world: &World) -> Layout {
 
         // Branch connector (Task 40) - use actual parent lane
         if let Some((parent_id, ref fp)) = tl.fork_point {
-            let parent_lane = timelines_layout.iter()
+            let parent_lane = timelines_layout
+                .iter()
                 .find(|lt| lt.timeline_id == parent_id)
                 .map(|lt| lt.lane_start)
                 .unwrap_or(tl_lane_start.saturating_sub(1));
@@ -219,7 +235,8 @@ pub fn compute_layout(world: &World) -> Layout {
 
         // Merge connector (Task 41) - use actual target lane
         if let Some((target_id, ref mp)) = tl.merge_point {
-            let target_lane = timelines_layout.iter()
+            let target_lane = timelines_layout
+                .iter()
                 .find(|lt| lt.timeline_id == target_id)
                 .map(|lt| lt.lane_start)
                 .unwrap_or(tl_lane_start.saturating_sub(1));
@@ -267,18 +284,26 @@ pub fn compute_layout(world: &World) -> Layout {
         }
     }
 
-    if global_min == f64::MAX { global_min = 0.0; }
-    if global_max == f64::MIN { global_max = 100.0; }
+    if global_min == f64::MAX {
+        global_min = 0.0;
+    }
+    if global_max == f64::MIN {
+        global_max = 100.0;
+    }
 
     // Relationship edge routing (Task 45)
     for rel in &world.relationships {
         let src_lane = lane_map.get(&rel.source_entity_id).copied().unwrap_or(0);
         let tgt_lane = lane_map.get(&rel.target_entity_id).copied().unwrap_or(0);
 
-        let src_x = rel.temporal_scope.as_ref()
+        let src_x = rel
+            .temporal_scope
+            .as_ref()
             .map(|ts| ts.start.to_ordinal() as f64)
             .unwrap_or((global_min + global_max) / 2.0);
-        let tgt_x = rel.temporal_scope.as_ref()
+        let tgt_x = rel
+            .temporal_scope
+            .as_ref()
             .map(|ts| ts.end.to_ordinal() as f64)
             .unwrap_or(src_x);
 
@@ -294,7 +319,9 @@ pub fn compute_layout(world: &World) -> Layout {
 
     // Generate tick marks (Task 38)
     let range = global_max - global_min;
-    let tick_interval = if range <= 0.0 { 1.0 } else {
+    let tick_interval = if range <= 0.0 {
+        1.0
+    } else {
         let approx = range / 10.0;
         10.0_f64.powf(approx.log10().floor())
     };
@@ -336,9 +363,9 @@ fn find_reusable_lane(
     x_end: f64,
 ) -> Option<usize> {
     for lane in lane_start..lane_end {
-        let has_overlap = entities.iter().any(|e| {
-            e.lane == lane && e.x_start < x_end && e.x_end > x_start
-        });
+        let has_overlap = entities
+            .iter()
+            .any(|e| e.lane == lane && e.x_start < x_end && e.x_end > x_start);
         if !has_overlap {
             return Some(lane);
         }
@@ -350,8 +377,11 @@ fn find_reusable_lane(
 fn resolve_label_collisions(entities: &mut [LayoutEntity]) {
     // Sort by lane then x_start
     entities.sort_by(|a, b| {
-        a.lane.cmp(&b.lane)
-            .then(a.x_start.partial_cmp(&b.x_start).unwrap_or(std::cmp::Ordering::Equal))
+        a.lane.cmp(&b.lane).then(
+            a.x_start
+                .partial_cmp(&b.x_start)
+                .unwrap_or(std::cmp::Ordering::Equal),
+        )
     });
 
     // Detect overlapping entities on the same lane and nudge the shorter one
@@ -359,7 +389,9 @@ fn resolve_label_collisions(entities: &mut [LayoutEntity]) {
     let len = entities.len();
     for i in 0..len {
         for j in (i + 1)..len {
-            if entities[i].lane != entities[j].lane { break; }
+            if entities[i].lane != entities[j].lane {
+                break;
+            }
             let i_label_end = entities[i].x_end + label_width_estimate;
             if entities[j].x_start < i_label_end {
                 // Collision: offset the name with a leader marker

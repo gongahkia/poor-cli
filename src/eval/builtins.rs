@@ -8,14 +8,18 @@ pub fn register_builtins(world: &World, args: &[Value], name: &str) -> Option<Va
                 let t1 = value_to_ordinal(&args[0]);
                 let t2 = value_to_ordinal(&args[1]);
                 Some(Value::Bool(t1 < t2))
-            } else { None }
+            } else {
+                None
+            }
         }
         "after" => {
             if args.len() == 2 {
                 let t1 = value_to_ordinal(&args[0]);
                 let t2 = value_to_ordinal(&args[1]);
                 Some(Value::Bool(t1 > t2))
-            } else { None }
+            } else {
+                None
+            }
         }
         "overlaps" => {
             if args.len() >= 2 {
@@ -25,54 +29,85 @@ pub fn register_builtins(world: &World, args: &[Value], name: &str) -> Option<Va
                     (Some(a), Some(b)) => Some(Value::Bool(a.overlaps(&b))),
                     _ => Some(Value::Bool(false)),
                 }
-            } else { Some(Value::Bool(false)) }
+            } else {
+                Some(Value::Bool(false))
+            }
         }
         "concurrent" => {
             if args.len() >= 2 {
                 let e1_ranges = entity_ranges(world, &args[0]);
                 let e2_ranges = entity_ranges(world, &args[1]);
                 let overlap = e1_ranges.iter().any(|(tid1, tr1)| {
-                    e2_ranges.iter().any(|(tid2, tr2)| tid1 == tid2 && tr1.overlaps(tr2))
+                    e2_ranges
+                        .iter()
+                        .any(|(tid2, tr2)| tid1 == tid2 && tr1.overlaps(tr2))
                 });
                 Some(Value::Bool(overlap))
-            } else { Some(Value::Bool(false)) }
+            } else {
+                Some(Value::Bool(false))
+            }
         }
         "duration" => {
             if args.len() == 2 {
                 let s = value_to_ordinal(&args[0]);
                 let e = value_to_ordinal(&args[1]);
                 Some(Value::Int(e - s))
-            } else { None }
+            } else {
+                None
+            }
         }
         "entities_at" => {
             if args.len() >= 2 {
                 let tl_name = match &args[0] {
                     Value::String(s) => s.clone(),
-                    Value::Timeline(id) => world.timelines.get(id).map(|t| t.name.clone()).unwrap_or_default(),
+                    Value::Timeline(id) => world
+                        .timelines
+                        .get(id)
+                        .map(|t| t.name.clone())
+                        .unwrap_or_default(),
                     _ => return Some(Value::List(Vec::new())),
                 };
                 let tp_ord = value_to_ordinal(&args[1]);
                 let tp = TimePoint::Abstract(tp_ord);
                 if let Some(tl) = world.timeline_by_name(&tl_name) {
-                    let full_range = TimeRange { start: TimePoint::Abstract(i64::MIN), end: TimePoint::Abstract(i64::MAX), inclusive_end: true };
-                    let entities: Vec<Value> = world.entities_on_timeline(tl.id, &full_range)
+                    let full_range = TimeRange {
+                        start: TimePoint::Abstract(i64::MIN),
+                        end: TimePoint::Abstract(i64::MAX),
+                        inclusive_end: true,
+                    };
+                    let entities: Vec<Value> = world
+                        .entities_on_timeline(tl.id, &full_range)
                         .into_iter()
-                        .filter(|e| e.timeline_appearances.iter().any(|(tid, tr)| *tid == tl.id && tr.contains(&tp)))
+                        .filter(|e| {
+                            e.timeline_appearances
+                                .iter()
+                                .any(|(tid, tr)| *tid == tl.id && tr.contains(&tp))
+                        })
                         .map(|e| Value::String(e.name.clone()))
                         .collect();
                     Some(Value::List(entities))
                 } else {
                     Some(Value::List(Vec::new()))
                 }
-            } else { Some(Value::List(Vec::new())) }
+            } else {
+                Some(Value::List(Vec::new()))
+            }
         }
         "relationships_of" => {
             if let Some(eid) = entity_id_from_value(world, args.first()) {
-                let rels: Vec<Value> = world.relationships.iter()
+                let rels: Vec<Value> = world
+                    .relationships
+                    .iter()
                     .filter(|r| r.source_entity_id == eid || r.target_entity_id == eid)
                     .map(|r| {
-                        let src = world.entity_by_id(r.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-                        let tgt = world.entity_by_id(r.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                        let src = world
+                            .entity_by_id(r.source_entity_id)
+                            .map(|e| e.name.as_str())
+                            .unwrap_or("?");
+                        let tgt = world
+                            .entity_by_id(r.target_entity_id)
+                            .map(|e| e.name.as_str())
+                            .unwrap_or("?");
                         Value::List(vec![
                             Value::String(src.to_string()),
                             Value::String(r.label.clone()),
@@ -82,19 +117,27 @@ pub fn register_builtins(world: &World, args: &[Value], name: &str) -> Option<Va
                     })
                     .collect();
                 Some(Value::List(rels))
-            } else { None }
+            } else {
+                None
+            }
         }
         "type_of" => {
             if let Some(eid) = entity_id_from_value(world, args.first()) {
-                world.entity_by_id(eid).map(|e| Value::String(e.type_id.clone()))
-            } else { None }
+                world
+                    .entity_by_id(eid)
+                    .map(|e| Value::String(e.type_id.clone()))
+            } else {
+                None
+            }
         }
         "len" => {
             if let Some(Value::List(items)) = args.first() {
                 Some(Value::Int(items.len() as i64))
             } else if let Some(Value::String(s)) = args.first() {
                 Some(Value::Int(s.len() as i64))
-            } else { None }
+            } else {
+                None
+            }
         }
         "print" => {
             for arg in args {
@@ -132,15 +175,18 @@ fn entity_ranges(world: &World, v: &Value) -> Vec<(Id, TimeRange)> {
 }
 fn value_to_time_range(world: &World, v: &Value) -> Option<TimeRange> {
     match v {
-        Value::Entity(id) => {
-            world.entity_by_id(*id)
-                .and_then(|e| e.timeline_appearances.first())
-                .map(|(_, tr)| tr.clone())
-        }
+        Value::Entity(id) => world
+            .entity_by_id(*id)
+            .and_then(|e| e.timeline_appearances.first())
+            .map(|(_, tr)| tr.clone()),
         Value::List(items) if items.len() == 2 => {
             let s = value_to_ordinal(&items[0]);
             let e = value_to_ordinal(&items[1]);
-            Some(TimeRange { start: TimePoint::Abstract(s), end: TimePoint::Abstract(e), inclusive_end: true })
+            Some(TimeRange {
+                start: TimePoint::Abstract(s),
+                end: TimePoint::Abstract(e),
+                inclusive_end: true,
+            })
         }
         _ => None,
     }

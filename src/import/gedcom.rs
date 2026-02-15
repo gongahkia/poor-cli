@@ -15,10 +15,14 @@ pub fn parse_gedcom(content: &str) -> Vec<GedcomRecord> {
 
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let parts: Vec<&str> = line.splitn(3, ' ').collect();
-        if parts.is_empty() { continue; }
+        if parts.is_empty() {
+            continue;
+        }
 
         let level: u32 = match parts[0].parse() {
             Ok(l) => l,
@@ -38,7 +42,12 @@ pub fn parse_gedcom(content: &str) -> Vec<GedcomRecord> {
             continue;
         };
 
-        let record = GedcomRecord { level, tag: tag.clone(), value, children: Vec::new() };
+        let record = GedcomRecord {
+            level,
+            tag: tag.clone(),
+            value,
+            children: Vec::new(),
+        };
 
         // Handle CONC/CONT at any nesting depth
         if tag == "CONC" || tag == "CONT" {
@@ -121,7 +130,9 @@ pub fn gedcom_to_seuss(records: &[GedcomRecord]) -> String {
                 let id = sanitize_id(&record.value);
                 let husb = find_child_value(&record.children, "HUSB").map(|s| sanitize_id(&s));
                 let wife = find_child_value(&record.children, "WIFE").map(|s| sanitize_id(&s));
-                let children: Vec<String> = record.children.iter()
+                let children: Vec<String> = record
+                    .children
+                    .iter()
                     .filter(|c| c.tag == "CHIL")
                     .map(|c| sanitize_id(&c.value))
                     .collect();
@@ -137,8 +148,10 @@ pub fn gedcom_to_seuss(records: &[GedcomRecord]) -> String {
     }
 
     // Generate timeline
-    output.push_str(&format!("timeline main {{\n    kind: linear,\n    start: {}-01-01,\n    end: {}-12-31,\n}}\n\n",
-        min_year, max_year));
+    output.push_str(&format!(
+        "timeline main {{\n    kind: linear,\n    start: {}-01-01,\n    end: {}-12-31,\n}}\n\n",
+        min_year, max_year
+    ));
 
     // Generate entities
     for (id, name, birth, death) in &individuals {
@@ -178,7 +191,9 @@ pub fn gedcom_to_seuss(records: &[GedcomRecord]) -> String {
 
 /// Find the record that CONC/CONT should append to based on nesting level.
 fn find_concat_target(stack: &mut Vec<GedcomRecord>, level: u32) -> Option<&mut GedcomRecord> {
-    if level == 0 || stack.is_empty() { return None; }
+    if level == 0 || stack.is_empty() {
+        return None;
+    }
     // Find the nearest record in the stack whose level is level - 1
     let target_level = level - 1;
     let idx = stack.iter().rposition(|r| r.level == target_level);
@@ -232,11 +247,15 @@ fn sanitize_id(s: &str) -> String {
 }
 
 fn find_child_value(children: &[GedcomRecord], tag: &str) -> Option<String> {
-    children.iter().find(|c| c.tag == tag).map(|c| c.value.clone())
+    children
+        .iter()
+        .find(|c| c.tag == tag)
+        .map(|c| c.value.clone())
 }
 
 fn find_event_date(children: &[GedcomRecord], event_tag: &str) -> Option<String> {
-    children.iter()
+    children
+        .iter()
         .find(|c| c.tag == event_tag)
         .and_then(|c| find_child_value(&c.children, "DATE"))
         .and_then(|d| normalize_date(&d))
@@ -248,7 +267,9 @@ fn normalize_date(s: &str) -> Option<String> {
         1 => {
             if let Ok(y) = parts[0].parse::<i32>() {
                 Some(format!("{:04}-01-01", y))
-            } else { None }
+            } else {
+                None
+            }
         }
         2 => {
             let month = month_to_num(parts[0])?;
@@ -267,10 +288,18 @@ fn normalize_date(s: &str) -> Option<String> {
 
 fn month_to_num(m: &str) -> Option<u32> {
     match m.to_uppercase().as_str() {
-        "JAN" => Some(1), "FEB" => Some(2), "MAR" => Some(3),
-        "APR" => Some(4), "MAY" => Some(5), "JUN" => Some(6),
-        "JUL" => Some(7), "AUG" => Some(8), "SEP" => Some(9),
-        "OCT" => Some(10), "NOV" => Some(11), "DEC" => Some(12),
+        "JAN" => Some(1),
+        "FEB" => Some(2),
+        "MAR" => Some(3),
+        "APR" => Some(4),
+        "MAY" => Some(5),
+        "JUN" => Some(6),
+        "JUL" => Some(7),
+        "AUG" => Some(8),
+        "SEP" => Some(9),
+        "OCT" => Some(10),
+        "NOV" => Some(11),
+        "DEC" => Some(12),
         _ => None,
     }
 }
@@ -279,8 +308,12 @@ fn extract_year(date: &str) -> Option<i32> {
     date.split('-').next()?.parse().ok()
 }
 
-fn find_name_by_id(individuals: &[(String, String, Option<String>, Option<String>)], id: &str) -> String {
-    individuals.iter()
+fn find_name_by_id(
+    individuals: &[(String, String, Option<String>, Option<String>)],
+    id: &str,
+) -> String {
+    individuals
+        .iter()
         .find(|(i, _, _, _)| i == id)
         .map(|(_, name, _, _)| name.replace(' ', "_").replace('-', "_"))
         .unwrap_or_else(|| id.replace(' ', "_"))

@@ -45,7 +45,9 @@ pub struct TypeRegistry {
 
 impl TypeRegistry {
     pub fn new() -> Self {
-        Self { types: HashMap::new() }
+        Self {
+            types: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, typedef: CustomTypeDef) -> Result<(), String> {
@@ -93,14 +95,21 @@ impl TypeRegistry {
         };
 
         for field in &typedef.fields {
-            if field.name.starts_with('@') { continue; }
+            if field.name.starts_with('@') {
+                continue;
+            }
             if !field.optional && !attrs.contains_key(&field.name) {
-                errors.push(format!("missing required field '{}' for type '{}'", field.name, type_name));
+                errors.push(format!(
+                    "missing required field '{}' for type '{}'",
+                    field.name, type_name
+                ));
             }
         }
 
         for (key, _value) in attrs {
-            if key.starts_with('@') { continue; }
+            if key.starts_with('@') {
+                continue;
+            }
             if !typedef.fields.iter().any(|f| f.name == *key) {
                 errors.push(format!("unknown field '{}' for type '{}'", key, type_name));
             }
@@ -119,16 +128,23 @@ impl TypeRegistry {
                 merged.parent = typedef.parent.clone();
                 // Child fields override parent
                 for field in &typedef.fields {
-                    if let Some(existing) = merged.fields.iter_mut().find(|f| f.name == field.name) {
+                    if let Some(existing) = merged.fields.iter_mut().find(|f| f.name == field.name)
+                    {
                         *existing = field.clone();
                     } else {
                         merged.fields.push(field.clone());
                     }
                 }
                 // Merge render hints
-                if typedef.render_hints.icon.is_some() { merged.render_hints.icon = typedef.render_hints.icon.clone(); }
-                if typedef.render_hints.color.is_some() { merged.render_hints.color = typedef.render_hints.color.clone(); }
-                if typedef.render_hints.shape.is_some() { merged.render_hints.shape = typedef.render_hints.shape.clone(); }
+                if typedef.render_hints.icon.is_some() {
+                    merged.render_hints.icon = typedef.render_hints.icon.clone();
+                }
+                if typedef.render_hints.color.is_some() {
+                    merged.render_hints.color = typedef.render_hints.color.clone();
+                }
+                if typedef.render_hints.shape.is_some() {
+                    merged.render_hints.shape = typedef.render_hints.shape.clone();
+                }
                 return Some(merged);
             }
         }
@@ -144,7 +160,7 @@ impl TypeRegistry {
 /// Parse a field type string
 pub fn parse_field_type(s: &str) -> (FieldType, bool) {
     let (type_str, optional) = if s.ends_with('?') {
-        (&s[..s.len()-1], true)
+        (&s[..s.len() - 1], true)
     } else {
         (s, false)
     };

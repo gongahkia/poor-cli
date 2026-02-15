@@ -34,7 +34,8 @@ pub fn render_animated_svg(layout: &Layout, theme: &Theme, frames: usize) -> Str
         total_width
     ));
     output.push_str(&format!(
-        ".anim-cursor {{ animation: cursor-sweep {}s linear infinite; }}\n", dur
+        ".anim-cursor {{ animation: cursor-sweep {}s linear infinite; }}\n",
+        dur
     ));
     for (i, ent) in layout.entities.iter().enumerate() {
         let x_start = ent.x_start - layout.viewport.time_start;
@@ -50,7 +51,8 @@ pub fn render_animated_svg(layout: &Layout, theme: &Theme, frames: usize) -> Str
             i, p0, p1, p2, p3
         ));
         output.push_str(&format!(
-            ".anim-ent-{} {{ animation: ent-{} {}s linear infinite; }}\n", i, i, dur
+            ".anim-ent-{} {{ animation: ent-{} {}s linear infinite; }}\n",
+            i, i, dur
         ));
     }
     output.push_str("</style>\n");
@@ -78,7 +80,9 @@ pub fn render_animated_svg(layout: &Layout, theme: &Theme, frames: usize) -> Str
         let begin_pct = (x_start / time_range * 100.0).max(0.0);
         let end_pct = (x_end / time_range * 100.0).min(100.0);
 
-        let entity_fill = theme.entity_colors.get(&ent.entity_type)
+        let entity_fill = theme
+            .entity_colors
+            .get(&ent.entity_type)
             .map(|s| s.as_str())
             .unwrap_or("#4a9eff");
 
@@ -98,7 +102,10 @@ pub fn render_animated_svg(layout: &Layout, theme: &Theme, frames: usize) -> Str
         output.push_str("  </rect>\n");
         output.push_str(&format!(
             "  <text x=\"{}\" y=\"{}\" font-size=\"12\" fill=\"{}\">{}</text>\n",
-            x + 4.0, y + 20.0, theme.text, ent.name
+            x + 4.0,
+            y + 20.0,
+            theme.text,
+            ent.name
         ));
         output.push_str("</g>\n");
     }

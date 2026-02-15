@@ -1,8 +1,8 @@
-use std::path::Path;
-use crate::lang::parser::parse_program;
 use crate::eval::evaluator::Evaluator;
+use crate::lang::parser::parse_program;
 use crate::layout::engine::compute_layout;
 use crate::render::svg_render::{render_svg, Theme};
+use std::path::Path;
 
 /// Markdown preprocessor (Task 54)
 /// Scans for ```seuss fenced code blocks, evaluates them, and replaces with inline SVG images
@@ -30,7 +30,10 @@ pub fn process_markdown(content: &str, base_dir: &Path) -> Result<String, String
                     let svg_path = base_dir.join(&svg_filename);
                     std::fs::write(&svg_path, &svg)
                         .map_err(|e| format!("failed to write SVG: {}", e))?;
-                    output.push_str(&format!("![Seuss Timeline {}]({})\n", block_count, svg_filename));
+                    output.push_str(&format!(
+                        "![Seuss Timeline {}]({})\n",
+                        block_count, svg_filename
+                    ));
                 }
                 Err(e) => {
                     output.push_str(&format!("<!-- seuss error: {} -->\n", e));
@@ -56,11 +59,17 @@ pub fn process_markdown(content: &str, base_dir: &Path) -> Result<String, String
 
 fn render_seuss_block(source: &str, block_num: usize) -> Result<String, String> {
     let file_str = format!("markdown:block{}", block_num);
-    let program = parse_program(source, &file_str)
-        .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;
+    let program = parse_program(source, &file_str).map_err(|errors| {
+        errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ")
+    })?;
 
     let mut evaluator = Evaluator::new();
-    evaluator.eval_program(&program)
+    evaluator
+        .eval_program(&program)
         .map_err(|e| e.to_string())?;
 
     let layout = compute_layout(&evaluator.world);

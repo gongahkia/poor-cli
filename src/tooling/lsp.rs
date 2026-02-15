@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Minimal LSP server implementation (Task 55)
 /// Handles stdio JSON-RPC for textDocument/completion, diagnostics, hover
@@ -65,7 +65,8 @@ pub fn get_completions(prefix: &str) -> Vec<CompletionItem> {
         ("faction", 21, "Entity type"),
     ];
 
-    keywords.iter()
+    keywords
+        .iter()
         .filter(|(name, _, _)| name.starts_with(prefix))
         .map(|(name, kind, detail)| CompletionItem {
             label: name.to_string(),
@@ -85,8 +86,14 @@ pub fn get_diagnostics(source: &str, file: &str) -> Vec<Diagnostic> {
             if let Err(e) = evaluator.eval_program(&program) {
                 diagnostics.push(Diagnostic {
                     range: Range {
-                        start: Position { line: 0, character: 0 },
-                        end: Position { line: 0, character: 0 },
+                        start: Position {
+                            line: 0,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            character: 0,
+                        },
                     },
                     severity: 1, // Error
                     message: e.message,
@@ -97,8 +104,14 @@ pub fn get_diagnostics(source: &str, file: &str) -> Vec<Diagnostic> {
             for (i, e) in errors.iter().enumerate() {
                 diagnostics.push(Diagnostic {
                     range: Range {
-                        start: Position { line: i as u32, character: 0 },
-                        end: Position { line: i as u32, character: 0 },
+                        start: Position {
+                            line: i as u32,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: i as u32,
+                            character: 0,
+                        },
                     },
                     severity: 1,
                     message: e.to_string(),

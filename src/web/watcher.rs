@@ -1,6 +1,6 @@
-use notify::{Watcher, RecursiveMode, Event, EventKind};
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 /// File watcher for live reload (Task 18)
 /// The on_change callback receives Ok(()) on success or Err(message) on file read failure.
@@ -11,8 +11,8 @@ where
     let (tx, rx) = mpsc::channel();
     let watched_path = path.to_path_buf();
 
-    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-        match res {
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
             Ok(event) => match event.kind {
                 EventKind::Modify(_) | EventKind::Create(_) => {
                     let _ = tx.send(Ok(()));
@@ -22,8 +22,7 @@ where
             Err(e) => {
                 let _ = tx.send(Err(format!("watcher error: {}", e)));
             }
-        }
-    })?;
+        })?;
 
     watcher.watch(path, RecursiveMode::NonRecursive)?;
 

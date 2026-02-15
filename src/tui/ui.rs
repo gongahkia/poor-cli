@@ -1,8 +1,8 @@
-use ratatui::prelude::*;
-use ratatui::widgets::*;
-use ratatui::style::{Color, Style, Modifier};
-use crate::model::types::Id;
 use super::app::{App, InputMode};
+use crate::model::types::Id;
+use ratatui::prelude::*;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::*;
 
 /// Render the TUI (Tasks 49-53)
 pub fn draw(frame: &mut ratatui::Frame, app: &App) {
@@ -109,16 +109,22 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
             let label = format!("─── {} ({:?}) ", tl.name, tl.kind);
             let suffix = if tl.is_loop {
                 format!(" ↻×{}", tl.loop_count.unwrap_or(1))
-            } else { String::new() };
+            } else {
+                String::new()
+            };
             lines.push(Line::from(Span::styled(
                 format!("{}{}", label, suffix),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )));
 
             // Loop boundary visualization (Task 6)
             if tl.is_loop {
-                let x_start = ((tl.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
-                let x_end = ((tl.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
+                let x_start =
+                    ((tl.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
+                let x_end = ((tl.x_end - vp.time_start) / time_range * inner_width).min(inner_width)
+                    as usize;
                 let box_width = x_end.saturating_sub(x_start).max(2);
                 let mut top = vec![Span::raw(" ".repeat(x_start.min(inner_width as usize)))];
                 top.push(Span::styled(
@@ -132,22 +138,37 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
     // Entity swim lanes as horizontal bars
     for ent in &app.layout.entities {
-        if ent.lane < vp.lane_start || ent.lane >= vp.lane_end { continue; }
-        if lines.len() >= inner_height { break; }
-        if !app.entity_visible_at_cursor(ent) { continue; }
+        if ent.lane < vp.lane_start || ent.lane >= vp.lane_end {
+            continue;
+        }
+        if lines.len() >= inner_height {
+            break;
+        }
+        if !app.entity_visible_at_cursor(ent) {
+            continue;
+        }
 
         let x_start = ((ent.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
-        let x_end = ((ent.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
+        let x_end =
+            ((ent.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
         let bar_len = x_end.saturating_sub(x_start).max(1);
 
         let is_selected = app.selected_entity == Some(ent.entity_id);
         let is_connected = app.selected_entity.map_or(true, |sel_id| {
             app.layout.edges.iter().any(|e| {
-                let src = app.layout.entities.get(e.source_lane).map(|en| en.entity_id);
-                let tgt = app.layout.entities.get(e.target_lane).map(|en| en.entity_id);
+                let src = app
+                    .layout
+                    .entities
+                    .get(e.source_lane)
+                    .map(|en| en.entity_id);
+                let tgt = app
+                    .layout
+                    .entities
+                    .get(e.target_lane)
+                    .map(|en| en.entity_id);
                 (src == Some(sel_id) && tgt == Some(ent.entity_id))
-                || (tgt == Some(sel_id) && src == Some(ent.entity_id))
-                || sel_id == ent.entity_id
+                    || (tgt == Some(sel_id) && src == Some(ent.entity_id))
+                    || sel_id == ent.entity_id
             })
         });
 
@@ -165,8 +186,17 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         let label = truncate_label(&ent.name, 24);
         spans.push(Span::styled(
             format!(" {}", label),
-            Style::default().fg(if is_selected { Color::Yellow } else { Color::White })
-                .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }),
+            Style::default()
+                .fg(if is_selected {
+                    Color::Yellow
+                } else {
+                    Color::White
+                })
+                .add_modifier(if is_selected {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ));
         lines.push(Line::from(spans));
 
@@ -175,7 +205,8 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
             for edge in &app.layout.edges {
                 if edge.source_lane == ent.lane || edge.target_lane == ent.lane {
                     let arrow = if edge.directed { "→" } else { "─" };
-                    let edge_x = ((edge.source_x - vp.time_start) / time_range * inner_width).max(0.0) as usize;
+                    let edge_x = ((edge.source_x - vp.time_start) / time_range * inner_width)
+                        .max(0.0) as usize;
                     let mut espans = vec![Span::raw(" ".repeat(edge_x.min(inner_width as usize)))];
                     espans.push(Span::styled(
                         format!("{} {}", arrow, edge.label),
@@ -191,8 +222,10 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     for tl in &app.layout.timelines {
         if tl.is_loop && tl.lane_end >= vp.lane_start && tl.lane_end < vp.lane_end {
             if lines.len() < inner_height {
-                let x_start = ((tl.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
-                let x_end = ((tl.x_end - vp.time_start) / time_range * inner_width).min(inner_width) as usize;
+                let x_start =
+                    ((tl.x_start - vp.time_start) / time_range * inner_width).max(0.0) as usize;
+                let x_end = ((tl.x_end - vp.time_start) / time_range * inner_width).min(inner_width)
+                    as usize;
                 let box_width = x_end.saturating_sub(x_start).max(2);
                 let mut bottom = vec![Span::raw(" ".repeat(x_start.min(inner_width as usize)))];
                 bottom.push(Span::styled(
@@ -206,7 +239,9 @@ fn draw_timeline_view(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
     // Branch/merge connectors
     for conn in &app.layout.connectors {
-        if lines.len() >= inner_height { break; }
+        if lines.len() >= inner_height {
+            break;
+        }
         let x = ((conn.from_x - vp.time_start) / time_range * inner_width).max(0.0) as usize;
         let symbol = match conn.kind {
             crate::layout::engine::ConnectorKind::Fork => "╱ fork",
@@ -233,54 +268,91 @@ fn draw_entity_detail(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     if let Some(ent) = app.layout.entities.iter().find(|e| e.entity_id == sel_id) {
         lines.push(Line::from(Span::styled(
             &ent.name,
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::from(format!("Type: {}", ent.entity_type)));
         lines.push(Line::from(format!("Lane: {}", ent.lane)));
-        lines.push(Line::from(format!("Time: {:.0}..{:.0}", ent.x_start, ent.x_end)));
+        lines.push(Line::from(format!(
+            "Time: {:.0}..{:.0}",
+            ent.x_start, ent.x_end
+        )));
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled("Relationships:", Style::default().add_modifier(Modifier::BOLD))));
+        lines.push(Line::from(Span::styled(
+            "Relationships:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
 
         for edge in &app.layout.edges {
             let is_source = edge.source_lane == ent.lane;
             let is_target = edge.target_lane == ent.lane;
             if is_source || is_target {
-                let other_lane = if is_source { edge.target_lane } else { edge.source_lane };
-                let other_name = app.layout.entities.iter()
+                let other_lane = if is_source {
+                    edge.target_lane
+                } else {
+                    edge.source_lane
+                };
+                let other_name = app
+                    .layout
+                    .entities
+                    .iter()
                     .find(|e| e.lane == other_lane)
                     .map(|e| e.name.as_str())
                     .unwrap_or("?");
                 let arrow = if edge.directed {
-                    if is_source { "→" } else { "←" }
-                } else { "─" };
-                lines.push(Line::from(format!("  {} {} {}", arrow, edge.label, other_name)));
+                    if is_source {
+                        "→"
+                    } else {
+                        "←"
+                    }
+                } else {
+                    "─"
+                };
+                lines.push(Line::from(format!(
+                    "  {} {} {}",
+                    arrow, edge.label, other_name
+                )));
             }
         }
     }
 
-    let block = Block::default().title("Entity Detail").borders(Borders::ALL);
+    let block = Block::default()
+        .title("Entity Detail")
+        .borders(Borders::ALL);
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
 }
 
 fn draw_status_bar(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let vp = &app.layout.viewport;
-    let layer = app.layer_names.get(app.active_layer).map(|s| s.as_str()).unwrap_or("All");
+    let layer = app
+        .layer_names
+        .get(app.active_layer)
+        .map(|s| s.as_str())
+        .unwrap_or("All");
     let status = format!(
         " {} | Time: {:.0}..{:.0} | Cursor: {:.0} | Zoom: {:.1}x | Layer: {} | E:{} R:{} | {} ",
-        app.file_path, vp.time_start, vp.time_end, app.time_cursor,
-        vp.scale, layer,
-        app.layout.entities.len(), app.layout.edges.len(),
+        app.file_path,
+        vp.time_start,
+        vp.time_end,
+        app.time_cursor,
+        vp.scale,
+        layer,
+        app.layout.entities.len(),
+        app.layout.edges.len(),
         app.status_message,
     );
-    let bar = Paragraph::new(status)
-        .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    let bar = Paragraph::new(status).style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_widget(bar, area);
 }
 
 fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
     let help_text = vec![
-        Line::from(Span::styled("Keybindings", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Keybindings",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("Navigation:"),
         Line::from("  h/←  Pan left       l/→  Pan right"),
@@ -304,14 +376,17 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
         Line::from("  q    Quit"),
     ];
 
-    let block = Block::default().title("Help").borders(Borders::ALL)
+    let block = Block::default()
+        .title("Help")
+        .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     let w = area.width.min(52);
     let h = area.height.min(24);
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
-        w, h,
+        w,
+        h,
     );
     frame.render_widget(Clear, popup);
     let paragraph = Paragraph::new(help_text).block(block);
@@ -329,7 +404,10 @@ fn draw_search_bar(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 /// Branch navigation popup (Task 58)
 fn draw_branch_nav(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let mut lines = vec![
-        Line::from(Span::styled("Select Timeline Branch", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Select Timeline Branch",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
     ];
     for (i, tl) in app.layout.timelines.iter().enumerate() {
@@ -343,9 +421,12 @@ fn draw_branch_nav(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
-        w, h,
+        w,
+        h,
     );
-    let block = Block::default().title("Branches").borders(Borders::ALL)
+    let block = Block::default()
+        .title("Branches")
+        .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
@@ -354,7 +435,10 @@ fn draw_branch_nav(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 /// Filter panel (Task 55)
 fn draw_filter_panel(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let mut lines = vec![
-        Line::from(Span::styled("Filters", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Filters",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("Entity Types:"),
     ];
@@ -374,9 +458,12 @@ fn draw_filter_panel(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
-        w, h,
+        w,
+        h,
     );
-    let block = Block::default().title("Filter").borders(Borders::ALL)
+    let block = Block::default()
+        .title("Filter")
+        .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
@@ -385,7 +472,10 @@ fn draw_filter_panel(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 /// Compare select popup (Task 50)
 fn draw_compare_select(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let mut lines = vec![
-        Line::from(Span::styled("Select Timeline to Compare", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Select Timeline to Compare",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
     ];
     for (i, tl) in app.layout.timelines.iter().enumerate() {
@@ -399,9 +489,12 @@ fn draw_compare_select(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
-        w, h,
+        w,
+        h,
     );
-    let block = Block::default().title("Compare").borders(Borders::ALL)
+    let block = Block::default()
+        .title("Compare")
+        .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
@@ -410,18 +503,26 @@ fn draw_compare_select(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 /// Command palette (Task 52)
 fn draw_command_palette(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let query = &app.palette_query.to_lowercase();
-    let filtered: Vec<_> = app.available_commands.iter()
+    let filtered: Vec<_> = app
+        .available_commands
+        .iter()
         .filter(|(name, _)| query.is_empty() || name.contains(query.as_str()))
         .collect();
 
     let mut lines = vec![
-        Line::from(Span::styled("Command Palette", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Command Palette",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from(format!("> {}", app.palette_query)),
         Line::from(""),
     ];
     for (name, desc) in &filtered {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:<16}", name), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("  {:<16}", name),
+                Style::default().fg(Color::Yellow),
+            ),
             Span::raw(*desc),
         ]));
     }
@@ -434,9 +535,12 @@ fn draw_command_palette(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
-        w, h,
+        w,
+        h,
     );
-    let block = Block::default().title("Commands").borders(Borders::ALL)
+    let block = Block::default()
+        .title("Commands")
+        .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
@@ -450,59 +554,105 @@ fn draw_compare_diff(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     };
 
     // Use first timeline as "left", selected compare_timeline_idx as "right"
-    let focused_idx = app.layout.timelines.iter().position(|t| {
-        app.layout.viewport.time_start <= t.x_start && t.x_end <= app.layout.viewport.time_end
-    }).unwrap_or(0);
+    let focused_idx = app
+        .layout
+        .timelines
+        .iter()
+        .position(|t| {
+            app.layout.viewport.time_start <= t.x_start && t.x_end <= app.layout.viewport.time_end
+        })
+        .unwrap_or(0);
 
-    if focused_idx == compare_idx { return; }
+    if focused_idx == compare_idx {
+        return;
+    }
 
     let left_tl = &app.layout.timelines[focused_idx];
     let right_tl = &app.layout.timelines[compare_idx];
 
-    let left_entities: Vec<&crate::layout::engine::LayoutEntity> = app.layout.entities.iter()
+    let left_entities: Vec<&crate::layout::engine::LayoutEntity> = app
+        .layout
+        .entities
+        .iter()
         .filter(|e| e.timeline_id == left_tl.timeline_id)
         .collect();
-    let right_entities: Vec<&crate::layout::engine::LayoutEntity> = app.layout.entities.iter()
+    let right_entities: Vec<&crate::layout::engine::LayoutEntity> = app
+        .layout
+        .entities
+        .iter()
         .filter(|e| e.timeline_id == right_tl.timeline_id)
         .collect();
 
-    let left_names: std::collections::HashSet<&str> = left_entities.iter().map(|e| e.name.as_str()).collect();
-    let right_names: std::collections::HashSet<&str> = right_entities.iter().map(|e| e.name.as_str()).collect();
+    let left_names: std::collections::HashSet<&str> =
+        left_entities.iter().map(|e| e.name.as_str()).collect();
+    let right_names: std::collections::HashSet<&str> =
+        right_entities.iter().map(|e| e.name.as_str()).collect();
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(vec![
-        Span::styled(format!(" {} ", left_tl.name), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {} ", left_tl.name),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" vs "),
-        Span::styled(format!(" {} ", right_tl.name), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {} ", right_tl.name),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]));
     lines.push(Line::from(""));
 
-    lines.push(Line::from(Span::styled("Entities:", Style::default().add_modifier(Modifier::BOLD))));
+    lines.push(Line::from(Span::styled(
+        "Entities:",
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
 
     // Added (in right but not left)
     for name in &right_names {
         if !left_names.contains(name) {
-            lines.push(Line::from(Span::styled(format!("  + {}", name), Style::default().fg(Color::Green))));
+            lines.push(Line::from(Span::styled(
+                format!("  + {}", name),
+                Style::default().fg(Color::Green),
+            )));
         }
     }
     // Removed (in left but not right)
     for name in &left_names {
         if !right_names.contains(name) {
-            lines.push(Line::from(Span::styled(format!("  - {}", name), Style::default().fg(Color::Red))));
+            lines.push(Line::from(Span::styled(
+                format!("  - {}", name),
+                Style::default().fg(Color::Red),
+            )));
         }
     }
     // Shared (in both) - check for type/time changes
     for name in &left_names {
         if right_names.contains(name) {
-            let le = left_entities.iter().find(|e| e.name.as_str() == *name).unwrap();
-            let re = right_entities.iter().find(|e| e.name.as_str() == *name).unwrap();
+            let le = left_entities
+                .iter()
+                .find(|e| e.name.as_str() == *name)
+                .unwrap();
+            let re = right_entities
+                .iter()
+                .find(|e| e.name.as_str() == *name)
+                .unwrap();
             if le.entity_type != re.entity_type
                 || (le.x_start - re.x_start).abs() > 0.5
                 || (le.x_end - re.x_end).abs() > 0.5
             {
-                lines.push(Line::from(Span::styled(format!("  ~ {} (changed)", name), Style::default().fg(Color::Yellow))));
+                lines.push(Line::from(Span::styled(
+                    format!("  ~ {} (changed)", name),
+                    Style::default().fg(Color::Yellow),
+                )));
             } else {
-                lines.push(Line::from(Span::styled(format!("    {}", name), Style::default().fg(Color::DarkGray))));
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", name),
+                    Style::default().fg(Color::DarkGray),
+                )));
             }
         }
     }
@@ -516,16 +666,21 @@ fn draw_compare_diff(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let popup = Rect::new(
         area.x + (area.width - w) / 2,
         area.y + (area.height - h) / 2,
-        w, h,
+        w,
+        h,
     );
-    let block = Block::default().title("Diff").borders(Borders::ALL)
+    let block = Block::default()
+        .title("Diff")
+        .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black));
     frame.render_widget(Clear, popup);
     frame.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
 fn truncate_label(name: &str, max_len: usize) -> String {
-    if name.len() <= max_len { return name.to_string(); }
+    if name.len() <= max_len {
+        return name.to_string();
+    }
     let truncated = &name[..max_len.saturating_sub(3)];
     if let Some(last_space) = truncated.rfind(' ') {
         format!("{}...", &truncated[..last_space])
@@ -534,7 +689,9 @@ fn truncate_label(name: &str, max_len: usize) -> String {
     }
 }
 fn entity_color(entity_type: &str, connected: bool) -> Color {
-    if !connected { return Color::DarkGray; }
+    if !connected {
+        return Color::DarkGray;
+    }
     match entity_type {
         "character" => Color::Blue,
         "event" => Color::Red,

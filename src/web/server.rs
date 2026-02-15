@@ -1,7 +1,7 @@
-use axum::{Router, routing::get, response::Html, extract::State};
+use axum::{extract::State, response::Html, routing::get, Router};
 use std::sync::{Arc, RwLock};
-use tower_http::cors::CorsLayer;
 use tokio::sync::broadcast;
+use tower_http::cors::CorsLayer;
 
 /// Shared state for web server
 pub struct AppState {
@@ -10,7 +10,10 @@ pub struct AppState {
 }
 
 /// Start the web server (Tasks 17, 20-25)
-pub async fn start_server(port: u16, initial_svg: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_server(
+    port: u16,
+    initial_svg: String,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (tx, _) = broadcast::channel(16);
     let state = Arc::new(AppState {
         svg_content: RwLock::new(initial_svg),
@@ -54,7 +57,11 @@ async fn ws_handler(
 async fn handle_ws(mut socket: axum::extract::ws::WebSocket, state: Arc<AppState>) {
     let mut rx = state.tx.subscribe();
     while let Ok(msg) = rx.recv().await {
-        if socket.send(axum::extract::ws::Message::Text(msg.into())).await.is_err() {
+        if socket
+            .send(axum::extract::ws::Message::Text(msg.into()))
+            .await
+            .is_err()
+        {
             break;
         }
     }
@@ -90,7 +97,8 @@ async fn shutdown_signal() {
 }
 
 fn generate_viewer_html(svg: &str) -> String {
-    format!(r##"<!DOCTYPE html>
+    format!(
+        r##"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -228,5 +236,6 @@ function populateFilters(entityTypes, timelineNames) {{
 }}
 </script>
 </body>
-</html>"##)
+</html>"##
+    )
 }

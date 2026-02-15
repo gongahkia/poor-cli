@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use chrono::NaiveDate;
+use std::collections::HashMap;
 
+use super::builtins;
+use super::env::Environment;
 use crate::lang::ast::*;
 use crate::model::types::*;
 use crate::model::world::World;
-use super::env::Environment;
-use super::builtins;
 
 const MAX_STACK_DEPTH: usize = 256;
 
@@ -77,7 +77,11 @@ impl Evaluator {
     }
 
     /// Timeline construction (Task 32)
-    fn eval_timeline_decl(&mut self, decl: &TimelineDecl, span: &Span) -> Result<Value, RuntimeError> {
+    fn eval_timeline_decl(
+        &mut self,
+        decl: &TimelineDecl,
+        span: &Span,
+    ) -> Result<Value, RuntimeError> {
         let id = self.world.next_id();
         let kind = match decl.kind {
             TimelineKind::Linear => TimelineKindModel::Linear,
@@ -89,29 +93,46 @@ impl Evaluator {
         let start = if let Some(ref e) = decl.start {
             let val = self.eval_expr(e)?;
             Some(self.value_to_timepoint(&val)?)
-        } else { None };
+        } else {
+            None
+        };
         let end = if let Some(ref e) = decl.end {
             let val = self.eval_expr(e)?;
             Some(self.value_to_timepoint(&val)?)
-        } else { None };
+        } else {
+            None
+        };
 
-        let parent_id = decl.parent.as_ref().and_then(|name| {
-            self.world.timeline_by_name(name).map(|t| t.id)
-        });
+        let parent_id = decl
+            .parent
+            .as_ref()
+            .and_then(|name| self.world.timeline_by_name(name).map(|t| t.id));
 
         let fork_point = if let Some((ref tl_name, ref at)) = decl.fork_from {
-            let tid = self.world.timeline_by_name(tl_name).map(|t| t.id).unwrap_or(0);
+            let tid = self
+                .world
+                .timeline_by_name(tl_name)
+                .map(|t| t.id)
+                .unwrap_or(0);
             let val = self.eval_expr(at)?;
             let tp = self.value_to_timepoint(&val)?;
             Some((tid, tp))
-        } else { None };
+        } else {
+            None
+        };
 
         let merge_point = if let Some((ref tl_name, ref at)) = decl.merge_into {
-            let tid = self.world.timeline_by_name(tl_name).map(|t| t.id).unwrap_or(0);
+            let tid = self
+                .world
+                .timeline_by_name(tl_name)
+                .map(|t| t.id)
+                .unwrap_or(0);
             let val = self.eval_expr(at)?;
             let tp = self.value_to_timepoint(&val)?;
             Some((tid, tp))
-        } else { None };
+        } else {
+            None
+        };
 
         let loop_config = if let Some(ref count_expr) = decl.loop_count {
             let count = match self.eval_expr(count_expr)? {
@@ -123,12 +144,22 @@ impl Evaluator {
                 entry_time: start.clone().unwrap_or(TimePoint::Abstract(0)),
                 exit_time: end.clone().unwrap_or(TimePoint::Abstract(count)),
             })
-        } else { None };
+        } else {
+            None
+        };
 
         let timeline = Timeline {
-            id, name: decl.name.clone(), kind, start, end,
-            parent_id, fork_point, merge_point, loop_config,
-            children: Vec::new(), event_markers: Vec::new(),
+            id,
+            name: decl.name.clone(),
+            kind,
+            start,
+            end,
+            parent_id,
+            fork_point,
+            merge_point,
+            loop_config,
+            children: Vec::new(),
+            event_markers: Vec::new(),
         };
 
         self.world.add_timeline(timeline);
@@ -147,12 +178,17 @@ impl Evaluator {
     /// Entity instantiation (Task 33)
     fn eval_entity_decl(&mut self, decl: &EntityDecl, span: &Span) -> Result<Value, RuntimeError> {
         let id = self.world.next_id();
-        let type_id = decl.type_ref.clone().unwrap_or_else(|| "entity".to_string());
+        let type_id = decl
+            .type_ref
+            .clone()
+            .unwrap_or_else(|| "entity".to_string());
 
         // Task 47: warn if type_ref not found in type registry (soft validation)
         if type_id != "entity" {
             let builtins = ["entity", "event", "person", "place", "object", "group"];
-            if !builtins.contains(&type_id.as_str()) && self.world.type_registry.get(&type_id).is_none() {
+            if !builtins.contains(&type_id.as_str())
+                && self.world.type_registry.get(&type_id).is_none()
+            {
                 // Only warn — the DSL allows ad-hoc type labels
                 if let Some(ref parent_span) = Some(span.clone()) {
                     let _ = parent_span; // suppress unused warning
@@ -170,13 +206,18 @@ impl Evaluator {
         if let Some(typedef) = self.world.type_registry.get(&type_id) {
             let typedef = typedef.clone(); // clone to avoid borrow conflict
             for field_def in &typedef.fields {
-                if field_def.name.starts_with('@') { continue; }
+                if field_def.name.starts_with('@') {
+                    continue;
+                }
                 if let Some(val) = attributes.get(&field_def.name) {
                     if !value_matches_type_name(val, &field_def.type_name) {
                         return Err(RuntimeError {
                             message: format!(
                                 "field '{}' on entity '{}' expected {} but got {}",
-                                field_def.name, decl.name, field_def.type_name, value_type_name(val)
+                                field_def.name,
+                                decl.name,
+                                field_def.type_name,
+                                value_type_name(val)
                             ),
                             span: Some(span.clone()),
                         });
@@ -195,17 +236,31 @@ impl Evaluator {
 
         let mut timeline_appearances = Vec::new();
         for (tl_name, start_expr, end_expr) in &decl.appears_on {
-            let tid = self.world.timeline_by_name(tl_name).map(|t| t.id).unwrap_or(0);
+            let tid = self
+                .world
+                .timeline_by_name(tl_name)
+                .map(|t| t.id)
+                .unwrap_or(0);
             let sv = self.eval_expr(start_expr)?;
             let ev = self.eval_expr(end_expr)?;
             let start = self.value_to_timepoint(&sv)?;
             let end = self.value_to_timepoint(&ev)?;
-            timeline_appearances.push((tid, TimeRange { start, end, inclusive_end: true }));
+            timeline_appearances.push((
+                tid,
+                TimeRange {
+                    start,
+                    end,
+                    inclusive_end: true,
+                },
+            ));
         }
 
         let entity = Entity {
-            id, name: decl.name.clone(), type_id,
-            attributes, timeline_appearances,
+            id,
+            name: decl.name.clone(),
+            type_id,
+            attributes,
+            timeline_appearances,
             lifecycle_events: Vec::new(),
         };
 
@@ -216,12 +271,14 @@ impl Evaluator {
 
     /// Relationship binding (Task 34)
     fn eval_rel_decl(&mut self, decl: &RelDecl, span: &Span) -> Result<Value, RuntimeError> {
-        let source_id = self.resolve_entity_id(&decl.source)
+        let source_id = self
+            .resolve_entity_id(&decl.source)
             .ok_or_else(|| RuntimeError {
                 message: format!("undefined entity: {}", decl.source),
                 span: Some(span.clone()),
             })?;
-        let target_id = self.resolve_entity_id(&decl.target)
+        let target_id = self
+            .resolve_entity_id(&decl.target)
             .ok_or_else(|| RuntimeError {
                 message: format!("undefined entity: {}", decl.target),
                 span: Some(span.clone()),
@@ -232,8 +289,14 @@ impl Evaluator {
             let ev = self.eval_expr(e)?;
             let start = self.value_to_timepoint(&sv)?;
             let end = self.value_to_timepoint(&ev)?;
-            Some(TimeRange { start, end, inclusive_end: true })
-        } else { None };
+            Some(TimeRange {
+                start,
+                end,
+                inclusive_end: true,
+            })
+        } else {
+            None
+        };
 
         let id = self.world.next_id();
         let rel = Relationship {
@@ -260,11 +323,15 @@ impl Evaluator {
         let typedef = TypeDef {
             name: decl.name.clone(),
             parent: decl.parent.clone(),
-            fields: decl.fields.iter().map(|f| TypeFieldDef {
-                name: f.name.clone(),
-                type_name: f.type_ann.clone(),
-                optional: f.optional,
-            }).collect(),
+            fields: decl
+                .fields
+                .iter()
+                .map(|f| TypeFieldDef {
+                    name: f.name.clone(),
+                    type_name: f.type_ann.clone(),
+                    optional: f.optional,
+                })
+                .collect(),
             meta,
         };
         self.world.add_type(typedef);
@@ -274,7 +341,11 @@ impl Evaluator {
     fn eval_fn_decl(&mut self, decl: &FnDecl) -> Result<Value, RuntimeError> {
         let fndef = FnDef {
             name: decl.name.clone(),
-            params: decl.params.iter().map(|p| (p.name.clone(), p.type_ann.clone())).collect(),
+            params: decl
+                .params
+                .iter()
+                .map(|p| (p.name.clone(), p.type_ann.clone()))
+                .collect(),
             return_type: decl.return_type.clone(),
             body: decl.body.clone(),
         };
@@ -310,7 +381,10 @@ impl Evaluator {
     fn eval_match(&mut self, match_expr: &MatchExpr) -> Result<Value, RuntimeError> {
         let subject = self.eval_expr(&match_expr.subject)?;
         let mut matched = false;
-        let has_wildcard = match_expr.arms.iter().any(|a| matches!(a.pattern.node, Pattern::Wildcard));
+        let has_wildcard = match_expr
+            .arms
+            .iter()
+            .any(|a| matches!(a.pattern.node, Pattern::Wildcard));
         for arm in &match_expr.arms {
             if self.pattern_matches(&arm.pattern.node, &subject) {
                 self.env.push_scope();
@@ -324,7 +398,10 @@ impl Evaluator {
             }
         }
         if !matched && !has_wildcard {
-            eprintln!("warning: non-exhaustive match, no arm matched value {:?}", subject);
+            eprintln!(
+                "warning: non-exhaustive match, no arm matched value {:?}",
+                subject
+            );
         }
         Ok(Value::Null)
     }
@@ -354,7 +431,9 @@ impl Evaluator {
         let mut iterations = 0;
         loop {
             let cond = self.eval_expr(&wl.condition)?;
-            if !self.is_truthy(&cond) { break; }
+            if !self.is_truthy(&cond) {
+                break;
+            }
             last = self.eval_block(&wl.body)?;
             iterations += 1;
             if iterations > 10000 {
@@ -396,12 +475,10 @@ impl Evaluator {
     fn eval_expr(&mut self, expr: &Spanned<Expr>) -> Result<Value, RuntimeError> {
         match &expr.node {
             Expr::Literal(lit) => self.eval_literal(lit),
-            Expr::Ident(name) => {
-                self.env.lookup(name).cloned().ok_or_else(|| RuntimeError {
-                    message: format!("undefined variable: {}", name),
-                    span: Some(expr.span.clone()),
-                })
-            }
+            Expr::Ident(name) => self.env.lookup(name).cloned().ok_or_else(|| RuntimeError {
+                message: format!("undefined variable: {}", name),
+                span: Some(expr.span.clone()),
+            }),
             Expr::BinOp { op, left, right } => {
                 let lv = self.eval_expr(left)?;
                 let rv = self.eval_expr(right)?;
@@ -438,7 +515,7 @@ impl Evaluator {
                     (Value::Int(a), Value::Int(b)) => {
                         Ok(Value::List((*a..*b).map(Value::Int).collect()))
                     }
-                    _ => Ok(Value::List(vec![s, e]))
+                    _ => Ok(Value::List(vec![s, e])),
                 }
             }
             Expr::If(if_expr) => self.eval_if(if_expr),
@@ -446,7 +523,11 @@ impl Evaluator {
             Expr::Block(block) => self.eval_block(block),
             Expr::Closure { params, body } => {
                 let captured = self.env.snapshot();
-                Ok(Value::Closure { params: params.clone(), body: Box::new((**body).clone()), captured })
+                Ok(Value::Closure {
+                    params: params.clone(),
+                    body: Box::new((**body).clone()),
+                    captured,
+                })
             }
             Expr::TimeAt { entity, time } => {
                 let _t = self.eval_expr(time)?;
@@ -460,7 +541,11 @@ impl Evaluator {
                         let i = *i as usize;
                         if i >= items.len() {
                             return Err(RuntimeError {
-                                message: format!("index {} out of bounds for list of length {}", i, items.len()),
+                                message: format!(
+                                    "index {} out of bounds for list of length {}",
+                                    i,
+                                    items.len()
+                                ),
                                 span: Some(expr.span.clone()),
                             });
                         }
@@ -470,12 +555,20 @@ impl Evaluator {
                         let i = *i as usize;
                         if i >= s.len() {
                             return Err(RuntimeError {
-                                message: format!("index {} out of bounds for string of length {}", i, s.len()),
+                                message: format!(
+                                    "index {} out of bounds for string of length {}",
+                                    i,
+                                    s.len()
+                                ),
                                 span: Some(expr.span.clone()),
                             });
                         }
                         let ch = s.chars().nth(i).ok_or_else(|| RuntimeError {
-                            message: format!("index {} out of bounds for string of length {}", i, s.chars().count()),
+                            message: format!(
+                                "index {} out of bounds for string of length {}",
+                                i,
+                                s.chars().count()
+                            ),
                             span: Some(expr.span.clone()),
                         })?;
                         Ok(Value::String(ch.to_string()))
@@ -483,7 +576,7 @@ impl Evaluator {
                     _ => Err(RuntimeError {
                         message: format!("cannot index {:?} with {:?}", obj, idx),
                         span: Some(expr.span.clone()),
-                    })
+                    }),
                 }
             }
         }
@@ -515,14 +608,23 @@ impl Evaluator {
         })
     }
 
-    fn eval_binop(&self, op: &BinOp, lv: &Value, rv: &Value, span: &Span) -> Result<Value, RuntimeError> {
+    fn eval_binop(
+        &self,
+        op: &BinOp,
+        lv: &Value,
+        rv: &Value,
+        span: &Span,
+    ) -> Result<Value, RuntimeError> {
         match (op, lv, rv) {
             (BinOp::Add, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
             (BinOp::Sub, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
             (BinOp::Mul, Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
             (BinOp::Div, Value::Int(a), Value::Int(b)) => {
                 if *b == 0 {
-                    Err(RuntimeError { message: "division by zero".into(), span: Some(span.clone()) })
+                    Err(RuntimeError {
+                        message: "division by zero".into(),
+                        span: Some(span.clone()),
+                    })
                 } else {
                     Ok(Value::Int(a / b))
                 }
@@ -531,7 +633,9 @@ impl Evaluator {
             (BinOp::Sub, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
             (BinOp::Mul, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
             (BinOp::Div, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
-            (BinOp::Add, Value::String(a), Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
+            (BinOp::Add, Value::String(a), Value::String(b)) => {
+                Ok(Value::String(format!("{}{}", a, b)))
+            }
             (BinOp::Eq, a, b) => Ok(Value::Bool(self.values_equal(a, b))),
             (BinOp::Neq, a, b) => Ok(Value::Bool(!self.values_equal(a, b))),
             (BinOp::Lt, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
@@ -540,13 +644,16 @@ impl Evaluator {
             (BinOp::Gte, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
             (BinOp::And, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a && *b)),
             (BinOp::Or, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(*a || *b)),
-            (BinOp::Add, Value::Date(tp), Value::Duration(d)) => { // date + duration
+            (BinOp::Add, Value::Date(tp), Value::Duration(d)) => {
+                // date + duration
                 Ok(Value::Date(tp.offset_days(*d)))
             }
-            (BinOp::Sub, Value::Date(tp), Value::Duration(d)) => { // date - duration
+            (BinOp::Sub, Value::Date(tp), Value::Duration(d)) => {
+                // date - duration
                 Ok(Value::Date(tp.offset_days(-d)))
             }
-            (BinOp::Sub, Value::Date(a), Value::Date(b)) => { // date - date = duration
+            (BinOp::Sub, Value::Date(a), Value::Date(b)) => {
+                // date - date = duration
                 Ok(Value::Duration(a.to_ordinal() - b.to_ordinal()))
             }
             (BinOp::Add, Value::Duration(a), Value::Duration(b)) => Ok(Value::Duration(a + b)),
@@ -555,7 +662,10 @@ impl Evaluator {
                 Ok(Value::List((*a..*b).map(Value::Int).collect()))
             }
             _ => Err(RuntimeError {
-                message: format!("type mismatch: cannot apply {:?} to {:?} and {:?}", op, lv, rv),
+                message: format!(
+                    "type mismatch: cannot apply {:?} to {:?} and {:?}",
+                    op, lv, rv
+                ),
                 span: Some(span.clone()),
             }),
         }
@@ -574,7 +684,12 @@ impl Evaluator {
     }
 
     /// Function call evaluation (Task 31)
-    fn eval_call(&mut self, callee: &Spanned<Expr>, args: &[Spanned<Expr>], span: &Span) -> Result<Value, RuntimeError> {
+    fn eval_call(
+        &mut self,
+        callee: &Spanned<Expr>,
+        args: &[Spanned<Expr>],
+        span: &Span,
+    ) -> Result<Value, RuntimeError> {
         let fn_name = match &callee.node {
             Expr::Ident(name) => name.clone(),
             Expr::FieldAccess { object, field } => {
@@ -611,12 +726,20 @@ impl Evaluator {
         }
         // Check if it's a closure variable
         if let Some(val) = self.env.lookup(&fn_name).cloned() {
-            if let Value::Closure { params, body, captured } = val {
+            if let Value::Closure {
+                params,
+                body,
+                captured,
+            } = val
+            {
                 let saved = self.env.snapshot();
                 self.env.with_snapshot(captured);
                 self.env.push_scope();
                 for (i, p) in params.iter().enumerate() {
-                    self.env.bind(p.name.clone(), arg_vals.get(i).cloned().unwrap_or(Value::Null));
+                    self.env.bind(
+                        p.name.clone(),
+                        arg_vals.get(i).cloned().unwrap_or(Value::Null),
+                    );
                 }
                 let result = self.eval_expr(&body)?;
                 self.env.pop_scope();
@@ -625,7 +748,11 @@ impl Evaluator {
             }
         }
         // Look up user-defined function
-        let fndef = self.world.fn_registry.get(&fn_name).cloned()
+        let fndef = self
+            .world
+            .fn_registry
+            .get(&fn_name)
+            .cloned()
             .ok_or_else(|| RuntimeError {
                 message: format!("undefined function: {}", fn_name),
                 span: Some(span.clone()),
@@ -640,7 +767,12 @@ impl Evaluator {
         Ok(result)
     }
 
-    fn eval_field_access(&self, obj: &Value, field: &str, span: &Span) -> Result<Value, RuntimeError> {
+    fn eval_field_access(
+        &self,
+        obj: &Value,
+        field: &str,
+        span: &Span,
+    ) -> Result<Value, RuntimeError> {
         match obj {
             Value::Entity(id) => {
                 if let Some(entity) = self.world.entity_by_id(*id) {
@@ -671,7 +803,10 @@ impl Evaluator {
                         }
                     }
                 } else {
-                    Err(RuntimeError { message: format!("entity not found: {}", id), span: Some(span.clone()) })
+                    Err(RuntimeError {
+                        message: format!("entity not found: {}", id),
+                        span: Some(span.clone()),
+                    })
                 }
             }
             Value::Timeline(id) => {
@@ -679,10 +814,16 @@ impl Evaluator {
                     match field {
                         "name" => Ok(Value::String(tl.name.clone())),
                         "kind" => Ok(Value::String(format!("{:?}", tl.kind))),
-                        _ => Err(RuntimeError { message: format!("unknown timeline field: {}", field), span: Some(span.clone()) })
+                        _ => Err(RuntimeError {
+                            message: format!("unknown timeline field: {}", field),
+                            span: Some(span.clone()),
+                        }),
                     }
                 } else {
-                    Err(RuntimeError { message: format!("timeline not found: {}", id), span: Some(span.clone()) })
+                    Err(RuntimeError {
+                        message: format!("timeline not found: {}", id),
+                        span: Some(span.clone()),
+                    })
                 }
             }
             _ => Err(RuntimeError {
@@ -695,15 +836,27 @@ impl Evaluator {
     // --- Temporal query evaluator (Task 36) ---
 
     pub fn entities_at_time(&self, point: &TimePoint) -> Vec<&Entity> {
-        self.world.entities.values().filter(|e| {
-            e.timeline_appearances.iter().any(|(_, tr)| tr.contains(point))
-        }).collect()
+        self.world
+            .entities
+            .values()
+            .filter(|e| {
+                e.timeline_appearances
+                    .iter()
+                    .any(|(_, tr)| tr.contains(point))
+            })
+            .collect()
     }
 
     pub fn relationships_at_time(&self, point: &TimePoint) -> Vec<&Relationship> {
-        self.world.relationships.iter().filter(|r| {
-            r.temporal_scope.as_ref().map_or(true, |ts| ts.contains(point))
-        }).collect()
+        self.world
+            .relationships
+            .iter()
+            .filter(|r| {
+                r.temporal_scope
+                    .as_ref()
+                    .map_or(true, |ts| ts.contains(point))
+            })
+            .collect()
     }
 
     // --- Helpers ---
@@ -719,8 +872,15 @@ impl Evaluator {
                 let mut depth = 1;
                 while let Some(&nc) = chars.peek() {
                     chars.next();
-                    if nc == '{' { depth += 1; }
-                    if nc == '}' { depth -= 1; if depth == 0 { break; } }
+                    if nc == '{' {
+                        depth += 1;
+                    }
+                    if nc == '}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
                     expr.push(nc);
                 }
                 // Try to resolve the expression
@@ -736,7 +896,9 @@ impl Evaluator {
 
     fn resolve_interpolation(&self, expr: &str) -> String {
         let parts: Vec<&str> = expr.split('.').collect();
-        if parts.is_empty() { return String::new(); }
+        if parts.is_empty() {
+            return String::new();
+        }
 
         // Try simple variable lookup
         if parts.len() == 1 {
@@ -810,7 +972,11 @@ impl Evaluator {
     fn value_to_timepoint(&self, val: &Value) -> Result<TimePoint, RuntimeError> {
         match val {
             Value::Date(tp) => {
-                if let TimePoint::Relative { anchor, offset_days } = tp {
+                if let TimePoint::Relative {
+                    anchor,
+                    offset_days,
+                } = tp
+                {
                     if let Some(ent) = self.world.entity_by_name(anchor) {
                         if let Some((_, tr)) = ent.timeline_appearances.first() {
                             let base = tr.start.to_ordinal();
@@ -826,10 +992,17 @@ impl Evaluator {
                 if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
                     Ok(TimePoint::Absolute(d))
                 } else {
-                    Ok(TimePoint::EraRef { timeline: String::new(), era: String::new(), point: s.clone() })
+                    Ok(TimePoint::EraRef {
+                        timeline: String::new(),
+                        era: String::new(),
+                        point: s.clone(),
+                    })
                 }
             }
-            _ => Err(RuntimeError { message: "cannot convert to time point".into(), span: None }),
+            _ => Err(RuntimeError {
+                message: "cannot convert to time point".into(),
+                span: None,
+            }),
         }
     }
 }
@@ -844,7 +1017,7 @@ fn value_matches_type_name(val: &Value, type_name: &str) -> bool {
         (Value::Bool(_), "bool") => true,
         (Value::Date(_), "date") => true,
         (Value::Entity(_), _) => true, // entity refs match any type-ref
-        (Value::Null, _) => true, // null acceptable for any type
+        (Value::Null, _) => true,      // null acceptable for any type
         _ => false,
     }
 }
@@ -868,10 +1041,14 @@ fn value_type_name(val: &Value) -> &'static str {
 
 /// Simple string similarity (Sørensen-Dice coefficient on bigrams)
 fn strsim_simple(a: &str, b: &str) -> f64 {
-    if a == b { return 1.0; }
+    if a == b {
+        return 1.0;
+    }
     let a = a.to_lowercase();
     let b = b.to_lowercase();
-    if a.len() < 2 || b.len() < 2 { return 0.0; }
+    if a.len() < 2 || b.len() < 2 {
+        return 0.0;
+    }
     let bigrams_a: Vec<_> = a.as_bytes().windows(2).collect();
     let bigrams_b: Vec<_> = b.as_bytes().windows(2).collect();
     let matches = bigrams_a.iter().filter(|bg| bigrams_b.contains(bg)).count();

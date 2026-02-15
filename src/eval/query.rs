@@ -1,5 +1,5 @@
-use crate::model::world::World;
 use crate::model::types::*;
+use crate::model::world::World;
 
 /// Query DSL subset (Task 60)
 /// Supports: select entities where type == "X" and appears_on("Y") and alive_at(N)
@@ -12,9 +12,7 @@ pub fn query_entities(world: &World, query: &str) -> Result<Vec<Id>, String> {
         return Err("query must start with 'select entities'".into());
     }
 
-    let rest = query.strip_prefix("select entities")
-        .unwrap_or("")
-        .trim();
+    let rest = query.strip_prefix("select entities").unwrap_or("").trim();
 
     // Split off "order by" clause if present
     let (where_part, order_clause) = if let Some(pos) = rest.to_lowercase().find("order by") {
@@ -29,7 +27,9 @@ pub fn query_entities(world: &World, query: &str) -> Result<Vec<Id>, String> {
         Vec::new()
     };
 
-    let mut results: Vec<&Entity> = world.entities.values()
+    let mut results: Vec<&Entity> = world
+        .entities
+        .values()
         .filter(|e| matches_all(e, &conditions, world))
         .collect();
 
@@ -59,13 +59,15 @@ fn parse_conditions(s: &str) -> Vec<Condition> {
 
     for part in parts {
         let part = part.trim();
-        if part.starts_with("type == ") || part.starts_with("type==\"") || part.starts_with("type == '") {
+        if part.starts_with("type == ")
+            || part.starts_with("type==\"")
+            || part.starts_with("type == '")
+        {
             let val = extract_quoted_value(part.split("==").nth(1).unwrap_or("").trim());
             conditions.push(Condition::TypeEquals(val));
         } else if part.starts_with("appears_on(") {
-            let val = extract_quoted_value(
-                part.trim_start_matches("appears_on(").trim_end_matches(')')
-            );
+            let val =
+                extract_quoted_value(part.trim_start_matches("appears_on(").trim_end_matches(')'));
             conditions.push(Condition::AppearsOn(val));
         } else if part.starts_with("alive_at(") {
             let val = part.trim_start_matches("alive_at(").trim_end_matches(')');
@@ -105,25 +107,48 @@ fn extract_quoted_value(s: &str) -> String {
 fn apply_ordering(results: &mut Vec<&Entity>, order_clause: &str) {
     let parts: Vec<&str> = order_clause.split_whitespace().collect();
     let field = parts.first().map(|s| *s).unwrap_or("name");
-    let descending = parts.get(1).map(|s| s.to_lowercase() == "desc").unwrap_or(false);
+    let descending = parts
+        .get(1)
+        .map(|s| s.to_lowercase() == "desc")
+        .unwrap_or(false);
 
     results.sort_by(|a, b| {
         let cmp = match field {
             "name" => a.name.cmp(&b.name),
             "type" => a.type_id.cmp(&b.type_id),
             "start" => {
-                let a_start = a.timeline_appearances.first().map(|(_, tr)| tr.start.to_ordinal()).unwrap_or(0);
-                let b_start = b.timeline_appearances.first().map(|(_, tr)| tr.start.to_ordinal()).unwrap_or(0);
+                let a_start = a
+                    .timeline_appearances
+                    .first()
+                    .map(|(_, tr)| tr.start.to_ordinal())
+                    .unwrap_or(0);
+                let b_start = b
+                    .timeline_appearances
+                    .first()
+                    .map(|(_, tr)| tr.start.to_ordinal())
+                    .unwrap_or(0);
                 a_start.cmp(&b_start)
             }
             "end" => {
-                let a_end = a.timeline_appearances.first().map(|(_, tr)| tr.end.to_ordinal()).unwrap_or(0);
-                let b_end = b.timeline_appearances.first().map(|(_, tr)| tr.end.to_ordinal()).unwrap_or(0);
+                let a_end = a
+                    .timeline_appearances
+                    .first()
+                    .map(|(_, tr)| tr.end.to_ordinal())
+                    .unwrap_or(0);
+                let b_end = b
+                    .timeline_appearances
+                    .first()
+                    .map(|(_, tr)| tr.end.to_ordinal())
+                    .unwrap_or(0);
                 a_end.cmp(&b_end)
             }
             _ => a.name.cmp(&b.name),
         };
-        if descending { cmp.reverse() } else { cmp }
+        if descending {
+            cmp.reverse()
+        } else {
+            cmp
+        }
     });
 }
 
@@ -131,13 +156,21 @@ fn matches_all(entity: &Entity, conditions: &[Condition], world: &World) -> bool
     for cond in conditions {
         match cond {
             Condition::TypeEquals(t) => {
-                if entity.type_id != *t { return false; }
+                if entity.type_id != *t {
+                    return false;
+                }
             }
             Condition::AppearsOn(tl_name) => {
                 let appears = entity.timeline_appearances.iter().any(|(tid, _)| {
-                    world.timelines.get(tid).map(|t| t.name == *tl_name).unwrap_or(false)
+                    world
+                        .timelines
+                        .get(tid)
+                        .map(|t| t.name == *tl_name)
+                        .unwrap_or(false)
                 });
-                if !appears { return false; }
+                if !appears {
+                    return false;
+                }
             }
             Condition::AliveAt(time) => {
                 let alive = entity.timeline_appearances.iter().any(|(_, tr)| {
@@ -145,13 +178,19 @@ fn matches_all(entity: &Entity, conditions: &[Condition], world: &World) -> bool
                     let e = tr.end.to_ordinal();
                     *time >= s && *time <= e
                 });
-                if !alive { return false; }
+                if !alive {
+                    return false;
+                }
             }
             Condition::NameContains(s) => {
-                if !entity.name.to_lowercase().contains(&s.to_lowercase()) { return false; }
+                if !entity.name.to_lowercase().contains(&s.to_lowercase()) {
+                    return false;
+                }
             }
             Condition::HasAttribute(attr) => {
-                if !entity.attributes.contains_key(attr) { return false; }
+                if !entity.attributes.contains_key(attr) {
+                    return false;
+                }
             }
             Condition::Overlaps(range_start, range_end) => {
                 let overlaps = entity.timeline_appearances.iter().any(|(_, tr)| {
@@ -159,7 +198,9 @@ fn matches_all(entity: &Entity, conditions: &[Condition], world: &World) -> bool
                     let e = tr.end.to_ordinal();
                     s < *range_end && e > *range_start
                 });
-                if !overlaps { return false; }
+                if !overlaps {
+                    return false;
+                }
             }
         }
     }

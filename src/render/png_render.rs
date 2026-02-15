@@ -15,13 +15,14 @@ pub fn render_png(svg_data: &str, output: &Path, dpi: u32) -> Result<(), String>
         return Err("SVG has zero dimensions".into());
     }
 
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
-        .ok_or("failed to create pixmap")?;
+    let mut pixmap =
+        resvg::tiny_skia::Pixmap::new(width, height).ok_or("failed to create pixmap")?;
 
     let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-    pixmap.save_png(output)
+    pixmap
+        .save_png(output)
         .map_err(|e| format!("PNG write error: {}", e))?;
 
     Ok(())

@@ -1,28 +1,28 @@
-mod lang;
-mod model;
-mod eval;
-mod layout;
-mod tui;
-mod render;
 mod cli;
-mod import;
 mod config;
-mod web;
-mod ext;
 mod embed;
+mod eval;
+mod ext;
+mod import;
+mod lang;
+mod layout;
+mod model;
+mod render;
 mod tooling;
+mod tui;
+mod web;
 
 use clap::Parser;
 use std::path::Path;
 
 use cli::commands::{Cli, Commands};
-use lang::reader::read_seuss_file;
-use lang::parser::parse_program;
+use config::loader::SeussConfig;
 use eval::evaluator::Evaluator;
+use lang::parser::parse_program;
+use lang::reader::read_seuss_file;
 use layout::engine::compute_layout;
 use render::svg_render::{render_svg, Theme};
 use tui::app::App;
-use config::loader::SeussConfig;
 
 fn main() {
     let cli = Cli::parse();
@@ -40,14 +40,46 @@ fn main() {
 
     match cli.command {
         Commands::Run { file } => run_tui(&file, cli.verbose),
-        Commands::Export { file, format, output, width, height, time_range, dpi } => {
-            let effective_dpi = if dpi == 150 { cfg.export.as_ref().and_then(|e| e.default_dpi).unwrap_or(dpi) } else { dpi };
-            let effective_width = width.or_else(|| cfg.export.as_ref().and_then(|e| e.default_width));
-            let effective_height = height.or_else(|| cfg.export.as_ref().and_then(|e| e.default_height));
+        Commands::Export {
+            file,
+            format,
+            output,
+            width,
+            height,
+            time_range,
+            dpi,
+        } => {
+            let effective_dpi = if dpi == 150 {
+                cfg.export
+                    .as_ref()
+                    .and_then(|e| e.default_dpi)
+                    .unwrap_or(dpi)
+            } else {
+                dpi
+            };
+            let effective_width =
+                width.or_else(|| cfg.export.as_ref().and_then(|e| e.default_width));
+            let effective_height =
+                height.or_else(|| cfg.export.as_ref().and_then(|e| e.default_height));
             let effective_format = if format == "svg" {
-                cfg.export.as_ref().and_then(|e| e.default_format.clone()).unwrap_or(format)
-            } else { format };
-            run_export(&file, &effective_format, output.as_deref(), effective_width, effective_height, time_range.as_deref(), effective_dpi, &svg_theme, cli.verbose);
+                cfg.export
+                    .as_ref()
+                    .and_then(|e| e.default_format.clone())
+                    .unwrap_or(format)
+            } else {
+                format
+            };
+            run_export(
+                &file,
+                &effective_format,
+                output.as_deref(),
+                effective_width,
+                effective_height,
+                time_range.as_deref(),
+                effective_dpi,
+                &svg_theme,
+                cli.verbose,
+            );
         }
         Commands::Check { file } => run_check(&file, cli.verbose),
         Commands::Import { file, from, output } => {
@@ -93,7 +125,9 @@ fn resolve_svg_theme(theme_flag: Option<&str>, cfg: &SeussConfig) -> Theme {
                     let tui = tc.to_tui_theme();
                     let mut theme = Theme::default();
                     for (k, v) in &tui.entity_colors {
-                        theme.entity_colors.insert(k.clone(), ratatui_color_to_hex(*v));
+                        theme
+                            .entity_colors
+                            .insert(k.clone(), ratatui_color_to_hex(*v));
                     }
                     return theme;
                 }
@@ -149,7 +183,8 @@ fn run_tui(file: &Path, verbose: bool) {
     }
 
     if verbose {
-        eprintln!("World: {} timelines, {} entities, {} relationships",
+        eprintln!(
+            "World: {} timelines, {} entities, {} relationships",
             evaluator.world.timelines.len(),
             evaluator.world.entities.len(),
             evaluator.world.relationships.len(),
@@ -168,9 +203,9 @@ fn run_tui(file: &Path, verbose: bool) {
 
 fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     use crossterm::{
-        event::{self, Event, EnableMouseCapture, DisableMouseCapture},
-        terminal::{enable_raw_mode, disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event},
         execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     };
     use ratatui::prelude::*;
     use std::time::Duration;
@@ -190,7 +225,9 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
             match event::read()? {
                 Event::Key(key) => {
                     app.handle_key(key);
-                    if app.should_quit { break; }
+                    if app.should_quit {
+                        break;
+                    }
                 }
                 Event::Mouse(mouse) => {
                     app.handle_mouse(mouse);
@@ -202,14 +239,32 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     Ok(())
 }
 
-fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, dpi: u32, theme: &Theme, verbose: bool) {
+fn run_export(
+    file: &Path,
+    format: &str,
+    output: Option<&Path>,
+    width: Option<u32>,
+    height: Option<u32>,
+    time_range: Option<&str>,
+    dpi: u32,
+    theme: &Theme,
+    verbose: bool,
+) {
     const SUPPORTED_FORMATS: &[&str] = &["svg", "png", "pdf"];
     if !SUPPORTED_FORMATS.contains(&format) {
-        eprintln!("Error: unsupported export format '{}'. Supported formats: {}", format, SUPPORTED_FORMATS.join(", "));
+        eprintln!(
+            "Error: unsupported export format '{}'. Supported formats: {}",
+            format,
+            SUPPORTED_FORMATS.join(", ")
+        );
         std::process::exit(1);
     }
 
@@ -287,7 +342,9 @@ fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u3
             let out_path = output.unwrap_or(Path::new("output.pdf"));
             let w = layout.total_width as f32 * 0.264; // px to mm approx
             let h = (layout.total_lanes as f32) * 10.0; // 10mm per lane
-            if let Err(e) = render::pdf_render::render_pdf(&svg, out_path, w.max(210.0), h.max(297.0)) {
+            if let Err(e) =
+                render::pdf_render::render_pdf(&svg, out_path, w.max(210.0), h.max(297.0))
+            {
                 eprintln!("PDF export error: {}", e);
                 std::process::exit(1);
             }
@@ -337,12 +394,25 @@ fn run_check(file: &Path, verbose: bool) {
         eprintln!("error: {}", error);
     }
     if !report.errors.is_empty() {
-        eprintln!("{} error(s), {} warning(s)", report.errors.len(), report.warnings.len());
+        eprintln!(
+            "{} error(s), {} warning(s)",
+            report.errors.len(),
+            report.warnings.len()
+        );
         std::process::exit(1);
     }
-    println!("✓ {} valid ({} timelines, {} entities, {} relationships{})",
-        file.display(), w.timelines.len(), w.entities.len(), w.relationships.len(),
-        if report.warnings.is_empty() { String::new() } else { format!(", {} warning(s)", report.warnings.len()) });
+    println!(
+        "✓ {} valid ({} timelines, {} entities, {} relationships{})",
+        file.display(),
+        w.timelines.len(),
+        w.entities.len(),
+        w.relationships.len(),
+        if report.warnings.is_empty() {
+            String::new()
+        } else {
+            format!(", {} warning(s)", report.warnings.len())
+        }
+    );
 }
 
 fn run_import(file: &Path, from: &str, output: Option<&Path>) {
@@ -356,22 +426,31 @@ fn run_import(file: &Path, from: &str, output: Option<&Path>) {
 
     let result = match from {
         "csv" | "csv-entities" => {
-            import::csv_import::import_entities_csv(&content)
-                .map_err(|errs| errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))
+            import::csv_import::import_entities_csv(&content).map_err(|errs| {
+                errs.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
         }
         "csv-relationships" => {
-            import::csv_import::import_relationships_csv(&content)
-                .map_err(|errs| errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))
+            import::csv_import::import_relationships_csv(&content).map_err(|errs| {
+                errs.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
         }
         "gedcom" => {
             let records = import::gedcom::parse_gedcom(&content);
             Ok(import::gedcom::gedcom_to_seuss(&records))
         }
-        "jsonld" => {
-            import::jsonld::import_jsonld(&content)
-        }
+        "jsonld" => import::jsonld::import_jsonld(&content),
         _ => {
-            eprintln!("Unsupported format: {}. Use: csv, csv-relationships, gedcom, jsonld", from);
+            eprintln!(
+                "Unsupported format: {}. Use: csv, csv-relationships, gedcom, jsonld",
+                from
+            );
             std::process::exit(1);
         }
     };
@@ -429,7 +508,11 @@ fn run_serve(file: &Path, port: u16, verbose: bool) {
     let svg = render_svg(&layout, &theme);
 
     if verbose {
-        eprintln!("Starting server with {} entities on port {}", evaluator.world.entities.len(), port);
+        eprintln!(
+            "Starting server with {} entities on port {}",
+            evaluator.world.entities.len(),
+            port
+        );
     }
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
@@ -442,7 +525,7 @@ fn run_serve(file: &Path, port: u16, verbose: bool) {
 }
 
 fn run_repl() {
-    use std::io::{self, Write, BufRead};
+    use std::io::{self, BufRead, Write};
 
     println!("Seuss REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit");
     let mut evaluator = Evaluator::new();
@@ -457,7 +540,9 @@ fn run_repl() {
             break;
         }
         let trimmed = input.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         // Meta-commands
         match trimmed {
@@ -474,8 +559,16 @@ fn run_repl() {
                 }
                 println!("Relationships: {}", w.relationships.len());
                 for rel in &w.relationships {
-                    let src = w.entities.get(&rel.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-                    let tgt = w.entities.get(&rel.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                    let src = w
+                        .entities
+                        .get(&rel.source_entity_id)
+                        .map(|e| e.name.as_str())
+                        .unwrap_or("?");
+                    let tgt = w
+                        .entities
+                        .get(&rel.target_entity_id)
+                        .map(|e| e.name.as_str())
+                        .unwrap_or("?");
                     println!("  {} -[{}]-> {}", src, rel.label, tgt);
                 }
                 continue;
@@ -485,17 +578,27 @@ fn run_repl() {
                 if w.entities.is_empty() {
                     println!("(no entities)");
                 } else {
-                    println!("{:<20} {:<15} {:<15} {}", "NAME", "TYPE", "TIMELINE", "TIME_RANGE");
+                    println!(
+                        "{:<20} {:<15} {:<15} {}",
+                        "NAME", "TYPE", "TIMELINE", "TIME_RANGE"
+                    );
                     println!("{}", "-".repeat(70));
                     for ent in w.entities.values() {
-                        let (tl_name, time_range) = ent.timeline_appearances.first()
+                        let (tl_name, time_range) = ent
+                            .timeline_appearances
+                            .first()
                             .map(|(tid, tr)| {
-                                let tl = w.timelines.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
-                                let range = format!("{}..{}", tr.start.to_ordinal(), tr.end.to_ordinal());
+                                let tl =
+                                    w.timelines.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
+                                let range =
+                                    format!("{}..{}", tr.start.to_ordinal(), tr.end.to_ordinal());
                                 (tl, range)
                             })
                             .unwrap_or(("-", "-".to_string()));
-                        println!("{:<20} {:<15} {:<15} {}", ent.name, ent.type_id, tl_name, time_range);
+                        println!(
+                            "{:<20} {:<15} {:<15} {}",
+                            ent.name, ent.type_id, tl_name, time_range
+                        );
                     }
                 }
                 continue;
@@ -505,16 +608,32 @@ fn run_repl() {
                 if w.relationships.is_empty() {
                     println!("(no relationships)");
                 } else {
-                    println!("{:<15} {:<15} {:<15} {:<10} {}", "SOURCE", "LABEL", "TARGET", "DIRECTED", "SCOPE");
+                    println!(
+                        "{:<15} {:<15} {:<15} {:<10} {}",
+                        "SOURCE", "LABEL", "TARGET", "DIRECTED", "SCOPE"
+                    );
                     println!("{}", "-".repeat(70));
                     for rel in &w.relationships {
-                        let src = w.entities.get(&rel.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-                        let tgt = w.entities.get(&rel.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+                        let src = w
+                            .entities
+                            .get(&rel.source_entity_id)
+                            .map(|e| e.name.as_str())
+                            .unwrap_or("?");
+                        let tgt = w
+                            .entities
+                            .get(&rel.target_entity_id)
+                            .map(|e| e.name.as_str())
+                            .unwrap_or("?");
                         let dir = if rel.directed { "→" } else { "─" };
-                        let scope = rel.temporal_scope.as_ref()
+                        let scope = rel
+                            .temporal_scope
+                            .as_ref()
                             .map(|ts| format!("{}..{}", ts.start.to_ordinal(), ts.end.to_ordinal()))
                             .unwrap_or_else(|| "-".to_string());
-                        println!("{:<15} {:<15} {:<15} {:<10} {}", src, rel.label, tgt, dir, scope);
+                        println!(
+                            "{:<15} {:<15} {:<15} {:<10} {}",
+                            src, rel.label, tgt, dir, scope
+                        );
                     }
                 }
                 continue;
@@ -531,7 +650,11 @@ fn run_repl() {
                     for warn in &report.warnings {
                         println!("WARN: {}", warn);
                     }
-                    println!("Total: {} errors, {} warnings", report.errors.len(), report.warnings.len());
+                    println!(
+                        "Total: {} errors, {} warnings",
+                        report.errors.len(),
+                        report.warnings.len()
+                    );
                 }
                 continue;
             }
@@ -546,11 +669,14 @@ fn run_repl() {
                     let time_range = layout.viewport.time_end - layout.viewport.time_start;
                     if time_range > 0.0 {
                         for ent in &layout.entities {
-                            let start = ((ent.x_start - layout.viewport.time_start) / time_range * width as f64) as usize;
-                            let end = ((ent.x_end - layout.viewport.time_start) / time_range * width as f64) as usize;
+                            let start = ((ent.x_start - layout.viewport.time_start) / time_range
+                                * width as f64) as usize;
+                            let end = ((ent.x_end - layout.viewport.time_start) / time_range
+                                * width as f64) as usize;
                             let bar_start = start.min(width);
                             let bar_len = end.saturating_sub(start).max(1).min(width - bar_start);
-                            println!("{:>15} |{}{}|",
+                            println!(
+                                "{:>15} |{}{}|",
                                 ent.name,
                                 " ".repeat(bar_start),
                                 "█".repeat(bar_len),
@@ -566,12 +692,10 @@ fn run_repl() {
         line_num += 1;
         let file_str = format!("repl:{}", line_num);
         match parse_program(trimmed, &file_str) {
-            Ok(program) => {
-                match evaluator.eval_program(&program) {
-                    Ok(_) => println!("ok"),
-                    Err(e) => eprintln!("error: {}", e),
-                }
-            }
+            Ok(program) => match evaluator.eval_program(&program) {
+                Ok(_) => println!("ok"),
+                Err(e) => eprintln!("error: {}", e),
+            },
             Err(errors) => {
                 // Improved error recovery: show line numbers relative to input block
                 let input_lines: Vec<&str> = trimmed.lines().collect();
@@ -580,7 +704,10 @@ fn run_repl() {
                     eprintln!("parse error: {}", err_str);
                 }
                 if input_lines.len() > 1 {
-                    eprintln!("  (multi-line input had {} lines, re-enter to try again)", input_lines.len());
+                    eprintln!(
+                        "  (multi-line input had {} lines, re-enter to try again)",
+                        input_lines.len()
+                    );
                     for (i, line) in input_lines.iter().enumerate() {
                         eprintln!("  {:>3} | {}", i + 1, line);
                     }
@@ -591,15 +718,22 @@ fn run_repl() {
 }
 
 fn run_diff(file1: &Path, file2: &Path) {
-    use crossterm::style::{Stylize};
+    use crossterm::style::Stylize;
 
     fn load_world(file: &Path) -> Result<crate::model::world::World, String> {
         let source = read_seuss_file(file).map_err(|e| format!("{}", e))?;
         let file_str = file.to_string_lossy().to_string();
-        let program = parse_program(&source, &file_str)
-            .map_err(|errors| errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))?;
+        let program = parse_program(&source, &file_str).map_err(|errors| {
+            errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })?;
         let mut evaluator = Evaluator::new();
-        evaluator.eval_program(&program).map_err(|e| e.to_string())?;
+        evaluator
+            .eval_program(&program)
+            .map_err(|e| e.to_string())?;
         Ok(evaluator.world)
     }
 
@@ -632,11 +766,17 @@ fn run_diff(file1: &Path, file2: &Path) {
 
     let w1 = match load_world(file1) {
         Ok(w) => w,
-        Err(e) => { eprintln!("Error in {}: {}", file1.display(), e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Error in {}: {}", file1.display(), e);
+            std::process::exit(1);
+        }
     };
     let w2 = match load_world(file2) {
         Ok(w) => w,
-        Err(e) => { eprintln!("Error in {}: {}", file2.display(), e); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Error in {}: {}", file2.display(), e);
+            std::process::exit(1);
+        }
     };
 
     let mut changes = 0;
@@ -654,8 +794,10 @@ fn run_diff(file1: &Path, file2: &Path) {
     }
 
     // Compare entities
-    let ents1: std::collections::HashMap<_, _> = w1.entities.values().map(|e| (&e.name, e)).collect();
-    let ents2: std::collections::HashMap<_, _> = w2.entities.values().map(|e| (&e.name, e)).collect();
+    let ents1: std::collections::HashMap<_, _> =
+        w1.entities.values().map(|e| (&e.name, e)).collect();
+    let ents2: std::collections::HashMap<_, _> =
+        w2.entities.values().map(|e| (&e.name, e)).collect();
     for (name, _) in &ents2 {
         if !ents1.contains_key(name) {
             print_added(&format!("entity {}", name), is_tty);
@@ -671,27 +813,62 @@ fn run_diff(file1: &Path, file2: &Path) {
     for (name, e1) in &ents1 {
         if let Some(e2) = ents2.get(name) {
             if e1.type_id != e2.type_id {
-                print_changed(&format!("entity {} type: {} → {}", name, e1.type_id, e2.type_id), is_tty);
+                print_changed(
+                    &format!("entity {} type: {} → {}", name, e1.type_id, e2.type_id),
+                    is_tty,
+                );
                 changes += 1;
             }
             if e1.attributes.len() != e2.attributes.len() {
-                print_changed(&format!("entity {} attrs: {} → {}", name, e1.attributes.len(), e2.attributes.len()), is_tty);
+                print_changed(
+                    &format!(
+                        "entity {} attrs: {} → {}",
+                        name,
+                        e1.attributes.len(),
+                        e2.attributes.len()
+                    ),
+                    is_tty,
+                );
                 changes += 1;
             }
         }
     }
 
     // Compare relationships
-    let rels1: Vec<_> = w1.relationships.iter().map(|r| {
-        let src = w1.entities.get(&r.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-        let tgt = w1.entities.get(&r.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-        format!("{}-[{}]->{}", src, r.label, tgt)
-    }).collect();
-    let rels2: Vec<_> = w2.relationships.iter().map(|r| {
-        let src = w2.entities.get(&r.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-        let tgt = w2.entities.get(&r.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-        format!("{}-[{}]->{}", src, r.label, tgt)
-    }).collect();
+    let rels1: Vec<_> = w1
+        .relationships
+        .iter()
+        .map(|r| {
+            let src = w1
+                .entities
+                .get(&r.source_entity_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or("?");
+            let tgt = w1
+                .entities
+                .get(&r.target_entity_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or("?");
+            format!("{}-[{}]->{}", src, r.label, tgt)
+        })
+        .collect();
+    let rels2: Vec<_> = w2
+        .relationships
+        .iter()
+        .map(|r| {
+            let src = w2
+                .entities
+                .get(&r.source_entity_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or("?");
+            let tgt = w2
+                .entities
+                .get(&r.target_entity_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or("?");
+            format!("{}-[{}]->{}", src, r.label, tgt)
+        })
+        .collect();
 
     let set1: std::collections::HashSet<_> = rels1.iter().collect();
     let set2: std::collections::HashSet<_> = rels2.iter().collect();
@@ -706,14 +883,37 @@ fn run_diff(file1: &Path, file2: &Path) {
 
     // Compare relationship directionality changes
     for r2 in &w2.relationships {
-        let src2 = w2.entities.get(&r2.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-        let tgt2 = w2.entities.get(&r2.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+        let src2 = w2
+            .entities
+            .get(&r2.source_entity_id)
+            .map(|e| e.name.as_str())
+            .unwrap_or("?");
+        let tgt2 = w2
+            .entities
+            .get(&r2.target_entity_id)
+            .map(|e| e.name.as_str())
+            .unwrap_or("?");
         for r1 in &w1.relationships {
-            let src1 = w1.entities.get(&r1.source_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
-            let tgt1 = w1.entities.get(&r1.target_entity_id).map(|e| e.name.as_str()).unwrap_or("?");
+            let src1 = w1
+                .entities
+                .get(&r1.source_entity_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or("?");
+            let tgt1 = w1
+                .entities
+                .get(&r1.target_entity_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or("?");
             if src1 == src2 && tgt1 == tgt2 && r1.label == r2.label && r1.directed != r2.directed {
-                let dir = if r2.directed { "directed" } else { "undirected" };
-                print_changed(&format!("rel {}-[{}]->{} now {}", src2, r2.label, tgt2, dir), is_tty);
+                let dir = if r2.directed {
+                    "directed"
+                } else {
+                    "undirected"
+                };
+                print_changed(
+                    &format!("rel {}-[{}]->{} now {}", src2, r2.label, tgt2, dir),
+                    is_tty,
+                );
                 changes += 1;
             }
         }

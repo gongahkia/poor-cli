@@ -56,13 +56,17 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() {
-        errors.push(ImportError { line: 0, message: "empty CSV".into() });
+        errors.push(ImportError {
+            line: 0,
+            message: "empty CSV".into(),
+        });
         return Err(errors);
     }
 
     let headers: Vec<String> = parse_csv_fields(lines[0]);
     let required = ["name", "type", "timeline", "start", "end"];
-    let missing: Vec<&str> = required.iter()
+    let missing: Vec<&str> = required
+        .iter()
         .filter(|r| !headers.iter().any(|h| h == **r))
         .copied()
         .collect();
@@ -80,7 +84,9 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
     let start_idx = headers.iter().position(|h| h == "start");
     let end_idx = headers.iter().position(|h| h == "end");
 
-    let extra_attrs: Vec<(usize, String)> = headers.iter().enumerate()
+    let extra_attrs: Vec<(usize, String)> = headers
+        .iter()
+        .enumerate()
         .filter(|(_, h)| !["name", "type", "timeline", "start", "end"].contains(&h.as_str()))
         .map(|(i, h)| (i, h.clone()))
         .collect();
@@ -94,24 +100,45 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
             None => continue,
         };
         if name.is_empty() {
-            errors.push(ImportError { line: line_no, message: "empty name".into() });
+            errors.push(ImportError {
+                line: line_no,
+                message: "empty name".into(),
+            });
             continue;
         }
 
-        let entity_type = type_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("entity");
-        let timeline = timeline_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
-        let start = start_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
-        let end = end_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
+        let entity_type = type_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("entity");
+        let timeline = timeline_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let start = start_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let end = end_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
 
         // Validate date formats
         if !start.is_empty() {
             if chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").is_err() {
-                errors.push(ImportError { line: line_no, message: format!("invalid date in 'start': {}", start) });
+                errors.push(ImportError {
+                    line: line_no,
+                    message: format!("invalid date in 'start': {}", start),
+                });
             }
         }
         if !end.is_empty() {
             if chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d").is_err() {
-                errors.push(ImportError { line: line_no, message: format!("invalid date in 'end': {}", end) });
+                errors.push(ImportError {
+                    line: line_no,
+                    message: format!("invalid date in 'end': {}", end),
+                });
             }
         }
 
@@ -131,13 +158,20 @@ pub fn import_entities_csv(content: &str) -> Result<String, Vec<ImportError>> {
         }
 
         if !timeline.is_empty() && !start.is_empty() && !end.is_empty() {
-            output.push_str(&format!("    appears_on: {} @ {}..{},\n", timeline, start, end));
+            output.push_str(&format!(
+                "    appears_on: {} @ {}..{},\n",
+                timeline, start, end
+            ));
         }
 
         output.push_str("}\n\n");
     }
 
-    if errors.is_empty() { Ok(output) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(output)
+    } else {
+        Err(errors)
+    }
 }
 
 /// Parse CSV into .seuss relationship declarations (Task 27)
@@ -148,7 +182,10 @@ pub fn import_relationships_csv(content: &str) -> Result<String, Vec<ImportError
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() {
-        errors.push(ImportError { line: 0, message: "empty CSV".into() });
+        errors.push(ImportError {
+            line: 0,
+            message: "empty CSV".into(),
+        });
         return Err(errors);
     }
 
@@ -160,7 +197,10 @@ pub fn import_relationships_csv(content: &str) -> Result<String, Vec<ImportError
     let end_idx = headers.iter().position(|h| h == "end");
 
     if source_idx.is_none() || target_idx.is_none() {
-        errors.push(ImportError { line: 1, message: "missing 'source' or 'target' column".into() });
+        errors.push(ImportError {
+            line: 1,
+            message: "missing 'source' or 'target' column".into(),
+        });
         return Err(errors);
     }
 
@@ -168,17 +208,35 @@ pub fn import_relationships_csv(content: &str) -> Result<String, Vec<ImportError
         let cols: Vec<String> = parse_csv_fields(line);
         let line_no = line_num + 2;
 
-        let source = source_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
-        let target = target_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
-        let label = label_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
+        let source = source_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let target = target_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let label = label_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
 
         if source.is_empty() || target.is_empty() {
-            errors.push(ImportError { line: line_no, message: "empty source or target".into() });
+            errors.push(ImportError {
+                line: line_no,
+                message: "empty source or target".into(),
+            });
             continue;
         }
 
-        let start = start_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
-        let end = end_idx.and_then(|i| cols.get(i)).map(|s| s.as_str()).unwrap_or("");
+        let start = start_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let end = end_idx
+            .and_then(|i| cols.get(i))
+            .map(|s| s.as_str())
+            .unwrap_or("");
 
         if !label.is_empty() {
             output.push_str(&format!("rel {} -[\"{}\"]-> {}", source, label, target));
@@ -192,5 +250,9 @@ pub fn import_relationships_csv(content: &str) -> Result<String, Vec<ImportError
         output.push_str(";\n");
     }
 
-    if errors.is_empty() { Ok(output) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(output)
+    } else {
+        Err(errors)
+    }
 }

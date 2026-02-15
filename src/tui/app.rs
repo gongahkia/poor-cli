@@ -1,6 +1,6 @@
-use std::collections::{HashSet, HashMap};
 use crate::layout::engine::Layout;
 use crate::model::types::Id;
+use std::collections::{HashMap, HashSet};
 
 /// Input mode
 #[derive(Debug, Clone, PartialEq)]
@@ -185,11 +185,17 @@ impl App {
                     let idx = (self.bookmarks.len() as u8) + 1;
                     if idx <= 9 {
                         let vp = &self.layout.viewport;
-                        self.bookmarks.insert(idx, ViewState {
-                            time_start: vp.time_start, time_end: vp.time_end,
-                            lane_start: vp.lane_start, lane_end: vp.lane_end,
-                            scale: vp.scale, selected: self.selected_entity,
-                        });
+                        self.bookmarks.insert(
+                            idx,
+                            ViewState {
+                                time_start: vp.time_start,
+                                time_end: vp.time_end,
+                                lane_start: vp.lane_start,
+                                lane_end: vp.lane_end,
+                                scale: vp.scale,
+                                selected: self.selected_entity,
+                            },
+                        );
                         self.status_message = format!("Bookmark {} saved", idx);
                     }
                 }
@@ -243,7 +249,11 @@ impl App {
                 }
                 KeyCode::Char(' ') => {
                     self.scrubber_playing = !self.scrubber_playing;
-                    self.status_message = if self.scrubber_playing { "▶ Playing".into() } else { "⏸ Paused".into() };
+                    self.status_message = if self.scrubber_playing {
+                        "▶ Playing".into()
+                    } else {
+                        "⏸ Paused".into()
+                    };
                 }
                 // Layer toggle (Task 56)
                 KeyCode::Char('v') => {
@@ -274,7 +284,9 @@ impl App {
                     self.input_mode = InputMode::Normal;
                 }
                 KeyCode::Char(c) => self.search_query.push(c),
-                KeyCode::Backspace => { self.search_query.pop(); }
+                KeyCode::Backspace => {
+                    self.search_query.pop();
+                }
                 _ => {}
             },
             InputMode::Help => match key.code {
@@ -285,7 +297,8 @@ impl App {
                 KeyCode::Esc => self.input_mode = InputMode::Normal,
                 KeyCode::Char('t') => {
                     // Toggle filter cursor through entity types
-                    self.status_message = format!("Active filters: {} types", self.type_filters.len());
+                    self.status_message =
+                        format!("Active filters: {} types", self.type_filters.len());
                 }
                 _ => {}
             },
@@ -312,7 +325,9 @@ impl App {
                     self.input_mode = InputMode::Normal;
                 }
                 KeyCode::Char(c) => self.palette_query.push(c),
-                KeyCode::Backspace => { self.palette_query.pop(); }
+                KeyCode::Backspace => {
+                    self.palette_query.pop();
+                }
                 _ => {}
             },
             InputMode::CompareSelect => match key.code {
@@ -326,7 +341,8 @@ impl App {
                     if idx < self.layout.timelines.len() {
                         self.compare_timeline_idx = Some(idx);
                         self.compare_mode = true;
-                        self.status_message = format!("Comparing with: {}", self.layout.timelines[idx].name);
+                        self.status_message =
+                            format!("Comparing with: {}", self.layout.timelines[idx].name);
                         self.input_mode = InputMode::Normal;
                     }
                 }
@@ -337,7 +353,7 @@ impl App {
 
     /// Handle mouse events (Task 63)
     pub fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
-        use crossterm::event::{MouseEventKind, MouseButton};
+        use crossterm::event::{MouseButton, MouseEventKind};
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 self.save_view_state();
@@ -358,14 +374,19 @@ impl App {
     fn click_select(&mut self, col: u16, row: u16) {
         let vp = &self.layout.viewport;
         let time_range = vp.time_end - vp.time_start;
-        if time_range <= 0.0 { return; }
+        if time_range <= 0.0 {
+            return;
+        }
         let term_cols = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80) as f64;
         let time = vp.time_start + (col as f64 / term_cols) * time_range;
         let lane = vp.lane_start + row as usize;
 
-        if let Some(ent) = self.layout.entities.iter().find(|e| {
-            e.lane == lane && e.x_start <= time && e.x_end >= time
-        }) {
+        if let Some(ent) = self
+            .layout
+            .entities
+            .iter()
+            .find(|e| e.lane == lane && e.x_start <= time && e.x_end >= time)
+        {
             self.selected_entity = Some(ent.entity_id);
             self.status_message = format!("Selected: {}", ent.name);
         }
@@ -382,15 +403,19 @@ impl App {
     }
     /// Check if entity is visible at current time cursor
     pub fn entity_visible_at_cursor(&self, ent: &crate::layout::engine::LayoutEntity) -> bool {
-        if !self.scrubber_playing { return true; } // show all when not scrubbing
+        if !self.scrubber_playing {
+            return true;
+        } // show all when not scrubbing
         self.time_cursor >= ent.x_start && self.time_cursor <= ent.x_end
     }
 
     fn cycle_selection(&mut self) {
-        if self.layout.entities.is_empty() { return; }
-        let current_idx = self.selected_entity.and_then(|id| {
-            self.layout.entities.iter().position(|e| e.entity_id == id)
-        });
+        if self.layout.entities.is_empty() {
+            return;
+        }
+        let current_idx = self
+            .selected_entity
+            .and_then(|id| self.layout.entities.iter().position(|e| e.entity_id == id));
         let next = match current_idx {
             Some(i) => (i + 1) % self.layout.entities.len(),
             None => 0,
@@ -404,19 +429,28 @@ impl App {
         // If an entity is selected, focus on it (old select_current behavior)
         // Also push current viewport onto drill stack for back-navigation
         if let Some(id) = self.selected_entity {
-            let coords = self.layout.entities.iter()
+            let coords = self
+                .layout
+                .entities
+                .iter()
                 .find(|e| e.entity_id == id)
                 .map(|ent| (ent.timeline_id, (ent.x_start + ent.x_end) / 2.0, ent.lane));
             if let Some((_tid, cx, lane)) = coords {
                 let vp = &self.layout.viewport;
                 self.drill_stack.push(ViewState {
-                    time_start: vp.time_start, time_end: vp.time_end,
-                    lane_start: vp.lane_start, lane_end: vp.lane_end,
-                    scale: vp.scale, selected: self.selected_entity,
+                    time_start: vp.time_start,
+                    time_end: vp.time_end,
+                    lane_start: vp.lane_start,
+                    lane_end: vp.lane_end,
+                    scale: vp.scale,
+                    selected: self.selected_entity,
                 });
                 // Find the timeline this entity belongs to and zoom to it
                 if let Some(tl) = self.layout.timelines.iter().find(|t| {
-                    self.layout.entities.iter().any(|e| e.entity_id == id && e.timeline_id == t.timeline_id)
+                    self.layout
+                        .entities
+                        .iter()
+                        .any(|e| e.entity_id == id && e.timeline_id == t.timeline_id)
                 }) {
                     self.layout.viewport.time_start = tl.x_start;
                     self.layout.viewport.time_end = tl.x_end;
@@ -439,7 +473,10 @@ impl App {
 
     fn select_current(&mut self) {
         if let Some(id) = self.selected_entity {
-            let coords = self.layout.entities.iter()
+            let coords = self
+                .layout
+                .entities
+                .iter()
                 .find(|e| e.entity_id == id)
                 .map(|ent| ((ent.x_start + ent.x_end) / 2.0, ent.lane));
             if let Some((cx, lane)) = coords {
@@ -451,9 +488,16 @@ impl App {
 
     fn jump_to_search(&mut self) {
         let query = self.search_query.to_lowercase();
-        if let Some(ent) = self.layout.entities.iter().find(|e| e.name.to_lowercase().contains(&query)) {
+        if let Some(ent) = self
+            .layout
+            .entities
+            .iter()
+            .find(|e| e.name.to_lowercase().contains(&query))
+        {
             self.selected_entity = Some(ent.entity_id);
-            self.layout.viewport.focus((ent.x_start + ent.x_end) / 2.0, ent.lane);
+            self.layout
+                .viewport
+                .focus((ent.x_start + ent.x_end) / 2.0, ent.lane);
             self.status_message = format!("Found: {}", ent.name);
         } else {
             self.status_message = format!("Not found: {}", self.search_query);
@@ -467,41 +511,66 @@ impl App {
 
     /// Check if edge label is visible (Task 56)
     pub fn is_edge_visible(&self, label: &str) -> bool {
-        if self.active_layer == 0 { return true; }
-        self.layer_names.get(self.active_layer).map_or(true, |l| l == label)
+        if self.active_layer == 0 {
+            return true;
+        }
+        self.layer_names
+            .get(self.active_layer)
+            .map_or(true, |l| l == label)
     }
 
     fn execute_palette_command(&mut self) {
         let q = self.palette_query.to_lowercase();
-        let matched = self.available_commands.iter()
+        let matched = self
+            .available_commands
+            .iter()
             .find(|(name, _)| name.contains(&q.as_str()));
         if let Some((cmd, _)) = matched {
             match *cmd {
                 "quit" => self.should_quit = true,
-                "search" => { self.input_mode = InputMode::Search; self.search_query.clear(); }
+                "search" => {
+                    self.input_mode = InputMode::Search;
+                    self.search_query.clear();
+                }
                 "filter" => self.input_mode = InputMode::Filter,
                 "help" => self.input_mode = InputMode::Help,
                 "branches" => self.input_mode = InputMode::BranchNav,
-                "zoom-in" => { self.save_view_state(); self.layout.viewport.zoom(1.2); }
-                "zoom-out" => { self.save_view_state(); self.layout.viewport.zoom(0.8); }
+                "zoom-in" => {
+                    self.save_view_state();
+                    self.layout.viewport.zoom(1.2);
+                }
+                "zoom-out" => {
+                    self.save_view_state();
+                    self.layout.viewport.zoom(0.8);
+                }
                 "reset" => {
                     self.layout.viewport.scale = 1.0;
                     self.status_message = "Reset".to_string();
                 }
                 "play" => {
                     self.scrubber_playing = !self.scrubber_playing;
-                    self.status_message = if self.scrubber_playing { "▶".into() } else { "⏸".into() };
+                    self.status_message = if self.scrubber_playing {
+                        "▶".into()
+                    } else {
+                        "⏸".into()
+                    };
                 }
                 "next-entity" => self.cycle_selection(),
                 "bookmark" => {
                     let idx = (self.bookmarks.len() as u8) + 1;
                     if idx <= 9 {
                         let vp = &self.layout.viewport;
-                        self.bookmarks.insert(idx, ViewState {
-                            time_start: vp.time_start, time_end: vp.time_end,
-                            lane_start: vp.lane_start, lane_end: vp.lane_end,
-                            scale: vp.scale, selected: self.selected_entity,
-                        });
+                        self.bookmarks.insert(
+                            idx,
+                            ViewState {
+                                time_start: vp.time_start,
+                                time_end: vp.time_end,
+                                lane_start: vp.lane_start,
+                                lane_end: vp.lane_end,
+                                scale: vp.scale,
+                                selected: self.selected_entity,
+                            },
+                        );
                         self.status_message = format!("Bookmark {} saved", idx);
                     }
                 }

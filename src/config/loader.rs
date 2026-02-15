@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
-use serde::Deserialize;
 use super::theme::ThemeConfig;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
 
 /// Config file structure (Task 43)
 #[derive(Debug, Deserialize, Default)]
@@ -56,14 +56,14 @@ impl SeussConfig {
     }
 
     fn load_file(path: &Path) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("failed to read config: {}", e))?;
-        toml::from_str(&content)
-            .map_err(|e| format!("failed to parse config: {}", e))
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("failed to read config: {}", e))?;
+        toml::from_str(&content).map_err(|e| format!("failed to parse config: {}", e))
     }
 }
 
 fn dirs_path() -> Option<PathBuf> {
-    std::env::var("HOME").ok()
+    std::env::var("HOME")
+        .ok()
         .map(|h| PathBuf::from(h).join(".config").join("seuss"))
 }

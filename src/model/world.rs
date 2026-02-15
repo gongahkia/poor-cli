@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
 use super::types::*;
+use std::collections::{BTreeMap, HashMap};
 
 /// World: top-level container (Task 22)
 #[derive(Debug)]
@@ -41,15 +41,21 @@ impl World {
     }
 
     pub fn entities_of_type(&self, type_id: &str) -> Vec<&Entity> {
-        self.entities.values().filter(|e| e.type_id == type_id).collect()
+        self.entities
+            .values()
+            .filter(|e| e.type_id == type_id)
+            .collect()
     }
 
     pub fn entities_on_timeline(&self, timeline_id: Id, range: &TimeRange) -> Vec<&Entity> {
-        self.entities.values().filter(|e| {
-            e.timeline_appearances.iter().any(|(tid, tr)| {
-                *tid == timeline_id && tr.overlaps(range)
+        self.entities
+            .values()
+            .filter(|e| {
+                e.timeline_appearances
+                    .iter()
+                    .any(|(tid, tr)| *tid == timeline_id && tr.overlaps(range))
             })
-        }).collect()
+            .collect()
     }
 
     pub fn add_entity(&mut self, entity: Entity) {
@@ -72,20 +78,31 @@ impl World {
     }
 
     pub fn edges_between(&self, e1: Id, e2: Id) -> Vec<&Relationship> {
-        self.relationships.iter().filter(|r| {
-            (r.source_entity_id == e1 && r.target_entity_id == e2)
-            || (r.source_entity_id == e2 && r.target_entity_id == e1 && !r.directed)
-        }).collect()
+        self.relationships
+            .iter()
+            .filter(|r| {
+                (r.source_entity_id == e1 && r.target_entity_id == e2)
+                    || (r.source_entity_id == e2 && r.target_entity_id == e1 && !r.directed)
+            })
+            .collect()
     }
 
     pub fn edges_at_time(&self, point: &TimePoint) -> Vec<&Relationship> {
-        self.relationships.iter().filter(|r| {
-            r.temporal_scope.as_ref().map_or(true, |ts| ts.contains(point))
-        }).collect()
+        self.relationships
+            .iter()
+            .filter(|r| {
+                r.temporal_scope
+                    .as_ref()
+                    .map_or(true, |ts| ts.contains(point))
+            })
+            .collect()
     }
 
     pub fn filter_by_label<'a>(&'a self, label: &str) -> Vec<&'a Relationship> {
-        self.relationships.iter().filter(|r| r.label == label).collect()
+        self.relationships
+            .iter()
+            .filter(|r| r.label == label)
+            .collect()
     }
 
     pub fn add_relationship(&mut self, rel: Relationship) {
@@ -99,7 +116,10 @@ impl World {
     }
 
     pub fn children_of(&self, timeline_id: Id) -> Vec<&Timeline> {
-        self.timelines.values().filter(|t| t.parent_id == Some(timeline_id)).collect()
+        self.timelines
+            .values()
+            .filter(|t| t.parent_id == Some(timeline_id))
+            .collect()
     }
 
     pub fn ancestors_of(&self, timeline_id: Id) -> Vec<Id> {
@@ -122,16 +142,20 @@ impl World {
     }
 
     pub fn branches_at(&self, point: &TimePoint) -> Vec<&Timeline> {
-        self.timelines.values().filter(|t| {
-            t.kind == TimelineKindModel::Branch
-            && t.fork_point.as_ref().map_or(false, |(_, fp)| {
-                fp.to_ordinal() <= point.to_ordinal()
+        self.timelines
+            .values()
+            .filter(|t| {
+                t.kind == TimelineKindModel::Branch
+                    && t.fork_point
+                        .as_ref()
+                        .map_or(false, |(_, fp)| fp.to_ordinal() <= point.to_ordinal())
             })
-        }).collect()
+            .collect()
     }
 
     pub fn detect_loops(&self) -> Vec<Id> {
-        self.timelines.values()
+        self.timelines
+            .values()
             .filter(|t| t.kind == TimelineKindModel::Loop)
             .map(|t| t.id)
             .collect()
