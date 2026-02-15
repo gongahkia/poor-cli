@@ -62,14 +62,6 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
-    /// Start live-reload web server
-    Serve {
-        /// Path to .seuss source file
-        file: PathBuf,
-        /// Server port
-        #[arg(short, long, default_value = "8888")]
-        port: u16,
-    },
     /// Validate a .seuss file without rendering
     Check {
         /// Path to .seuss source file
