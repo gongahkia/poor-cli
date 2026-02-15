@@ -1,10 +1,8 @@
 # Seuss Syntax Reference
 
-This document is the complete syntax reference for the Seuss DSL. Seuss is a domain-specific language for modeling temporal narratives — timelines, entities, relationships, and their evolution over time.
+Complete syntax reference for the Seuss DSL [v1.0.0](https://github.com/gongahkia/seuss/releases/tag/v0.1.0). 
 
-All examples below are valid Seuss syntax.
-
----
+For more examples, see the [`examples/`](../examples/) directory.
 
 ## Table of Contents
 
@@ -639,5 +637,3 @@ if total_battles > 10 {
     let large_conflict = true;
 }
 ```
-
-For more examples, see the [`examples/`](../examples/) directory.
