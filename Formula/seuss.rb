@@ -1,7 +1,7 @@
 class Seuss < Formula
   desc "A DSL for modeling and visualizing temporal narratives"
   homepage "https://github.com/gongahkia/seuss"
-  version "0.1.0"
+  version "1.0.0"
   license "MIT"
 
   on_macos do

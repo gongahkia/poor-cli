@@ -1,4 +1,4 @@
-[![](https://img.shields.io/badge/seuss_0.1.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/v0.1.0)
+[![](https://img.shields.io/badge/seuss_1.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/v1.0.0)
 ![](https://github.com/gongahkia/seuss/actions/workflows/ci.yml/badge.svg)
 ![](https://github.com/gongahkia/seuss/actions/workflows/release.yml/badge.svg)
 

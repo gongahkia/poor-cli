@@ -505,7 +505,7 @@ fn run_repl() {
     }
 
     let seuss_files = find_seuss_files();
-    println!("Seuss REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit");
+    println!("Seuss REPL v1.0.0 — type declarations, then :world to inspect, :quit to exit");
     if seuss_files.is_empty() {
         println!("  No .seuss files found in current directory");
     } else {
