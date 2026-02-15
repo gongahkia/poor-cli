@@ -46,7 +46,7 @@ $ ./target/release/seuss export examples/lotr.seuss --format svg --output timeli
 | `seuss export <file.seuss> --format svg` | Export as SVG |
 | `seuss check <file.seuss>` | Validate without rendering |
 
-## TUI Keybindings
+4. Also navigate `Seuss`' TUI with the following commands.
 
 | Key | Action |
 |-----|--------|
@@ -58,6 +58,14 @@ $ ./target/release/seuss export examples/lotr.seuss --format svg --output timeli
 | `?` | Toggle help |
 | `q` | Quit |
 
+## Syntax
+
+Learn more about `Seuss`' syntax at [`SYNTAX.md`](./docs/SYNTAX.md).
+
+Alternatively, refer to examples which live at [`./examples`](./examples/).
+
 ## Architecture
 
-...
+<div align="center">
+    <img src="./asset/reference/architecture.png">
+</div>
