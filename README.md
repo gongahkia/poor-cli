@@ -15,6 +15,10 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 * *Scripting*: [Rust](https://rust-lang.org/), ...
 * ...
 
+## Screenshots
+
+
+
 ## Usage
 
 The below instructions are for running `Seuss` locally.
