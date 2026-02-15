@@ -4,21 +4,28 @@
 
 # `Seuss`
 
-[DSL](https://en.wikipedia.org/wiki/Domain-specific_language) for modeling and visualizing temporal narratives — timelines, entities, relationships, and their evolution over time.
-
-Built in Rust with a PEG parser, evaluator, TUI (ratatui), and SVG renderer.
+Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-specific_language) for modeling [timelines](https://en.wikipedia.org/wiki/Timeline) and their [evolutions](https://en.wikipedia.org/wiki/Temporal_paradox).
 
 <div align="center">
-    <img src="https://images.artbrokerage.com/artthumb/geisel_162877_9/632x632/Dr_Seuss_Oh_the_Stuff_You_Will_Learn_CP.jpg" width="50%">
+    <img src="./asset/logo/seuss.jpg" width="50%">
 </div>
 
 ## Stack
 
-...
+* *Scripting*: [Rust](https://rust-lang.org/), ...
+* ...
 
 ## Usage
 
-...
+The below instructions are for running `Seuss` locally.
+
+1. First run the below to install `Seuss` on your local machine.
+
+```console
+$ git clone https://github.com/gongahkia/seuss && cd seuss
+```
+
+2. Then execute the below commands to use `Seuss`.
 
 ```console
 $ cargo build --release
@@ -27,7 +34,7 @@ $ ./target/release/seuss run examples/lotr.seuss
 $ ./target/release/seuss export examples/lotr.seuss --format svg --output timeline.svg
 ```
 
-### CLI Commands
+3. `Seuss` provides all the below commands [out-of-the-box](https://en.wikipedia.org/wiki/Out_of_the_Box).
 
 | Command | Description |
 |---------|-------------|
@@ -35,7 +42,7 @@ $ ./target/release/seuss export examples/lotr.seuss --format svg --output timeli
 | `seuss export <file.seuss> --format svg` | Export as SVG |
 | `seuss check <file.seuss>` | Validate without rendering |
 
-### TUI Keybindings
+## TUI Keybindings
 
 | Key | Action |
 |-----|--------|
@@ -48,9 +55,5 @@ $ ./target/release/seuss export examples/lotr.seuss --format svg --output timeli
 | `q` | Quit |
 
 ## Architecture
-
-...
-
-## Reference
 
 ...
