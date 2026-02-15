@@ -149,10 +149,54 @@ impl Evaluator {
         let id = self.world.next_id();
         let type_id = decl.type_ref.clone().unwrap_or_else(|| "entity".to_string());
 
+        // Task 47: validate type_ref exists in type registry
+        if type_id != "entity" {
+            let builtins = ["entity", "event", "person", "place", "object", "group"];
+            if !builtins.contains(&type_id.as_str()) && self.world.type_registry.get(&type_id).is_none() {
+                let available: Vec<&str> = self.world.type_registry.keys().map(|s| s.as_str()).collect();
+                let suggestion = available.iter()
+                    .filter(|t| strsim_simple(&type_id, t) > 0.5)
+                    .copied()
+                    .next();
+                let mut msg = format!("unknown type '{}' not found in type registry", type_id);
+                if let Some(s) = suggestion {
+                    msg.push_str(&format!("; did you mean '{}'?", s));
+                }
+                return Err(RuntimeError { message: msg, span: Some(span.clone()) });
+            }
+        }
+
         let mut attributes = HashMap::new();
         for (name, expr) in &decl.fields {
             let val = self.eval_expr(expr)?;
             attributes.insert(name.clone(), val);
+        }
+
+        // Task 45: enforce field type validation against type registry
+        if let Some(typedef) = self.world.type_registry.get(&type_id) {
+            let typedef = typedef.clone(); // clone to avoid borrow conflict
+            for field_def in &typedef.fields {
+                if field_def.name.starts_with('@') { continue; }
+                if let Some(val) = attributes.get(&field_def.name) {
+                    if !value_matches_type_name(val, &field_def.type_name) {
+                        return Err(RuntimeError {
+                            message: format!(
+                                "field '{}' on entity '{}' expected {} but got {}",
+                                field_def.name, decl.name, field_def.type_name, value_type_name(val)
+                            ),
+                            span: Some(span.clone()),
+                        });
+                    }
+                } else if !field_def.optional {
+                    return Err(RuntimeError {
+                        message: format!(
+                            "missing required field '{}' for type '{}' on entity '{}'",
+                            field_def.name, type_id, decl.name
+                        ),
+                        span: Some(span.clone()),
+                    });
+                }
+            }
         }
 
         let mut timeline_appearances = Vec::new();
@@ -776,4 +820,48 @@ impl Evaluator {
             _ => Err(RuntimeError { message: "cannot convert to time point".into(), span: None }),
         }
     }
+}
+
+/// Check if a Value matches an expected type name string
+fn value_matches_type_name(val: &Value, type_name: &str) -> bool {
+    match (val, type_name) {
+        (Value::Int(_), "int") => true,
+        (Value::Float(_), "float") => true,
+        (Value::Int(_), "float") => true, // int coerces to float
+        (Value::String(_), "string") => true,
+        (Value::Bool(_), "bool") => true,
+        (Value::Date(_), "date") => true,
+        (Value::Entity(_), _) => true, // entity refs match any type-ref
+        (Value::Null, _) => true, // null acceptable for any type
+        _ => false,
+    }
+}
+
+/// Human-readable type name for a Value
+fn value_type_name(val: &Value) -> &'static str {
+    match val {
+        Value::Int(_) => "int",
+        Value::Float(_) => "float",
+        Value::String(_) => "string",
+        Value::Bool(_) => "bool",
+        Value::Date(_) => "date",
+        Value::Duration(_) => "duration",
+        Value::Entity(_) => "entity",
+        Value::Timeline(_) => "timeline",
+        Value::List(_) => "list",
+        Value::Closure { .. } => "closure",
+        Value::Null => "null",
+    }
+}
+
+/// Simple string similarity (Sørensen-Dice coefficient on bigrams)
+fn strsim_simple(a: &str, b: &str) -> f64 {
+    if a == b { return 1.0; }
+    let a = a.to_lowercase();
+    let b = b.to_lowercase();
+    if a.len() < 2 || b.len() < 2 { return 0.0; }
+    let bigrams_a: Vec<_> = a.as_bytes().windows(2).collect();
+    let bigrams_b: Vec<_> = b.as_bytes().windows(2).collect();
+    let matches = bigrams_a.iter().filter(|bg| bigrams_b.contains(bg)).count();
+    (2.0 * matches as f64) / (bigrams_a.len() + bigrams_b.len()) as f64
 }

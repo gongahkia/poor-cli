@@ -52,6 +52,31 @@ impl TypeRegistry {
         if self.types.contains_key(&typedef.name) {
             return Err(format!("duplicate type definition: {}", typedef.name));
         }
+        // Task 46: cycle detection — walk parent chain before registering
+        if let Some(ref parent_name) = typedef.parent {
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(typedef.name.clone());
+            let mut current = parent_name.clone();
+            loop {
+                if visited.contains(&current) {
+                    return Err(format!(
+                        "inheritance cycle detected: {} -> {} forms a cycle",
+                        typedef.name, current
+                    ));
+                }
+                visited.insert(current.clone());
+                match self.types.get(&current) {
+                    Some(parent_def) => {
+                        if let Some(ref grandparent) = parent_def.parent {
+                            current = grandparent.clone();
+                        } else {
+                            break;
+                        }
+                    }
+                    None => break, // parent not yet registered; can't detect deeper cycles
+                }
+            }
+        }
         self.types.insert(typedef.name.clone(), typedef);
         Ok(())
     }
