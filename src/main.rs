@@ -561,34 +561,32 @@ fn run_repl() {
                     Some(std::path::PathBuf::from(arg))
                 };
                 match path {
-                    Some(p) if p.exists() => {
-                        match read_seuss_file(&p) {
-                            Ok(source) => {
-                                let file_str = p.to_string_lossy().to_string();
-                                match parse_program(&source, &file_str) {
-                                    Ok(program) => match evaluator.eval_program(&program) {
-                                        Ok(_) => {
-                                            let w = &evaluator.world;
-                                            println!(
+                    Some(p) if p.exists() => match read_seuss_file(&p) {
+                        Ok(source) => {
+                            let file_str = p.to_string_lossy().to_string();
+                            match parse_program(&source, &file_str) {
+                                Ok(program) => match evaluator.eval_program(&program) {
+                                    Ok(_) => {
+                                        let w = &evaluator.world;
+                                        println!(
                                                 "✓ Loaded {} ({} timelines, {} entities, {} relationships)",
                                                 p.display(),
                                                 w.timelines.len(),
                                                 w.entities.len(),
                                                 w.relationships.len()
                                             );
-                                        }
-                                        Err(e) => eprintln!("Runtime error: {}", e),
-                                    },
-                                    Err(errors) => {
-                                        for e in &errors {
-                                            eprintln!("Parse error: {}", e);
-                                        }
+                                    }
+                                    Err(e) => eprintln!("Runtime error: {}", e),
+                                },
+                                Err(errors) => {
+                                    for e in &errors {
+                                        eprintln!("Parse error: {}", e);
                                     }
                                 }
                             }
-                            Err(e) => eprintln!("Error reading {}: {}", p.display(), e),
                         }
-                    }
+                        Err(e) => eprintln!("Error reading {}: {}", p.display(), e),
+                    },
                     Some(p) => eprintln!("File not found: {}", p.display()),
                     None => eprintln!("Invalid file number: {}", arg),
                 }
