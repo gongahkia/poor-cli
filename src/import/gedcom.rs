@@ -40,9 +40,10 @@ pub fn parse_gedcom(content: &str) -> Vec<GedcomRecord> {
 
         let record = GedcomRecord { level, tag: tag.clone(), value, children: Vec::new() };
 
-        // Handle CONC/CONT
+        // Handle CONC/CONT at any nesting depth
         if tag == "CONC" || tag == "CONT" {
-            if let Some(parent) = stack.last_mut() {
+            let target = find_concat_target(&mut stack, level);
+            if let Some(parent) = target {
                 if tag == "CONT" {
                     parent.value.push('\n');
                 }
@@ -173,6 +174,57 @@ pub fn gedcom_to_seuss(records: &[GedcomRecord]) -> String {
     }
 
     output
+}
+
+/// Find the record that CONC/CONT should append to based on nesting level.
+fn find_concat_target(stack: &mut Vec<GedcomRecord>, level: u32) -> Option<&mut GedcomRecord> {
+    if level == 0 || stack.is_empty() { return None; }
+    // Find the nearest record in the stack whose level is level - 1
+    let target_level = level - 1;
+    let idx = stack.iter().rposition(|r| r.level == target_level);
+    match idx {
+        Some(i) => Some(&mut stack[i]),
+        None => stack.last_mut(),
+    }
+}
+
+/// Validation warning for GEDCOM structure issues
+#[derive(Debug)]
+pub struct GedcomWarning {
+    pub record_id: String,
+    pub message: String,
+}
+
+/// Validate GEDCOM structure: INDI must have NAME, FAM must have HUSB/WIFE/CHIL
+pub fn validate_gedcom(records: &[GedcomRecord]) -> Vec<GedcomWarning> {
+    let mut warnings = Vec::new();
+    for record in records {
+        match record.tag.as_str() {
+            "INDI" => {
+                let id = &record.value;
+                if find_child_value(&record.children, "NAME").is_none() {
+                    warnings.push(GedcomWarning {
+                        record_id: id.clone(),
+                        message: "INDI record missing NAME tag".into(),
+                    });
+                }
+            }
+            "FAM" => {
+                let id = &record.value;
+                let has_husb = record.children.iter().any(|c| c.tag == "HUSB");
+                let has_wife = record.children.iter().any(|c| c.tag == "WIFE");
+                let has_chil = record.children.iter().any(|c| c.tag == "CHIL");
+                if !has_husb && !has_wife && !has_chil {
+                    warnings.push(GedcomWarning {
+                        record_id: id.clone(),
+                        message: "FAM record missing HUSB, WIFE, and CHIL tags".into(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    warnings
 }
 
 fn sanitize_id(s: &str) -> String {
