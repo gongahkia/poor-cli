@@ -35,27 +35,17 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 
 ## Usage
 
-### Installation
+The below instructions are for running `Seuss` locally.
+
+1. First execute the below command to clone `Seuss` on your local machine.
 
 ```console
 $ git clone https://github.com/gongahkia/seuss && cd seuss
-$ cargo build --release
+$ cargo build --release # built binary lives at ./target/release/seuss
+$ cp ./target/release/seuss /usr/local/bin/ # optionally copy the binary to your PATH
 ```
 
-The binary is at `./target/release/seuss`. Optionally copy it to your PATH:
-
-```console
-$ cp ./target/release/seuss /usr/local/bin/
-```
-
-### Quick start
-
-```console
-$ seuss check examples/ww2.seuss          # validate a file
-$ seuss run examples/ww2.seuss            # open interactive TUI
-$ seuss export examples/ww2.seuss -f svg -o timeline.svg   # export SVG
-$ seuss repl                              # start interactive REPL
-```
+2. Next, run any of the below commands *(and flags)* to interact with `Seuss` and its [TUI](#tui-commands).
 
 ### Commands
 
@@ -70,7 +60,7 @@ $ seuss repl                              # start interactive REPL
 | `seuss import <file> --from csv` | Import from CSV, GEDCOM, or JSON-LD into `.seuss` format |
 | `seuss repl` | Interactive REPL with file discovery, `:load`, `:world`, `:entities`, `:rels` |
 
-### Global flags
+### Flags
 
 | Flag | Description |
 |------|-------------|
@@ -78,7 +68,7 @@ $ seuss repl                              # start interactive REPL
 | `--config <path>` | Path to a TOML config file for default export settings |
 | `--theme <name>` | Theme: `dark` (default), `light`, or path to a custom TOML theme |
 
-### Export options
+3. Additionally, `Seuss` provides export options to the below file formats.
 
 ```console
 $ seuss export examples/ww2.seuss -f svg -o ww2.svg
@@ -87,25 +77,9 @@ $ seuss export examples/ww2.seuss -f pdf -o ww2.pdf
 $ seuss export examples/ww2.seuss -f svg --width 1920 --height 1080
 ```
 
-### REPL
+4. Finally, interact with `Seuss`' REPL via the below, or type raw `Seuss` declarations to interactively build a timeline.
 
-The REPL auto-discovers `.seuss` files in the current directory on startup.
-
-```console
-$ seuss repl
-Seuss REPL v0.1.0 — type declarations, then :world to inspect, :quit to exit
-  Found 2 .seuss file(s):
-    [1] examples/lotr.seuss
-    [2] examples/ww2.seuss
-  Use :load <number> or :load <path> to load a file
-
-seuss> :load 2
-✓ Loaded examples/ww2.seuss (4 timelines, 26 entities, 29 relationships)
-seuss> :entities
-seuss> :rels
-seuss> :validate
-seuss> :quit
-```
+### REPL commands
 
 | Command | Description |
 |---------|-------------|
@@ -118,13 +92,11 @@ seuss> :quit
 | `:timeline` / `:t` | ASCII mini-timeline visualization |
 | `:quit` / `:q` | Exit the REPL |
 
-You can also type raw Seuss declarations directly into the REPL to build a world interactively.
-
-## TUI
+### TUI commands
 
 The `seuss run` command opens a full-screen interactive terminal interface for exploring timelines.
 
-### Navigation
+#### Navigation
 
 | Key | Action |
 |-----|--------|
@@ -136,7 +108,7 @@ The `seuss run` command opens a full-screen interactive terminal interface for e
 | `-` | Zoom out |
 | `q` | Quit |
 
-### Entity interaction
+#### Entity interaction
 
 | Key | Action |
 |-----|--------|
@@ -145,7 +117,7 @@ The `seuss run` command opens a full-screen interactive terminal interface for e
 | `Backspace` | Drill up (navigate back) |
 | `Esc` | Deselect current entity |
 
-### Modes
+#### Modes
 
 | Key | Action |
 |-----|--------|
@@ -156,7 +128,7 @@ The `seuss run` command opens a full-screen interactive terminal interface for e
 | `C` | Compare mode — select two timelines to view a side-by-side diff |
 | `Ctrl+p` | Open command palette |
 
-### Time controls
+#### Time controls
 
 | Key | Action |
 |-----|--------|
@@ -164,21 +136,21 @@ The `seuss run` command opens a full-screen interactive terminal interface for e
 | `]` | Step time cursor forward |
 | `Space` | Play/pause time scrubber |
 
-### Bookmarks
+#### Bookmarks
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+b` | Save current viewport as a bookmark |
 | `1`–`9` | Jump to a saved bookmark |
 
-### Undo/Redo
+#### Undo/Redo
 
 | Key | Action |
 |-----|--------|
 | `Ctrl+z` | Undo last navigation action |
 | `Ctrl+y` | Redo |
 
-### Layer cycling
+#### Layer cycling
 
 | Key | Action |
 |-----|--------|
