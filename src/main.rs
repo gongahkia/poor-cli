@@ -22,14 +22,32 @@ use eval::evaluator::Evaluator;
 use layout::engine::compute_layout;
 use render::svg_render::{render_svg, Theme};
 use tui::app::App;
+use config::loader::SeussConfig;
 
 fn main() {
     let cli = Cli::parse();
 
+    // Wire config file loading: load and merge with CLI args
+    let cfg = SeussConfig::load(cli.config.as_deref());
+
+    // Wire --verbose to structured logging
+    if cli.verbose {
+        std::env::set_var("RUST_LOG", "debug");
+    }
+
+    // Wire --theme CLI flag to Theme selection
+    let svg_theme = resolve_svg_theme(cli.theme.as_deref(), &cfg);
+
     match cli.command {
         Commands::Run { file } => run_tui(&file, cli.verbose),
         Commands::Export { file, format, output, width, height, time_range, dpi } => {
-            run_export(&file, &format, output.as_deref(), width, height, time_range.as_deref(), dpi, cli.verbose);
+            let effective_dpi = if dpi == 150 { cfg.export.as_ref().and_then(|e| e.default_dpi).unwrap_or(dpi) } else { dpi };
+            let effective_width = width.or_else(|| cfg.export.as_ref().and_then(|e| e.default_width));
+            let effective_height = height.or_else(|| cfg.export.as_ref().and_then(|e| e.default_height));
+            let effective_format = if format == "svg" {
+                cfg.export.as_ref().and_then(|e| e.default_format.clone()).unwrap_or(format)
+            } else { format };
+            run_export(&file, &effective_format, output.as_deref(), effective_width, effective_height, time_range.as_deref(), effective_dpi, &svg_theme, cli.verbose);
         }
         Commands::Check { file } => run_check(&file, cli.verbose),
         Commands::Import { file, from, output } => {
@@ -40,6 +58,62 @@ fn main() {
         }
         Commands::Repl => run_repl(),
         Commands::Diff { file1, file2 } => run_diff(&file1, &file2),
+    }
+}
+
+/// Resolve SVG theme from --theme flag or config file
+fn resolve_svg_theme(theme_flag: Option<&str>, cfg: &SeussConfig) -> Theme {
+    match theme_flag {
+        Some("dark") | None => {
+            // Apply config theme overrides if present
+            if let Some(ref tc) = cfg.theme {
+                let tui = tc.to_tui_theme();
+                let mut theme = Theme::default();
+                // Transfer any custom entity colors from config
+                for (k, v) in &tui.entity_colors {
+                    let hex = ratatui_color_to_hex(*v);
+                    theme.entity_colors.insert(k.clone(), hex);
+                }
+                theme
+            } else {
+                Theme::default()
+            }
+        }
+        Some("light") => {
+            let mut theme = Theme::default();
+            theme.bg = "#f5f5f5".into();
+            theme.text = "#1a1a1a".into();
+            theme.timeline_bg = "#e0e0e0".into();
+            theme
+        }
+        Some(path) => {
+            // Try loading custom theme from TOML path
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Ok(tc) = toml::from_str::<config::theme::ThemeConfig>(&content) {
+                    let tui = tc.to_tui_theme();
+                    let mut theme = Theme::default();
+                    for (k, v) in &tui.entity_colors {
+                        theme.entity_colors.insert(k.clone(), ratatui_color_to_hex(*v));
+                    }
+                    return theme;
+                }
+            }
+            eprintln!("Warning: could not load theme '{}', using default", path);
+            Theme::default()
+        }
+    }
+}
+
+fn ratatui_color_to_hex(c: ratatui::style::Color) -> String {
+    match c {
+        ratatui::style::Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
+        ratatui::style::Color::Blue => "#4a9eff".into(),
+        ratatui::style::Color::Red => "#ff4a4a".into(),
+        ratatui::style::Color::Green => "#4aff4a".into(),
+        ratatui::style::Color::Magenta => "#ff4aff".into(),
+        ratatui::style::Color::Cyan => "#4affff".into(),
+        ratatui::style::Color::Yellow => "#ffcc00".into(),
+        _ => "#888888".into(),
     }
 }
 
@@ -132,7 +206,7 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, dpi: u32, verbose: bool) {
+fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, dpi: u32, theme: &Theme, verbose: bool) {
     let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
@@ -159,7 +233,7 @@ fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u3
     }
 
     let mut layout = compute_layout(&evaluator.world);
-    let theme = Theme::default();
+    let theme = theme.clone();
 
     // Time-range cropping (Task 16)
     if let Some(tr) = time_range {

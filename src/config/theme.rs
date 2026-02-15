@@ -111,11 +111,33 @@ impl ThemeConfig {
 }
 
 fn parse_color(s: &str) -> Option<Color> {
-    if s.starts_with('#') && s.len() == 7 {
-        let r = u8::from_str_radix(&s[1..3], 16).ok()?;
-        let g = u8::from_str_radix(&s[3..5], 16).ok()?;
-        let b = u8::from_str_radix(&s[5..7], 16).ok()?;
-        return Some(Color::Rgb(r, g, b));
+    if s.starts_with('#') {
+        let hex = &s[1..];
+        match hex.len() {
+            // #RGB shorthand → expand to #RRGGBB
+            3 => {
+                let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
+                let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
+                let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+                return Some(Color::Rgb(r, g, b));
+            }
+            // #RRGGBB standard
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                return Some(Color::Rgb(r, g, b));
+            }
+            // #RRGGBBAA with alpha (alpha ignored for terminal)
+            8 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                // alpha byte hex[6..8] ignored
+                return Some(Color::Rgb(r, g, b));
+            }
+            _ => return None,
+        }
     }
     match s.to_lowercase().as_str() {
         "black" => Some(Color::Black),
