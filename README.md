@@ -17,7 +17,20 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 
 ## Screenshots
 
+<div align="center">
+    <img src="" width="40%">
+    <img src="" width="40%">
+</div>
 
+<div align="center">
+    <img src="" width="40%">
+    <img src="" width="40%">
+</div>
+
+<div align="center">
+    <img src="" width="40%">
+    <img src="" width="40%">
+</div>
 
 ## Usage
 
@@ -44,6 +57,8 @@ $ ./target/release/seuss export examples/lotr.seuss --format svg --output timeli
 |---------|-------------|
 | `seuss run <file.seuss>` | Parse and visualize in terminal TUI |
 | `seuss export <file.seuss> --format svg` | Export as SVG |
+| `seuss export <file.seuss> --format png` | Export as PNG |
+| `seuss export <file.seuss> --format pdf` | Export as PDF |
 | `seuss check <file.seuss>` | Validate without rendering |
 
 4. Also navigate `Seuss`' TUI with the following commands.
