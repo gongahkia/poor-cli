@@ -84,9 +84,6 @@ fn main() {
         Commands::Import { file, from, output } => {
             run_import(&file, &from, output.as_deref());
         }
-        Commands::Serve { file, port } => {
-            run_serve(&file, port, cli.verbose);
-        }
         Commands::Repl => run_repl(),
         Commands::Diff { file1, file2 } => run_diff(&file1, &file2),
     }
