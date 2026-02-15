@@ -207,6 +207,12 @@ fn run_tui_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_export(file: &Path, format: &str, output: Option<&Path>, width: Option<u32>, height: Option<u32>, time_range: Option<&str>, dpi: u32, theme: &Theme, verbose: bool) {
+    const SUPPORTED_FORMATS: &[&str] = &["svg", "png", "pdf"];
+    if !SUPPORTED_FORMATS.contains(&format) {
+        eprintln!("Error: unsupported export format '{}'. Supported formats: {}", format, SUPPORTED_FORMATS.join(", "));
+        std::process::exit(1);
+    }
+
     let source = match read_seuss_file(file) {
         Ok(s) => s,
         Err(e) => {
