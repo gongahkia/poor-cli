@@ -21,7 +21,30 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
-      - run: cargo clippy -- -D warnings
-      - run: cargo test
-      - run: cargo build --release
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy -- -W warnings
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Smoke test — version
+        run: ./target/release/seuss --version
+
+      - name: Smoke test — check example
+        run: ./target/release/seuss check examples/lotr.seuss
+
+      - name: Smoke test — export SVG
+        run: ./target/release/seuss export examples/lotr.seuss -f svg -o /tmp/lotr.svg && test -s /tmp/lotr.svg
+
+      - name: Smoke test — reject bad format
+        run: |
+          if ./target/release/seuss export examples/lotr.seuss -f json 2>/dev/null; then
+            echo "Expected failure for unsupported format" && exit 1
+          fi
