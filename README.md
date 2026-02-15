@@ -1,4 +1,6 @@
-[![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/1.0.0)
+[![](https://img.shields.io/badge/seuss_1.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/1.0.0)
+![](https://github.com/gongahkia/seuess/actions/workflows/ci.yml/badge.svg)
+![](https://github.com/gongahkia/seuess/actions/workflows/release.yml/badge.svg)
 
 # `Seuss`
 
