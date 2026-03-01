@@ -11,6 +11,7 @@ describe("poor-cli.rpc", function()
         end
         rpc.request_id = 0
         rpc.pending = {}
+        rpc.pending_timers = {}
         rpc.buffer = ""
     end)
     

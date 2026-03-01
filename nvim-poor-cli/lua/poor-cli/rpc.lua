@@ -9,7 +9,27 @@ local M = {}
 M.job_id = nil
 M.request_id = 0
 M.pending = {}  -- Maps request_id to callback
+M.pending_timers = {} -- Maps request_id to timeout timer
 M.buffer = ""   -- Accumulates partial messages
+
+local function clear_request_timer(id)
+    local timer = M.pending_timers[id]
+    if not timer then
+        return
+    end
+
+    M.pending_timers[id] = nil
+    pcall(function()
+        timer:stop()
+        timer:close()
+    end)
+end
+
+local function clear_all_request_timers()
+    for id, _ in pairs(M.pending_timers) do
+        clear_request_timer(id)
+    end
+end
 
 -- Start the server
 function M.start()
@@ -53,6 +73,7 @@ function M.stop()
     if M.job_id then
         vim.fn.jobstop(M.job_id)
         M.job_id = nil
+        clear_all_request_timers()
         M.pending = {}
         M.buffer = ""
         vim.notify("[poor-cli] Server stopped", vim.log.levels.INFO)
@@ -85,6 +106,30 @@ function M.request(method, params, callback)
     
     -- Store callback
     M.pending[id] = callback
+    if callback then
+        local timeout_ms = config.get("request_timeout") or 15000
+        if timeout_ms > 0 then
+            M.pending_timers[id] = vim.defer_fn(function()
+                local timed_out_callback = M.pending[id]
+                if not timed_out_callback then
+                    clear_request_timer(id)
+                    return
+                end
+
+                M.pending[id] = nil
+                clear_request_timer(id)
+                timed_out_callback(nil, {
+                    code = -32001,
+                    message = "Request timed out",
+                    data = {
+                        request_id = id,
+                        method = method,
+                        timeout_ms = timeout_ms,
+                    },
+                })
+            end, timeout_ms)
+        end
+    end
     
     -- Send message
     M.send_message(message)
@@ -94,6 +139,23 @@ function M.request(method, params, callback)
     end
     
     return id
+end
+
+-- Cancel an in-flight request by id.
+function M.cancel_request(id, err)
+    if not id then
+        return false
+    end
+
+    local callback = M.pending[id]
+    M.pending[id] = nil
+    clear_request_timer(id)
+
+    if callback and err then
+        callback(nil, err)
+    end
+
+    return callback ~= nil
 end
 
 -- Send a notification (no response expected)
@@ -186,12 +248,15 @@ function M.handle_response(message)
     local callback = M.pending[message.id]
     if callback then
         M.pending[message.id] = nil
+        clear_request_timer(message.id)
         
         if message.error then
             callback(nil, message.error)
         else
             callback(message.result, nil)
         end
+    else
+        clear_request_timer(message.id)
     end
 end
 
@@ -226,6 +291,7 @@ end
 -- Handle server exit
 function M.handle_exit(code)
     M.job_id = nil
+    clear_all_request_timers()
     M.pending = {}
     M.buffer = ""
     

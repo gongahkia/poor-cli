@@ -48,7 +48,9 @@ cancel_pending_inline_request = function()
     end
 
     -- Remove callback dispatch for the stale in-flight request.
-    if context.request_id and rpc.pending then
+    if context.request_id and rpc.cancel_request then
+        rpc.cancel_request(context.request_id)
+    elseif context.request_id and rpc.pending then
         rpc.pending[context.request_id] = nil
     end
 

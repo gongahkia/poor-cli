@@ -32,6 +32,7 @@ M.defaults = {
     -- Auto-completion settings
     auto_trigger = false,  -- Auto-trigger on CursorHoldI
     trigger_delay = 500,   -- Delay in ms for auto-trigger
+    request_timeout = 15000, -- RPC request timeout in ms
     
     -- Health check on setup
     check_health_on_setup = false,
