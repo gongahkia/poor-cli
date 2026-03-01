@@ -235,6 +235,29 @@ class TestPermissionModeTransitions:
         assert danger_result is True
         mock_to_thread.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_auto_safe_rejects_bash_metacharacters(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        repl.config = SimpleNamespace(
+            security=SimpleNamespace(
+                permission_mode=PermissionMode.AUTO_SAFE,
+                require_permission_for_write=True,
+                require_permission_for_bash=True,
+                safe_commands=["echo", "ls", "pwd"],
+            )
+        )
+
+        with patch("poor_cli.repl_async.asyncio.to_thread", AsyncMock(return_value="y")) as mock_to_thread:
+            allowed = await PoorCLIAsync.request_permission(
+                repl,
+                "bash",
+                {"command": "echo hello && whoami"},
+            )
+
+        assert allowed is False
+        mock_to_thread.assert_not_awaited()
+
 
 class TestMainEntrypoint:
     """Test argument parsing behavior for main()."""

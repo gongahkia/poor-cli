@@ -1023,6 +1023,7 @@ class PoorCLIAsync:
         if isinstance(permission_mode, str):
             permission_mode = PermissionMode(permission_mode)
             self.config.security.permission_mode = permission_mode
+        shell_metacharacters = [";", "&&", "||", "|", "`", "$("]
 
         if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
             return True
@@ -1030,6 +1031,8 @@ class PoorCLIAsync:
         if permission_mode == PermissionMode.AUTO_SAFE:
             if tool_name == "bash":
                 command = tool_args.get("command", "").strip().lower()
+                if any(token in command for token in shell_metacharacters):
+                    return False
                 safe_commands = self.config.security.safe_commands
                 destructive_commands = ["rm", "del", "format", "dd", "mkfs", "fdisk", ">", "sudo rm"]
                 is_destructive = any(cmd in command for cmd in destructive_commands)
@@ -1057,6 +1060,8 @@ class PoorCLIAsync:
         if tool_name == "bash":
             command = tool_args.get("command", "").strip().lower()
             safe_commands = self.config.security.safe_commands
+            if any(token in command for token in shell_metacharacters):
+                return False
 
             # Check for destructive commands
             destructive_commands = ["rm", "del", "format", "dd", "mkfs", "fdisk", ">", "sudo rm"]
