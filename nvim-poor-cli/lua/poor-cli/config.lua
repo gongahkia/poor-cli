@@ -32,6 +32,7 @@ M.defaults = {
     -- UI options
     chat_width = 60,
     chat_position = "right",  -- "right" or "left"
+    max_context_files = 20, -- Maximum open buffers sent as chat context
     
     -- Auto-completion settings
     auto_trigger = false,  -- Auto-trigger on CursorHoldI

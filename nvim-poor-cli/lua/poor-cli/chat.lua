@@ -168,6 +168,8 @@ end
 -- Get list of open buffer file paths for context
 function M.get_context_files()
     local files = {}
+    local max_context_files = tonumber(config.get("max_context_files")) or 20
+    local should_cap = max_context_files > 0
     
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_loaded(bufnr) then
@@ -177,6 +179,9 @@ function M.get_context_files()
                 local ft = vim.bo[bufnr].filetype
                 if ft ~= "" and ft ~= "help" and ft ~= "markdown" then
                     table.insert(files, name)
+                    if should_cap and #files >= max_context_files then
+                        break
+                    end
                 end
             end
         end
