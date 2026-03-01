@@ -30,7 +30,7 @@ jobs:
       - name: Run linting
         run: |
           pip install ruff
-          ruff check poor_cli/core.py poor_cli/server.py poor_cli/prompts.py poor_cli/context.py
+          ruff check poor_cli tests
 
       - name: Run Python tests
         run: |
