@@ -1,6 +1,7 @@
 """Unit tests for ToolRegistryAsync.bash()."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -111,3 +112,32 @@ async def test_bash_truncates_large_output():
 
     assert result.startswith("0123456789")
     assert "[Output truncated: stdout truncated at 10 bytes]" in result
+
+
+@pytest.mark.asyncio
+async def test_bash_timeout_is_clamped_by_security_config():
+    registry = ToolRegistryAsync()
+    registry.config = SimpleNamespace(
+        security=SimpleNamespace(max_bash_timeout_seconds=5)
+    )
+    process = _FakeProcess(returncode=0, stdout=b"ok\n", stderr=b"")
+    observed = {}
+
+    async def _wait_for(awaitable, timeout):
+        observed["timeout"] = timeout
+        return await awaitable
+
+    with (
+        patch(
+            "poor_cli.tools_async.asyncio.create_subprocess_exec",
+            AsyncMock(return_value=process),
+        ),
+        patch(
+            "poor_cli.tools_async.asyncio.wait_for",
+            AsyncMock(side_effect=_wait_for),
+        ),
+    ):
+        result = await registry.bash("echo ok", timeout=60)
+
+    assert result == "ok\n"
+    assert observed["timeout"] == 5

@@ -149,6 +149,7 @@ class SecurityConfig:
     require_permission_for_write: bool = True
     require_permission_for_bash: bool = True
     enable_bash_execution: bool = True
+    max_bash_timeout_seconds: int = 60
     max_file_size_mb: int = 100
     allowed_file_extensions: list = field(default_factory=lambda: [])  # Empty = all allowed
 
@@ -407,6 +408,8 @@ class ConfigManager:
         # Validate security config
         if self.config.security.max_file_size_mb < 1:
             raise ConfigurationError("max_file_size_mb must be at least 1")
+        if self.config.security.max_bash_timeout_seconds < 1:
+            raise ConfigurationError("max_bash_timeout_seconds must be at least 1")
 
         logger.info("Configuration validated successfully")
         return True

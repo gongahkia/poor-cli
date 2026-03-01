@@ -657,6 +657,11 @@ class ToolRegistryAsync:
         try:
             logger.info(f"Executing bash command: {command}")
 
+            security_cfg = getattr(getattr(self, "config", None), "security", None)
+            timeout_ceiling = getattr(security_cfg, "max_bash_timeout_seconds", None)
+            if isinstance(timeout_ceiling, int) and timeout_ceiling > 0:
+                timeout = min(timeout, timeout_ceiling)
+
             validation = self.command_validator.validate(command)
             if not validation.is_safe:
                 warning_text = "; ".join(validation.warnings) if validation.warnings else "Unsafe command blocked"
