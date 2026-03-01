@@ -1,4 +1,3 @@
-(B) Add file locking around `RepoConfig` history reads and writes to prevent corruption when CLI and Neovim append concurrently. +stability +history +reliability
 (B) Add corrupted-history recovery in `RepoConfig._load_history()` that restores from the latest valid backup snapshot. +stability +history +reliability
 (B) Add a one-time migration path from `~/.poor-cli/history.db` into `.poor-cli/history.json` with a persisted migration marker file. +stability +history +migration
 (B) Add a config toggle in `poor_cli/config.py` to disable automatic history migration for users who want a clean repo-local start. +stability +history +config

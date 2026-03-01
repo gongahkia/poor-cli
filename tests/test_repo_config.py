@@ -3,6 +3,7 @@ Tests for repository preference serialization.
 """
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -57,3 +58,29 @@ class TestRepoConfigHistoryPersistence:
         assert destination == repo_config.history_file
         assert source.parent == repo_config.config_dir
         assert repo_config.history_file.exists()
+
+    def test_history_load_and_save_take_file_lock(self, tmp_path, monkeypatch):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Bootstrap files first, then track locking calls on a fresh instance.
+        RepoConfig(repo_path=repo_root)
+
+        lock_modes = []
+        original_lock = RepoConfig._history_file_lock
+
+        @contextmanager
+        def _tracking_lock(self, exclusive):
+            lock_modes.append(exclusive)
+            with original_lock(self, exclusive):
+                yield
+
+        monkeypatch.setattr(RepoConfig, "_history_file_lock", _tracking_lock)
+
+        repo_config = RepoConfig(repo_path=repo_root)
+        repo_config.start_session(model="test-model")
+        repo_config.add_message("user", "hello")
+
+        assert False in lock_modes
+        assert True in lock_modes
+        assert repo_config.history_lock_file.exists()

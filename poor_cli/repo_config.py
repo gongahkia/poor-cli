@@ -10,8 +10,9 @@ Manages .poor-cli directory in the current repository for:
 import os
 import json
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Iterator, Optional, List
 from datetime import datetime
 from dataclasses import dataclass, asdict, field
 
@@ -19,6 +20,11 @@ from .config import PermissionMode
 from .exceptions import ConfigurationError, FileOperationError, setup_logger
 
 logger = setup_logger(__name__)
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-Unix fallback
+    fcntl = None
 
 
 @dataclass
@@ -132,6 +138,7 @@ class RepoConfig:
 
     REPO_DIR_NAME = ".poor-cli"
     HISTORY_FILE = "history.json"
+    HISTORY_LOCK_FILE = "history.lock"
     PREFERENCES_FILE = "preferences.json"
 
     def __init__(self, repo_path: Optional[Path] = None):
@@ -144,6 +151,7 @@ class RepoConfig:
         self.repo_path = repo_path or Path.cwd()
         self.config_dir = self.repo_path / self.REPO_DIR_NAME
         self.history_file = self.config_dir / self.HISTORY_FILE
+        self.history_lock_file = self.config_dir / self.HISTORY_LOCK_FILE
         self.preferences_file = self.config_dir / self.PREFERENCES_FILE
 
         # In-memory state
@@ -212,15 +220,17 @@ class RepoConfig:
     def _load_history(self) -> None:
         """Load chat history from file"""
         try:
-            if self.history_file.exists():
+            if not self.history_file.exists():
+                self.sessions = []
+                self._save_history()
+                logger.info("Created new history file")
+                return
+
+            with self._history_file_lock(exclusive=False):
                 with open(self.history_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 self.sessions = [ChatSession.from_dict(session) for session in data.get("sessions", [])]
                 logger.info(f"Loaded {len(self.sessions)} sessions from history")
-            else:
-                self.sessions = []
-                self._save_history()
-                logger.info("Created new history file")
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in history file: {e}")
             raise ConfigurationError("Invalid history file format")
@@ -230,32 +240,50 @@ class RepoConfig:
 
     def _save_history(self) -> None:
         """Save chat history to file"""
-        temp_path: Optional[str] = None
-        try:
-            data = {
-                "sessions": [session.to_dict() for session in self.sessions],
-                "total_sessions": len(self.sessions),
-                "last_updated": datetime.now().isoformat()
-            }
-            fd, temp_path = tempfile.mkstemp(
-                prefix=f"{self.HISTORY_FILE}.",
-                suffix=".tmp",
-                dir=self.config_dir,
-            )
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_path, self.history_file)
-            logger.debug(f"Saved {len(self.sessions)} sessions to history")
-        except Exception as e:
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
-            logger.error(f"Failed to save history: {e}")
-            raise FileOperationError("Failed to save history", str(e))
+        with self._history_file_lock(exclusive=True):
+            temp_path: Optional[str] = None
+            try:
+                data = {
+                    "sessions": [session.to_dict() for session in self.sessions],
+                    "total_sessions": len(self.sessions),
+                    "last_updated": datetime.now().isoformat()
+                }
+                fd, temp_path = tempfile.mkstemp(
+                    prefix=f"{self.HISTORY_FILE}.",
+                    suffix=".tmp",
+                    dir=self.config_dir,
+                )
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temp_path, self.history_file)
+                logger.debug(f"Saved {len(self.sessions)} sessions to history")
+            except Exception as e:
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                logger.error(f"Failed to save history: {e}")
+                raise FileOperationError("Failed to save history", str(e))
+
+    @contextmanager
+    def _history_file_lock(self, exclusive: bool) -> Iterator[None]:
+        """Synchronize history file access across concurrent processes."""
+        self.history_lock_file.touch(exist_ok=True)
+
+        if fcntl is None:  # pragma: no cover - non-Unix fallback
+            yield
+            return
+
+        lock_mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        with open(self.history_lock_file, 'a+', encoding='utf-8') as lock_file:
+            fcntl.flock(lock_file.fileno(), lock_mode)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def start_session(self, model: str = "gemini-2.5-flash") -> ChatSession:
         """Start a new chat session"""
