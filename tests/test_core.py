@@ -71,6 +71,15 @@ class TestPoorCLICoreInit:
         
         assert core._config_path == config_path
 
+    def test_create_instance_with_history_adapter(self):
+        """Test injecting a custom history adapter."""
+        from poor_cli.core import PoorCLICore
+
+        adapter = MagicMock()
+        core = PoorCLICore(history_adapter=adapter)
+
+        assert core.history_adapter is adapter
+
 
 class TestPoorCLICoreNotInitialized:
     """Test error handling when core is not initialized."""
@@ -158,9 +167,11 @@ class TestPoorCLICoreWithMocks:
     @pytest.mark.asyncio
     async def test_clear_history(self, core_with_mocks):
         """Test clearing history."""
+        core_with_mocks.history_adapter = MagicMock()
         await core_with_mocks.clear_history()
         
         core_with_mocks.provider.clear_history.assert_called_once()
+        core_with_mocks.history_adapter.clear_history.assert_called_once()
     
     def test_get_history_empty(self, core_with_mocks):
         """Test getting empty history."""

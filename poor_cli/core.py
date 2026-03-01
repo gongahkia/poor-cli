@@ -7,14 +7,14 @@ the Neovim plugin.
 
 import asyncio
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
 
 from .config import ConfigManager, Config
 from .providers.base import BaseProvider, ProviderResponse, FunctionCall
 from .providers.provider_factory import ProviderFactory
 from .tools_async import ToolRegistryAsync
 from .checkpoint import CheckpointManager
-from .history import HistoryManager
+from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
@@ -29,6 +29,32 @@ from .exceptions import (
 logger = setup_logger(__name__)
 
 
+class HistoryAdapter(Protocol):
+    """History backend contract used by PoorCLICore."""
+
+    def start_session(self, model: str) -> None: ...
+
+    def add_message(self, role: str, content: str) -> None: ...
+
+    def clear_history(self) -> None: ...
+
+
+class RepoHistoryAdapter:
+    """Repository-scoped history adapter backed by RepoConfig."""
+
+    def __init__(self, repo_config: RepoConfig):
+        self._repo_config = repo_config
+
+    def start_session(self, model: str) -> None:
+        self._repo_config.start_session(model=model)
+
+    def add_message(self, role: str, content: str) -> None:
+        self._repo_config.add_message(role=role, content=content)
+
+    def clear_history(self) -> None:
+        self._repo_config.clear_history()
+
+
 class PoorCLICore:
     """
     Headless AI coding assistant engine.
@@ -40,22 +66,27 @@ class PoorCLICore:
     Attributes:
         provider: The AI provider (Gemini, OpenAI, Claude, Ollama)
         tool_registry: Registry of available tools
-        history_manager: Conversation history manager
+        history_adapter: Conversation history backend
         checkpoint_manager: File checkpoint/undo system
         config: Configuration object
     """
     SUPPORTED_CLIENTS: Tuple[str, str] = ("cli", "neovim")
     
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(
+        self,
+        config_path: Optional[Path] = None,
+        history_adapter: Optional[HistoryAdapter] = None,
+    ):
         """
         Initialize PoorCLICore with optional config path.
         
         Args:
             config_path: Optional path to config file. If None, uses default.
+            history_adapter: Optional history backend override.
         """
         self.provider: Optional[BaseProvider] = None
         self.tool_registry: Optional[ToolRegistryAsync] = None
-        self.history_manager: Optional[HistoryManager] = None
+        self.history_adapter: Optional[HistoryAdapter] = history_adapter
         self.checkpoint_manager: Optional[CheckpointManager] = None
         self.config: Optional[Config] = None
         self._config_manager: Optional[ConfigManager] = None
@@ -151,11 +182,12 @@ class PoorCLICore:
                 system_instruction=self._system_instruction
             )
             
-            # Initialize history manager if enabled
+            # Initialize repository-backed history adapter if enabled
             if self.config.history.auto_save:
-                self.history_manager = HistoryManager()
-                self.history_manager.start_session(self.config.model.model_name)
-                logger.info("History manager initialized")
+                if self.history_adapter is None:
+                    self.history_adapter = RepoHistoryAdapter(get_repo_config())
+                self.history_adapter.start_session(self.config.model.model_name)
+                logger.info("History adapter initialized")
             
             # Initialize checkpoint manager if enabled
             if self.config.checkpoint.enabled:
@@ -235,8 +267,8 @@ class PoorCLICore:
 
         
         # Save to history
-        if self.history_manager:
-            self.history_manager.add_message("user", message)
+        if self.history_adapter:
+            self.history_adapter.add_message("user", message)
         
         try:
             accumulated_text = ""
@@ -270,8 +302,8 @@ class PoorCLICore:
                     yield chunk.content
             
             # Save assistant response to history
-            if self.history_manager and accumulated_text:
-                self.history_manager.add_message("model", accumulated_text)
+            if self.history_adapter and accumulated_text:
+                self.history_adapter.add_message("model", accumulated_text)
             
             logger.info(f"Message complete, {len(accumulated_text)} chars")
             
@@ -440,8 +472,8 @@ class PoorCLICore:
                 full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
         
         # Save to history
-        if self.history_manager:
-            self.history_manager.add_message("user", message)
+        if self.history_adapter:
+            self.history_adapter.add_message("user", message)
         
         try:
             response = await self.provider.send_message(full_message)
@@ -455,8 +487,8 @@ class PoorCLICore:
                     accumulated_text += response.content
             
             # Save assistant response to history
-            if self.history_manager and accumulated_text:
-                self.history_manager.add_message("model", accumulated_text)
+            if self.history_adapter and accumulated_text:
+                self.history_adapter.add_message("model", accumulated_text)
             
             logger.info(f"Message complete (sync), {len(accumulated_text)} chars")
             return accumulated_text
@@ -785,8 +817,8 @@ class PoorCLICore:
         if hasattr(self.provider, 'clear_history'):
             await self.provider.clear_history()
         
-        if self.history_manager:
-            self.history_manager.clear_current_session()
+        if self.history_adapter:
+            self.history_adapter.clear_history()
 
     def get_history(self) -> List[Dict[str, Any]]:
         """
