@@ -207,6 +207,22 @@ class TestPoorCLIServer:
         assert server.permission_mode == "auto-safe"
         assert result["capabilities"]["permissionMode"] == "auto-safe"
 
+    @pytest.mark.asyncio
+    async def test_initialize_rejects_invalid_permission_mode(self, server):
+        """Test invalid initialize permissionMode returns INVALID_PARAMS."""
+        server.core.initialize = AsyncMock()
+        server.core.get_provider_info = MagicMock(return_value={"name": "gemini"})
+        message = JsonRpcMessage(
+            id=1,
+            method="initialize",
+            params={"permissionMode": "never-ask"},
+        )
+
+        response = await server.dispatch(message)
+
+        assert response.error is not None
+        assert response.error["code"] == JsonRpcError.INVALID_PARAMS
+
 
 class TestServerMain:
     """Test server CLI entrypoint behavior."""

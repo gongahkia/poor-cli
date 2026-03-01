@@ -13,6 +13,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from .config import PermissionMode
 from .core import PoorCLICore
 from .exceptions import ConfigurationError, PoorCLIError, setup_logger
 
@@ -88,6 +89,10 @@ class JsonRpcError:
         return error
 
 
+class InvalidParamsError(Exception):
+    """Raised when JSON-RPC method params fail validation."""
+
+
 # =============================================================================
 # PoorCLI Server
 # =============================================================================
@@ -148,7 +153,13 @@ class PoorCLIServer:
         try:
             requested_permission_mode = params.get("permissionMode")
             if requested_permission_mode is not None:
-                self.permission_mode = str(requested_permission_mode)
+                try:
+                    self.permission_mode = PermissionMode(str(requested_permission_mode)).value
+                except ValueError as e:
+                    raise InvalidParamsError(
+                        "Invalid permissionMode. "
+                        "Expected one of: prompt, auto-safe, danger-full-access."
+                    ) from e
 
             await self.core.initialize(
                 provider_name=params.get("provider"),
@@ -421,6 +432,14 @@ class PoorCLIServer:
             return JsonRpcMessage(
                 id=message.id,
                 result=result
+            )
+        except InvalidParamsError as e:
+            return JsonRpcMessage(
+                id=message.id,
+                error=JsonRpcError.make_error(
+                    JsonRpcError.INVALID_PARAMS,
+                    str(e),
+                ),
             )
         except Exception as e:
             self.logger.exception(f"Handler error for {message.method}")
