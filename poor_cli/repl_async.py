@@ -23,7 +23,6 @@ from .enhanced_tools import EnhancedToolRegistry
 from .config import get_config_manager, Config, PermissionMode
 from .prompts import build_tool_calling_system_instruction
 from .provider_lifecycle import ProviderLifecycleService
-from .history import HistoryManager
 from .repo_config import get_repo_config, RepoConfig
 from .error_recovery import ErrorRecoveryManager
 from .checkpoint import CheckpointManager
@@ -87,7 +86,7 @@ class PoorCLIAsync:
             dangerously_skip_permissions=dangerously_skip_permissions,
         )
         set_log_context(provider=self.config.model.provider)
-        self.history_manager: Optional[HistoryManager] = None
+        self.history_manager = None  # Deprecated placeholder; repo_config is authoritative.
         self.repo_config: Optional[RepoConfig] = None  # For local JSON history
         self.error_recovery = ErrorRecoveryManager()
         self.running = False
@@ -192,12 +191,6 @@ class PoorCLIAsync:
         try:
             logger.info("Initializing poor-cli (async)...")
 
-            # Initialize history manager
-            if self.config.history.auto_save:
-                self.history_manager = HistoryManager()
-                self.history_manager.start_session(self.config.model.model_name)
-                logger.info("History manager initialized")
-
             # Start repo config session for local JSON history
             if self.repo_config:
                 try:
@@ -275,7 +268,7 @@ class PoorCLIAsync:
         status_line.append(f"[magenta]{self.config.model.provider}[/magenta]")
         if self.config.ui.enable_streaming:
             status_line.append("[green]streaming[/green]")
-        if self.history_manager:
+        if self.repo_config:
             status_line.append("[cyan]history[/cyan]")
         if self.config.ui.show_token_count:
             status_line.append("[yellow]tokens[/yellow]")
@@ -565,9 +558,6 @@ class PoorCLIAsync:
 
     async def _shutdown_sessions(self):
         """End history sessions and persist repository-scoped history."""
-        if self.history_manager:
-            self.history_manager.end_session()
-
         if self.repo_config:
             try:
                 self.repo_config.end_session()
@@ -664,9 +654,6 @@ class PoorCLIAsync:
             self.session_stats["input_chars"] += len(user_input)
             self.session_stats["input_tokens_estimate"] += len(user_input) // 4
 
-            if self.history_manager:
-                self.history_manager.add_message("user", user_input)
-
             if self.repo_config:
                 try:
                     self.repo_config.add_message("user", user_input)
@@ -687,9 +674,6 @@ class PoorCLIAsync:
                 self.session_stats["output_chars"] += len(response_text)
                 self.session_stats["output_tokens_estimate"] += len(response_text) // 4
                 self.last_assistant_response = response_text
-
-                if self.history_manager:
-                    self.history_manager.add_message("model", response_text)
 
                 if self.repo_config:
                     try:
@@ -775,26 +759,12 @@ class PoorCLIAsync:
             self.session_stats["input_chars"] += len(user_input)
             self.session_stats["input_tokens_estimate"] += len(user_input) // 4
 
-            # Save user message to history
-            if self.history_manager:
-                self.history_manager.add_message("user", user_input)
-
             # Save to repo config history as well
             if self.repo_config:
                 try:
                     self.repo_config.add_message("user", user_input)
                 except Exception as e:
                     logger.error(f"Failed to log user message to repo config: {e}")
-
-            # Check if we should prune history
-            if self.history_manager:
-                current_tokens = self.history_manager.get_total_tokens()
-                if current_tokens > self.config.history.max_token_limit:
-                    pruned = self.history_manager.prune_history(
-                        self.config.history.max_token_limit
-                    )
-                    if pruned > 0:
-                        logger.info(f"Pruned {pruned} messages from history")
 
             # Use streaming if enabled
             if self.config.ui.enable_streaming:
@@ -907,10 +877,6 @@ class PoorCLIAsync:
                 self.session_stats["output_tokens_estimate"] += len(accumulated_text) // 4
                 self.last_assistant_response = accumulated_text
 
-            # Save assistant response to history
-            if self.history_manager and accumulated_text:
-                self.history_manager.add_message("model", accumulated_text)
-
             # Save to repo config history as well
             if self.repo_config and accumulated_text:
                 try:
@@ -954,10 +920,6 @@ class PoorCLIAsync:
                 # Display text response
                 if response.content:
                     self.display_response(response.content)
-
-                    # Save to history
-                    if self.history_manager:
-                        self.history_manager.add_message("model", response.content)
 
                     # Save to repo config history as well
                     if self.repo_config:
