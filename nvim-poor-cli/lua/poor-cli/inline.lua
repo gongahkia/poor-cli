@@ -11,6 +11,81 @@ M.ns_id = vim.api.nvim_create_namespace("poor-cli-inline")
 
 -- Current completion state
 M.current_completion = nil  -- { bufnr, line, col, text }
+M.inline_request_token = 0
+M.pending_inline_request = nil  -- { token, bufnr, line, col, changedtick }
+
+local function create_inline_request_context(bufnr, line, col)
+    M.inline_request_token = M.inline_request_token + 1
+    local context = {
+        token = M.inline_request_token,
+        bufnr = bufnr,
+        line = line,
+        col = col,
+        changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+    }
+    M.pending_inline_request = context
+    return context
+end
+
+local function is_request_active(context)
+    return M.pending_inline_request
+        and M.pending_inline_request.token == context.token
+end
+
+local function clear_request_if_active(context)
+    if is_request_active(context) then
+        M.pending_inline_request = nil
+    end
+end
+
+local function is_request_stale(context)
+    if not vim.api.nvim_buf_is_valid(context.bufnr) then
+        return true
+    end
+
+    if vim.api.nvim_get_current_buf() ~= context.bufnr then
+        return true
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    if cursor[1] ~= context.line or cursor[2] ~= context.col then
+        return true
+    end
+
+    local changedtick = vim.api.nvim_buf_get_changedtick(context.bufnr)
+    return changedtick ~= context.changedtick
+end
+
+local function handle_inline_response(context, result, err)
+    if not is_request_active(context) then
+        return
+    end
+
+    if err then
+        clear_request_if_active(context)
+        vim.notify("[poor-cli] Completion error: " .. vim.inspect(err), vim.log.levels.ERROR)
+        return
+    end
+
+    if not result or not result.completion then
+        clear_request_if_active(context)
+        return
+    end
+
+    vim.schedule(function()
+        if not is_request_active(context) then
+            return
+        end
+
+        if is_request_stale(context) then
+            clear_request_if_active(context)
+            return
+        end
+
+        clear_request_if_active(context)
+        M.show_ghost_text(result.completion)
+    end)
+end
 
 -- Show ghost text at cursor position
 function M.show_ghost_text(text)
@@ -157,24 +232,21 @@ function M.trigger()
     local language = vim.bo[bufnr].filetype
     
     -- Request completion
-    rpc.request("poor-cli/inlineComplete", {
+    local request_context = create_inline_request_context(bufnr, line, col)
+
+    local request_id = rpc.request("poor-cli/inlineComplete", {
         codeBefore = code_before,
         codeAfter = code_after,
         instruction = "",
         filePath = file_path,
         language = language,
     }, function(result, err)
-        if err then
-            vim.notify("[poor-cli] Completion error: " .. vim.inspect(err), vim.log.levels.ERROR)
-            return
-        end
-        
-        if result and result.completion then
-            vim.schedule(function()
-                M.show_ghost_text(result.completion)
-            end)
-        end
+        handle_inline_response(request_context, result, err)
     end)
+
+    if not request_id then
+        clear_request_if_active(request_context)
+    end
 end
 
 -- Trigger with custom instruction
@@ -217,24 +289,21 @@ function M.trigger_with_instruction(instruction)
     local file_path = vim.fn.expand("%:p")
     local language = vim.bo[bufnr].filetype
     
-    rpc.request("poor-cli/inlineComplete", {
+    local request_context = create_inline_request_context(bufnr, line, col)
+
+    local request_id = rpc.request("poor-cli/inlineComplete", {
         codeBefore = code_before,
         codeAfter = code_after,
         instruction = instruction,
         filePath = file_path,
         language = language,
     }, function(result, err)
-        if err then
-            vim.notify("[poor-cli] Completion error: " .. vim.inspect(err), vim.log.levels.ERROR)
-            return
-        end
-        
-        if result and result.completion then
-            vim.schedule(function()
-                M.show_ghost_text(result.completion)
-            end)
-        end
+        handle_inline_response(request_context, result, err)
     end)
+
+    if not request_id then
+        clear_request_if_active(request_context)
+    end
 end
 
 -- Complete visual selection with instruction
