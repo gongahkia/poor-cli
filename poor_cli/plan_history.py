@@ -19,7 +19,6 @@ from collections import Counter, defaultdict
 from enum import Enum
 
 from poor_cli.plan_mode import ExecutionPlan, PlanStep, PlanStepType, RiskLevel
-from poor_cli.advanced_planning import PlanTemplate
 from poor_cli.exceptions import setup_logger
 
 logger = setup_logger(__name__)
@@ -32,6 +31,16 @@ class PlanOutcome(Enum):
     FAILURE = "failure"
     CANCELLED = "cancelled"
     ROLLBACK = "rollback"
+
+
+@dataclass
+class PlanTemplate:
+    """Persisted plan template record used by plan history features."""
+
+    template_id: str
+    name: str
+    description: str
+    steps_template: List[Dict[str, Any]]
 
 
 @dataclass
