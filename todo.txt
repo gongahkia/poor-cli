@@ -1,0 +1,36 @@
+(B) Add `max_bash_timeout_seconds` to `SecurityConfig` in `poor_cli/config.py` and clamp tool-requested timeout values to this ceiling. +stability +security +config
+(B) Set `PoorCLICore.permission_callback` in `poor_cli/server.py` so JSON-RPC tool calls cannot bypass permission policy. +stability +security +server
+(B) Implement a default server permission callback that denies write/edit/delete/bash in `prompt` mode when no interactive confirmer exists. +stability +security +server +nvim
+(B) Return structured `permission_denied` errors from server tool execution paths instead of generic exception strings. +stability +security +server
+(B) Remove `HistoryManager` initialization and writes from `poor_cli/repl_async.py` so REPL uses a single repository-scoped history backend. +stability +history +refactor
+(B) Replace `HistoryManager` usage in `poor_cli/core.py` with an injected history adapter backed by repository storage. +stability +history +refactor
+(B) Add atomic write semantics in `RepoConfig._save_history()` using temp file plus `os.replace`. +stability +history +reliability
+(B) Add file locking around `RepoConfig` history reads and writes to prevent corruption when CLI and Neovim append concurrently. +stability +history +reliability
+(B) Add corrupted-history recovery in `RepoConfig._load_history()` that restores from the latest valid backup snapshot. +stability +history +reliability
+(B) Add a one-time migration path from `~/.poor-cli/history.db` into `.poor-cli/history.json` with a persisted migration marker file. +stability +history +migration
+(B) Add a config toggle in `poor_cli/config.py` to disable automatic history migration for users who want a clean repo-local start. +stability +history +config
+(B) Route `/history`, `/sessions`, `/search`, `/export`, `/new-session`, and `/clear` command data paths to `RepoConfig` only. +stability +history +cli
+(B) Add retention controls (`max_sessions`, `max_messages_per_session`) to `RepoConfig` and prune on write to keep repo history bounded. +stability +history +performance
+(B) Add concurrency tests that run simultaneous append operations from two processes against the same `.poor-cli/history.json`. +stability +tests +history
+(B) Migrate `poor_cli/providers/gemini_provider.py` from deprecated `google-generativeai` SDK to the supported `google-genai` SDK. +stability +providers +refactor
+(B) Remove all direct `google.generativeai.types.protos` imports from `poor_cli/repl_async.py` and `poor_cli/core.py` by moving provider-specific tool-result formatting behind provider adapters. +stability +providers +refactor
+(B) Add provider contract tests that validate stream chunks, function-call parsing, and tool-result formatting for Gemini/OpenAI/Anthropic/Ollama adapters. +stability +tests +providers
+(B) Add stale-response guards in `nvim-poor-cli/lua/poor-cli/inline.lua` by binding each completion response to a request token and cursor snapshot. +stability +nvim +feature
+(B) Cancel in-flight inline completion requests in `nvim-poor-cli/lua/poor-cli/inline.lua` when cursor position or buffer text changes. +stability +nvim +feature
+(B) Fix first-line context assembly in `nvim-poor-cli/lua/poor-cli/inline.lua` so `codeBefore` does not prepend a spurious leading newline. +stability +nvim +bugfix
+(B) Make inline insertion column math byte-safe for multibyte text in `nvim-poor-cli/lua/poor-cli/inline.lua`. +stability +nvim +bugfix
+(B) Add RPC request timeout handling in `nvim-poor-cli/lua/poor-cli/rpc.lua` and surface timeout errors to callbacks. +stability +nvim +reliability
+(B) Add automatic server restart backoff in `nvim-poor-cli/lua/poor-cli/rpc.lua` when the stdio job exits unexpectedly. +stability +nvim +reliability
+(B) Cap Neovim context file fan-in in `nvim-poor-cli/lua/poor-cli/chat.lua` to a configurable maximum number of buffers. +stability +nvim +performance
+(B) Deduplicate and canonicalize file paths returned by `M.get_context_files()` in `nvim-poor-cli/lua/poor-cli/chat.lua` before JSON-RPC requests. +stability +nvim +performance
+(B) Replace loading-indicator removal heuristics in `nvim-poor-cli/lua/poor-cli/chat.lua` with marker-based insertion/removal to avoid deleting real content. +stability +nvim +bugfix
+(B) Add Neovim tests for stale completion suppression and request timeout behavior in `nvim-poor-cli/tests/`. +stability +tests +nvim
+(B) Add an import-graph check in CI that reports modules with zero runtime references from entrypoints and tests. +stability +infra +ci
+(B) Remove `poor_cli/gemini_client_async.py` if import-graph check confirms no runtime references from CLI, server, or tests. +stability +cleanup +refactor
+(B) Remove `poor_cli/advanced_planning.py` if import-graph check confirms no runtime references from CLI, server, or tests. +stability +cleanup +refactor
+(B) Remove `poor_cli/interactive_plan_editor.py` if import-graph check confirms no runtime references from CLI, server, or tests. +stability +cleanup +refactor
+(B) Remove `poor_cli/ui_modes.py` if import-graph check confirms no runtime references from CLI, server, or tests. +stability +cleanup +refactor
+(B) Remove `poor_cli/visual_enhancements.py` if import-graph check confirms no runtime references from CLI, server, or tests. +stability +cleanup +refactor
+(B) Remove `poor_cli/code_intelligence.py` if import-graph check confirms no runtime references from CLI, server, or tests. +stability +cleanup +refactor
+(B) Replace unsafe `.env` ingestion in `run.sh` with robust parsing that ignores comments and preserves values containing spaces. +stability +security +cli
+(B) Make `get_repo_config()` return instances keyed by repository root path instead of a single global singleton. +stability +history +bugfix
