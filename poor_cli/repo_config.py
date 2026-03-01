@@ -273,6 +273,7 @@ class RepoConfig:
         with self._history_file_lock(exclusive=True):
             temp_path: Optional[str] = None
             try:
+                self.sessions = self._merge_sessions_with_disk_locked(self.sessions)
                 self._apply_retention_limits()
                 data = {
                     "sessions": [session.to_dict() for session in self.sessions],
@@ -299,6 +300,25 @@ class RepoConfig:
                         pass
                 logger.error(f"Failed to save history: {e}")
                 raise FileOperationError("Failed to save history", str(e))
+
+    def _merge_sessions_with_disk_locked(self, local_sessions: List[ChatSession]) -> List[ChatSession]:
+        """Merge local sessions with latest on-disk sessions while holding write lock."""
+        merged: Dict[str, ChatSession] = {}
+
+        if self.history_file.exists():
+            try:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    disk_data = json.load(f)
+                for session_data in disk_data.get("sessions", []):
+                    session = ChatSession.from_dict(session_data)
+                    merged[session.session_id] = session
+            except Exception as e:
+                logger.warning(f"Failed to merge existing on-disk sessions: {e}")
+
+        for session in local_sessions:
+            merged[session.session_id] = session
+
+        return sorted(merged.values(), key=lambda session: session.started_at)
 
     def _write_history_backup(self) -> None:
         """Persist a timestamped backup snapshot of history."""
@@ -477,7 +497,7 @@ class RepoConfig:
 
     def start_session(self, model: str = "gemini-2.5-flash") -> ChatSession:
         """Start a new chat session"""
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{os.getpid()}"
         self.current_session = ChatSession(
             session_id=session_id,
             started_at=datetime.now().isoformat(),

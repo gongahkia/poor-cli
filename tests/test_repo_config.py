@@ -5,6 +5,7 @@ Tests for repository preference serialization.
 import os
 import json
 import sqlite3
+from multiprocessing import Process
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -13,6 +14,18 @@ import pytest
 from poor_cli.config import PermissionMode
 from poor_cli.exceptions import ConfigurationError
 from poor_cli.repo_config import ChatSession, RepoConfig, RepoPreferences
+
+
+def _concurrent_append_worker(repo_root: str, content: str) -> None:
+    from pathlib import Path as _Path
+
+    repo_config = RepoConfig(
+        repo_path=_Path(repo_root),
+        enable_legacy_history_migration=False,
+    )
+    repo_config.start_session(model="worker")
+    repo_config.add_message("user", content)
+    repo_config.end_session()
 
 
 class TestRepoPreferencesPermissionMode:
@@ -269,3 +282,36 @@ class TestRepoConfigHistoryPersistence:
         repo_config._save_history()
 
         assert [session.session_id for session in repo_config.sessions] == ["s2", "s3"]
+
+    def test_concurrent_process_appends_preserve_history_file_integrity(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        RepoConfig(
+            repo_path=repo_root,
+            enable_legacy_history_migration=False,
+        )
+
+        proc_a = Process(target=_concurrent_append_worker, args=(str(repo_root), "from-proc-a"))
+        proc_b = Process(target=_concurrent_append_worker, args=(str(repo_root), "from-proc-b"))
+        proc_a.start()
+        proc_b.start()
+        proc_a.join(timeout=20)
+        proc_b.join(timeout=20)
+
+        assert proc_a.exitcode == 0
+        assert proc_b.exitcode == 0
+
+        reloaded = RepoConfig(
+            repo_path=repo_root,
+            enable_legacy_history_migration=False,
+        )
+        all_contents = [
+            message.content
+            for session in reloaded.sessions
+            for message in session.messages
+        ]
+        assert "from-proc-a" in all_contents
+        assert "from-proc-b" in all_contents
+
+        payload = json.loads(reloaded.history_file.read_text(encoding="utf-8"))
+        assert isinstance(payload.get("sessions"), list)

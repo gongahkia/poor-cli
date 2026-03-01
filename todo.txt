@@ -1,4 +1,3 @@
-(B) Add concurrency tests that run simultaneous append operations from two processes against the same `.poor-cli/history.json`. +stability +tests +history
 (B) Migrate `poor_cli/providers/gemini_provider.py` from deprecated `google-generativeai` SDK to the supported `google-genai` SDK. +stability +providers +refactor
 (B) Remove all direct `google.generativeai.types.protos` imports from `poor_cli/repl_async.py` and `poor_cli/core.py` by moving provider-specific tool-result formatting behind provider adapters. +stability +providers +refactor
 (B) Add provider contract tests that validate stream chunks, function-call parsing, and tool-result formatting for Gemini/OpenAI/Anthropic/Ollama adapters. +stability +tests +providers
