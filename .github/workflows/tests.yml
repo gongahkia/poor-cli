@@ -1,4 +1,4 @@
-name: CI/CD poor-cli tests
+name: Poor-CLI CI/CD Tests
 
 on:
   push:
