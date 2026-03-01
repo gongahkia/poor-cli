@@ -11,6 +11,7 @@ import os
 import json
 import tempfile
 import shutil
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Any, Iterator, Optional, List
@@ -141,6 +142,7 @@ class RepoConfig:
     HISTORY_FILE = "history.json"
     HISTORY_BACKUP_DIR = "history_backups"
     HISTORY_LOCK_FILE = "history.lock"
+    HISTORY_MIGRATION_MARKER_FILE = "history_migration_marker.json"
     PREFERENCES_FILE = "preferences.json"
 
     def __init__(self, repo_path: Optional[Path] = None):
@@ -155,6 +157,7 @@ class RepoConfig:
         self.history_file = self.config_dir / self.HISTORY_FILE
         self.history_backup_dir = self.config_dir / self.HISTORY_BACKUP_DIR
         self.history_lock_file = self.config_dir / self.HISTORY_LOCK_FILE
+        self.history_migration_marker_file = self.config_dir / self.HISTORY_MIGRATION_MARKER_FILE
         self.preferences_file = self.config_dir / self.PREFERENCES_FILE
 
         # In-memory state
@@ -166,6 +169,7 @@ class RepoConfig:
         self._ensure_config_dir()
         self._load_preferences()
         self._load_history()
+        self._maybe_migrate_legacy_history()
 
     def _ensure_config_dir(self) -> None:
         """Create .poor-cli directory if it doesn't exist"""
@@ -333,6 +337,106 @@ class RepoConfig:
                 return False
 
         return False
+
+    def _maybe_migrate_legacy_history(self) -> None:
+        """One-time import of legacy ~/.poor-cli/history.db into repo history."""
+        if self.history_migration_marker_file.exists():
+            return
+
+        legacy_db_path = Path.home() / ".poor-cli" / "history.db"
+        marker_payload: Dict[str, Any] = {
+            "ran_at": datetime.now().isoformat(),
+            "legacy_db_path": str(legacy_db_path),
+            "status": "source_missing",
+            "migrated_sessions": 0,
+        }
+
+        try:
+            if legacy_db_path.exists():
+                migrated_sessions = self._migrate_legacy_history_db(legacy_db_path)
+                marker_payload["status"] = "migrated" if migrated_sessions else "no_new_data"
+                marker_payload["migrated_sessions"] = migrated_sessions
+            self._write_migration_marker(marker_payload)
+        except Exception as e:
+            marker_payload["status"] = "failed"
+            marker_payload["error"] = str(e)
+            self._write_migration_marker(marker_payload)
+            logger.warning(f"Legacy history migration failed: {e}")
+
+    def _migrate_legacy_history_db(self, legacy_db_path: Path) -> int:
+        """Import sessions/messages from legacy SQLite history database."""
+        existing_session_ids = {session.session_id for session in self.sessions}
+        migrated_sessions = 0
+
+        conn = sqlite3.connect(legacy_db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT session_id, started_at, ended_at, model
+                FROM sessions
+                ORDER BY started_at ASC
+                """
+            )
+            session_rows = cursor.fetchall()
+
+            for session_id, started_at, ended_at, model in session_rows:
+                if session_id in existing_session_ids:
+                    continue
+
+                cursor.execute(
+                    """
+                    SELECT role, content, timestamp
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY id ASC
+                    """,
+                    (session_id,),
+                )
+                message_rows = cursor.fetchall()
+
+                messages: List[ChatMessage] = []
+                total_tokens_estimate = 0
+                for role, content, timestamp in message_rows:
+                    text = content if isinstance(content, str) else str(content)
+                    normalized_role = "assistant" if role in {"model", "assistant"} else str(role)
+                    messages.append(
+                        ChatMessage(
+                            role=normalized_role,
+                            content=text,
+                            timestamp=timestamp or datetime.now().isoformat(),
+                        )
+                    )
+                    total_tokens_estimate += len(text) // 4
+
+                self.sessions.append(
+                    ChatSession(
+                        session_id=str(session_id),
+                        started_at=started_at or datetime.now().isoformat(),
+                        ended_at=ended_at,
+                        model=model or "gemini-2.5-flash",
+                        messages=messages,
+                        total_tokens_estimate=total_tokens_estimate,
+                    )
+                )
+                existing_session_ids.add(str(session_id))
+                migrated_sessions += 1
+        finally:
+            conn.close()
+
+        if migrated_sessions:
+            self._save_history()
+            logger.info(f"Migrated {migrated_sessions} legacy sessions from {legacy_db_path}")
+
+        return migrated_sessions
+
+    def _write_migration_marker(self, marker_payload: Dict[str, Any]) -> None:
+        """Persist migration status marker so migration runs only once."""
+        try:
+            with open(self.history_migration_marker_file, 'w', encoding='utf-8') as f:
+                json.dump(marker_payload, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to persist history migration marker: {e}")
 
     @contextmanager
     def _history_file_lock(self, exclusive: bool) -> Iterator[None]:

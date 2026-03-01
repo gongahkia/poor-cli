@@ -4,6 +4,7 @@ Tests for repository preference serialization.
 
 import os
 import json
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -108,3 +109,72 @@ class TestRepoConfigHistoryPersistence:
         RepoConfig(repo_path=repo_root)
         restored_payload = json.loads(repo_config.history_file.read_text(encoding="utf-8"))
         assert restored_payload["sessions"] == expected_backup_payload["sessions"]
+
+    def test_legacy_history_db_migrates_once_and_writes_marker(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        legacy_dir = home / ".poor-cli"
+        legacy_dir.mkdir(parents=True)
+        legacy_db = legacy_dir / "history.db"
+
+        conn = sqlite3.connect(legacy_db)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE sessions (
+                    session_id TEXT PRIMARY KEY,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT,
+                    total_tokens INTEGER DEFAULT 0,
+                    model TEXT DEFAULT 'gemini-2.0-flash-exp',
+                    archived INTEGER DEFAULT 0
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                "INSERT INTO sessions (session_id, started_at, ended_at, model) VALUES (?, ?, ?, ?)",
+                ("legacy-1", "2026-01-01T00:00:00", None, "gemini-legacy"),
+            )
+            cursor.execute(
+                "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                ("legacy-1", "user", "hello from sqlite", "2026-01-01T00:00:01"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        monkeypatch.setenv("HOME", str(home))
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        first = RepoConfig(repo_path=repo_root)
+        migrated_ids = {session.session_id for session in first.sessions}
+        assert "legacy-1" in migrated_ids
+        assert first.history_migration_marker_file.exists()
+
+        conn = sqlite3.connect(legacy_db)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO sessions (session_id, started_at, ended_at, model) VALUES (?, ?, ?, ?)",
+                ("legacy-2", "2026-01-02T00:00:00", None, "gemini-legacy"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        second = RepoConfig(repo_path=repo_root)
+        second_ids = {session.session_id for session in second.sessions}
+        assert "legacy-2" not in second_ids
