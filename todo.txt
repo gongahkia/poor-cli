@@ -1,4 +1,3 @@
-(B) Route `/history`, `/sessions`, `/search`, `/export`, `/new-session`, and `/clear` command data paths to `RepoConfig` only. +stability +history +cli
 (B) Add retention controls (`max_sessions`, `max_messages_per_session`) to `RepoConfig` and prune on write to keep repo history bounded. +stability +history +performance
 (B) Add concurrency tests that run simultaneous append operations from two processes against the same `.poor-cli/history.json`. +stability +tests +history
 (B) Migrate `poor_cli/providers/gemini_provider.py` from deprecated `google-generativeai` SDK to the supported `google-genai` SDK. +stability +providers +refactor

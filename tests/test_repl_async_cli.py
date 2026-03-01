@@ -259,6 +259,61 @@ class TestPermissionModeTransitions:
         mock_to_thread.assert_not_awaited()
 
 
+class TestHistoryCommands:
+    """Test repo-config-backed history command behavior."""
+
+    @pytest.mark.asyncio
+    async def test_clear_command_uses_repo_config_history(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        repl.provider = MagicMock()
+        repl.provider.clear_history = AsyncMock()
+        repl.repo_config = MagicMock()
+
+        await PoorCLIAsync.handle_command(repl, "/clear")
+
+        repl.provider.clear_history.assert_awaited_once_with()
+        repl.repo_config.clear_current_session.assert_called_once_with()
+        repl.console.print.assert_called_once_with("[green]Conversation history cleared[/green]")
+
+    @pytest.mark.asyncio
+    async def test_new_session_command_rotates_repo_config_session(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        repl.provider = MagicMock()
+        repl.provider.clear_history = AsyncMock()
+        repl.config = SimpleNamespace(model=SimpleNamespace(model_name="gemini-test"))
+        repl.repo_config = MagicMock()
+        repl.repo_config.current_session = SimpleNamespace(session_id="new-session-id")
+
+        with patch("poor_cli.repl_commands.set_log_context") as mock_set_log_context:
+            await PoorCLIAsync.handle_command(repl, "/new-session")
+
+        repl.provider.clear_history.assert_awaited_once_with()
+        repl.repo_config.end_session.assert_called_once_with()
+        repl.repo_config.start_session.assert_called_once_with(model="gemini-test")
+        mock_set_log_context.assert_called_once_with(session_id="new-session-id")
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_uses_repo_config(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        session = SimpleNamespace(
+            session_id="session-1",
+            started_at="2026-01-01T10:00:00",
+            messages=[SimpleNamespace(role="user", content="hi")],
+        )
+        repl.repo_config = SimpleNamespace(
+            current_session=session,
+            list_sessions=MagicMock(return_value=[session]),
+        )
+
+        await PoorCLIAsync._list_sessions(repl)
+
+        repl.repo_config.list_sessions.assert_called_once_with(limit=10)
+        repl.console.print.assert_called_once()
+
+
 class TestMainEntrypoint:
     """Test argument parsing behavior for main()."""
 

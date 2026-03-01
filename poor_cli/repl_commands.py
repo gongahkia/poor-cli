@@ -78,8 +78,8 @@ async def handle_slash_command(repl, command: str):
 
     elif cmd == "/clear":
         await repl.provider.clear_history()
-        if repl.history_manager:
-            repl.history_manager.clear_current_session()
+        if repl.repo_config:
+            repl.repo_config.clear_current_session()
         repl.console.print("[green]Conversation history cleared[/green]")
 
     elif cmd == "/clear-output":
@@ -117,14 +117,11 @@ async def handle_slash_command(repl, command: str):
     elif cmd == "/new-session":
         # Start a completely new session (clear history)
         await repl.provider.clear_history()
-        if repl.history_manager:
-            repl.history_manager.end_session()
-            repl.history_manager.start_session(repl.config.model.model_name)
         if repl.repo_config:
             repl.repo_config.end_session()
             repl.repo_config.start_session(model=repl.config.model.model_name)
             if repl.repo_config.current_session:
-                set_log_context(session_id=repl.repo_config.current_session)
+                set_log_context(session_id=repl.repo_config.current_session.session_id)
         repl.console.print("[green]✓ Started new session (previous history cleared)[/green]")
 
     elif cmd == "/config":

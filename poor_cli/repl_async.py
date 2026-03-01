@@ -198,7 +198,7 @@ class PoorCLIAsync:
                 try:
                     self.repo_config.start_session(model=self.config.model.model_name)
                     if self.repo_config.current_session:
-                        set_log_context(session_id=self.repo_config.current_session)
+                        set_log_context(session_id=self.repo_config.current_session.session_id)
                     logger.info("Started repo config history session")
                 except Exception as e:
                     logger.error(f"Failed to start repo config session: {e}")
@@ -397,13 +397,13 @@ class PoorCLIAsync:
             self.console.print(f"[dim yellow]⚠ Could not restore previous session: {e}[/dim yellow]")
 
     async def _list_sessions(self):
-        """List all previous sessions from history database"""
+        """List all previous sessions from repo history."""
         try:
-            if not self.history_manager:
+            if not self.repo_config:
                 self.console.print("[yellow]History tracking not enabled[/yellow]")
                 return
 
-            sessions = self.history_manager.list_sessions(limit=10)
+            sessions = self.repo_config.list_sessions(limit=10)
 
             if not sessions:
                 self.console.print("[yellow]No previous sessions found[/yellow]")
@@ -413,7 +413,17 @@ class PoorCLIAsync:
             from datetime import datetime
             session_text = "[bold]Recent Sessions:[/bold]\n\n"
 
-            for session_id, started_at, message_count in sessions:
+            active_session_id = (
+                self.repo_config.current_session.session_id
+                if self.repo_config.current_session
+                else None
+            )
+
+            for session in sessions:
+                session_id = session.session_id
+                started_at = session.started_at
+                message_count = len(session.messages)
+
                 # Parse and format date
                 try:
                     dt = datetime.fromisoformat(started_at)
@@ -421,7 +431,8 @@ class PoorCLIAsync:
                 except:
                     date_str = started_at
 
-                session_text += f"[cyan]{session_id}[/cyan] - {date_str}\n"
+                active_marker = " [green](active)[/green]" if session_id == active_session_id else ""
+                session_text += f"[cyan]{session_id}[/cyan]{active_marker} - {date_str}\n"
                 session_text += f"  Messages: {message_count}\n\n"
 
             self.console.print(Panel(session_text.strip(), title="Session History", border_style="cyan"))

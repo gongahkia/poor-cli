@@ -518,6 +518,18 @@ class RepoConfig:
             "model": self.current_session.model
         }
 
+    def list_sessions(self, limit: int = 10) -> List[ChatSession]:
+        """List recent sessions, including active session first when present."""
+        completed_sessions = sorted(
+            self.sessions,
+            key=lambda session: session.started_at,
+            reverse=True,
+        )
+        ordered_sessions = list(completed_sessions)
+        if self.current_session:
+            ordered_sessions.insert(0, self.current_session)
+        return ordered_sessions[:limit]
+
     def get_all_sessions_stats(self) -> Dict[str, Any]:
         """Get statistics about all sessions"""
         total_messages = sum(len(s.messages) for s in self.sessions)
@@ -583,6 +595,15 @@ class RepoConfig:
             self.current_session.messages = []
         self._save_history()
         logger.info("Cleared chat history")
+
+    def clear_current_session(self) -> None:
+        """Clear only the active session messages."""
+        if not self.current_session:
+            return
+        self.current_session.messages = []
+        self.current_session.total_tokens_estimate = 0
+        self._save_history()
+        logger.info("Cleared current repo session messages")
 
     def get_recent_messages(self, count: int = 10) -> List[ChatMessage]:
         """Get recent messages from current session"""
