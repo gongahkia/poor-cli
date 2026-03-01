@@ -31,7 +31,7 @@ class _FakeProcess:
 async def test_bash_validator_block_path_raises_command_execution_error():
     registry = ToolRegistryAsync()
     with patch(
-        "poor_cli.tools_async.asyncio.create_subprocess_shell",
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
         AsyncMock(),
     ) as mock_subprocess:
         with pytest.raises(CommandExecutionError, match="blocked by validator"):
@@ -51,7 +51,7 @@ async def test_bash_timeout_kills_process_and_raises():
 
     with (
         patch(
-            "poor_cli.tools_async.asyncio.create_subprocess_shell",
+            "poor_cli.tools_async.asyncio.create_subprocess_exec",
             AsyncMock(return_value=running_process),
         ),
         patch(
@@ -76,7 +76,7 @@ async def test_bash_success_path_returns_stdout():
     )
 
     with patch(
-        "poor_cli.tools_async.asyncio.create_subprocess_shell",
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
         AsyncMock(return_value=successful_process),
     ):
         result = await registry.bash("echo hello world")

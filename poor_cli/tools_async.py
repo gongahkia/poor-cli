@@ -5,6 +5,7 @@ Async tool implementations for poor-cli
 import os
 import asyncio
 import subprocess
+import shlex
 import glob as glob_module
 import re
 import aiofiles
@@ -648,12 +649,15 @@ class ToolRegistryAsync:
                     "; ".join(validation.warnings),
                 )
 
-            # Create subprocess asynchronously
-            process = await asyncio.create_subprocess_shell(
-                command,
+            argv = shlex.split(command)
+            if not argv:
+                raise CommandExecutionError(command, "Command is empty after parsing")
+
+            # Create subprocess asynchronously without shell interpolation.
+            process = await asyncio.create_subprocess_exec(
+                *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                shell=True
             )
 
             # Wait for completion with timeout
