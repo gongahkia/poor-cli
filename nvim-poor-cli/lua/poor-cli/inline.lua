@@ -120,6 +120,18 @@ vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "TextChanged", "Tex
     end,
 })
 
+local function byte_len(text)
+    return vim.fn.strlen(text or "")
+end
+
+local function split_line_at_byte_col(line_text, byte_col)
+    local max_col = byte_len(line_text)
+    local safe_col = math.max(0, math.min(byte_col, max_col))
+    local before = line_text:sub(1, safe_col)
+    local after = line_text:sub(safe_col + 1)
+    return before, after, safe_col
+end
+
 -- Show ghost text at cursor position
 function M.show_ghost_text(text)
     if not text or text == "" then
@@ -192,16 +204,16 @@ function M.accept()
     if #lines == 1 then
         -- Single line - insert inline
         local current_line = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
-        local new_line = current_line:sub(1, col) .. text .. current_line:sub(col + 1)
+        local before, after, safe_col = split_line_at_byte_col(current_line, col)
+        local new_line = before .. text .. after
         vim.api.nvim_buf_set_lines(bufnr, line, line + 1, false, { new_line })
         
         -- Move cursor to end of inserted text
-        vim.api.nvim_win_set_cursor(0, { line + 1, col + #text })
+        vim.api.nvim_win_set_cursor(0, { line + 1, safe_col + byte_len(text) })
     else
         -- Multi-line insert
         local current_line = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
-        local before = current_line:sub(1, col)
-        local after = current_line:sub(col + 1)
+        local before, after = split_line_at_byte_col(current_line, col)
         
         -- First line gets the prefix
         lines[1] = before .. lines[1]
@@ -212,7 +224,7 @@ function M.accept()
         
         -- Move cursor to end of inserted text
         local last_line = line + #lines
-        local last_col = #lines[#lines] - #after
+        local last_col = byte_len(lines[#lines]) - byte_len(after)
         vim.api.nvim_win_set_cursor(0, { last_line, last_col })
     end
     
