@@ -2,6 +2,7 @@
 -- Tests for poor-cli RPC client functionality
 
 local rpc = require("poor-cli.rpc")
+local config = require("poor-cli.config")
 
 describe("poor-cli.rpc", function()
     before_each(function()
@@ -134,6 +135,48 @@ describe("poor-cli.rpc", function()
             
             assert.is_not_nil(error_received)
             assert.is_not_nil(error_received.message)
+        end)
+
+        it("should call callback with timeout error when request expires", function()
+            rpc.job_id = 1
+
+            local original_chansend = vim.fn.chansend
+            vim.fn.chansend = function()
+                return 1
+            end
+
+            local original_defer_fn = vim.defer_fn
+            local timer_callback = nil
+            local timer_delay = nil
+            vim.defer_fn = function(cb, delay)
+                timer_callback = cb
+                timer_delay = delay
+                return {
+                    stop = function() end,
+                    close = function() end,
+                }
+            end
+
+            local original_timeout = config.config.request_timeout
+            config.config.request_timeout = 25
+
+            local timeout_error = nil
+            local request_id = rpc.request("test", {}, function(_result, err)
+                timeout_error = err
+            end)
+
+            assert.are.equal(25, timer_delay)
+            timer_callback()
+
+            assert.is_nil(rpc.pending[request_id])
+            assert.is_not_nil(timeout_error)
+            assert.are.equal(-32001, timeout_error.code)
+            assert.matches("timed out", timeout_error.message)
+
+            config.config.request_timeout = original_timeout
+            vim.defer_fn = original_defer_fn
+            vim.fn.chansend = original_chansend
+            rpc.job_id = nil
         end)
     end)
     

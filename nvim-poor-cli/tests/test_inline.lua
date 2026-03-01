@@ -2,6 +2,7 @@
 -- Tests for poor-cli inline completion functionality
 
 local inline = require("poor-cli.inline")
+local rpc = require("poor-cli.rpc")
 
 describe("poor-cli.inline", function()
     before_each(function()
@@ -167,6 +168,64 @@ describe("poor-cli.inline", function()
             
             local after = _G.test_helpers.get_buffer_content()
             assert.are.equal(original, after)
+        end)
+    end)
+
+    describe("stale completion suppression", function()
+        it("should ignore completion responses after cursor moves", function()
+            local original_is_running = rpc.is_running
+            local original_request = rpc.request
+            local captured_callback = nil
+
+            rpc.is_running = function()
+                return true
+            end
+            rpc.request = function(_method, _params, callback)
+                captured_callback = callback
+                return 1
+            end
+
+            vim.api.nvim_win_set_cursor(0, { 3, 4 })
+            inline.trigger()
+            vim.api.nvim_win_set_cursor(0, { 3, 5 })
+
+            captured_callback({ completion = "stale completion" }, nil)
+            vim.wait(20)
+
+            assert.is_false(inline.has_completion())
+
+            rpc.is_running = original_is_running
+            rpc.request = original_request
+        end)
+
+        it("should ignore older responses when a newer request exists", function()
+            local original_is_running = rpc.is_running
+            local original_request = rpc.request
+            local callbacks = {}
+            local next_id = 0
+
+            rpc.is_running = function()
+                return true
+            end
+            rpc.request = function(_method, _params, callback)
+                next_id = next_id + 1
+                callbacks[next_id] = callback
+                return next_id
+            end
+
+            vim.api.nvim_win_set_cursor(0, { 3, 4 })
+            inline.trigger()
+            inline.trigger()
+
+            callbacks[1]({ completion = "old completion" }, nil)
+            callbacks[2]({ completion = "new completion" }, nil)
+            vim.wait(20)
+
+            assert.is_true(inline.has_completion())
+            assert.are.equal("new completion", inline.current_completion.text)
+
+            rpc.is_running = original_is_running
+            rpc.request = original_request
         end)
     end)
     
