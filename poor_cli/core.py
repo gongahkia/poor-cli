@@ -16,7 +16,10 @@ from .tools_async import ToolRegistryAsync
 from .checkpoint import CheckpointManager
 from .history import HistoryManager
 from .context import ContextManager, get_context_manager
-from .prompts import build_fim_prompt as _build_fim_prompt, get_system_instruction
+from .prompts import (
+    build_fim_prompt as _build_fim_prompt,
+    build_tool_calling_system_instruction,
+)
 from .exceptions import (
     PoorCLIError,
     ConfigurationError,
@@ -140,7 +143,7 @@ class PoorCLICore:
             # Build system instruction
             import os
             current_dir = os.getcwd()
-            self._system_instruction = self._build_system_instruction(current_dir)
+            self._system_instruction = build_tool_calling_system_instruction(current_dir)
             
             # Initialize provider with tools and system instruction
             await self.provider.initialize(
@@ -172,48 +175,6 @@ class PoorCLICore:
             logger.exception("Failed to initialize PoorCLICore")
             raise ConfigurationError(f"Initialization failed: {e}")
     
-    def _build_system_instruction(self, current_dir: str) -> str:
-        """
-        Build system instruction for the AI.
-        
-        Args:
-            current_dir: Current working directory.
-        
-        Returns:
-            System instruction string.
-        """
-        return f"""You are an AI assistant with TOOL CALLING capabilities. You have been given tools to perform file operations and system commands.
-
-CRITICAL: When a user asks you to write/create a file, you MUST immediately call the write_file tool. DO NOT just show the code to the user. DO NOT say "write this to a file". Actually call the tool.
-
-CURRENT WORKING DIRECTORY: {current_dir}
-
-MANDATORY TOOL USAGE RULES:
-1. File creation/writing: IMMEDIATELY call write_file(file_path, content)
-2. File editing: IMMEDIATELY call edit_file(file_path, old_text, new_text)
-3. File reading: IMMEDIATELY call read_file(file_path)
-4. NEVER respond with just code snippets when asked to create a file
-5. NEVER say "write this to a file" - YOU must call the tool yourself
-
-Your available tools:
-- write_file(file_path, content): Creates or overwrites a file
-- edit_file(file_path, old_text, new_text): Edits existing files
-- read_file(file_path): Reads file contents
-- glob_files(pattern): Find files matching pattern
-- grep_files(pattern): Search for text in files
-- bash(command): Execute shell commands
-
-FILE PATH RULES:
-- ALWAYS use ABSOLUTE paths: {current_dir}/filename
-- User says "create test.py" → use path: {current_dir}/test.py
-- User says "create src/main.py" → use path: {current_dir}/src/main.py
-
-IMPORTANT: Only call write_file if the user:
-1. Explicitly asks to "create", "write", "save" a file, OR
-2. Confirms they want to save code after you show it
-
-If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
-
     async def send_message(
         self,
         message: str,

@@ -5,6 +5,7 @@ Tests for prompts module.
 import pytest
 from poor_cli.prompts import (
     build_fim_prompt,
+    build_tool_calling_system_instruction,
     get_system_instruction,
     format_prompt,
     FIM_TEMPLATE,
@@ -124,6 +125,16 @@ class TestGetSystemInstruction:
         instruction = get_system_instruction("nonexistent")
         
         assert instruction == SYSTEM_INSTRUCTION_CHAT
+
+
+class TestToolCallingSystemInstruction:
+    """Test shared tool-calling system instruction builder."""
+
+    def test_includes_working_directory(self):
+        instruction = build_tool_calling_system_instruction("/tmp/project")
+
+        assert "/tmp/project" in instruction
+        assert "TOOL CALLING" in instruction
 
 
 class TestFormatPrompt:
