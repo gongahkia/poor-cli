@@ -9,6 +9,7 @@ Manages .poor-cli directory in the current repository for:
 
 import os
 import json
+import tempfile
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -229,16 +230,30 @@ class RepoConfig:
 
     def _save_history(self) -> None:
         """Save chat history to file"""
+        temp_path: Optional[str] = None
         try:
             data = {
                 "sessions": [session.to_dict() for session in self.sessions],
                 "total_sessions": len(self.sessions),
                 "last_updated": datetime.now().isoformat()
             }
-            with open(self.history_file, 'w', encoding='utf-8') as f:
+            fd, temp_path = tempfile.mkstemp(
+                prefix=f"{self.HISTORY_FILE}.",
+                suffix=".tmp",
+                dir=self.config_dir,
+            )
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, self.history_file)
             logger.debug(f"Saved {len(self.sessions)} sessions to history")
         except Exception as e:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
             logger.error(f"Failed to save history: {e}")
             raise FileOperationError("Failed to save history", str(e))
 
