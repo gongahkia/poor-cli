@@ -19,6 +19,7 @@ from .core import PoorCLICore
 from .exceptions import (
     ConfigurationError,
     PoorCLIError,
+    PermissionDeniedError,
     get_error_code,
     log_context,
     set_log_context,
@@ -306,6 +307,15 @@ class PoorCLIServer:
         file_path = params.get("filePath", "")
         old_text = params.get("oldText", "")
         new_text = params.get("newText", "")
+
+        await self._enforce_server_tool_permission(
+            "edit_file",
+            {
+                "file_path": file_path,
+                "old_text": old_text,
+                "new_text": new_text,
+            },
+        )
         
         result = await self.core.apply_edit(
             file_path=file_path,
@@ -360,9 +370,11 @@ class PoorCLIServer:
         self._ensure_initialized()
         
         command = params.get("command", "")
+        tool_args = {"command": command}
 
         with log_context(tool_name="bash"):
-            result = await self.core.execute_tool("bash", {"command": command})
+            await self._enforce_server_tool_permission("bash", tool_args)
+            result = await self.core.execute_tool("bash", tool_args)
         
         return {
             "output": result,
@@ -429,6 +441,16 @@ class PoorCLIServer:
         """Ensure the server is initialized."""
         if not self.initialized:
             raise Exception("Server not initialized. Call 'initialize' first.")
+
+    async def _enforce_server_tool_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+        """Apply configured server permission policy for direct tool handlers."""
+        callback = self.core.permission_callback
+        if callback is None:
+            return
+
+        permitted = await callback(tool_name, tool_args)
+        if not permitted:
+            raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
     
     # =========================================================================
     # Message Dispatch
@@ -479,6 +501,19 @@ class PoorCLIServer:
                         JsonRpcError.INVALID_PARAMS,
                         str(e),
                         {"error_code": "INVALID_PARAMS"},
+                    ),
+                )
+            except PermissionDeniedError as e:
+                return JsonRpcMessage(
+                    id=message.id,
+                    error=JsonRpcError.make_error(
+                        JsonRpcError.INTERNAL_ERROR,
+                        str(e),
+                        {
+                            "error_code": e.error_code,
+                            "tool": e.tool_name,
+                            "permission_mode": e.permission_mode,
+                        },
                     ),
                 )
             except Exception as e:

@@ -328,6 +328,46 @@ class TestPoorCLIServer:
         assert response.error["code"] == JsonRpcError.INVALID_PARAMS
         assert response.error["data"]["error_code"] == "INVALID_PARAMS"
 
+    @pytest.mark.asyncio
+    async def test_execute_command_permission_denied_returns_structured_error(self, server):
+        """Permission-denied command execution returns structured JSON-RPC error data."""
+        server.initialized = True
+        message = JsonRpcMessage(
+            id=1,
+            method="poor-cli/executeCommand",
+            params={"command": "echo hello"},
+        )
+
+        response = await server.dispatch(message)
+
+        assert response.error is not None
+        assert response.error["code"] == JsonRpcError.INTERNAL_ERROR
+        assert response.error["data"]["error_code"] == "permission_denied"
+        assert response.error["data"]["tool"] == "bash"
+        assert response.error["data"]["permission_mode"] == "prompt"
+
+    @pytest.mark.asyncio
+    async def test_apply_edit_permission_denied_returns_structured_error(self, server):
+        """Permission-denied applyEdit returns structured JSON-RPC error data."""
+        server.initialized = True
+        message = JsonRpcMessage(
+            id=2,
+            method="poor-cli/applyEdit",
+            params={
+                "filePath": "example.py",
+                "oldText": "a",
+                "newText": "b",
+            },
+        )
+
+        response = await server.dispatch(message)
+
+        assert response.error is not None
+        assert response.error["code"] == JsonRpcError.INTERNAL_ERROR
+        assert response.error["data"]["error_code"] == "permission_denied"
+        assert response.error["data"]["tool"] == "edit_file"
+        assert response.error["data"]["permission_mode"] == "prompt"
+
 
 class TestServerMain:
     """Test server CLI entrypoint behavior."""

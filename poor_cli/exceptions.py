@@ -118,6 +118,23 @@ class ConfigurationError(PoorCLIError):
     pass
 
 
+class PermissionDeniedError(PoorCLIError):
+    """Raised when execution is blocked by permission policy."""
+    ERROR_CODE = "permission_denied"
+
+    def __init__(self, tool_name: str, permission_mode: Optional[str] = None):
+        self.tool_name = tool_name
+        self.permission_mode = permission_mode
+        details = f"Tool: {tool_name}"
+        if permission_mode:
+            details += f"\nPermission mode: {permission_mode}"
+        super().__init__(
+            f"Permission denied for tool '{tool_name}'",
+            details=details,
+            error_code=self.ERROR_CODE,
+        )
+
+
 def get_error_code(error: BaseException) -> str:
     """Return deterministic error code for user-facing failures."""
     explicit = getattr(error, "error_code", None)
