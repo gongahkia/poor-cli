@@ -171,6 +171,7 @@ class TestPoorCLIServer:
     def test_init(self, server):
         """Test server initialization."""
         assert server.core is not None
+        assert server.core.permission_callback is not None
         assert server.initialized is False
         assert len(server.handlers) > 0
     

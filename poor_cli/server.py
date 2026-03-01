@@ -115,6 +115,7 @@ class PoorCLIServer:
     def __init__(self):
         """Initialize the server."""
         self.core = PoorCLICore()
+        self.core.permission_callback = self._server_permission_callback
         self.handlers: Dict[str, Callable] = {}
         self.initialized = False
         self.permission_mode: str = "prompt"
@@ -126,6 +127,10 @@ class PoorCLIServer:
         self._writer: Optional[asyncio.StreamWriter] = None
         
         self._register_handlers()
+
+    async def _server_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+        """Server-side permission callback for core tool execution."""
+        return True
     
     def _register_handlers(self) -> None:
         """Register JSON-RPC method handlers."""
