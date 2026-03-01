@@ -12,6 +12,8 @@ M.win = nil
 M.history = {}
 M.input_buf = nil
 M.input_win = nil
+M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
+M.loading_marker = nil
 
 -- Open chat panel
 function M.open()
@@ -228,13 +230,23 @@ function M.append_loading()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    
+
+    -- Keep only one loading block at a time.
+    M.remove_loading()
+
     local line_count = vim.api.nvim_buf_line_count(M.buf)
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
+    local loading_lines = {
         "## 🤖 Assistant",
         "",
         "_Thinking..._",
         "",
+    }
+
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, loading_lines)
+    M.loading_marker = vim.api.nvim_buf_set_extmark(M.buf, M.loading_ns, line_count, 0, {
+        end_row = line_count + #loading_lines,
+        end_col = 0,
+        right_gravity = false,
     })
 end
 
@@ -243,20 +255,29 @@ function M.remove_loading()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    
-    local line_count = vim.api.nvim_buf_line_count(M.buf)
-    
-    -- Find and remove the loading indicator
-    local lines = vim.api.nvim_buf_get_lines(M.buf, math.max(0, line_count - 10), line_count, false)
-    
-    for i = #lines, 1, -1 do
-        if lines[i] == "_Thinking..._" then
-            -- Remove the loading block (header, empty, thinking, empty)
-            local start_line = line_count - (#lines - i) - 2
-            vim.api.nvim_buf_set_lines(M.buf, start_line, line_count, false, {})
-            break
+
+    if not M.loading_marker then
+        return
+    end
+
+    local marker = vim.api.nvim_buf_get_extmark_by_id(
+        M.buf,
+        M.loading_ns,
+        M.loading_marker,
+        { details = true }
+    )
+
+    if marker and #marker >= 3 then
+        local start_row = marker[1]
+        local details = marker[3] or {}
+        local end_row = details.end_row
+        if end_row and end_row >= start_row then
+            vim.api.nvim_buf_set_lines(M.buf, start_row, end_row, false, {})
         end
     end
+
+    pcall(vim.api.nvim_buf_del_extmark, M.buf, M.loading_ns, M.loading_marker)
+    M.loading_marker = nil
 end
 
 -- Send with current visual selection
