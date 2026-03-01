@@ -22,6 +22,7 @@ from .exceptions import (
     FileOperationError,
     PathTraversalError,
 )
+from .command_validator import get_command_validator
 
 # Setup logger
 logger = setup_logger(__name__)
@@ -32,6 +33,7 @@ class ToolRegistryAsync:
 
     def __init__(self):
         self.tools = {}
+        self.command_validator = get_command_validator(strict_mode=False)
         self._register_tools()
 
     def _register_tools(self):
@@ -622,6 +624,29 @@ class ToolRegistryAsync:
         """
         try:
             logger.info(f"Executing bash command: {command}")
+
+            validation = self.command_validator.validate(command)
+            if not validation.is_safe:
+                warning_text = "; ".join(validation.warnings) if validation.warnings else "Unsafe command blocked"
+                suggestion_text = (
+                    f" Suggested alternative: {validation.suggested_alternative}"
+                    if validation.suggested_alternative
+                    else ""
+                )
+                raise CommandExecutionError(
+                    command,
+                    (
+                        f"Command blocked by validator "
+                        f"(risk={validation.risk_level.value}): {warning_text}{suggestion_text}"
+                    ),
+                )
+
+            if validation.warnings:
+                logger.warning(
+                    "Validator warnings for command '%s': %s",
+                    command,
+                    "; ".join(validation.warnings),
+                )
 
             # Create subprocess asynchronously
             process = await asyncio.create_subprocess_shell(

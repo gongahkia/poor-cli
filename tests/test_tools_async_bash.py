@@ -30,18 +30,14 @@ class _FakeProcess:
 @pytest.mark.asyncio
 async def test_bash_validator_block_path_raises_command_execution_error():
     registry = ToolRegistryAsync()
-    blocked_process = _FakeProcess(
-        returncode=1,
-        stdout=b"",
-        stderr=b"blocked by validator",
-    )
-
     with patch(
         "poor_cli.tools_async.asyncio.create_subprocess_shell",
-        AsyncMock(return_value=blocked_process),
-    ):
+        AsyncMock(),
+    ) as mock_subprocess:
         with pytest.raises(CommandExecutionError, match="blocked by validator"):
-            await registry.bash("rm -rf /tmp/danger")
+            await registry.bash("rm -rf /")
+
+    mock_subprocess.assert_not_awaited()
 
 
 @pytest.mark.asyncio
