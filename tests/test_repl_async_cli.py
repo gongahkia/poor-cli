@@ -58,7 +58,7 @@ class TestRunNonInteractive:
         repl.initialize.assert_awaited_once_with(show_welcome=False)
         repl._process_request_non_interactive.assert_awaited_once_with("hello world")
         repl._shutdown_sessions.assert_awaited_once_with()
-        mock_print.assert_called_once_with("Error: bad request", file=sys.stderr)
+        mock_print.assert_called_once_with("Error [INTERNAL_ERROR]: bad request", file=sys.stderr)
 
     @pytest.mark.asyncio
     async def test_run_non_interactive_json_output(self):

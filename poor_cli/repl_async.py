@@ -40,6 +40,7 @@ from .exceptions import (
     setup_logger,
     enable_verbose_logging,
     clear_log_context,
+    get_error_code,
     log_context,
     set_log_context,
 )
@@ -632,7 +633,8 @@ class PoorCLIAsync:
                     print(payload["response"])
             else:
                 error = payload.get("error") or {}
-                print(f"Error: {error.get('message', 'Unknown error')}", file=sys.stderr)
+                code = error.get("code", "INTERNAL_ERROR")
+                print(f"Error [{code}]: {error.get('message', 'Unknown error')}", file=sys.stderr)
 
             return 0 if payload["ok"] else 1
         finally:
@@ -704,6 +706,7 @@ class PoorCLIAsync:
             payload["error"] = {
                 "type": type(e).__name__,
                 "message": str(e),
+                "code": get_error_code(e),
             }
             payload["elapsed_seconds"] = round(time.time() - start_time, 3)
             return payload
@@ -811,30 +814,33 @@ class PoorCLIAsync:
             raise
 
         except PoorCLIError as e:
+            error_code = get_error_code(e)
             self.console.print(
                 Panel(
-                    f"[bold red]Error[/bold red]\n\n{e}",
+                    f"[bold red]Error[/bold red]\n\n{e}\n\n[dim]Error code: {error_code}[/dim]",
                     title="⚠️  Error",
                     border_style="red",
                 )
             )
-            logger.error(f"Application error: {e}")
+            logger.error(f"Application error [{error_code}]: {e}")
             return False
 
         except Exception as e:
+            error_code = get_error_code(e)
             error_type = type(e).__name__
             error_msg = str(e)
             self.console.print(
                 Panel(
                     f"[bold red]Unexpected Error[/bold red]\n\n"
                     f"Type: {error_type}\n"
-                    f"Message: {error_msg}\n\n"
+                    f"Message: {error_msg}\n"
+                    f"Error code: {error_code}\n\n"
                     "[yellow]Please check the logs for more details.[/yellow]",
                     title="⚠️  Unexpected Error",
                     border_style="red",
                 )
             )
-            logger.exception("Unexpected error processing request")
+            logger.exception(f"Unexpected error processing request [{error_code}]")
             return False
         finally:
             clear_log_context("request_id", "tool_name")
@@ -989,6 +995,7 @@ class PoorCLIAsync:
 
     def _handle_api_error(self, title: str, message: str, exception: Exception):
         """Helper to display API errors consistently with recovery suggestions"""
+        error_code = get_error_code(exception)
         # Get recovery suggestions
         suggestions = self.error_recovery.get_suggestions(exception)
         suggestion_text = ""
@@ -1002,12 +1009,13 @@ class PoorCLIAsync:
 
         self.console.print(
             Panel(
-                f"[bold red]{title}[/bold red]\n\n{message}{suggestion_text}",
+                f"[bold red]{title}[/bold red]\n\n{message}\n\n"
+                f"[dim]Error code: {error_code}[/dim]{suggestion_text}",
                 title=f"⚠️  {title}",
                 border_style="yellow" if "Rate Limit" in title or "Timeout" in title else "red",
             )
         )
-        logger.error(f"{title}: {exception}")
+        logger.error(f"{title} [{error_code}]: {exception}")
 
     async def request_permission(self, tool_name: str, tool_args: dict) -> bool:
         """Request user permission for file operations"""

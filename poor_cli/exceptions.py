@@ -11,9 +11,17 @@ from typing import Any, Dict, Iterator, Optional
 
 class PoorCLIError(Exception):
     """Base exception for all poor-cli errors"""
-    def __init__(self, message: str, details: Optional[str] = None):
+    ERROR_CODE = "POORCLI_ERROR"
+
+    def __init__(
+        self,
+        message: str,
+        details: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ):
         self.message = message
         self.details = details
+        self.error_code = error_code or self.ERROR_CODE
         super().__init__(self.message)
 
     def __str__(self):
@@ -24,51 +32,62 @@ class PoorCLIError(Exception):
 
 class APIError(PoorCLIError):
     """Raised when API calls fail"""
+    ERROR_CODE = "API_ERROR"
     pass
 
 
 class APIConnectionError(APIError):
     """Raised when cannot connect to API"""
+    ERROR_CODE = "API_CONNECTION_ERROR"
     pass
 
 
 class APITimeoutError(APIError):
     """Raised when API call times out"""
+    ERROR_CODE = "API_TIMEOUT_ERROR"
     pass
 
 
 class APIRateLimitError(APIError):
     """Raised when API rate limit is exceeded"""
+    ERROR_CODE = "API_RATE_LIMIT_ERROR"
     pass
 
 
 class FileOperationError(PoorCLIError):
     """Base exception for file operation errors"""
+    ERROR_CODE = "FILE_OPERATION_ERROR"
     pass
 
 
 class FileNotFoundError(FileOperationError):
     """Raised when file is not found"""
+    ERROR_CODE = "FILE_NOT_FOUND"
     pass
 
 
 class FilePermissionError(FileOperationError):
     """Raised when lacking permissions for file operation"""
+    ERROR_CODE = "FILE_PERMISSION_ERROR"
     pass
 
 
 class InvalidPathError(FileOperationError):
     """Raised when path is invalid or unsafe"""
+    ERROR_CODE = "INVALID_PATH"
     pass
 
 
 class PathTraversalError(InvalidPathError):
     """Raised when path traversal attempt is detected"""
+    ERROR_CODE = "PATH_TRAVERSAL"
     pass
 
 
 class ToolExecutionError(PoorCLIError):
     """Raised when tool execution fails"""
+    ERROR_CODE = "TOOL_EXECUTION_ERROR"
+
     def __init__(self, tool_name: str, message: str, details: Optional[str] = None):
         self.tool_name = tool_name
         super().__init__(f"Tool '{tool_name}' failed: {message}", details)
@@ -76,6 +95,8 @@ class ToolExecutionError(PoorCLIError):
 
 class CommandExecutionError(PoorCLIError):
     """Raised when bash command execution fails"""
+    ERROR_CODE = "COMMAND_EXECUTION_ERROR"
+
     def __init__(self, command: str, message: str, return_code: Optional[int] = None):
         self.command = command
         self.return_code = return_code
@@ -87,12 +108,29 @@ class CommandExecutionError(PoorCLIError):
 
 class ValidationError(PoorCLIError):
     """Raised when input validation fails"""
+    ERROR_CODE = "VALIDATION_ERROR"
     pass
 
 
 class ConfigurationError(PoorCLIError):
     """Raised when configuration is invalid"""
+    ERROR_CODE = "CONFIGURATION_ERROR"
     pass
+
+
+def get_error_code(error: BaseException) -> str:
+    """Return deterministic error code for user-facing failures."""
+    explicit = getattr(error, "error_code", None)
+    if explicit:
+        return str(explicit)
+
+    if isinstance(error, TimeoutError):
+        return "TIMEOUT_ERROR"
+    if isinstance(error, PermissionError):
+        return "PERMISSION_ERROR"
+    if isinstance(error, ValueError):
+        return "INVALID_INPUT"
+    return "INTERNAL_ERROR"
 
 
 STRUCTURED_LOG_FIELDS = ("session_id", "provider", "tool_name", "request_id")

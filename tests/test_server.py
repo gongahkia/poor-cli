@@ -165,6 +165,7 @@ class TestPoorCLIServer:
         
         assert response.error is not None
         assert response.error["code"] == JsonRpcError.INVALID_REQUEST
+        assert response.error["data"]["error_code"] == "INVALID_REQUEST"
     
     @pytest.mark.asyncio
     async def test_dispatch_method_not_found(self, server):
@@ -175,6 +176,7 @@ class TestPoorCLIServer:
         
         assert response.error is not None
         assert response.error["code"] == JsonRpcError.METHOD_NOT_FOUND
+        assert response.error["data"]["error_code"] == "METHOD_NOT_FOUND"
 
     @pytest.mark.asyncio
     async def test_dispatch_text_document_completion_not_supported(self, server):
@@ -185,6 +187,7 @@ class TestPoorCLIServer:
 
         assert response.error is not None
         assert response.error["code"] == JsonRpcError.METHOD_NOT_FOUND
+        assert response.error["data"]["error_code"] == "METHOD_NOT_FOUND"
     
     @pytest.mark.asyncio
     async def test_dispatch_shutdown(self, server):
@@ -222,6 +225,7 @@ class TestPoorCLIServer:
 
         assert response.error is not None
         assert response.error["code"] == JsonRpcError.INVALID_PARAMS
+        assert response.error["data"]["error_code"] == "INVALID_PARAMS"
 
 
 class TestServerMain:

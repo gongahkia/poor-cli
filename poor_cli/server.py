@@ -19,6 +19,7 @@ from .core import PoorCLICore
 from .exceptions import (
     ConfigurationError,
     PoorCLIError,
+    get_error_code,
     log_context,
     set_log_context,
     setup_logger,
@@ -190,7 +191,7 @@ class PoorCLIServer:
                 }
             }
         except ConfigurationError as e:
-            raise Exception(f"Initialization failed: {e}")
+            raise ConfigurationError(f"Initialization failed: {e}") from e
     
     async def handle_shutdown(self, params: Dict[str, Any]) -> None:
         """Shutdown the server."""
@@ -426,7 +427,8 @@ class PoorCLIServer:
                     id=message.id,
                     error=JsonRpcError.make_error(
                         JsonRpcError.INVALID_REQUEST,
-                        "Missing method"
+                        "Missing method",
+                        {"error_code": "INVALID_REQUEST"},
                     )
                 )
             
@@ -436,7 +438,8 @@ class PoorCLIServer:
                     id=message.id,
                     error=JsonRpcError.make_error(
                         JsonRpcError.METHOD_NOT_FOUND,
-                        f"Unknown method: {message.method}"
+                        f"Unknown method: {message.method}",
+                        {"error_code": "METHOD_NOT_FOUND"},
                     )
                 )
             
@@ -452,15 +455,18 @@ class PoorCLIServer:
                     error=JsonRpcError.make_error(
                         JsonRpcError.INVALID_PARAMS,
                         str(e),
+                        {"error_code": "INVALID_PARAMS"},
                     ),
                 )
             except Exception as e:
+                error_code = get_error_code(e)
                 self.logger.exception(f"Handler error for {message.method}")
                 return JsonRpcMessage(
                     id=message.id,
                     error=JsonRpcError.make_error(
                         JsonRpcError.INTERNAL_ERROR,
-                        str(e)
+                        str(e),
+                        {"error_code": error_code},
                     )
                 )
     
