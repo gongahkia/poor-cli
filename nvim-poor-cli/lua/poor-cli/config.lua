@@ -10,6 +10,10 @@ M.defaults = {
     
     -- Auto-start server on setup
     auto_start = true,
+    auto_restart = true, -- Restart server automatically after unexpected exits
+    restart_backoff_initial = 1000, -- Initial restart delay in ms
+    restart_backoff_max = 30000, -- Max restart delay in ms
+    restart_backoff_multiplier = 2, -- Backoff multiplier per failure
     
     -- Highlight group for ghost text
     ghost_text_hl = "Comment",

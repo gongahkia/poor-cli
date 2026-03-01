@@ -13,6 +13,13 @@ describe("poor-cli.rpc", function()
         rpc.pending = {}
         rpc.pending_timers = {}
         rpc.buffer = ""
+        rpc.manual_stop = false
+        rpc.restart_attempt = 0
+        if rpc.restart_timer then
+            rpc.restart_timer:stop()
+            rpc.restart_timer:close()
+            rpc.restart_timer = nil
+        end
     end)
     
     after_each(function()

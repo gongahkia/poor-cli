@@ -11,6 +11,9 @@ M.request_id = 0
 M.pending = {}  -- Maps request_id to callback
 M.pending_timers = {} -- Maps request_id to timeout timer
 M.buffer = ""   -- Accumulates partial messages
+M.manual_stop = false
+M.restart_attempt = 0
+M.restart_timer = nil
 
 local function clear_request_timer(id)
     local timer = M.pending_timers[id]
@@ -31,18 +34,67 @@ local function clear_all_request_timers()
     end
 end
 
+local function clear_restart_timer()
+    if not M.restart_timer then
+        return
+    end
+
+    local timer = M.restart_timer
+    M.restart_timer = nil
+    pcall(function()
+        timer:stop()
+        timer:close()
+    end)
+end
+
+local function restart_delay_ms()
+    local initial = config.get("restart_backoff_initial") or 1000
+    local max_delay = config.get("restart_backoff_max") or 30000
+    local multiplier = config.get("restart_backoff_multiplier") or 2
+
+    local exponent = math.max(M.restart_attempt - 1, 0)
+    local delay = initial * (multiplier ^ exponent)
+    return math.min(math.floor(delay), max_delay)
+end
+
+local function schedule_restart()
+    if not config.get("auto_restart") then
+        return
+    end
+
+    M.restart_attempt = M.restart_attempt + 1
+    local delay = restart_delay_ms()
+
+    clear_restart_timer()
+    M.restart_timer = vim.defer_fn(function()
+        M.restart_timer = nil
+        if M.job_id then
+            return
+        end
+        M.start(true)
+    end, delay)
+
+    vim.notify(
+        "[poor-cli] Server exited unexpectedly, restarting in " .. delay .. "ms",
+        vim.log.levels.WARN
+    )
+end
+
 -- Start the server
-function M.start()
+function M.start(is_restart)
     if M.job_id then
         vim.notify("[poor-cli] Server already running", vim.log.levels.WARN)
         return M.job_id
     end
-    
+
+    clear_restart_timer()
+    M.manual_stop = false
+
     local cmd = config.get("server_cmd")
     if config.is_debug() then
         vim.notify("[poor-cli] Starting server: " .. cmd, vim.log.levels.DEBUG)
     end
-    
+
     M.job_id = vim.fn.jobstart(cmd, {
         on_stdout = function(_, data, _)
             M.handle_stdout(data)
@@ -57,26 +109,36 @@ function M.start()
         stdout_buffered = false,
         stderr_buffered = false,
     })
-    
+
     if M.job_id <= 0 then
         vim.notify("[poor-cli] Failed to start server", vim.log.levels.ERROR)
         M.job_id = nil
         return nil
     end
-    
+
+    if not is_restart then
+        M.restart_attempt = 0
+    end
+
     vim.notify("[poor-cli] Server started", vim.log.levels.INFO)
     return M.job_id
 end
 
 -- Stop the server
 function M.stop()
+    M.manual_stop = true
+    clear_restart_timer()
+
     if M.job_id then
         vim.fn.jobstop(M.job_id)
         M.job_id = nil
         clear_all_request_timers()
         M.pending = {}
         M.buffer = ""
+        M.restart_attempt = 0
         vim.notify("[poor-cli] Server stopped", vim.log.levels.INFO)
+    else
+        M.manual_stop = false
     end
 end
 
@@ -290,17 +352,33 @@ end
 
 -- Handle server exit
 function M.handle_exit(code)
+    local was_manual_stop = M.manual_stop
     M.job_id = nil
     clear_all_request_timers()
     M.pending = {}
     M.buffer = ""
-    
-    if code ~= 0 then
-        vim.notify("[poor-cli] Server exited with code " .. code, vim.log.levels.WARN)
-    else
+
+    if was_manual_stop then
+        M.manual_stop = false
+        M.restart_attempt = 0
+        if config.is_debug() then
+            vim.notify("[poor-cli] Server stopped by user", vim.log.levels.DEBUG)
+        end
+        return
+    end
+
+    if code == 0 then
+        M.restart_attempt = 0
         if config.is_debug() then
             vim.notify("[poor-cli] Server exited normally", vim.log.levels.DEBUG)
         end
+        return
+    end
+
+    if config.get("auto_restart") then
+        schedule_restart()
+    else
+        vim.notify("[poor-cli] Server exited with code " .. code, vim.log.levels.WARN)
     end
 end
 
