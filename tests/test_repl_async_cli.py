@@ -3,6 +3,7 @@ Tests for poor_cli.repl_async non-interactive CLI entrypoints.
 """
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -196,6 +197,43 @@ class TestPermissionModeCommand:
         repl.console.print.assert_called_once()
         printed = repl.console.print.call_args.args[0]
         assert "danger-full-access" in printed
+
+
+class TestPermissionModeTransitions:
+    """End-to-end permission transition checks across all modes."""
+
+    @pytest.mark.asyncio
+    async def test_permission_mode_transitions_change_write_permission_behavior(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        repl.config = SimpleNamespace(
+            security=SimpleNamespace(
+                permission_mode=PermissionMode.PROMPT,
+                require_permission_for_write=True,
+                require_permission_for_bash=True,
+                safe_commands=["ls", "cat", "pwd", "echo"],
+            )
+        )
+
+        with patch("poor_cli.repl_async.asyncio.to_thread", AsyncMock(return_value="n")) as mock_to_thread:
+            prompt_result = await PoorCLIAsync.request_permission(
+                repl, "write_file", {"file_path": "a.txt"}
+            )
+
+            await PoorCLIAsync.handle_command(repl, "/permission-mode auto-safe")
+            auto_safe_result = await PoorCLIAsync.request_permission(
+                repl, "write_file", {"file_path": "a.txt"}
+            )
+
+            await PoorCLIAsync.handle_command(repl, "/permission-mode danger-full-access")
+            danger_result = await PoorCLIAsync.request_permission(
+                repl, "write_file", {"file_path": "a.txt"}
+            )
+
+        assert prompt_result is False
+        assert auto_safe_result is False
+        assert danger_result is True
+        mock_to_thread.assert_awaited_once()
 
 
 class TestMainEntrypoint:
