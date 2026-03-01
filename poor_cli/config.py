@@ -9,9 +9,18 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict, field
+from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
 
 logger = setup_logger(__name__)
+
+
+class PermissionMode(str, Enum):
+    """Permission behavior for potentially unsafe operations."""
+
+    PROMPT = "prompt"
+    AUTO_SAFE = "auto-safe"
+    DANGER_FULL_ACCESS = "danger-full-access"
 
 
 @dataclass
@@ -136,11 +145,42 @@ class SecurityConfig:
         "pwd", "ls", "echo", "cat", "head", "tail",
         "grep", "find", "which", "whoami", "date"
     ])
+    permission_mode: PermissionMode = PermissionMode.PROMPT
     require_permission_for_write: bool = True
     require_permission_for_bash: bool = True
     enable_bash_execution: bool = True
     max_file_size_mb: int = 100
     allowed_file_extensions: list = field(default_factory=lambda: [])  # Empty = all allowed
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize security config with enum values."""
+        data = asdict(self)
+        data["permission_mode"] = self.permission_mode.value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SecurityConfig":
+        """Create SecurityConfig with validated permission mode."""
+        data = data.copy()
+        raw_mode = data.get("permission_mode", PermissionMode.PROMPT)
+
+        if isinstance(raw_mode, PermissionMode):
+            mode = raw_mode
+        elif isinstance(raw_mode, str):
+            try:
+                mode = PermissionMode(raw_mode)
+            except ValueError as e:
+                raise ConfigurationError(
+                    "Invalid security.permission_mode value. "
+                    "Expected one of: prompt, auto-safe, danger-full-access."
+                ) from e
+        else:
+            raise ConfigurationError(
+                "Invalid security.permission_mode type. Expected a string."
+            )
+
+        data["permission_mode"] = mode
+        return cls(**data)
 
 
 @dataclass
@@ -173,7 +213,7 @@ class Config:
             "model": asdict(self.model),
             "history": asdict(self.history),
             "ui": asdict(self.ui),
-            "security": asdict(self.security),
+            "security": self.security.to_dict(),
             "tools": asdict(self.tools),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
@@ -187,7 +227,7 @@ class Config:
             model=ModelConfig.from_dict(data.get("model", {})),
             history=HistoryConfig(**data.get("history", {})),
             ui=UIConfig(**data.get("ui", {})),
-            security=SecurityConfig(**data.get("security", {})),
+            security=SecurityConfig.from_dict(data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
