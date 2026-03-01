@@ -1,4 +1,3 @@
-(B) Implement a default server permission callback that denies write/edit/delete/bash in `prompt` mode when no interactive confirmer exists. +stability +security +server +nvim
 (B) Return structured `permission_denied` errors from server tool execution paths instead of generic exception strings. +stability +security +server
 (B) Remove `HistoryManager` initialization and writes from `poor_cli/repl_async.py` so REPL uses a single repository-scoped history backend. +stability +history +refactor
 (B) Replace `HistoryManager` usage in `poor_cli/core.py` with an injected history adapter backed by repository storage. +stability +history +refactor

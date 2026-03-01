@@ -130,6 +130,24 @@ class PoorCLIServer:
 
     async def _server_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
         """Server-side permission callback for core tool execution."""
+        del tool_args  # Unused for default mode-based enforcement.
+
+        try:
+            permission_mode = PermissionMode(self.permission_mode)
+        except ValueError:
+            permission_mode = PermissionMode.PROMPT
+
+        if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
+            return True
+
+        if permission_mode == PermissionMode.PROMPT and tool_name in {
+            "write_file",
+            "edit_file",
+            "delete_file",
+            "bash",
+        }:
+            return False
+
         return True
     
     def _register_handlers(self) -> None:

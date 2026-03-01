@@ -174,6 +174,27 @@ class TestPoorCLIServer:
         assert server.core.permission_callback is not None
         assert server.initialized is False
         assert len(server.handlers) > 0
+
+    @pytest.mark.asyncio
+    async def test_server_callback_denies_sensitive_tools_in_prompt_mode(self, server):
+        """Prompt mode denies mutating tools without an interactive confirmer."""
+        server.permission_mode = "prompt"
+
+        callback = server.core.permission_callback
+        assert callback is not None
+        assert await callback("write_file", {"file_path": "x"}) is False
+        assert await callback("edit_file", {"file_path": "x"}) is False
+        assert await callback("delete_file", {"file_path": "x"}) is False
+        assert await callback("bash", {"command": "echo hi"}) is False
+
+    @pytest.mark.asyncio
+    async def test_server_callback_allows_non_sensitive_tools_in_prompt_mode(self, server):
+        """Prompt mode still allows read-only tools."""
+        server.permission_mode = "prompt"
+
+        callback = server.core.permission_callback
+        assert callback is not None
+        assert await callback("read_file", {"file_path": "x"}) is True
     
     def test_has_required_handlers(self, server):
         """Test that required handlers are registered."""
