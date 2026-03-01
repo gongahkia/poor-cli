@@ -49,11 +49,28 @@ logger = setup_logger(__name__)
 class PoorCLIAsync:
     """Async REPL interface with streaming support and multi-provider support"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        provider_override: Optional[str] = None,
+        model_override: Optional[str] = None,
+        cwd_override: Optional[str] = None,
+    ):
         self.console = Console()
         self.provider: Optional[BaseProvider] = None
+
+        if cwd_override:
+            try:
+                os.chdir(cwd_override)
+                logger.info(f"Changed working directory to {os.getcwd()}")
+            except OSError as e:
+                raise ConfigurationError(f"Invalid --cwd path '{cwd_override}': {e}") from e
+
         self.config_manager = get_config_manager()
         self.config: Config = self.config_manager.config
+        if provider_override:
+            self.config.model.provider = provider_override
+        if model_override:
+            self.config.model.model_name = model_override
         self.history_manager: Optional[HistoryManager] = None
         self.repo_config: Optional[RepoConfig] = None  # For local JSON history
         self.error_recovery = ErrorRecoveryManager()
@@ -2000,9 +2017,24 @@ Use /provider for a quick capability summary[/dim]"""
 def main():
     """Entry point for async poor-cli"""
     try:
+        common_parser = argparse.ArgumentParser(add_help=False)
+        common_parser.add_argument(
+            "--provider",
+            help="Override provider for this session",
+        )
+        common_parser.add_argument(
+            "--model",
+            help="Override model for this session",
+        )
+        common_parser.add_argument(
+            "--cwd",
+            help="Run poor-cli in a specific working directory",
+        )
+
         parser = argparse.ArgumentParser(
             prog="poor-cli",
             description="poor-cli interactive assistant",
+            parents=[common_parser],
         )
         subparsers = parser.add_subparsers(dest="command")
         run_parser = subparsers.add_parser(
@@ -2018,7 +2050,11 @@ def main():
         )
         args = parser.parse_args()
 
-        repl = PoorCLIAsync()
+        repl = PoorCLIAsync(
+            provider_override=args.provider,
+            model_override=args.model,
+            cwd_override=args.cwd,
+        )
         if args.command == "run":
             exit_code = asyncio.run(
                 repl.run_non_interactive(args.prompt, output_format=args.output)

@@ -98,13 +98,18 @@ class TestMainEntrypoint:
         mock_repl.run_non_interactive.return_value = "non-interactive-coro"
 
         with (
-            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl),
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl) as mock_repl_cls,
             patch("poor_cli.repl_async.asyncio.run", return_value=0) as mock_asyncio_run,
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
 
         assert exc_info.value.code == 0
+        mock_repl_cls.assert_called_once_with(
+            provider_override=None,
+            model_override=None,
+            cwd_override=None,
+        )
         mock_repl.run_non_interactive.assert_called_once_with("ship it", output_format="text")
         mock_asyncio_run.assert_called_once_with("non-interactive-coro")
 
@@ -117,13 +122,18 @@ class TestMainEntrypoint:
         mock_repl.run_non_interactive.return_value = "non-interactive-coro"
 
         with (
-            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl),
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl) as mock_repl_cls,
             patch("poor_cli.repl_async.asyncio.run", return_value=0) as mock_asyncio_run,
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
 
         assert exc_info.value.code == 0
+        mock_repl_cls.assert_called_once_with(
+            provider_override=None,
+            model_override=None,
+            cwd_override=None,
+        )
         mock_repl.run_non_interactive.assert_called_once_with("ship it", output_format="json")
         mock_asyncio_run.assert_called_once_with("non-interactive-coro")
 
@@ -133,10 +143,46 @@ class TestMainEntrypoint:
         mock_repl.run.return_value = "interactive-coro"
 
         with (
-            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl),
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl) as mock_repl_cls,
             patch("poor_cli.repl_async.asyncio.run") as mock_asyncio_run,
         ):
             main()
 
+        mock_repl_cls.assert_called_once_with(
+            provider_override=None,
+            model_override=None,
+            cwd_override=None,
+        )
         mock_repl.run.assert_called_once_with()
         mock_asyncio_run.assert_called_once_with("interactive-coro")
+
+    def test_main_passes_provider_model_and_cwd_overrides(self, monkeypatch):
+        monkeypatch.setattr(
+            "poor_cli.repl_async.sys.argv",
+            [
+                "poor-cli",
+                "--provider",
+                "openai",
+                "--model",
+                "gpt-4o-mini",
+                "--cwd",
+                "/tmp",
+                "run",
+                "ship it",
+            ],
+        )
+        mock_repl = MagicMock()
+        mock_repl.run_non_interactive.return_value = "non-interactive-coro"
+
+        with (
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl) as mock_repl_cls,
+            patch("poor_cli.repl_async.asyncio.run", return_value=0),
+        ):
+            with pytest.raises(SystemExit):
+                main()
+
+        mock_repl_cls.assert_called_once_with(
+            provider_override="openai",
+            model_override="gpt-4o-mini",
+            cwd_override="/tmp",
+        )
