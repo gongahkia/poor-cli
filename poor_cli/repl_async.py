@@ -17,12 +17,12 @@ from rich.live import Live
 from rich import print as rprint
 from google.generativeai.types import protos
 
-from .providers.provider_factory import ProviderFactory
 from .providers.base import BaseProvider, ProviderResponse
 from .tools_async import ToolRegistryAsync
 from .enhanced_tools import EnhancedToolRegistry
 from .config import get_config_manager, Config, PermissionMode
 from .prompts import build_tool_calling_system_instruction
+from .provider_lifecycle import ProviderLifecycleService
 from .history import HistoryManager
 from .repo_config import get_repo_config, RepoConfig
 from .error_recovery import ErrorRecoveryManager
@@ -69,6 +69,11 @@ class PoorCLIAsync:
 
         self.config_manager = get_config_manager()
         self.config: Config = self.config_manager.config
+        self.provider_lifecycle = ProviderLifecycleService(
+            console=self.console,
+            config=self.config,
+            config_manager=self.config_manager,
+        )
         if provider_override:
             self.config.model.provider = provider_override
         if model_override:
@@ -200,18 +205,7 @@ class PoorCLIAsync:
 
             # Get tool declarations and initialize provider with tools
             try:
-                tool_declarations = self.tool_registry.get_tool_declarations()
-                current_dir = os.getcwd()
-
-                # Build system instruction
-                system_instruction = build_tool_calling_system_instruction(current_dir)
-
-                # Initialize provider with tools
-                await self.provider.initialize(
-                    tools=tool_declarations,
-                    system_instruction=system_instruction
-                )
-                logger.info(f"Initialized with {len(tool_declarations)} tools")
+                await self._initialize_current_provider_tools()
 
                 # Restore previous conversation history if enabled
                 if self.config.history.restore_on_startup:
@@ -243,125 +237,20 @@ class PoorCLIAsync:
             sys.exit(1)
 
     async def _initialize_provider(self):
-        """Initialize the AI provider using factory"""
-        try:
-            # Get API key for provider
-            api_key = self.config_manager.get_api_key(self.config.model.provider)
+        """Initialize provider instance via the provider lifecycle service."""
+        self.provider = await self.provider_lifecycle.initialize_provider()
 
-            if not api_key and self.config.model.provider != "ollama":
-                # Check which providers have API keys available
-                available_providers = []
-                for prov_name in self.config.model.providers.keys():
-                    if prov_name == "ollama":
-                        available_providers.append(prov_name)
-                    elif self.config_manager.get_api_key(prov_name):
-                        available_providers.append(prov_name)
+    async def _initialize_current_provider_tools(self) -> None:
+        """Initialize the active provider with tool declarations."""
+        tool_declarations = self.tool_registry.get_tool_declarations()
+        current_dir = os.getcwd()
+        system_instruction = build_tool_calling_system_instruction(current_dir)
 
-                if not available_providers:
-                    # No providers available at all
-                    self.console.print(
-                        Panel(
-                            f"[bold red]API Key Not Found:[/bold red]\n\n"
-                            f"No API key found for provider: {self.config.model.provider}\n\n"
-                            f"[yellow]Please set the environment variable:[/yellow]\n"
-                            f"{self.config.model.providers[self.config.model.provider].api_key_env_var}\n\n"
-                            f"Or add it to your .env file.",
-                            title="⚠️  Configuration Error",
-                            border_style="red",
-                        )
-                    )
-                    logger.error(f"No API key for provider: {self.config.model.provider}")
-                    sys.exit(1)
-
-                # Providers are available, prompt user to switch
-                self.console.print(
-                    Panel(
-                        f"[yellow]No API key found for provider: {self.config.model.provider}[/yellow]\n\n"
-                        f"[cyan]Available providers with API keys:[/cyan]\n"
-                        + "\n".join([f"  • {p}" for p in available_providers]) +
-                        f"\n\n[bold]Would you like to switch to an available provider?[/bold]",
-                        title="⚠️  Provider Configuration",
-                        border_style="yellow",
-                    )
-                )
-
-                # Prompt user to switch
-                response = await asyncio.to_thread(
-                    Prompt.ask,
-                    "[bold]Switch provider?[/bold]",
-                    choices=["y", "n", "yes", "no"],
-                    default="y"
-                )
-
-                if response.lower() in ["y", "yes"]:
-                    # Let user switch provider
-                    await self._switch_provider()
-                    # _switch_provider already reinitializes, so just return
-                    return
-                else:
-                    self.console.print("[yellow]Exiting. Please set an API key and try again.[/yellow]")
-                    sys.exit(0)
-
-            # Create provider
-            logger.info(f"Creating {self.config.model.provider} provider...")
-
-            # Get provider config for additional settings
-            provider_config = self.config_manager.get_provider_config(self.config.model.provider)
-            extra_kwargs = {}
-
-            if provider_config and provider_config.base_url:
-                extra_kwargs["base_url"] = provider_config.base_url
-
-            self.provider = ProviderFactory.create(
-                provider_name=self.config.model.provider,
-                api_key=api_key or "",  # Ollama doesn't need API key
-                model_name=self.config.model.model_name,
-                **extra_kwargs
-            )
-
-            logger.info(f"Provider {self.config.model.provider} initialized successfully")
-
-        except ConfigurationError as e:
-            error_msg = str(e)
-            recovery_steps = []
-
-            # Provide specific recovery suggestions based on error type
-            if "API key" in error_msg or "GEMINI_API_KEY" in error_msg:
-                recovery_steps = [
-                    "1. Get a free API key from https://makersuite.google.com/app/apikey",
-                    "2. Add it to your .env file: GEMINI_API_KEY=your-key-here",
-                    "3. Or set environment variable: export GEMINI_API_KEY=your-key-here",
-                    "4. Restart poor-cli"
-                ]
-            elif "provider" in error_msg.lower():
-                recovery_steps = [
-                    "1. Use /providers to see available providers",
-                    "2. Use /switch to change providers",
-                    "3. Check ~/.poor-cli/config.yaml for configuration",
-                    "4. Ensure API keys are set in .env file"
-                ]
-            else:
-                recovery_steps = [
-                    "1. Check ~/.poor-cli/config.yaml for errors",
-                    "2. Verify all required environment variables are set",
-                    "3. Try: poor-cli --verbose for detailed logs",
-                    "4. Reset config: rm ~/.poor-cli/config.yaml"
-                ]
-
-            recovery_text = "\n\n[bold cyan]How to fix this:[/bold cyan]\n" + "\n".join(recovery_steps)
-
-            self.console.print(
-                Panel(
-                    f"[bold red]Configuration Error:[/bold red]\n{e}\n\n"
-                    f"[yellow]Provider:[/yellow] {self.config.model.provider}\n"
-                    f"[yellow]Model:[/yellow] {self.config.model.model_name}"
-                    f"{recovery_text}",
-                    title="⚠️  Configuration Error",
-                    border_style="red",
-                )
-            )
-            logger.error(f"Configuration error: {e}")
-            sys.exit(1)
+        await self.provider.initialize(
+            tools=tool_declarations,
+            system_instruction=system_instruction
+        )
+        logger.info(f"Initialized with {len(tool_declarations)} tools")
 
     def _display_welcome(self):
         """Display welcome message"""
@@ -411,75 +300,15 @@ class PoorCLIAsync:
         )
 
     async def _switch_provider(self):
-        """Switch to a different AI provider"""
-        # Get list of available providers
-        available_providers = ProviderFactory.list_providers()
-
-        if not available_providers:
-            self.console.print("[red]No providers available[/red]")
-            return
-
-        # Display available providers
-        self.console.print("\n[bold]Available Providers:[/bold]")
-        provider_list = list(available_providers.keys())
-
-        for i, provider_name in enumerate(provider_list, 1):
-            current = " [green](current)[/green]" if provider_name == self.config.model.provider else ""
-            prov_config = self.config.model.providers.get(provider_name)
-            default_model = prov_config.default_model if prov_config else "N/A"
-
-            # Check if API key is available
-            has_key = provider_name == "ollama" or self.config_manager.get_api_key(provider_name) is not None
-            key_status = "[green]✓[/green]" if has_key else "[red]✗ (no key)[/red]"
-
-            self.console.print(f"  {i}. {provider_name} - {default_model}{current} {key_status}")
-
-        # Get user choice
+        """Switch to a different AI provider."""
         try:
-            choice = await asyncio.to_thread(
-                Prompt.ask,
-                "\n[bold]Select provider[/bold]",
-                choices=[str(i) for i in range(1, len(provider_list) + 1)] + ["c"],
-                default="c"
-            )
-
-            if choice == "c":
-                self.console.print("[yellow]Cancelled[/yellow]")
+            provider = await self.provider_lifecycle.switch_provider()
+            if provider is None:
                 return
 
-            selected_provider = provider_list[int(choice) - 1]
-
-            # Get model name
-            prov_config = self.config.model.providers.get(selected_provider)
-            default_model = prov_config.default_model if prov_config else ""
-
-            model_name = await asyncio.to_thread(
-                Prompt.ask,
-                f"\n[bold]Model name[/bold]",
-                default=default_model
-            )
-
-            # Update config
-            self.config.model.provider = selected_provider
-            self.config.model.model_name = model_name
-            self.config_manager.save()
-
-            # Reinitialize provider
-            self.console.print(f"\n[cyan]Switching to {selected_provider} ({model_name})...[/cyan]")
-
-            await self._initialize_provider()
-
-            # Reinitialize with tools
-            tool_declarations = self.tool_registry.get_tool_declarations()
-            current_dir = os.getcwd()
-            system_instruction = build_tool_calling_system_instruction(current_dir)
-
-            await self.provider.initialize(
-                tools=tool_declarations,
-                system_instruction=system_instruction
-            )
-
-            self.console.print(f"[green]✓ Switched to {selected_provider}[/green]")
+            self.provider = provider
+            await self._initialize_current_provider_tools()
+            self.console.print(f"[green]✓ Switched to {self.config.model.provider}[/green]")
 
         except Exception as e:
             self.console.print(f"[red]Error switching provider: {e}[/red]")
@@ -597,68 +426,8 @@ class PoorCLIAsync:
             logger.error(f"Error listing sessions: {e}", exc_info=True)
 
     async def _list_all_providers(self):
-        """List all available providers and their models"""
-        try:
-            from rich.table import Table
-
-            table = Table(title="Available AI Providers", show_header=True, header_style="bold cyan")
-            table.add_column("Provider", style="cyan", width=12)
-            table.add_column("Status", width=10)
-            table.add_column("Default Model", style="green", width=30)
-            table.add_column("API Key", width=15)
-            table.add_column("Base URL", width=25)
-
-            # Get all configured providers
-            for provider_name, provider_config in self.config.model.providers.items():
-                # Check if API key is available
-                api_key_var = provider_config.api_key_env_var
-                api_key_value = os.getenv(api_key_var, "")
-
-                # Determine status
-                if provider_name == self.config.model.provider:
-                    status = "[green]● Active[/green]"
-                elif api_key_value or provider_name == "ollama":
-                    status = "[yellow]○ Ready[/yellow]"
-                else:
-                    status = "[red]○ No Key[/red]"
-
-                # API key status
-                if provider_name == "ollama":
-                    key_status = "[dim]Not needed[/dim]"
-                elif api_key_value:
-                    masked_key = f"{api_key_value[:8]}...{api_key_value[-4:]}" if len(api_key_value) > 12 else "***"
-                    key_status = f"[green]{masked_key}[/green]"
-                else:
-                    key_status = f"[red]{api_key_var}[/red]"
-
-                # Base URL (if applicable)
-                base_url = provider_config.base_url if provider_config.base_url else "[dim]Default[/dim]"
-
-                table.add_row(
-                    provider_name.capitalize(),
-                    status,
-                    provider_config.default_model,
-                    key_status,
-                    base_url
-                )
-
-            self.console.print(table)
-
-            # Show additional info
-            info_text = (
-                "\n[bold]Available Models by Provider:[/bold]\n\n"
-                "[cyan]Gemini (Free):[/cyan] gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.5-flash\n"
-                "[cyan]OpenAI (Paid):[/cyan] gpt-4-turbo, gpt-4, gpt-3.5-turbo\n"
-                "[cyan]Anthropic (Paid):[/cyan] claude-3-5-sonnet-20241022, claude-3-opus, claude-3-sonnet\n"
-                "[cyan]Ollama (Local):[/cyan] llama3, codellama, mistral, phi3\n\n"
-                "[dim]Use /switch to change providers or set DEFAULT_PROVIDER in .env[/dim]"
-            )
-
-            self.console.print(Panel(info_text, title="Model Information", border_style="cyan"))
-
-        except Exception as e:
-            self.console.print(f"[red]Error listing providers: {e}[/red]")
-            logger.error(f"Error listing providers: {e}", exc_info=True)
+        """List all available providers and their models."""
+        await self.provider_lifecycle.list_all_providers()
 
     async def _export_conversation(self, cmd: str):
         """Export conversation history to file"""
