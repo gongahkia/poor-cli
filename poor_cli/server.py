@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -17,6 +18,7 @@ from .core import PoorCLICore
 from .exceptions import ConfigurationError, PoorCLIError, setup_logger
 
 logger = setup_logger(__name__)
+HTTP_DEPRECATION_ENV_VAR = "POOR_CLI_ALLOW_HTTP"
 
 
 # =============================================================================
@@ -705,6 +707,11 @@ def main() -> None:
     if args.stdio:
         asyncio.run(server.run_stdio())
     elif args.http:
+        if os.getenv(HTTP_DEPRECATION_ENV_VAR) != "1":
+            parser.error(
+                "HTTP transport is deprecated and disabled by default. "
+                f"Set {HTTP_DEPRECATION_ENV_VAR}=1 to temporarily enable --http."
+            )
         asyncio.run(run_http(server, args.host, args.port))
     else:
         # Default to stdio

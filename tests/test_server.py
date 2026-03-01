@@ -10,6 +10,7 @@ from poor_cli.server import (
     PoorCLIServer,
     JsonRpcMessage,
     JsonRpcError,
+    main,
 )
 
 
@@ -184,3 +185,19 @@ class TestPoorCLIServer:
         
         # Shutdown returns None result
         assert response.error is None
+
+
+class TestServerMain:
+    """Test server CLI entrypoint behavior."""
+
+    def test_http_transport_requires_deprecation_override(self, monkeypatch):
+        """Test that --http requires POOR_CLI_ALLOW_HTTP=1."""
+        monkeypatch.setattr("poor_cli.server.sys.argv", ["poor-cli-server", "--http"])
+        monkeypatch.delenv("POOR_CLI_ALLOW_HTTP", raising=False)
+
+        with patch("poor_cli.server.asyncio.run") as mock_asyncio_run:
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 2
+        mock_asyncio_run.assert_not_called()
