@@ -10,6 +10,7 @@ Manages .poor-cli directory in the current repository for:
 import os
 import json
 import tempfile
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Any, Iterator, Optional, List
@@ -138,6 +139,7 @@ class RepoConfig:
 
     REPO_DIR_NAME = ".poor-cli"
     HISTORY_FILE = "history.json"
+    HISTORY_BACKUP_DIR = "history_backups"
     HISTORY_LOCK_FILE = "history.lock"
     PREFERENCES_FILE = "preferences.json"
 
@@ -151,6 +153,7 @@ class RepoConfig:
         self.repo_path = repo_path or Path.cwd()
         self.config_dir = self.repo_path / self.REPO_DIR_NAME
         self.history_file = self.config_dir / self.HISTORY_FILE
+        self.history_backup_dir = self.config_dir / self.HISTORY_BACKUP_DIR
         self.history_lock_file = self.config_dir / self.HISTORY_LOCK_FILE
         self.preferences_file = self.config_dir / self.PREFERENCES_FILE
 
@@ -168,6 +171,7 @@ class RepoConfig:
         """Create .poor-cli directory if it doesn't exist"""
         try:
             self.config_dir.mkdir(exist_ok=True)
+            self.history_backup_dir.mkdir(exist_ok=True)
 
             # Create .gitignore to exclude sensitive data
             gitignore_path = self.config_dir / ".gitignore"
@@ -233,6 +237,9 @@ class RepoConfig:
                 logger.info(f"Loaded {len(self.sessions)} sessions from history")
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in history file: {e}")
+            if self._restore_history_from_backup():
+                logger.warning("Recovered corrupted history from backup snapshot")
+                return
             raise ConfigurationError("Invalid history file format")
         except Exception as e:
             logger.error(f"Failed to load history: {e}")
@@ -258,6 +265,7 @@ class RepoConfig:
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(temp_path, self.history_file)
+                self._write_history_backup()
                 logger.debug(f"Saved {len(self.sessions)} sessions to history")
             except Exception as e:
                 if temp_path:
@@ -267,6 +275,64 @@ class RepoConfig:
                         pass
                 logger.error(f"Failed to save history: {e}")
                 raise FileOperationError("Failed to save history", str(e))
+
+    def _write_history_backup(self) -> None:
+        """Persist a timestamped backup snapshot of history."""
+        try:
+            self.history_backup_dir.mkdir(exist_ok=True)
+            backup_name = f"history-{datetime.now().strftime('%Y%m%d%H%M%S%f')}.json"
+            backup_path = self.history_backup_dir / backup_name
+            shutil.copy2(self.history_file, backup_path)
+        except Exception as e:
+            logger.warning(f"Failed to create history backup: {e}")
+
+    def _restore_history_from_backup(self) -> bool:
+        """Restore history from the latest valid backup snapshot."""
+        if not self.history_backup_dir.exists():
+            return False
+
+        backup_files = sorted(
+            self.history_backup_dir.glob("history-*.json"),
+            reverse=True,
+        )
+        for backup_file in backup_files:
+            try:
+                with open(backup_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                recovered_sessions = [
+                    ChatSession.from_dict(session)
+                    for session in data.get("sessions", [])
+                ]
+            except Exception as e:
+                logger.warning(f"Skipping invalid history backup {backup_file}: {e}")
+                continue
+
+            temp_path: Optional[str] = None
+            try:
+                with self._history_file_lock(exclusive=True):
+                    fd, temp_path = tempfile.mkstemp(
+                        prefix=f"{self.HISTORY_FILE}.",
+                        suffix=".tmp",
+                        dir=self.config_dir,
+                    )
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(temp_path, self.history_file)
+                self.sessions = recovered_sessions
+                logger.warning(f"Restored history from backup snapshot: {backup_file.name}")
+                return True
+            except Exception as e:
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                logger.error(f"Failed to restore history backup {backup_file}: {e}")
+                return False
+
+        return False
 
     @contextmanager
     def _history_file_lock(self, exclusive: bool) -> Iterator[None]:

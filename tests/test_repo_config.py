@@ -3,6 +3,7 @@ Tests for repository preference serialization.
 """
 
 import os
+import json
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -84,3 +85,26 @@ class TestRepoConfigHistoryPersistence:
         assert False in lock_modes
         assert True in lock_modes
         assert repo_config.history_lock_file.exists()
+
+    def test_corrupted_history_recovers_from_latest_valid_backup(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        repo_config = RepoConfig(repo_path=repo_root)
+        repo_config.start_session(model="test-model")
+        repo_config.add_message("user", "hello")
+
+        backup_files = sorted(repo_config.history_backup_dir.glob("history-*.json"))
+        assert backup_files
+        expected_backup_payload = json.loads(backup_files[-1].read_text(encoding="utf-8"))
+
+        # Introduce a newer invalid backup to ensure recovery skips invalid snapshots.
+        invalid_backup = repo_config.history_backup_dir / "history-999999999999999999.json"
+        invalid_backup.write_text("{invalid-json", encoding="utf-8")
+
+        # Corrupt the active history file.
+        repo_config.history_file.write_text("{invalid-json", encoding="utf-8")
+
+        RepoConfig(repo_path=repo_root)
+        restored_payload = json.loads(repo_config.history_file.read_text(encoding="utf-8"))
+        assert restored_payload["sessions"] == expected_backup_payload["sessions"]
