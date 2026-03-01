@@ -97,6 +97,7 @@ class HistoryConfig:
     auto_save: bool = True
     save_directory: str = "~/.poor-cli/history"
     max_token_limit: int = 100000  # Context window limit
+    auto_migrate_legacy_history: bool = True
 
     # History restoration settings
     restore_on_startup: bool = True  # Load previous session on startup

@@ -1,4 +1,3 @@
-(B) Add a config toggle in `poor_cli/config.py` to disable automatic history migration for users who want a clean repo-local start. +stability +history +config
 (B) Route `/history`, `/sessions`, `/search`, `/export`, `/new-session`, and `/clear` command data paths to `RepoConfig` only. +stability +history +cli
 (B) Add retention controls (`max_sessions`, `max_messages_per_session`) to `RepoConfig` and prune on write to keep repo history bounded. +stability +history +performance
 (B) Add concurrency tests that run simultaneous append operations from two processes against the same `.poor-cli/history.json`. +stability +tests +history

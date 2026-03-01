@@ -145,14 +145,20 @@ class RepoConfig:
     HISTORY_MIGRATION_MARKER_FILE = "history_migration_marker.json"
     PREFERENCES_FILE = "preferences.json"
 
-    def __init__(self, repo_path: Optional[Path] = None):
+    def __init__(
+        self,
+        repo_path: Optional[Path] = None,
+        enable_legacy_history_migration: bool = True,
+    ):
         """
         Initialize repo config
 
         Args:
             repo_path: Path to repository (defaults to current directory)
+            enable_legacy_history_migration: Import ~/.poor-cli/history.db once when enabled.
         """
         self.repo_path = repo_path or Path.cwd()
+        self.enable_legacy_history_migration = enable_legacy_history_migration
         self.config_dir = self.repo_path / self.REPO_DIR_NAME
         self.history_file = self.config_dir / self.HISTORY_FILE
         self.history_backup_dir = self.config_dir / self.HISTORY_BACKUP_DIR
@@ -169,7 +175,8 @@ class RepoConfig:
         self._ensure_config_dir()
         self._load_preferences()
         self._load_history()
-        self._maybe_migrate_legacy_history()
+        if self.enable_legacy_history_migration:
+            self._maybe_migrate_legacy_history()
 
     def _ensure_config_dir(self) -> None:
         """Create .poor-cli directory if it doesn't exist"""
@@ -588,9 +595,19 @@ class RepoConfig:
 _repo_config: Optional[RepoConfig] = None
 
 
-def get_repo_config(repo_path: Optional[Path] = None) -> RepoConfig:
+def get_repo_config(
+    repo_path: Optional[Path] = None,
+    enable_legacy_history_migration: bool = True,
+) -> RepoConfig:
     """Get global repo config instance"""
     global _repo_config
-    if _repo_config is None or (repo_path and repo_path != _repo_config.repo_path):
-        _repo_config = RepoConfig(repo_path)
+    if (
+        _repo_config is None
+        or (repo_path and repo_path != _repo_config.repo_path)
+        or _repo_config.enable_legacy_history_migration != enable_legacy_history_migration
+    ):
+        _repo_config = RepoConfig(
+            repo_path=repo_path,
+            enable_legacy_history_migration=enable_legacy_history_migration,
+        )
     return _repo_config

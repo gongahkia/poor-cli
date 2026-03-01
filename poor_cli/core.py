@@ -185,7 +185,13 @@ class PoorCLICore:
             # Initialize repository-backed history adapter if enabled
             if self.config.history.auto_save:
                 if self.history_adapter is None:
-                    self.history_adapter = RepoHistoryAdapter(get_repo_config())
+                    self.history_adapter = RepoHistoryAdapter(
+                        get_repo_config(
+                            enable_legacy_history_migration=(
+                                self.config.history.auto_migrate_legacy_history
+                            )
+                        )
+                    )
                 self.history_adapter.start_session(self.config.model.model_name)
                 logger.info("History adapter initialized")
             

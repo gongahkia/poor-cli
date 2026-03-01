@@ -178,3 +178,56 @@ class TestRepoConfigHistoryPersistence:
         second = RepoConfig(repo_path=repo_root)
         second_ids = {session.session_id for session in second.sessions}
         assert "legacy-2" not in second_ids
+
+    def test_legacy_history_migration_can_be_disabled(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        legacy_dir = home / ".poor-cli"
+        legacy_dir.mkdir(parents=True)
+        legacy_db = legacy_dir / "history.db"
+
+        conn = sqlite3.connect(legacy_db)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE sessions (
+                    session_id TEXT PRIMARY KEY,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT,
+                    total_tokens INTEGER DEFAULT 0,
+                    model TEXT DEFAULT 'gemini-2.0-flash-exp',
+                    archived INTEGER DEFAULT 0
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                "INSERT INTO sessions (session_id, started_at, ended_at, model) VALUES (?, ?, ?, ?)",
+                ("legacy-off", "2026-01-01T00:00:00", None, "gemini-legacy"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        monkeypatch.setenv("HOME", str(home))
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        repo_config = RepoConfig(
+            repo_path=repo_root,
+            enable_legacy_history_migration=False,
+        )
+
+        assert {session.session_id for session in repo_config.sessions} == set()
+        assert not repo_config.history_migration_marker_file.exists()

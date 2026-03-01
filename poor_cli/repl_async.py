@@ -136,7 +136,9 @@ class PoorCLIAsync:
 
         # Initialize repo config for local history
         try:
-            self.repo_config = get_repo_config()
+            self.repo_config = get_repo_config(
+                enable_legacy_history_migration=self.config.history.auto_migrate_legacy_history
+            )
             logger.info(f"Initialized repo config at {self.repo_config.config_dir}")
         except Exception as e:
             logger.error(f"Failed to initialize repo config: {e}", exc_info=True)
