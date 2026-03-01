@@ -128,6 +128,39 @@ class TestPermissionOverrides:
         assert repl.config.security.require_permission_for_bash is False
 
 
+class TestPermissionModeCommand:
+    """Test /permission-mode REPL command behavior."""
+
+    @pytest.mark.asyncio
+    async def test_permission_mode_command_sets_mode(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        repl.config = MagicMock()
+        repl.config.security.permission_mode = PermissionMode.PROMPT
+        repl.config.security.require_permission_for_write = True
+        repl.config.security.require_permission_for_bash = True
+
+        await PoorCLIAsync.handle_command(repl, "/permission-mode auto-safe")
+
+        assert repl.config.security.permission_mode == PermissionMode.AUTO_SAFE
+        assert repl.config.security.require_permission_for_write is True
+        assert repl.config.security.require_permission_for_bash is True
+        repl.console.print.assert_called_once_with("[green]Permission mode set to auto-safe[/green]")
+
+    @pytest.mark.asyncio
+    async def test_permission_mode_command_shows_current_mode(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.console = MagicMock()
+        repl.config = MagicMock()
+        repl.config.security.permission_mode = PermissionMode.DANGER_FULL_ACCESS
+
+        await PoorCLIAsync.handle_command(repl, "/permission-mode")
+
+        repl.console.print.assert_called_once()
+        printed = repl.console.print.call_args.args[0]
+        assert "danger-full-access" in printed
+
+
 class TestMainEntrypoint:
     """Test argument parsing behavior for main()."""
 

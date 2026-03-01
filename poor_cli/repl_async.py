@@ -164,12 +164,17 @@ class PoorCLIAsync:
         if dangerously_skip_permissions:
             selected_mode = PermissionMode.DANGER_FULL_ACCESS
 
-        self.config.security.permission_mode = selected_mode
+        self._set_permission_mode(selected_mode)
 
-        # Backward-compatible toggles for callers that still inspect boolean flags.
-        if selected_mode == PermissionMode.DANGER_FULL_ACCESS:
+    def _set_permission_mode(self, mode: PermissionMode) -> None:
+        """Set active permission mode and keep legacy permission booleans in sync."""
+        self.config.security.permission_mode = mode
+        if mode == PermissionMode.DANGER_FULL_ACCESS:
             self.config.security.require_permission_for_write = False
             self.config.security.require_permission_for_bash = False
+        else:
+            self.config.security.require_permission_for_write = True
+            self.config.security.require_permission_for_bash = True
 
     async def initialize(self, show_welcome: bool = True):
         """Initialize the AI provider and tools with proper error handling"""
@@ -1035,6 +1040,7 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     "/export [format] - Export conversation (json, md, txt)\n\n"
                     "[cyan]Configuration:[/cyan]\n"
                     "/config        - Show current configuration\n"
+                    "/permission-mode [mode] - Show or set permission mode\n"
                     "/verbose       - Toggle verbose logging\n"
                     "/plan-mode     - Toggle plan mode\n"
                     "/cost          - Show API usage and cost estimates\n"
@@ -1112,6 +1118,31 @@ If the user just asks for a solution/code without mentioning a file, show the co
                     border_style="cyan",
                 )
             )
+
+        elif cmd == "/permission-mode" or cmd.startswith("/permission-mode "):
+            parts = cmd.split(maxsplit=1)
+            if len(parts) == 1:
+                current_mode = self.config.security.permission_mode
+                if isinstance(current_mode, PermissionMode):
+                    current_mode = current_mode.value
+                self.console.print(
+                    f"[cyan]Current permission mode:[/cyan] {current_mode}\n"
+                    "[dim]Available: prompt, auto-safe, danger-full-access[/dim]"
+                )
+                return
+
+            requested_mode = parts[1].strip().lower()
+            try:
+                mode = PermissionMode(requested_mode)
+            except ValueError:
+                self.console.print(
+                    "[red]Invalid permission mode.[/red] "
+                    "Use one of: prompt, auto-safe, danger-full-access."
+                )
+                return
+
+            self._set_permission_mode(mode)
+            self.console.print(f"[green]Permission mode set to {mode.value}[/green]")
 
         elif cmd == "/history" or cmd.startswith("/history "):
             # Show recent messages from chat history
