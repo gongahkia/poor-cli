@@ -3,6 +3,7 @@ Async REPL interface for poor-cli with streaming support
 """
 
 import argparse
+import json
 import os
 import sys
 import asyncio
@@ -809,12 +810,133 @@ If the user just asks for a solution/code without mentioning a file, show the co
 
         self.console.print("\n[cyan]Goodbye![/cyan]")
 
-    async def run_non_interactive(self, prompt: str) -> int:
+    async def run_non_interactive(self, prompt: str, output_format: str = "text") -> int:
         """Execute one request and return process exit code."""
         await self.initialize(show_welcome=False)
-        success = await self.process_request(prompt)
-        await self._shutdown_sessions()
-        return 0 if success else 1
+
+        try:
+            payload = await self._process_request_non_interactive(prompt)
+
+            if output_format == "json":
+                print(json.dumps(payload, ensure_ascii=False))
+            elif payload["ok"]:
+                if payload["response"]:
+                    print(payload["response"])
+            else:
+                error = payload.get("error") or {}
+                print(f"Error: {error.get('message', 'Unknown error')}", file=sys.stderr)
+
+            return 0 if payload["ok"] else 1
+        finally:
+            await self._shutdown_sessions()
+
+    async def _process_request_non_interactive(self, user_input: str) -> Dict[str, Any]:
+        """Process one request and return machine-readable payload."""
+        start_time = time.time()
+        self._capture_tool_results = True
+        self._captured_tool_results: List[Dict[str, Any]] = []
+        self._non_interactive_mode = True
+
+        payload: Dict[str, Any] = {
+            "ok": False,
+            "response": "",
+            "tool_calls": [],
+            "error": None,
+        }
+
+        try:
+            logger.info(f"Processing non-interactive request: {user_input[:100]}...")
+
+            self.session_stats["requests"] += 1
+            self.session_stats["input_chars"] += len(user_input)
+            self.session_stats["input_tokens_estimate"] += len(user_input) // 4
+
+            if self.history_manager:
+                self.history_manager.add_message("user", user_input)
+
+            if self.repo_config:
+                try:
+                    self.repo_config.add_message("user", user_input)
+                except Exception as e:
+                    logger.error(f"Failed to log user message to repo config: {e}")
+
+            if self.config.ui.enable_streaming:
+                response_text = await self._collect_response_streaming(user_input)
+            else:
+                response_text = await self._collect_response_non_streaming(user_input)
+
+            payload["ok"] = True
+            payload["response"] = response_text
+            payload["tool_calls"] = list(self._captured_tool_results)
+            payload["elapsed_seconds"] = round(time.time() - start_time, 3)
+
+            if response_text:
+                self.session_stats["output_chars"] += len(response_text)
+                self.session_stats["output_tokens_estimate"] += len(response_text) // 4
+                self.last_assistant_response = response_text
+
+                if self.history_manager:
+                    self.history_manager.add_message("model", response_text)
+
+                if self.repo_config:
+                    try:
+                        self.repo_config.add_message("assistant", response_text)
+                    except Exception as e:
+                        logger.error(f"Failed to log assistant message to repo config: {e}")
+
+            return payload
+
+        except Exception as e:
+            logger.exception("Non-interactive request failed")
+            payload["ok"] = False
+            payload["tool_calls"] = list(self._captured_tool_results)
+            payload["error"] = {
+                "type": type(e).__name__,
+                "message": str(e),
+            }
+            payload["elapsed_seconds"] = round(time.time() - start_time, 3)
+            return payload
+
+        finally:
+            self._capture_tool_results = False
+            self._non_interactive_mode = False
+
+    async def _collect_response_streaming(self, user_input: str) -> str:
+        """Collect complete response text from streaming provider calls."""
+        accumulated_text = ""
+
+        async for chunk in self.provider.send_message_stream(user_input):
+            if chunk.function_calls:
+                tool_result_content = await self.execute_function_calls_provider(chunk)
+                response = await self.provider.send_message(tool_result_content)
+
+                if response.content:
+                    accumulated_text += response.content
+
+                while response.function_calls:
+                    tool_result_content = await self.execute_function_calls_provider(response)
+                    response = await self.provider.send_message(tool_result_content)
+                    if response.content:
+                        accumulated_text += response.content
+                break
+
+            if chunk.content:
+                accumulated_text += chunk.content
+
+        return accumulated_text
+
+    async def _collect_response_non_streaming(self, user_input: str) -> str:
+        """Collect complete response text from non-streaming provider calls."""
+        response = await self.provider.send_message(user_input)
+        accumulated_text = response.content or ""
+
+        while response.function_calls:
+            tool_result_content = await self.execute_function_calls_provider(response)
+            response = await self.provider.send_message(tool_result_content)
+            if response.content:
+                accumulated_text += response.content
+
+        return accumulated_text
 
     async def handle_command(self, command: str):
         """Handle slash commands"""
@@ -1711,6 +1833,7 @@ Use /provider for a quick capability summary[/dim]"""
                     {
                         "id": fc.id,
                         "name": fc.name,
+                        "arguments": fc.arguments,
                         "result": "Plan rejected by user"
                     }
                     for fc in response.function_calls
@@ -1723,6 +1846,7 @@ Use /provider for a quick capability summary[/dim]"""
                     tool_results.append({
                         "id": fc.id,
                         "name": fc.name,
+                        "arguments": fc.arguments,
                         "result": result
                     })
         else:
@@ -1733,7 +1857,8 @@ Use /provider for a quick capability summary[/dim]"""
                 tool_name = fc.name
                 tool_args = fc.arguments
 
-                self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
+                if not getattr(self, "_non_interactive_mode", False):
+                    self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
 
                 # Request permission for file operations
                 if not await self.request_permission(tool_name, tool_args):
@@ -1744,7 +1869,7 @@ Use /provider for a quick capability summary[/dim]"""
                     result = await self.tool_registry.execute_tool(tool_name, tool_args)
 
                 # Display tool output
-                if result:
+                if result and not getattr(self, "_non_interactive_mode", False):
                     self.console.print(
                         Panel(
                             result[:1000] + ("..." if len(result) > 1000 else ""),
@@ -1757,8 +1882,20 @@ Use /provider for a quick capability summary[/dim]"""
                 tool_results.append({
                     "id": fc.id,
                     "name": tool_name,
+                    "arguments": tool_args,
                     "result": result
                 })
+
+        if getattr(self, "_capture_tool_results", False):
+            self._captured_tool_results.extend(
+                {
+                    "id": tr.get("id"),
+                    "name": tr.get("name"),
+                    "arguments": tr.get("arguments", {}),
+                    "result": tr.get("result"),
+                }
+                for tr in tool_results
+            )
 
         # Format results based on provider type
         return self._format_tool_results(tool_results)
@@ -1873,11 +2010,19 @@ def main():
             help='Run one non-interactive prompt and exit',
         )
         run_parser.add_argument("prompt", help="Prompt text to send")
+        run_parser.add_argument(
+            "--output",
+            choices=["text", "json"],
+            default="text",
+            help="Output format for non-interactive mode",
+        )
         args = parser.parse_args()
 
         repl = PoorCLIAsync()
         if args.command == "run":
-            exit_code = asyncio.run(repl.run_non_interactive(args.prompt))
+            exit_code = asyncio.run(
+                repl.run_non_interactive(args.prompt, output_format=args.output)
+            )
             sys.exit(exit_code)
 
         asyncio.run(repl.run())
