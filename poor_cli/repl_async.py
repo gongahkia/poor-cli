@@ -2,6 +2,7 @@
 Async REPL interface for poor-cli with streaming support
 """
 
+import argparse
 import os
 import sys
 import asyncio
@@ -111,7 +112,7 @@ class PoorCLIAsync:
         if self.verbose_mode:
             enable_verbose_logging()
 
-    async def initialize(self):
+    async def initialize(self, show_welcome: bool = True):
         """Initialize the AI provider and tools with proper error handling"""
         try:
             logger.info("Initializing poor-cli (async)...")
@@ -161,7 +162,8 @@ class PoorCLIAsync:
                 sys.exit(1)
 
             # Display welcome message
-            self._display_welcome()
+            if show_welcome:
+                self._display_welcome()
             logger.info("Initialization complete")
 
         except Exception as e:
@@ -752,9 +754,21 @@ If the user just asks for a solution/code without mentioning a file, show the co
             )
             logger.error(f"Error exporting conversation: {e}", exc_info=True)
 
+    async def _shutdown_sessions(self):
+        """End history sessions and persist repository-scoped history."""
+        if self.history_manager:
+            self.history_manager.end_session()
+
+        if self.repo_config:
+            try:
+                self.repo_config.end_session()
+                logger.info("Repo config session ended and history saved")
+            except Exception as e:
+                logger.error(f"Failed to end repo config session: {e}")
+
     async def run(self):
         """Main async REPL loop"""
-        await self.initialize()
+        await self.initialize(show_welcome=True)
         self.running = True
 
         while self.running:
@@ -791,18 +805,16 @@ If the user just asks for a solution/code without mentioning a file, show the co
                 break
 
         # Cleanup
-        if self.history_manager:
-            self.history_manager.end_session()
-
-        # End repo config session and save history
-        if self.repo_config:
-            try:
-                self.repo_config.end_session()
-                logger.info("Repo config session ended and history saved")
-            except Exception as e:
-                logger.error(f"Failed to end repo config session: {e}")
+        await self._shutdown_sessions()
 
         self.console.print("\n[cyan]Goodbye![/cyan]")
+
+    async def run_non_interactive(self, prompt: str) -> int:
+        """Execute one request and return process exit code."""
+        await self.initialize(show_welcome=False)
+        success = await self.process_request(prompt)
+        await self._shutdown_sessions()
+        return 0 if success else 1
 
     async def handle_command(self, command: str):
         """Handle slash commands"""
@@ -1339,8 +1351,8 @@ Use /provider for a quick capability summary[/dim]"""
             self.console.print(f"[red]Unknown command: {command}[/red]\n"
                              "[dim]Type /help to see available commands[/dim]")
 
-    async def process_request(self, user_input: str):
-        """Process user request with AI, streaming, and comprehensive error handling"""
+    async def process_request(self, user_input: str) -> bool:
+        """Process one user request and return whether it succeeded."""
         # Track execution time
         start_time = time.time()
 
@@ -1383,6 +1395,7 @@ Use /provider for a quick capability summary[/dim]"""
             elapsed_time = time.time() - start_time
             if elapsed_time > 0.5:  # Only show if > 0.5 seconds
                 self.console.print(f"[dim]⏱ {elapsed_time:.2f}s[/dim]")
+            return True
 
         except KeyboardInterrupt:
             self.console.print("\n[yellow]Request cancelled[/yellow]")
@@ -1398,6 +1411,7 @@ Use /provider for a quick capability summary[/dim]"""
                 )
             )
             logger.error(f"Application error: {e}")
+            return False
 
         except Exception as e:
             error_type = type(e).__name__
@@ -1413,6 +1427,7 @@ Use /provider for a quick capability summary[/dim]"""
                 )
             )
             logger.exception("Unexpected error processing request")
+            return False
 
     async def _process_request_streaming(self, user_input: str):
         """Process request with streaming responses"""
@@ -1848,7 +1863,23 @@ Use /provider for a quick capability summary[/dim]"""
 def main():
     """Entry point for async poor-cli"""
     try:
+        parser = argparse.ArgumentParser(
+            prog="poor-cli",
+            description="poor-cli interactive assistant",
+        )
+        subparsers = parser.add_subparsers(dest="command")
+        run_parser = subparsers.add_parser(
+            "run",
+            help='Run one non-interactive prompt and exit',
+        )
+        run_parser.add_argument("prompt", help="Prompt text to send")
+        args = parser.parse_args()
+
         repl = PoorCLIAsync()
+        if args.command == "run":
+            exit_code = asyncio.run(repl.run_non_interactive(args.prompt))
+            sys.exit(exit_code)
+
         asyncio.run(repl.run())
     except KeyboardInterrupt:
         print("\nExiting...")
