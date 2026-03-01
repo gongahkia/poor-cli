@@ -38,7 +38,7 @@ class TestRunNonInteractive:
         mock_print.assert_called_once_with("done")
 
     @pytest.mark.asyncio
-    async def test_run_non_interactive_failure_returns_one(self):
+    async def test_run_non_interactive_tool_call_error_returns_one(self):
         repl = object.__new__(PoorCLIAsync)
         repl.initialize = AsyncMock()
         repl._process_request_non_interactive = AsyncMock(
@@ -46,7 +46,11 @@ class TestRunNonInteractive:
                 "ok": False,
                 "response": "",
                 "tool_calls": [{"name": "bash", "result": "denied"}],
-                "error": {"type": "RuntimeError", "message": "bad request"},
+                "error": {
+                    "type": "ToolExecutionError",
+                    "message": "bad request",
+                    "code": "TOOL_EXECUTION_ERROR",
+                },
             }
         )
         repl._shutdown_sessions = AsyncMock()
@@ -58,7 +62,40 @@ class TestRunNonInteractive:
         repl.initialize.assert_awaited_once_with(show_welcome=False)
         repl._process_request_non_interactive.assert_awaited_once_with("hello world")
         repl._shutdown_sessions.assert_awaited_once_with()
-        mock_print.assert_called_once_with("Error [INTERNAL_ERROR]: bad request", file=sys.stderr)
+        mock_print.assert_called_once_with(
+            "Error [TOOL_EXECUTION_ERROR]: bad request",
+            file=sys.stderr,
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_non_interactive_provider_error_returns_one(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.initialize = AsyncMock()
+        repl._process_request_non_interactive = AsyncMock(
+            return_value={
+                "ok": False,
+                "response": "",
+                "tool_calls": [],
+                "error": {
+                    "type": "ConfigurationError",
+                    "message": "missing provider key",
+                    "code": "CONFIGURATION_ERROR",
+                },
+            }
+        )
+        repl._shutdown_sessions = AsyncMock()
+
+        with patch("builtins.print") as mock_print:
+            exit_code = await PoorCLIAsync.run_non_interactive(repl, "hello world")
+
+        assert exit_code == 1
+        repl.initialize.assert_awaited_once_with(show_welcome=False)
+        repl._process_request_non_interactive.assert_awaited_once_with("hello world")
+        repl._shutdown_sessions.assert_awaited_once_with()
+        mock_print.assert_called_once_with(
+            "Error [CONFIGURATION_ERROR]: missing provider key",
+            file=sys.stderr,
+        )
 
     @pytest.mark.asyncio
     async def test_run_non_interactive_json_output(self):
