@@ -153,6 +153,7 @@ class TestPoorCLICoreWithMocks:
         assert info["name"] == "gemini"
         assert info["model"] == "gemini-pro"
         assert "capabilities" in info
+        assert info["supported_clients"] == ["cli", "neovim"]
     
     @pytest.mark.asyncio
     async def test_clear_history(self, core_with_mocks):

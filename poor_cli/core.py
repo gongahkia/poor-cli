@@ -1,8 +1,8 @@
 """
 PoorCLI Core Engine - Headless AI coding assistant
 
-This module provides a headless engine that can be used by CLI, Neovim, VSCode, etc.
-It separates the core AI functionality from any specific UI implementation.
+This module provides a headless engine used by the PoorCLI terminal client and
+the Neovim plugin.
 """
 
 import asyncio
@@ -30,11 +30,9 @@ class PoorCLICore:
     """
     Headless AI coding assistant engine.
     
-    This is the core wrapper layer that can be used by any UI:
+    This is the core wrapper layer shared by supported clients:
     - CLI (repl_async.py)
     - Neovim plugin (via JSON-RPC server)
-    - VSCode extension (via HTTP server)
-    - Any other integration
     
     Attributes:
         provider: The AI provider (Gemini, OpenAI, Claude, Ollama)
@@ -43,6 +41,7 @@ class PoorCLICore:
         checkpoint_manager: File checkpoint/undo system
         config: Configuration object
     """
+    SUPPORTED_CLIENTS: Tuple[str, str] = ("cli", "neovim")
     
     def __init__(self, config_path: Optional[Path] = None):
         """
@@ -786,7 +785,7 @@ If the user just asks for a solution/code without mentioning a file, show the co
         Get information about the current provider.
         
         Returns:
-            Dict with keys: name, model, capabilities.
+            Dict with keys: name, model, capabilities, supported_clients.
         
         Raises:
             PoorCLIError: If not initialized.
@@ -806,7 +805,8 @@ If the user just asks for a solution/code without mentioning a file, show the co
         return {
             "name": self.config.model.provider,
             "model": self.config.model.model_name,
-            "capabilities": capabilities
+            "capabilities": capabilities,
+            "supported_clients": list(self.SUPPORTED_CLIENTS),
         }
 
     async def clear_history(self) -> None:
@@ -988,4 +988,3 @@ If the user just asks for a solution/code without mentioning a file, show the co
         except Exception as e:
             logger.error(f"Checkpoint restore failed: {e}")
             raise PoorCLIError(f"Failed to restore checkpoint: {e}")
-
