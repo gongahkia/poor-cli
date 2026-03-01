@@ -12,9 +12,12 @@ M.ns_id = vim.api.nvim_create_namespace("poor-cli-inline")
 -- Current completion state
 M.current_completion = nil  -- { bufnr, line, col, text }
 M.inline_request_token = 0
-M.pending_inline_request = nil  -- { token, bufnr, line, col, changedtick }
+M.pending_inline_request = nil  -- { token, request_id, bufnr, line, col, changedtick }
+local cancel_pending_inline_request
 
 local function create_inline_request_context(bufnr, line, col)
+    cancel_pending_inline_request()
+
     M.inline_request_token = M.inline_request_token + 1
     local context = {
         token = M.inline_request_token,
@@ -38,6 +41,20 @@ local function clear_request_if_active(context)
     end
 end
 
+cancel_pending_inline_request = function()
+    local context = M.pending_inline_request
+    if not context then
+        return
+    end
+
+    -- Remove callback dispatch for the stale in-flight request.
+    if context.request_id and rpc.pending then
+        rpc.pending[context.request_id] = nil
+    end
+
+    M.pending_inline_request = nil
+end
+
 local function is_request_stale(context)
     if not vim.api.nvim_buf_is_valid(context.bufnr) then
         return true
@@ -54,6 +71,13 @@ local function is_request_stale(context)
 
     local changedtick = vim.api.nvim_buf_get_changedtick(context.bufnr)
     return changedtick ~= context.changedtick
+end
+
+local function cancel_if_request_stale()
+    local context = M.pending_inline_request
+    if context and is_request_stale(context) then
+        cancel_pending_inline_request()
+    end
 end
 
 local function handle_inline_response(context, result, err)
@@ -86,6 +110,15 @@ local function handle_inline_response(context, result, err)
         M.show_ghost_text(result.completion)
     end)
 end
+
+local request_cancel_group = vim.api.nvim_create_augroup("poor-cli-inline-request-cancel", { clear = true })
+
+vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "TextChanged", "TextChangedI", "BufLeave" }, {
+    group = request_cancel_group,
+    callback = function()
+        cancel_if_request_stale()
+    end,
+})
 
 -- Show ghost text at cursor position
 function M.show_ghost_text(text)
@@ -244,6 +277,7 @@ function M.trigger()
         handle_inline_response(request_context, result, err)
     end)
 
+    request_context.request_id = request_id
     if not request_id then
         clear_request_if_active(request_context)
     end
@@ -301,6 +335,7 @@ function M.trigger_with_instruction(instruction)
         handle_inline_response(request_context, result, err)
     end)
 
+    request_context.request_id = request_id
     if not request_id then
         clear_request_if_active(request_context)
     end
