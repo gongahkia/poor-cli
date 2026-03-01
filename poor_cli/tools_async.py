@@ -641,7 +641,8 @@ class ToolRegistryAsync:
                 process.kill()
                 await process.wait()
                 raise CommandExecutionError(
-                    f"Command timed out after {timeout} seconds: {command}"
+                    command,
+                    f"Command timed out after {timeout} seconds",
                 )
 
             # Decode output
@@ -651,7 +652,9 @@ class ToolRegistryAsync:
             if process.returncode != 0:
                 error_msg = stderr_text or stdout_text or "Command failed"
                 raise CommandExecutionError(
-                    f"Command failed with exit code {process.returncode}: {error_msg}"
+                    command,
+                    f"Command failed with exit code {process.returncode}: {error_msg}",
+                    return_code=process.returncode,
                 )
 
             result = stdout_text or "(No output)"
@@ -661,7 +664,7 @@ class ToolRegistryAsync:
         except CommandExecutionError:
             raise
         except Exception as e:
-            raise CommandExecutionError(f"Failed to execute command: {str(e)}")
+            raise CommandExecutionError(command, f"Failed to execute command: {str(e)}")
 
     async def list_directory(self, path: Optional[str] = None, show_hidden: bool = False) -> str:
         """List directory contents with metadata
@@ -853,6 +856,7 @@ class ToolRegistryAsync:
         Raises:
             CommandExecutionError: If git command fails
         """
+        command = "git status"
         try:
             work_dir = path or os.getcwd()
             command = f"cd {work_dir} && git status"
@@ -861,7 +865,7 @@ class ToolRegistryAsync:
             return result
 
         except Exception as e:
-            raise CommandExecutionError(f"Git status failed: {str(e)}")
+            raise CommandExecutionError(command, f"Git status failed: {str(e)}")
 
     async def git_diff(self, path: Optional[str] = None, file_path: Optional[str] = None) -> str:
         """Show git differences
@@ -876,6 +880,7 @@ class ToolRegistryAsync:
         Raises:
             CommandExecutionError: If git command fails
         """
+        command = "git diff"
         try:
             work_dir = path or os.getcwd()
             file_arg = file_path if file_path else ""
@@ -885,7 +890,7 @@ class ToolRegistryAsync:
             return result if result.strip() else "No changes"
 
         except Exception as e:
-            raise CommandExecutionError(f"Git diff failed: {str(e)}")
+            raise CommandExecutionError(command, f"Git diff failed: {str(e)}")
 
     async def create_directory(self, path: str) -> str:
         """Create a new directory
