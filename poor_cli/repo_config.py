@@ -669,23 +669,36 @@ class RepoConfig:
         return self.current_session.messages[-count:]
 
 
-# Global repo config instance
-_repo_config: Optional[RepoConfig] = None
+# Cached repo config instances keyed by repository root path.
+_repo_configs: Dict[Path, RepoConfig] = {}
+
+
+def _normalize_repo_path(repo_path: Optional[Path]) -> Path:
+    """Return canonical repository root path used for cache keying."""
+    candidate = Path(repo_path) if repo_path is not None else Path.cwd()
+    try:
+        return candidate.resolve()
+    except FileNotFoundError:
+        # Path.resolve(strict=False) behavior for Python<3.10 compatibility.
+        return candidate.absolute()
 
 
 def get_repo_config(
     repo_path: Optional[Path] = None,
     enable_legacy_history_migration: bool = True,
 ) -> RepoConfig:
-    """Get global repo config instance"""
-    global _repo_config
+    """Get repo config instance cached per repository root path."""
+    normalized_path = _normalize_repo_path(repo_path)
+    existing = _repo_configs.get(normalized_path)
+
     if (
-        _repo_config is None
-        or (repo_path and repo_path != _repo_config.repo_path)
-        or _repo_config.enable_legacy_history_migration != enable_legacy_history_migration
+        existing is None
+        or existing.enable_legacy_history_migration != enable_legacy_history_migration
     ):
-        _repo_config = RepoConfig(
-            repo_path=repo_path,
+        existing = RepoConfig(
+            repo_path=normalized_path,
             enable_legacy_history_migration=enable_legacy_history_migration,
         )
-    return _repo_config
+        _repo_configs[normalized_path] = existing
+
+    return existing

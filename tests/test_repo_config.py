@@ -13,7 +13,8 @@ import pytest
 
 from poor_cli.config import PermissionMode
 from poor_cli.exceptions import ConfigurationError
-from poor_cli.repo_config import ChatSession, RepoConfig, RepoPreferences
+from poor_cli.repo_config import ChatSession, RepoConfig, RepoPreferences, get_repo_config
+import poor_cli.repo_config as repo_config_module
 
 
 def _concurrent_append_worker(repo_root: str, content: str) -> None:
@@ -315,3 +316,61 @@ class TestRepoConfigHistoryPersistence:
 
         payload = json.loads(reloaded.history_file.read_text(encoding="utf-8"))
         assert isinstance(payload.get("sessions"), list)
+
+
+class TestGetRepoConfigCache:
+    """Ensure get_repo_config caches instances by repository root path."""
+
+    def test_returns_same_instance_for_same_repo_root(self, tmp_path, monkeypatch):
+        repo_root = tmp_path / "repo-a"
+        repo_root.mkdir()
+        monkeypatch.setattr(repo_config_module, "_repo_configs", {})
+
+        first = get_repo_config(
+            repo_path=repo_root,
+            enable_legacy_history_migration=False,
+        )
+        second = get_repo_config(
+            repo_path=repo_root,
+            enable_legacy_history_migration=False,
+        )
+
+        assert first is second
+
+    def test_returns_distinct_instances_for_distinct_repo_roots(self, tmp_path, monkeypatch):
+        repo_a = tmp_path / "repo-a"
+        repo_b = tmp_path / "repo-b"
+        repo_a.mkdir()
+        repo_b.mkdir()
+        monkeypatch.setattr(repo_config_module, "_repo_configs", {})
+
+        first = get_repo_config(
+            repo_path=repo_a,
+            enable_legacy_history_migration=False,
+        )
+        second = get_repo_config(
+            repo_path=repo_b,
+            enable_legacy_history_migration=False,
+        )
+
+        assert first is not second
+        assert first.repo_path == repo_a.resolve()
+        assert second.repo_path == repo_b.resolve()
+
+    def test_recreates_instance_when_migration_toggle_changes(self, tmp_path, monkeypatch):
+        repo_root = tmp_path / "repo-toggle"
+        repo_root.mkdir()
+        monkeypatch.setattr(repo_config_module, "_repo_configs", {})
+
+        first = get_repo_config(
+            repo_path=repo_root,
+            enable_legacy_history_migration=False,
+        )
+        second = get_repo_config(
+            repo_path=repo_root,
+            enable_legacy_history_migration=True,
+        )
+
+        assert first is not second
+        assert first.enable_legacy_history_migration is False
+        assert second.enable_legacy_history_migration is True
