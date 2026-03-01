@@ -10,15 +10,24 @@ from poor_cli.tools_async import ToolRegistryAsync
 
 
 class _FakeProcess:
+    class _FakeStream:
+        def __init__(self, data: bytes):
+            self._data = data
+            self._cursor = 0
+
+        async def read(self, size: int) -> bytes:
+            if self._cursor >= len(self._data):
+                return b""
+            chunk = self._data[self._cursor:self._cursor + size]
+            self._cursor += len(chunk)
+            return chunk
+
     def __init__(self, *, returncode: int, stdout: bytes, stderr: bytes):
         self.returncode = returncode
-        self._stdout = stdout
-        self._stderr = stderr
+        self.stdout = self._FakeStream(stdout)
+        self.stderr = self._FakeStream(stderr)
         self.killed = False
         self.waited = False
-
-    async def communicate(self):
-        return self._stdout, self._stderr
 
     def kill(self):
         self.killed = True
@@ -82,3 +91,23 @@ async def test_bash_success_path_returns_stdout():
         result = await registry.bash("echo hello world")
 
     assert result == "hello world\n"
+
+
+@pytest.mark.asyncio
+async def test_bash_truncates_large_output():
+    registry = ToolRegistryAsync()
+    registry.MAX_CAPTURED_OUTPUT_BYTES = 10
+    noisy_process = _FakeProcess(
+        returncode=0,
+        stdout=b"0123456789ABCDEFGHIJ",
+        stderr=b"",
+    )
+
+    with patch(
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
+        AsyncMock(return_value=noisy_process),
+    ):
+        result = await registry.bash("echo noisy")
+
+    assert result.startswith("0123456789")
+    assert "[Output truncated: stdout truncated at 10 bytes]" in result

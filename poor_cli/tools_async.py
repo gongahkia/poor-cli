@@ -10,7 +10,7 @@ import glob as glob_module
 import re
 import aiofiles
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .exceptions import (
     ToolExecutionError,
@@ -31,6 +31,7 @@ logger = setup_logger(__name__)
 
 class ToolRegistryAsync:
     """Async registry for all available tools"""
+    MAX_CAPTURED_OUTPUT_BYTES = 1024 * 1024  # 1 MiB per stream
 
     def __init__(self):
         self.tools = {}
@@ -610,6 +611,36 @@ class ToolRegistryAsync:
         except Exception as e:
             raise ToolExecutionError(f"Grep search failed: {str(e)}")
 
+    async def _read_stream_with_limit(
+        self,
+        stream: Optional[asyncio.StreamReader],
+        max_bytes: int,
+    ) -> Tuple[bytes, bool]:
+        """Read a process stream with bounded capture to avoid memory blowups."""
+        if stream is None:
+            return b"", False
+
+        chunks: List[bytes] = []
+        captured = 0
+        truncated = False
+
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+
+            if captured < max_bytes:
+                remaining = max_bytes - captured
+                if len(chunk) > remaining:
+                    truncated = True
+                to_store = chunk[:remaining]
+                chunks.append(to_store)
+                captured += len(to_store)
+            else:
+                truncated = True
+
+        return b"".join(chunks), truncated
+
     async def bash(self, command: str, timeout: int = 60) -> str:
         """Execute bash command asynchronously
 
@@ -660,33 +691,58 @@ class ToolRegistryAsync:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            # Wait for completion with timeout
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=timeout
+            stdout_task = asyncio.create_task(
+                self._read_stream_with_limit(
+                    process.stdout,
+                    self.MAX_CAPTURED_OUTPUT_BYTES,
                 )
+            )
+            stderr_task = asyncio.create_task(
+                self._read_stream_with_limit(
+                    process.stderr,
+                    self.MAX_CAPTURED_OUTPUT_BYTES,
+                )
+            )
+
+            try:
+                await asyncio.wait_for(process.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
                 raise CommandExecutionError(
                     command,
                     f"Command timed out after {timeout} seconds",
                 )
 
+            stdout_bytes, stdout_truncated = await stdout_task
+            stderr_bytes, stderr_truncated = await stderr_task
+
             # Decode output
-            stdout_text = stdout.decode('utf-8', errors='replace')
-            stderr_text = stderr.decode('utf-8', errors='replace')
+            stdout_text = stdout_bytes.decode('utf-8', errors='replace')
+            stderr_text = stderr_bytes.decode('utf-8', errors='replace')
+
+            truncation_notes: List[str] = []
+            if stdout_truncated:
+                truncation_notes.append(f"stdout truncated at {self.MAX_CAPTURED_OUTPUT_BYTES} bytes")
+            if stderr_truncated:
+                truncation_notes.append(f"stderr truncated at {self.MAX_CAPTURED_OUTPUT_BYTES} bytes")
+            truncation_suffix = (
+                "\n[Output truncated: " + ", ".join(truncation_notes) + "]"
+                if truncation_notes
+                else ""
+            )
 
             if process.returncode != 0:
                 error_msg = stderr_text or stdout_text or "Command failed"
+                error_msg += truncation_suffix
                 raise CommandExecutionError(
                     command,
                     f"Command failed with exit code {process.returncode}: {error_msg}",
                     return_code=process.returncode,
                 )
 
-            result = stdout_text or "(No output)"
+            result = (stdout_text or "(No output)") + truncation_suffix
             logger.info(f"Bash command completed successfully")
             return result
 
