@@ -8,7 +8,12 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from .config import PermissionMode
-from .exceptions import disable_verbose_logging, enable_verbose_logging, setup_logger
+from .exceptions import (
+    disable_verbose_logging,
+    enable_verbose_logging,
+    set_log_context,
+    setup_logger,
+)
 
 logger = setup_logger(__name__)
 
@@ -118,6 +123,8 @@ async def handle_slash_command(repl, command: str):
         if repl.repo_config:
             repl.repo_config.end_session()
             repl.repo_config.start_session(model=repl.config.model.model_name)
+            if repl.repo_config.current_session:
+                set_log_context(session_id=repl.repo_config.current_session)
         repl.console.print("[green]✓ Started new session (previous history cleared)[/green]")
 
     elif cmd == "/config":
@@ -572,4 +579,3 @@ Use /provider for a quick capability summary[/dim]"""
     else:
         repl.console.print(f"[red]Unknown command: {command}[/red]\n"
                          "[dim]Type /help to see available commands[/dim]")
-

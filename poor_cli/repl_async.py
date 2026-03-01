@@ -39,6 +39,9 @@ from .exceptions import (
     ConfigurationError,
     setup_logger,
     enable_verbose_logging,
+    clear_log_context,
+    log_context,
+    set_log_context,
 )
 from .enhanced_input import EnhancedInputManager
 
@@ -82,10 +85,12 @@ class PoorCLIAsync:
             permission_mode_override=permission_mode_override,
             dangerously_skip_permissions=dangerously_skip_permissions,
         )
+        set_log_context(provider=self.config.model.provider)
         self.history_manager: Optional[HistoryManager] = None
         self.repo_config: Optional[RepoConfig] = None  # For local JSON history
         self.error_recovery = ErrorRecoveryManager()
         self.running = False
+        self._request_counter = 0
         self.verbose_mode = self.config.ui.verbose_logging
         self.last_user_input: Optional[str] = None  # Track last user input for /retry
         self.last_assistant_response: Optional[str] = None  # Track last response for /copy
@@ -196,6 +201,8 @@ class PoorCLIAsync:
             if self.repo_config:
                 try:
                     self.repo_config.start_session(model=self.config.model.model_name)
+                    if self.repo_config.current_session:
+                        set_log_context(session_id=self.repo_config.current_session)
                     logger.info("Started repo config history session")
                 except Exception as e:
                     logger.error(f"Failed to start repo config session: {e}")
@@ -238,6 +245,7 @@ class PoorCLIAsync:
 
     async def _initialize_provider(self):
         """Initialize provider instance via the provider lifecycle service."""
+        set_log_context(provider=self.config.model.provider)
         self.provider = await self.provider_lifecycle.initialize_provider()
 
     async def _initialize_current_provider_tools(self) -> None:
@@ -307,6 +315,7 @@ class PoorCLIAsync:
                 return
 
             self.provider = provider
+            set_log_context(provider=self.config.model.provider)
             await self._initialize_current_provider_tools()
             self.console.print(f"[green]✓ Switched to {self.config.model.provider}[/green]")
 
@@ -561,6 +570,7 @@ class PoorCLIAsync:
         if self.repo_config:
             try:
                 self.repo_config.end_session()
+                clear_log_context("session_id")
                 logger.info("Repo config session ended and history saved")
             except Exception as e:
                 logger.error(f"Failed to end repo config session: {e}")
@@ -634,6 +644,9 @@ class PoorCLIAsync:
         self._capture_tool_results = True
         self._captured_tool_results: List[Dict[str, Any]] = []
         self._non_interactive_mode = True
+        self._request_counter += 1
+        request_id = f"cli-{self._request_counter}"
+        set_log_context(request_id=request_id, provider=self.config.model.provider)
 
         payload: Dict[str, Any] = {
             "ok": False,
@@ -698,6 +711,7 @@ class PoorCLIAsync:
         finally:
             self._capture_tool_results = False
             self._non_interactive_mode = False
+            clear_log_context("request_id", "tool_name")
 
     async def _collect_response_streaming(self, user_input: str) -> str:
         """Collect complete response text from streaming provider calls."""
@@ -746,6 +760,9 @@ class PoorCLIAsync:
         """Process one user request and return whether it succeeded."""
         # Track execution time
         start_time = time.time()
+        self._request_counter += 1
+        request_id = f"cli-{self._request_counter}"
+        set_log_context(request_id=request_id, provider=self.config.model.provider)
 
         try:
             logger.info(f"Processing user request: {user_input[:100]}...")
@@ -819,6 +836,8 @@ class PoorCLIAsync:
             )
             logger.exception("Unexpected error processing request")
             return False
+        finally:
+            clear_log_context("request_id", "tool_name")
 
     async def _process_request_streaming(self, user_input: str):
         """Process request with streaming responses"""
@@ -1150,13 +1169,14 @@ class PoorCLIAsync:
                 if not getattr(self, "_non_interactive_mode", False):
                     self.console.print(f"\n[dim]→ Calling tool: {tool_name}[/dim]")
 
-                # Request permission for file operations
-                if not await self.request_permission(tool_name, tool_args):
-                    result = "Operation cancelled by user"
-                    self.console.print("[yellow]Operation cancelled[/yellow]")
-                else:
-                    # Execute the tool asynchronously
-                    result = await self.tool_registry.execute_tool(tool_name, tool_args)
+                with log_context(tool_name=tool_name):
+                    # Request permission for file operations
+                    if not await self.request_permission(tool_name, tool_args):
+                        result = "Operation cancelled by user"
+                        self.console.print("[yellow]Operation cancelled[/yellow]")
+                    else:
+                        # Execute the tool asynchronously
+                        result = await self.tool_registry.execute_tool(tool_name, tool_args)
 
                 # Display tool output
                 if result and not getattr(self, "_non_interactive_mode", False):
@@ -1200,13 +1220,14 @@ class PoorCLIAsync:
         Returns:
             Tool execution result
         """
-        # Request permission for file operations
-        if not await self.request_permission(tool_name, tool_args):
-            return "Operation cancelled by user"
+        with log_context(tool_name=tool_name):
+            # Request permission for file operations
+            if not await self.request_permission(tool_name, tool_args):
+                return "Operation cancelled by user"
 
-        # Execute the tool
-        result = await self.tool_registry.execute_tool(tool_name, tool_args)
-        return result
+            # Execute the tool
+            result = await self.tool_registry.execute_tool(tool_name, tool_args)
+            return result
 
     def _format_tool_results(self, tool_results: List[Dict[str, Any]]):
         """Format tool results for provider consumption"""

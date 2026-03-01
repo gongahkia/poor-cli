@@ -2,9 +2,11 @@
 Custom exceptions and error handling utilities for poor-cli
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Iterator, Optional
 
 
 class PoorCLIError(Exception):
@@ -93,6 +95,68 @@ class ConfigurationError(PoorCLIError):
     pass
 
 
+STRUCTURED_LOG_FIELDS = ("session_id", "provider", "tool_name", "request_id")
+_DEFAULT_LOG_FIELD_VALUE = "-"
+_log_context: ContextVar[Dict[str, str]] = ContextVar("poor_cli_log_context", default={})
+
+
+class StructuredLogContextFilter(logging.Filter):
+    """Injects structured context fields into every emitted record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        context = _log_context.get()
+        for field in STRUCTURED_LOG_FIELDS:
+            value = getattr(record, field, None)
+            if value in (None, ""):
+                value = context.get(field, _DEFAULT_LOG_FIELD_VALUE)
+            setattr(record, field, str(value) if value not in (None, "") else _DEFAULT_LOG_FIELD_VALUE)
+        return True
+
+
+def set_log_context(**fields: Any) -> None:
+    """Set or clear structured logging context fields for the current task."""
+    context = dict(_log_context.get())
+    for field, value in fields.items():
+        if field not in STRUCTURED_LOG_FIELDS:
+            continue
+        if value in (None, ""):
+            context.pop(field, None)
+        else:
+            context[field] = str(value)
+    _log_context.set(context)
+
+
+def clear_log_context(*field_names: str) -> None:
+    """Clear one or more structured log context fields."""
+    if not field_names:
+        _log_context.set({})
+        return
+
+    context = dict(_log_context.get())
+    for field in field_names:
+        context.pop(field, None)
+    _log_context.set(context)
+
+
+@contextmanager
+def log_context(**fields: Any) -> Iterator[None]:
+    """Temporarily apply structured logging context within a block."""
+    context = dict(_log_context.get())
+    for field, value in fields.items():
+        if field not in STRUCTURED_LOG_FIELDS:
+            continue
+        if value in (None, ""):
+            context.pop(field, None)
+        else:
+            context[field] = str(value)
+
+    token = _log_context.set(context)
+    try:
+        yield
+    finally:
+        _log_context.reset(token)
+
+
 def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
                  level: int = logging.INFO, console_level: Optional[int] = None) -> logging.Logger:
     """
@@ -112,17 +176,25 @@ def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
 
     # Clear existing handlers
     logger.handlers.clear()
+    logger.filters.clear()
 
     # Create formatter
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        (
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s "
+            "| session_id=%(session_id)s provider=%(provider)s "
+            "tool_name=%(tool_name)s request_id=%(request_id)s"
+        ),
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    context_filter = StructuredLogContextFilter()
+    logger.addFilter(context_filter)
 
     # Console handler - defaults to WARNING to reduce verbosity
     console_handler = logging.StreamHandler()
     console_handler.setLevel(console_level if console_level is not None else logging.WARNING)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(context_filter)
     logger.addHandler(console_handler)
 
     # File handler if specified - captures all INFO+ messages
@@ -131,6 +203,7 @@ def setup_logger(name: str = "poor_cli", log_file: Optional[str] = None,
             file_handler = logging.FileHandler(log_file)
             file_handler.setLevel(level)
             file_handler.setFormatter(formatter)
+            file_handler.addFilter(context_filter)
             logger.addHandler(file_handler)
         except Exception as e:
             # Can't use logger.warning here as it might not be set up yet

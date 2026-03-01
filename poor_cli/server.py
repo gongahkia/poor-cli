@@ -10,12 +10,19 @@ import asyncio
 import json
 import logging
 import sys
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from .config import PermissionMode
 from .core import PoorCLICore
-from .exceptions import ConfigurationError, PoorCLIError, setup_logger
+from .exceptions import (
+    ConfigurationError,
+    PoorCLIError,
+    log_context,
+    set_log_context,
+    setup_logger,
+)
 
 logger = setup_logger(__name__)
 
@@ -110,7 +117,9 @@ class PoorCLIServer:
         self.handlers: Dict[str, Callable] = {}
         self.initialized = False
         self.permission_mode: str = "prompt"
-        self.logger = logging.getLogger("poor-cli-server")
+        self.logger = setup_logger("poor_cli.server")
+        self.session_id = f"server-{uuid.uuid4().hex[:8]}"
+        set_log_context(session_id=self.session_id)
         self._running = False
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
@@ -167,6 +176,8 @@ class PoorCLIServer:
                 api_key=params.get("apiKey")
             )
             self.initialized = True
+            provider_info = self.core.get_provider_info()
+            set_log_context(provider=provider_info.get("name"))
             
             return {
                 "capabilities": {
@@ -175,7 +186,7 @@ class PoorCLIServer:
                     "chatProvider": True,
                     "fileOperations": True,
                     "permissionMode": self.permission_mode,
-                    "providerInfo": self.core.get_provider_info()
+                    "providerInfo": provider_info
                 }
             }
         except ConfigurationError as e:
@@ -325,8 +336,9 @@ class PoorCLIServer:
         self._ensure_initialized()
         
         command = params.get("command", "")
-        
-        result = await self.core.execute_tool("bash", {"command": command})
+
+        with log_context(tool_name="bash"):
+            result = await self.core.execute_tool("bash", {"command": command})
         
         return {
             "output": result,
@@ -408,48 +420,49 @@ class PoorCLIServer:
         Returns:
             Response message
         """
-        if not message.method:
-            return JsonRpcMessage(
-                id=message.id,
-                error=JsonRpcError.make_error(
-                    JsonRpcError.INVALID_REQUEST,
-                    "Missing method"
+        with log_context(request_id=message.id):
+            if not message.method:
+                return JsonRpcMessage(
+                    id=message.id,
+                    error=JsonRpcError.make_error(
+                        JsonRpcError.INVALID_REQUEST,
+                        "Missing method"
+                    )
                 )
-            )
-        
-        handler = self.handlers.get(message.method)
-        if not handler:
-            return JsonRpcMessage(
-                id=message.id,
-                error=JsonRpcError.make_error(
-                    JsonRpcError.METHOD_NOT_FOUND,
-                    f"Unknown method: {message.method}"
+            
+            handler = self.handlers.get(message.method)
+            if not handler:
+                return JsonRpcMessage(
+                    id=message.id,
+                    error=JsonRpcError.make_error(
+                        JsonRpcError.METHOD_NOT_FOUND,
+                        f"Unknown method: {message.method}"
+                    )
                 )
-            )
-        
-        try:
-            result = await handler(message.params or {})
-            return JsonRpcMessage(
-                id=message.id,
-                result=result
-            )
-        except InvalidParamsError as e:
-            return JsonRpcMessage(
-                id=message.id,
-                error=JsonRpcError.make_error(
-                    JsonRpcError.INVALID_PARAMS,
-                    str(e),
-                ),
-            )
-        except Exception as e:
-            self.logger.exception(f"Handler error for {message.method}")
-            return JsonRpcMessage(
-                id=message.id,
-                error=JsonRpcError.make_error(
-                    JsonRpcError.INTERNAL_ERROR,
-                    str(e)
+            
+            try:
+                result = await handler(message.params or {})
+                return JsonRpcMessage(
+                    id=message.id,
+                    result=result
                 )
-            )
+            except InvalidParamsError as e:
+                return JsonRpcMessage(
+                    id=message.id,
+                    error=JsonRpcError.make_error(
+                        JsonRpcError.INVALID_PARAMS,
+                        str(e),
+                    ),
+                )
+            except Exception as e:
+                self.logger.exception(f"Handler error for {message.method}")
+                return JsonRpcMessage(
+                    id=message.id,
+                    error=JsonRpcError.make_error(
+                        JsonRpcError.INTERNAL_ERROR,
+                        str(e)
+                    )
+                )
     
     # =========================================================================
     # STDIO Transport
