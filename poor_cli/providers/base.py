@@ -125,6 +125,20 @@ class BaseProvider(ABC):
         """
         return tools
 
+    def format_tool_results(self, tool_results: List[Dict[str, Any]]) -> Any:
+        """Format executed tool results into provider-native follow-up input.
+
+        Args:
+            tool_results: Executed tool result dictionaries with id/name/result.
+
+        Returns:
+            Provider-specific payload accepted by `send_message`.
+        """
+        return "\n".join(
+            f"{tool_result['name']}: {tool_result['result']}"
+            for tool_result in tool_results
+        )
+
     def get_provider_name(self) -> str:
         """Get the provider name
 

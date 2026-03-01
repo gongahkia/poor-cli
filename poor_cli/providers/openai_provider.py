@@ -95,15 +95,7 @@ class OpenAIProvider(BaseProvider):
 
     async def send_message(self, message: Any) -> ProviderResponse:
         """Send message to OpenAI"""
-        # Handle string message vs pre-formatted content
-        if isinstance(message, str):
-            self.messages.append({
-                "role": "user",
-                "content": message
-            })
-        else:
-            # Assume it's already formatted (for tool results)
-            self.messages.append(message)
+        self._append_message(message)
 
         for attempt in range(self.max_retries):
             try:
@@ -153,14 +145,7 @@ class OpenAIProvider(BaseProvider):
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from OpenAI"""
-        # Handle string message
-        if isinstance(message, str):
-            self.messages.append({
-                "role": "user",
-                "content": message
-            })
-        else:
-            self.messages.append(message)
+        self._append_message(message)
 
         try:
             # Prepare request
@@ -239,6 +224,32 @@ class OpenAIProvider(BaseProvider):
         except Exception as e:
             logger.error(f"OpenAI streaming error: {e}")
             raise APIError(f"OpenAI streaming error: {e}", str(e))
+
+    def _append_message(self, message: Any) -> None:
+        """Append or extend chat history with user/tool messages."""
+        if isinstance(message, str):
+            self.messages.append({
+                "role": "user",
+                "content": message
+            })
+            return
+
+        if isinstance(message, list) and all(isinstance(item, dict) for item in message):
+            self.messages.extend(message)
+            return
+
+        self.messages.append(message)
+
+    def format_tool_results(self, tool_results: List[Dict[str, Any]]) -> Any:
+        """Format tool results for OpenAI function-calling follow-up turns."""
+        return [
+            {
+                "role": "tool",
+                "tool_call_id": tool_result["id"],
+                "content": tool_result["result"],
+            }
+            for tool_result in tool_results
+        ]
 
     def _parse_response(self, response: Any) -> ProviderResponse:
         """

@@ -369,74 +369,11 @@ class PoorCLICore:
                 "result": result
             })
         
-        # Format results based on provider
-        return self._format_tool_results(tool_results)
+        if not self.provider:
+            return tool_results
 
-    def _format_tool_results(self, tool_results: List[Dict[str, Any]]) -> Any:
-        """
-        Format tool results for provider consumption.
-        
-        Args:
-            tool_results: List of tool result dicts with id, name, result.
-        
-        Returns:
-            Provider-specific formatted tool results.
-        """
-        provider_name = self.config.model.provider.lower()
-        
-        if provider_name == "gemini":
-            # Gemini format using protos
-            import google.generativeai as genai
-            from google.generativeai import protos
-            
-            function_response_parts = []
-            for tr in tool_results:
-                function_response_parts.append(
-                    protos.Part(
-                        function_response=protos.FunctionResponse(
-                            name=tr["name"],
-                            response={"result": tr["result"]}
-                        )
-                    )
-                )
-            return protos.Content(role="user", parts=function_response_parts)
-        
-        elif provider_name == "openai":
-            # OpenAI expects tool results one at a time in conversation
-            return [
-                {
-                    "role": "tool",
-                    "tool_call_id": tr["id"],
-                    "content": tr["result"]
-                }
-                for tr in tool_results
-            ]
-        
-        elif provider_name in ["anthropic", "claude"]:
-            # Anthropic format
-            return [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tr["id"],
-                    "content": tr["result"]
-                }
-                for tr in tool_results
-            ]
-        
-        elif provider_name == "ollama":
-            # Ollama uses OpenAI-compatible format
-            return [
-                {
-                    "role": "tool",
-                    "tool_call_id": tr["id"],
-                    "content": tr["result"]
-                }
-                for tr in tool_results
-            ]
-        
-        else:
-            # Default: return as string
-            return "\n".join([f"{tr['name']}: {tr['result']}" for tr in tool_results])
+        # Delegate provider-specific formatting to provider adapters.
+        return self.provider.format_tool_results(tool_results)
 
     async def send_message_sync(
         self,

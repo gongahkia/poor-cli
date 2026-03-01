@@ -15,7 +15,6 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.live import Live
 from rich import print as rprint
-from google.generativeai.types import protos
 
 from .providers.base import BaseProvider, ProviderResponse
 from .tools_async import ToolRegistryAsync
@@ -1218,55 +1217,11 @@ class PoorCLIAsync:
             return result
 
     def _format_tool_results(self, tool_results: List[Dict[str, Any]]):
-        """Format tool results for provider consumption"""
-        provider_name = self.config.model.provider.lower()
-
-        if provider_name == "gemini":
-            # Gemini format
-            function_response_parts = []
-            for tr in tool_results:
-                function_response_parts.append(
-                    protos.Part(
-                        function_response=protos.FunctionResponse(
-                            name=tr["name"],
-                            response={"result": tr["result"]}
-                        )
-                    )
-                )
-            return protos.Content(role="user", parts=function_response_parts)
-
-        elif provider_name == "openai":
-            # OpenAI format
-            return {
-                "role": "tool",
-                "tool_call_id": tool_results[0]["id"],  # OpenAI expects one at a time
-                "content": tool_results[0]["result"]
-            }
-
-        elif provider_name in ["anthropic", "claude"]:
-            # Anthropic format
-            return {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tr["id"],
-                        "content": tr["result"]
-                    }
-                    for tr in tool_results
-                ]
-            }
-
-        elif provider_name == "ollama":
-            # Ollama uses OpenAI-compatible format
-            return {
-                "role": "tool",
-                "content": tool_results[0]["result"]
-            }
-
-        else:
-            # Default: return as-is
+        """Delegate tool-result formatting to the active provider adapter."""
+        if not self.provider:
             return tool_results
+
+        return self.provider.format_tool_results(tool_results)
 
     async def execute_function_calls(self, response):
         """

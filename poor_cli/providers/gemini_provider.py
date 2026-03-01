@@ -176,6 +176,16 @@ class GeminiProvider(BaseProvider):
             except Exception as e:
                 raise APIError(f"Streaming failed: {e}", str(e))
 
+    def format_tool_results(self, tool_results: List[Dict[str, Any]]) -> Any:
+        """Format tool results as Gemini function-response parts."""
+        return [
+            genai_types.Part.from_function_response(
+                name=tool_result["name"],
+                response={"result": tool_result["result"]},
+            )
+            for tool_result in tool_results
+        ]
+
     def _normalize_message(self, message: Any) -> Any:
         """Normalize caller payloads into `google-genai` chat message shapes."""
         if isinstance(message, str):
