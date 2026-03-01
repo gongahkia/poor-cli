@@ -1,12 +1,30 @@
 """
-Gemini AI Provider Implementation
+Gemini AI Provider Implementation.
+
+Uses the supported `google-genai` SDK and keeps a compatibility bridge for
+legacy `google.generativeai.types.protos.Content` tool-result payloads until
+callers are migrated to provider-native adapters.
 """
 
 import asyncio
-import json
 from typing import List, Dict, Any, Optional, AsyncIterator
-import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    from google.genai import errors as genai_errors
+
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    genai = None
+    genai_types = None
+    genai_errors = None
+
+try:
+    from google.protobuf.json_format import MessageToDict
+except ImportError:  # pragma: no cover - protobuf is an indirect dependency.
+    MessageToDict = None
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
 from ..exceptions import (
@@ -22,147 +40,250 @@ logger = setup_logger(__name__)
 
 
 class GeminiProvider(BaseProvider):
-    """Gemini AI provider implementation"""
+    """Gemini provider implementation backed by `google-genai`."""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash-exp",
-                 max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0):
-        """Initialize Gemini provider
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = "gemini-2.0-flash-exp",
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        timeout: float = 60.0,
+    ):
+        """Initialize Gemini provider.
 
         Args:
-            api_key: Gemini API key
-            model_name: Model to use
-            max_retries: Maximum retries for failed requests
-            retry_delay: Initial retry delay in seconds
-            timeout: Request timeout in seconds (not used by Gemini SDK directly)
+            api_key: Gemini API key.
+            model_name: Model to use.
+            max_retries: Maximum retries for retryable request failures.
+            retry_delay: Initial retry delay in seconds.
+            timeout: Per-request timeout in seconds.
         """
+        if not GENAI_AVAILABLE:
+            raise ConfigurationError(
+                "Gemini provider requires 'google-genai'. "
+                "Install with: pip install google-genai"
+            )
+
         super().__init__(api_key, model_name)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.timeout = timeout
-        self.model = None
-        self.chat = None
 
-        # Configure Gemini
         try:
-            genai.configure(api_key=self.api_key)
-            logger.info("Gemini provider initialized")
+            self.client = genai.Client(api_key=self.api_key).aio
         except Exception as e:
-            raise ConfigurationError(f"Failed to configure Gemini: {e}")
+            raise ConfigurationError(f"Failed to initialize Gemini client: {e}")
 
-    async def initialize(self, tools: Optional[List[Dict[str, Any]]] = None,
-                        system_instruction: Optional[str] = None):
-        """Initialize Gemini model with tools and instructions"""
+        self.chat = None
+        self._chat_config = None
+
+    async def initialize(
+        self,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system_instruction: Optional[str] = None,
+    ):
+        """Initialize Gemini chat session with tool declarations and system instruction."""
         try:
-            def _init():
-                model = genai.GenerativeModel(
-                    model_name=self.model_name,
-                    tools=tools if tools else None,
-                    system_instruction=system_instruction,
+            config_kwargs: Dict[str, Any] = {
+                "automatic_function_calling": (
+                    genai_types.AutomaticFunctionCallingConfig(disable=True)
                 )
-                chat = model.start_chat(enable_automatic_function_calling=False)
-                return model, chat
+            }
 
-            self.model, self.chat = await asyncio.to_thread(_init)
+            if tools:
+                # Existing tool declarations already match Gemini function schema.
+                config_kwargs["tools"] = [
+                    genai_types.Tool(function_declarations=tools)
+                ]
+
+            if system_instruction:
+                config_kwargs["system_instruction"] = system_instruction
+
+            self._chat_config = genai_types.GenerateContentConfig(**config_kwargs)
+            self.chat = self.client.chats.create(
+                model=self.model_name,
+                config=self._chat_config,
+            )
             logger.info(f"Gemini model {self.model_name} initialized")
 
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Gemini model: {e}")
 
     async def send_message(self, message: Any) -> ProviderResponse:
-        """Send message to Gemini
+        """Send message to Gemini and return normalized response."""
+        if self.chat is None:
+            raise ConfigurationError("Gemini provider not initialized")
 
-        Args:
-            message: Message to send (str or Content object)
+        normalized_message = self._normalize_message(message)
 
-        Returns:
-            Normalized ProviderResponse object
-        """
         for attempt in range(self.max_retries):
             try:
-                response = await asyncio.to_thread(self.chat.send_message, message)
-
-                # Parse Gemini response into ProviderResponse
+                response = await asyncio.wait_for(
+                    self.chat.send_message(normalized_message),
+                    timeout=self.timeout,
+                )
                 return self._parse_response(response)
 
-            except google_exceptions.ResourceExhausted as e:
+            except asyncio.TimeoutError as e:
                 if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    await asyncio.sleep(wait_time)
+                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
                     continue
-                raise APIRateLimitError("Rate limit exceeded", str(e))
+                raise APITimeoutError("Gemini request timeout", str(e))
 
-            except google_exceptions.DeadlineExceeded as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    await asyncio.sleep(wait_time)
+            except genai_errors.APIError as e:
+                mapped = self._map_api_error(e)
+                if self._is_retryable_error(e) and attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
                     continue
-                raise APITimeoutError("Request timed out", str(e))
+                raise mapped
 
             except Exception as e:
                 raise APIError(f"Failed to send message: {e}", str(e))
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
-        """Stream response from Gemini
+        """Stream response chunks from Gemini."""
+        if self.chat is None:
+            raise ConfigurationError("Gemini provider not initialized")
 
-        Args:
-            message: Message to send
+        normalized_message = self._normalize_message(message)
 
-        Yields:
-            ProviderResponse chunks
-        """
+        for attempt in range(self.max_retries):
+            try:
+                stream = await asyncio.wait_for(
+                    self.chat.send_message_stream(normalized_message),
+                    timeout=self.timeout,
+                )
+
+                async for chunk in stream:
+                    yield self._parse_response(chunk, is_chunk=True)
+
+                return
+
+            except asyncio.TimeoutError as e:
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    continue
+                raise APITimeoutError("Gemini streaming request timeout", str(e))
+
+            except genai_errors.APIError as e:
+                mapped = self._map_api_error(e)
+                if self._is_retryable_error(e) and attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    continue
+                raise mapped
+
+            except Exception as e:
+                raise APIError(f"Streaming failed: {e}", str(e))
+
+    def _normalize_message(self, message: Any) -> Any:
+        """Normalize caller payloads into `google-genai` chat message shapes."""
+        if isinstance(message, str):
+            return message
+
+        legacy_parts = self._legacy_content_to_parts(message)
+        if legacy_parts is not None:
+            return legacy_parts
+
+        return message
+
+    def _legacy_content_to_parts(self, message: Any) -> Optional[List[Any]]:
+        """Convert legacy `protos.Content` tool responses to `types.Part` list."""
+        parts = getattr(message, "parts", None)
+        if parts is None:
+            return None
+
+        converted_parts = []
+        for part in parts:
+            text = getattr(part, "text", None)
+            if text:
+                converted_parts.append(genai_types.Part.from_text(text=text))
+                continue
+
+            function_response = getattr(part, "function_response", None)
+            if function_response is None:
+                continue
+
+            name = getattr(function_response, "name", "")
+            if not name:
+                continue
+
+            converted_parts.append(
+                genai_types.Part.from_function_response(
+                    name=name,
+                    response=self._coerce_response_payload(
+                        getattr(function_response, "response", {})
+                    ),
+                )
+            )
+
+        return converted_parts if converted_parts else None
+
+    def _coerce_response_payload(self, payload: Any) -> Dict[str, Any]:
+        """Convert protobuf structs and other payload objects into dictionaries."""
+        if isinstance(payload, dict):
+            return payload
+
+        if MessageToDict is not None:
+            try:
+                converted = MessageToDict(payload, preserving_proto_field_name=True)
+                if isinstance(converted, dict):
+                    return converted
+            except Exception:
+                pass
+
         try:
-            def _stream():
-                return self.chat.send_message(message, stream=True)
+            items = dict(payload.items())
+            if isinstance(items, dict):
+                return items
+        except Exception:
+            pass
 
-            stream_gen = await asyncio.to_thread(_stream)
+        return {"result": str(payload)}
 
-            for chunk in stream_gen:
-                yield self._parse_response(chunk, is_chunk=True)
-                await asyncio.sleep(0)
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Return True if a Gemini SDK error should be retried."""
+        code = getattr(error, "code", None)
+        return code in {408, 429, 500, 502, 503, 504}
 
-        except google_exceptions.ResourceExhausted as e:
-            raise APIRateLimitError("Rate limit exceeded", str(e))
-        except Exception as e:
-            raise APIError(f"Streaming failed: {e}", str(e))
+    def _map_api_error(self, error: Exception) -> APIError:
+        """Map Gemini SDK exceptions to poor-cli API exception types."""
+        code = getattr(error, "code", None)
+
+        if code == 429:
+            return APIRateLimitError("Gemini rate limit exceeded", str(error))
+
+        if code in {408, 504}:
+            return APITimeoutError("Gemini request timeout", str(error))
+
+        if code in {502, 503}:
+            return APIConnectionError("Gemini API temporarily unavailable", str(error))
+
+        return APIError(f"Gemini API error: {error}", str(error))
 
     def _parse_response(self, response: Any, is_chunk: bool = False) -> ProviderResponse:
-        """
-        Parse Gemini response into normalized ProviderResponse
-
-        Args:
-            response: Gemini response object
-            is_chunk: Whether this is a streaming chunk
-
-        Returns:
-            Normalized ProviderResponse
-        """
+        """Parse Gemini SDK responses into normalized `ProviderResponse`."""
         try:
-            # Extract content and function calls
-            content = ""
-            function_calls = []
+            content = response.text or ""
+            function_calls: List[FunctionCall] = []
+
+            for fc in response.function_calls or []:
+                if not fc.name:
+                    continue
+
+                function_calls.append(
+                    FunctionCall(
+                        id=fc.id or f"gemini_{fc.name}",
+                        name=fc.name,
+                        arguments=fc.args or {},
+                    )
+                )
+
             finish_reason = None
-
-            if hasattr(response, 'candidates') and response.candidates:
+            if getattr(response, "candidates", None):
                 candidate = response.candidates[0]
-
-                # Get finish reason
-                if hasattr(candidate, 'finish_reason'):
+                if getattr(candidate, "finish_reason", None) is not None:
                     finish_reason = str(candidate.finish_reason)
-
-                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                    for part in candidate.content.parts:
-                        # Extract text
-                        if hasattr(part, 'text') and part.text:
-                            content += part.text
-
-                        # Extract function calls
-                        if hasattr(part, 'function_call') and part.function_call:
-                            fc = part.function_call
-                            function_calls.append(FunctionCall(
-                                id=f"gemini_{fc.name}",  # Gemini doesn't provide IDs
-                                name=fc.name,
-                                arguments=dict(fc.args) if fc.args else {}
-                            ))
 
             return ProviderResponse(
                 content=content,
@@ -170,64 +291,83 @@ class GeminiProvider(BaseProvider):
                 finish_reason=finish_reason,
                 function_calls=function_calls if function_calls else None,
                 raw_response=response,
-                metadata={"is_chunk": is_chunk}
+                metadata={"is_chunk": is_chunk},
             )
 
         except Exception as e:
             logger.error(f"Error parsing Gemini response: {e}")
-            # Return minimal response on error
             return ProviderResponse(
                 content="",
                 role="assistant",
                 raw_response=response,
-                metadata={"parse_error": str(e)}
+                metadata={"parse_error": str(e), "is_chunk": is_chunk},
             )
 
     async def clear_history(self):
-        """Clear Gemini conversation history"""
-        try:
-            def _start_new():
-                return self.model.start_chat(enable_automatic_function_calling=False)
+        """Clear Gemini conversation history by starting a new chat session."""
+        if self._chat_config is None:
+            raise ConfigurationError("Gemini provider not initialized")
 
-            self.chat = await asyncio.to_thread(_start_new)
+        try:
+            self.chat = self.client.chats.create(
+                model=self.model_name,
+                config=self._chat_config,
+            )
             logger.info("Gemini history cleared")
         except Exception as e:
             raise APIError(f"Failed to clear history: {e}", str(e))
 
     def get_history(self) -> List[Dict[str, Any]]:
-        """Get Gemini conversation history
-
-        Returns:
-            List of message dictionaries
-        """
-        if not self.chat:
+        """Get Gemini conversation history."""
+        if self.chat is None:
             return []
 
         try:
             history = []
-            for message in self.chat.history:
-                history.append({
-                    "role": message.role,
-                    "parts": [part.text if hasattr(part, 'text') else str(part)
-                             for part in message.parts]
-                })
+            for message in self.chat.get_history():
+                parts = []
+                for part in getattr(message, "parts", []) or []:
+                    if getattr(part, "text", None):
+                        parts.append(part.text)
+                    elif getattr(part, "function_call", None):
+                        parts.append(
+                            {
+                                "function_call": {
+                                    "name": part.function_call.name,
+                                    "args": part.function_call.args,
+                                }
+                            }
+                        )
+                    elif getattr(part, "function_response", None):
+                        parts.append(
+                            {
+                                "function_response": {
+                                    "name": part.function_response.name,
+                                    "response": part.function_response.response,
+                                }
+                            }
+                        )
+
+                history.append(
+                    {
+                        "role": message.role,
+                        "parts": parts,
+                    }
+                )
+
             return history
         except Exception as e:
             logger.error(f"Failed to get history: {e}")
             return []
 
     def get_capabilities(self) -> ProviderCapabilities:
-        """Get Gemini capabilities
-
-        Returns:
-            Gemini capabilities
-        """
+        """Get Gemini capabilities."""
         return ProviderCapabilities(
             supports_streaming=True,
             supports_function_calling=True,
             supports_system_instructions=True,
-            max_context_tokens=1000000,  # Gemini 2.0 has 1M context
+            max_context_tokens=1000000,
             supports_vision=True,
             supports_json_mode=True,
-            supports_code_interpreter=False
+            supports_code_interpreter=False,
         )
