@@ -168,6 +168,7 @@ end
 -- Get list of open buffer file paths for context
 function M.get_context_files()
     local files = {}
+    local seen = {}
     local max_context_files = tonumber(config.get("max_context_files")) or 20
     local should_cap = max_context_files > 0
     
@@ -178,9 +179,15 @@ function M.get_context_files()
                 -- Only include code files
                 local ft = vim.bo[bufnr].filetype
                 if ft ~= "" and ft ~= "help" and ft ~= "markdown" then
-                    table.insert(files, name)
-                    if should_cap and #files >= max_context_files then
-                        break
+                    local absolute = vim.fn.fnamemodify(name, ":p")
+                    local canonical = vim.loop.fs_realpath(absolute) or absolute
+
+                    if canonical ~= "" and not seen[canonical] then
+                        seen[canonical] = true
+                        table.insert(files, canonical)
+                        if should_cap and #files >= max_context_files then
+                            break
+                        end
                     end
                 end
             end
