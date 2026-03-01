@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from dataclasses import dataclass, asdict, field
 
+from .config import PermissionMode
 from .exceptions import ConfigurationError, FileOperationError, setup_logger
 
 logger = setup_logger(__name__)
@@ -22,6 +23,8 @@ logger = setup_logger(__name__)
 @dataclass
 class RepoPreferences:
     """Repository-level preferences"""
+    permission_mode: PermissionMode = PermissionMode.PROMPT
+
     # Auto-approve settings (per repo)
     auto_approve_read: bool = False
     auto_approve_write: bool = False
@@ -41,11 +44,32 @@ class RepoPreferences:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
-        return asdict(self)
+        data = asdict(self)
+        data["permission_mode"] = self.permission_mode.value
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RepoPreferences':
         """Create from dictionary"""
+        data = data.copy()
+        raw_mode = data.get("permission_mode", PermissionMode.PROMPT)
+
+        if isinstance(raw_mode, PermissionMode):
+            mode = raw_mode
+        elif isinstance(raw_mode, str):
+            try:
+                mode = PermissionMode(raw_mode)
+            except ValueError as e:
+                raise ConfigurationError(
+                    "Invalid preferences.permission_mode value. "
+                    "Expected one of: prompt, auto-safe, danger-full-access."
+                ) from e
+        else:
+            raise ConfigurationError(
+                "Invalid preferences.permission_mode type. Expected a string."
+            )
+
+        data["permission_mode"] = mode
         return cls(**data)
 
 
