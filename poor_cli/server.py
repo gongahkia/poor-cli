@@ -116,7 +116,6 @@ class PoorCLIServer:
         self.handlers = {
             "initialize": self.handle_initialize,
             "shutdown": self.handle_shutdown,
-            "textDocument/completion": self.handle_completion,
             "poor-cli/chat": self.handle_chat,
             "poor-cli/inlineComplete": self.handle_inline_complete,
             "poor-cli/applyEdit": self.handle_apply_edit,
@@ -169,11 +168,6 @@ class PoorCLIServer:
         self.logger.info("Shutdown requested")
         self._running = False
         return None
-    
-    async def handle_completion(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle LSP-style text document completion."""
-        # For now, redirect to inline complete
-        return await self.handle_inline_complete(params)
     
     async def handle_chat(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

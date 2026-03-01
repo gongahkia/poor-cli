@@ -175,6 +175,16 @@ class TestPoorCLIServer:
         
         assert response.error is not None
         assert response.error["code"] == JsonRpcError.METHOD_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_dispatch_text_document_completion_not_supported(self, server):
+        """Test that legacy LSP completion alias is not supported."""
+        message = JsonRpcMessage(id=1, method="textDocument/completion")
+
+        response = await server.dispatch(message)
+
+        assert response.error is not None
+        assert response.error["code"] == JsonRpcError.METHOD_NOT_FOUND
     
     @pytest.mark.asyncio
     async def test_dispatch_shutdown(self, server):
