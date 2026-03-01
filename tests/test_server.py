@@ -201,3 +201,27 @@ class TestServerMain:
 
         assert exc_info.value.code == 2
         mock_asyncio_run.assert_not_called()
+
+    def test_http_transport_emits_audit_event(self, monkeypatch):
+        """Test that enabled --http emits an audit event before startup."""
+        monkeypatch.setattr(
+            "poor_cli.server.sys.argv",
+            ["poor-cli-server", "--http", "--host", "0.0.0.0", "--port", "4321"],
+        )
+        monkeypatch.setenv("POOR_CLI_ALLOW_HTTP", "1")
+        mock_audit_logger = MagicMock()
+
+        with (
+            patch("poor_cli.server.get_audit_logger", return_value=mock_audit_logger),
+            patch("poor_cli.server.run_http", new=MagicMock(return_value="run-http-coro")) as mock_run_http,
+            patch("poor_cli.server.asyncio.run") as mock_asyncio_run,
+        ):
+            main()
+
+        mock_run_http.assert_called_once()
+        mock_asyncio_run.assert_called_once_with("run-http-coro")
+        mock_audit_logger.log_event.assert_called_once()
+        call_kwargs = mock_audit_logger.log_event.call_args.kwargs
+        assert call_kwargs["operation"] == "deprecated_http_transport_used"
+        assert call_kwargs["details"]["host"] == "0.0.0.0"
+        assert call_kwargs["details"]["port"] == 4321

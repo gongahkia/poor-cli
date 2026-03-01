@@ -14,11 +14,32 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from .audit_log import AuditEventType, AuditSeverity, get_audit_logger
 from .core import PoorCLICore
 from .exceptions import ConfigurationError, PoorCLIError, setup_logger
 
 logger = setup_logger(__name__)
 HTTP_DEPRECATION_ENV_VAR = "POOR_CLI_ALLOW_HTTP"
+
+
+def emit_http_transport_audit_event(host: str, port: int) -> None:
+    """Record deprecated HTTP transport usage for deprecation tracking."""
+    try:
+        audit_logger = get_audit_logger()
+        audit_logger.log_event(
+            event_type=AuditEventType.CONFIG_CHANGE,
+            operation="deprecated_http_transport_used",
+            target="poor-cli-server",
+            details={
+                "transport": "http",
+                "host": host,
+                "port": port,
+                "deprecation_env_var": HTTP_DEPRECATION_ENV_VAR,
+            },
+            severity=AuditSeverity.WARNING,
+        )
+    except Exception:
+        logger.exception("Failed to emit HTTP transport audit event")
 
 
 # =============================================================================
@@ -712,6 +733,7 @@ def main() -> None:
                 "HTTP transport is deprecated and disabled by default. "
                 f"Set {HTTP_DEPRECATION_ENV_VAR}=1 to temporarily enable --http."
             )
+        emit_http_transport_audit_event(args.host, args.port)
         asyncio.run(run_http(server, args.host, args.port))
     else:
         # Default to stdio
