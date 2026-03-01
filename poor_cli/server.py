@@ -104,6 +104,7 @@ class PoorCLIServer:
         self.core = PoorCLICore()
         self.handlers: Dict[str, Callable] = {}
         self.initialized = False
+        self.permission_mode: str = "prompt"
         self.logger = logging.getLogger("poor-cli-server")
         self._running = False
         self._reader: Optional[asyncio.StreamReader] = None
@@ -139,11 +140,16 @@ class PoorCLIServer:
             provider: Optional provider name
             model: Optional model name
             apiKey: Optional API key
+            permissionMode: Optional requested approval behavior for this session
         
         Returns:
             Server capabilities
         """
         try:
+            requested_permission_mode = params.get("permissionMode")
+            if requested_permission_mode is not None:
+                self.permission_mode = str(requested_permission_mode)
+
             await self.core.initialize(
                 provider_name=params.get("provider"),
                 model_name=params.get("model"),
@@ -157,6 +163,7 @@ class PoorCLIServer:
                     "inlineCompletionProvider": True,
                     "chatProvider": True,
                     "fileOperations": True,
+                    "permissionMode": self.permission_mode,
                     "providerInfo": self.core.get_provider_info()
                 }
             }

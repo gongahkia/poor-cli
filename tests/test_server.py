@@ -4,7 +4,7 @@ Tests for the JSON-RPC server.
 
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from poor_cli.server import (
     PoorCLIServer,
@@ -195,6 +195,17 @@ class TestPoorCLIServer:
         
         # Shutdown returns None result
         assert response.error is None
+
+    @pytest.mark.asyncio
+    async def test_initialize_accepts_permission_mode_param(self, server):
+        """Test initialize stores requested permission mode for the session."""
+        server.core.initialize = AsyncMock()
+        server.core.get_provider_info = MagicMock(return_value={"name": "gemini"})
+
+        result = await server.handle_initialize({"permissionMode": "auto-safe"})
+
+        assert server.permission_mode == "auto-safe"
+        assert result["capabilities"]["permissionMode"] == "auto-safe"
 
 
 class TestServerMain:
