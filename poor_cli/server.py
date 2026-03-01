@@ -484,36 +484,44 @@ class PoorCLIServer:
             Parsed message or None on EOF.
         """
         try:
-            # Read headers until empty line
-            content_length = 0
-            
-            while True:
-                line = await asyncio.get_event_loop().run_in_executor(
-                    None, sys.stdin.readline
-                )
-                
-                if not line:
+            loop = asyncio.get_event_loop()
+
+            # Read headers byte-by-byte so fragmented header chunks are handled correctly.
+            header_buffer = ""
+            header_delimiter = None
+            while header_delimiter is None:
+                chunk = await loop.run_in_executor(None, lambda: sys.stdin.read(1))
+                if not chunk:
                     return None  # EOF
-                
-                line = line.strip()
-                
-                if not line:
-                    break  # End of headers
-                
-                if line.startswith("Content-Length:"):
-                    content_length = int(line.split(":")[1].strip())
-            
-            if content_length == 0:
+                header_buffer += chunk
+
+                if "\r\n\r\n" in header_buffer:
+                    header_delimiter = "\r\n\r\n"
+                elif "\n\n" in header_buffer:
+                    header_delimiter = "\n\n"
+
+            header_text, body_prefix = header_buffer.split(header_delimiter, 1)
+
+            content_length = 0
+            for raw_line in header_text.splitlines():
+                line = raw_line.strip()
+                if line.lower().startswith("content-length:"):
+                    content_length = int(line.split(":", 1)[1].strip())
+                    break
+
+            if content_length <= 0:
                 return None
-            
-            # Read body
-            body = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: sys.stdin.read(content_length)
-            )
-            
-            if not body:
-                return None
-            
+
+            # Read body until exact content-length is satisfied.
+            body = body_prefix
+            while len(body) < content_length:
+                remaining = content_length - len(body)
+                chunk = await loop.run_in_executor(None, lambda size=remaining: sys.stdin.read(size))
+                if not chunk:
+                    return None
+                body += chunk
+
+            body = body[:content_length]
             return JsonRpcMessage.from_json(body)
             
         except json.JSONDecodeError as e:

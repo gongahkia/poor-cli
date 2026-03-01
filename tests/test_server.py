@@ -4,6 +4,7 @@ Tests for the JSON-RPC server.
 
 import json
 import pytest
+from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from poor_cli.server import (
@@ -12,6 +13,36 @@ from poor_cli.server import (
     JsonRpcError,
     main,
 )
+
+
+class _FragmentedStdin:
+    """Chunked stdin reader used to simulate transport fragmentation."""
+
+    def __init__(self, fragments):
+        self._fragments = deque(fragments)
+
+    def read(self, size=-1):
+        if not self._fragments:
+            return ""
+        if size is None or size < 0:
+            return self._fragments.popleft()
+
+        out = ""
+        while self._fragments and len(out) < size:
+            fragment = self._fragments[0]
+            remaining = size - len(out)
+            if len(fragment) <= remaining:
+                out += self._fragments.popleft()
+            else:
+                out += fragment[:remaining]
+                self._fragments[0] = fragment[remaining:]
+                break
+        return out
+
+
+class _InlineEventLoop:
+    async def run_in_executor(self, _executor, fn):
+        return fn()
 
 
 class TestJsonRpcMessage:
@@ -198,6 +229,54 @@ class TestPoorCLIServer:
         
         # Shutdown returns None result
         assert response.error is None
+
+    @pytest.mark.asyncio
+    async def test_read_message_stdio_handles_fragmented_header_and_body(self, server, monkeypatch):
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "initialize",
+                "params": {"provider": "gemini"},
+            }
+        )
+        fragments = [
+            "Cont",
+            "ent-Len",
+            "gth: ",
+            str(len(body)),
+            "\r",
+            "\n",
+            "\r\n",
+            body[:5],
+            body[5:17],
+            body[17:],
+        ]
+
+        monkeypatch.setattr("poor_cli.server.sys.stdin", _FragmentedStdin(fragments))
+        monkeypatch.setattr("poor_cli.server.asyncio.get_event_loop", lambda: _InlineEventLoop())
+
+        message = await server.read_message_stdio()
+
+        assert message is not None
+        assert message.id == 7
+        assert message.method == "initialize"
+        assert message.params == {"provider": "gemini"}
+
+    @pytest.mark.asyncio
+    async def test_read_message_stdio_returns_none_for_incomplete_body(self, server, monkeypatch):
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "shutdown"})
+        fragments = [
+            f"Content-Length: {len(body)}\r\n\r\n",
+            body[:5],  # Intentionally truncated body stream
+        ]
+
+        monkeypatch.setattr("poor_cli.server.sys.stdin", _FragmentedStdin(fragments))
+        monkeypatch.setattr("poor_cli.server.asyncio.get_event_loop", lambda: _InlineEventLoop())
+
+        message = await server.read_message_stdio()
+
+        assert message is None
 
     @pytest.mark.asyncio
     async def test_initialize_accepts_permission_mode_param(self, server):
