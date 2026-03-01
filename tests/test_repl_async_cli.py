@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from poor_cli.config import PermissionMode
 from poor_cli.repl_async import PoorCLIAsync, main
 
 
@@ -89,6 +90,44 @@ class TestRunNonInteractive:
         assert '"tool_calls"' in printed_json
 
 
+class TestPermissionOverrides:
+    """Test session permission mode override behavior."""
+
+    def test_apply_permission_mode_override(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.config = MagicMock()
+        repl.config.security.permission_mode = PermissionMode.PROMPT
+        repl.config.security.require_permission_for_write = True
+        repl.config.security.require_permission_for_bash = True
+
+        PoorCLIAsync._apply_permission_mode_overrides(
+            repl,
+            permission_mode_override="auto-safe",
+            dangerously_skip_permissions=False,
+        )
+
+        assert repl.config.security.permission_mode == PermissionMode.AUTO_SAFE
+        assert repl.config.security.require_permission_for_write is True
+        assert repl.config.security.require_permission_for_bash is True
+
+    def test_dangerously_skip_permissions_forces_danger_mode(self):
+        repl = object.__new__(PoorCLIAsync)
+        repl.config = MagicMock()
+        repl.config.security.permission_mode = PermissionMode.PROMPT
+        repl.config.security.require_permission_for_write = True
+        repl.config.security.require_permission_for_bash = True
+
+        PoorCLIAsync._apply_permission_mode_overrides(
+            repl,
+            permission_mode_override="auto-safe",
+            dangerously_skip_permissions=True,
+        )
+
+        assert repl.config.security.permission_mode == PermissionMode.DANGER_FULL_ACCESS
+        assert repl.config.security.require_permission_for_write is False
+        assert repl.config.security.require_permission_for_bash is False
+
+
 class TestMainEntrypoint:
     """Test argument parsing behavior for main()."""
 
@@ -109,6 +148,8 @@ class TestMainEntrypoint:
             provider_override=None,
             model_override=None,
             cwd_override=None,
+            permission_mode_override=None,
+            dangerously_skip_permissions=False,
         )
         mock_repl.run_non_interactive.assert_called_once_with("ship it", output_format="text")
         mock_asyncio_run.assert_called_once_with("non-interactive-coro")
@@ -133,6 +174,8 @@ class TestMainEntrypoint:
             provider_override=None,
             model_override=None,
             cwd_override=None,
+            permission_mode_override=None,
+            dangerously_skip_permissions=False,
         )
         mock_repl.run_non_interactive.assert_called_once_with("ship it", output_format="json")
         mock_asyncio_run.assert_called_once_with("non-interactive-coro")
@@ -152,6 +195,8 @@ class TestMainEntrypoint:
             provider_override=None,
             model_override=None,
             cwd_override=None,
+            permission_mode_override=None,
+            dangerously_skip_permissions=False,
         )
         mock_repl.run.assert_called_once_with()
         mock_asyncio_run.assert_called_once_with("interactive-coro")
@@ -185,4 +230,36 @@ class TestMainEntrypoint:
             provider_override="openai",
             model_override="gpt-4o-mini",
             cwd_override="/tmp",
+            permission_mode_override=None,
+            dangerously_skip_permissions=False,
+        )
+
+    def test_main_passes_permission_mode_override_flags(self, monkeypatch):
+        monkeypatch.setattr(
+            "poor_cli.repl_async.sys.argv",
+            [
+                "poor-cli",
+                "--permission-mode",
+                "auto-safe",
+                "--dangerously-skip-permissions",
+                "run",
+                "ship it",
+            ],
+        )
+        mock_repl = MagicMock()
+        mock_repl.run_non_interactive.return_value = "non-interactive-coro"
+
+        with (
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl) as mock_repl_cls,
+            patch("poor_cli.repl_async.asyncio.run", return_value=0),
+        ):
+            with pytest.raises(SystemExit):
+                main()
+
+        mock_repl_cls.assert_called_once_with(
+            provider_override=None,
+            model_override=None,
+            cwd_override=None,
+            permission_mode_override="auto-safe",
+            dangerously_skip_permissions=True,
         )

@@ -21,7 +21,7 @@ from .providers.provider_factory import ProviderFactory
 from .providers.base import BaseProvider, ProviderResponse
 from .tools_async import ToolRegistryAsync
 from .enhanced_tools import EnhancedToolRegistry
-from .config import get_config_manager, Config
+from .config import get_config_manager, Config, PermissionMode
 from .history import HistoryManager
 from .repo_config import get_repo_config, RepoConfig
 from .error_recovery import ErrorRecoveryManager
@@ -54,6 +54,8 @@ class PoorCLIAsync:
         provider_override: Optional[str] = None,
         model_override: Optional[str] = None,
         cwd_override: Optional[str] = None,
+        permission_mode_override: Optional[str] = None,
+        dangerously_skip_permissions: bool = False,
     ):
         self.console = Console()
         self.provider: Optional[BaseProvider] = None
@@ -71,6 +73,10 @@ class PoorCLIAsync:
             self.config.model.provider = provider_override
         if model_override:
             self.config.model.model_name = model_override
+        self._apply_permission_mode_overrides(
+            permission_mode_override=permission_mode_override,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+        )
         self.history_manager: Optional[HistoryManager] = None
         self.repo_config: Optional[RepoConfig] = None  # For local JSON history
         self.error_recovery = ErrorRecoveryManager()
@@ -129,6 +135,41 @@ class PoorCLIAsync:
         # Enable verbose logging if set in config
         if self.verbose_mode:
             enable_verbose_logging()
+
+    def _apply_permission_mode_overrides(
+        self,
+        permission_mode_override: Optional[str],
+        dangerously_skip_permissions: bool,
+    ) -> None:
+        """Apply session-only permission mode overrides from CLI flags."""
+        current_mode = self.config.security.permission_mode
+        if isinstance(current_mode, str):
+            try:
+                current_mode = PermissionMode(current_mode)
+            except ValueError as e:
+                raise ConfigurationError(
+                    f"Invalid configured permission mode: {current_mode}"
+                ) from e
+
+        selected_mode = current_mode
+        if permission_mode_override:
+            try:
+                selected_mode = PermissionMode(permission_mode_override)
+            except ValueError as e:
+                raise ConfigurationError(
+                    "Invalid --permission-mode value. "
+                    "Expected: prompt, auto-safe, danger-full-access."
+                ) from e
+
+        if dangerously_skip_permissions:
+            selected_mode = PermissionMode.DANGER_FULL_ACCESS
+
+        self.config.security.permission_mode = selected_mode
+
+        # Backward-compatible toggles for callers that still inspect boolean flags.
+        if selected_mode == PermissionMode.DANGER_FULL_ACCESS:
+            self.config.security.require_permission_for_write = False
+            self.config.security.require_permission_for_bash = False
 
     async def initialize(self, show_welcome: bool = True):
         """Initialize the AI provider and tools with proper error handling"""
@@ -1740,6 +1781,27 @@ Use /provider for a quick capability summary[/dim]"""
 
     async def request_permission(self, tool_name: str, tool_args: dict) -> bool:
         """Request user permission for file operations"""
+        permission_mode = self.config.security.permission_mode
+        if isinstance(permission_mode, str):
+            permission_mode = PermissionMode(permission_mode)
+            self.config.security.permission_mode = permission_mode
+
+        if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
+            return True
+
+        if permission_mode == PermissionMode.AUTO_SAFE:
+            if tool_name == "bash":
+                command = tool_args.get("command", "").strip().lower()
+                safe_commands = self.config.security.safe_commands
+                destructive_commands = ["rm", "del", "format", "dd", "mkfs", "fdisk", ">", "sudo rm"]
+                is_destructive = any(cmd in command for cmd in destructive_commands)
+                return any(command.startswith(cmd) for cmd in safe_commands) and not is_destructive
+
+            if tool_name in {"write_file", "edit_file", "delete_file"}:
+                return False
+
+            return True
+
         # Check config for permission requirements
         if tool_name == "bash" and not self.config.security.require_permission_for_bash:
             return True
@@ -2030,6 +2092,16 @@ def main():
             "--cwd",
             help="Run poor-cli in a specific working directory",
         )
+        common_parser.add_argument(
+            "--permission-mode",
+            choices=[mode.value for mode in PermissionMode],
+            help="Permission behavior for tool execution",
+        )
+        common_parser.add_argument(
+            "--dangerously-skip-permissions",
+            action="store_true",
+            help="Disable permission prompts and allow all operations",
+        )
 
         parser = argparse.ArgumentParser(
             prog="poor-cli",
@@ -2054,6 +2126,8 @@ def main():
             provider_override=args.provider,
             model_override=args.model,
             cwd_override=args.cwd,
+            permission_mode_override=args.permission_mode,
+            dangerously_skip_permissions=args.dangerously_skip_permissions,
         )
         if args.command == "run":
             exit_code = asyncio.run(
