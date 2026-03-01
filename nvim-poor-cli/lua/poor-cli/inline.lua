@@ -248,7 +248,12 @@ function M.trigger()
     local code_before = table.concat(vim.list_slice(lines, 1, line - 1), "\n")
     if line <= total_lines then
         local current_line = lines[line] or ""
-        code_before = code_before .. "\n" .. current_line:sub(1, col)
+        local current_prefix = current_line:sub(1, col)
+        if code_before ~= "" then
+            code_before = code_before .. "\n" .. current_prefix
+        else
+            code_before = current_prefix
+        end
     end
     
     local code_after = ""
@@ -309,7 +314,12 @@ function M.trigger_with_instruction(instruction)
     
     local code_before = table.concat(vim.list_slice(lines, 1, line - 1), "\n")
     if line <= #lines then
-        code_before = code_before .. "\n" .. (lines[line] or ""):sub(1, col)
+        local current_prefix = (lines[line] or ""):sub(1, col)
+        if code_before ~= "" then
+            code_before = code_before .. "\n" .. current_prefix
+        else
+            code_before = current_prefix
+        end
     end
     
     local code_after = ""
