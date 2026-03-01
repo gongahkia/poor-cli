@@ -100,6 +100,10 @@ jobs:
           pip install ruff
           ruff check poor_cli tests
 
+      - name: Report import graph reachability
+        run: |
+          python scripts/import_graph_check.py
+
       - name: Run Python tests
         run: |
           pytest tests/ -v
