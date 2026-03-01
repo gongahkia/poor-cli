@@ -46,6 +46,10 @@ class RepoPreferences:
         "grep", "find", "which", "whoami", "date"
     ])
 
+    # Retention controls
+    max_sessions: int = 100
+    max_messages_per_session: int = 200
+
     # Tracking
     created_at: str = ""
     updated_at: str = ""
@@ -77,6 +81,14 @@ class RepoPreferences:
             raise ConfigurationError(
                 "Invalid preferences.permission_mode type. Expected a string."
             )
+
+        max_sessions = data.get("max_sessions", 100)
+        if int(max_sessions) < 1:
+            raise ConfigurationError("preferences.max_sessions must be at least 1")
+
+        max_messages = data.get("max_messages_per_session", 200)
+        if int(max_messages) < 1:
+            raise ConfigurationError("preferences.max_messages_per_session must be at least 1")
 
         data["permission_mode"] = mode
         return cls(**data)
@@ -261,6 +273,7 @@ class RepoConfig:
         with self._history_file_lock(exclusive=True):
             temp_path: Optional[str] = None
             try:
+                self._apply_retention_limits()
                 data = {
                     "sessions": [session.to_dict() for session in self.sessions],
                     "total_sessions": len(self.sessions),
@@ -478,6 +491,7 @@ class RepoConfig:
         if self.current_session:
             self.current_session.ended_at = datetime.now().isoformat()
             self.sessions.append(self.current_session)
+            self._apply_retention_limits()
             self.preferences.total_sessions += 1
             self._save_history()
             self._save_preferences()
@@ -500,10 +514,33 @@ class RepoConfig:
 
         # Estimate tokens (rough: ~4 chars per token)
         self.current_session.total_tokens_estimate += len(content) // 4
+        self._apply_retention_limits()
 
         # Auto-save after each message
         self._save_history()
         logger.debug(f"Added {role} message to session")
+
+    def _apply_retention_limits(self) -> None:
+        """Prune sessions/messages to configured retention limits."""
+        max_messages = max(int(self.preferences.max_messages_per_session), 1)
+        max_sessions = max(int(self.preferences.max_sessions), 1)
+
+        for session in self.sessions:
+            if len(session.messages) > max_messages:
+                session.messages = session.messages[-max_messages:]
+                self._recalculate_token_estimate(session)
+
+        if self.current_session and len(self.current_session.messages) > max_messages:
+            self.current_session.messages = self.current_session.messages[-max_messages:]
+            self._recalculate_token_estimate(self.current_session)
+
+        if len(self.sessions) > max_sessions:
+            self.sessions = sorted(self.sessions, key=lambda session: session.started_at)[-max_sessions:]
+
+    @staticmethod
+    def _recalculate_token_estimate(session: ChatSession) -> None:
+        """Recompute token estimate after message pruning."""
+        session.total_tokens_estimate = sum(len(msg.content) // 4 for msg in session.messages)
 
     def get_session_stats(self) -> Dict[str, Any]:
         """Get statistics about current session"""

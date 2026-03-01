@@ -12,7 +12,7 @@ import pytest
 
 from poor_cli.config import PermissionMode
 from poor_cli.exceptions import ConfigurationError
-from poor_cli.repo_config import RepoConfig, RepoPreferences
+from poor_cli.repo_config import ChatSession, RepoConfig, RepoPreferences
 
 
 class TestRepoPreferencesPermissionMode:
@@ -33,6 +33,14 @@ class TestRepoPreferencesPermissionMode:
     def test_from_dict_rejects_invalid_permission_mode(self):
         with pytest.raises(ConfigurationError, match="Invalid preferences.permission_mode value"):
             RepoPreferences.from_dict({"permission_mode": "always-allow"})
+
+    def test_from_dict_rejects_invalid_max_sessions(self):
+        with pytest.raises(ConfigurationError, match="preferences.max_sessions must be at least 1"):
+            RepoPreferences.from_dict({"max_sessions": 0})
+
+    def test_from_dict_rejects_invalid_max_messages_per_session(self):
+        with pytest.raises(ConfigurationError, match="preferences.max_messages_per_session must be at least 1"):
+            RepoPreferences.from_dict({"max_messages_per_session": 0})
 
 
 class TestRepoConfigHistoryPersistence:
@@ -231,3 +239,33 @@ class TestRepoConfigHistoryPersistence:
 
         assert {session.session_id for session in repo_config.sessions} == set()
         assert not repo_config.history_migration_marker_file.exists()
+
+    def test_retention_prunes_messages_per_session_on_add(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        repo_config = RepoConfig(repo_path=repo_root)
+        repo_config.preferences.max_messages_per_session = 2
+        repo_config.start_session(model="test-model")
+        repo_config.add_message("user", "first")
+        repo_config.add_message("assistant", "second")
+        repo_config.add_message("user", "third")
+
+        contents = [msg.content for msg in repo_config.current_session.messages]
+        assert contents == ["second", "third"]
+
+    def test_retention_prunes_sessions_on_save(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        repo_config = RepoConfig(repo_path=repo_root)
+        repo_config.preferences.max_sessions = 2
+        repo_config.sessions = [
+            ChatSession(session_id="s1", started_at="2026-01-01T00:00:00"),
+            ChatSession(session_id="s2", started_at="2026-01-02T00:00:00"),
+            ChatSession(session_id="s3", started_at="2026-01-03T00:00:00"),
+        ]
+
+        repo_config._save_history()
+
+        assert [session.session_id for session in repo_config.sessions] == ["s2", "s3"]
