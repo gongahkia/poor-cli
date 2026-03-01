@@ -4,7 +4,7 @@ Tests for the JSON-RPC server.
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from poor_cli.server import (
     PoorCLIServer,
@@ -190,38 +190,32 @@ class TestPoorCLIServer:
 class TestServerMain:
     """Test server CLI entrypoint behavior."""
 
-    def test_http_transport_requires_deprecation_override(self, monkeypatch):
-        """Test that --http requires POOR_CLI_ALLOW_HTTP=1."""
-        monkeypatch.setattr("poor_cli.server.sys.argv", ["poor-cli-server", "--http"])
-        monkeypatch.delenv("POOR_CLI_ALLOW_HTTP", raising=False)
-
-        with patch("poor_cli.server.asyncio.run") as mock_asyncio_run:
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-
-        assert exc_info.value.code == 2
-        mock_asyncio_run.assert_not_called()
-
-    def test_http_transport_emits_audit_event(self, monkeypatch):
-        """Test that enabled --http emits an audit event before startup."""
-        monkeypatch.setattr(
-            "poor_cli.server.sys.argv",
-            ["poor-cli-server", "--http", "--host", "0.0.0.0", "--port", "4321"],
-        )
-        monkeypatch.setenv("POOR_CLI_ALLOW_HTTP", "1")
-        mock_audit_logger = MagicMock()
+    def test_stdio_flag_uses_stdio_transport(self, monkeypatch):
+        """Test that --stdio runs the stdio transport."""
+        monkeypatch.setattr("poor_cli.server.sys.argv", ["poor-cli-server", "--stdio"])
+        mock_server = MagicMock()
+        mock_server.run_stdio.return_value = "stdio-coro"
 
         with (
-            patch("poor_cli.server.get_audit_logger", return_value=mock_audit_logger),
-            patch("poor_cli.server.run_http", new=MagicMock(return_value="run-http-coro")) as mock_run_http,
+            patch("poor_cli.server.PoorCLIServer", return_value=mock_server),
             patch("poor_cli.server.asyncio.run") as mock_asyncio_run,
         ):
             main()
 
-        mock_run_http.assert_called_once()
-        mock_asyncio_run.assert_called_once_with("run-http-coro")
-        mock_audit_logger.log_event.assert_called_once()
-        call_kwargs = mock_audit_logger.log_event.call_args.kwargs
-        assert call_kwargs["operation"] == "deprecated_http_transport_used"
-        assert call_kwargs["details"]["host"] == "0.0.0.0"
-        assert call_kwargs["details"]["port"] == 4321
+        mock_server.run_stdio.assert_called_once_with()
+        mock_asyncio_run.assert_called_once_with("stdio-coro")
+
+    def test_no_transport_flag_defaults_to_stdio(self, monkeypatch):
+        """Test that no transport flag still runs stdio."""
+        monkeypatch.setattr("poor_cli.server.sys.argv", ["poor-cli-server"])
+        mock_server = MagicMock()
+        mock_server.run_stdio.return_value = "stdio-coro"
+
+        with (
+            patch("poor_cli.server.PoorCLIServer", return_value=mock_server),
+            patch("poor_cli.server.asyncio.run") as mock_asyncio_run,
+        ):
+            main()
+
+        mock_server.run_stdio.assert_called_once_with()
+        mock_asyncio_run.assert_called_once_with("stdio-coro")

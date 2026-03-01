@@ -2,44 +2,21 @@
 PoorCLI JSON-RPC Server
 
 This module provides a JSON-RPC 2.0 server for editor integrations.
-It supports both stdio transport (for Neovim) and HTTP transport (for VSCode).
+It supports stdio transport for Neovim integration.
 """
 
 import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from .audit_log import AuditEventType, AuditSeverity, get_audit_logger
 from .core import PoorCLICore
 from .exceptions import ConfigurationError, PoorCLIError, setup_logger
 
 logger = setup_logger(__name__)
-HTTP_DEPRECATION_ENV_VAR = "POOR_CLI_ALLOW_HTTP"
-
-
-def emit_http_transport_audit_event(host: str, port: int) -> None:
-    """Record deprecated HTTP transport usage for deprecation tracking."""
-    try:
-        audit_logger = get_audit_logger()
-        audit_logger.log_event(
-            event_type=AuditEventType.CONFIG_CHANGE,
-            operation="deprecated_http_transport_used",
-            target="poor-cli-server",
-            details={
-                "transport": "http",
-                "host": host,
-                "port": port,
-                "deprecation_env_var": HTTP_DEPRECATION_ENV_VAR,
-            },
-            severity=AuditSeverity.WARNING,
-        )
-    except Exception:
-        logger.exception("Failed to emit HTTP transport audit event")
 
 
 # =============================================================================
@@ -119,9 +96,7 @@ class PoorCLIServer:
     """
     JSON-RPC server for PoorCLI.
     
-    Provides editor integration via:
-    - stdio transport (for Neovim)
-    - HTTP transport (for VSCode and others)
+    Provides editor integration via stdio transport (for Neovim).
     """
     
     def __init__(self):
@@ -607,76 +582,6 @@ class StreamingJsonRpcServer(PoorCLIServer):
 
 
 # =============================================================================
-# HTTP Transport (for VSCode and others)
-# =============================================================================
-
-async def run_http(server: PoorCLIServer, host: str = "127.0.0.1", port: int = 9876) -> None:
-    """
-    Run the server using HTTP transport.
-    
-    Creates an HTTP server that accepts JSON-RPC requests.
-    Also provides a WebSocket endpoint for streaming.
-    
-    Args:
-        server: The PoorCLIServer instance
-        host: Host to bind to
-        port: Port to bind to
-    """
-    try:
-        from aiohttp import web
-    except ImportError:
-        logger.error("aiohttp not installed. Run: pip install aiohttp")
-        return
-    
-    async def handle_jsonrpc(request: web.Request) -> web.Response:
-        """Handle POST /jsonrpc requests."""
-        try:
-            body = await request.text()
-            message = JsonRpcMessage.from_json(body)
-            response = await server.dispatch(message)
-            return web.json_response(response.to_dict())
-        except json.JSONDecodeError:
-            return web.json_response(
-                JsonRpcMessage(
-                    error=JsonRpcError.make_error(
-                        JsonRpcError.PARSE_ERROR,
-                        "Invalid JSON"
-                    )
-                ).to_dict(),
-                status=400
-            )
-    
-    async def handle_health(request: web.Request) -> web.Response:
-        """Handle GET /health requests."""
-        return web.json_response({
-            "status": "ok",
-            "initialized": server.initialized,
-            "provider": server.core.get_provider_info() if server.initialized else None
-        })
-    
-    app = web.Application()
-    app.router.add_post("/jsonrpc", handle_jsonrpc)
-    app.router.add_get("/health", handle_health)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    site = web.TCPSite(runner, host, port)
-    await site.start()
-    
-    logger.info(f"HTTP server running on http://{host}:{port}")
-    
-    # Keep running until interrupted
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        await runner.cleanup()
-
-
-# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -689,23 +594,6 @@ def main() -> None:
         "--stdio",
         action="store_true",
         help="Use stdio transport (for Neovim)"
-    )
-    parser.add_argument(
-        "--http",
-        action="store_true",
-        help="Use HTTP transport (for VSCode)"
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=9876,
-        help="Port for HTTP server (default: 9876)"
-    )
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="127.0.0.1",
-        help="Host for HTTP server (default: 127.0.0.1)"
     )
     parser.add_argument(
         "--verbose",
@@ -725,19 +613,8 @@ def main() -> None:
     
     server = PoorCLIServer()
     
-    if args.stdio:
-        asyncio.run(server.run_stdio())
-    elif args.http:
-        if os.getenv(HTTP_DEPRECATION_ENV_VAR) != "1":
-            parser.error(
-                "HTTP transport is deprecated and disabled by default. "
-                f"Set {HTTP_DEPRECATION_ENV_VAR}=1 to temporarily enable --http."
-            )
-        emit_http_transport_audit_event(args.host, args.port)
-        asyncio.run(run_http(server, args.host, args.port))
-    else:
-        # Default to stdio
-        asyncio.run(server.run_stdio())
+    # Stdio is the only supported transport.
+    asyncio.run(server.run_stdio())
 
 
 if __name__ == "__main__":
