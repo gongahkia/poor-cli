@@ -93,7 +93,7 @@ jobs:
 
       - name: Run mypy
         run: |
-          mypy poor_cli/core.py poor_cli/server.py poor_cli/prompts.py poor_cli/context.py --ignore-missing-imports --no-error-summary || true
+          mypy poor_cli/core.py poor_cli/server.py poor_cli/prompts.py poor_cli/context.py --ignore-missing-imports --no-error-summary
 
   # Build check
   build:
