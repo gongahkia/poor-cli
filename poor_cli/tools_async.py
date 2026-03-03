@@ -8,6 +8,7 @@ import subprocess
 import shlex
 import glob as glob_module
 import re
+import shutil
 import aiofiles
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -349,9 +350,129 @@ class ToolRegistryAsync:
             }
         }
 
+        if shutil.which("gh"):
+            self.tools.update({
+                "gh_pr_list": {
+                    "function": self.gh_pr_list,
+                    "declaration": {
+                        "name": "gh_pr_list",
+                        "description": "List GitHub pull requests",
+                        "parameters": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "state": {"type": "STRING", "description": "PR state: open, closed, merged"},
+                                "limit": {"type": "INTEGER", "description": "Maximum number of PRs"}
+                            },
+                            "required": []
+                        }
+                    }
+                },
+                "gh_pr_view": {
+                    "function": self.gh_pr_view,
+                    "declaration": {
+                        "name": "gh_pr_view",
+                        "description": "View details for a GitHub pull request",
+                        "parameters": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "number": {"type": "INTEGER", "description": "Pull request number"}
+                            },
+                            "required": ["number"]
+                        }
+                    }
+                },
+                "gh_issue_list": {
+                    "function": self.gh_issue_list,
+                    "declaration": {
+                        "name": "gh_issue_list",
+                        "description": "List GitHub issues",
+                        "parameters": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "state": {"type": "STRING", "description": "Issue state: open or closed"},
+                                "limit": {"type": "INTEGER", "description": "Maximum number of issues"}
+                            },
+                            "required": []
+                        }
+                    }
+                },
+                "gh_issue_view": {
+                    "function": self.gh_issue_view,
+                    "declaration": {
+                        "name": "gh_issue_view",
+                        "description": "View details for a GitHub issue",
+                        "parameters": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "number": {"type": "INTEGER", "description": "Issue number"}
+                            },
+                            "required": ["number"]
+                        }
+                    }
+                },
+                "gh_pr_create": {
+                    "function": self.gh_pr_create,
+                    "declaration": {
+                        "name": "gh_pr_create",
+                        "description": "Create a GitHub pull request",
+                        "parameters": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "title": {"type": "STRING", "description": "Pull request title"},
+                                "body": {"type": "STRING", "description": "Pull request description/body"},
+                                "base": {"type": "STRING", "description": "Base branch"}
+                            },
+                            "required": ["title", "body"]
+                        }
+                    }
+                },
+                "gh_pr_comment": {
+                    "function": self.gh_pr_comment,
+                    "declaration": {
+                        "name": "gh_pr_comment",
+                        "description": "Comment on a GitHub pull request",
+                        "parameters": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "number": {"type": "INTEGER", "description": "Pull request number"},
+                                "body": {"type": "STRING", "description": "Comment text"}
+                            },
+                            "required": ["number", "body"]
+                        }
+                    }
+                },
+            })
+
+        self.tools["web_search"] = {
+            "function": self.web_search,
+            "declaration": {
+                "name": "web_search",
+                "description": "Search the web for current information. Returns titles, URLs, and snippets.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Search query"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         """Get tool declarations for API"""
         return [tool["declaration"] for tool in self.tools.values()]
+
+    def register_external_tool(
+        self,
+        name: str,
+        function: Any,
+        declaration: Dict[str, Any]
+    ) -> None:
+        """Register an externally provided async tool function."""
+        self.tools[name] = {
+            "function": function,
+            "declaration": declaration,
+        }
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool with given arguments
@@ -1005,3 +1126,36 @@ class ToolRegistryAsync:
 
         except Exception as e:
             raise FileOperationError(f"Failed to create directory: {str(e)}")
+
+    async def gh_pr_list(self, state: str = "open", limit: int = 10) -> str:
+        from .github_tools import gh_pr_list
+        return await gh_pr_list(state=state, limit=limit)
+
+    async def gh_pr_view(self, number: int) -> str:
+        from .github_tools import gh_pr_view
+        return await gh_pr_view(number=number)
+
+    async def gh_issue_list(self, state: str = "open", limit: int = 10) -> str:
+        from .github_tools import gh_issue_list
+        return await gh_issue_list(state=state, limit=limit)
+
+    async def gh_issue_view(self, number: int) -> str:
+        from .github_tools import gh_issue_view
+        return await gh_issue_view(number=number)
+
+    async def gh_pr_create(self, title: str, body: str, base: str = "main") -> str:
+        from .github_tools import gh_pr_create
+        return await gh_pr_create(title=title, body=body, base=base)
+
+    async def gh_pr_comment(self, number: int, body: str) -> str:
+        from .github_tools import gh_pr_comment
+        return await gh_pr_comment(number=number, body=body)
+
+    async def web_search(self, query: str) -> str:
+        api_key = os.environ.get("BRAVE_SEARCH_API_KEY")
+        if api_key:
+            from .web_search import brave_search
+            return await brave_search(query=query, api_key=api_key, count=5)
+
+        from .web_search import duckduckgo_search
+        return await duckduckgo_search(query=query, count=5)

@@ -3,11 +3,21 @@ Slash command handlers for PoorCLIAsync.
 """
 
 import asyncio
+import os
+import shlex
+from pathlib import Path
 
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
+from rich.table import Table
 
 from .config import PermissionMode
+from .prompts import (
+    format_prompt,
+    PROMPT_COMMIT_MESSAGE,
+    PROMPT_REVIEW_CODE,
+    PROMPT_GENERATE_TESTS,
+)
 from .exceptions import (
     disable_verbose_logging,
     enable_verbose_logging,
@@ -17,9 +27,45 @@ from .exceptions import (
 
 logger = setup_logger(__name__)
 
+
+def _detect_language_from_path(file_path: str) -> str:
+    extension_map = {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".jsx": "javascript",
+        ".rs": "rust",
+        ".go": "go",
+        ".java": "java",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".rb": "ruby",
+        ".php": "php",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".scala": "scala",
+        ".lua": "lua",
+        ".sh": "bash",
+        ".sql": "sql",
+        ".html": "html",
+        ".css": "css",
+        ".json": "json",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".toml": "toml",
+        ".md": "markdown",
+    }
+    return extension_map.get(Path(file_path).suffix.lower(), "text")
+
+
 async def handle_slash_command(repl, command: str):
     """Handle slash commands"""
-    cmd = command.lower().strip()
+    raw_command = command.strip()
+    cmd = raw_command.lower()
 
     if cmd == "/quit" or cmd == "/exit":
         repl.running = False
@@ -54,6 +100,19 @@ async def handle_slash_command(repl, command: str):
                 "/switch        - Switch AI provider\n\n"
                 "[cyan]Export & Archive:[/cyan]\n"
                 "/export [format] - Export conversation (json, md, txt)\n\n"
+                "[cyan]Git Integration:[/cyan]\n"
+                "/commit        - AI-generated commit message for staged changes\n"
+                "/review [file] - AI code review (file or staged diff)\n\n"
+                "[cyan]Code Tools:[/cyan]\n"
+                "/test <file>   - Generate unit tests for a file\n"
+                "/image <path>  - Queue an image for the next message\n\n"
+                "[cyan]Prompt Library:[/cyan]\n"
+                "/save-prompt <name> - Save prompt text for reuse\n"
+                "/use <name>    - Load and send a saved prompt\n"
+                "/prompts       - List saved prompts\n\n"
+                "[cyan]Watch Mode:[/cyan]\n"
+                "/watch <dir>   - Watch directory and analyze changes\n"
+                "/unwatch       - Stop active watch mode\n\n"
                 "[cyan]Configuration:[/cyan]\n"
                 "/config        - Show current configuration\n"
                 "/permission-mode [mode] - Show or set permission mode\n"
@@ -84,7 +143,6 @@ async def handle_slash_command(repl, command: str):
 
     elif cmd == "/clear-output":
         # Clear screen but keep history
-        import os
         os.system('clear' if os.name != 'nt' else 'cls')
         repl.console.print("[dim]Screen cleared (history preserved)[/dim]")
 
@@ -247,7 +305,6 @@ async def handle_slash_command(repl, command: str):
             return
 
         # Get files in current directory
-        from pathlib import Path
         current_files = list(Path.cwd().rglob("*.py"))[:10]  # First 10 Python files
         file_paths = [str(f) for f in current_files if f.is_file()]
 
@@ -340,6 +397,162 @@ async def handle_slash_command(repl, command: str):
     elif cmd.startswith("/export"):
         # Export conversation history
         await repl._export_conversation(cmd)
+
+    elif cmd == "/commit":
+        diff = await repl.tool_registry.bash(command="git diff --staged", timeout=30)
+        if not diff.strip() or diff.strip() == "(No output)":
+            repl.console.print("[yellow]No staged changes. Stage files with git add first.[/yellow]")
+            return
+
+        prompt = format_prompt(PROMPT_COMMIT_MESSAGE, diff=diff)
+        response = await repl.provider.send_message(prompt)
+        commit_message = (response.content or "").strip()
+        if not commit_message:
+            repl.console.print("[yellow]Could not generate a commit message.[/yellow]")
+            return
+
+        repl.console.print(
+            Panel(
+                commit_message,
+                title="Proposed Commit Message",
+                border_style="cyan",
+            )
+        )
+
+        if Confirm.ask("Commit with this message?"):
+            escaped_msg = shlex.quote(commit_message)
+            await repl.tool_registry.bash(
+                command=f"git commit -m {escaped_msg}",
+                timeout=60,
+            )
+            repl.console.print("[green]Commit created successfully.[/green]")
+        else:
+            repl.console.print("[yellow]Commit cancelled[/yellow]")
+
+    elif cmd.startswith("/review"):
+        parts = raw_command.split(maxsplit=1)
+        file_path = parts[1].strip() if len(parts) > 1 else None
+
+        if file_path:
+            try:
+                content = await repl.tool_registry.read_file(file_path=file_path)
+            except Exception as e:
+                repl.console.print(f"[red]Failed to read file for review: {e}[/red]")
+                return
+            language = _detect_language_from_path(file_path)
+        else:
+            content = await repl.tool_registry.bash(command="git diff --staged", timeout=30)
+            language = "diff"
+
+        if not content.strip() or content.strip() == "(No output)":
+            repl.console.print("[yellow]Nothing to review.[/yellow]")
+            return
+
+        formatted = format_prompt(PROMPT_REVIEW_CODE, language=language, code=content)
+        await repl.process_request(formatted)
+
+    elif cmd == "/test":
+        repl.console.print("[yellow]Usage: /test <file>[/yellow]")
+
+    elif cmd.startswith("/test "):
+        file_path = raw_command.split(maxsplit=1)[1].strip()
+        if not file_path:
+            repl.console.print("[yellow]Usage: /test <file>[/yellow]")
+            return
+        try:
+            content = await repl.tool_registry.read_file(file_path=file_path)
+        except Exception as e:
+            repl.console.print(f"[red]Failed to read file for test generation: {e}[/red]")
+            return
+
+        language = _detect_language_from_path(file_path)
+        formatted = format_prompt(PROMPT_GENERATE_TESTS, language=language, code=content)
+        await repl.process_request(formatted)
+
+    elif cmd.startswith("/save-prompt "):
+        name = raw_command.split(maxsplit=1)[1].strip()
+        if not name:
+            repl.console.print("[yellow]Usage: /save-prompt <name>[/yellow]")
+            return
+        if not repl.prompt_library:
+            repl.console.print("[red]Prompt library is not available in this session.[/red]")
+            return
+        content = Prompt.ask("[bold]Enter prompt text[/bold]")
+        repl.prompt_library.save(name, content)
+        repl.console.print(f"[green]Saved prompt: {name}[/green]")
+
+    elif cmd.startswith("/use "):
+        name = raw_command.split(maxsplit=1)[1].strip()
+        if not name:
+            repl.console.print("[yellow]Usage: /use <name>[/yellow]")
+            return
+        if not repl.prompt_library:
+            repl.console.print("[red]Prompt library is not available in this session.[/red]")
+            return
+        try:
+            content = repl.prompt_library.load(name)
+        except FileNotFoundError:
+            repl.console.print(f"[red]Prompt not found: {name}[/red]")
+            return
+        repl.console.print(f"[dim]Loaded prompt: {name}[/dim]")
+        await repl.process_request(content)
+
+    elif cmd == "/prompts":
+        if not repl.prompt_library:
+            repl.console.print("[red]Prompt library is not available in this session.[/red]")
+            return
+        prompts = repl.prompt_library.list_all()
+        if not prompts:
+            repl.console.print("[yellow]No saved prompts[/yellow]")
+            return
+        table = Table(title="Saved Prompts", show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="cyan", width=24)
+        table.add_column("Preview", style="white")
+        for name in prompts:
+            try:
+                preview = repl.prompt_library.load(name).strip().replace("\n", " ")
+            except FileNotFoundError:
+                preview = "(missing)"
+            table.add_row(name, (preview[:60] + "...") if len(preview) > 60 else preview)
+        repl.console.print(table)
+
+    elif cmd.startswith("/image "):
+        image_path = raw_command.split(maxsplit=1)[1].strip()
+        if not os.path.isfile(image_path):
+            repl.console.print(f"[red]Image file not found: {image_path}[/red]")
+            return
+        from .vision import IMAGE_EXTENSIONS
+        ext = Path(image_path).suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            repl.console.print(f"[red]Unsupported image extension: {ext}[/red]")
+            return
+        repl.pending_images.append(image_path)
+        repl.console.print(
+            f"[green]Image queued: {image_path}. It will be sent with your next message.[/green]"
+        )
+
+    elif cmd.startswith("/watch "):
+        watch_dir = raw_command.split(maxsplit=1)[1].strip()
+        if not os.path.isdir(watch_dir):
+            repl.console.print(f"[red]Directory not found: {watch_dir}[/red]")
+            return
+        if getattr(repl, "_watch_task", None) and not repl._watch_task.done():
+            repl.console.print("[yellow]Watch mode is already running. Use /unwatch first.[/yellow]")
+            return
+        from .watch import run_watch_mode
+        repl.console.print(f"[dim]Watching {watch_dir}...[/dim]")
+        repl._watch_task = asyncio.create_task(
+            run_watch_mode(repl, watch_dir, "Explain the changes")
+        )
+        repl.console.print("[dim]Use /unwatch to stop[/dim]")
+
+    elif cmd == "/unwatch":
+        if getattr(repl, "_watch_task", None):
+            repl._watch_task.cancel()
+            repl._watch_task = None
+            repl.console.print("[green]Watch mode stopped[/green]")
+        else:
+            repl.console.print("[yellow]No active watch task[/yellow]")
 
     elif cmd == "/retry":
         # Retry last user request

@@ -1,0 +1,4 @@
+test everything works if it should be working
+take screenshots
+update entire readme
+see what aspects of this project can be rewritten and optimised in diff languages

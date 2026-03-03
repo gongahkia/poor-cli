@@ -243,6 +243,18 @@ class AnthropicProvider(BaseProvider):
             })
             return
 
+        if (
+            isinstance(message, list)
+            and len(message) > 0
+            and isinstance(message[0], dict)
+            and message[0].get("type") in ("image", "text")
+        ):
+            self.messages.append({
+                "role": "user",
+                "content": message,
+            })
+            return
+
         if isinstance(message, list) and all(
             isinstance(item, dict) and item.get("type") == "tool_result"
             for item in message

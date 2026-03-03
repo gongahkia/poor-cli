@@ -192,8 +192,3 @@
 [ ] 15.4  Run `python -m py_compile poor_cli/prompt_library.py && python -m py_compile poor_cli/web_search.py && python -m py_compile poor_cli/github_tools.py && python -m py_compile poor_cli/vision.py && python -m py_compile poor_cli/watch.py && python -m py_compile poor_cli/mcp_client.py && python -m py_compile poor_cli/lsp_context.py` to verify no syntax errors in new files.
 
 [ ] 15.5  Run the existing test suite with `python -m pytest tests/ -x -q` to verify no regressions in existing functionality.
-
-test everything works if it should be working
-take screenshots
-update entire readme
-see what aspects of this project can be rewritten and optimised in diff languages

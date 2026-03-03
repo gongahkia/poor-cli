@@ -7,6 +7,7 @@ callers are migrated to provider-native adapters.
 """
 
 import asyncio
+import base64
 from typing import List, Dict, Any, Optional, AsyncIterator
 
 try:
@@ -190,6 +191,33 @@ class GeminiProvider(BaseProvider):
         """Normalize caller payloads into `google-genai` chat message shapes."""
         if isinstance(message, str):
             return message
+
+        if (
+            isinstance(message, list)
+            and message
+            and all(isinstance(item, dict) for item in message)
+        ):
+            parts: List[Any] = []
+            for item in message:
+                inline_data = item.get("inline_data")
+                if isinstance(inline_data, dict):
+                    try:
+                        parts.append(
+                            genai_types.Part(
+                                inline_data=genai_types.Blob(
+                                    mime_type=inline_data["mime_type"],
+                                    data=base64.b64decode(inline_data["data"]),
+                                )
+                            )
+                        )
+                        continue
+                    except Exception:
+                        logger.debug("Failed to parse inline_data part for Gemini", exc_info=True)
+
+                if "text" in item:
+                    parts.append(genai_types.Part.from_text(text=str(item["text"])))
+            if parts:
+                return parts
 
         legacy_parts = self._legacy_content_to_parts(message)
         if legacy_parts is not None:

@@ -161,6 +161,14 @@ Your available tools:
 - glob_files(pattern): Find files matching pattern
 - grep_files(pattern): Search for text in files
 - bash(command): Execute shell commands
+- gh_pr_list(state, limit): List GitHub PRs
+- gh_pr_view(number): View a GitHub PR
+- gh_issue_list(state, limit): List GitHub issues
+- gh_issue_view(number): View a GitHub issue
+- gh_pr_create(title, body, base): Create a GitHub PR
+- gh_pr_comment(number, body): Comment on a GitHub PR
+- web_search(query): Search the web for current information
+(GitHub tools require the `gh` CLI)
 
 FILE PATH RULES:
 - ALWAYS use ABSOLUTE paths: {current_dir}/filename
@@ -236,6 +244,20 @@ Check for:
 - Missing error handling
 
 Provide specific, actionable feedback."""
+
+PROMPT_COMMIT_MESSAGE = """Generate a concise git commit message in conventional commits format for this staged diff.
+
+Requirements:
+- Use one line only
+- Format: <type>: <summary>
+- Prefer types like feat, fix, docs, refactor, test, chore
+- Keep it specific and <= 72 characters when possible
+- Return ONLY the commit message text, with no quotes or explanation
+
+Diff:
+```diff
+{diff}
+```"""
 
 
 # =============================================================================

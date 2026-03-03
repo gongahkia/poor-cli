@@ -21,7 +21,9 @@ class CommandCompleter(Completer):
         '/sessions', '/new-session', '/retry', '/search', '/edit-last', '/copy',
         '/checkpoints', '/checkpoint', '/save', '/rewind', '/undo', '/restore', '/diff',
         '/provider', '/providers', '/switch', '/export', '/config', '/verbose',
-        '/plan-mode', '/cost', '/model-info'
+        '/plan-mode', '/cost', '/model-info', '/permission-mode',
+        '/commit', '/review', '/test', '/image', '/watch', '/unwatch',
+        '/save-prompt', '/use', '/prompts'
     ]
 
     def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:

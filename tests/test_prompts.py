@@ -15,6 +15,7 @@ from poor_cli.prompts import (
     SYSTEM_INSTRUCTION_CHAT,
     SYSTEM_INSTRUCTION_INLINE,
     PROMPT_EXPLAIN_CODE,
+    PROMPT_COMMIT_MESSAGE,
 )
 
 
@@ -180,3 +181,6 @@ class TestPromptConstants:
         """Test system instructions are defined."""
         assert len(SYSTEM_INSTRUCTION_CHAT) > 100
         assert len(SYSTEM_INSTRUCTION_INLINE) > 50
+
+    def test_commit_prompt_has_diff_placeholder(self):
+        assert "{diff}" in PROMPT_COMMIT_MESSAGE

@@ -449,3 +449,61 @@ class TestMainEntrypoint:
             permission_mode_override="auto-safe",
             dangerously_skip_permissions=True,
         )
+
+    def test_main_run_subcommand_with_file_context(self, monkeypatch, tmp_path):
+        context_file = tmp_path / "ctx.txt"
+        context_file.write_text("context body", encoding="utf-8")
+        monkeypatch.setattr(
+            "poor_cli.repl_async.sys.argv",
+            ["poor-cli", "--file", str(context_file), "run", "ship it"],
+        )
+        mock_repl = MagicMock()
+        mock_repl.run_non_interactive.return_value = "non-interactive-coro"
+
+        with (
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl),
+            patch("poor_cli.repl_async.asyncio.run", return_value=0),
+        ):
+            with pytest.raises(SystemExit):
+                main()
+
+        called_prompt = mock_repl.run_non_interactive.call_args.args[0]
+        assert "File" in called_prompt
+        assert "context body" in called_prompt
+        assert called_prompt.endswith("ship it")
+
+    def test_main_script_mode_dispatches_to_run_script(self, monkeypatch, tmp_path):
+        script_file = tmp_path / "script.txt"
+        script_file.write_text("first prompt", encoding="utf-8")
+        monkeypatch.setattr(
+            "poor_cli.repl_async.sys.argv",
+            ["poor-cli", "--script", str(script_file)],
+        )
+        mock_repl = MagicMock()
+        mock_repl.run_script.return_value = "script-coro"
+
+        with (
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl),
+            patch("poor_cli.repl_async.asyncio.run", return_value=0),
+        ):
+            with pytest.raises(SystemExit):
+                main()
+
+        mock_repl.run_script.assert_called_once_with(str(script_file))
+
+    def test_main_watch_mode_dispatches_to_run_watch(self, monkeypatch):
+        monkeypatch.setattr(
+            "poor_cli.repl_async.sys.argv",
+            ["poor-cli", "--watch", ".", "--watch-prompt", "Explain changes"],
+        )
+        mock_repl = MagicMock()
+        mock_repl.run_watch.return_value = "watch-coro"
+
+        with (
+            patch("poor_cli.repl_async.PoorCLIAsync", return_value=mock_repl),
+            patch("poor_cli.repl_async.asyncio.run", return_value=0),
+        ):
+            with pytest.raises(SystemExit):
+                main()
+
+        mock_repl.run_watch.assert_called_once_with(".", "Explain changes")

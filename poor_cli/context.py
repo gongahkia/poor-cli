@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+from urllib.parse import unquote, urlparse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -68,7 +69,8 @@ class ContextManager:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         max_files: int = DEFAULT_MAX_FILES,
         max_file_size: int = DEFAULT_MAX_FILE_SIZE,
-        cache_ttl: int = 60  # seconds
+        cache_ttl: int = 60,  # seconds
+        lsp_client: Any = None,
     ):
         """
         Initialize the context manager.
@@ -83,6 +85,7 @@ class ContextManager:
         self.max_files = max_files
         self.max_file_size = max_file_size
         self.cache_ttl = cache_ttl
+        self._lsp_client = lsp_client
         
         # File content cache: path -> (content, timestamp)
         self._cache: Dict[str, Tuple[str, float]] = {}
@@ -274,6 +277,40 @@ class ContextManager:
             List of FileContext for imported files
         """
         import_files: List[FileContext] = []
+
+        if self._lsp_client is not None and getattr(self._lsp_client, "available", False):
+            lsp_files: Dict[str, FileContext] = {}
+            try:
+                symbols = await self._lsp_client.get_symbols(file_ctx.path)
+                for symbol in symbols or []:
+                    sel_range = symbol.get("selectionRange") or symbol.get("range") or {}
+                    start = sel_range.get("start", {})
+                    line = int(start.get("line", 0))
+                    character = int(start.get("character", 0))
+                    definition = await self._lsp_client.get_definition(
+                        file_ctx.path,
+                        line,
+                        character,
+                    )
+                    if not definition:
+                        continue
+                    uri = definition.get("uri")
+                    if not uri:
+                        continue
+                    parsed = urlparse(uri)
+                    if parsed.scheme != "file":
+                        continue
+                    resolved_path = unquote(parsed.path)
+                    if not resolved_path:
+                        continue
+                    imported_file = await self._load_file(resolved_path)
+                    if imported_file:
+                        lsp_files[imported_file.path] = imported_file
+                if lsp_files:
+                    return list(lsp_files.values())
+            except Exception as e:
+                logger.debug(f"LSP import resolution failed; falling back to regex imports: {e}")
+
         patterns = self._import_patterns.get(file_ctx.language, [])
         
         if not patterns:

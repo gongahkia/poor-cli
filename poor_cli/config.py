@@ -208,6 +208,7 @@ class Config:
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
+    mcp_servers: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary, excluding API keys"""
@@ -219,6 +220,7 @@ class Config:
             "tools": asdict(self.tools),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
+            "mcp_servers": self.mcp_servers,
         }
         return config_dict
 
@@ -233,6 +235,7 @@ class Config:
             tools=ToolConfig(**data.get("tools", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
+            mcp_servers=data.get("mcp_servers", {}),
         )
 
 
@@ -275,6 +278,7 @@ class ConfigManager:
                 return self.config
 
             self.config = Config.from_dict(data)
+            self._apply_repo_overrides()
 
             # Expand paths
             self.config.history.save_directory = str(
@@ -288,6 +292,83 @@ class ConfigManager:
             raise ConfigurationError(f"Invalid YAML in config file: {e}")
         except Exception as e:
             raise ConfigurationError(f"Failed to load config: {e}")
+
+    def _apply_repo_overrides(self) -> None:
+        """Apply repository-local overrides from .poor-cli/config.yaml if present."""
+        repo_config_path = Path.cwd() / ".poor-cli" / "config.yaml"
+        if not repo_config_path.exists():
+            return
+
+        try:
+            with open(repo_config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+
+            if data is None or not isinstance(data, dict):
+                logger.warning("Repo config override file is empty or invalid, skipping")
+                return
+
+            self._deep_merge(self.config, data)
+            logger.info(f"Applied repo-level config overrides from {repo_config_path}")
+        except Exception as e:
+            logger.warning(f"Failed to apply repo-level config overrides: {e}")
+
+    @staticmethod
+    def _deep_merge(config: Config, overrides: Dict[str, Any]) -> None:
+        """Merge known top-level config sections into Config in-place."""
+        valid_sections = {
+            "model",
+            "history",
+            "ui",
+            "security",
+            "tools",
+            "plan_mode",
+            "checkpoint",
+            "mcp_servers",
+        }
+
+        for section_name, section_overrides in overrides.items():
+            if section_name not in valid_sections:
+                logger.warning(f"Unknown repo override section: {section_name}")
+                continue
+
+            if section_name == "mcp_servers":
+                if not isinstance(section_overrides, dict):
+                    logger.warning("mcp_servers override must be a mapping, skipping")
+                    continue
+                merged = dict(config.mcp_servers)
+                merged.update(section_overrides)
+                config.mcp_servers = merged
+                continue
+
+            if not isinstance(section_overrides, dict):
+                logger.warning(
+                    f"Override section '{section_name}' must be a mapping, skipping"
+                )
+                continue
+
+            section_obj = getattr(config, section_name, None)
+            if section_obj is None:
+                logger.warning(f"Missing config section '{section_name}', skipping")
+                continue
+
+            if hasattr(section_obj, "to_dict") and callable(section_obj.to_dict):
+                merged_data: Dict[str, Any] = section_obj.to_dict()
+            else:
+                merged_data = asdict(section_obj)
+
+            for key, value in section_overrides.items():
+                if key not in merged_data:
+                    logger.warning(f"Unknown key in {section_name} override: {key}")
+                    continue
+                merged_data[key] = value
+
+            section_cls = section_obj.__class__
+            if hasattr(section_cls, "from_dict") and callable(section_cls.from_dict):
+                new_section = section_cls.from_dict(merged_data)
+            else:
+                new_section = section_cls(**merged_data)
+
+            setattr(config, section_name, new_section)
 
     def save(self, config: Optional[Config] = None) -> None:
         """Save configuration to file

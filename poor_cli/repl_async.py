@@ -8,6 +8,7 @@ import os
 import sys
 import asyncio
 import time
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from rich.console import Console
 from rich.markdown import Markdown
@@ -43,6 +44,7 @@ from .exceptions import (
     set_log_context,
 )
 from .enhanced_input import EnhancedInputManager
+from .context import get_context_manager
 
 # Setup logger
 logger = setup_logger(__name__)
@@ -93,6 +95,11 @@ class PoorCLIAsync:
         self.verbose_mode = self.config.ui.verbose_logging
         self.last_user_input: Optional[str] = None  # Track last user input for /retry
         self.last_assistant_response: Optional[str] = None  # Track last response for /copy
+        self.pending_images: List[str] = []
+        self.prompt_library = None
+        self.mcp_manager = None
+        self.lsp_client = None
+        self._watch_task: Optional[asyncio.Task] = None
 
         # Usage tracking for /cost
         self.session_stats = {
@@ -198,6 +205,8 @@ class PoorCLIAsync:
                     self.repo_config.start_session(model=self.config.model.model_name)
                     if self.repo_config.current_session:
                         set_log_context(session_id=self.repo_config.current_session.session_id)
+                    from .prompt_library import PromptLibrary
+                    self.prompt_library = PromptLibrary(self.repo_config.config_dir)
                     logger.info("Started repo config history session")
                 except Exception as e:
                     logger.error(f"Failed to start repo config session: {e}")
@@ -208,6 +217,8 @@ class PoorCLIAsync:
             # Get tool declarations and initialize provider with tools
             try:
                 await self._initialize_current_provider_tools()
+                await self._initialize_mcp_tools()
+                await self._initialize_lsp_context()
 
                 # Restore previous conversation history if enabled
                 if self.config.history.restore_on_startup:
@@ -254,6 +265,61 @@ class PoorCLIAsync:
             system_instruction=system_instruction
         )
         logger.info(f"Initialized with {len(tool_declarations)} tools")
+
+    async def _initialize_mcp_tools(self) -> None:
+        """Initialize MCP servers and register their tools when configured."""
+        if not getattr(self.config, "mcp_servers", None):
+            return
+
+        try:
+            from .mcp_client import MCPManager
+
+            self.mcp_manager = MCPManager(self.config.mcp_servers)
+            await self.mcp_manager.initialize()
+            declarations = self.mcp_manager.get_tool_declarations()
+            if not declarations:
+                logger.info("No MCP tools discovered")
+                return
+
+            for declaration in declarations:
+                tool_name = declaration.get("name")
+                if not tool_name:
+                    continue
+
+                async def _external_tool_wrapper(_tool_name: str = tool_name, **kwargs: Any) -> str:
+                    return await self.mcp_manager.execute_tool(_tool_name, kwargs)
+
+                self.tool_registry.register_external_tool(
+                    tool_name,
+                    _external_tool_wrapper,
+                    declaration,
+                )
+
+            # Reinitialize provider so it receives newly registered MCP tools.
+            await self._initialize_current_provider_tools()
+            logger.info(f"Registered {len(declarations)} MCP tools")
+        except Exception as e:
+            logger.warning(f"MCP initialization skipped due to error: {e}")
+
+    async def _initialize_lsp_context(self) -> None:
+        """Best-effort LSP startup for context resolution."""
+        try:
+            from .lsp_context import detect_project_language, LSPClient
+
+            language = detect_project_language(os.getcwd())
+            if not language:
+                return
+
+            self.lsp_client = LSPClient(language=language, root_path=os.getcwd())
+            await self.lsp_client.start()
+            if not self.lsp_client.available:
+                return
+
+            context_manager = get_context_manager()
+            context_manager._lsp_client = self.lsp_client  # best-effort wiring
+            logger.info(f"LSP client started for {language}")
+        except Exception as e:
+            logger.debug(f"LSP context initialization failed: {e}")
 
     def _display_welcome(self):
         """Display welcome message"""
@@ -570,6 +636,24 @@ class PoorCLIAsync:
 
     async def _shutdown_sessions(self):
         """End history sessions and persist repository-scoped history."""
+        if self._watch_task:
+            self._watch_task.cancel()
+            self._watch_task = None
+
+        if self.mcp_manager:
+            try:
+                await self.mcp_manager.shutdown()
+            except Exception as e:
+                logger.debug(f"Error shutting down MCP manager: {e}")
+            self.mcp_manager = None
+
+        if self.lsp_client and getattr(self.lsp_client, "available", False):
+            try:
+                await self.lsp_client.shutdown()
+            except Exception as e:
+                logger.debug(f"Error shutting down LSP client: {e}")
+            self.lsp_client = None
+
         if self.repo_config:
             try:
                 self.repo_config.end_session()
@@ -588,7 +672,14 @@ class PoorCLIAsync:
                 # Build prompt with provider and model info (PS1-style)
                 provider_short = self.config.model.provider[:4].upper()  # e.g., "GEMI", "OPEN", "ANTH"
                 model_short = self.config.model.model_name.split('-')[-1][:8]  # Last part of model name
-                prompt_text = f"\nYou ({provider_short}/{model_short}): "
+                token_info = ""
+                if self.config.ui.show_token_count:
+                    est = (
+                        self.session_stats.get("input_tokens_estimate", 0)
+                        + self.session_stats.get("output_tokens_estimate", 0)
+                    )
+                    token_info = f" [{est:,}tok]"
+                prompt_text = f"\nYou ({provider_short}/{model_short}){token_info}: "
 
                 # Use enhanced input manager with smart history (arrow keys) and file path autocomplete
                 user_input = await self.input_manager.get_input(
@@ -642,6 +733,45 @@ class PoorCLIAsync:
         finally:
             await self._shutdown_sessions()
 
+    def _build_file_context_block(self, file_path: str) -> str:
+        """Build a context preamble for non-interactive file-based prompts."""
+        content = Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        return f"File {file_path}:\n```\n{content}\n```\n\n"
+
+    async def run_script(self, script_path: str) -> int:
+        """Run prompts from a script file in sequence."""
+        script_content = Path(script_path).read_text(encoding="utf-8", errors="ignore")
+        if "\n---\n" in script_content:
+            prompts = [part.strip() for part in script_content.split("\n---\n")]
+        else:
+            prompts = [line.strip() for line in script_content.splitlines()]
+        prompts = [prompt for prompt in prompts if prompt]
+
+        await self.initialize(show_welcome=False)
+        try:
+            total = len(prompts)
+            for idx, prompt in enumerate(prompts):
+                self.console.print(f"[dim]--- Prompt {idx + 1}/{total} ---[/dim]")
+                await self.process_request(prompt)
+                self.console.print()
+            return 0
+        finally:
+            await self._shutdown_sessions()
+
+    async def run_watch(self, directory: str, prompt: str) -> int:
+        """Run watch mode until interrupted."""
+        await self.initialize(show_welcome=False)
+        from .watch import run_watch_mode
+
+        self.console.print(f"[dim]Watching {directory} for changes... (Ctrl+C to stop)[/dim]")
+        try:
+            await run_watch_mode(self, directory, prompt)
+        except KeyboardInterrupt:
+            self.console.print("[yellow]Watch mode stopped[/yellow]")
+        finally:
+            await self._shutdown_sessions()
+        return 0
+
     async def _process_request_non_interactive(self, user_input: str) -> Dict[str, Any]:
         """Process one request and return machine-readable payload."""
         start_time = time.time()
@@ -672,10 +802,12 @@ class PoorCLIAsync:
                 except Exception as e:
                     logger.error(f"Failed to log user message to repo config: {e}")
 
+            prepared_input = self._prepare_user_input_payload(user_input)
+
             if self.config.ui.enable_streaming:
-                response_text = await self._collect_response_streaming(user_input)
+                response_text = await self._collect_response_streaming(prepared_input)
             else:
-                response_text = await self._collect_response_non_streaming(user_input)
+                response_text = await self._collect_response_non_streaming(prepared_input)
 
             payload["ok"] = True
             payload["response"] = response_text
@@ -712,7 +844,7 @@ class PoorCLIAsync:
             self._non_interactive_mode = False
             clear_log_context("request_id", "tool_name")
 
-    async def _collect_response_streaming(self, user_input: str) -> str:
+    async def _collect_response_streaming(self, user_input: Any) -> str:
         """Collect complete response text from streaming provider calls."""
         accumulated_text = ""
 
@@ -736,7 +868,7 @@ class PoorCLIAsync:
 
         return accumulated_text
 
-    async def _collect_response_non_streaming(self, user_input: str) -> str:
+    async def _collect_response_non_streaming(self, user_input: Any) -> str:
         """Collect complete response text from non-streaming provider calls."""
         response = await self.provider.send_message(user_input)
         accumulated_text = response.content or ""
@@ -755,6 +887,40 @@ class PoorCLIAsync:
 
         await handle_slash_command(self, command)
 
+    def _prepare_user_input_payload(self, user_input: str) -> Any:
+        """Convert text input into provider-specific multimodal payload when images are present."""
+        from .vision import (
+            build_multimodal_content_anthropic,
+            build_multimodal_content_openai,
+            build_multimodal_parts_gemini,
+            detect_image_paths,
+        )
+
+        detected = detect_image_paths(user_input)
+        all_images = self.pending_images + detected
+        if not all_images:
+            return user_input
+
+        # Preserve order while removing duplicates.
+        unique_images: List[str] = []
+        for image_path in all_images:
+            if image_path not in unique_images:
+                unique_images.append(image_path)
+
+        provider = self.config.model.provider.lower()
+        try:
+            if provider == "gemini":
+                payload = build_multimodal_parts_gemini(user_input, unique_images)
+            elif provider == "openai":
+                payload = build_multimodal_content_openai(user_input, unique_images)
+            elif provider in {"anthropic", "claude"}:
+                payload = build_multimodal_content_anthropic(user_input, unique_images)
+            else:
+                payload = user_input
+            return payload
+        finally:
+            self.pending_images = []
+
     async def process_request(self, user_input: str) -> bool:
         """Process one user request and return whether it succeeded."""
         # Track execution time
@@ -765,24 +931,27 @@ class PoorCLIAsync:
 
         try:
             logger.info(f"Processing user request: {user_input[:100]}...")
+            original_user_input = user_input
 
             # Track usage stats
             self.session_stats["requests"] += 1
-            self.session_stats["input_chars"] += len(user_input)
-            self.session_stats["input_tokens_estimate"] += len(user_input) // 4
+            self.session_stats["input_chars"] += len(original_user_input)
+            self.session_stats["input_tokens_estimate"] += len(original_user_input) // 4
 
             # Save to repo config history as well
             if self.repo_config:
                 try:
-                    self.repo_config.add_message("user", user_input)
+                    self.repo_config.add_message("user", original_user_input)
                 except Exception as e:
                     logger.error(f"Failed to log user message to repo config: {e}")
 
+            user_payload = self._prepare_user_input_payload(original_user_input)
+
             # Use streaming if enabled
             if self.config.ui.enable_streaming:
-                await self._process_request_streaming(user_input)
+                await self._process_request_streaming(user_payload)
             else:
-                await self._process_request_normal(user_input)
+                await self._process_request_normal(user_payload)
 
             # Display execution time
             elapsed_time = time.time() - start_time
@@ -827,7 +996,7 @@ class PoorCLIAsync:
         finally:
             clear_log_context("request_id", "tool_name")
 
-    async def _process_request_streaming(self, user_input: str):
+    async def _process_request_streaming(self, user_input: Any):
         """Process request with streaming responses"""
         try:
             self.console.print("\n[bold green]Poor AI[/bold green]")
@@ -910,7 +1079,7 @@ class PoorCLIAsync:
         except APIError as e:
             self._handle_api_error("API Error", str(e), e)
 
-    async def _process_request_normal(self, user_input: str):
+    async def _process_request_normal(self, user_input: Any):
         """Process request with normal (non-streaming) responses"""
         try:
             # Show loading indicator
@@ -1162,8 +1331,16 @@ class PoorCLIAsync:
                         result = "Operation cancelled by user"
                         self.console.print("[yellow]Operation cancelled[/yellow]")
                     else:
-                        # Execute the tool asynchronously
-                        result = await self.tool_registry.execute_tool(tool_name, tool_args)
+                        # Execute local tools first, then MCP fallback.
+                        try:
+                            if tool_name in self.tool_registry.tools:
+                                result = await self.tool_registry.execute_tool(tool_name, tool_args)
+                            elif self.mcp_manager:
+                                result = await self.mcp_manager.execute_tool(tool_name, tool_args)
+                            else:
+                                result = f"Unknown tool: {tool_name}"
+                        except Exception as e:
+                            result = f"Error executing {tool_name}: {e}"
 
                 # Display tool output
                 if result and not getattr(self, "_non_interactive_mode", False):
@@ -1213,7 +1390,12 @@ class PoorCLIAsync:
                 return "Operation cancelled by user"
 
             # Execute the tool
-            result = await self.tool_registry.execute_tool(tool_name, tool_args)
+            if tool_name in self.tool_registry.tools:
+                result = await self.tool_registry.execute_tool(tool_name, tool_args)
+            elif self.mcp_manager:
+                result = await self.mcp_manager.execute_tool(tool_name, tool_args)
+            else:
+                result = f"Unknown tool: {tool_name}"
             return result
 
     def _format_tool_results(self, tool_results: List[Dict[str, Any]]):
@@ -1277,6 +1459,25 @@ def main():
             action="store_true",
             help="Disable permission prompts and allow all operations",
         )
+        common_parser.add_argument(
+            "-f",
+            "--file",
+            help="File to include as context",
+        )
+        common_parser.add_argument(
+            "--script",
+            help="Run prompts from a script file (one per line, or separated by ---)",
+        )
+        common_parser.add_argument(
+            "--watch",
+            metavar="DIR",
+            help="Watch directory for file changes and respond",
+        )
+        common_parser.add_argument(
+            "--watch-prompt",
+            default="Explain the changes in these files",
+            help="Prompt to use in watch mode",
+        )
 
         parser = argparse.ArgumentParser(
             prog="poor-cli",
@@ -1297,19 +1498,65 @@ def main():
         )
         args = parser.parse_args()
 
-        repl = PoorCLIAsync(
-            provider_override=args.provider,
-            model_override=args.model,
-            cwd_override=args.cwd,
-            permission_mode_override=args.permission_mode,
-            dangerously_skip_permissions=args.dangerously_skip_permissions,
-        )
+        def create_repl() -> PoorCLIAsync:
+            return PoorCLIAsync(
+                provider_override=args.provider,
+                model_override=args.model,
+                cwd_override=args.cwd,
+                permission_mode_override=args.permission_mode,
+                dangerously_skip_permissions=args.dangerously_skip_permissions,
+            )
+
+        def add_file_context(prompt_text: str) -> str:
+            file_ctx = ""
+            file_arg = getattr(args, "file", None)
+            if file_arg:
+                try:
+                    content = Path(file_arg).read_text(encoding="utf-8", errors="ignore")
+                    file_ctx = f"File {file_arg}:\n```\n{content}\n```\n\n"
+                except Exception as e:
+                    raise ConfigurationError(f"Failed to read --file context '{file_arg}': {e}") from e
+            return file_ctx + prompt_text
+
+        if not sys.stdin.isatty():
+            prompt = getattr(args, "prompt", None)
+            if not prompt:
+                try:
+                    stdin_data = sys.stdin.read().strip()
+                except OSError:
+                    stdin_data = ""
+                prompt = stdin_data
+            if prompt:
+                combined = add_file_context(prompt)
+                repl = create_repl()
+                exit_code = asyncio.run(
+                    repl.run_non_interactive(
+                        combined,
+                        output_format=getattr(args, "output", "text"),
+                    )
+                )
+                sys.exit(exit_code)
+            if args.command == "run":
+                print("Error: no prompt provided via stdin or CLI argument.", file=sys.stderr)
+                sys.exit(1)
+
+        if getattr(args, "script", None):
+            repl = create_repl()
+            sys.exit(asyncio.run(repl.run_script(args.script)))
+
+        if getattr(args, "watch", None):
+            repl = create_repl()
+            sys.exit(asyncio.run(repl.run_watch(args.watch, args.watch_prompt)))
+
         if args.command == "run":
+            prompt = add_file_context(args.prompt)
+            repl = create_repl()
             exit_code = asyncio.run(
-                repl.run_non_interactive(args.prompt, output_format=args.output)
+                repl.run_non_interactive(prompt, output_format=args.output)
             )
             sys.exit(exit_code)
 
+        repl = create_repl()
         asyncio.run(repl.run())
     except KeyboardInterrupt:
         print("\nExiting...")

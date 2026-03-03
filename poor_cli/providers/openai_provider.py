@@ -234,6 +234,18 @@ class OpenAIProvider(BaseProvider):
             })
             return
 
+        if (
+            isinstance(message, list)
+            and len(message) > 0
+            and isinstance(message[0], dict)
+            and "type" in message[0]
+        ):
+            self.messages.append({
+                "role": "user",
+                "content": message,
+            })
+            return
+
         if isinstance(message, list) and all(isinstance(item, dict) for item in message):
             self.messages.extend(message)
             return
