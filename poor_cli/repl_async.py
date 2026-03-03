@@ -9,7 +9,7 @@ import sys
 import asyncio
 import time
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -681,10 +681,10 @@ class PoorCLIAsync:
                     token_info = f" [{est:,}tok]"
                 prompt_text = f"\nYou ({provider_short}/{model_short}){token_info}: "
 
-                # Use enhanced input manager with smart history (arrow keys) and file path autocomplete
+                # Smart input: history, slash-command recommendations, and path completion.
                 user_input = await self.input_manager.get_input(
                     prompt_text=prompt_text,
-                    enable_completer=True  # Enable file path autocomplete with Tab key
+                    enable_completer=True
                 )
 
                 if not user_input.strip():
@@ -1136,29 +1136,100 @@ class PoorCLIAsync:
         except APIError as e:
             self._handle_api_error("API Error", str(e), e)
 
+    @staticmethod
+    def _normalize_error_fragment(fragment: str) -> str:
+        """Collapse noisy whitespace/prefixes in error text fragments."""
+        cleaned = " ".join(fragment.split()).strip()
+        if cleaned.lower().startswith("details:"):
+            cleaned = cleaned[len("details:"):].strip()
+        return cleaned
+
+    @classmethod
+    def _extract_error_parts(cls, message: str, exception: Exception) -> Tuple[str, List[str]]:
+        """Extract primary error message and deduplicated detail lines."""
+        raw_sources: List[str] = []
+
+        if isinstance(exception, PoorCLIError):
+            if exception.message:
+                raw_sources.append(exception.message)
+            if exception.details:
+                raw_sources.append(f"Details: {exception.details}")
+
+        if message:
+            raw_sources.append(message)
+
+        exception_text = str(exception)
+        if exception_text:
+            raw_sources.append(exception_text)
+
+        primary_message = ""
+        detail_lines: List[str] = []
+
+        for source in raw_sources:
+            parts = [part.strip() for part in source.split("Details:") if part.strip()]
+            if not parts:
+                continue
+
+            if not primary_message:
+                primary_message = cls._normalize_error_fragment(parts[0])
+
+            for detail in parts[1:]:
+                cleaned_detail = cls._normalize_error_fragment(detail)
+                if cleaned_detail:
+                    detail_lines.append(cleaned_detail)
+
+        if not primary_message:
+            primary_message = cls._normalize_error_fragment(message) or "Request failed."
+
+        normalized_primary = cls._normalize_error_fragment(primary_message).lower()
+        seen_details = set()
+        unique_details: List[str] = []
+        for detail in detail_lines:
+            normalized_detail = cls._normalize_error_fragment(detail)
+            lowered = normalized_detail.lower()
+            if not normalized_detail or lowered == normalized_primary or lowered in seen_details:
+                continue
+            seen_details.add(lowered)
+            unique_details.append(normalized_detail)
+
+        return primary_message, unique_details[:2]
+
     def _handle_api_error(self, title: str, message: str, exception: Exception):
-        """Helper to display API errors consistently with recovery suggestions"""
+        """Display API errors with concise formatting and recovery suggestions."""
         error_code = get_error_code(exception)
+        primary_message, detail_lines = self._extract_error_parts(message, exception)
         # Get recovery suggestions
         suggestions = self.error_recovery.get_suggestions(exception)
-        suggestion_text = ""
+
+        panel_lines = [f"[bold red]{primary_message}[/bold red]"]
+
+        if detail_lines:
+            panel_lines.append("")
+            panel_lines.append("[bold]Details[/bold]")
+            for detail in detail_lines:
+                panel_lines.append(f"- [dim]{detail}[/dim]")
 
         if suggestions:
-            suggestion_text = "\n\n[bold cyan]Suggestions:[/bold cyan]\n"
-            for i, sug in enumerate(suggestions[:3], 1):
-                suggestion_text += f"{i}. {sug.title}: {sug.description}\n"
-                if sug.commands:
-                    suggestion_text += f"   Try: [dim]{sug.commands[0]}[/dim]\n"
+            panel_lines.append("")
+            panel_lines.append("[bold cyan]What to try[/bold cyan]")
+            for i, suggestion in enumerate(suggestions[:3], 1):
+                panel_lines.append(f"{i}. {suggestion.title} - {suggestion.description}")
+                if suggestion.commands:
+                    panel_lines.append(f"   [dim]{suggestion.commands[0]}[/dim]")
+
+        panel_lines.append("")
+        panel_lines.append(f"[dim]Error code: {error_code}[/dim]")
 
         self.console.print(
             Panel(
-                f"[bold red]{title}[/bold red]\n\n{message}\n\n"
-                f"[dim]Error code: {error_code}[/dim]{suggestion_text}",
-                title=f"⚠️  {title}",
+                "\n".join(panel_lines),
+                title=title,
                 border_style="yellow" if "Rate Limit" in title or "Timeout" in title else "red",
             )
         )
-        logger.error(f"{title} [{error_code}]: {exception}")
+        logger.info(f"{title} [{error_code}]: {primary_message}")
+        if detail_lines:
+            logger.debug(f"{title} details: {' | '.join(detail_lines)}")
 
     async def request_permission(self, tool_name: str, tool_args: dict) -> bool:
         """Request user permission for file operations"""

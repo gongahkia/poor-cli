@@ -78,6 +78,11 @@ class ErrorRecoveryManager:
                 r"(?:TypeError)",
                 self._suggest_type_error
             ),
+            # Ollama model missing errors
+            (
+                r'model\s+["\\\']?[\w:.\-]+["\\\']?\s+not found.*pull it first',
+                self._suggest_ollama_model_missing
+            ),
             # API key errors
             (
                 r"(?:API key|authentication|invalid.*key|GEMINI_API_KEY)",
@@ -275,6 +280,38 @@ class ErrorRecoveryManager:
                 commands=[],
                 priority=2
             )
+        ]
+
+    def _suggest_ollama_model_missing(
+        self,
+        error: Exception,
+        context: Optional[dict],
+    ) -> List[RecoverySuggestion]:
+        """Suggestions when Ollama model is missing locally."""
+        error_text = str(error).replace('\\"', '"')
+        model_match = re.search(
+            r'model\s+["\']?([\w:.\-]+)["\']?\s+not found',
+            error_text,
+            re.IGNORECASE,
+        )
+        model_name = model_match.group(1) if model_match else "<model-name>"
+
+        return [
+            RecoverySuggestion(
+                title="Pull missing Ollama model",
+                description="Download the missing model and retry your request",
+                commands=[
+                    f"ollama pull {model_name}",
+                    "ollama list",
+                ],
+                priority=1
+            ),
+            RecoverySuggestion(
+                title="Switch provider temporarily",
+                description="Use another configured provider while the model downloads",
+                commands=["/switch"],
+                priority=2
+            ),
         ]
 
     def _suggest_api_key_error(self, error: Exception, context: Optional[dict]) -> List[RecoverySuggestion]:
