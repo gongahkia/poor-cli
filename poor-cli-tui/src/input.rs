@@ -16,6 +16,8 @@ pub enum InputAction {
     ProviderSelected(usize),
     /// Permission prompt answered.
     PermissionAnswered(bool),
+    /// User cancelled an in-flight request (Ctrl+C / Esc while waiting).
+    Cancel,
 }
 
 /// Slash commands available for auto-complete.
@@ -67,9 +69,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         match key.code {
             KeyCode::Char('c') => {
                 if app.waiting {
-                    app.stop_waiting();
-                    app.set_status("Request cancelled");
-                    return InputAction::Redraw;
+                    return InputAction::Cancel;
                 }
                 if app.input_buffer.is_empty() {
                     return InputAction::Quit;
@@ -131,8 +131,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
 }
 
 fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
-    // Don't accept input while waiting
+    // While waiting, only Esc cancels — everything else is ignored
     if app.waiting {
+        if key.code == KeyCode::Esc {
+            return InputAction::Cancel;
+        }
         return InputAction::None;
     }
 

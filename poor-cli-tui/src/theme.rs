@@ -15,7 +15,7 @@ pub const MAGENTA: Color = Color::Magenta;
 
 // ── Role colors ───────────────────────────────────────────────────────
 pub const USER_COLOR: Color = Color::Cyan;
-pub const ASSISTANT_COLOR: Color = Color::Green;
+pub const ASSISTANT_COLOR: Color = Color::Rgb(80, 200, 120);
 pub const SYSTEM_COLOR: Color = Color::Magenta;
 pub const TOOL_COLOR: Color = Color::DarkGray;
 
@@ -47,7 +47,15 @@ pub fn input_style() -> Style {
 }
 
 pub fn input_cursor_style() -> Style {
-    Style::default().fg(Color::Black).bg(Color::White)
+    Style::default().fg(Color::Black).bg(Color::Rgb(100, 200, 255))
+}
+
+pub fn code_block_bg() -> Color {
+    Color::Rgb(30, 32, 40)
+}
+
+pub fn local_badge_style() -> Style {
+    Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
 }
 
 pub fn hint_style() -> Style {

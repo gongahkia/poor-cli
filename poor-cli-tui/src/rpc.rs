@@ -1,7 +1,8 @@
 /// JSON-RPC 2.0 client communicating with the Python `poor_cli.server` over stdio.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -289,5 +290,54 @@ impl RpcClient {
 impl Drop for RpcClient {
     fn drop(&mut self) {
         let _ = self.shutdown();
+    }
+}
+
+// ── RPC worker pattern ───────────────────────────────────────────────
+
+pub enum RpcCommand {
+    Chat { message: String, reply: SyncSender<Result<String, String>> },
+    ListProviders { reply: SyncSender<Result<Vec<ProviderInfo>, String>> },
+    SwitchProvider {
+        provider: String,
+        model: Option<String>,
+        reply: SyncSender<Result<(String, String), String>>,
+    },
+    Shutdown,
+}
+
+/// Blocks the calling thread, dispatching RPC commands until Shutdown or channel drop.
+pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
+    loop {
+        match rx.recv() {
+            Ok(RpcCommand::Chat { message, reply }) => {
+                let result = client
+                    .chat(&message, &[])
+                    .map(|r| r.content.unwrap_or_default());
+                let _ = reply.send(result);
+            }
+            Ok(RpcCommand::ListProviders { reply }) => {
+                let _ = reply.send(client.list_providers());
+            }
+            Ok(RpcCommand::SwitchProvider { provider, model, reply }) => {
+                let p_clone = provider.clone();
+                let m_clone = model.clone();
+                let result = client
+                    .switch_provider(&provider, model.as_deref())
+                    .map(|val| {
+                        let prov = val.pointer("/provider/name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&p_clone)
+                            .to_string();
+                        let mdl = val.pointer("/provider/model")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(m_clone.as_deref().unwrap_or("default"))
+                            .to_string();
+                        (prov, mdl)
+                    });
+                let _ = reply.send(result);
+            }
+            Ok(RpcCommand::Shutdown) | Err(_) => break,
+        }
     }
 }

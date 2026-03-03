@@ -138,6 +138,12 @@ pub struct App {
 
     // ── Whether server is connected ───
     pub server_connected: bool,
+
+    // ── Working directory ───
+    pub cwd: String,
+
+    // ── Local provider flag (ollama) ───
+    pub is_local_provider: bool,
 }
 
 impl Default for App {
@@ -164,6 +170,8 @@ impl Default for App {
             permission_answer: None,
             status_message: None,
             server_connected: false,
+            cwd: String::new(),
+            is_local_provider: false,
         }
     }
 }
@@ -173,16 +181,14 @@ impl App {
         Self::default()
     }
 
-    /// Add a welcome message on startup.
-    pub fn add_welcome(&mut self) {
+    fn welcome_text(&self) -> String {
         let mascot = r#"        ___
       /     \
      | () () |
       \  ^  /
        |||||
       '-----'"#;
-
-        let welcome = format!(
+        format!(
             "{mascot}\n\n\
             poor-cli v{version}  •  {provider}/{model}\n\
             AI-powered coding assistant in your terminal\n\n\
@@ -195,8 +201,22 @@ impl App {
             version = self.version,
             provider = self.provider_name,
             model = self.model_name,
-        );
-        self.messages.push(ChatMessage::system(welcome));
+        )
+    }
+
+    /// Add a welcome message on startup.
+    pub fn add_welcome(&mut self) {
+        self.messages.push(ChatMessage::system(self.welcome_text()));
+    }
+
+    /// Retroactively update the welcome message after init completes.
+    pub fn update_welcome(&mut self) {
+        let text = self.welcome_text();
+        if let Some(msg) = self.messages.first_mut() {
+            if matches!(msg.role, MessageRole::System) {
+                msg.content = text;
+            }
+        }
     }
 
     /// Push a message and auto-scroll to bottom.

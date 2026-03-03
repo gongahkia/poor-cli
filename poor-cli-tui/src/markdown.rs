@@ -25,7 +25,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                 for cl in &code_lines {
                     lines.push(Line::from(Span::styled(
                         format!("  {cl}"),
-                        Style::default().fg(Color::Rgb(200, 200, 200)),
+                        Style::default().fg(Color::Rgb(200, 200, 200)).bg(theme::code_block_bg()),
                     )));
                 }
                 lines.push(Line::from(Span::styled(

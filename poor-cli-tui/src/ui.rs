@@ -17,7 +17,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, AppMode, ChatMessage, MessageRole};
+use crate::app::{App, AppMode, MessageRole};
 use crate::input::SLASH_COMMANDS;
 use crate::markdown;
 use crate::theme;
@@ -89,12 +89,27 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    if app.is_local_provider {
+        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled("[local]", theme::local_badge_style()));
+    }
+
     if app.server_connected {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled("●", Style::default().fg(Color::Green)));
+        let dot_color = if app.is_local_provider { Color::Magenta } else { Color::Green };
+        spans.push(Span::styled("●", Style::default().fg(dot_color)));
     } else {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled("●", Style::default().fg(Color::Red)));
+    }
+
+    if !app.cwd.is_empty() {
+        let cwd_short = app.cwd.split('/').last().unwrap_or(&app.cwd);
+        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("~/{cwd_short}"),
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     // Waiting indicator on the right side
@@ -295,7 +310,7 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
         };
         vec![
             Span::styled("  ", Style::default()),
-            Span::styled("> ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("❯ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled(
                 app.input_buffer.clone(),
                 theme::input_style(),
@@ -359,10 +374,12 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("  /switch", Style::default().fg(Color::DarkGray)),
             Span::styled("  Ctrl+C", Style::default().fg(Color::DarkGray)),
             Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Esc", Style::default().fg(Color::DarkGray)),
+            Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("PgUp/PgDn", Style::default().fg(Color::DarkGray)),
+            Span::styled(": scroll  ", Style::default().fg(Color::DarkGray)),
             Span::styled("↑↓", Style::default().fg(Color::DarkGray)),
-            Span::styled(": history  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Tab", Style::default().fg(Color::DarkGray)),
-            Span::styled(": complete", Style::default().fg(Color::DarkGray)),
+            Span::styled(": history", Style::default().fg(Color::DarkGray)),
         ]
     };
 
