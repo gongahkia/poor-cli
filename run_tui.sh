@@ -16,6 +16,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUI_DIR="${SCRIPT_DIR}/poor-cli-tui"
 BINARY="${TUI_DIR}/target/release/poor-cli-tui"
 
+# Load .env if present so direct `./run_tui.sh` matches `./run.sh` behavior.
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/.env"
+    set +a
+fi
+
 # Source cargo env if available
 if [ -f "$HOME/.cargo/env" ]; then
     source "$HOME/.cargo/env"

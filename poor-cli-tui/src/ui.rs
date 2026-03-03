@@ -28,7 +28,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // status bar
-            Constraint::Min(5),   // chat area
+            Constraint::Min(5),    // chat area
             Constraint::Length(3), // input area
             Constraint::Length(1), // hint bar
         ])
@@ -59,14 +59,15 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
     let provider_upper = provider_short.to_uppercase();
 
-    let model_display = app
-        .model_name
-        .split('-')
-        .last()
-        .unwrap_or(&app.model_name);
+    let model_display = app.model_name.split('-').last().unwrap_or(&app.model_name);
 
     let mut spans = vec![
-        Span::styled("  poor-cli", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  poor-cli",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             format!(" v{} ", app.version),
             Style::default().fg(Color::DarkGray),
@@ -74,7 +75,9 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled("│ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             format!("{provider_upper}"),
-            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("/{model_display}"),
@@ -84,10 +87,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     if app.streaming_enabled {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(
-            "streaming",
-            Style::default().fg(Color::Green),
-        ));
+        spans.push(Span::styled("streaming", Style::default().fg(Color::Green)));
     }
 
     if app.is_local_provider {
@@ -106,7 +106,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     if app.server_connected {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-        let dot_color = if app.is_local_provider { Color::Magenta } else { Color::Green };
+        let dot_color = if app.is_local_provider {
+            Color::Magenta
+        } else {
+            Color::Green
+        };
         spans.push(Span::styled("●", Style::default().fg(dot_color)));
     } else {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
@@ -125,24 +129,17 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Waiting indicator on the right side
     if app.waiting {
         let elapsed = app.wait_elapsed();
-        let right_text = format!(
-            " {} thinking… {elapsed} ",
-            app.spinner_frame()
-        );
+        let right_text = format!(" {} thinking… {elapsed} ", app.spinner_frame());
         // Calculate padding
         let used_width: usize = spans.iter().map(|s| s.content.len()).sum();
         let remaining = (area.width as usize).saturating_sub(used_width + right_text.len());
         if remaining > 0 {
             spans.push(Span::raw(" ".repeat(remaining)));
         }
-        spans.push(Span::styled(
-            right_text,
-            Style::default().fg(Color::Cyan),
-        ));
+        spans.push(Span::styled(right_text, Style::default().fg(Color::Cyan)));
     }
 
-    let bar = Paragraph::new(Line::from(spans))
-        .style(theme::status_bar_style());
+    let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style());
     frame.render_widget(bar, area);
 }
 
@@ -189,8 +186,7 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                 // Render assistant content as markdown
                 let md_lines = markdown::render_markdown(&msg.content);
                 for ml in md_lines {
-                    let mut padded_spans: Vec<Span<'static>> =
-                        vec![Span::raw("    ".to_string())];
+                    let mut padded_spans: Vec<Span<'static>> = vec![Span::raw("    ".to_string())];
                     padded_spans.extend(ml.spans);
                     all_lines.push(Line::from(padded_spans));
                 }
@@ -198,7 +194,12 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             MessageRole::System => {
                 all_lines.push(Line::from(vec![
                     Span::styled("  ◆ ", Style::default().fg(theme::SYSTEM_COLOR)),
-                    Span::styled("System", Style::default().fg(theme::SYSTEM_COLOR).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "System",
+                        Style::default()
+                            .fg(theme::SYSTEM_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]));
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(Span::styled(
@@ -210,22 +211,13 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             MessageRole::ToolCall { name } => {
                 all_lines.push(Line::from(vec![
                     Span::styled("  ┌─ ", theme::tool_border_style()),
-                    Span::styled(
-                        name.clone(),
-                        theme::tool_title_style(),
-                    ),
-                    Span::styled(
-                        " ──────────────",
-                        theme::tool_border_style(),
-                    ),
+                    Span::styled(name.clone(), theme::tool_title_style()),
+                    Span::styled(" ──────────────", theme::tool_border_style()),
                 ]));
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(vec![
                         Span::styled("  │ ", theme::tool_border_style()),
-                        Span::styled(
-                            line.to_string(),
-                            Style::default().fg(Color::DarkGray),
-                        ),
+                        Span::styled(line.to_string(), Style::default().fg(Color::DarkGray)),
                     ]));
                 }
                 all_lines.push(Line::from(Span::styled(
@@ -236,10 +228,7 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             MessageRole::ToolResult { name } => {
                 all_lines.push(Line::from(vec![
                     Span::styled("  ┌─ ", theme::tool_border_style()),
-                    Span::styled(
-                        format!("{name} result"),
-                        theme::tool_title_style(),
-                    ),
+                    Span::styled(format!("{name} result"), theme::tool_title_style()),
                     Span::styled(" ─────", theme::tool_border_style()),
                 ]));
                 // Truncate long tool output
@@ -251,10 +240,7 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                 for line in content.lines().take(15) {
                     all_lines.push(Line::from(vec![
                         Span::styled("  │ ", theme::tool_border_style()),
-                        Span::styled(
-                            line.to_string(),
-                            Style::default().fg(Color::DarkGray),
-                        ),
+                        Span::styled(line.to_string(), Style::default().fg(Color::DarkGray)),
                     ]));
                 }
                 if msg.content.lines().count() > 15 {
@@ -306,11 +292,11 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
     let prompt_spans = if app.waiting {
         vec![
             Span::styled("  ", Style::default()),
+            Span::styled(app.spinner_frame(), theme::spinner_style()),
             Span::styled(
-                app.spinner_frame(),
-                theme::spinner_style(),
+                " Waiting for response... ",
+                Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(" Waiting for response... ", Style::default().fg(Color::DarkGray)),
         ]
     } else {
         let provider_short = if app.provider_name.len() > 4 {
@@ -320,15 +306,14 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
         };
         vec![
             Span::styled("  ", Style::default()),
-            Span::styled("❯ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled(
-                app.input_buffer.clone(),
-                theme::input_style(),
+                "❯ ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                "█",
-                theme::input_cursor_style(),
-            ),
+            Span::styled(app.input_buffer.clone(), theme::input_style()),
+            Span::styled("█", theme::input_cursor_style()),
             // Show placeholder when empty
             if app.input_buffer.is_empty() {
                 Span::styled(
@@ -389,8 +374,7 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
         ]
     };
 
-    let hint = Paragraph::new(Line::from(spans))
-        .style(Style::default().fg(Color::DarkGray));
+    let hint = Paragraph::new(Line::from(spans)).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint, area);
 }
 
@@ -413,7 +397,8 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
     }
 
     let display_items: Vec<&SlashCommandSpec> = commands.into_iter().take(8).collect();
-    let palette_height = (display_items.len() as u16 + 2).min(frame.area().height.saturating_sub(5));
+    let palette_height =
+        (display_items.len() as u16 + 2).min(frame.area().height.saturating_sub(5));
     if palette_height < 3 {
         return;
     }
@@ -440,7 +425,9 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
             ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("{:<14}", spec.command),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(spec.description.to_string(), desc_style),
             ]))
@@ -457,7 +444,9 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
         Block::default()
             .title(Span::styled(
                 title,
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Rgb(60, 70, 95))),
@@ -495,7 +484,9 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                 format!(" ({})", p.models.join(", "))
             };
             let style = if i == app.provider_select_idx {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
             } else if p.available {
                 Style::default().fg(Color::White)
             } else {
@@ -519,7 +510,9 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
         Block::default()
             .title(Span::styled(
                 " Switch Provider ",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan))
@@ -549,30 +542,19 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
         )),
         Line::from(""),
         Line::from(vec![
-            Span::styled(
-                "  Press ",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 "y",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                " to allow, ",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled(" to allow, ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 "n",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                " to deny",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled(" to deny", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(""),
     ];

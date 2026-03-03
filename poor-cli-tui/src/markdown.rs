@@ -19,13 +19,22 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
             if in_code_block {
                 // End code block — flush
                 lines.push(Line::from(Span::styled(
-                    format!("─── {} ", if code_lang.is_empty() { "code" } else { &code_lang }),
+                    format!(
+                        "─── {} ",
+                        if code_lang.is_empty() {
+                            "code"
+                        } else {
+                            &code_lang
+                        }
+                    ),
                     theme::code_block_border_style(),
                 )));
                 for cl in &code_lines {
                     lines.push(Line::from(Span::styled(
                         format!("  {cl}"),
-                        Style::default().fg(Color::Rgb(200, 200, 200)).bg(theme::code_block_bg()),
+                        Style::default()
+                            .fg(Color::Rgb(200, 200, 200))
+                            .bg(theme::code_block_bg()),
                     )));
                 }
                 lines.push(Line::from(Span::styled(
@@ -129,7 +138,14 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
     // Flush trailing code block
     if in_code_block && !code_lines.is_empty() {
         lines.push(Line::from(Span::styled(
-            format!("─── {} ", if code_lang.is_empty() { "code" } else { &code_lang }),
+            format!(
+                "─── {} ",
+                if code_lang.is_empty() {
+                    "code"
+                } else {
+                    &code_lang
+                }
+            ),
             theme::code_block_border_style(),
         )));
         for cl in &code_lines {
@@ -203,10 +219,8 @@ fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
                     "*" => {
                         if let Some(end) = after_marker.find('*') {
                             let italic_text = &after_marker[..end];
-                            spans.push(Span::styled(
-                                italic_text.to_string(),
-                                theme::italic_style(),
-                            ));
+                            spans
+                                .push(Span::styled(italic_text.to_string(), theme::italic_style()));
                             remaining = &after_marker[end + 1..];
                         } else {
                             spans.push(Span::raw("*".to_string()));

@@ -48,9 +48,7 @@ impl ChatMessage {
 
     pub fn tool_call(name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
-            role: MessageRole::ToolCall {
-                name: name.into(),
-            },
+            role: MessageRole::ToolCall { name: name.into() },
             content: content.into(),
             timestamp: Instant::now(),
         }
@@ -58,9 +56,7 @@ impl ChatMessage {
 
     pub fn tool_result(name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
-            role: MessageRole::ToolResult {
-                name: name.into(),
-            },
+            role: MessageRole::ToolResult { name: name.into() },
             content: content.into(),
             timestamp: Instant::now(),
         }

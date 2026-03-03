@@ -47,7 +47,9 @@ pub fn input_style() -> Style {
 }
 
 pub fn input_cursor_style() -> Style {
-    Style::default().fg(Color::Black).bg(Color::Rgb(100, 200, 255))
+    Style::default()
+        .fg(Color::Black)
+        .bg(Color::Rgb(100, 200, 255))
 }
 
 pub fn code_block_bg() -> Color {
@@ -55,7 +57,9 @@ pub fn code_block_bg() -> Color {
 }
 
 pub fn local_badge_style() -> Style {
-    Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(Color::Magenta)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn hint_style() -> Style {

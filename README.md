@@ -45,9 +45,10 @@ $ cp .env.example .env
 
 ```console
 $ ./run.sh
-$ python -m poor_cli
+$ ./run_tui.sh
+$ python -m poor_cli         # wrapper that launches the Rust TUI
 $ pip install -e .
-$ poor-cli
+$ poor-cli                   # wrapper that launches the Rust TUI
 $ ./uninstall.sh
 ```
 
@@ -85,30 +86,39 @@ $ docker run -it --env-file .env poor-cli
 
 **Session Management:**
 - `/help` - Show help message
-- `/quit` - Exit the REPL
+- `/quit` - Exit and print session summary
 - `/clear` - Clear current conversation
+- `/clear-output` - Clear visible output
 - `/history [N]` - Show recent messages (default: 10)
-- `/sessions` - List all previous sessions
 - `/new-session` - Start fresh session
+- `/retry` - Retry last request
+- `/search <term>` - Search session messages
+- `/edit-last` - Load previous message into input
 
-**Checkpoints & Undo:**
-- `/checkpoints` - List all checkpoints
-- `/checkpoint` - Create manual checkpoint
-- `/rewind [ID]` - Restore checkpoint (ID or 'last')
-- `/diff <f1> <f2>` - Compare two files
+**Git Integration:**
+- `/commit` - Generate commit message from staged diff
+- `/review [file]` - Review a file or staged diff
+- `/test <file>` - Generate tests for a file
 
 **Provider Management:**
 - `/provider` - Show current provider info
 - `/providers` - List all available providers and models
 - `/switch` - Switch AI provider
+- `/model-info` - Show provider model notes
 
-**Export & Archive:**
-- `/export [format]` - Export conversation (json, md, txt)
+**Prompt Library & Watch:**
+- `/save-prompt <name> <text>` - Save reusable prompt
+- `/use <name>` - Load and run saved prompt
+- `/prompts` - List saved prompts
+- `/watch <dir>` - Watch directory and auto-analyze changes
+- `/unwatch` - Stop watch mode
 
 **Configuration:**
 - `/config` - Show current configuration
-- `/verbose` - Toggle verbose logging
-- `/plan-mode` - Toggle plan mode
+- `/permission-mode` - Show active permission mode
+- `/cost` - Show token/cost estimate
+- `/tools` - List backend tool declarations
+- `/image <path>` - Queue image path for next request
 
 **Neovim Commands:**
 - `:PoorCliStart`: Start the AI server
@@ -144,7 +154,7 @@ $ docker run -it --env-file .env poor-cli
 ```mermaid
 flowchart TB
     subgraph Clients["Client Interfaces"]
-        CLI["CLI REPL<br/>(repl_async.py)"]
+        CLI["Rust TUI<br/>(poor-cli-tui)"]
         NVIM["Neovim Plugin<br/>(Lua)"]
         EXT["Other Editors<br/>(VSCode, etc.)"]
     end
@@ -196,7 +206,7 @@ flowchart TB
         ENV[".env<br/>(API Keys)"]
     end
 
-    CLI --> ENGINE
+    CLI --> RPC
     NVIM --> RPC
     EXT --> RPC
     RPC --> ENGINE

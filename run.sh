@@ -57,5 +57,6 @@ load_env_file() {
 # Load environment variables from .env safely.
 load_env_file ".env"
 
-# Run poor-cli
-clear && python3 -m poor_cli
+# Run poor-cli Rust TUI (Python now only serves the backend JSON-RPC process)
+clear
+exec ./run_tui.sh "$@"

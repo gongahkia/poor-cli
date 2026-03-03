@@ -16,9 +16,9 @@ POORCLI := $(VENV)/bin/poor-cli
 help:
 	@echo "Available targets:"
 	@echo "  make setup         Create .venv, install deps, and create .env if missing"
-	@echo "  make run           Run via ./run.sh"
-	@echo "  make run-module    Run via python -m poor_cli"
-	@echo "  make run-cli       Run installed poor-cli entrypoint"
+	@echo "  make run           Run Rust TUI via ./run.sh"
+	@echo "  make run-module    Run Rust TUI via python -m poor_cli wrapper"
+	@echo "  make run-cli       Run Rust TUI via installed poor-cli entrypoint"
 	@echo "  make test          Run pytest tests/ -v"
 	@echo "  make lint          Run ruff check poor_cli tests"
 	@echo "  make import-graph  Run import graph check"

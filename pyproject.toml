@@ -56,7 +56,7 @@ dev = [
 ]
 
 [project.scripts]
-poor-cli = "poor_cli.repl_async:main"
+poor-cli = "poor_cli.__main__:main"
 poor-cli-server = "poor_cli.server:main"
 
 [project.urls]

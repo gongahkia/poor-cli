@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::sync::mpsc::{Receiver, SyncSender};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::Mutex;
 
 // ── JSON-RPC message types ───────────────────────────────────────────
@@ -202,10 +202,7 @@ impl RpcClient {
     /// Send a chat message and get the response.
     pub fn chat(&self, message: &str, context_files: &[String]) -> Result<ChatResult, String> {
         let mut params = serde_json::Map::new();
-        params.insert(
-            "message".into(),
-            serde_json::Value::String(message.into()),
-        );
+        params.insert("message".into(), serde_json::Value::String(message.into()));
         if !context_files.is_empty() {
             let files: Vec<serde_json::Value> = context_files
                 .iter()
@@ -219,11 +216,13 @@ impl RpcClient {
 
     /// List available providers.
     pub fn list_providers(&self) -> Result<Vec<ProviderInfo>, String> {
-        let val = self.call("listProviders", serde_json::Value::Object(Default::default()))?;
+        let val = self.call(
+            "listProviders",
+            serde_json::Value::Object(Default::default()),
+        )?;
         // The server may return a map or array. Handle both.
         if let Some(arr) = val.as_array() {
-            serde_json::from_value(serde_json::Value::Array(arr.clone()))
-                .map_err(|e| e.to_string())
+            serde_json::from_value(serde_json::Value::Array(arr.clone())).map_err(|e| e.to_string())
         } else if let Some(obj) = val.as_object() {
             // Convert map to vec
             let list: Vec<ProviderInfo> = obj
@@ -293,7 +292,10 @@ impl RpcClient {
 
     /// Get tool declarations from server.
     pub fn get_tools(&self) -> Result<Value, String> {
-        self.call("poor-cli/getTools", serde_json::Value::Object(Default::default()))
+        self.call(
+            "poor-cli/getTools",
+            serde_json::Value::Object(Default::default()),
+        )
     }
 
     /// Execute a shell command through the backend.
@@ -366,19 +368,35 @@ impl Drop for RpcClient {
 // ── RPC worker pattern ───────────────────────────────────────────────
 
 pub enum RpcCommand {
-    Chat { message: String, reply: SyncSender<Result<String, String>> },
-    ExecuteCommand { command: String, reply: SyncSender<Result<String, String>> },
+    Chat {
+        message: String,
+        reply: SyncSender<Result<String, String>>,
+    },
+    ExecuteCommand {
+        command: String,
+        reply: SyncSender<Result<String, String>>,
+    },
     ReadFile {
         file_path: String,
         start_line: Option<u64>,
         end_line: Option<u64>,
         reply: SyncSender<Result<String, String>>,
     },
-    GetConfig { reply: SyncSender<Result<Value, String>> },
-    GetProviderInfo { reply: SyncSender<Result<Value, String>> },
-    GetTools { reply: SyncSender<Result<Value, String>> },
-    ClearHistory { reply: SyncSender<Result<(), String>> },
-    ListProviders { reply: SyncSender<Result<Vec<ProviderInfo>, String>> },
+    GetConfig {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetProviderInfo {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetTools {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ClearHistory {
+        reply: SyncSender<Result<(), String>>,
+    },
+    ListProviders {
+        reply: SyncSender<Result<Vec<ProviderInfo>, String>>,
+    },
     SwitchProvider {
         provider: String,
         model: Option<String>,
@@ -423,17 +441,23 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::ListProviders { reply }) => {
                 let _ = reply.send(client.list_providers());
             }
-            Ok(RpcCommand::SwitchProvider { provider, model, reply }) => {
+            Ok(RpcCommand::SwitchProvider {
+                provider,
+                model,
+                reply,
+            }) => {
                 let p_clone = provider.clone();
                 let m_clone = model.clone();
                 let result = client
                     .switch_provider(&provider, model.as_deref())
                     .map(|val| {
-                        let prov = val.pointer("/provider/name")
+                        let prov = val
+                            .pointer("/provider/name")
                             .and_then(|v| v.as_str())
                             .unwrap_or(&p_clone)
                             .to_string();
-                        let mdl = val.pointer("/provider/model")
+                        let mdl = val
+                            .pointer("/provider/model")
                             .and_then(|v| v.as_str())
                             .unwrap_or(m_clone.as_deref().unwrap_or("default"))
                             .to_string();

@@ -401,7 +401,7 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) -> InputAction {
 /// Auto-complete the slash command in the input buffer.
 fn autocomplete_command(app: &mut App) {
     let prefix = app.input_buffer.as_str();
-    let matches: Vec<&&SlashCommandSpec> = SLASH_COMMANDS
+    let matches: Vec<&SlashCommandSpec> = SLASH_COMMANDS
         .iter()
         .filter(|spec| spec.command.starts_with(prefix) && spec.command != prefix)
         .collect();
