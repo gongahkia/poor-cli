@@ -7,11 +7,41 @@ import asyncio
 import subprocess
 import shlex
 import glob as glob_module
+import json
+import time
 import re
 import shutil
+import socket
+import tempfile
+import ipaddress
+import importlib.metadata
 import aiofiles
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
+from collections import Counter
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - exercised on py<3.11
+    tomllib = None
+
+try:
+    import tomli
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    tomli = None
+
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional fallback
+    YAML_AVAILABLE = False
+
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional fallback
+    AIOHTTP_AVAILABLE = False
 
 from .exceptions import (
     ToolExecutionError,
@@ -349,6 +379,197 @@ class ToolRegistryAsync:
                 }
             }
         }
+
+        self.tools.update({
+            "run_tests": {
+                "function": self.run_tests,
+                "declaration": {
+                    "name": "run_tests",
+                    "description": "Run project tests and return structured pass/fail output with failing locations",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "command": {
+                                "type": "STRING",
+                                "description": "Optional test command (for example: 'pytest -q' or 'cargo test')"
+                            },
+                            "path": {
+                                "type": "STRING",
+                                "description": "Project directory (defaults to current directory)"
+                            },
+                            "timeout": {
+                                "type": "INTEGER",
+                                "description": "Timeout in seconds (default 300)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "git_status_diff": {
+                "function": self.git_status_diff,
+                "declaration": {
+                    "name": "git_status_diff",
+                    "description": "Summarize git status plus staged/unstaged diff stats and risk hints",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Repository path (defaults to current directory)"
+                            },
+                            "include_untracked": {
+                                "type": "BOOLEAN",
+                                "description": "Include untracked files in status summary (default true)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "apply_patch_unified": {
+                "function": self.apply_patch_unified,
+                "declaration": {
+                    "name": "apply_patch_unified",
+                    "description": "Validate and apply a unified diff patch via git apply",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "patch": {
+                                "type": "STRING",
+                                "description": "Unified diff patch content"
+                            },
+                            "path": {
+                                "type": "STRING",
+                                "description": "Repository path (defaults to current directory)"
+                            },
+                            "check_only": {
+                                "type": "BOOLEAN",
+                                "description": "If true, validate patch without applying it"
+                            }
+                        },
+                        "required": ["patch"]
+                    }
+                }
+            },
+            "format_and_lint": {
+                "function": self.format_and_lint,
+                "declaration": {
+                    "name": "format_and_lint",
+                    "description": "Run available formatters/linters and return structured results",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Project directory (defaults to current directory)"
+                            },
+                            "fix": {
+                                "type": "BOOLEAN",
+                                "description": "Auto-fix format/lint issues when supported (default true)"
+                            },
+                            "timeout": {
+                                "type": "INTEGER",
+                                "description": "Timeout per command in seconds (default 300)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "dependency_inspect": {
+                "function": self.dependency_inspect,
+                "declaration": {
+                    "name": "dependency_inspect",
+                    "description": "Inspect project dependencies, installed versions, and outdated packages when available",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Project directory (defaults to current directory)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "fetch_url": {
+                "function": self.fetch_url,
+                "declaration": {
+                    "name": "fetch_url",
+                    "description": "Fetch and summarize content from an HTTP(S) URL with SSRF safeguards",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "url": {
+                                "type": "STRING",
+                                "description": "HTTP or HTTPS URL to fetch"
+                            },
+                            "timeout": {
+                                "type": "INTEGER",
+                                "description": "Timeout in seconds (default 20)"
+                            },
+                            "max_chars": {
+                                "type": "INTEGER",
+                                "description": "Maximum characters to return from page text (default 12000)"
+                            }
+                        },
+                        "required": ["url"]
+                    }
+                }
+            },
+            "json_yaml_edit": {
+                "function": self.json_yaml_edit,
+                "declaration": {
+                    "name": "json_yaml_edit",
+                    "description": "Edit JSON/YAML files using dotted-path updates",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "file_path": {
+                                "type": "STRING",
+                                "description": "Path to JSON or YAML file"
+                            },
+                            "updates_json": {
+                                "type": "STRING",
+                                "description": "JSON object mapping dotted paths to new values"
+                            },
+                            "create_missing": {
+                                "type": "BOOLEAN",
+                                "description": "Create missing nested objects for dotted paths (default true)"
+                            }
+                        },
+                        "required": ["file_path", "updates_json"]
+                    }
+                }
+            },
+            "process_logs": {
+                "function": self.process_logs,
+                "declaration": {
+                    "name": "process_logs",
+                    "description": "Analyze log files and summarize levels, frequent errors, and likely root cause",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "path": {
+                                "type": "STRING",
+                                "description": "Log file or directory (defaults to current directory)"
+                            },
+                            "pattern": {
+                                "type": "STRING",
+                                "description": "Optional regex filter applied to log lines"
+                            },
+                            "max_lines": {
+                                "type": "INTEGER",
+                                "description": "Maximum lines to analyze (default 5000)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+        })
 
         if shutil.which("gh"):
             self.tools.update({
@@ -761,6 +982,205 @@ class ToolRegistryAsync:
                 truncated = True
 
         return b"".join(chunks), truncated
+
+    def _resolve_directory(self, path: Optional[str]) -> Path:
+        """Resolve and validate a working directory."""
+        if path:
+            return validate_file_path(path, must_exist=True, must_be_dir=True)
+        return Path.cwd()
+
+    async def _run_command_capture(
+        self,
+        argv: List[str],
+        timeout: int = 60,
+        cwd: Optional[str] = None,
+        stdin_text: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Run command without shell and capture bounded stdout/stderr."""
+        if not argv:
+            raise ValidationError("Command argv cannot be empty")
+
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            cwd=cwd,
+            stdin=asyncio.subprocess.PIPE if stdin_text is not None else None,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        if stdin_text is not None and process.stdin is not None:
+            process.stdin.write(stdin_text.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+
+        stdout_task = asyncio.create_task(
+            self._read_stream_with_limit(
+                process.stdout,
+                self.MAX_CAPTURED_OUTPUT_BYTES,
+            )
+        )
+        stderr_task = asyncio.create_task(
+            self._read_stream_with_limit(
+                process.stderr,
+                self.MAX_CAPTURED_OUTPUT_BYTES,
+            )
+        )
+
+        timed_out = False
+        try:
+            await asyncio.wait_for(process.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            timed_out = True
+            process.kill()
+            await process.wait()
+
+        stdout_bytes, stdout_truncated = await stdout_task
+        stderr_bytes, stderr_truncated = await stderr_task
+
+        return {
+            "stdout": stdout_bytes.decode("utf-8", errors="replace"),
+            "stderr": stderr_bytes.decode("utf-8", errors="replace"),
+            "exit_code": process.returncode,
+            "timed_out": timed_out,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
+        }
+
+    def _infer_test_command(self, work_dir: Path) -> Optional[List[str]]:
+        """Infer a suitable default test command for a project directory."""
+        pyproject = work_dir / "pyproject.toml"
+        tests_dir = work_dir / "tests"
+        cargo_toml = work_dir / "Cargo.toml"
+        package_json = work_dir / "package.json"
+
+        if (tests_dir.exists() or pyproject.exists()) and shutil.which("pytest"):
+            return ["pytest", "tests/", "-v"]
+        if cargo_toml.exists() and shutil.which("cargo"):
+            return ["cargo", "test"]
+        if package_json.exists() and shutil.which("npm"):
+            return ["npm", "test", "--silent"]
+        return None
+
+    @staticmethod
+    def _extract_failure_locations(text: str) -> List[Dict[str, Any]]:
+        """Extract file/line hints from test/lint output."""
+        locations: List[Dict[str, Any]] = []
+        seen = set()
+        pattern = re.compile(
+            r"(?P<file>[A-Za-z0-9_./\-]+\.(?:py|rs|js|ts|tsx|jsx|go|java|kt|c|cpp|hpp|h|rb|php|swift|scala|lua|sh|yaml|yml|toml|json)):(?P<line>\d+)(?::(?P<col>\d+))?"
+        )
+
+        for match in pattern.finditer(text):
+            file_path = match.group("file")
+            line = int(match.group("line"))
+            col_str = match.group("col")
+            column = int(col_str) if col_str else None
+            key = (file_path, line, column)
+            if key in seen:
+                continue
+            seen.add(key)
+            locations.append(
+                {
+                    "file": file_path,
+                    "line": line,
+                    "column": column,
+                }
+            )
+            if len(locations) >= 20:
+                break
+        return locations
+
+    @staticmethod
+    def _strip_html(html: str) -> str:
+        """Reduce HTML to plain text for compact retrieval."""
+        text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _normalize_package_name(raw_name: str) -> str:
+        """Normalize package names for metadata lookups."""
+        return re.sub(r"[-_.]+", "-", raw_name).lower()
+
+    def _parse_requirement_name(self, line: str) -> Optional[str]:
+        """Extract package name from a requirements line."""
+        stripped = line.strip()
+        if (
+            not stripped
+            or stripped.startswith("#")
+            or stripped.startswith("-r")
+            or stripped.startswith("--")
+            or stripped.startswith("git+")
+        ):
+            return None
+        name = re.split(r"[<>=!~\[\s]", stripped, maxsplit=1)[0]
+        return self._normalize_package_name(name) if name else None
+
+    def _load_pyproject_dependencies(self, pyproject_path: Path) -> Dict[str, str]:
+        """Load dependency declarations from pyproject.toml when parser is available."""
+        parser = tomllib or tomli
+        if parser is None:
+            return {}
+        try:
+            data = parser.loads(pyproject_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+        discovered: Dict[str, str] = {}
+        project_data = data.get("project", {})
+        dep_lists = []
+        dep_lists.extend(project_data.get("dependencies", []) or [])
+        optional = project_data.get("optional-dependencies", {}) or {}
+        for extra_deps in optional.values():
+            dep_lists.extend(extra_deps or [])
+
+        for dep in dep_lists:
+            if not isinstance(dep, str):
+                continue
+            name = self._parse_requirement_name(dep)
+            if name and name not in discovered:
+                discovered[name] = dep
+        return discovered
+
+    @staticmethod
+    def _is_host_public(host: str) -> bool:
+        """Check whether host resolves to public addresses only."""
+        lowered = host.lower()
+        if lowered in {"localhost", "127.0.0.1", "::1"} or lowered.endswith(".local"):
+            return False
+
+        try:
+            ip = ipaddress.ip_address(host)
+            return not (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_multicast
+                or ip.is_reserved
+            )
+        except ValueError:
+            pass
+
+        try:
+            resolved = socket.getaddrinfo(host, None)
+        except socket.gaierror:
+            return False
+
+        for entry in resolved:
+            addr = entry[4][0]
+            try:
+                ip = ipaddress.ip_address(addr)
+            except ValueError:
+                continue
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_multicast
+                or ip.is_reserved
+            ):
+                return False
+        return True
 
     async def bash(self, command: str, timeout: int = 60) -> str:
         """Execute bash command asynchronously
