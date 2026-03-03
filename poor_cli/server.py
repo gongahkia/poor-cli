@@ -129,6 +129,7 @@ class PoorCLIServer:
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._client_streaming = False # set True if client opts in during initialize
+        self._pending_permissions: Dict[str, asyncio.Future] = {} # promptId → Future[bool]
 
         self._register_handlers()
 
@@ -774,6 +775,45 @@ class PoorCLIServer:
         """Cancel an in-flight agentic loop."""
         self.core.cancel_request()
         return {"success": True}
+
+    async def _streaming_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+        """Interactive permission callback used during streaming chat.
+        Sends permissionReq notification and waits for permissionRes."""
+        prompt_id = str(uuid.uuid4())
+        notification = JsonRpcMessage(
+            method="poor-cli/permissionReq",
+            params={
+                "toolName": tool_name,
+                "toolArgs": tool_args,
+                "promptId": prompt_id,
+            },
+        )
+        await self.write_message_stdio(notification)
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        self._pending_permissions[prompt_id] = future
+        try:
+            return await asyncio.wait_for(future, timeout=300) # 5 min timeout
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            self._pending_permissions.pop(prompt_id, None)
+
+    async def _handle_notification(self, message: JsonRpcMessage) -> None:
+        """Handle incoming JSON-RPC notifications (no id)."""
+        if message.method == "poor-cli/permissionRes":
+            params = message.params or {}
+            prompt_id = params.get("promptId", "")
+            allowed = params.get("allowed", False)
+            future = self._pending_permissions.get(prompt_id)
+            if future and not future.done():
+                future.set_result(allowed)
+            elif not prompt_id and self._pending_permissions:
+                # fallback: resolve the first pending permission
+                for _pid, fut in list(self._pending_permissions.items()):
+                    if not fut.done():
+                        fut.set_result(allowed)
+                        break
 
     async def handle_chat_streaming(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

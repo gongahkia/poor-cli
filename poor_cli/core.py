@@ -50,10 +50,11 @@ class CoreEvent:
         })
 
     @staticmethod
-    def tool_result(tool_name: str, result: str, call_id: str = "", iteration: int = 0, cap: int = 25) -> "CoreEvent":
+    def tool_result(tool_name: str, result: str, call_id: str = "", iteration: int = 0, cap: int = 25, diff: str = "") -> "CoreEvent":
         return CoreEvent(type="tool_result", data={
             "toolName": tool_name, "toolResult": result, "callId": call_id,
             "iterationIndex": iteration, "iterationCap": cap,
+            "diff": diff,
         })
 
     @staticmethod
@@ -397,6 +398,38 @@ class PoorCLICore:
             logger.exception("Error sending message (events)")
             raise PoorCLIError(f"Failed to send message: {e}")
 
+    def _check_auto_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[bool]:
+        """Check auto-approve/deny from AgenticConfig. Returns True/False/None."""
+        if not self.config:
+            return None
+        ac = self.config.agentic
+        if tool_name in ac.auto_approve_tools:
+            return True
+        args_str = str(tool_args)
+        for pattern in ac.deny_patterns:
+            if pattern in args_str:
+                logger.warning(f"Deny pattern matched: {pattern}")
+                return False
+        return None # needs interactive permission
+
+    def _compute_edit_diff(self, tool_name: str, tool_args: Dict[str, Any]) -> str:
+        """Compute a unified diff for edit_file tool calls."""
+        if tool_name != "edit_file":
+            return ""
+        old_text = tool_args.get("old_text", "")
+        new_text = tool_args.get("new_text", "")
+        file_path = tool_args.get("file_path", "unknown")
+        if not old_text and not new_text:
+            return ""
+        import difflib
+        diff_lines = list(difflib.unified_diff(
+            old_text.splitlines(keepends=True),
+            new_text.splitlines(keepends=True),
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path}",
+        ))
+        return "".join(diff_lines)
+
     async def _handle_function_calls_events(
         self,
         response: ProviderResponse,
@@ -404,14 +437,7 @@ class PoorCLICore:
         max_iterations: int,
         request_id: str,
     ) -> Any:
-        """Handle function calls, yielding CoreEvents for each. Returns formatted tool results."""
-        # This is an internal helper; we collect events into a list so callers
-        # can yield them. But since async generators can't easily compose, we
-        # store events on self and let the caller yield after calling us.
-        # Actually, let's just make this return tool_results and have the caller
-        # do the yielding. We'll emit events from send_message_events directly.
-        # For simplicity, we'll make this a regular async method that also
-        # records events into self._pending_events.
+        """Handle function calls with auto-approve/deny guardrails and diff capture."""
         if not response.function_calls:
             return None
 
@@ -427,8 +453,22 @@ class PoorCLICore:
             )
             logger.info(f"Executing tool: {tool_name}")
 
-            if self._permission_callback:
+            # 1. Check auto-approve/deny from config
+            auto = self._check_auto_permission(tool_name, tool_args)
+            if auto is False:
+                result = "Operation denied by safety policy"
+                self._pending_events.append(
+                    CoreEvent.tool_result(tool_name, result, fc.id, iteration, max_iterations)
+                )
+                tool_results.append({"id": fc.id, "name": tool_name, "result": result})
+                continue
+
+            # 2. If not auto-approved, check interactive permission callback
+            if auto is None and self._permission_callback:
                 try:
+                    self._pending_events.append(
+                        CoreEvent.permission_request(tool_name, tool_args, request_id)
+                    )
                     permitted = await self._permission_callback(tool_name, tool_args)
                     if not permitted:
                         result = "Operation cancelled by user"
@@ -440,6 +480,10 @@ class PoorCLICore:
                 except Exception as e:
                     logger.error(f"Permission callback error: {e}")
 
+            # 3. Compute diff before execution for edit_file
+            diff_text = self._compute_edit_diff(tool_name, tool_args)
+
+            # 4. Execute the tool
             try:
                 result = await self.tool_registry.execute_tool(tool_name, tool_args)
             except Exception as e:
@@ -447,7 +491,7 @@ class PoorCLICore:
                 logger.error(f"Tool execution failed: {e}")
 
             self._pending_events.append(
-                CoreEvent.tool_result(tool_name, str(result), fc.id, iteration, max_iterations)
+                CoreEvent.tool_result(tool_name, str(result), fc.id, iteration, max_iterations, diff=diff_text)
             )
             tool_results.append({"id": fc.id, "name": tool_name, "result": result})
 
