@@ -135,10 +135,12 @@ fn run_app(
     cli: Cli,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut app = App::new();
-    app.cwd = std::env::current_dir()
-        .ok()
-        .and_then(|p| p.to_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| ".".into());
+    app.cwd = cli.cwd.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| ".".into())
+    });
 
     let (tx, rx) = mpsc::channel::<ServerMsg>();
     let (rpc_cmd_tx, rpc_cmd_rx) = mpsc::channel::<RpcCommand>();
