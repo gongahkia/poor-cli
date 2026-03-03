@@ -248,7 +248,12 @@ function M.setup_streaming_autocmds()
                 if data.event_type == "tool_call_start" then
                     M._append_tool_call(data.tool_name, data.tool_args)
                 elseif data.event_type == "tool_result" then
-                    M._append_tool_result(data.tool_name, data.tool_result)
+                    local diff = data.diff or ""
+                    if diff ~= "" then
+                        M._append_diff_view(data.tool_name, diff)
+                    else
+                        M._append_tool_result(data.tool_name, data.tool_result)
+                    end
                 end
             end)
         end,
@@ -277,6 +282,21 @@ function M._append_tool_result(name, result)
         result_str = result_str:sub(1, 500) .. "…"
     end
     local lines = { "**✓ " .. (name or "tool") .. " result**", "```", result_str, "```", "" }
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+end
+
+-- Append a diff view block
+function M._append_diff_view(name, diff_text)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    local lines = { "**📝 " .. (name or "edit") .. " diff**", "```diff" }
+    for _, line in ipairs(vim.split(diff_text, "\n", { plain = true })) do
+        table.insert(lines, line)
+    end
+    table.insert(lines, "```")
+    table.insert(lines, "")
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
 end
 
