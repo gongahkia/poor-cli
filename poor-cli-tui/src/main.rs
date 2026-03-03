@@ -459,24 +459,25 @@ fn run_app(
                     });
                 }
                 InputAction::PlanApproved => {
-                    // Execute the plan step by step
-                    if let Some(step_desc) = app.current_plan_step_description().map(|s| s.to_string()) {
+                    let step_idx = app.plan_current_step;
+                    let step_desc = app.current_plan_step_description().map(|s| s.to_string());
+                    let orig = app.plan_original_request.clone();
+                    if let Some(desc) = step_desc {
                         let exec_msg = format!(
                             "Execute step {} of my plan: {}\n\nOriginal request: {}",
-                            app.plan_current_step + 1,
-                            step_desc,
-                            app.plan_original_request,
+                            step_idx + 1, desc, orig,
                         );
-                        if app.plan_current_step < app.plan_steps.len() {
-                            app.plan_steps[app.plan_current_step].status = poor_cli_tui::app::PlanStepStatus::Running;
+                        let display = format!("[plan step {}] {}", step_idx + 1, desc);
+                        if step_idx < app.plan_steps.len() {
+                            app.plan_steps[step_idx].status = poor_cli_tui::app::PlanStepStatus::Running;
                         }
                         send_chat_request(
                             &mut app,
                             &tx,
                             &rpc_cmd_tx,
                             &cancel_token,
-                            exec_msg.clone(),
-                            format!("[plan step {}] {}", app.plan_current_step + 1, step_desc),
+                            exec_msg,
+                            display,
                         );
                     }
                 }
