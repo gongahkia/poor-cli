@@ -795,3 +795,125 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_stream_chunk_notification() {
+        let params = json!({"requestId": "r1", "chunk": "hello", "done": false});
+        let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
+        match n {
+            ServerNotification::StreamChunk { request_id, chunk, done, reason } => {
+                assert_eq!(request_id, "r1");
+                assert_eq!(chunk, "hello");
+                assert!(!done);
+                assert!(reason.is_none());
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_stream_chunk_done() {
+        let params = json!({"requestId": "r1", "chunk": "", "done": true, "reason": "complete"});
+        let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
+        match n {
+            ServerNotification::StreamChunk { done, reason, .. } => {
+                assert!(done);
+                assert_eq!(reason.as_deref(), Some("complete"));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_tool_event_with_diff() {
+        let params = json!({
+            "requestId": "r1", "eventType": "tool_result",
+            "toolName": "edit_file", "toolArgs": {"path": "x"},
+            "toolResult": "ok", "diff": "--- a\n+++ b",
+            "iterationIndex": 2, "iterationCap": 10,
+        });
+        let n = parse_notification("poor-cli/toolEvent", &params).unwrap();
+        match n {
+            ServerNotification::ToolEvent { diff, iteration_index, iteration_cap, .. } => {
+                assert_eq!(diff, "--- a\n+++ b");
+                assert_eq!(iteration_index, 2);
+                assert_eq!(iteration_cap, 10);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_permission_request() {
+        let params = json!({"requestId": "r1", "toolName": "bash", "toolArgs": {"cmd": "ls"}, "promptId": "p1"});
+        let n = parse_notification("poor-cli/permissionReq", &params).unwrap();
+        match n {
+            ServerNotification::PermissionRequest { prompt_id, tool_name, .. } => {
+                assert_eq!(prompt_id, "p1");
+                assert_eq!(tool_name, "bash");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_progress() {
+        let params = json!({"requestId": "r1", "phase": "thinking", "message": "analyzing", "iterationIndex": 3, "iterationCap": 25});
+        let n = parse_notification("poor-cli/progress", &params).unwrap();
+        match n {
+            ServerNotification::Progress { phase, iteration_index, .. } => {
+                assert_eq!(phase, "thinking");
+                assert_eq!(iteration_index, 3);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_cost_update() {
+        let params = json!({"requestId": "r1", "inputTokens": 500, "outputTokens": 200, "estimatedCost": 0.05});
+        let n = parse_notification("poor-cli/costUpdate", &params).unwrap();
+        match n {
+            ServerNotification::CostUpdate { input_tokens, output_tokens, estimated_cost, .. } => {
+                assert_eq!(input_tokens, 500);
+                assert_eq!(output_tokens, 200);
+                assert!((estimated_cost - 0.05).abs() < 1e-10);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_unknown_notification_returns_none() {
+        let params = json!({});
+        assert!(parse_notification("poor-cli/unknown", &params).is_none());
+    }
+
+    #[test]
+    fn parse_notification_missing_fields_uses_defaults() {
+        let params = json!({});
+        let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
+        match n {
+            ServerNotification::StreamChunk { request_id, chunk, done, .. } => {
+                assert_eq!(request_id, "");
+                assert_eq!(chunk, "");
+                assert!(!done);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn read_one_message_valid() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":"ok"}"#;
+        let framed = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+        let mut reader = std::io::BufReader::new(framed.as_bytes());
+        let result = read_one_message(&mut reader).unwrap();
+        assert_eq!(result, body);
+    }
+}
