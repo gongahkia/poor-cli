@@ -334,7 +334,6 @@ class PoorCLICore:
                     return
 
                 if chunk.function_calls:
-                    # emit cost_update from metadata if available
                     if chunk.metadata:
                         usage = chunk.metadata.get("usage", {})
                         if usage:
@@ -344,13 +343,15 @@ class PoorCLICore:
                             )
 
                     tool_results = await self._handle_function_calls_events(chunk, iteration, max_iterations, request_id)
+                    for ev in self._pending_events:
+                        yield ev
+                    self._pending_events = []
 
                     response = await self.provider.send_message(tool_results)
                     if response.content:
                         accumulated_text += response.content
                         yield CoreEvent.text_chunk(response.content, request_id)
 
-                    # agentic loop: keep going while there are more function calls
                     while response.function_calls:
                         iteration += 1
                         if self._cancel_event.is_set():
@@ -363,8 +364,11 @@ class PoorCLICore:
                         yield CoreEvent.progress("tool_loop", f"Iteration {iteration}/{max_iterations}", iteration, max_iterations)
 
                         tool_results = await self._handle_function_calls_events(response, iteration, max_iterations, request_id)
-                        response = await self.provider.send_message(tool_results)
+                        for ev in self._pending_events:
+                            yield ev
+                        self._pending_events = []
 
+                        response = await self.provider.send_message(tool_results)
                         if response.content:
                             accumulated_text += response.content
                             yield CoreEvent.text_chunk(response.content, request_id)

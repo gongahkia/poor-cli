@@ -17,7 +17,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config import PermissionMode
-from .core import PoorCLICore
+from .core import PoorCLICore, CoreEvent
 from .exceptions import (
     ConfigurationError,
     PoorCLIError,
@@ -128,7 +128,8 @@ class PoorCLIServer:
         self._running = False
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
-        
+        self._client_streaming = False # set True if client opts in during initialize
+
         self._register_handlers()
 
     async def _server_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
