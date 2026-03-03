@@ -16,6 +16,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
     Frame,
 };
+use textwrap::Options;
 
 use crate::app::{App, AppMode, MessageRole};
 use crate::input::{SlashCommandSpec, SLASH_COMMANDS};
@@ -325,7 +326,8 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled("  ⚠ ", Style::default().fg(theme::ERROR)),
                     Span::styled("Error", theme::error_style()),
                 ]));
-                for line in msg.content.lines() {
+                let wrap_width = area.width.saturating_sub(8).max(20) as usize;
+                for line in wrap_text_lines(&msg.content, wrap_width) {
                     all_lines.push(Line::from(Span::styled(
                         format!("    {line}"),
                         Style::default().fg(theme::ERROR),
@@ -347,6 +349,27 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         .scroll((max_scroll.saturating_sub(effective_scroll), 0));
 
     frame.render_widget(para, area);
+}
+
+fn wrap_text_lines(content: &str, width: usize) -> Vec<String> {
+    let options = Options::new(width).break_words(true);
+    let mut wrapped = Vec::new();
+
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            wrapped.push(String::new());
+            continue;
+        }
+        for fragment in textwrap::wrap(line, &options) {
+            wrapped.push(fragment.into_owned());
+        }
+    }
+
+    if wrapped.is_empty() {
+        wrapped.push(String::new());
+    }
+
+    wrapped
 }
 
 // ── Input bar ────────────────────────────────────────────────────────

@@ -48,9 +48,90 @@ pub struct RpcError {
     pub data: Option<serde_json::Value>,
 }
 
+const MAX_RPC_ERROR_CHARS: usize = 360;
+
+fn collapse_whitespace(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn trim_embedded_payload(value: &str) -> String {
+    for marker in [" {'message':", " {\"message\":", " {'error':", " {\"error\":"] {
+        if let Some(idx) = value.find(marker) {
+            return value[..idx].trim().to_string();
+        }
+    }
+    value.to_string()
+}
+
+fn collect_quoted_values(input: &str, pattern: &str, quote_char: char) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut offset = 0usize;
+
+    while let Some(pos) = input[offset..].find(pattern) {
+        let start = offset + pos + pattern.len();
+        let remainder = &input[start..];
+        if let Some(end_rel) = remainder.find(quote_char) {
+            let raw_value = &remainder[..end_rel];
+            let cleaned = collapse_whitespace(&raw_value.replace("\\n", " ").replace("\\t", " "));
+            if !cleaned.is_empty() {
+                values.push(cleaned);
+            }
+            offset = start + end_rel + 1;
+        } else {
+            break;
+        }
+    }
+
+    values
+}
+
+fn contains_case_insensitive(haystack: &str, needle: &str) -> bool {
+    haystack.to_lowercase().contains(&needle.to_lowercase())
+}
+
+fn extract_structured_message(raw: &str) -> Option<String> {
+    let mut candidates = collect_quoted_values(raw, "\"message\": \"", '"');
+    candidates.extend(collect_quoted_values(raw, "'message': '", '\''));
+
+    candidates
+        .into_iter()
+        .find(|value| !value.starts_with('{') && !value.contains("\"error\":"))
+}
+
+fn extract_structured_reason(raw: &str) -> Option<String> {
+    let mut candidates = collect_quoted_values(raw, "\"reason\": \"", '"');
+    candidates.extend(collect_quoted_values(raw, "'reason': '", '\''));
+    candidates.into_iter().next()
+}
+
+fn sanitize_rpc_error_message(raw: &str) -> String {
+    let compact = collapse_whitespace(&raw.replace("\\n", " ").replace("\\t", " ").replace('\n', " "));
+    let mut message = trim_embedded_payload(&compact);
+
+    if let Some(extracted_message) = extract_structured_message(raw) {
+        if !contains_case_insensitive(&message, &extracted_message) {
+            message = format!("{message}: {extracted_message}");
+        }
+    }
+
+    if let Some(reason) = extract_structured_reason(raw) {
+        if !contains_case_insensitive(&message, &reason) {
+            message = format!("{message} ({reason})");
+        }
+    }
+
+    if message.len() > MAX_RPC_ERROR_CHARS {
+        let mut shortened = message.chars().take(MAX_RPC_ERROR_CHARS - 3).collect::<String>();
+        shortened.push_str("...");
+        return shortened;
+    }
+
+    message
+}
+
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}", self.code, self.message)
+        write!(f, "[{}] {}", self.code, sanitize_rpc_error_message(&self.message))
     }
 }
 
@@ -915,5 +996,24 @@ mod tests {
         let mut reader = std::io::BufReader::new(framed.as_bytes());
         let result = read_one_message(&mut reader).unwrap();
         assert_eq!(result, body);
+    }
+
+    #[test]
+    fn sanitize_rpc_error_message_extracts_structured_details() {
+        let raw = "Failed to send message: Gemini API error: 400 Bad Request. {'message': '{\\n  \"error\": {\\n    \"code\": 400,\\n    \"message\": \"API key not valid. Please pass a valid API key.\",\\n    \"details\": [{\"reason\": \"API_KEY_INVALID\"}]\\n  }\\n}', 'status': 'Bad Request'}";
+
+        let cleaned = sanitize_rpc_error_message(raw);
+
+        assert!(cleaned.contains("Failed to send message: Gemini API error: 400 Bad Request."));
+        assert!(cleaned.contains("API key not valid. Please pass a valid API key."));
+        assert!(cleaned.contains("API_KEY_INVALID"));
+        assert!(!cleaned.contains("{'message':"));
+    }
+
+    #[test]
+    fn sanitize_rpc_error_message_truncates_long_values() {
+        let cleaned = sanitize_rpc_error_message(&"x".repeat(800));
+        assert!(cleaned.len() <= 360);
+        assert!(cleaned.ends_with("..."));
     }
 }
