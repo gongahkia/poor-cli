@@ -15,6 +15,7 @@ import socket
 import tempfile
 import ipaddress
 import importlib.metadata
+import sys
 import aiofiles
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -710,7 +711,7 @@ class ToolRegistryAsync:
         """
         try:
             if tool_name not in self.tools:
-                raise ToolExecutionError(f"Unknown tool: {tool_name}")
+                raise ToolExecutionError(tool_name, f"Unknown tool: {tool_name}")
 
             tool_function = self.tools[tool_name]["function"]
             logger.info(f"Executing tool: {tool_name} with args: {arguments}")
@@ -725,7 +726,7 @@ class ToolRegistryAsync:
             raise
         except Exception as e:
             logger.error(f"Unexpected error in tool execution: {e}", exc_info=True)
-            raise ToolExecutionError(f"Tool execution failed: {str(e)}")
+            raise ToolExecutionError(tool_name, f"Tool execution failed: {str(e)}")
 
     async def read_file(self, file_path: str, start_line: Optional[int] = None,
                        end_line: Optional[int] = None) -> str:
@@ -886,7 +887,7 @@ class ToolRegistryAsync:
             return result
 
         except Exception as e:
-            raise ToolExecutionError(f"Glob search failed: {str(e)}")
+            raise ToolExecutionError("glob_files", f"Glob search failed: {str(e)}")
 
     async def grep_files(self, pattern: str, path: Optional[str] = None,
                         file_pattern: str = "*", case_sensitive: bool = True) -> str:
@@ -951,7 +952,7 @@ class ToolRegistryAsync:
             return result
 
         except Exception as e:
-            raise ToolExecutionError(f"Grep search failed: {str(e)}")
+            raise ToolExecutionError("grep_files", f"Grep search failed: {str(e)}")
 
     async def _read_stream_with_limit(
         self,
@@ -1546,6 +1547,604 @@ class ToolRegistryAsync:
 
         except Exception as e:
             raise FileOperationError(f"Failed to create directory: {str(e)}")
+
+    async def run_tests(
+        self,
+        command: Optional[str] = None,
+        path: Optional[str] = None,
+        timeout: int = 300,
+    ) -> str:
+        """Run project tests and return structured results."""
+        try:
+            work_dir = self._resolve_directory(path)
+            argv = shlex.split(command) if command else self._infer_test_command(work_dir)
+            if not argv:
+                raise ToolExecutionError(
+                    "run_tests",
+                    "Could not infer a test command. Provide `command`, for example `pytest -q`."
+                )
+
+            started = time.time()
+            result = await self._run_command_capture(
+                argv=argv,
+                timeout=timeout,
+                cwd=str(work_dir),
+            )
+            duration = round(time.time() - started, 2)
+
+            combined_output = "\n".join(
+                part for part in [result["stdout"], result["stderr"]] if part
+            )
+            payload = {
+                "ok": (not result["timed_out"]) and result["exit_code"] == 0,
+                "command": " ".join(argv),
+                "working_directory": str(work_dir),
+                "duration_seconds": duration,
+                "timed_out": result["timed_out"],
+                "exit_code": result["exit_code"],
+                "failing_locations": self._extract_failure_locations(combined_output),
+                "output_excerpt": combined_output[:6000],
+            }
+            return json.dumps(payload, indent=2)
+        except (ValidationError, ToolExecutionError):
+            raise
+        except Exception as e:
+            raise ToolExecutionError("run_tests", f"Failed to run tests: {str(e)}")
+
+    async def git_status_diff(
+        self,
+        path: Optional[str] = None,
+        include_untracked: bool = True,
+    ) -> str:
+        """Summarize repository status and diff statistics."""
+        try:
+            work_dir = self._resolve_directory(path)
+
+            root_check = await self._run_command_capture(
+                ["git", "rev-parse", "--show-toplevel"],
+                timeout=15,
+                cwd=str(work_dir),
+            )
+            if root_check["exit_code"] != 0:
+                raise ToolExecutionError(
+                    "git_status_diff",
+                    root_check["stderr"].strip() or "Not a git repository"
+                )
+            repo_root = root_check["stdout"].strip()
+
+            status_args = ["git", "status", "--short"]
+            if not include_untracked:
+                status_args.append("--untracked-files=no")
+            status_result = await self._run_command_capture(
+                status_args,
+                timeout=20,
+                cwd=str(work_dir),
+            )
+            unstaged_stat = await self._run_command_capture(
+                ["git", "diff", "--stat"],
+                timeout=20,
+                cwd=str(work_dir),
+            )
+            staged_stat = await self._run_command_capture(
+                ["git", "diff", "--cached", "--stat"],
+                timeout=20,
+                cwd=str(work_dir),
+            )
+            shortstat_unstaged = await self._run_command_capture(
+                ["git", "diff", "--shortstat"],
+                timeout=20,
+                cwd=str(work_dir),
+            )
+            shortstat_staged = await self._run_command_capture(
+                ["git", "diff", "--cached", "--shortstat"],
+                timeout=20,
+                cwd=str(work_dir),
+            )
+
+            status_lines = [
+                line for line in status_result["stdout"].splitlines() if line.strip()
+            ]
+            changed_files: List[str] = []
+            for line in status_lines:
+                if len(line) < 4:
+                    continue
+                file_part = line[3:].strip()
+                if " -> " in file_part:
+                    file_part = file_part.split(" -> ", maxsplit=1)[-1].strip()
+                if file_part:
+                    changed_files.append(file_part)
+
+            risk_hints: List[str] = []
+            for file_path in changed_files:
+                lowered = file_path.lower()
+                if lowered.startswith(".github/workflows/"):
+                    risk_hints.append(f"{file_path}: CI/workflow behavior changed")
+                if lowered in {"dockerfile", "compose.yml", "docker-compose.yml"}:
+                    risk_hints.append(f"{file_path}: deployment/runtime behavior may change")
+                if lowered.endswith((".sql", ".db", ".sqlite")):
+                    risk_hints.append(f"{file_path}: data migration/storage impact possible")
+                if "auth" in lowered or "security" in lowered or ".env" in lowered:
+                    risk_hints.append(f"{file_path}: security-sensitive surface touched")
+
+            payload = {
+                "repository_root": repo_root,
+                "working_directory": str(work_dir),
+                "changed_file_count": len(changed_files),
+                "changed_files": changed_files,
+                "status_porcelain": status_lines,
+                "unstaged_diff_stat": (unstaged_stat["stdout"] or "").strip(),
+                "staged_diff_stat": (staged_stat["stdout"] or "").strip(),
+                "unstaged_shortstat": (shortstat_unstaged["stdout"] or "").strip(),
+                "staged_shortstat": (shortstat_staged["stdout"] or "").strip(),
+                "risk_hints": risk_hints[:15],
+            }
+            return json.dumps(payload, indent=2)
+        except (ValidationError, ToolExecutionError):
+            raise
+        except Exception as e:
+            raise ToolExecutionError("git_status_diff", f"Failed to summarize git status/diff: {str(e)}")
+
+    async def apply_patch_unified(
+        self,
+        patch: str,
+        path: Optional[str] = None,
+        check_only: bool = False,
+    ) -> str:
+        """Validate and apply a unified patch using git apply."""
+        if not patch or not patch.strip():
+            raise ValidationError("Patch content cannot be empty")
+        if not shutil.which("git"):
+            raise ToolExecutionError("apply_patch_unified", "`git` is required for apply_patch_unified")
+
+        work_dir = self._resolve_directory(path)
+        patch_file = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".patch",
+                prefix="poor_cli_",
+                delete=False,
+                dir=str(work_dir),
+            ) as handle:
+                handle.write(patch)
+                patch_file = handle.name
+
+            check_result = await self._run_command_capture(
+                ["git", "apply", "--check", patch_file],
+                timeout=60,
+                cwd=str(work_dir),
+            )
+            if check_result["timed_out"]:
+                raise ToolExecutionError("apply_patch_unified", "Patch validation timed out")
+            if check_result["exit_code"] != 0:
+                details = (check_result["stderr"] or check_result["stdout"]).strip()
+                raise ToolExecutionError("apply_patch_unified", f"Patch validation failed: {details}")
+
+            if check_only:
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "check_only": True,
+                        "message": "Patch validation successful",
+                    },
+                    indent=2,
+                )
+
+            apply_result = await self._run_command_capture(
+                ["git", "apply", "--verbose", patch_file],
+                timeout=120,
+                cwd=str(work_dir),
+            )
+            if apply_result["timed_out"]:
+                raise ToolExecutionError("apply_patch_unified", "Patch application timed out")
+            if apply_result["exit_code"] != 0:
+                details = (apply_result["stderr"] or apply_result["stdout"]).strip()
+                raise ToolExecutionError("apply_patch_unified", f"Patch apply failed: {details}")
+
+            return json.dumps(
+                {
+                    "ok": True,
+                    "check_only": False,
+                    "message": "Patch applied successfully",
+                    "stdout": apply_result["stdout"].strip(),
+                },
+                indent=2,
+            )
+        finally:
+            if patch_file and os.path.exists(patch_file):
+                os.remove(patch_file)
+
+    async def format_and_lint(
+        self,
+        path: Optional[str] = None,
+        fix: bool = True,
+        timeout: int = 300,
+    ) -> str:
+        """Run available formatter/linter commands with structured output."""
+        try:
+            work_dir = self._resolve_directory(path)
+            target = str(work_dir)
+            commands: List[Tuple[str, List[str]]] = []
+
+            if shutil.which("black"):
+                black_cmd = ["black", target]
+                if not fix:
+                    black_cmd = ["black", "--check", target]
+                commands.append(("black", black_cmd))
+
+            if shutil.which("ruff"):
+                ruff_cmd = ["ruff", "check", target]
+                if fix:
+                    ruff_cmd.insert(2, "--fix")
+                commands.append(("ruff", ruff_cmd))
+
+            if shutil.which("mypy"):
+                mypy_target = "poor_cli" if (work_dir / "poor_cli").exists() else target
+                commands.append(("mypy", ["mypy", mypy_target, "--no-error-summary"]))
+
+            if not commands:
+                raise ToolExecutionError(
+                    "format_and_lint",
+                    "No formatter/linter tools found in PATH (expected black/ruff/mypy)."
+                )
+
+            results = []
+            overall_ok = True
+            for name, argv in commands:
+                command_result = await self._run_command_capture(
+                    argv=argv,
+                    timeout=timeout,
+                    cwd=str(work_dir),
+                )
+                ok = (not command_result["timed_out"]) and command_result["exit_code"] == 0
+                overall_ok = overall_ok and ok
+                results.append(
+                    {
+                        "tool": name,
+                        "command": " ".join(argv),
+                        "ok": ok,
+                        "exit_code": command_result["exit_code"],
+                        "timed_out": command_result["timed_out"],
+                        "stdout_excerpt": command_result["stdout"][:3000],
+                        "stderr_excerpt": command_result["stderr"][:3000],
+                    }
+                )
+
+            return json.dumps(
+                {
+                    "ok": overall_ok,
+                    "working_directory": str(work_dir),
+                    "fix_mode": fix,
+                    "results": results,
+                },
+                indent=2,
+            )
+        except (ValidationError, ToolExecutionError):
+            raise
+        except Exception as e:
+            raise ToolExecutionError("format_and_lint", f"Failed to run format/lint: {str(e)}")
+
+    async def dependency_inspect(self, path: Optional[str] = None) -> str:
+        """Inspect dependency declarations and installed/outdated versions."""
+        try:
+            work_dir = self._resolve_directory(path)
+            discovered: Dict[str, Dict[str, Any]] = {}
+
+            for req_name in ("requirements.txt", "requirements-dev.txt"):
+                req_path = work_dir / req_name
+                if not req_path.exists():
+                    continue
+                lines = req_path.read_text(encoding="utf-8").splitlines()
+                for raw_line in lines:
+                    dep_name = self._parse_requirement_name(raw_line)
+                    if not dep_name:
+                        continue
+                    discovered.setdefault(
+                        dep_name,
+                        {"name": dep_name, "sources": [], "declarations": []},
+                    )
+                    discovered[dep_name]["sources"].append(req_name)
+                    discovered[dep_name]["declarations"].append(raw_line.strip())
+
+            pyproject_path = work_dir / "pyproject.toml"
+            if pyproject_path.exists():
+                pyproject_deps = self._load_pyproject_dependencies(pyproject_path)
+                for dep_name, declaration in pyproject_deps.items():
+                    discovered.setdefault(
+                        dep_name,
+                        {"name": dep_name, "sources": [], "declarations": []},
+                    )
+                    discovered[dep_name]["sources"].append("pyproject.toml")
+                    discovered[dep_name]["declarations"].append(declaration)
+
+            outdated_map: Dict[str, Dict[str, str]] = {}
+            pip_result = await self._run_command_capture(
+                [sys.executable, "-m", "pip", "list", "--outdated", "--format=json"],
+                timeout=45,
+                cwd=str(work_dir),
+            )
+            if not pip_result["timed_out"] and pip_result["exit_code"] == 0:
+                try:
+                    outdated_entries = json.loads(pip_result["stdout"] or "[]")
+                    for entry in outdated_entries:
+                        pkg_name = self._normalize_package_name(entry.get("name", ""))
+                        if pkg_name:
+                            outdated_map[pkg_name] = {
+                                "installed_version": entry.get("version", ""),
+                                "latest_version": entry.get("latest_version", ""),
+                            }
+                except json.JSONDecodeError:
+                    pass
+
+            dependency_rows = []
+            for dep_name in sorted(discovered):
+                declared = discovered[dep_name]
+                try:
+                    installed_version = importlib.metadata.version(dep_name)
+                    installed = True
+                except importlib.metadata.PackageNotFoundError:
+                    installed_version = None
+                    installed = False
+
+                row: Dict[str, Any] = {
+                    "name": dep_name,
+                    "sources": sorted(set(declared["sources"])),
+                    "declarations": declared["declarations"][:5],
+                    "installed": installed,
+                    "installed_version": installed_version,
+                }
+                if dep_name in outdated_map:
+                    row["outdated"] = True
+                    row["latest_version"] = outdated_map[dep_name]["latest_version"]
+                else:
+                    row["outdated"] = False
+                dependency_rows.append(row)
+
+            payload = {
+                "working_directory": str(work_dir),
+                "dependency_count": len(dependency_rows),
+                "outdated_count": sum(1 for row in dependency_rows if row["outdated"]),
+                "dependencies": dependency_rows,
+            }
+            return json.dumps(payload, indent=2)
+        except Exception as e:
+            raise ToolExecutionError("dependency_inspect", f"Failed to inspect dependencies: {str(e)}")
+
+    async def fetch_url(self, url: str, timeout: int = 20, max_chars: int = 12000) -> str:
+        """Fetch and summarize content from an HTTP(S) URL."""
+        if not AIOHTTP_AVAILABLE:
+            raise ToolExecutionError("fetch_url", "fetch_url requires aiohttp")
+
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValidationError("Only http and https URLs are allowed")
+        if not parsed.hostname:
+            raise ValidationError("URL must include a valid hostname")
+        if not self._is_host_public(parsed.hostname):
+            raise ValidationError("Refusing to fetch local/private network addresses")
+
+        timeout = max(timeout, 1)
+        max_chars = max(max_chars, 200)
+
+        try:
+            client_timeout = aiohttp.ClientTimeout(total=timeout)
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.get(url, allow_redirects=True) as response:
+                    body = await response.text(errors="replace")
+                    if response.status >= 400:
+                        excerpt = body[:500].replace("\n", " ")
+                        raise ToolExecutionError(
+                            "fetch_url",
+                            f"HTTP {response.status} fetching {url}: {excerpt}"
+                        )
+
+                    content_type = response.headers.get("Content-Type", "")
+                    lowered_ct = content_type.lower()
+                    title = ""
+                    excerpt = body
+
+                    if "html" in lowered_ct:
+                        title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", body)
+                        if title_match:
+                            title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+                        excerpt = self._strip_html(body)
+                    elif "json" in lowered_ct:
+                        try:
+                            excerpt = json.dumps(json.loads(body), indent=2)
+                        except Exception:
+                            excerpt = body
+
+                    payload = {
+                        "url": str(response.url),
+                        "status": response.status,
+                        "content_type": content_type,
+                        "title": title,
+                        "content_excerpt": excerpt[:max_chars],
+                    }
+                    return json.dumps(payload, indent=2)
+        except asyncio.TimeoutError:
+            raise ToolExecutionError("fetch_url", f"Timed out fetching URL after {timeout}s")
+        except aiohttp.ClientError as e:
+            raise ToolExecutionError("fetch_url", f"Network error fetching URL: {str(e)}")
+
+    async def json_yaml_edit(
+        self,
+        file_path: str,
+        updates_json: str,
+        create_missing: bool = True,
+    ) -> str:
+        """Apply dotted-path updates to JSON/YAML files."""
+        try:
+            path_obj = validate_file_path(file_path, must_exist=True, must_be_file=True)
+            suffix = path_obj.suffix.lower()
+            if suffix not in {".json", ".yaml", ".yml"}:
+                raise ValidationError("json_yaml_edit only supports .json/.yaml/.yml files")
+
+            try:
+                updates = json.loads(updates_json)
+            except json.JSONDecodeError as e:
+                raise ValidationError(f"updates_json must be valid JSON: {e}") from e
+
+            if not isinstance(updates, dict) or not updates:
+                raise ValidationError("updates_json must be a non-empty JSON object")
+
+            raw_content = path_obj.read_text(encoding="utf-8")
+            if suffix == ".json":
+                document = json.loads(raw_content or "{}")
+            else:
+                if not YAML_AVAILABLE:
+                    raise ToolExecutionError("json_yaml_edit", "PyYAML is required to edit YAML files")
+                document = yaml.safe_load(raw_content) if raw_content.strip() else {}
+
+            if document is None:
+                document = {}
+            if not isinstance(document, dict):
+                raise ValidationError("Root document must be an object/dictionary")
+
+            changed_paths = []
+            for dotted_path, value in updates.items():
+                if not isinstance(dotted_path, str) or not dotted_path.strip():
+                    raise ValidationError("Update keys must be non-empty dotted paths")
+                segments = [segment for segment in dotted_path.split(".") if segment]
+                if not segments:
+                    raise ValidationError(f"Invalid dotted path: {dotted_path}")
+
+                cursor = document
+                for segment in segments[:-1]:
+                    existing = cursor.get(segment)
+                    if existing is None:
+                        if not create_missing:
+                            raise ValidationError(
+                                f"Missing path segment '{segment}' in '{dotted_path}'"
+                            )
+                        cursor[segment] = {}
+                        existing = cursor[segment]
+                    elif not isinstance(existing, dict):
+                        if not create_missing:
+                            raise ValidationError(
+                                f"Path segment '{segment}' is not an object in '{dotted_path}'"
+                            )
+                        cursor[segment] = {}
+                        existing = cursor[segment]
+                    cursor = existing
+                cursor[segments[-1]] = value
+                changed_paths.append(dotted_path)
+
+            if suffix == ".json":
+                rendered = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+            else:
+                rendered = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+
+            path_obj.write_text(rendered, encoding="utf-8")
+            return (
+                f"Updated {path_obj} with {len(changed_paths)} changes: "
+                + ", ".join(changed_paths[:15])
+            )
+        except (ValidationError, ToolExecutionError):
+            raise
+        except Exception as e:
+            raise ToolExecutionError("json_yaml_edit", f"Failed to edit JSON/YAML file: {str(e)}")
+
+    async def process_logs(
+        self,
+        path: Optional[str] = None,
+        pattern: Optional[str] = None,
+        max_lines: int = 5000,
+    ) -> str:
+        """Analyze log files and produce a concise diagnostic summary."""
+        try:
+            if max_lines <= 0:
+                raise ValidationError("max_lines must be a positive integer")
+
+            target = (
+                validate_file_path(path, must_exist=True) if path else Path.cwd()
+            )
+
+            if target.is_file():
+                files = [target]
+            else:
+                candidates: List[Path] = []
+                for extension in ("*.log", "*.txt", "*.out"):
+                    candidates.extend(target.rglob(extension))
+                files = sorted({candidate for candidate in candidates if candidate.is_file()})
+
+            if not files:
+                raise ToolExecutionError("process_logs", "No log files found to process")
+
+            regex = re.compile(pattern) if pattern else None
+            per_file_budget = max(50, max_lines // max(len(files), 1))
+            level_counts: Counter = Counter()
+            error_signatures: Counter = Counter()
+            signature_samples: Dict[str, str] = {}
+            lines_analyzed = 0
+            files_analyzed: List[str] = []
+
+            for log_file in files[:25]:
+                try:
+                    async with aiofiles.open(
+                        log_file,
+                        "r",
+                        encoding="utf-8",
+                        errors="ignore",
+                    ) as handle:
+                        lines = await handle.readlines()
+                except Exception:
+                    continue
+
+                tail_lines = lines[-per_file_budget:]
+                files_analyzed.append(str(log_file))
+
+                for raw_line in tail_lines:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    if regex and not regex.search(line):
+                        continue
+
+                    lines_analyzed += 1
+                    lowered = line.lower()
+                    if "error" in lowered or "exception" in lowered or "traceback" in lowered:
+                        level_counts["error"] += 1
+                        signature = re.sub(r"\d+", "<num>", line)
+                        signature = re.sub(r"\b[0-9a-f]{8,}\b", "<hex>", signature, flags=re.IGNORECASE)
+                        error_signatures[signature] += 1
+                        signature_samples.setdefault(signature, line[:240])
+                    elif "warn" in lowered:
+                        level_counts["warning"] += 1
+                    elif "info" in lowered:
+                        level_counts["info"] += 1
+                    elif "debug" in lowered:
+                        level_counts["debug"] += 1
+                    else:
+                        level_counts["other"] += 1
+
+            top_errors = []
+            for signature, count in error_signatures.most_common(5):
+                top_errors.append(
+                    {
+                        "signature": signature,
+                        "count": count,
+                        "sample": signature_samples.get(signature, ""),
+                    }
+                )
+
+            likely_root_cause = top_errors[0]["sample"] if top_errors else ""
+
+            payload = {
+                "files_analyzed": files_analyzed,
+                "lines_analyzed": lines_analyzed,
+                "level_counts": dict(level_counts),
+                "top_errors": top_errors,
+                "likely_root_cause": likely_root_cause,
+            }
+            return json.dumps(payload, indent=2)
+        except re.error as e:
+            raise ValidationError(f"Invalid regex pattern: {e}") from e
+        except (ValidationError, ToolExecutionError):
+            raise
+        except Exception as e:
+            raise ToolExecutionError("process_logs", f"Failed to process logs: {str(e)}")
 
     async def gh_pr_list(self, state: str = "open", limit: int = 10) -> str:
         from .github_tools import gh_pr_list

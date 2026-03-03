@@ -100,6 +100,7 @@ class PoorCLIAsync:
         self.mcp_manager = None
         self.lsp_client = None
         self._watch_task: Optional[asyncio.Task] = None
+        self.session_started_at = time.time()
 
         # Usage tracking for /cost
         self.session_stats = {
@@ -323,12 +324,11 @@ class PoorCLIAsync:
 
     def _display_welcome(self):
         """Display welcome message"""
-        mascot = """[dim blue]        ___
-      /     \\
-     | () () |
-      \\  ^  /
-       |||||
-      '-----'[/dim blue]
+        logo = r"""[bold cyan] ____   ___   ___  ____        ____ _     ___
+|  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
+| |_) | | | | | | | |_) |    | |   | |    | |
+|  __/| |_| | |_| |  _ <     | |___| |___ | |
+|_|    \___/ \___/|_| \_\     \____|_____|___|[/bold cyan]
 """
 
         status_line = []
@@ -344,7 +344,7 @@ class PoorCLIAsync:
 
         from poor_cli import __version__
 
-        welcome_text = f"""{mascot}
+        welcome_text = f"""{logo}
 [bold cyan]poor-cli[/bold cyan] [dim]v{__version__}[/dim]
 [dim]AI-powered CLI tool using {self.config.model.model_name}[/dim]
 {status}
@@ -365,6 +365,28 @@ class PoorCLIAsync:
                 title="[bold cyan]Welcome[/bold cyan]",
                 border_style="cyan",
                 padding=(0, 1),
+            )
+        )
+
+    def _display_session_summary(self) -> None:
+        """Display current session summary before exit."""
+        elapsed_seconds = max(0, int(time.time() - self.session_started_at))
+        minutes, seconds = divmod(elapsed_seconds, 60)
+        duration = f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+
+        stats = self.session_stats
+        summary = (
+            f"[bold]Provider:[/bold] {self.config.model.provider} ({self.config.model.model_name})\n"
+            f"[bold]Duration:[/bold] {duration}\n"
+            f"[bold]Requests:[/bold] {stats['requests']}\n"
+            f"[bold]Input:[/bold] {stats['input_chars']:,} chars (~{stats['input_tokens_estimate']:,} tokens)\n"
+            f"[bold]Output:[/bold] {stats['output_chars']:,} chars (~{stats['output_tokens_estimate']:,} tokens)"
+        )
+        self.console.print(
+            Panel(
+                summary,
+                title="Session Summary",
+                border_style="cyan",
             )
         )
 
@@ -708,6 +730,7 @@ class PoorCLIAsync:
                 break
 
         # Cleanup
+        self._display_session_summary()
         await self._shutdown_sessions()
 
         self.console.print("\n[cyan]Goodbye![/cyan]")
@@ -1252,7 +1275,14 @@ class PoorCLIAsync:
                 is_destructive = any(cmd in command for cmd in destructive_commands)
                 return any(command.startswith(cmd) for cmd in safe_commands) and not is_destructive
 
-            if tool_name in {"write_file", "edit_file", "delete_file"}:
+            if tool_name in {
+                "write_file",
+                "edit_file",
+                "delete_file",
+                "apply_patch_unified",
+                "json_yaml_edit",
+                "format_and_lint",
+            }:
                 return False
 
             return True
@@ -1261,11 +1291,24 @@ class PoorCLIAsync:
         if tool_name == "bash" and not self.config.security.require_permission_for_bash:
             return True
 
-        if tool_name in ["write_file", "edit_file"] and not self.config.security.require_permission_for_write:
+        if tool_name in [
+            "write_file",
+            "edit_file",
+            "apply_patch_unified",
+            "json_yaml_edit",
+            "format_and_lint",
+        ] and not self.config.security.require_permission_for_write:
             return True
 
         # Define which tools require permission
-        file_operation_tools = {"write_file", "edit_file", "bash"}
+        file_operation_tools = {
+            "write_file",
+            "edit_file",
+            "bash",
+            "apply_patch_unified",
+            "json_yaml_edit",
+            "format_and_lint",
+        }
 
         if tool_name not in file_operation_tools:
             return True
@@ -1310,6 +1353,24 @@ class PoorCLIAsync:
                 action_desc = f"[yellow]Execute bash command:[/yellow] {command}"
                 details = f"[dim]This will run a shell command.[/dim]"
                 border_color = "yellow"
+        elif tool_name == "apply_patch_unified":
+            check_only = bool(tool_args.get("check_only", False))
+            action_desc = "[yellow]Apply unified patch to repository[/yellow]"
+            mode = "validate only (check_only=true)" if check_only else "validate and modify files"
+            details = f"[dim]This operation will {mode}.[/dim]"
+            border_color = "yellow"
+        elif tool_name == "json_yaml_edit":
+            file_path = tool_args.get("file_path", "unknown")
+            action_desc = f"[yellow]Edit JSON/YAML file:[/yellow] {file_path}"
+            details = "[dim]This will modify structured config values in-place.[/dim]"
+            border_color = "yellow"
+        elif tool_name == "format_and_lint":
+            run_path = tool_args.get("path", os.getcwd())
+            fix_mode = bool(tool_args.get("fix", True))
+            mode = "with auto-fix enabled" if fix_mode else "in check-only mode"
+            action_desc = f"[yellow]Run format/lint in:[/yellow] {run_path}"
+            details = f"[dim]This may rewrite files ({mode}).[/dim]"
+            border_color = "yellow"
         else:
             return True
 

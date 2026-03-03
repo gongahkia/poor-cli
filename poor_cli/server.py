@@ -146,6 +146,9 @@ class PoorCLIServer:
             "edit_file",
             "delete_file",
             "bash",
+            "apply_patch_unified",
+            "json_yaml_edit",
+            "format_and_lint",
         }:
             return False
 

@@ -31,7 +31,11 @@ def test_bare_slash_shows_recommended_commands_only():
 
 def test_prefix_filters_to_matching_supported_commands():
     completions = _command_completions("/pro")
-    assert [completion.text for completion in completions] == ["/provider", "/providers"]
+    assert [completion.text for completion in completions] == [
+        "/provider",
+        "/providers",
+        "/prompts",
+    ]
 
 
 def test_extract_command_token_ignores_leading_whitespace():

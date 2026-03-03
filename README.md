@@ -126,6 +126,14 @@ $ docker run -it --env-file .env poor-cli
 - glob_files: Find files matching patterns (e.g., `**/*.py`)
 - grep_files: Search for text in files using regex
 - bash: Execute bash commands with timeout support
+- run_tests: Run project tests and report structured failures
+- git_status_diff: Summarize git status, diff stats, and risk hints
+- apply_patch_unified: Validate/apply unified diff patches via `git apply`
+- format_and_lint: Run available formatters/linters (`black`, `ruff`, `mypy`)
+- dependency_inspect: Inspect declared, installed, and outdated dependencies
+- fetch_url: Fetch and summarize URL content with SSRF safeguards
+- json_yaml_edit: Edit JSON/YAML using dotted-path updates
+- process_logs: Parse logs into level counts and likely root cause
 
 ## Architecture
 

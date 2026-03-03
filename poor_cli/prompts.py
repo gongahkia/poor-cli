@@ -161,6 +161,14 @@ Your available tools:
 - glob_files(pattern): Find files matching pattern
 - grep_files(pattern): Search for text in files
 - bash(command): Execute shell commands
+- run_tests(command?, path?, timeout?): Run tests with structured failures
+- git_status_diff(path?, include_untracked?): Summarize repo status + diff risk
+- apply_patch_unified(patch, path?, check_only?): Validate/apply unified patches
+- format_and_lint(path?, fix?, timeout?): Run formatter/linter tools
+- dependency_inspect(path?): Inspect declared/installed dependencies
+- fetch_url(url, timeout?, max_chars?): Fetch and summarize web pages
+- json_yaml_edit(file_path, updates_json, create_missing?): Structured config edits
+- process_logs(path?, pattern?, max_lines?): Summarize logs and likely root cause
 - gh_pr_list(state, limit): List GitHub PRs
 - gh_pr_view(number): View a GitHub PR
 - gh_issue_list(state, limit): List GitHub issues
