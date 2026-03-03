@@ -128,6 +128,19 @@ class PlanModeConfig:
 
 
 @dataclass
+class AgenticConfig:
+    """Configuration for agentic loop behavior"""
+    max_iterations: int = 25 # max tool-call round-trips per request
+    auto_approve_tools: list = field(default_factory=lambda: [
+        "read_file", "glob_files", "grep_files", "git_status_diff",
+        "list_directory", "diff_files",
+    ])
+    deny_patterns: list = field(default_factory=lambda: [
+        "rm -rf", "sudo", "chmod 777",
+    ])
+
+
+@dataclass
 class CheckpointConfig:
     """Configuration for checkpoint system"""
     enabled: bool = True  # Enable automatic checkpoints
@@ -205,6 +218,7 @@ class Config:
     tools: ToolConfig = field(default_factory=ToolConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
+    agentic: AgenticConfig = field(default_factory=AgenticConfig)
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
@@ -220,6 +234,7 @@ class Config:
             "tools": asdict(self.tools),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
+            "agentic": asdict(self.agentic),
             "mcp_servers": self.mcp_servers,
         }
         return config_dict
@@ -235,6 +250,7 @@ class Config:
             tools=ToolConfig(**data.get("tools", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
+            agentic=AgenticConfig(**data.get("agentic", {})),
             mcp_servers=data.get("mcp_servers", {}),
         )
 
@@ -323,6 +339,7 @@ class ConfigManager:
             "tools",
             "plan_mode",
             "checkpoint",
+            "agentic",
             "mcp_servers",
         }
 

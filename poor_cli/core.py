@@ -6,6 +6,7 @@ the Neovim plugin.
 """
 
 import asyncio
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
 
@@ -27,6 +28,55 @@ from .exceptions import (
 )
 
 logger = setup_logger(__name__)
+
+
+# ── CoreEvent: structured events yielded by the agentic loop ─────────
+
+@dataclass
+class CoreEvent:
+    """Structured event emitted by the agentic loop."""
+    type: str # text_chunk | tool_call_start | tool_result | permission_request | cost_update | progress | done
+    data: Dict[str, Any] = field(default_factory=dict)
+
+    @staticmethod
+    def text_chunk(chunk: str, request_id: str = "") -> "CoreEvent":
+        return CoreEvent(type="text_chunk", data={"chunk": chunk, "requestId": request_id})
+
+    @staticmethod
+    def tool_call_start(tool_name: str, tool_args: Dict[str, Any], call_id: str = "", iteration: int = 0, cap: int = 25) -> "CoreEvent":
+        return CoreEvent(type="tool_call_start", data={
+            "toolName": tool_name, "toolArgs": tool_args, "callId": call_id,
+            "iterationIndex": iteration, "iterationCap": cap,
+        })
+
+    @staticmethod
+    def tool_result(tool_name: str, result: str, call_id: str = "", iteration: int = 0, cap: int = 25) -> "CoreEvent":
+        return CoreEvent(type="tool_result", data={
+            "toolName": tool_name, "toolResult": result, "callId": call_id,
+            "iterationIndex": iteration, "iterationCap": cap,
+        })
+
+    @staticmethod
+    def permission_request(tool_name: str, tool_args: Dict[str, Any], prompt_id: str = "") -> "CoreEvent":
+        return CoreEvent(type="permission_request", data={
+            "toolName": tool_name, "toolArgs": tool_args, "promptId": prompt_id,
+        })
+
+    @staticmethod
+    def cost_update(input_tokens: int = 0, output_tokens: int = 0, estimated_cost: float = 0.0) -> "CoreEvent":
+        return CoreEvent(type="cost_update", data={
+            "inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost,
+        })
+
+    @staticmethod
+    def progress(phase: str, message: str, iteration: int = 0, cap: int = 25) -> "CoreEvent":
+        return CoreEvent(type="progress", data={
+            "phase": phase, "message": message, "iterationIndex": iteration, "iterationCap": cap,
+        })
+
+    @staticmethod
+    def done(reason: str = "complete") -> "CoreEvent":
+        return CoreEvent(type="done", data={"reason": reason})
 
 
 class HistoryAdapter(Protocol):
@@ -97,10 +147,13 @@ class PoorCLICore:
         # Permission callback for file operations
         # Set this to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool]
         self._permission_callback: Optional[Callable[[str, Dict], Any]] = None
-        
+
         # Context manager for intelligent context gathering
         self._context_manager: Optional[ContextManager] = None
-        
+
+        # Cancel event for mid-loop cancellation
+        self._cancel_event: asyncio.Event = asyncio.Event()
+
         logger.info("PoorCLICore instance created")
     
     async def initialize(
@@ -213,6 +266,191 @@ class PoorCLICore:
             logger.exception("Failed to initialize PoorCLICore")
             raise ConfigurationError(f"Initialization failed: {e}")
     
+    def cancel_request(self) -> None:
+        """Signal cancellation of the current agentic loop."""
+        self._cancel_event.set()
+
+    def _build_full_message(self, message: str, context_files: Optional[List[str]] = None) -> str:
+        """Build message with context files synchronously where possible."""
+        return message # context is handled in the async variants below
+
+    async def _build_context_message(self, message: str, context_files: Optional[List[str]] = None) -> str:
+        """Build full message with context file contents."""
+        if not context_files:
+            return message
+        if self._context_manager:
+            primary_file = context_files[0] if context_files else None
+            additional_files = context_files[1:] if len(context_files) > 1 else None
+            context_result = await self._context_manager.gather_context(
+                primary_file=primary_file, additional_files=additional_files, include_imports=True,
+            )
+            if context_result.files:
+                context_str = self._context_manager.format_context_for_prompt(context_result, include_paths=True)
+                logger.info(context_result.message)
+                return f"{context_str}\n\nUser request: {message}"
+        else:
+            context_parts = []
+            for file_path in context_files:
+                try:
+                    content = await self.tool_registry.read_file(file_path)
+                    context_parts.append(f"=== {file_path} ===\n{content}")
+                except Exception as e:
+                    logger.warning(f"Failed to read context file {file_path}: {e}")
+            if context_parts:
+                return "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+        return message
+
+    async def send_message_events(
+        self,
+        message: str,
+        context_files: Optional[List[str]] = None,
+        request_id: str = "",
+    ) -> AsyncIterator[CoreEvent]:
+        """
+        Send a message and yield CoreEvent objects (structured agentic events).
+
+        This is the primary method for streaming clients. It yields tool_call_start,
+        tool_result, text_chunk, cost_update, progress, and done events.
+        """
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        self._cancel_event.clear()
+        max_iterations = self.config.agentic.max_iterations if self.config else 25
+        iteration = 0
+
+        logger.info(f"Sending message (events): {message[:100]}...")
+        full_message = await self._build_context_message(message, context_files)
+
+        if self.history_adapter:
+            self.history_adapter.add_message("user", message)
+
+        try:
+            accumulated_text = ""
+
+            async for chunk in self.provider.send_message_stream(full_message):
+                if self._cancel_event.is_set():
+                    yield CoreEvent.done(reason="cancelled")
+                    return
+
+                if chunk.function_calls:
+                    # emit cost_update from metadata if available
+                    if chunk.metadata:
+                        usage = chunk.metadata.get("usage", {})
+                        if usage:
+                            yield CoreEvent.cost_update(
+                                input_tokens=usage.get("input_tokens", 0),
+                                output_tokens=usage.get("output_tokens", 0),
+                            )
+
+                    tool_results = await self._handle_function_calls_events(chunk, iteration, max_iterations, request_id)
+
+                    response = await self.provider.send_message(tool_results)
+                    if response.content:
+                        accumulated_text += response.content
+                        yield CoreEvent.text_chunk(response.content, request_id)
+
+                    # agentic loop: keep going while there are more function calls
+                    while response.function_calls:
+                        iteration += 1
+                        if self._cancel_event.is_set():
+                            yield CoreEvent.done(reason="cancelled")
+                            return
+                        if iteration >= max_iterations:
+                            yield CoreEvent.done(reason="iteration_cap")
+                            return
+
+                        yield CoreEvent.progress("tool_loop", f"Iteration {iteration}/{max_iterations}", iteration, max_iterations)
+
+                        tool_results = await self._handle_function_calls_events(response, iteration, max_iterations, request_id)
+                        response = await self.provider.send_message(tool_results)
+
+                        if response.content:
+                            accumulated_text += response.content
+                            yield CoreEvent.text_chunk(response.content, request_id)
+
+                        if response.metadata:
+                            usage = response.metadata.get("usage", {})
+                            if usage:
+                                yield CoreEvent.cost_update(
+                                    input_tokens=usage.get("input_tokens", 0),
+                                    output_tokens=usage.get("output_tokens", 0),
+                                )
+
+                    break
+
+                elif chunk.content:
+                    accumulated_text += chunk.content
+                    yield CoreEvent.text_chunk(chunk.content, request_id)
+
+            if self.history_adapter and accumulated_text:
+                self.history_adapter.add_message("model", accumulated_text)
+
+            yield CoreEvent.done(reason="complete")
+            logger.info(f"Message complete (events), {len(accumulated_text)} chars")
+
+        except Exception as e:
+            logger.exception("Error sending message (events)")
+            raise PoorCLIError(f"Failed to send message: {e}")
+
+    async def _handle_function_calls_events(
+        self,
+        response: ProviderResponse,
+        iteration: int,
+        max_iterations: int,
+        request_id: str,
+    ) -> Any:
+        """Handle function calls, yielding CoreEvents for each. Returns formatted tool results."""
+        # This is an internal helper; we collect events into a list so callers
+        # can yield them. But since async generators can't easily compose, we
+        # store events on self and let the caller yield after calling us.
+        # Actually, let's just make this return tool_results and have the caller
+        # do the yielding. We'll emit events from send_message_events directly.
+        # For simplicity, we'll make this a regular async method that also
+        # records events into self._pending_events.
+        if not response.function_calls:
+            return None
+
+        self._pending_events: List[CoreEvent] = []
+        tool_results = []
+
+        for fc in response.function_calls:
+            tool_name = fc.name
+            tool_args = fc.arguments
+
+            self._pending_events.append(
+                CoreEvent.tool_call_start(tool_name, tool_args, fc.id, iteration, max_iterations)
+            )
+            logger.info(f"Executing tool: {tool_name}")
+
+            if self._permission_callback:
+                try:
+                    permitted = await self._permission_callback(tool_name, tool_args)
+                    if not permitted:
+                        result = "Operation cancelled by user"
+                        self._pending_events.append(
+                            CoreEvent.tool_result(tool_name, result, fc.id, iteration, max_iterations)
+                        )
+                        tool_results.append({"id": fc.id, "name": tool_name, "result": result})
+                        continue
+                except Exception as e:
+                    logger.error(f"Permission callback error: {e}")
+
+            try:
+                result = await self.tool_registry.execute_tool(tool_name, tool_args)
+            except Exception as e:
+                result = f"Error: {e}"
+                logger.error(f"Tool execution failed: {e}")
+
+            self._pending_events.append(
+                CoreEvent.tool_result(tool_name, str(result), fc.id, iteration, max_iterations)
+            )
+            tool_results.append({"id": fc.id, "name": tool_name, "result": result})
+
+        if not self.provider:
+            return tool_results
+        return self.provider.format_tool_results(tool_results)
+
     async def send_message(
         self,
         message: str,
@@ -220,99 +458,45 @@ class PoorCLICore:
     ) -> AsyncIterator[str]:
         """
         Send a message and yield streaming text chunks.
-        
+
         This method handles function calls internally and yields only text content.
-        
-        Args:
-            message: The message to send to the AI.
-            context_files: Optional list of file paths to include as context.
-        
-        Yields:
-            Text chunks as they arrive from the AI.
-        
-        Raises:
-            PoorCLIError: If not initialized or message sending fails.
+        Legacy interface — streaming clients should use send_message_events().
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
-        
-        logger.info(f"Sending message: {message[:100]}...")
-        
-        # Build context from files if provided
-        full_message = message
-        if context_files:
-            # Use context manager for intelligent context gathering
-            if self._context_manager:
-                primary_file = context_files[0] if context_files else None
-                additional_files = context_files[1:] if len(context_files) > 1 else None
-                
-                context_result = await self._context_manager.gather_context(
-                    primary_file=primary_file,
-                    additional_files=additional_files,
-                    include_imports=True
-                )
-                
-                if context_result.files:
-                    context_str = self._context_manager.format_context_for_prompt(
-                        context_result,
-                        include_paths=True
-                    )
-                    full_message = f"{context_str}\n\nUser request: {message}"
-                    logger.info(context_result.message)
-            else:
-                # Fallback to simple file reading
-                context_parts = []
-                for file_path in context_files:
-                    try:
-                        content = await self.tool_registry.read_file(file_path)
-                        context_parts.append(f"=== {file_path} ===\n{content}")
-                    except Exception as e:
-                        logger.warning(f"Failed to read context file {file_path}: {e}")
-                if context_parts:
-                    full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
 
-        
-        # Save to history
+        logger.info(f"Sending message: {message[:100]}...")
+        full_message = await self._build_context_message(message, context_files)
+
         if self.history_adapter:
             self.history_adapter.add_message("user", message)
-        
+
         try:
             accumulated_text = ""
-            
+
             async for chunk in self.provider.send_message_stream(full_message):
-                # Check for function calls
                 if chunk.function_calls:
-                    # Handle function calls
                     tool_results = await self._handle_function_calls(chunk)
-                    
-                    # Send tool results and get final response
                     response = await self.provider.send_message(tool_results)
-                    
                     if response.content:
                         accumulated_text += response.content
                         yield response.content
-                    
-                    # Check for more function calls in the response
                     while response.function_calls:
                         tool_results = await self._handle_function_calls(response)
                         response = await self.provider.send_message(tool_results)
                         if response.content:
                             accumulated_text += response.content
                             yield response.content
-                    
-                    break  # Exit streaming after handling function calls
-                
-                # Yield text content
+                    break
                 elif chunk.content:
                     accumulated_text += chunk.content
                     yield chunk.content
-            
-            # Save assistant response to history
+
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
-            
+
             logger.info(f"Message complete, {len(accumulated_text)} chars")
-            
+
         except Exception as e:
             logger.exception("Error sending message")
             raise PoorCLIError(f"Failed to send message: {e}")
