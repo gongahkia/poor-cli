@@ -265,6 +265,38 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                     theme::tool_border_style(),
                 )));
             }
+            MessageRole::DiffView { name } => {
+                all_lines.push(Line::from(vec![
+                    Span::styled("  ┌─ ", theme::tool_border_style()),
+                    Span::styled(format!("{name} diff"), theme::tool_title_style()),
+                    Span::styled(" ─────", theme::tool_border_style()),
+                ]));
+                for line in msg.content.lines().take(40) {
+                    let (prefix, style) = if line.starts_with('+') && !line.starts_with("+++") {
+                        ("  │+", Style::default().fg(Color::Green))
+                    } else if line.starts_with('-') && !line.starts_with("---") {
+                        ("  │-", Style::default().fg(Color::Red))
+                    } else if line.starts_with("@@") {
+                        ("  │ ", Style::default().fg(Color::Cyan))
+                    } else {
+                        ("  │ ", Style::default().fg(Color::DarkGray))
+                    };
+                    all_lines.push(Line::from(vec![
+                        Span::styled(prefix.to_string(), theme::tool_border_style()),
+                        Span::styled(line.to_string(), style),
+                    ]));
+                }
+                if msg.content.lines().count() > 40 {
+                    all_lines.push(Line::from(vec![
+                        Span::styled("  │ ", theme::tool_border_style()),
+                        Span::styled("... (truncated)".to_string(), Style::default().fg(Color::DarkGray)),
+                    ]));
+                }
+                all_lines.push(Line::from(Span::styled(
+                    "  └────────────────────",
+                    theme::tool_border_style(),
+                )));
+            }
             MessageRole::Error => {
                 all_lines.push(Line::from(vec![
                     Span::styled("  ⚠ ", Style::default().fg(theme::ERROR)),

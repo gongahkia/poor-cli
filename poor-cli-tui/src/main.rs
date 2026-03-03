@@ -83,6 +83,7 @@ enum ServerMsg {
         tool_name: String,
         tool_args: Value,
         tool_result: String,
+        diff: String,
         iteration_index: u32,
         iteration_cap: u32,
     },
@@ -201,10 +202,10 @@ fn run_app(
                                     }
                                     ServerNotification::ToolEvent {
                                         event_type, tool_name, tool_args, tool_result,
-                                        iteration_index, iteration_cap, ..
+                                        diff, iteration_index, iteration_cap, ..
                                     } => ServerMsg::ToolEvent {
                                         event_type, tool_name, tool_args, tool_result,
-                                        iteration_index, iteration_cap,
+                                        diff, iteration_index, iteration_cap,
                                     },
                                     ServerNotification::PermissionRequest {
                                         tool_name, tool_args, prompt_id, ..
@@ -335,7 +336,7 @@ fn run_app(
                 }
                 ServerMsg::ToolEvent {
                     event_type, tool_name, tool_args, tool_result,
-                    iteration_index, iteration_cap,
+                    diff, iteration_index, iteration_cap,
                 } => {
                     app.current_iteration = iteration_index;
                     app.iteration_cap = iteration_cap;
@@ -345,12 +346,17 @@ fn run_app(
                         app.push_message(ChatMessage::tool_call(&tool_name, args_str));
                     } else if event_type == "tool_result" {
                         app.active_tool = None;
-                        app.push_message(ChatMessage::tool_result(&tool_name, tool_result));
+                        if !diff.is_empty() {
+                            app.push_message(ChatMessage::diff_view(&tool_name, diff));
+                        } else {
+                            app.push_message(ChatMessage::tool_result(&tool_name, tool_result));
+                        }
                     }
                 }
-                ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id: _ } => {
+                ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id } => {
                     let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
                     app.permission_message = format!("{tool_name}: {args_str}");
+                    app.permission_prompt_id = prompt_id;
                     app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
                 }
                 ServerMsg::Progress { phase: _, message: _, iteration_index, iteration_cap } => {
@@ -415,10 +421,11 @@ fn run_app(
                     }
                 }
                 InputAction::PermissionAnswered(allowed) => {
+                    let prompt_id = std::mem::take(&mut app.permission_prompt_id);
                     let _ = rpc_cmd_tx.send(RpcCommand::SendNotification {
                         method: "poor-cli/permissionRes".into(),
                         params: serde_json::json!({
-                            "promptId": "",
+                            "promptId": prompt_id,
                             "allowed": allowed,
                         }),
                     });

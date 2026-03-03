@@ -821,6 +821,9 @@ class PoorCLIServer:
 
         Sends JSON-RPC notifications for each CoreEvent, then returns a
         final RPC result with the accumulated text.
+
+        Permission requests are handled via the streaming permission callback
+        which sends a permissionReq notification and awaits a permissionRes.
         """
         self._ensure_initialized()
 
@@ -828,74 +831,73 @@ class PoorCLIServer:
         context_files = params.get("contextFiles")
         request_id = params.get("requestId", "")
 
-        accumulated_text = ""
-        async for event in self.core.send_message_events(
-            message=message,
-            context_files=context_files,
-            request_id=request_id,
-        ):
-            if event.type == "text_chunk":
-                notification = JsonRpcMessage(
-                    method="poor-cli/streamChunk",
-                    params={"requestId": request_id, "chunk": event.data.get("chunk", ""), "done": False},
-                )
-                await self.write_message_stdio(notification)
-                accumulated_text += event.data.get("chunk", "")
-            elif event.type in ("tool_call_start", "tool_result"):
-                event_type = event.type
-                notification = JsonRpcMessage(
-                    method="poor-cli/toolEvent",
-                    params={
-                        "requestId": request_id,
-                        "eventType": event_type,
-                        "toolName": event.data.get("toolName", ""),
-                        "toolArgs": event.data.get("toolArgs", {}),
-                        "toolResult": event.data.get("toolResult", ""),
-                        "iterationIndex": event.data.get("iterationIndex", 0),
-                        "iterationCap": event.data.get("iterationCap", 25),
-                    },
-                )
-                await self.write_message_stdio(notification)
-            elif event.type == "permission_request":
-                notification = JsonRpcMessage(
-                    method="poor-cli/permissionReq",
-                    params={
-                        "requestId": request_id,
-                        "toolName": event.data.get("toolName", ""),
-                        "toolArgs": event.data.get("toolArgs", {}),
-                        "promptId": event.data.get("promptId", ""),
-                    },
-                )
-                await self.write_message_stdio(notification)
-            elif event.type == "cost_update":
-                notification = JsonRpcMessage(
-                    method="poor-cli/costUpdate",
-                    params={
-                        "requestId": request_id,
-                        "inputTokens": event.data.get("inputTokens", 0),
-                        "outputTokens": event.data.get("outputTokens", 0),
-                        "estimatedCost": event.data.get("estimatedCost", 0.0),
-                    },
-                )
-                await self.write_message_stdio(notification)
-            elif event.type == "progress":
-                notification = JsonRpcMessage(
-                    method="poor-cli/progress",
-                    params={
-                        "requestId": request_id,
-                        "phase": event.data.get("phase", ""),
-                        "message": event.data.get("message", ""),
-                        "iterationIndex": event.data.get("iterationIndex", 0),
-                        "iterationCap": event.data.get("iterationCap", 25),
-                    },
-                )
-                await self.write_message_stdio(notification)
-            elif event.type == "done":
-                done_notification = JsonRpcMessage(
-                    method="poor-cli/streamChunk",
-                    params={"requestId": request_id, "chunk": "", "done": True, "reason": event.data.get("reason", "complete")},
-                )
-                await self.write_message_stdio(done_notification)
+        # Install interactive permission callback for this streaming session
+        prev_callback = self.core.permission_callback
+        self.core.permission_callback = self._streaming_permission_callback
+
+        try:
+            accumulated_text = ""
+            async for event in self.core.send_message_events(
+                message=message,
+                context_files=context_files,
+                request_id=request_id,
+            ):
+                if event.type == "text_chunk":
+                    notification = JsonRpcMessage(
+                        method="poor-cli/streamChunk",
+                        params={"requestId": request_id, "chunk": event.data.get("chunk", ""), "done": False},
+                    )
+                    await self.write_message_stdio(notification)
+                    accumulated_text += event.data.get("chunk", "")
+                elif event.type in ("tool_call_start", "tool_result"):
+                    event_type = event.type
+                    notification = JsonRpcMessage(
+                        method="poor-cli/toolEvent",
+                        params={
+                            "requestId": request_id,
+                            "eventType": event_type,
+                            "toolName": event.data.get("toolName", ""),
+                            "toolArgs": event.data.get("toolArgs", {}),
+                            "toolResult": event.data.get("toolResult", ""),
+                            "diff": event.data.get("diff", ""),
+                            "iterationIndex": event.data.get("iterationIndex", 0),
+                            "iterationCap": event.data.get("iterationCap", 25),
+                        },
+                    )
+                    await self.write_message_stdio(notification)
+                elif event.type == "permission_request":
+                    pass # handled by _streaming_permission_callback already
+                elif event.type == "cost_update":
+                    notification = JsonRpcMessage(
+                        method="poor-cli/costUpdate",
+                        params={
+                            "requestId": request_id,
+                            "inputTokens": event.data.get("inputTokens", 0),
+                            "outputTokens": event.data.get("outputTokens", 0),
+                            "estimatedCost": event.data.get("estimatedCost", 0.0),
+                        },
+                    )
+                    await self.write_message_stdio(notification)
+                elif event.type == "progress":
+                    notification = JsonRpcMessage(
+                        method="poor-cli/progress",
+                        params={
+                            "requestId": request_id,
+                            "phase": event.data.get("phase", ""),
+                            "message": event.data.get("message", ""),
+                            "iterationIndex": event.data.get("iterationIndex", 0),
+                            "iterationCap": event.data.get("iterationCap", 25),
+                        },
+                    )
+                    await self.write_message_stdio(notification)
+                elif event.type == "done":
+                    done_notification = JsonRpcMessage(
+                        method="poor-cli/streamChunk",
+                        params={"requestId": request_id, "chunk": "", "done": True, "reason": event.data.get("reason", "complete")},
+                    )
+                    await self.write_message_stdio(done_notification)
+        finally:
+            self.core.permission_callback = prev_callback
 
         return {"content": accumulated_text, "role": "assistant"}
 
@@ -1070,32 +1072,50 @@ class PoorCLIServer:
         except Exception as e:
             self.logger.error(f"Write error: {e}")
     
+    async def _dispatch_and_respond(self, message: JsonRpcMessage) -> None:
+        """Dispatch a request and write the response. Used for background tasks."""
+        try:
+            response = await self.dispatch(message)
+            if message.id is not None:
+                await self.write_message_stdio(response)
+        except Exception as e:
+            self.logger.exception(f"Error in background dispatch for {message.method}")
+
     async def run_stdio(self) -> None:
         """
         Run the server using stdio transport.
-        
+
         Reads JSON-RPC messages from stdin and writes responses to stdout.
+        Streaming requests run as background tasks so the main loop can
+        process incoming notifications (e.g. permissionRes) concurrently.
         """
         self.logger.info("Starting stdio server")
         self._running = True
-        
+
         while self._running:
             try:
                 message = await self.read_message_stdio()
-                
+
                 if message is None:
                     self.logger.info("EOF received, shutting down")
                     break
-                
-                response = await self.dispatch(message)
-                
-                # Only send response if there's an id (not a notification)
-                if message.id is not None:
-                    await self.write_message_stdio(response)
-                    
+
+                # Handle notifications (no id) — e.g. permissionRes
+                if message.id is None:
+                    await self._handle_notification(message)
+                    continue
+
+                # Streaming requests run concurrently so permission flow works
+                if message.method == "poor-cli/chatStreaming":
+                    asyncio.ensure_future(self._dispatch_and_respond(message))
+                else:
+                    response = await self.dispatch(message)
+                    if message.id is not None:
+                        await self.write_message_stdio(response)
+
             except Exception as e:
                 self.logger.exception("Error in main loop")
-        
+
         self.logger.info("Stdio server stopped")
 
 

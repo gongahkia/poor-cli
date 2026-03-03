@@ -11,6 +11,7 @@ pub enum MessageRole {
     System,
     ToolCall { name: String },
     ToolResult { name: String },
+    DiffView { name: String },
     Error,
 }
 
@@ -57,6 +58,14 @@ impl ChatMessage {
     pub fn tool_result(name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::ToolResult { name: name.into() },
+            content: content.into(),
+            timestamp: Instant::now(),
+        }
+    }
+
+    pub fn diff_view(name: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::DiffView { name: name.into() },
             content: content.into(),
             timestamp: Instant::now(),
         }
@@ -128,6 +137,7 @@ pub struct App {
     // ── Permission prompt state ───
     pub permission_message: String,
     pub permission_answer: Option<bool>,
+    pub permission_prompt_id: String,
 
     // ── Status message (temporary) ───
     pub status_message: Option<(String, Instant)>,
@@ -188,6 +198,7 @@ impl Default for App {
             history_index: None,
             permission_message: String::new(),
             permission_answer: None,
+            permission_prompt_id: String::new(),
             status_message: None,
             server_connected: false,
             cwd: String::new(),
