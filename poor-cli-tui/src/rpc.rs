@@ -55,7 +55,12 @@ fn collapse_whitespace(value: &str) -> String {
 }
 
 fn trim_embedded_payload(value: &str) -> String {
-    for marker in [" {'message':", " {\"message\":", " {'error':", " {\"error\":"] {
+    for marker in [
+        " {'message':",
+        " {\"message\":",
+        " {'error':",
+        " {\"error\":",
+    ] {
         if let Some(idx) = value.find(marker) {
             return value[..idx].trim().to_string();
         }
@@ -105,7 +110,11 @@ fn extract_structured_reason(raw: &str) -> Option<String> {
 }
 
 fn sanitize_rpc_error_message(raw: &str) -> String {
-    let compact = collapse_whitespace(&raw.replace("\\n", " ").replace("\\t", " ").replace('\n', " "));
+    let compact = collapse_whitespace(
+        &raw.replace("\\n", " ")
+            .replace("\\t", " ")
+            .replace('\n', " "),
+    );
     let mut message = trim_embedded_payload(&compact);
 
     if let Some(extracted_message) = extract_structured_message(raw) {
@@ -121,7 +130,10 @@ fn sanitize_rpc_error_message(raw: &str) -> String {
     }
 
     if message.len() > MAX_RPC_ERROR_CHARS {
-        let mut shortened = message.chars().take(MAX_RPC_ERROR_CHARS - 3).collect::<String>();
+        let mut shortened = message
+            .chars()
+            .take(MAX_RPC_ERROR_CHARS - 3)
+            .collect::<String>();
         shortened.push_str("...");
         return shortened;
     }
@@ -131,7 +143,12 @@ fn sanitize_rpc_error_message(raw: &str) -> String {
 
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}", self.code, sanitize_rpc_error_message(&self.message))
+        write!(
+            f,
+            "[{}] {}",
+            self.code,
+            sanitize_rpc_error_message(&self.message)
+        )
     }
 }
 
@@ -247,39 +264,122 @@ fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String
 fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
     match method {
         "poor-cli/streamChunk" => Some(ServerNotification::StreamChunk {
-            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            chunk: params.get("chunk").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            done: params.get("done").and_then(|v| v.as_bool()).unwrap_or(false),
-            reason: params.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            chunk: params
+                .get("chunk")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            done: params
+                .get("done")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            reason: params
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         }),
         "poor-cli/toolEvent" => Some(ServerNotification::ToolEvent {
-            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            event_type: params.get("eventType").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            tool_name: params.get("toolName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            event_type: params
+                .get("eventType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            tool_name: params
+                .get("toolName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             tool_args: params.get("toolArgs").cloned().unwrap_or(Value::Null),
-            tool_result: params.get("toolResult").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            diff: params.get("diff").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            iteration_index: params.get("iterationIndex").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            iteration_cap: params.get("iterationCap").and_then(|v| v.as_u64()).unwrap_or(25) as u32,
+            tool_result: params
+                .get("toolResult")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            diff: params
+                .get("diff")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            iteration_index: params
+                .get("iterationIndex")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            iteration_cap: params
+                .get("iterationCap")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(25) as u32,
         }),
         "poor-cli/permissionReq" => Some(ServerNotification::PermissionRequest {
-            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            tool_name: params.get("toolName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            tool_name: params
+                .get("toolName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             tool_args: params.get("toolArgs").cloned().unwrap_or(Value::Null),
-            prompt_id: params.get("promptId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            prompt_id: params
+                .get("promptId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         }),
         "poor-cli/progress" => Some(ServerNotification::Progress {
-            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            phase: params.get("phase").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            message: params.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            iteration_index: params.get("iterationIndex").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            iteration_cap: params.get("iterationCap").and_then(|v| v.as_u64()).unwrap_or(25) as u32,
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            phase: params
+                .get("phase")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            message: params
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            iteration_index: params
+                .get("iterationIndex")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            iteration_cap: params
+                .get("iterationCap")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(25) as u32,
         }),
         "poor-cli/costUpdate" => Some(ServerNotification::CostUpdate {
-            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            input_tokens: params.get("inputTokens").and_then(|v| v.as_u64()).unwrap_or(0),
-            output_tokens: params.get("outputTokens").and_then(|v| v.as_u64()).unwrap_or(0),
-            estimated_cost: params.get("estimatedCost").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            input_tokens: params
+                .get("inputTokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            output_tokens: params
+                .get("outputTokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            estimated_cost: params
+                .get("estimatedCost")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
         }),
         _ => None,
     }
@@ -578,10 +678,7 @@ impl RpcClient {
 
     /// Cancel an in-flight request.
     pub fn cancel_request(&self) -> Result<(), String> {
-        let _ = self.call(
-            "poor-cli/cancelRequest",
-            Value::Object(Default::default()),
-        )?;
+        let _ = self.call("poor-cli/cancelRequest", Value::Object(Default::default()))?;
         Ok(())
     }
 
@@ -621,11 +718,7 @@ impl RpcClient {
     }
 
     /// Switch to a different provider/model.
-    pub fn switch_provider(
-        &self,
-        provider: &str,
-        model: Option<&str>,
-    ) -> Result<Value, String> {
+    pub fn switch_provider(&self, provider: &str, model: Option<&str>) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
         params.insert("provider".into(), Value::String(provider.into()));
         if let Some(m) = model {
@@ -644,7 +737,10 @@ impl RpcClient {
     }
 
     pub fn get_provider_info(&self) -> Result<Value, String> {
-        self.call("poor-cli/getProviderInfo", Value::Object(Default::default()))
+        self.call(
+            "poor-cli/getProviderInfo",
+            Value::Object(Default::default()),
+        )
     }
 
     pub fn get_tools(&self) -> Result<Value, String> {
@@ -652,7 +748,10 @@ impl RpcClient {
     }
 
     pub fn list_config_options(&self) -> Result<Value, String> {
-        self.call("poor-cli/listConfigOptions", Value::Object(Default::default()))
+        self.call(
+            "poor-cli/listConfigOptions",
+            Value::Object(Default::default()),
+        )
     }
 
     pub fn set_config(&self, key_path: &str, value: Value) -> Result<Value, String> {
@@ -887,7 +986,12 @@ mod tests {
         let params = json!({"requestId": "r1", "chunk": "hello", "done": false});
         let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
         match n {
-            ServerNotification::StreamChunk { request_id, chunk, done, reason } => {
+            ServerNotification::StreamChunk {
+                request_id,
+                chunk,
+                done,
+                reason,
+            } => {
                 assert_eq!(request_id, "r1");
                 assert_eq!(chunk, "hello");
                 assert!(!done);
@@ -920,7 +1024,12 @@ mod tests {
         });
         let n = parse_notification("poor-cli/toolEvent", &params).unwrap();
         match n {
-            ServerNotification::ToolEvent { diff, iteration_index, iteration_cap, .. } => {
+            ServerNotification::ToolEvent {
+                diff,
+                iteration_index,
+                iteration_cap,
+                ..
+            } => {
                 assert_eq!(diff, "--- a\n+++ b");
                 assert_eq!(iteration_index, 2);
                 assert_eq!(iteration_cap, 10);
@@ -934,7 +1043,11 @@ mod tests {
         let params = json!({"requestId": "r1", "toolName": "bash", "toolArgs": {"cmd": "ls"}, "promptId": "p1"});
         let n = parse_notification("poor-cli/permissionReq", &params).unwrap();
         match n {
-            ServerNotification::PermissionRequest { prompt_id, tool_name, .. } => {
+            ServerNotification::PermissionRequest {
+                prompt_id,
+                tool_name,
+                ..
+            } => {
                 assert_eq!(prompt_id, "p1");
                 assert_eq!(tool_name, "bash");
             }
@@ -947,7 +1060,11 @@ mod tests {
         let params = json!({"requestId": "r1", "phase": "thinking", "message": "analyzing", "iterationIndex": 3, "iterationCap": 25});
         let n = parse_notification("poor-cli/progress", &params).unwrap();
         match n {
-            ServerNotification::Progress { phase, iteration_index, .. } => {
+            ServerNotification::Progress {
+                phase,
+                iteration_index,
+                ..
+            } => {
                 assert_eq!(phase, "thinking");
                 assert_eq!(iteration_index, 3);
             }
@@ -960,7 +1077,12 @@ mod tests {
         let params = json!({"requestId": "r1", "inputTokens": 500, "outputTokens": 200, "estimatedCost": 0.05});
         let n = parse_notification("poor-cli/costUpdate", &params).unwrap();
         match n {
-            ServerNotification::CostUpdate { input_tokens, output_tokens, estimated_cost, .. } => {
+            ServerNotification::CostUpdate {
+                input_tokens,
+                output_tokens,
+                estimated_cost,
+                ..
+            } => {
                 assert_eq!(input_tokens, 500);
                 assert_eq!(output_tokens, 200);
                 assert!((estimated_cost - 0.05).abs() < 1e-10);
@@ -980,7 +1102,12 @@ mod tests {
         let params = json!({});
         let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
         match n {
-            ServerNotification::StreamChunk { request_id, chunk, done, .. } => {
+            ServerNotification::StreamChunk {
+                request_id,
+                chunk,
+                done,
+                ..
+            } => {
                 assert_eq!(request_id, "");
                 assert_eq!(chunk, "");
                 assert!(!done);

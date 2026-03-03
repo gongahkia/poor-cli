@@ -64,7 +64,9 @@ def _extract_reason(details: Any) -> Optional[str]:
     return None
 
 
-def _extract_structured_error_fields(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def _extract_structured_error_fields(
+    payload: Dict[str, Any],
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Extract normalized message, reason, and status fields from structured API payloads."""
     message: Optional[str] = None
     reason: Optional[str] = None
@@ -86,7 +88,9 @@ def _extract_structured_error_fields(payload: Dict[str, Any]) -> Tuple[Optional[
     if isinstance(payload_message, str) and payload_message.strip():
         nested_payload = _try_parse_mapping(payload_message.strip())
         if nested_payload is not None:
-            nested_message, nested_reason, nested_status = _extract_structured_error_fields(nested_payload)
+            nested_message, nested_reason, nested_status = _extract_structured_error_fields(
+                nested_payload
+            )
             message = message or nested_message
             reason = reason or nested_reason
             status = status or nested_status
@@ -132,7 +136,9 @@ def _sanitize_exception_message(error: Exception) -> str:
 
     payload = _extract_structured_payload(raw)
     if payload is not None:
-        extracted_message, extracted_reason, extracted_status = _extract_structured_error_fields(payload)
+        extracted_message, extracted_reason, extracted_status = _extract_structured_error_fields(
+            payload
+        )
 
         detail_parts: List[str] = []
         if extracted_message:
@@ -155,16 +161,18 @@ def _sanitize_exception_message(error: Exception) -> str:
 # JSON-RPC Message Types
 # =============================================================================
 
+
 @dataclass
 class JsonRpcMessage:
     """JSON-RPC 2.0 message."""
+
     jsonrpc: str = "2.0"
     id: Optional[int] = None
     method: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     result: Optional[Any] = None
     error: Optional[Dict[str, Any]] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
         d = {"jsonrpc": self.jsonrpc}
@@ -179,11 +187,11 @@ class JsonRpcMessage:
         if self.error is not None:
             d["error"] = self.error
         return d
-    
+
     def to_json(self) -> str:
         """Serialize to JSON string."""
         return json.dumps(self.to_dict())
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "JsonRpcMessage":
         """Create from dictionary."""
@@ -193,9 +201,9 @@ class JsonRpcMessage:
             method=data.get("method"),
             params=data.get("params"),
             result=data.get("result"),
-            error=data.get("error")
+            error=data.get("error"),
         )
-    
+
     @classmethod
     def from_json(cls, text: str) -> "JsonRpcMessage":
         """Parse from JSON string."""
@@ -205,12 +213,13 @@ class JsonRpcMessage:
 
 class JsonRpcError:
     """JSON-RPC 2.0 error codes."""
+
     PARSE_ERROR = -32700
     INVALID_REQUEST = -32600
     METHOD_NOT_FOUND = -32601
     INVALID_PARAMS = -32602
     INTERNAL_ERROR = -32603
-    
+
     @classmethod
     def make_error(cls, code: int, message: str, data: Any = None) -> Dict[str, Any]:
         """Create an error object."""
@@ -228,13 +237,14 @@ class InvalidParamsError(Exception):
 # PoorCLI Server
 # =============================================================================
 
+
 class PoorCLIServer:
     """
     JSON-RPC server for PoorCLI.
-    
+
     Provides editor integration via stdio transport (for Neovim).
     """
-    
+
     def __init__(self):
         """Initialize the server."""
         self.core = PoorCLICore()
@@ -248,8 +258,8 @@ class PoorCLIServer:
         self._running = False
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
-        self._client_streaming = False # set True if client opts in during initialize
-        self._pending_permissions: Dict[str, asyncio.Future] = {} # promptId → Future[bool]
+        self._client_streaming = False  # set True if client opts in during initialize
+        self._pending_permissions: Dict[str, asyncio.Future] = {}  # promptId → Future[bool]
 
         self._register_handlers()
 
@@ -277,7 +287,7 @@ class PoorCLIServer:
             return False
 
         return True
-    
+
     def _register_handlers(self) -> None:
         """Register JSON-RPC method handlers."""
         self.handlers = {
@@ -303,21 +313,21 @@ class PoorCLIServer:
             "poor-cli/cancelRequest": self.handle_cancel_request,
             "poor-cli/chatStreaming": self.handle_chat_streaming,
         }
-    
+
     # =========================================================================
     # Handler Methods
     # =========================================================================
-    
+
     async def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Initialize the server with provider configuration.
-        
+
         Params:
             provider: Optional provider name
             model: Optional model name
             apiKey: Optional API key
             permissionMode: Optional requested approval behavior for this session
-        
+
         Returns:
             Server capabilities
         """
@@ -339,7 +349,7 @@ class PoorCLIServer:
             await self.core.initialize(
                 provider_name=params.get("provider"),
                 model_name=params.get("model"),
-                api_key=params.get("apiKey")
+                api_key=params.get("apiKey"),
             )
             self.initialized = True
             provider_info = self.core.get_provider_info()
@@ -353,68 +363,64 @@ class PoorCLIServer:
                     "chatStreamingProvider": True,
                     "fileOperations": True,
                     "permissionMode": self.permission_mode,
-                    "providerInfo": provider_info
+                    "providerInfo": provider_info,
                 }
             }
         except ConfigurationError as e:
             raise ConfigurationError(f"Initialization failed: {e}") from e
-    
+
     async def handle_shutdown(self, params: Dict[str, Any]) -> None:
         """Shutdown the server."""
         self.logger.info("Shutdown requested")
         self._running = False
         return None
-    
+
     async def handle_chat(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle chat message.
-        
+
         Params:
             message: The message to send
             contextFiles: Optional list of file paths for context
-        
+
         Returns:
             content: Response text
             role: "assistant"
         """
         self._ensure_initialized()
-        
+
         message = params.get("message", "")
         context_files = params.get("contextFiles")
-        
+
         response_text = await self.core.send_message_sync(
-            message=message,
-            context_files=context_files
+            message=message, context_files=context_files
         )
-        
-        return {
-            "content": response_text,
-            "role": "assistant"
-        }
-    
+
+        return {"content": response_text, "role": "assistant"}
+
     async def handle_inline_complete(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle inline code completion.
-        
+
         Params:
             codeBefore: Code before cursor
             codeAfter: Code after cursor
             instruction: Optional instruction
             filePath: Current file path
             language: Programming language
-        
+
         Returns:
             completion: Generated code
             isPartial: Whether this is a partial result
         """
         self._ensure_initialized()
-        
+
         code_before = params.get("codeBefore", "")
         code_after = params.get("codeAfter", "")
         instruction = params.get("instruction", "")
         file_path = params.get("filePath", "")
         language = params.get("language", "")
-        
+
         # Collect all chunks
         chunks = []
         async for chunk in self.core.inline_complete(
@@ -422,30 +428,27 @@ class PoorCLIServer:
             code_after=code_after,
             instruction=instruction,
             file_path=file_path,
-            language=language
+            language=language,
         ):
             chunks.append(chunk)
-        
-        return {
-            "completion": "".join(chunks),
-            "isPartial": False
-        }
-    
+
+        return {"completion": "".join(chunks), "isPartial": False}
+
     async def handle_apply_edit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Apply a code edit.
-        
+
         Params:
             filePath: File to edit
             oldText: Text to replace
             newText: Replacement text
-        
+
         Returns:
             success: Whether the edit succeeded
             message: Result message
         """
         self._ensure_initialized()
-        
+
         file_path = params.get("filePath", "")
         old_text = params.get("oldText", "")
         new_text = params.get("newText", "")
@@ -458,120 +461,107 @@ class PoorCLIServer:
                 "new_text": new_text,
             },
         )
-        
+
         result = await self.core.apply_edit(
-            file_path=file_path,
-            old_text=old_text,
-            new_text=new_text
+            file_path=file_path, old_text=old_text, new_text=new_text
         )
-        
+
         success = not result.startswith("Error")
-        
-        return {
-            "success": success,
-            "message": result
-        }
-    
+
+        return {"success": success, "message": result}
+
     async def handle_read_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Read a file.
-        
+
         Params:
             filePath: File to read
             startLine: Optional start line
             endLine: Optional end line
-        
+
         Returns:
             content: File contents
         """
         self._ensure_initialized()
-        
+
         file_path = params.get("filePath", "")
         start_line = params.get("startLine")
         end_line = params.get("endLine")
-        
+
         content = await self.core.read_file(
-            file_path=file_path,
-            start_line=start_line,
-            end_line=end_line
+            file_path=file_path, start_line=start_line, end_line=end_line
         )
-        
+
         return {"content": content}
-    
+
     async def handle_execute_command(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a shell command.
-        
+
         Params:
             command: Command to execute
-        
+
         Returns:
             output: Command output
             exitCode: Exit code (always 0 for now)
         """
         self._ensure_initialized()
-        
+
         command = params.get("command", "")
         tool_args = {"command": command}
 
         with log_context(tool_name="bash"):
             await self._enforce_server_tool_permission("bash", tool_args)
             result = await self.core.execute_tool("bash", tool_args)
-        
-        return {
-            "output": result,
-            "exitCode": 0
-        }
-    
+
+        return {"output": result, "exitCode": 0}
+
     async def handle_get_tools(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get available tools.
-        
+
         Returns:
             tools: List of tool declarations
         """
         self._ensure_initialized()
-        
+
         return {"tools": self.core.get_available_tools()}
-    
+
     async def handle_switch_provider(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Switch AI provider.
-        
+
         Params:
             provider: Provider name
             model: Optional model name
-        
+
         Returns:
             success: Whether the switch succeeded
             provider: New provider info
         """
         self._ensure_initialized()
-        
+
         provider = params.get("provider", "")
         model = params.get("model")
-        
+
         await self.core.switch_provider(provider, model)
-        
-        return {
-            "success": True,
-            "provider": self.core.get_provider_info()
-        }
-    
+
+        return {"success": True, "provider": self.core.get_provider_info()}
+
     async def handle_get_provider_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get current provider info.
-        
+
         Returns:
             Provider info dict
         """
         self._ensure_initialized()
         return self.core.get_provider_info()
-    
+
     async def handle_clear_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Clear conversation history.
-        
+
         Returns:
             success: Always true
         """
@@ -730,10 +720,12 @@ class PoorCLIServer:
         if not isinstance(current, bool):
             raise InvalidParamsError(f"{key_path} is not a boolean value")
 
-        return await self.handle_set_config({
-            "keyPath": key_path,
-            "value": not current,
-        })
+        return await self.handle_set_config(
+            {
+                "keyPath": key_path,
+                "value": not current,
+            }
+        )
 
     def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
         """Flatten nested dict/list/scalars into a dot-path list."""
@@ -744,12 +736,14 @@ class PoorCLIServer:
             return
 
         if isinstance(value, list):
-            output.append({
-                "path": prefix,
-                "value": value,
-                "type": "list",
-                "isBoolean": False,
-            })
+            output.append(
+                {
+                    "path": prefix,
+                    "value": value,
+                    "type": "list",
+                    "isBoolean": False,
+                }
+            )
             return
 
         if isinstance(value, bool):
@@ -763,12 +757,14 @@ class PoorCLIServer:
         else:
             value_type = "string"
 
-        output.append({
-            "path": prefix,
-            "value": value,
-            "type": value_type,
-            "isBoolean": isinstance(value, bool),
-        })
+        output.append(
+            {
+                "path": prefix,
+                "value": value,
+                "type": value_type,
+                "isBoolean": isinstance(value, bool),
+            }
+        )
 
     def _resolve_config_parent(self, key_path: str) -> Tuple[Any, str]:
         keys = [k for k in key_path.split(".") if k]
@@ -815,9 +811,7 @@ class PoorCLIServer:
                 try:
                     return enum_cls(proposed)
                 except ValueError as e:
-                    raise InvalidParamsError(
-                        f"Invalid value for {key_path}: {proposed}"
-                    ) from e
+                    raise InvalidParamsError(f"Invalid value for {key_path}: {proposed}") from e
             raise InvalidParamsError(f"{key_path} expects a string enum value")
 
         if isinstance(current, bool):
@@ -890,13 +884,15 @@ class PoorCLIServer:
         if isinstance(value, Enum):
             return value.value
         return value
-    
+
     async def handle_cancel_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Cancel an in-flight agentic loop."""
         self.core.cancel_request()
         return {"success": True}
 
-    async def _streaming_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+    async def _streaming_permission_callback(
+        self, tool_name: str, tool_args: Dict[str, Any]
+    ) -> bool:
         """Interactive permission callback used during streaming chat.
         Sends permissionReq notification and waits for permissionRes."""
         prompt_id = str(uuid.uuid4())
@@ -913,7 +909,7 @@ class PoorCLIServer:
         future: asyncio.Future[bool] = loop.create_future()
         self._pending_permissions[prompt_id] = future
         try:
-            return await asyncio.wait_for(future, timeout=300) # 5 min timeout
+            return await asyncio.wait_for(future, timeout=300)  # 5 min timeout
         except asyncio.TimeoutError:
             return False
         finally:
@@ -965,7 +961,11 @@ class PoorCLIServer:
                 if event.type == "text_chunk":
                     notification = JsonRpcMessage(
                         method="poor-cli/streamChunk",
-                        params={"requestId": request_id, "chunk": event.data.get("chunk", ""), "done": False},
+                        params={
+                            "requestId": request_id,
+                            "chunk": event.data.get("chunk", ""),
+                            "done": False,
+                        },
                     )
                     await self.write_message_stdio(notification)
                     accumulated_text += event.data.get("chunk", "")
@@ -986,7 +986,7 @@ class PoorCLIServer:
                     )
                     await self.write_message_stdio(notification)
                 elif event.type == "permission_request":
-                    pass # handled by _streaming_permission_callback already
+                    pass  # handled by _streaming_permission_callback already
                 elif event.type == "cost_update":
                     notification = JsonRpcMessage(
                         method="poor-cli/costUpdate",
@@ -1013,7 +1013,12 @@ class PoorCLIServer:
                 elif event.type == "done":
                     done_notification = JsonRpcMessage(
                         method="poor-cli/streamChunk",
-                        params={"requestId": request_id, "chunk": "", "done": True, "reason": event.data.get("reason", "complete")},
+                        params={
+                            "requestId": request_id,
+                            "chunk": "",
+                            "done": True,
+                            "reason": event.data.get("reason", "complete"),
+                        },
                     )
                     await self.write_message_stdio(done_notification)
         finally:
@@ -1026,7 +1031,9 @@ class PoorCLIServer:
         if not self.initialized:
             raise Exception("Server not initialized. Call 'initialize' first.")
 
-    async def _enforce_server_tool_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+    async def _enforce_server_tool_permission(
+        self, tool_name: str, tool_args: Dict[str, Any]
+    ) -> None:
         """Apply configured server permission policy for direct tool handlers."""
         callback = self.core.permission_callback
         if callback is None:
@@ -1035,18 +1042,18 @@ class PoorCLIServer:
         permitted = await callback(tool_name, tool_args)
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
-    
+
     # =========================================================================
     # Message Dispatch
     # =========================================================================
-    
+
     async def dispatch(self, message: JsonRpcMessage) -> JsonRpcMessage:
         """
         Dispatch a JSON-RPC message to the appropriate handler.
-        
+
         Args:
             message: The incoming message
-        
+
         Returns:
             Response message
         """
@@ -1058,9 +1065,9 @@ class PoorCLIServer:
                         JsonRpcError.INVALID_REQUEST,
                         "Missing method",
                         {"error_code": "INVALID_REQUEST"},
-                    )
+                    ),
                 )
-            
+
             handler = self.handlers.get(message.method)
             if not handler:
                 return JsonRpcMessage(
@@ -1069,15 +1076,12 @@ class PoorCLIServer:
                         JsonRpcError.METHOD_NOT_FOUND,
                         f"Unknown method: {message.method}",
                         {"error_code": "METHOD_NOT_FOUND"},
-                    )
+                    ),
                 )
-            
+
             try:
                 result = await handler(message.params or {})
-                return JsonRpcMessage(
-                    id=message.id,
-                    result=result
-                )
+                return JsonRpcMessage(id=message.id, result=result)
             except InvalidParamsError as e:
                 return JsonRpcMessage(
                     id=message.id,
@@ -1109,19 +1113,19 @@ class PoorCLIServer:
                         JsonRpcError.INTERNAL_ERROR,
                         _sanitize_exception_message(e),
                         {"error_code": error_code},
-                    )
+                    ),
                 )
-    
+
     # =========================================================================
     # STDIO Transport
     # =========================================================================
-    
+
     async def read_message_stdio(self) -> Optional[JsonRpcMessage]:
         """
         Read a JSON-RPC message from stdin.
-        
+
         Uses the LSP-style Content-Length header protocol.
-        
+
         Returns:
             Parsed message or None on EOF.
         """
@@ -1158,40 +1162,42 @@ class PoorCLIServer:
             body = body_prefix
             while len(body) < content_length:
                 remaining = content_length - len(body)
-                chunk = await loop.run_in_executor(None, lambda size=remaining: sys.stdin.read(size))
+                chunk = await loop.run_in_executor(
+                    None, lambda size=remaining: sys.stdin.read(size)
+                )
                 if not chunk:
                     return None
                 body += chunk
 
             body = body[:content_length]
             return JsonRpcMessage.from_json(body)
-            
+
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON parse error: {e}")
             return None
         except Exception as e:
             self.logger.error(f"Read error: {e}")
             return None
-    
+
     async def write_message_stdio(self, message: JsonRpcMessage) -> None:
         """
         Write a JSON-RPC message to stdout.
-        
+
         Uses the LSP-style Content-Length header protocol.
-        
+
         Args:
             message: The message to write.
         """
         try:
             body = message.to_json()
             content = f"Content-Length: {len(body)}\r\n\r\n{body}"
-            
+
             sys.stdout.write(content)
             sys.stdout.flush()
-            
+
         except Exception as e:
             self.logger.error(f"Write error: {e}")
-    
+
     async def _dispatch_and_respond(self, message: JsonRpcMessage) -> None:
         """Dispatch a request and write the response. Used for background tasks."""
         try:
@@ -1243,6 +1249,7 @@ class PoorCLIServer:
 # Streaming Server Extension
 # =============================================================================
 
+
 class StreamingJsonRpcServer(PoorCLIServer):
     """
     Extended server with streaming support.
@@ -1258,9 +1265,7 @@ class StreamingJsonRpcServer(PoorCLIServer):
         message = params.get("message", "")
         context_files = params.get("contextFiles")
 
-        async for chunk in self.core.send_message(
-            message=message, context_files=context_files
-        ):
+        async for chunk in self.core.send_message(message=message, context_files=context_files):
             notification = JsonRpcMessage(
                 method="poor-cli/streamChunk",
                 params={"requestId": request_id, "chunk": chunk, "done": False},
@@ -1278,34 +1283,25 @@ class StreamingJsonRpcServer(PoorCLIServer):
 # Main Entry Point
 # =============================================================================
 
+
 def main() -> None:
     """Main entry point for the server."""
-    parser = argparse.ArgumentParser(
-        description="PoorCLI JSON-RPC Server for editor integration"
-    )
-    parser.add_argument(
-        "--stdio",
-        action="store_true",
-        help="Use stdio transport (for Neovim)"
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging"
-    )
-    
+    parser = argparse.ArgumentParser(description="PoorCLI JSON-RPC Server for editor integration")
+    parser.add_argument("--stdio", action="store_true", help="Use stdio transport (for Neovim)")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+
     args = parser.parse_args()
-    
+
     # Set up logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        stream=sys.stderr  # Log to stderr to keep stdout clean for JSON-RPC
+        stream=sys.stderr,  # Log to stderr to keep stdout clean for JSON-RPC
     )
-    
+
     server = PoorCLIServer()
-    
+
     # Stdio is the only supported transport.
     asyncio.run(server.run_stdio())
 

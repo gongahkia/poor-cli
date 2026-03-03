@@ -192,37 +192,74 @@ fn run_app(
         move || match RpcClient::spawn_with_notifications(&python_bin, cwd.as_deref()) {
             Ok((client, notification_rx)) => {
                 // Spawn notification reader thread → maps ServerNotification → ServerMsg
-                thread::spawn(move || {
-                    loop {
-                        match notification_rx.recv() {
-                            Ok(notif) => {
-                                let msg = match notif {
-                                    ServerNotification::StreamChunk { chunk, done, reason, .. } => {
-                                        ServerMsg::StreamChunk { chunk, done, reason }
-                                    }
-                                    ServerNotification::ToolEvent {
-                                        event_type, tool_name, tool_args, tool_result,
-                                        diff, iteration_index, iteration_cap, ..
-                                    } => ServerMsg::ToolEvent {
-                                        event_type, tool_name, tool_args, tool_result,
-                                        diff, iteration_index, iteration_cap,
-                                    },
-                                    ServerNotification::PermissionRequest {
-                                        tool_name, tool_args, prompt_id, ..
-                                    } => ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id },
-                                    ServerNotification::Progress {
-                                        phase, message, iteration_index, iteration_cap, ..
-                                    } => ServerMsg::Progress { phase, message, iteration_index, iteration_cap },
-                                    ServerNotification::CostUpdate {
-                                        input_tokens, output_tokens, ..
-                                    } => ServerMsg::CostUpdate { input_tokens, output_tokens },
-                                };
-                                if tx_notif.send(msg).is_err() {
-                                    break;
-                                }
+                thread::spawn(move || loop {
+                    match notification_rx.recv() {
+                        Ok(notif) => {
+                            let msg = match notif {
+                                ServerNotification::StreamChunk {
+                                    chunk,
+                                    done,
+                                    reason,
+                                    ..
+                                } => ServerMsg::StreamChunk {
+                                    chunk,
+                                    done,
+                                    reason,
+                                },
+                                ServerNotification::ToolEvent {
+                                    event_type,
+                                    tool_name,
+                                    tool_args,
+                                    tool_result,
+                                    diff,
+                                    iteration_index,
+                                    iteration_cap,
+                                    ..
+                                } => ServerMsg::ToolEvent {
+                                    event_type,
+                                    tool_name,
+                                    tool_args,
+                                    tool_result,
+                                    diff,
+                                    iteration_index,
+                                    iteration_cap,
+                                },
+                                ServerNotification::PermissionRequest {
+                                    tool_name,
+                                    tool_args,
+                                    prompt_id,
+                                    ..
+                                } => ServerMsg::PermissionRequest {
+                                    tool_name,
+                                    tool_args,
+                                    prompt_id,
+                                },
+                                ServerNotification::Progress {
+                                    phase,
+                                    message,
+                                    iteration_index,
+                                    iteration_cap,
+                                    ..
+                                } => ServerMsg::Progress {
+                                    phase,
+                                    message,
+                                    iteration_index,
+                                    iteration_cap,
+                                },
+                                ServerNotification::CostUpdate {
+                                    input_tokens,
+                                    output_tokens,
+                                    ..
+                                } => ServerMsg::CostUpdate {
+                                    input_tokens,
+                                    output_tokens,
+                                },
+                            };
+                            if tx_notif.send(msg).is_err() {
+                                break;
                             }
-                            Err(_) => break,
                         }
+                        Err(_) => break,
                     }
                 });
 
@@ -238,19 +275,25 @@ fn run_app(
                                 .pointer("/providerInfo/name")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
-                                .unwrap_or_else(|| provider.clone().unwrap_or_else(|| "gemini".into()));
+                                .unwrap_or_else(|| {
+                                    provider.clone().unwrap_or_else(|| "gemini".into())
+                                });
                             let mdl = caps
                                 .pointer("/providerInfo/model")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_else(|| {
-                                    model.clone().unwrap_or_else(|| "gemini-2.0-flash-exp".into())
+                                    model
+                                        .clone()
+                                        .unwrap_or_else(|| "gemini-2.0-flash-exp".into())
                                 });
                             (prov, mdl)
                         } else {
                             (
                                 provider.clone().unwrap_or_else(|| "gemini".into()),
-                                model.clone().unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
+                                model
+                                    .clone()
+                                    .unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
                             )
                         };
                         let _ = tx_init.send(ServerMsg::Initialized {
@@ -341,12 +384,18 @@ fn run_app(
                     app.stop_waiting();
                     app.push_message(ChatMessage::error(message));
                 }
-                ServerMsg::StreamChunk { chunk, done, reason: _ } => {
+                ServerMsg::StreamChunk {
+                    chunk,
+                    done,
+                    reason: _,
+                } => {
                     if done {
                         app.finalize_streaming();
                         app.stop_waiting();
                         // Advance plan if we're executing plan steps
-                        if !app.plan_steps.is_empty() && app.plan_current_step < app.plan_steps.len() {
+                        if !app.plan_steps.is_empty()
+                            && app.plan_current_step < app.plan_steps.len()
+                        {
                             app.advance_plan_step();
                             if app.plan_current_step < app.plan_steps.len() {
                                 app.mode = poor_cli_tui::app::AppMode::PlanReview;
@@ -363,8 +412,13 @@ fn run_app(
                     }
                 }
                 ServerMsg::ToolEvent {
-                    event_type, tool_name, tool_args, tool_result,
-                    diff, iteration_index, iteration_cap,
+                    event_type,
+                    tool_name,
+                    tool_args,
+                    tool_result,
+                    diff,
+                    iteration_index,
+                    iteration_cap,
                 } => {
                     app.current_iteration = iteration_index;
                     app.iteration_cap = iteration_cap;
@@ -381,17 +435,29 @@ fn run_app(
                         }
                     }
                 }
-                ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id } => {
+                ServerMsg::PermissionRequest {
+                    tool_name,
+                    tool_args,
+                    prompt_id,
+                } => {
                     let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
                     app.permission_message = format!("{tool_name}: {args_str}");
                     app.permission_prompt_id = prompt_id;
                     app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
                 }
-                ServerMsg::Progress { phase: _, message: _, iteration_index, iteration_cap } => {
+                ServerMsg::Progress {
+                    phase: _,
+                    message: _,
+                    iteration_index,
+                    iteration_cap,
+                } => {
                     app.current_iteration = iteration_index;
                     app.iteration_cap = iteration_cap;
                 }
-                ServerMsg::CostUpdate { input_tokens, output_tokens } => {
+                ServerMsg::CostUpdate {
+                    input_tokens,
+                    output_tokens,
+                } => {
                     app.turn_input_tokens += input_tokens;
                     app.turn_output_tokens += output_tokens;
                     app.cumulative_input_tokens += input_tokens;
@@ -465,11 +531,14 @@ fn run_app(
                     if let Some(desc) = step_desc {
                         let exec_msg = format!(
                             "Execute step {} of my plan: {}\n\nOriginal request: {}",
-                            step_idx + 1, desc, orig,
+                            step_idx + 1,
+                            desc,
+                            orig,
                         );
                         let display = format!("[plan step {}] {}", step_idx + 1, desc);
                         if step_idx < app.plan_steps.len() {
-                            app.plan_steps[step_idx].status = poor_cli_tui::app::PlanStepStatus::Running;
+                            app.plan_steps[step_idx].status =
+                                poor_cli_tui::app::PlanStepStatus::Running;
                         }
                         send_chat_request(
                             &mut app,
@@ -1625,16 +1694,27 @@ Watch mode: {}",
             };
 
         // Use real token counts if available, else estimates
-        let (in_tokens, out_tokens) = if app.cumulative_input_tokens > 0 || app.cumulative_output_tokens > 0 {
-            (app.cumulative_input_tokens as f64, app.cumulative_output_tokens as f64)
-        } else {
-            (app.input_tokens_estimate as f64, app.output_tokens_estimate as f64)
-        };
+        let (in_tokens, out_tokens) =
+            if app.cumulative_input_tokens > 0 || app.cumulative_output_tokens > 0 {
+                (
+                    app.cumulative_input_tokens as f64,
+                    app.cumulative_output_tokens as f64,
+                )
+            } else {
+                (
+                    app.input_tokens_estimate as f64,
+                    app.output_tokens_estimate as f64,
+                )
+            };
         let input_cost = (in_tokens / 1_000_000.0) * input_per_million;
         let output_cost = (out_tokens / 1_000_000.0) * output_per_million;
         let total = input_cost + output_cost;
 
-        let real_label = if app.cumulative_input_tokens > 0 { "" } else { " (estimated)" };
+        let real_label = if app.cumulative_input_tokens > 0 {
+            ""
+        } else {
+            " (estimated)"
+        };
         let text = format!(
             "**Session Usage Statistics:**\n\n\
 Requests: {}\n\
@@ -1940,7 +2020,9 @@ Total: **${:.4}**",
     if lowered.starts_with("/plan ") {
         let request = raw.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
         if request.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /plan <task description>".to_string()));
+            app.push_message(ChatMessage::system(
+                "Usage: /plan <task description>".to_string(),
+            ));
             return false;
         }
         // Ask the AI to generate a plan
@@ -1968,7 +2050,11 @@ Task: {request}"
                         .lines()
                         .filter(|l| {
                             let t = l.trim();
-                            !t.is_empty() && t.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                            !t.is_empty()
+                                && t.chars()
+                                    .next()
+                                    .map(|c| c.is_ascii_digit())
+                                    .unwrap_or(false)
                         })
                         .map(|l| {
                             // strip "1. " prefix
@@ -1980,7 +2066,9 @@ Task: {request}"
                         .collect();
                     if steps.is_empty() {
                         let _ = tx2.send(ServerMsg::SystemMessage {
-                            content: format!("Could not parse plan steps from response:\n{content}"),
+                            content: format!(
+                                "Could not parse plan steps from response:\n{content}"
+                            ),
                         });
                     } else {
                         let _ = tx2.send(ServerMsg::SystemMessage {
@@ -1992,7 +2080,9 @@ Task: {request}"
                     let _ = tx2.send(ServerMsg::Error { message: e });
                 }
                 Err(_) => {
-                    let _ = tx2.send(ServerMsg::Error { message: "RPC unavailable".into() });
+                    let _ = tx2.send(ServerMsg::Error {
+                        message: "RPC unavailable".into(),
+                    });
                 }
             }
         });
@@ -2001,7 +2091,8 @@ Task: {request}"
 
     if lowered == "/undo" {
         // Ask the AI to undo the last file change using checkpoint
-        let undo_msg = "Undo the last file change. Use the checkpoint system to restore the previous version.";
+        let undo_msg =
+            "Undo the last file change. Use the checkpoint system to restore the previous version.";
         send_chat_request(
             app,
             tx,

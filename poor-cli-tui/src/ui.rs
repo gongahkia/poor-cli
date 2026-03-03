@@ -34,8 +34,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),            // status bar
             Constraint::Min(5),               // chat area
-            Constraint::Length(input_height),  // input area (grows for multi-line)
-            Constraint::Length(1),             // hint bar
+            Constraint::Length(input_height), // input area (grows for multi-line)
+            Constraint::Length(1),            // hint bar
         ])
         .split(frame.area());
 
@@ -113,7 +113,10 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ));
         if app.turn_input_tokens + app.turn_output_tokens > 0 {
             spans.push(Span::styled(
-                format!(" (turn: {})", app.turn_input_tokens + app.turn_output_tokens),
+                format!(
+                    " (turn: {})",
+                    app.turn_input_tokens + app.turn_output_tokens
+                ),
                 Style::default().fg(Color::Rgb(80, 80, 100)),
             ));
         }
@@ -313,7 +316,10 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                 if msg.content.lines().count() > 40 {
                     all_lines.push(Line::from(vec![
                         Span::styled("  │ ", theme::tool_border_style()),
-                        Span::styled("... (truncated)".to_string(), Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            "... (truncated)".to_string(),
+                            Style::default().fg(Color::DarkGray),
+                        ),
                     ]));
                 }
                 all_lines.push(Line::from(Span::styled(
@@ -407,7 +413,12 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
         for (i, part) in app.input_buffer.split('\n').enumerate() {
             let prefix = if i == 0 { "  ❯ " } else { "  … " };
             lines.push(Line::from(vec![
-                Span::styled(prefix.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    prefix.to_string(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(part.to_string(), theme::input_style()),
             ]));
         }
@@ -692,7 +703,9 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
         Line::from(""),
         Line::from(Span::styled(
             "  📋 Plan Review",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
     ];
@@ -701,7 +714,12 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
         let (marker, style) = match step.status {
             crate::app::PlanStepStatus::Pending => {
                 if i == app.plan_current_step {
-                    ("▸ ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+                    (
+                        "▸ ",
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    )
                 } else {
                     ("  ", Style::default().fg(Color::DarkGray))
                 }
@@ -719,9 +737,17 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Enter",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" to execute, ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Esc", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Esc",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" to cancel", Style::default().fg(Color::DarkGray)),
     ]));
     lines.push(Line::from(""));

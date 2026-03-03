@@ -507,10 +507,13 @@ impl App {
     }
 
     pub fn set_plan(&mut self, steps: Vec<String>, original_request: String) {
-        self.plan_steps = steps.into_iter().map(|s| PlanStep {
-            description: s,
-            status: PlanStepStatus::Pending,
-        }).collect();
+        self.plan_steps = steps
+            .into_iter()
+            .map(|s| PlanStep {
+                description: s,
+                status: PlanStepStatus::Pending,
+            })
+            .collect();
         self.plan_current_step = 0;
         self.plan_original_request = original_request;
         self.mode = AppMode::PlanReview;
@@ -524,7 +527,9 @@ impl App {
     }
 
     pub fn current_plan_step_description(&self) -> Option<&str> {
-        self.plan_steps.get(self.plan_current_step).map(|s| s.description.as_str())
+        self.plan_steps
+            .get(self.plan_current_step)
+            .map(|s| s.description.as_str())
     }
 
     pub fn clear_plan(&mut self) {
