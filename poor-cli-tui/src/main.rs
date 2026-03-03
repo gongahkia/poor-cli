@@ -49,6 +49,7 @@ struct Cli {
 
 // ── Background message from server thread ────────────────────────────
 
+#[allow(dead_code)]
 enum ServerMsg {
     Initialized {
         provider: String,
@@ -352,7 +353,7 @@ fn run_app(
                     app.permission_message = format!("{tool_name}: {args_str}");
                     app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
                 }
-                ServerMsg::Progress { phase, message, iteration_index, iteration_cap } => {
+                ServerMsg::Progress { phase: _, message: _, iteration_index, iteration_cap } => {
                     app.current_iteration = iteration_index;
                     app.iteration_cap = iteration_cap;
                 }
@@ -413,7 +414,15 @@ fn run_app(
                         });
                     }
                 }
-                InputAction::PermissionAnswered(_allowed) => {}
+                InputAction::PermissionAnswered(allowed) => {
+                    let _ = rpc_cmd_tx.send(RpcCommand::SendNotification {
+                        method: "poor-cli/permissionRes".into(),
+                        params: serde_json::json!({
+                            "promptId": "",
+                            "allowed": allowed,
+                        }),
+                    });
+                }
                 InputAction::Redraw => {}
                 InputAction::None => {}
             }

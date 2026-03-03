@@ -129,8 +129,16 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Waiting indicator on the right side
     if app.waiting {
         let elapsed = app.wait_elapsed();
-        let right_text = format!(" {} thinking… {elapsed} ", app.spinner_frame());
-        // Calculate padding
+        let right_text = if let Some(tool) = &app.active_tool {
+            format!(
+                " [{}/{}] Running: {tool}… {elapsed} ",
+                app.current_iteration, app.iteration_cap
+            )
+        } else if app.streaming_message.is_some() {
+            format!(" {} streaming… {elapsed} ", app.spinner_frame())
+        } else {
+            format!(" {} thinking… {elapsed} ", app.spinner_frame())
+        };
         let used_width: usize = spans.iter().map(|s| s.content.len()).sum();
         let remaining = (area.width as usize).saturating_sub(used_width + right_text.len());
         if remaining > 0 {

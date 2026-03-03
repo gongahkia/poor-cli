@@ -124,6 +124,7 @@ pub struct RpcClient {
     next_id: AtomicU64,
     pending_requests: Arc<Mutex<HashMap<u64, SyncSender<Result<Value, String>>>>>,
     notification_tx: Option<Sender<ServerNotification>>,
+    #[allow(dead_code)]
     reader_handle: Option<thread::JoinHandle<()>>,
     stdin_lock: Arc<Mutex<()>>, // serialize writes
 }
