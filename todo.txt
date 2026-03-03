@@ -1,0 +1,194 @@
+# poor-cli Feature Expansion TODO
+# Each line is one atomic task. Status: [ ] pending, [x] done.
+# Lines starting with ## are section headers.
+# Tasks reference exact files, line numbers, function names, and data structures.
+
+## TIER 1 — /commit, /review, /test commands + token display + project profiles
+
+# --- Feature 1: /commit command (AI-generated commit messages) ---
+
+[ ] 1.1  In poor_cli/prompts.py, after PROMPT_REVIEW_CODE (line 238), add a new constant PROMPT_COMMIT_MESSAGE. It should be a string template with a {diff} placeholder. The prompt should instruct the AI to generate a concise conventional-commits-format message (e.g. "feat: ...", "fix: ...") and return ONLY the commit message text, no explanation.
+
+[ ] 1.2  In poor_cli/repl_commands.py, add an import for Confirm from rich.prompt at the top (line 8 area, alongside existing Prompt import). Also add an import for the new PROMPT_COMMIT_MESSAGE from ..prompts.
+
+[ ] 1.3  In poor_cli/repl_commands.py, before the final else clause (line 576), add a new elif block: `elif cmd == "/commit":`. The handler should: (a) call `await repl.tool_registry.bash(command="git diff --staged", timeout=30)`, (b) if the result is empty or "(No output)", print a yellow warning "No staged changes. Stage files with git add first." and return, (c) format the diff into PROMPT_COMMIT_MESSAGE template, (d) send to provider via `response = await repl.provider.send_message(formatted_prompt)`, (e) extract response.content, strip it, print the proposed message in a Panel titled "Proposed Commit Message", (f) use `Confirm.ask("Commit with this message?")`, (g) if yes, shell-escape the message and call `await repl.tool_registry.bash(command=f'git commit -m "{escaped_msg}"')`, print green success. If no, print yellow "Commit cancelled".
+
+[ ] 1.4  In poor_cli/repl_commands.py, in the /help Panel string (lines 28-76), add "/commit" under a new "[cyan]Git Integration:[/cyan]" section after the Export section (after line 56). The help text: "/commit        - AI-generated commit message for staged changes".
+
+[ ] 1.5  In poor_cli/enhanced_input.py, add '/commit' to the CommandCompleter.COMMANDS list (line 19-24).
+
+# --- Feature 2: /review command (code review) ---
+
+[ ] 2.1  In poor_cli/repl_commands.py, before the final else clause (line 576), add a new elif block: `elif cmd.startswith("/review"):`. The handler should: (a) split cmd on whitespace to get optional file path argument, (b) if a file path is given, call `content = await repl.tool_registry.read_file(file_path)` and detect language from the file extension (e.g. ".py"->"python", ".js"->"javascript", ".rs"->"rust", default to "text"), (c) if no file path, call `content = await repl.tool_registry.bash(command="git diff --staged", timeout=30)` and set language to "diff", (d) if content is empty, print yellow warning and return, (e) import format_prompt and PROMPT_REVIEW_CODE from ..prompts, (f) call `formatted = format_prompt(PROMPT_REVIEW_CODE, language=language, code=content)`, (g) send via `await repl.process_request(formatted)`.
+
+[ ] 2.2  In poor_cli/repl_commands.py, in the /help Panel string, add "/review [file]  - AI code review (file or staged diff)" under the new "Git Integration" section added in task 1.4.
+
+[ ] 2.3  In poor_cli/enhanced_input.py, add '/review' to the CommandCompleter.COMMANDS list.
+
+# --- Feature 3: /test command (test generation) ---
+
+[ ] 3.1  In poor_cli/repl_commands.py, before the final else clause, add a new elif block: `elif cmd.startswith("/test "):` (note the trailing space to require an argument). The handler should: (a) parse file path from `cmd.split(maxsplit=1)[1]`, (b) call `content = await repl.tool_registry.read_file(file_path)`, (c) detect language from extension, (d) import format_prompt and PROMPT_GENERATE_TESTS from ..prompts, (e) format with `format_prompt(PROMPT_GENERATE_TESTS, language=language, code=content)`, (f) send via `await repl.process_request(formatted)`. Note: do NOT auto-write the test file — let the AI use its tools if the user asks it to save.
+
+[ ] 3.2  In poor_cli/repl_commands.py, in the /help Panel string, add "/test <file>    - Generate unit tests for a file" under a new "[cyan]Code Tools:[/cyan]" section.
+
+[ ] 3.3  In poor_cli/enhanced_input.py, add '/test' to the CommandCompleter.COMMANDS list.
+
+# --- Feature 4: Token budget display in REPL prompt ---
+
+[ ] 4.1  In poor_cli/repl_async.py, in the run() method (around line 589-591), modify the prompt_text construction. Currently it is: `prompt_text = f"\nYou ({provider_short}/{model_short}): "`. Change it to: first compute `token_info = ""`, then `if self.config.ui.show_token_count: est = self.session_stats.get("input_tokens_estimate", 0) + self.session_stats.get("output_tokens_estimate", 0); token_info = f" [{est:,}tok]"`, then `prompt_text = f"\nYou ({provider_short}/{model_short}){token_info}: "`.
+
+# --- Feature 5: Project profiles (per-repo config overlay) ---
+
+[ ] 5.1  In poor_cli/config.py, in the ConfigManager.load() method (line 254-290), after `self.config = Config.from_dict(data)` (line 277) and before the path expansion block (line 279), add a call to a new method: `self._apply_repo_overrides()`.
+
+[ ] 5.2  In poor_cli/config.py, add a new method `_apply_repo_overrides(self)` to the ConfigManager class. This method should: (a) compute `repo_config_path = Path.cwd() / ".poor-cli" / "config.yaml"`, (b) if it does not exist, return early, (c) read and yaml.safe_load it, (d) if the loaded data is None or not a dict, return, (e) call `self._deep_merge(self.config, data)`, (f) log "Applied repo-level config overrides".
+
+[ ] 5.3  In poor_cli/config.py, add a new static method `_deep_merge(config: Config, overrides: Dict[str, Any])` to ConfigManager. For each key in overrides that matches a Config field name (model, history, ui, security, tools, plan_mode, checkpoint), get the corresponding sub-config dataclass via getattr, then for each sub-key in overrides[key], call setattr on the sub-config. Skip unknown keys with a logger.warning.
+
+## TIER 2 — Pipe/stdin mode, --script batch, prompt library, GitHub tools
+
+# --- Feature 6: Pipe/stdin mode ---
+
+[ ] 6.1  In poor_cli/repl_async.py, in the main() function (line 1254), add a new argument to common_parser (after the --dangerously-skip-permissions arg, around line 1279): `common_parser.add_argument("-f", "--file", help="File to include as context")`.
+
+[ ] 6.2  In poor_cli/repl_async.py, in the main() function, after `args = parser.parse_args()` (line 1298) and before the repl creation (line 1300), add stdin detection logic: `if not sys.stdin.isatty():`. Inside this block: (a) read `stdin_data = sys.stdin.read().strip()`, (b) build `file_ctx = ""`, (c) if `getattr(args, 'file', None)` is truthy, read the file content and set `file_ctx = f"File {args.file}:\n```\n{content}\n```\n\n"`, (d) set `prompt = getattr(args, 'prompt', None) or stdin_data`, (e) set `combined = file_ctx + prompt`, (f) create repl with same overrides as line 1300-1306, (g) call `sys.exit(asyncio.run(repl.run_non_interactive(combined, output_format=getattr(args, 'output', 'text'))))`.
+
+[ ] 6.3  In poor_cli/repl_async.py, in the existing `run` subcommand path (lines 1307-1311), if `args.file` is set, read the file and prepend its content to `args.prompt` before passing to `run_non_interactive`.
+
+# --- Feature 7: --script batch mode ---
+
+[ ] 7.1  In poor_cli/repl_async.py, in main(), add a new argument to common_parser: `common_parser.add_argument("--script", help="Run prompts from a script file (one per line, or separated by ---)")`.
+
+[ ] 7.2  In poor_cli/repl_async.py, add a new method `async def run_script(self, script_path: str) -> int` to PoorCLIAsync. It should: (a) read the file at script_path, (b) if the content contains "\n---\n", split on that delimiter; otherwise split on "\n", (c) filter out empty/whitespace-only lines, (d) call `await self.initialize(show_welcome=False)`, (e) for each prompt, print a dim header like `"--- Prompt {i+1}/{total} ---"`, call `await self.process_request(prompt)`, print a blank line separator, (f) return 0.
+
+[ ] 7.3  In poor_cli/repl_async.py, in main(), after the stdin detection block (from task 6.2) and before the existing `run` subcommand check (line 1307), add: `if getattr(args, 'script', None):` followed by repl creation and `sys.exit(asyncio.run(repl.run_script(args.script)))`.
+
+# --- Feature 8: Prompt library ---
+
+[ ] 8.1  Create new file poor_cli/prompt_library.py with a class PromptLibrary. Constructor takes `config_dir: Path` and sets `self.prompts_dir = config_dir / "prompts"`. The class should have these methods: (a) `save(name: str, content: str) -> None` — creates prompts_dir if needed, writes to `prompts_dir / f"{name}.txt"`, (b) `load(name: str) -> str` — reads from `prompts_dir / f"{name}.txt"`, raises FileNotFoundError if missing, (c) `list_all() -> List[str]` — returns sorted list of stem names from *.txt files in prompts_dir (returns empty list if dir doesn't exist), (d) `delete(name: str) -> None` — removes the file. All file I/O should be synchronous (the files are tiny).
+
+[ ] 8.2  In poor_cli/repl_async.py, in PoorCLIAsync.__init__ (around line 120, after input_manager init), add: `self.prompt_library = None`. Then in the initialize() method (around line 196, after repo_config session start), add: if self.repo_config exists, `from .prompt_library import PromptLibrary` and `self.prompt_library = PromptLibrary(self.repo_config.config_dir)`.
+
+[ ] 8.3  In poor_cli/repl_commands.py, before the final else, add handler for `elif cmd.startswith("/save-prompt "):`. It should: (a) parse name from `cmd.split(maxsplit=1)[1].strip()`, (b) if no repl.prompt_library, print red error and return, (c) ask user for prompt content via `Prompt.ask("[bold]Enter prompt text[/bold]")`, (d) call `repl.prompt_library.save(name, content)`, (e) print green confirmation.
+
+[ ] 8.4  In poor_cli/repl_commands.py, before the final else, add handler for `elif cmd.startswith("/use "):`. It should: (a) parse name from `cmd.split(maxsplit=1)[1].strip()`, (b) if no repl.prompt_library, print red error and return, (c) try `content = repl.prompt_library.load(name)`, catch FileNotFoundError and print red error, (d) print dim "Loaded prompt: {name}", (e) send via `await repl.process_request(content)`.
+
+[ ] 8.5  In poor_cli/repl_commands.py, before the final else, add handler for `elif cmd == "/prompts":`. It should: (a) if no repl.prompt_library, print red error and return, (b) call `prompts = repl.prompt_library.list_all()`, (c) if empty, print yellow "No saved prompts", (d) otherwise import Table from rich.table, create a table with columns "Name" and "Preview", for each name load the content and show first 60 chars as preview, print the table.
+
+[ ] 8.6  In poor_cli/repl_commands.py, in the /help Panel string, add a new section "[cyan]Prompt Library:[/cyan]" with entries for /save-prompt, /use, and /prompts.
+
+[ ] 8.7  In poor_cli/enhanced_input.py, add '/save-prompt', '/use', '/prompts' to CommandCompleter.COMMANDS.
+
+# --- Feature 9: GitHub tools ---
+
+[ ] 9.1  Create new file poor_cli/github_tools.py. It should contain 6 async functions, each using asyncio.create_subprocess_exec to call the `gh` CLI. Each function should capture stdout, decode as utf-8, and return the string. The functions are: (a) `async def gh_pr_list(state: str = "open", limit: int = 10) -> str` — runs `gh pr list --state {state} --limit {limit} --json number,title,author,url,state`, (b) `async def gh_pr_view(number: int) -> str` — runs `gh pr view {number} --json number,title,body,state,author,url,comments`, (c) `async def gh_issue_list(state: str = "open", limit: int = 10) -> str` — runs `gh issue list --state {state} --limit {limit} --json number,title,author,url,state`, (d) `async def gh_issue_view(number: int) -> str` — runs `gh issue view {number} --json number,title,body,state,author,url,comments`, (e) `async def gh_pr_create(title: str, body: str, base: str = "main") -> str` — runs `gh pr create --title {title} --body {body} --base {base}`, (f) `async def gh_pr_comment(number: int, body: str) -> str` — runs `gh pr comment {number} --body {body}`. Each should handle subprocess errors and return error messages as strings.
+
+[ ] 9.2  In poor_cli/tools_async.py, at the top, add `import shutil`.
+
+[ ] 9.3  In poor_cli/tools_async.py, at the end of the _register_tools() method (after the "create_directory" entry, around line 349), add a conditional block: `if shutil.which("gh"):` that registers 6 new tools. Each tool entry follows the existing dict pattern with "function" and "declaration" keys. Tool names: "gh_pr_list", "gh_pr_view", "gh_issue_list", "gh_issue_view", "gh_pr_create", "gh_pr_comment". Each declaration should use the same Gemini OBJECT/STRING/INTEGER schema format as existing tools. The function for each should be a thin wrapper method on ToolRegistryAsync.
+
+[ ] 9.4  In poor_cli/tools_async.py, add 6 new async methods to ToolRegistryAsync that import and delegate to the functions in github_tools.py: `async def gh_pr_list(self, state="open", limit=10)`, `async def gh_pr_view(self, number)`, `async def gh_issue_list(self, state="open", limit=10)`, `async def gh_issue_view(self, number)`, `async def gh_pr_create(self, title, body, base="main")`, `async def gh_pr_comment(self, number, body)`.
+
+[ ] 9.5  In poor_cli/prompts.py, in the SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE string (line 144-174), after the "- bash(command):" line (line 163), add conditional text. Since this is a static template, add these lines unconditionally: "- gh_pr_list(state, limit): List GitHub PRs\n- gh_pr_view(number): View a GitHub PR\n- gh_issue_list(state, limit): List GitHub issues\n- gh_issue_view(number): View a GitHub issue\n- gh_pr_create(title, body, base): Create a GitHub PR\n- gh_pr_comment(number, body): Comment on a GitHub PR\n" with a note "(GitHub tools require the `gh` CLI)".
+
+## TIER 3 — Web search tool, image/vision input, watch mode
+
+# --- Feature 10: Web search tool ---
+
+[ ] 10.1  Create new file poor_cli/web_search.py with two async functions. (a) `async def brave_search(query: str, api_key: str, count: int = 5) -> str`: uses aiohttp to GET `https://api.search.brave.com/res/v1/web/search` with headers `{"Accept": "application/json", "Accept-Encoding": "gzip", "X-Subscription-Token": api_key}` and params `{"q": query, "count": count}`. Parses JSON response, extracts web.results list, formats each as "Title: {title}\nURL: {url}\nSnippet: {description}\n". Returns formatted string or error message. (b) `async def duckduckgo_search(query: str, count: int = 5) -> str`: uses aiohttp to GET `https://html.duckduckgo.com/html/` with params `{"q": query}`, parses the HTML response with regex to extract result titles and snippets from `<a class="result__a"` and `<a class="result__snippet"` elements. Returns formatted results or error message. Both functions should catch exceptions and return error strings rather than raising.
+
+[ ] 10.2  In poor_cli/tools_async.py, at the end of _register_tools() (after the GitHub tools block from task 9.3), add a "web_search" tool entry with declaration: name "web_search", description "Search the web for current information. Returns titles, URLs, and snippets.", parameters with "query" (STRING, required).
+
+[ ] 10.3  In poor_cli/tools_async.py, add a new method `async def web_search(self, query: str) -> str` to ToolRegistryAsync. It should: (a) `import os`, (b) check `os.environ.get("BRAVE_SEARCH_API_KEY")`, (c) if available, `from .web_search import brave_search` and call it, (d) otherwise, `from .web_search import duckduckgo_search` and call that, (e) return the result string.
+
+[ ] 10.4  In .env.example, after the OLLAMA section (line 24), add a new section: "# Web Search - Optional (for web_search tool)\n# Get your key from: https://brave.com/search/api/\n# BRAVE_SEARCH_API_KEY=your-brave-search-api-key-here".
+
+[ ] 10.5  In poor_cli/prompts.py, in SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE, after the GitHub tools lines (added in task 9.5), add: "- web_search(query): Search the web for current information".
+
+# --- Feature 11: Image/vision input ---
+
+[ ] 11.1  Create new file poor_cli/vision.py. It should contain: (a) `IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}`, (b) `def encode_image(path: str) -> tuple` that reads the file in binary, base64-encodes it, determines mime_type from extension (png->image/png, jpg/jpeg->image/jpeg, gif->image/gif, webp->image/webp, bmp->image/bmp), returns `(base64_string, mime_type)`, (c) `def detect_image_paths(text: str) -> list` that uses regex `r'(?:^|\s)(/[\w./~-]+\.(?:png|jpg|jpeg|gif|webp|bmp))\b'` to find image file paths in text, filters to only those that exist on disk via os.path.isfile, returns list of paths, (d) `def build_multimodal_parts_gemini(text: str, images: list) -> list` that builds a list of genai_types-compatible parts: for each image, create `{"inline_data": {"mime_type": mime, "data": b64}}`, then append `{"text": text}`, return the list, (e) `def build_multimodal_content_openai(text: str, images: list) -> list` that builds OpenAI content array: `[{"type": "text", "text": text}]` plus for each image `{"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}`, (f) `def build_multimodal_content_anthropic(text: str, images: list) -> list` that builds Anthropic content array: for each image `{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}` then `{"type": "text", "text": text}`.
+
+[ ] 11.2  In poor_cli/repl_async.py, in PoorCLIAsync.__init__ (around line 95, near last_assistant_response), add: `self.pending_images: list = []`.
+
+[ ] 11.3  In poor_cli/repl_commands.py, before the final else, add handler for `elif cmd.startswith("/image "):`. It should: (a) parse path from `cmd.split(maxsplit=1)[1].strip()`, (b) import `os` and check `os.path.isfile(path)`, if not print red error and return, (c) import IMAGE_EXTENSIONS from ..vision, check extension is valid, (d) append path to `repl.pending_images`, (e) print green "Image queued: {path}. It will be sent with your next message."
+
+[ ] 11.4  In poor_cli/repl_async.py, in the process_request() method (line 758), after the input_tokens_estimate tracking (line 772) and before the streaming check (line 782), add image handling: (a) import `detect_image_paths` from `.vision`, (b) call `detected = detect_image_paths(user_input)`, (c) combine with `self.pending_images`: `all_images = self.pending_images + detected`, (d) if all_images is non-empty: import the appropriate builder based on `self.config.model.provider` (gemini -> build_multimodal_parts_gemini, openai -> build_multimodal_content_openai, anthropic -> build_multimodal_content_anthropic), call it with `(user_input, all_images)`, set `user_input = multimodal_content`, clear `self.pending_images = []`.
+
+[ ] 11.5  In poor_cli/providers/gemini_provider.py, in _normalize_message() (line 189-198), add a check: if message is a list of dicts (i.e. `isinstance(message, list)`), convert each dict to the appropriate genai_types.Part. For dicts with "inline_data" key, create `genai_types.Part(inline_data=genai_types.Blob(mime_type=d["inline_data"]["mime_type"], data=base64.b64decode(d["inline_data"]["data"])))`. For dicts with "text" key, create `genai_types.Part.from_text(text=d["text"])`. Return the list of parts. Add `import base64` at the top of the file.
+
+[ ] 11.6  In poor_cli/providers/openai_provider.py, in _append_message() (line 228-241), add handling for when message is a list of dicts containing "type" keys (the OpenAI multimodal content format). If `isinstance(message, list) and len(message) > 0 and isinstance(message[0], dict) and "type" in message[0]`, then append `{"role": "user", "content": message}` and return.
+
+[ ] 11.7  In poor_cli/providers/anthropic_provider.py, in _append_message() (line 237-263), add handling for when message is a list of dicts containing "type" keys (the Anthropic multimodal content format). If `isinstance(message, list) and len(message) > 0 and isinstance(message[0], dict) and message[0].get("type") in ("image", "text")`, then append `{"role": "user", "content": message}` and return.
+
+[ ] 11.8  In poor_cli/enhanced_input.py, add '/image' to CommandCompleter.COMMANDS.
+
+[ ] 11.9  In poor_cli/repl_commands.py, in the /help Panel, add "/image <path>   - Queue an image for the next message" under the "Code Tools" section.
+
+# --- Feature 12: Watch mode ---
+
+[ ] 12.1  Create new file poor_cli/watch.py with a class FileWatcher and a runner function. FileWatcher.__init__ takes `directory: str`, `patterns: list = None` (glob patterns like ["*.py", "*.js"]; None means all files), `debounce: float = 2.0` (seconds). It should have: (a) `_snapshot() -> dict` method that walks the directory, for each file matching patterns, records `{path: os.stat(path).st_mtime}`, returns the dict, (b) `async def watch(self) -> AsyncIterator[list]` async generator that takes an initial snapshot, then loops: `await asyncio.sleep(self.debounce)`, take new snapshot, compare mtimes, yield list of changed/new file paths if any changes detected, update snapshot. Also add a standalone `async def run_watch_mode(repl, directory: str, prompt: str, patterns: list = None)` that creates a FileWatcher, iterates over changes, for each change set: reads each changed file, builds a combined prompt like "The following files changed:\n\n{file contents}\n\n{user prompt}", and calls `await repl.process_request(combined)`.
+
+[ ] 12.2  In poor_cli/repl_async.py, in main(), add two new arguments to common_parser: `common_parser.add_argument("--watch", metavar="DIR", help="Watch directory for file changes and respond")` and `common_parser.add_argument("--watch-prompt", default="Explain the changes in these files", help="Prompt to use in watch mode")`.
+
+[ ] 12.3  In poor_cli/repl_async.py, in main(), after the --script handling block (from task 7.3) and before the run subcommand check, add: `if getattr(args, 'watch', None):` block that creates repl, calls `asyncio.run(repl.run_watch(args.watch, args.watch_prompt))`, and exits.
+
+[ ] 12.4  In poor_cli/repl_async.py, add a new method `async def run_watch(self, directory: str, prompt: str)` to PoorCLIAsync. It should: (a) call `await self.initialize(show_welcome=False)`, (b) import run_watch_mode from .watch, (c) print a dim message "Watching {directory} for changes... (Ctrl+C to stop)", (d) try: `await run_watch_mode(self, directory, prompt)`, except KeyboardInterrupt: print "Watch mode stopped".
+
+[ ] 12.5  In poor_cli/repl_commands.py, before the final else, add handler for `elif cmd.startswith("/watch "):`. It should: (a) parse directory from cmd, (b) check os.path.isdir(directory), (c) import run_watch_mode from ..watch, (d) print dim "Watching {directory}...", (e) start watch as background asyncio task: `repl._watch_task = asyncio.create_task(run_watch_mode(repl, directory, "Explain the changes"))`, (f) print instructions "Use /unwatch to stop".
+
+[ ] 12.6  In poor_cli/repl_commands.py, add handler for `elif cmd == "/unwatch":`. It should: (a) check if `hasattr(repl, '_watch_task') and repl._watch_task`, (b) cancel the task, (c) print green "Watch mode stopped".
+
+[ ] 12.7  In poor_cli/enhanced_input.py, add '/watch', '/unwatch' to CommandCompleter.COMMANDS.
+
+## TIER 4 — MCP client, LSP-aware context
+
+# --- Feature 13: MCP client support ---
+
+[ ] 13.1  In poor_cli/config.py, in the Config dataclass (line 199-210), add a new field: `mcp_servers: Dict[str, Any] = field(default_factory=dict)` after the api_keys field.
+
+[ ] 13.2  In poor_cli/config.py, in Config.to_dict() (line 212-223), add `"mcp_servers": self.mcp_servers` to the config_dict.
+
+[ ] 13.3  In poor_cli/config.py, in Config.from_dict() (line 225-236), pass `mcp_servers=data.get("mcp_servers", {})` to the cls() constructor.
+
+[ ] 13.4  Create new file poor_cli/mcp_client.py with class MCPClient. Constructor takes `name: str, command: str, args: list = None, env: dict = None`. It should have: (a) `async def connect(self)` — spawns subprocess via `asyncio.create_subprocess_exec(self.command, *self.args, stdin=PIPE, stdout=PIPE, stderr=PIPE, env=merged_env)`, sends JSON-RPC initialize request `{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "poor-cli"}}}` as a line to stdin, reads response line from stdout, parses JSON, stores server capabilities. (b) `async def list_tools(self) -> list` — sends `{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}`, parses response, converts each MCP tool schema to Gemini declaration format (MCP uses JSON Schema, convert "type":"string" to "type":"STRING" etc), returns list of declaration dicts. (c) `async def call_tool(self, name: str, arguments: dict) -> str` — sends `{"jsonrpc": "2.0", "id": N, "method": "tools/call", "params": {"name": name, "arguments": arguments}}`, parses response, extracts content[0].text, returns as string. (d) `async def disconnect(self)` — sends process.terminate(), waits.
+
+[ ] 13.5  In poor_cli/mcp_client.py, add class MCPManager. Constructor takes `servers_config: dict` (keys are server names, values are dicts with "command", "args", "env"). It should have: (a) `async def initialize(self)` — for each server config, create MCPClient, connect, list_tools, store mapping of tool_name -> client. (b) `def get_tool_declarations(self) -> list` — returns aggregated tool declarations from all connected servers. (c) `async def execute_tool(self, name: str, arguments: dict) -> str` — looks up which client owns the tool, calls call_tool. (d) `async def shutdown(self)` — disconnects all clients.
+
+[ ] 13.6  In poor_cli/tools_async.py, add a new method to ToolRegistryAsync: `def register_external_tool(self, name: str, function, declaration: dict) -> None` that adds an entry to `self.tools[name] = {"function": function, "declaration": declaration}`.
+
+[ ] 13.7  In poor_cli/repl_async.py, in PoorCLIAsync.__init__ (around line 120), add: `self.mcp_manager = None`.
+
+[ ] 13.8  In poor_cli/repl_async.py, in the initialize() method, after `_initialize_current_provider_tools()` (around line 210), add MCP initialization: if `self.config.mcp_servers` is non-empty, import MCPManager from .mcp_client, create instance, call `await self.mcp_manager.initialize()`, then for each tool declaration from `self.mcp_manager.get_tool_declarations()`, call `self.tool_registry.register_external_tool(decl["name"], self.mcp_manager.execute_tool, decl)`, then re-initialize provider tools by calling `await self._initialize_current_provider_tools()` again so provider sees the new tools.
+
+[ ] 13.9  In poor_cli/repl_async.py, in _shutdown_sessions() method (find it by searching for "_shutdown_sessions"), add: if self.mcp_manager, call `await self.mcp_manager.shutdown()`.
+
+[ ] 13.10  In poor_cli/repl_async.py, in execute_function_calls_provider() method, when executing a tool, check if the tool name exists in self.tool_registry.tools first (existing path). If not, and self.mcp_manager exists, try `result = await self.mcp_manager.execute_tool(tool_name, tool_args)`. This ensures MCP tools that were registered via register_external_tool also work through the normal tool_registry path.
+
+# --- Feature 14: LSP-aware context ---
+
+[ ] 14.1  Create new file poor_cli/lsp_context.py with constants and classes. Add a dict `LSP_SERVER_MAP = {"python": ["pyright-langserver", "--stdio"], "typescript": ["typescript-language-server", "--stdio"], "javascript": ["typescript-language-server", "--stdio"], "rust": ["rust-analyzer"], "go": ["gopls"]}`. Add function `def detect_project_language(root_path: str) -> Optional[str]` that checks for presence of pyproject.toml/setup.py/requirements.txt (-> "python"), package.json (-> "typescript"), Cargo.toml (-> "rust"), go.mod (-> "go"); returns first match or None.
+
+[ ] 14.2  In poor_cli/lsp_context.py, add class LSPClient. Constructor takes `language: str, root_path: str`. It should have: (a) `async def start(self)` — look up command from LSP_SERVER_MAP, check shutil.which for the binary, if not found set self.available = False and return, spawn subprocess, send LSP initialize request (JSON-RPC over stdio with Content-Length header framing), parse response, send initialized notification, set self.available = True. (b) `async def _send_request(self, method: str, params: dict) -> dict` — helper that sends a JSON-RPC request with Content-Length framing, reads response. (c) `async def _send_notification(self, method: str, params: dict)` — sends without expecting response. (d) `async def get_symbols(self, file_path: str) -> list` — sends textDocument/documentSymbol, returns list of symbol dicts with name, kind, range. (e) `async def get_definition(self, file_path: str, line: int, character: int) -> Optional[dict]` — sends textDocument/definition, returns location dict or None. (f) `async def get_references(self, file_path: str, line: int, character: int) -> list` — sends textDocument/references, returns list of location dicts. (g) `async def shutdown(self)` — sends shutdown request, exit notification, terminates process.
+
+[ ] 14.3  In poor_cli/context.py, in the ContextManager class __init__ (find it around line 40-60), add an optional parameter: `lsp_client: Any = None` and store as `self._lsp_client = lsp_client`.
+
+[ ] 14.4  In poor_cli/context.py, in the _find_import_files() method (the method that currently uses regex to resolve imports), add at the beginning: if `self._lsp_client` is not None and `self._lsp_client.available` is True, try to use `self._lsp_client.get_symbols(file_path)` to get imports, then for each import symbol use `self._lsp_client.get_definition()` to resolve the actual file path. If this succeeds, return the LSP-resolved files. If it fails or lsp_client is None, fall through to the existing regex-based import resolution.
+
+[ ] 14.5  In poor_cli/repl_async.py, in PoorCLIAsync.__init__ (around line 120), add: `self.lsp_client = None`.
+
+[ ] 14.6  In poor_cli/repl_async.py, in the initialize() method, after MCP initialization (from task 13.8), add LSP initialization: import `detect_project_language, LSPClient` from `.lsp_context`, call `language = detect_project_language(os.getcwd())`, if language is not None, create `self.lsp_client = LSPClient(language, os.getcwd())`, call `await self.lsp_client.start()`, if `self.lsp_client.available`, log "LSP client started for {language}".
+
+[ ] 14.7  In poor_cli/repl_async.py, in _shutdown_sessions(), add: if self.lsp_client and self.lsp_client.available, call `await self.lsp_client.shutdown()`.
+
+## FINAL — Autocomplete + help text consistency
+
+[ ] 15.1  In poor_cli/enhanced_input.py, verify the final CommandCompleter.COMMANDS list includes ALL new commands from every feature: '/commit', '/review', '/test', '/image', '/watch', '/unwatch', '/save-prompt', '/use', '/prompts'. Add any that are missing.
+
+[ ] 15.2  In poor_cli/repl_commands.py, verify the /help Panel string includes ALL new commands organized into clear sections: "Git Integration" (/commit, /review), "Code Tools" (/test, /image), "Prompt Library" (/save-prompt, /use, /prompts), "Watch Mode" (/watch, /unwatch). Ensure consistent formatting with existing sections.
+
+[ ] 15.3  Run `python -m py_compile poor_cli/repl_commands.py && python -m py_compile poor_cli/repl_async.py && python -m py_compile poor_cli/tools_async.py && python -m py_compile poor_cli/config.py && python -m py_compile poor_cli/prompts.py` to verify no syntax errors in modified files.
+
+[ ] 15.4  Run `python -m py_compile poor_cli/prompt_library.py && python -m py_compile poor_cli/web_search.py && python -m py_compile poor_cli/github_tools.py && python -m py_compile poor_cli/vision.py && python -m py_compile poor_cli/watch.py && python -m py_compile poor_cli/mcp_client.py && python -m py_compile poor_cli/lsp_context.py` to verify no syntax errors in new files.
+
+[ ] 15.5  Run the existing test suite with `python -m pytest tests/ -x -q` to verify no regressions in existing functionality.
