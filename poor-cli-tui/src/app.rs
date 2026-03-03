@@ -144,6 +144,16 @@ pub struct App {
 
     // ── Local provider flag (ollama) ───
     pub is_local_provider: bool,
+
+    // ── Session metrics ───
+    pub session_started_at: Instant,
+    pub session_requests: usize,
+    pub input_chars: usize,
+    pub output_chars: usize,
+    pub input_tokens_estimate: usize,
+    pub output_tokens_estimate: usize,
+    pub last_user_message: Option<String>,
+    pub pending_images: Vec<String>,
 }
 
 impl Default for App {
@@ -172,6 +182,14 @@ impl Default for App {
             server_connected: false,
             cwd: String::new(),
             is_local_provider: false,
+            session_started_at: Instant::now(),
+            session_requests: 0,
+            input_chars: 0,
+            output_chars: 0,
+            input_tokens_estimate: 0,
+            output_tokens_estimate: 0,
+            last_user_message: None,
+            pending_images: Vec::new(),
         }
     }
 }
@@ -182,14 +200,13 @@ impl App {
     }
 
     fn welcome_text(&self) -> String {
-        let mascot = r#"        ___
-      /     \
-     | () () |
-      \  ^  /
-       |||||
-      '-----'"#;
+        let logo = r#" ____   ___   ___  ____        ____ _     ___
+|  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
+| |_) | | | | | | | |_) |    | |   | |    | |
+|  __/| |_| | |_| |  _ <     | |___| |___ | |
+|_|    \___/ \___/|_| \_\     \____|_____|___|"#;
         format!(
-            "{mascot}\n\n\
+            "{logo}\n\n\
             poor-cli v{version}  •  {provider}/{model}\n\
             AI-powered coding assistant in your terminal\n\n\
             Commands:\n  \
@@ -401,5 +418,46 @@ impl App {
                 self.status_message = None;
             }
         }
+    }
+
+    pub fn record_user_input(&mut self, text: &str) {
+        self.session_requests += 1;
+        self.input_chars += text.len();
+        self.input_tokens_estimate += text.len() / 4;
+        self.last_user_message = Some(text.to_string());
+    }
+
+    pub fn record_assistant_output(&mut self, text: &str) {
+        self.output_chars += text.len();
+        self.output_tokens_estimate += text.len() / 4;
+    }
+
+    pub fn session_summary_text(&self) -> String {
+        let elapsed = self.session_started_at.elapsed();
+        let total_seconds = elapsed.as_secs();
+        let mins = total_seconds / 60;
+        let secs = total_seconds % 60;
+        let duration = if mins > 0 {
+            format!("{mins}m {secs}s")
+        } else {
+            format!("{secs}s")
+        };
+
+        format!(
+            "Session Summary\n\
+Provider: {} ({})\n\
+Duration: {}\n\
+Requests: {}\n\
+Input: {} chars (~{} tokens)\n\
+Output: {} chars (~{} tokens)",
+            self.provider_name,
+            self.model_name,
+            duration,
+            self.session_requests,
+            self.input_chars,
+            self.input_tokens_estimate,
+            self.output_chars,
+            self.output_tokens_estimate
+        )
     }
 }

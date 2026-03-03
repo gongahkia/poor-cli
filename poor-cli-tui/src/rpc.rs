@@ -1,5 +1,6 @@
 /// JSON-RPC 2.0 client communicating with the Python `poor_cli.server` over stdio.
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -277,6 +278,75 @@ impl RpcClient {
         serde_json::from_value(val).map_err(|e| e.to_string())
     }
 
+    /// Get current config as raw JSON value.
+    pub fn get_config_value(&self) -> Result<Value, String> {
+        self.call("getConfig", serde_json::Value::Object(Default::default()))
+    }
+
+    /// Get current provider information.
+    pub fn get_provider_info(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getProviderInfo",
+            serde_json::Value::Object(Default::default()),
+        )
+    }
+
+    /// Get tool declarations from server.
+    pub fn get_tools(&self) -> Result<Value, String> {
+        self.call("poor-cli/getTools", serde_json::Value::Object(Default::default()))
+    }
+
+    /// Execute a shell command through the backend.
+    pub fn execute_command(&self, command: &str) -> Result<String, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "command".into(),
+            serde_json::Value::String(command.to_string()),
+        );
+        let val = self.call("poor-cli/executeCommand", serde_json::Value::Object(params))?;
+        Ok(val
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
+    }
+
+    /// Read a file through the backend.
+    pub fn read_file(
+        &self,
+        file_path: &str,
+        start_line: Option<u64>,
+        end_line: Option<u64>,
+    ) -> Result<String, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "filePath".into(),
+            serde_json::Value::String(file_path.to_string()),
+        );
+        if let Some(start) = start_line {
+            params.insert("startLine".into(), serde_json::Value::Number(start.into()));
+        }
+        if let Some(end) = end_line {
+            params.insert("endLine".into(), serde_json::Value::Number(end.into()));
+        }
+
+        let val = self.call("poor-cli/readFile", serde_json::Value::Object(params))?;
+        Ok(val
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
+    }
+
+    /// Clear backend conversation history.
+    pub fn clear_history(&self) -> Result<(), String> {
+        let _ = self.call(
+            "poor-cli/clearHistory",
+            serde_json::Value::Object(Default::default()),
+        )?;
+        Ok(())
+    }
+
     /// Shutdown the server.
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", serde_json::Value::Object(Default::default()));
@@ -297,6 +367,17 @@ impl Drop for RpcClient {
 
 pub enum RpcCommand {
     Chat { message: String, reply: SyncSender<Result<String, String>> },
+    ExecuteCommand { command: String, reply: SyncSender<Result<String, String>> },
+    ReadFile {
+        file_path: String,
+        start_line: Option<u64>,
+        end_line: Option<u64>,
+        reply: SyncSender<Result<String, String>>,
+    },
+    GetConfig { reply: SyncSender<Result<Value, String>> },
+    GetProviderInfo { reply: SyncSender<Result<Value, String>> },
+    GetTools { reply: SyncSender<Result<Value, String>> },
+    ClearHistory { reply: SyncSender<Result<(), String>> },
     ListProviders { reply: SyncSender<Result<Vec<ProviderInfo>, String>> },
     SwitchProvider {
         provider: String,
@@ -315,6 +396,29 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                     .chat(&message, &[])
                     .map(|r| r.content.unwrap_or_default());
                 let _ = reply.send(result);
+            }
+            Ok(RpcCommand::ExecuteCommand { command, reply }) => {
+                let _ = reply.send(client.execute_command(&command));
+            }
+            Ok(RpcCommand::ReadFile {
+                file_path,
+                start_line,
+                end_line,
+                reply,
+            }) => {
+                let _ = reply.send(client.read_file(&file_path, start_line, end_line));
+            }
+            Ok(RpcCommand::GetConfig { reply }) => {
+                let _ = reply.send(client.get_config_value());
+            }
+            Ok(RpcCommand::GetProviderInfo { reply }) => {
+                let _ = reply.send(client.get_provider_info());
+            }
+            Ok(RpcCommand::GetTools { reply }) => {
+                let _ = reply.send(client.get_tools());
+            }
+            Ok(RpcCommand::ClearHistory { reply }) => {
+                let _ = reply.send(client.clear_history());
             }
             Ok(RpcCommand::ListProviders { reply }) => {
                 let _ = reply.send(client.list_providers());

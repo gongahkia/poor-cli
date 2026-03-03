@@ -51,6 +51,16 @@ pub const SLASH_COMMANDS: &[&str] = &[
     "/cost",
     "/model-info",
     "/permission-mode",
+    "/commit",
+    "/review",
+    "/test",
+    "/image",
+    "/watch",
+    "/unwatch",
+    "/save-prompt",
+    "/use",
+    "/prompts",
+    "/tools",
 ];
 
 /// Process a crossterm event and update app state.
