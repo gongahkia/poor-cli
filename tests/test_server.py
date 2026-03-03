@@ -11,6 +11,7 @@ from poor_cli.server import (
     PoorCLIServer,
     JsonRpcMessage,
     JsonRpcError,
+    _sanitize_exception_message,
     main,
 )
 
@@ -158,6 +159,35 @@ class TestJsonRpcError:
         assert error["code"] == -32600
         assert error["message"] == "Invalid request"
         assert error["data"] == {"details": "missing field"}
+
+
+class TestErrorSanitization:
+    """Test server-side error message cleanup helpers."""
+
+    def test_sanitize_exception_message_extracts_useful_provider_error(self):
+        raw = (
+            "Failed to send message: Gemini API error: 400 Bad Request. "
+            "{'message': '{\\n"
+            '  "error": {\\n'
+            '    "code": 400,\\n'
+            '    "message": "API key not valid. Please pass a valid API key.",\\n'
+            '    "status": "INVALID_ARGUMENT",\\n'
+            '    "details": [{"reason": "API_KEY_INVALID"}]\\n'
+            "  }\\n"
+            "}', 'status': 'Bad Request'}"
+        )
+
+        cleaned = _sanitize_exception_message(Exception(raw))
+
+        assert "Failed to send message: Gemini API error: 400 Bad Request." in cleaned
+        assert "API key not valid. Please pass a valid API key." in cleaned
+        assert "(API_KEY_INVALID)" in cleaned
+        assert "{'message':" not in cleaned
+
+    def test_sanitize_exception_message_truncates_very_long_text(self):
+        cleaned = _sanitize_exception_message(Exception("x" * 800))
+        assert len(cleaned) <= 360
+        assert cleaned.endswith("...")
 
 
 class TestPoorCLIServer:
