@@ -128,6 +128,37 @@ function M.append_message(role, content)
     table.insert(M.history, { role = role, content = content })
 end
 
+-- Resolve @file:path and @workspace mentions, returns expanded message + extra context files
+function M._resolve_mentions(message)
+    local extra_files = {}
+    -- @file:path — read and inline the file content
+    local resolved = message:gsub("@file:([%w%._/%-~]+)", function(path)
+        local abs = vim.fn.fnamemodify(path, ":p")
+        if vim.fn.filereadable(abs) == 1 then
+            table.insert(extra_files, abs)
+            local lines = vim.fn.readfile(abs)
+            local content = table.concat(lines, "\n")
+            local lang = vim.filetype.match({ filename = abs }) or ""
+            return "```" .. lang .. "\n-- " .. path .. "\n" .. content .. "\n```"
+        end
+        return "@file:" .. path -- leave unchanged if unreadable
+    end)
+    -- @workspace — project structure summary
+    resolved = resolved:gsub("@workspace", function()
+        local cwd = vim.fn.getcwd()
+        local handle = io.popen("find " .. vim.fn.shellescape(cwd) ..
+            " -maxdepth 3 -not -path '*/.git/*' -not -path '*/node_modules/*'" ..
+            " -not -path '*/__pycache__/*' -not -path '*/target/*' -type f | head -50")
+        if handle then
+            local result = handle:read("*a")
+            handle:close()
+            return "```\n-- Project files:\n" .. result .. "```"
+        end
+        return "@workspace"
+    end)
+    return resolved, extra_files
+end
+
 -- Send a message (uses streaming endpoint when available)
 function M.send(message)
     if not message or message == "" then
@@ -139,15 +170,21 @@ function M.send(message)
         return
     end
 
-    M.append_message("user", message)
+    -- Resolve @ mentions
+    local resolved_msg, mention_files = M._resolve_mentions(message)
+
+    M.append_message("user", message) -- show original in chat
     local context_files = M.get_context_files()
+    for _, f in ipairs(mention_files) do
+        table.insert(context_files, f)
+    end
 
     -- Use streaming endpoint
     M.streaming_request_id = tostring(os.time()) .. "-" .. tostring(math.random(1000, 9999))
     M._start_streaming_block()
 
     rpc.request("poor-cli/chatStreaming", {
-        message = message,
+        message = resolved_msg,
         contextFiles = context_files,
         requestId = M.streaming_request_id,
     }, function(result, err)
