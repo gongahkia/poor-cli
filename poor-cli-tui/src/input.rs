@@ -76,6 +76,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/settings",
+        description: "List editable config settings",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/quit",
         description: "Exit the TUI",
         recommended: false,
@@ -113,6 +118,16 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         command: "/cost",
         description: "Show usage and cost estimate",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/toggle",
+        description: "Toggle boolean config value",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/set",
+        description: "Set config key to a value",
         recommended: false,
     },
     SlashCommandSpec {

@@ -685,8 +685,12 @@ Type `@path/to/file` in any message to attach file context.\n\
   /providers           List available providers\n\
   /switch              Switch provider/model\n\
   /model-info          Show provider-specific model notes\n\
-  /permission-mode     Show current backend permission mode\n\
-  /config              Show backend config snapshot\n\n\
+  /permission-mode [mode]  Show or set backend permission mode\n\n\
+**Configuration:**\n\
+  /config              Show backend config snapshot\n\
+  /settings            List editable config settings\n\
+  /toggle <key>        Toggle a boolean config option\n\
+  /set <key> <value>   Set a config option value\n\n\
 **Git Integration:**\n\
   /commit              Generate commit message from staged diff\n\
   /review [file]       Review a file or staged diff\n\n\
@@ -847,7 +851,14 @@ Type `@path/to/file` in any message to attach file context.\n\
 Provider: {}\n\
 Model: {}\n\
 Streaming: {}\n\
+Show Token Count: {}\n\
+Markdown Rendering: {}\n\
+Show Tool Calls: {}\n\
+Verbose Logging: {}\n\
+Plan Mode: {}\n\
+Checkpointing: {}\n\
 Permission Mode: {}\n\
+Config File: {}\n\
 Version: v{}",
                     cfg.get("provider")
                         .and_then(|v| v.as_str())
@@ -864,9 +875,42 @@ Version: v{}",
                     } else {
                         "disabled"
                     },
+                    bool_label(
+                        cfg.get("showTokenCount")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                    ),
+                    bool_label(
+                        cfg.get("markdownRendering")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                    ),
+                    bool_label(
+                        cfg.get("showToolCalls")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                    ),
+                    bool_label(
+                        cfg.get("verboseLogging")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                    ),
+                    bool_label(
+                        cfg.get("planMode")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                    ),
+                    bool_label(
+                        cfg.get("checkpointing")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                    ),
                     cfg.get("permissionMode")
                         .and_then(|v| v.as_str())
                         .unwrap_or("prompt"),
+                    cfg.get("configFile")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)"),
                     cfg.get("version")
                         .and_then(|v| v.as_str())
                         .unwrap_or(app.version.as_str())
@@ -878,7 +922,137 @@ Version: v{}",
         return false;
     }
 
+    if lowered == "/settings" {
+        match rpc_list_config_options_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let options = payload
+                    .get("options")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let config_file = payload
+                    .get("configFile")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(unknown)");
+
+                let mut lines = vec![
+                    format!("**Editable Settings** ({})", options.len()),
+                    format!("Config file: `{config_file}`"),
+                    String::new(),
+                    "Quick actions: `/toggle <key>` or `/set <key> <value>`".to_string(),
+                    String::new(),
+                ];
+
+                for opt in options.iter().take(80) {
+                    let key = opt
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let typ = opt
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let value = opt.get("value").cloned().unwrap_or(Value::Null);
+                    let is_bool = opt
+                        .get("isBoolean")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let bool_hint = if is_bool { " (toggleable)" } else { "" };
+                    lines.push(format!(
+                        "- `{key}` [{typ}{bool_hint}] = `{}`",
+                        format_value_for_display(&value)
+                    ));
+                }
+                if options.len() > 80 {
+                    lines.push(format!(
+                        "\n... and {} more settings. Narrow with `/set <key> <value>`.",
+                        options.len() - 80
+                    ));
+                }
+
+                app.push_message(ChatMessage::system(lines.join("\n")));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to load settings: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/toggle ") {
+        let key = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        if key.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /toggle <key>".to_string()));
+            return false;
+        }
+
+        match rpc_toggle_config_blocking(rpc_cmd_tx, key) {
+            Ok(result) => {
+                let value = result.get("value").cloned().unwrap_or(Value::Null);
+                app.push_message(ChatMessage::system(format!(
+                    "Toggled `{key}` to `{}`",
+                    format_value_for_display(&value)
+                )));
+            }
+            Err(e) => {
+                app.push_message(ChatMessage::error(format!("Failed to toggle `{key}`: {e}")))
+            }
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/set ") {
+        let mut parts = raw.splitn(3, ' ');
+        let _ = parts.next();
+        let key = parts.next().unwrap_or("").trim();
+        let raw_value = parts.next().unwrap_or("").trim();
+
+        if key.is_empty() || raw_value.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /set <key> <value>".to_string()));
+            return false;
+        }
+
+        let parsed_value = parse_value_literal(raw_value);
+        match rpc_set_config_blocking(rpc_cmd_tx, key, parsed_value) {
+            Ok(result) => {
+                let value = result.get("value").cloned().unwrap_or(Value::Null);
+                app.push_message(ChatMessage::system(format!(
+                    "Updated `{key}` = `{}`",
+                    format_value_for_display(&value)
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to set `{key}`: {e}"))),
+        }
+        return false;
+    }
+
     if lowered.starts_with("/permission-mode") {
+        let maybe_mode = raw.split_whitespace().nth(1);
+        if let Some(mode) = maybe_mode {
+            let normalized = mode.trim().to_lowercase();
+            if !matches!(
+                normalized.as_str(),
+                "prompt" | "auto-safe" | "danger-full-access"
+            ) {
+                app.push_message(ChatMessage::error(
+                    "Invalid mode. Use one of: prompt, auto-safe, danger-full-access".to_string(),
+                ));
+                return false;
+            }
+
+            match rpc_set_config_blocking(
+                rpc_cmd_tx,
+                "security.permission_mode",
+                Value::String(normalized.clone()),
+            ) {
+                Ok(_) => app.push_message(ChatMessage::system(format!(
+                    "Permission mode set to **{normalized}**"
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to set permission mode: {e}"
+                ))),
+            }
+            return false;
+        }
+
         match rpc_get_config_blocking(rpc_cmd_tx) {
             Ok(cfg) => {
                 let mode = cfg
@@ -886,7 +1060,7 @@ Version: v{}",
                     .and_then(|v| v.as_str())
                     .unwrap_or("prompt");
                 app.push_message(ChatMessage::system(format!(
-                    "Current permission mode: **{mode}**\nAvailable: prompt, auto-safe, danger-full-access"
+                    "Current permission mode: **{mode}**\nAvailable: prompt, auto-safe, danger-full-access\nSet with: `/permission-mode <mode>`"
                 )));
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -1846,6 +2020,52 @@ fn bool_icon(value: Option<bool>) -> &'static str {
     }
 }
 
+fn bool_label(value: bool) -> &'static str {
+    if value {
+        "on"
+    } else {
+        "off"
+    }
+}
+
+fn format_value_for_display(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.clone(),
+        Value::Array(_) | Value::Object(_) => {
+            serde_json::to_string(value).unwrap_or_else(|_| "<unserializable>".to_string())
+        }
+    }
+}
+
+fn parse_value_literal(raw: &str) -> Value {
+    let lower = raw.trim().to_lowercase();
+    match lower.as_str() {
+        "true" | "on" | "yes" | "enabled" => return Value::Bool(true),
+        "false" | "off" | "no" | "disabled" => return Value::Bool(false),
+        _ => {}
+    }
+
+    if let Ok(n) = raw.parse::<i64>() {
+        return Value::Number(serde_json::Number::from(n));
+    }
+    if let Ok(f) = raw.parse::<f64>() {
+        if let Some(num) = serde_json::Number::from_f64(f) {
+            return Value::Number(num);
+        }
+    }
+    if (raw.starts_with('{') && raw.ends_with('}')) || (raw.starts_with('[') && raw.ends_with(']'))
+    {
+        if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
+            return parsed;
+        }
+    }
+
+    Value::String(raw.to_string())
+}
+
 fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or("").trim().to_string()
 }
@@ -2028,6 +2248,55 @@ fn rpc_get_tools_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for tools".to_string())?
+}
+
+fn rpc_list_config_options_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListConfigOptions { reply: reply_tx })
+        .map_err(|e| format!("Failed to request config options: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for config options".to_string())?
+}
+
+fn rpc_set_config_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    key_path: &str,
+    value: Value,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetConfig {
+            key_path: key_path.to_string(),
+            value,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request config update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for config update".to_string())?
+}
+
+fn rpc_toggle_config_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    key_path: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ToggleConfig {
+            key_path: key_path.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request config toggle: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for config toggle".to_string())?
 }
 
 fn rpc_clear_history_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<(), String> {

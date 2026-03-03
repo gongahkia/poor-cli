@@ -298,6 +298,35 @@ impl RpcClient {
         )
     }
 
+    /// List editable config options.
+    pub fn list_config_options(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/listConfigOptions",
+            serde_json::Value::Object(Default::default()),
+        )
+    }
+
+    /// Set one config value by key path.
+    pub fn set_config(&self, key_path: &str, value: Value) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "keyPath".into(),
+            serde_json::Value::String(key_path.to_string()),
+        );
+        params.insert("value".into(), value);
+        self.call("poor-cli/setConfig", serde_json::Value::Object(params))
+    }
+
+    /// Toggle a boolean config value by key path.
+    pub fn toggle_config(&self, key_path: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "keyPath".into(),
+            serde_json::Value::String(key_path.to_string()),
+        );
+        self.call("poor-cli/toggleConfig", serde_json::Value::Object(params))
+    }
+
     /// Execute a shell command through the backend.
     pub fn execute_command(&self, command: &str) -> Result<String, String> {
         let mut params = serde_json::Map::new();
@@ -391,6 +420,18 @@ pub enum RpcCommand {
     GetTools {
         reply: SyncSender<Result<Value, String>>,
     },
+    ListConfigOptions {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetConfig {
+        key_path: String,
+        value: Value,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ToggleConfig {
+        key_path: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
     ClearHistory {
         reply: SyncSender<Result<(), String>>,
     },
@@ -434,6 +475,19 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::GetTools { reply }) => {
                 let _ = reply.send(client.get_tools());
+            }
+            Ok(RpcCommand::ListConfigOptions { reply }) => {
+                let _ = reply.send(client.list_config_options());
+            }
+            Ok(RpcCommand::SetConfig {
+                key_path,
+                value,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_config(&key_path, value));
+            }
+            Ok(RpcCommand::ToggleConfig { key_path, reply }) => {
+                let _ = reply.send(client.toggle_config(&key_path));
             }
             Ok(RpcCommand::ClearHistory { reply }) => {
                 let _ = reply.send(client.clear_history());

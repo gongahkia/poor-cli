@@ -7,12 +7,14 @@ It supports stdio transport for Neovim integration.
 
 import argparse
 import asyncio
+import copy
 import json
 import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config import PermissionMode
 from .core import PoorCLICore
@@ -163,6 +165,7 @@ class PoorCLIServer:
             "listProviders": self.handle_list_providers,
             "switchProvider": self.handle_switch_provider,
             "getConfig": self.handle_get_config,
+            "setConfig": self.handle_set_config,
             "poor-cli/chat": self.handle_chat,
             "poor-cli/inlineComplete": self.handle_inline_complete,
             "poor-cli/applyEdit": self.handle_apply_edit,
@@ -172,6 +175,9 @@ class PoorCLIServer:
             "poor-cli/switchProvider": self.handle_switch_provider,
             "poor-cli/getProviderInfo": self.handle_get_provider_info,
             "poor-cli/clearHistory": self.handle_clear_history,
+            "poor-cli/listConfigOptions": self.handle_list_config_options,
+            "poor-cli/setConfig": self.handle_set_config,
+            "poor-cli/toggleConfig": self.handle_toggle_config,
         }
     
     # =========================================================================
@@ -478,15 +484,283 @@ class PoorCLIServer:
             Serialized config dictionary.
         """
         self._ensure_initialized()
-        config = self.core.config_manager.config
+        config = self.core.config
+        if config is None:
+            raise RuntimeError("Core configuration unavailable")
         provider_info = self.core.get_provider_info()
+        config_path = None
+        if self.core._config_manager is not None:
+            config_path = str(self.core._config_manager.config_path)
         return {
             "provider": provider_info.get("name", "unknown"),
             "model": provider_info.get("model", "unknown"),
             "streaming": config.ui.enable_streaming,
+            "showTokenCount": config.ui.show_token_count,
+            "markdownRendering": config.ui.markdown_rendering,
+            "showToolCalls": config.ui.show_tool_calls,
+            "verboseLogging": config.ui.verbose_logging,
+            "planMode": config.plan_mode.enabled,
+            "checkpointing": config.checkpoint.enabled,
             "version": getattr(self.core, "_version", "0.4.0"),
             "permissionMode": self.permission_mode,
+            "configFile": config_path,
         }
+
+    async def handle_list_config_options(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        List editable config leaf values in dot-notation form.
+
+        Returns:
+            options: [{"path", "value", "type", "isBoolean"}]
+        """
+        del params
+        self._ensure_initialized()
+        if self.core.config is None:
+            raise RuntimeError("Core configuration unavailable")
+
+        options: List[Dict[str, Any]] = []
+        self._flatten_config_values(self.core.config.to_dict(), "", options)
+        options.sort(key=lambda item: item["path"])
+
+        config_path = None
+        if self.core._config_manager is not None:
+            config_path = str(self.core._config_manager.config_path)
+
+        return {
+            "options": options,
+            "permissionMode": self.permission_mode,
+            "configFile": config_path,
+        }
+
+    async def handle_set_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Set a config value by keyPath.
+
+        Params:
+            keyPath: Dot path (e.g. ui.enable_streaming)
+            value: New value (JSON scalar/object/array)
+        """
+        self._ensure_initialized()
+        if self.core.config is None:
+            raise RuntimeError("Core configuration unavailable")
+        if self.core._config_manager is None:
+            raise RuntimeError("Config manager unavailable")
+
+        key_path = str(params.get("keyPath", "")).strip()
+        if not key_path:
+            raise InvalidParamsError("Missing keyPath")
+        if "value" not in params:
+            raise InvalidParamsError("Missing value")
+
+        old_value = copy.deepcopy(self._get_config_value(key_path))
+        new_value = self._coerce_config_value(old_value, params["value"], key_path)
+        self._set_config_value(key_path, new_value)
+
+        provider_switched = False
+        try:
+            if key_path in {"model.provider", "model.model_name"}:
+                provider_name = self.core.config.model.provider
+                model_name = self.core.config.model.model_name
+                await self.core.switch_provider(provider_name, model_name)
+                provider_switched = True
+
+            if key_path == "security.permission_mode":
+                mode = self.core.config.security.permission_mode
+                if isinstance(mode, PermissionMode):
+                    self.permission_mode = mode.value
+                else:
+                    self.permission_mode = str(mode)
+
+            self.core._config_manager.config = self.core.config
+            self.core._config_manager.validate()
+            self.core._config_manager.save()
+        except Exception:
+            self._set_config_value(key_path, old_value)
+            if key_path == "security.permission_mode":
+                mode = self.core.config.security.permission_mode
+                self.permission_mode = mode.value if isinstance(mode, PermissionMode) else str(mode)
+            raise
+
+        return {
+            "success": True,
+            "keyPath": key_path,
+            "value": self._jsonable_value(self._get_config_value(key_path)),
+            "providerSwitched": provider_switched,
+        }
+
+    async def handle_toggle_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Toggle a boolean config key by keyPath.
+        """
+        self._ensure_initialized()
+        key_path = str(params.get("keyPath", "")).strip()
+        if not key_path:
+            raise InvalidParamsError("Missing keyPath")
+
+        current = self._get_config_value(key_path)
+        if not isinstance(current, bool):
+            raise InvalidParamsError(f"{key_path} is not a boolean value")
+
+        return await self.handle_set_config({
+            "keyPath": key_path,
+            "value": not current,
+        })
+
+    def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
+        """Flatten nested dict/list/scalars into a dot-path list."""
+        if isinstance(value, dict):
+            for key in sorted(value.keys()):
+                next_prefix = f"{prefix}.{key}" if prefix else key
+                self._flatten_config_values(value[key], next_prefix, output)
+            return
+
+        if isinstance(value, list):
+            output.append({
+                "path": prefix,
+                "value": value,
+                "type": "list",
+                "isBoolean": False,
+            })
+            return
+
+        if isinstance(value, bool):
+            value_type = "bool"
+        elif isinstance(value, int):
+            value_type = "int"
+        elif isinstance(value, float):
+            value_type = "float"
+        elif value is None:
+            value_type = "null"
+        else:
+            value_type = "string"
+
+        output.append({
+            "path": prefix,
+            "value": value,
+            "type": value_type,
+            "isBoolean": isinstance(value, bool),
+        })
+
+    def _resolve_config_parent(self, key_path: str) -> Tuple[Any, str]:
+        keys = [k for k in key_path.split(".") if k]
+        if not keys:
+            raise InvalidParamsError("Invalid keyPath")
+
+        current: Any = self.core.config
+        for key in keys[:-1]:
+            if isinstance(current, dict):
+                if key not in current:
+                    raise InvalidParamsError(f"Unknown config path: {key_path}")
+                current = current[key]
+            elif hasattr(current, key):
+                current = getattr(current, key)
+            else:
+                raise InvalidParamsError(f"Unknown config path: {key_path}")
+
+        return current, keys[-1]
+
+    def _get_config_value(self, key_path: str) -> Any:
+        parent, final_key = self._resolve_config_parent(key_path)
+        if isinstance(parent, dict):
+            if final_key not in parent:
+                raise InvalidParamsError(f"Unknown config key: {key_path}")
+            return parent[final_key]
+        if hasattr(parent, final_key):
+            return getattr(parent, final_key)
+        raise InvalidParamsError(f"Unknown config key: {key_path}")
+
+    def _set_config_value(self, key_path: str, value: Any) -> None:
+        parent, final_key = self._resolve_config_parent(key_path)
+        if isinstance(parent, dict):
+            parent[final_key] = value
+            return
+        if hasattr(parent, final_key):
+            setattr(parent, final_key, value)
+            return
+        raise InvalidParamsError(f"Unknown config key: {key_path}")
+
+    def _coerce_config_value(self, current: Any, proposed: Any, key_path: str) -> Any:
+        if isinstance(current, Enum):
+            enum_cls = type(current)
+            if isinstance(proposed, str):
+                try:
+                    return enum_cls(proposed)
+                except ValueError as e:
+                    raise InvalidParamsError(
+                        f"Invalid value for {key_path}: {proposed}"
+                    ) from e
+            raise InvalidParamsError(f"{key_path} expects a string enum value")
+
+        if isinstance(current, bool):
+            if isinstance(proposed, bool):
+                return proposed
+            if isinstance(proposed, str):
+                normalized = proposed.strip().lower()
+                if normalized in {"1", "true", "yes", "on", "enabled"}:
+                    return True
+                if normalized in {"0", "false", "no", "off", "disabled"}:
+                    return False
+            raise InvalidParamsError(f"{key_path} expects a boolean value")
+
+        if isinstance(current, int) and not isinstance(current, bool):
+            if isinstance(proposed, (int, float)):
+                return int(proposed)
+            if isinstance(proposed, str):
+                try:
+                    return int(proposed.strip())
+                except ValueError as e:
+                    raise InvalidParamsError(f"{key_path} expects an integer value") from e
+            raise InvalidParamsError(f"{key_path} expects an integer value")
+
+        if isinstance(current, float):
+            if isinstance(proposed, (int, float)):
+                return float(proposed)
+            if isinstance(proposed, str):
+                try:
+                    return float(proposed.strip())
+                except ValueError as e:
+                    raise InvalidParamsError(f"{key_path} expects a float value") from e
+            raise InvalidParamsError(f"{key_path} expects a float value")
+
+        if isinstance(current, list):
+            if isinstance(proposed, list):
+                return proposed
+            if isinstance(proposed, str):
+                candidate = proposed.strip()
+                if candidate.startswith("["):
+                    try:
+                        parsed = json.loads(candidate)
+                    except json.JSONDecodeError as e:
+                        raise InvalidParamsError(f"{key_path} expects a JSON list") from e
+                    if isinstance(parsed, list):
+                        return parsed
+                    raise InvalidParamsError(f"{key_path} expects a JSON list")
+                if candidate == "":
+                    return []
+                return [part.strip() for part in candidate.split(",") if part.strip()]
+            raise InvalidParamsError(f"{key_path} expects a list value")
+
+        if isinstance(current, dict):
+            if isinstance(proposed, dict):
+                return proposed
+            if isinstance(proposed, str):
+                try:
+                    parsed = json.loads(proposed.strip())
+                except json.JSONDecodeError as e:
+                    raise InvalidParamsError(f"{key_path} expects a JSON object") from e
+                if isinstance(parsed, dict):
+                    return parsed
+            raise InvalidParamsError(f"{key_path} expects an object value")
+
+        if current is None:
+            return proposed
+
+        return str(proposed)
+
+    def _jsonable_value(self, value: Any) -> Any:
+        if isinstance(value, Enum):
+            return value.value
+        return value
     
     def _ensure_initialized(self) -> None:
         """Ensure the server is initialized."""
