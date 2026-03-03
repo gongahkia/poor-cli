@@ -24,13 +24,17 @@ use crate::theme;
 
 /// Main render function called each frame.
 pub fn draw(frame: &mut Frame, app: &App) {
+    let input_height = {
+        let newlines = app.input_buffer.matches('\n').count();
+        (newlines as u16 + 3).min(8) // 3 base + extra lines, cap at 8
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // status bar
-            Constraint::Min(5),    // chat area
-            Constraint::Length(3), // input area
-            Constraint::Length(1), // hint bar
+            Constraint::Length(1),            // status bar
+            Constraint::Min(5),               // chat area
+            Constraint::Length(input_height),  // input area (grows for multi-line)
+            Constraint::Length(1),             // hint bar
         ])
         .split(frame.area());
 
@@ -95,13 +99,29 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::styled("[local]", theme::local_badge_style()));
     }
 
-    let total_tokens = app.input_tokens_estimate + app.output_tokens_estimate;
-    if total_tokens > 0 {
+    // Show real token counts if available, else estimates
+    let real_total = app.cumulative_input_tokens + app.cumulative_output_tokens;
+    if real_total > 0 {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled(
-            format!("{total_tokens}tok"),
+            format!("{}tok", real_total),
             Style::default().fg(Color::DarkGray),
         ));
+        if app.turn_input_tokens + app.turn_output_tokens > 0 {
+            spans.push(Span::styled(
+                format!(" (turn: {})", app.turn_input_tokens + app.turn_output_tokens),
+                Style::default().fg(Color::Rgb(80, 80, 100)),
+            ));
+        }
+    } else {
+        let total_tokens = app.input_tokens_estimate + app.output_tokens_estimate;
+        if total_tokens > 0 {
+            spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                format!("~{total_tokens}tok"),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
     }
 
     if app.server_connected {
@@ -329,22 +349,50 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
 // ── Input bar ────────────────────────────────────────────────────────
 
 fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let prompt_spans = if app.waiting {
-        vec![
+    if app.waiting {
+        let prompt_spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(app.spinner_frame(), theme::spinner_style()),
             Span::styled(
                 " Waiting for response... ",
                 Style::default().fg(Color::DarkGray),
             ),
-        ]
+        ];
+        let input = Paragraph::new(Line::from(prompt_spans)).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(Color::Rgb(50, 50, 70)))
+                .padding(Padding::new(0, 0, 0, 0)),
+        );
+        frame.render_widget(input, area);
+        return;
+    }
+
+    let provider_short = if app.provider_name.len() > 4 {
+        &app.provider_name[..4]
     } else {
-        let provider_short = if app.provider_name.len() > 4 {
-            &app.provider_name[..4]
-        } else {
-            &app.provider_name
-        };
-        vec![
+        &app.provider_name
+    };
+
+    // Multi-line input: split by newlines
+    let line_count = app.input_buffer.matches('\n').count() + 1;
+    if line_count > 1 {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        for (i, part) in app.input_buffer.split('\n').enumerate() {
+            let prefix = if i == 0 { "  ❯ " } else { "  … " };
+            lines.push(Line::from(vec![
+                Span::styled(prefix.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(part.to_string(), theme::input_style()),
+            ]));
+        }
+        let input = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(Color::Rgb(50, 50, 70))),
+        );
+        frame.render_widget(input, area);
+    } else {
+        let prompt_spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(
                 "❯ ",
@@ -354,7 +402,6 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
             ),
             Span::styled(app.input_buffer.clone(), theme::input_style()),
             Span::styled("█", theme::input_cursor_style()),
-            // Show placeholder when empty
             if app.input_buffer.is_empty() {
                 Span::styled(
                     format!(" Type your message ({})...", provider_short.to_uppercase()),
@@ -363,16 +410,15 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 Span::raw("")
             },
-        ]
-    };
-
-    let input = Paragraph::new(Line::from(prompt_spans)).block(
-        Block::default()
-            .borders(Borders::TOP)
-            .border_style(Style::default().fg(Color::Rgb(50, 50, 70)))
-            .padding(Padding::new(0, 0, 0, 0)),
-    );
-    frame.render_widget(input, area);
+        ];
+        let input = Paragraph::new(Line::from(prompt_spans)).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(Color::Rgb(50, 50, 70)))
+                .padding(Padding::new(0, 0, 0, 0)),
+        );
+        frame.render_widget(input, area);
+    }
 }
 
 // ── Hint bar ─────────────────────────────────────────────────────────

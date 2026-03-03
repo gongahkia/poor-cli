@@ -203,6 +203,19 @@ function M.request(method, params, callback)
     return id
 end
 
+-- Send a JSON-RPC notification (no id, no response expected).
+function M.notify(method, params)
+    if not M.job_id then
+        return
+    end
+    local message = {
+        jsonrpc = "2.0",
+        method = method,
+        params = params or {},
+    }
+    M.send_message(message)
+end
+
 -- Cancel an in-flight request by id.
 function M.cancel_request(id, err)
     if not id then
@@ -344,6 +357,7 @@ function M.handle_notification(message)
                 tool_name = params.toolName or "",
                 tool_args = params.toolArgs or {},
                 tool_result = params.toolResult or "",
+                diff = params.diff or "",
                 iteration_index = params.iterationIndex or 0,
                 iteration_cap = params.iterationCap or 25,
             },

@@ -258,6 +258,29 @@ function M.setup_streaming_autocmds()
             end)
         end,
     })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliPermissionReq",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                M._handle_permission_request(data.tool_name, data.tool_args, data.prompt_id)
+            end)
+        end,
+    })
+end
+
+-- Handle interactive permission request from server
+function M._handle_permission_request(tool_name, tool_args, prompt_id)
+    local args_str = type(tool_args) == "table" and vim.inspect(tool_args) or tostring(tool_args or "")
+    local msg = string.format("Allow %s?\n%s", tool_name or "tool", args_str)
+    vim.ui.select({ "Allow", "Deny" }, { prompt = msg }, function(choice)
+        local allowed = choice == "Allow"
+        rpc.notify("poor-cli/permissionRes", {
+            promptId = prompt_id or "",
+            allowed = allowed,
+        })
+    end)
 end
 
 -- Append a tool call block to the chat buffer

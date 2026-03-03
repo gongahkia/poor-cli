@@ -230,6 +230,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         description: "Show session status summary",
         recommended: false,
     },
+    SlashCommandSpec {
+        command: "/undo",
+        description: "Undo last file change (checkpoint)",
+        recommended: false,
+    },
 ];
 
 /// Process a crossterm event and update app state.
@@ -320,6 +325,13 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
 
     match key.code {
         KeyCode::Enter => {
+            // Alt+Enter or Shift+Enter inserts a newline for multi-line input
+            if key.modifiers.contains(KeyModifiers::ALT)
+                || key.modifiers.contains(KeyModifiers::SHIFT)
+            {
+                app.insert_char('\n');
+                return InputAction::Redraw;
+            }
             let text = app.take_input();
             if text.is_empty() {
                 return InputAction::None;

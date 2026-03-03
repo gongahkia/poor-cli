@@ -1875,6 +1875,20 @@ Total: **${:.4}**",
         return false;
     }
 
+    if lowered == "/undo" {
+        // Ask the AI to undo the last file change using checkpoint
+        let undo_msg = "Undo the last file change. Use the checkpoint system to restore the previous version.";
+        send_chat_request(
+            app,
+            tx,
+            rpc_cmd_tx,
+            cancel_token,
+            undo_msg.to_string(),
+            "/undo".to_string(),
+        );
+        return false;
+    }
+
     app.push_message(ChatMessage::error(format!(
         "Unknown command: {raw}\nType /help to see available commands"
     )));
