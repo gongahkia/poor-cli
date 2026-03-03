@@ -1,0 +1,7 @@
+add a poor mode and enrich mode where the poor mode will seek to save as many tokens as possible while the rich mode gives proper, featureful answers
+allow poor-cli to display code blocks 
+allow setting of light mode and dark mode for UI and codeblocks
+add poor-cli-multiplayer support in the future
+test everything works if it should be working
+take screenshots
+update entire readme with new project details
