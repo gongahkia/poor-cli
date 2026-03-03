@@ -1,12 +1,16 @@
 /// JSON-RPC 2.0 client communicating with the Python `poor_cli.server` over stdio.
+///
+/// Supports both blocking request/response calls AND asynchronous server notifications
+/// (for streaming, tool events, etc.).
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::Mutex;
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 // ── JSON-RPC message types ───────────────────────────────────────────
 
@@ -14,6 +18,13 @@ use std::sync::Mutex;
 struct RpcRequest {
     jsonrpc: &'static str,
     id: u64,
+    method: String,
+    params: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct RpcNotification {
+    jsonrpc: &'static str,
     method: String,
     params: serde_json::Value,
 }
@@ -26,6 +37,8 @@ pub struct RpcResponse {
     pub id: Option<u64>,
     pub result: Option<serde_json::Value>,
     pub error: Option<RpcError>,
+    pub method: Option<String>,
+    pub params: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -64,15 +77,215 @@ pub struct ProviderInfo {
     pub models: Vec<String>,
 }
 
+// ── Server notification types ────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub enum ServerNotification {
+    StreamChunk {
+        request_id: String,
+        chunk: String,
+        done: bool,
+        reason: Option<String>,
+    },
+    ToolEvent {
+        request_id: String,
+        event_type: String,
+        tool_name: String,
+        tool_args: Value,
+        tool_result: String,
+        iteration_index: u32,
+        iteration_cap: u32,
+    },
+    PermissionRequest {
+        request_id: String,
+        tool_name: String,
+        tool_args: Value,
+        prompt_id: String,
+    },
+    Progress {
+        request_id: String,
+        phase: String,
+        message: String,
+        iteration_index: u32,
+        iteration_cap: u32,
+    },
+    CostUpdate {
+        request_id: String,
+        input_tokens: u64,
+        output_tokens: u64,
+        estimated_cost: f64,
+    },
+}
+
 // ── RPC Client ───────────────────────────────────────────────────────
 
 pub struct RpcClient {
     child: Mutex<Child>,
     next_id: AtomicU64,
+    pending_requests: Arc<Mutex<HashMap<u64, SyncSender<Result<Value, String>>>>>,
+    notification_tx: Option<Sender<ServerNotification>>,
+    reader_handle: Option<thread::JoinHandle<()>>,
+    stdin_lock: Arc<Mutex<()>>, // serialize writes
+}
+
+/// Read one Content-Length framed message from a BufReader.
+fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String> {
+    let mut content_length: usize = 0;
+    loop {
+        let mut header_line = String::new();
+        reader
+            .read_line(&mut header_line)
+            .map_err(|e| format!("Read header error: {e}"))?;
+        if header_line.is_empty() {
+            return Err("EOF".into());
+        }
+        let trimmed = header_line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some(val) = trimmed.strip_prefix("Content-Length:") {
+            content_length = val
+                .trim()
+                .parse()
+                .map_err(|e| format!("Invalid Content-Length: {e}"))?;
+        }
+    }
+    if content_length == 0 {
+        return Err("No Content-Length in message".into());
+    }
+    let mut body_buf = vec![0u8; content_length];
+    reader
+        .read_exact(&mut body_buf)
+        .map_err(|e| format!("Read body error: {e}"))?;
+    String::from_utf8(body_buf).map_err(|e| format!("UTF-8 error: {e}"))
+}
+
+/// Parse a server notification from JSON-RPC method + params.
+fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
+    match method {
+        "poor-cli/streamChunk" => Some(ServerNotification::StreamChunk {
+            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            chunk: params.get("chunk").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            done: params.get("done").and_then(|v| v.as_bool()).unwrap_or(false),
+            reason: params.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        }),
+        "poor-cli/toolEvent" => Some(ServerNotification::ToolEvent {
+            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            event_type: params.get("eventType").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            tool_name: params.get("toolName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            tool_args: params.get("toolArgs").cloned().unwrap_or(Value::Null),
+            tool_result: params.get("toolResult").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            iteration_index: params.get("iterationIndex").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            iteration_cap: params.get("iterationCap").and_then(|v| v.as_u64()).unwrap_or(25) as u32,
+        }),
+        "poor-cli/permissionReq" => Some(ServerNotification::PermissionRequest {
+            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            tool_name: params.get("toolName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            tool_args: params.get("toolArgs").cloned().unwrap_or(Value::Null),
+            prompt_id: params.get("promptId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        }),
+        "poor-cli/progress" => Some(ServerNotification::Progress {
+            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            phase: params.get("phase").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            message: params.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            iteration_index: params.get("iterationIndex").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            iteration_cap: params.get("iterationCap").and_then(|v| v.as_u64()).unwrap_or(25) as u32,
+        }),
+        "poor-cli/costUpdate" => Some(ServerNotification::CostUpdate {
+            request_id: params.get("requestId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            input_tokens: params.get("inputTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            output_tokens: params.get("outputTokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            estimated_cost: params.get("estimatedCost").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        }),
+        _ => None,
+    }
 }
 
 impl RpcClient {
     /// Spawn the Python JSON-RPC server as a child process.
+    /// Returns the client and a notification receiver channel.
+    pub fn spawn_with_notifications(
+        python_bin: &str,
+        cwd: Option<&str>,
+    ) -> Result<(Self, Receiver<ServerNotification>), String> {
+        let mut cmd = Command::new(python_bin);
+        cmd.arg("-m")
+            .arg("poor_cli.server")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to start Python server: {e}"))?;
+
+        let stdout = child.stdout.take().ok_or("No stdout handle")?;
+        let pending_requests: Arc<Mutex<HashMap<u64, SyncSender<Result<Value, String>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let (notification_tx, notification_rx) = mpsc::channel::<ServerNotification>();
+
+        // Spawn continuous reader thread
+        let pending_clone = pending_requests.clone();
+        let notif_tx = notification_tx.clone();
+        let reader_handle = thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                match read_one_message(&mut reader) {
+                    Ok(body_str) => {
+                        let msg: RpcResponse = match serde_json::from_str(&body_str) {
+                            Ok(m) => m,
+                            Err(_) => continue,
+                        };
+
+                        // Check if this is a notification (no id, has method)
+                        if msg.id.is_none() {
+                            if let Some(method) = &msg.method {
+                                let params = msg.params.as_ref().cloned().unwrap_or(Value::Null);
+                                if let Some(notif) = parse_notification(method, &params) {
+                                    let _ = notif_tx.send(notif);
+                                }
+                            }
+                            continue;
+                        }
+
+                        // It's a response — route to pending request
+                        if let Some(id) = msg.id {
+                            if let Ok(mut pending) = pending_clone.lock() {
+                                if let Some(sender) = pending.remove(&id) {
+                                    let result = if let Some(err) = msg.error {
+                                        Err(err.to_string())
+                                    } else {
+                                        msg.result
+                                            .ok_or_else(|| "No result in response".to_string())
+                                    };
+                                    let _ = sender.send(result);
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => break, // EOF or read error
+                }
+            }
+        });
+
+        Ok((
+            Self {
+                child: Mutex::new(child),
+                next_id: AtomicU64::new(1),
+                pending_requests,
+                notification_tx: Some(notification_tx),
+                reader_handle: Some(reader_handle),
+                stdin_lock: Arc::new(Mutex::new(())),
+            },
+            notification_rx,
+        ))
+    }
+
+    /// Legacy spawn without notifications (falls back to blocking call()).
     pub fn spawn(python_bin: &str, cwd: Option<&str>) -> Result<Self, String> {
         let mut cmd = Command::new(python_bin);
         cmd.arg("-m")
@@ -92,17 +305,55 @@ impl RpcClient {
         Ok(Self {
             child: Mutex::new(child),
             next_id: AtomicU64::new(1),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            notification_tx: None,
+            reader_handle: None,
+            stdin_lock: Arc::new(Mutex::new(())),
         })
     }
 
-    /// Send a JSON-RPC request and read the response (blocking).
-    ///
-    /// Uses LSP-style `Content-Length` header framing to match the Python server.
-    pub fn call(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    /// Write a Content-Length framed message to stdin.
+    fn write_raw(&self, body: &str) -> Result<(), String> {
+        let _lock = self.stdin_lock.lock().map_err(|e| e.to_string())?;
+        let mut child = self.child.lock().map_err(|e| e.to_string())?;
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or("No stdin handle on child process")?;
+        let header = format!("Content-Length: {}\r\n\r\n{body}", body.len());
+        write!(stdin, "{header}").map_err(|e| format!("Write error: {e}"))?;
+        stdin.flush().map_err(|e| format!("Flush error: {e}"))?;
+        Ok(())
+    }
+
+    /// Send a request and wait for response via the reader thread.
+    /// Used when spawn_with_notifications was used.
+    fn call_async(&self, method: &str, params: Value) -> Result<Value, String> {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let request = RpcRequest {
+            jsonrpc: "2.0",
+            id,
+            method: method.to_string(),
+            params,
+        };
+        let body = serde_json::to_string(&request).map_err(|e| e.to_string())?;
+
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        {
+            let mut pending = self.pending_requests.lock().map_err(|e| e.to_string())?;
+            pending.insert(id, reply_tx);
+        }
+
+        self.write_raw(&body)?;
+
+        reply_rx
+            .recv_timeout(std::time::Duration::from_secs(120))
+            .map_err(|e| format!("RPC timeout/error: {e}"))?
+    }
+
+    /// Send a JSON-RPC request and read the response (blocking, inline reader).
+    /// Used when spawn() (legacy) was used.
+    fn call_blocking(&self, method: &str, params: Value) -> Result<Value, String> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let request = RpcRequest {
             jsonrpc: "2.0",
@@ -113,7 +364,6 @@ impl RpcClient {
 
         let mut child = self.child.lock().map_err(|e| e.to_string())?;
 
-        // Write request with Content-Length header
         let stdin = child
             .stdin
             .as_mut()
@@ -123,14 +373,12 @@ impl RpcClient {
         write!(stdin, "{header}").map_err(|e| format!("Write error: {e}"))?;
         stdin.flush().map_err(|e| format!("Flush error: {e}"))?;
 
-        // Read response with Content-Length header
         let stdout = child
             .stdout
             .as_mut()
             .ok_or("No stdout handle on child process")?;
         let mut reader = BufReader::new(stdout);
 
-        // Read headers until empty line
         let mut content_length: usize = 0;
         loop {
             let mut header_line = String::new();
@@ -153,7 +401,6 @@ impl RpcClient {
             return Err("No Content-Length in response".into());
         }
 
-        // Read exactly content_length bytes
         let mut body_buf = vec![0u8; content_length];
         reader
             .read_exact(&mut body_buf)
@@ -171,6 +418,26 @@ impl RpcClient {
             .ok_or_else(|| "No result in response".to_string())
     }
 
+    /// Unified call: routes to async or blocking based on how client was spawned.
+    pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        if self.notification_tx.is_some() {
+            self.call_async(method, params)
+        } else {
+            self.call_blocking(method, params)
+        }
+    }
+
+    /// Send a JSON-RPC notification (no id, no response expected).
+    pub fn send_notification(&self, method: &str, params: Value) -> Result<(), String> {
+        let notification = RpcNotification {
+            jsonrpc: "2.0",
+            method: method.to_string(),
+            params,
+        };
+        let body = serde_json::to_string(&notification).map_err(|e| e.to_string())?;
+        self.write_raw(&body)
+    }
+
     /// Initialize the server with provider/model info.
     pub fn initialize(
         &self,
@@ -181,50 +448,65 @@ impl RpcClient {
     ) -> Result<InitResult, String> {
         let mut params = serde_json::Map::new();
         if let Some(p) = provider {
-            params.insert("provider".into(), serde_json::Value::String(p.into()));
+            params.insert("provider".into(), Value::String(p.into()));
         }
         if let Some(m) = model {
-            params.insert("model".into(), serde_json::Value::String(m.into()));
+            params.insert("model".into(), Value::String(m.into()));
         }
         if let Some(k) = api_key {
-            params.insert("apiKey".into(), serde_json::Value::String(k.into()));
+            params.insert("apiKey".into(), Value::String(k.into()));
         }
         if let Some(pm) = permission_mode {
-            params.insert(
-                "permissionMode".into(),
-                serde_json::Value::String(pm.into()),
-            );
+            params.insert("permissionMode".into(), Value::String(pm.into()));
         }
-        let val = self.call("initialize", serde_json::Value::Object(params))?;
+        // Enable streaming notifications
+        if self.notification_tx.is_some() {
+            params.insert("streaming".into(), Value::Bool(true));
+        }
+        let val = self.call("initialize", Value::Object(params))?;
         serde_json::from_value(val).map_err(|e| e.to_string())
     }
 
-    /// Send a chat message and get the response.
+    /// Send a chat message (non-streaming, legacy).
     pub fn chat(&self, message: &str, context_files: &[String]) -> Result<ChatResult, String> {
         let mut params = serde_json::Map::new();
-        params.insert("message".into(), serde_json::Value::String(message.into()));
+        params.insert("message".into(), Value::String(message.into()));
         if !context_files.is_empty() {
-            let files: Vec<serde_json::Value> = context_files
+            let files: Vec<Value> = context_files
                 .iter()
-                .map(|f| serde_json::Value::String(f.clone()))
+                .map(|f| Value::String(f.clone()))
                 .collect();
-            params.insert("contextFiles".into(), serde_json::Value::Array(files));
+            params.insert("contextFiles".into(), Value::Array(files));
         }
-        let val = self.call("chat", serde_json::Value::Object(params))?;
+        let val = self.call("chat", Value::Object(params))?;
         serde_json::from_value(val).map_err(|e| e.to_string())
+    }
+
+    /// Send a streaming chat message. Notifications arrive via the notification channel.
+    /// Returns the final accumulated result.
+    pub fn chat_streaming(&self, message: &str, request_id: &str) -> Result<ChatResult, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("message".into(), Value::String(message.into()));
+        params.insert("requestId".into(), Value::String(request_id.into()));
+        let val = self.call("poor-cli/chatStreaming", Value::Object(params))?;
+        serde_json::from_value(val).map_err(|e| e.to_string())
+    }
+
+    /// Cancel an in-flight request.
+    pub fn cancel_request(&self) -> Result<(), String> {
+        let _ = self.call(
+            "poor-cli/cancelRequest",
+            Value::Object(Default::default()),
+        )?;
+        Ok(())
     }
 
     /// List available providers.
     pub fn list_providers(&self) -> Result<Vec<ProviderInfo>, String> {
-        let val = self.call(
-            "listProviders",
-            serde_json::Value::Object(Default::default()),
-        )?;
-        // The server may return a map or array. Handle both.
+        let val = self.call("listProviders", Value::Object(Default::default()))?;
         if let Some(arr) = val.as_array() {
-            serde_json::from_value(serde_json::Value::Array(arr.clone())).map_err(|e| e.to_string())
+            serde_json::from_value(Value::Array(arr.clone())).map_err(|e| e.to_string())
         } else if let Some(obj) = val.as_object() {
-            // Convert map to vec
             let list: Vec<ProviderInfo> = obj
                 .iter()
                 .map(|(name, info)| {
@@ -259,82 +541,53 @@ impl RpcClient {
         &self,
         provider: &str,
         model: Option<&str>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
-        params.insert(
-            "provider".into(),
-            serde_json::Value::String(provider.into()),
-        );
+        params.insert("provider".into(), Value::String(provider.into()));
         if let Some(m) = model {
-            params.insert("model".into(), serde_json::Value::String(m.into()));
+            params.insert("model".into(), Value::String(m.into()));
         }
-        self.call("switchProvider", serde_json::Value::Object(params))
+        self.call("switchProvider", Value::Object(params))
     }
 
-    /// Get current config from the server.
-    pub fn get_config(&self) -> Result<HashMap<String, serde_json::Value>, String> {
-        let val = self.call("getConfig", serde_json::Value::Object(Default::default()))?;
+    pub fn get_config(&self) -> Result<HashMap<String, Value>, String> {
+        let val = self.call("getConfig", Value::Object(Default::default()))?;
         serde_json::from_value(val).map_err(|e| e.to_string())
     }
 
-    /// Get current config as raw JSON value.
     pub fn get_config_value(&self) -> Result<Value, String> {
-        self.call("getConfig", serde_json::Value::Object(Default::default()))
+        self.call("getConfig", Value::Object(Default::default()))
     }
 
-    /// Get current provider information.
     pub fn get_provider_info(&self) -> Result<Value, String> {
-        self.call(
-            "poor-cli/getProviderInfo",
-            serde_json::Value::Object(Default::default()),
-        )
+        self.call("poor-cli/getProviderInfo", Value::Object(Default::default()))
     }
 
-    /// Get tool declarations from server.
     pub fn get_tools(&self) -> Result<Value, String> {
-        self.call(
-            "poor-cli/getTools",
-            serde_json::Value::Object(Default::default()),
-        )
+        self.call("poor-cli/getTools", Value::Object(Default::default()))
     }
 
-    /// List editable config options.
     pub fn list_config_options(&self) -> Result<Value, String> {
-        self.call(
-            "poor-cli/listConfigOptions",
-            serde_json::Value::Object(Default::default()),
-        )
+        self.call("poor-cli/listConfigOptions", Value::Object(Default::default()))
     }
 
-    /// Set one config value by key path.
     pub fn set_config(&self, key_path: &str, value: Value) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
-        params.insert(
-            "keyPath".into(),
-            serde_json::Value::String(key_path.to_string()),
-        );
+        params.insert("keyPath".into(), Value::String(key_path.to_string()));
         params.insert("value".into(), value);
-        self.call("poor-cli/setConfig", serde_json::Value::Object(params))
+        self.call("poor-cli/setConfig", Value::Object(params))
     }
 
-    /// Toggle a boolean config value by key path.
     pub fn toggle_config(&self, key_path: &str) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
-        params.insert(
-            "keyPath".into(),
-            serde_json::Value::String(key_path.to_string()),
-        );
-        self.call("poor-cli/toggleConfig", serde_json::Value::Object(params))
+        params.insert("keyPath".into(), Value::String(key_path.to_string()));
+        self.call("poor-cli/toggleConfig", Value::Object(params))
     }
 
-    /// Execute a shell command through the backend.
     pub fn execute_command(&self, command: &str) -> Result<String, String> {
         let mut params = serde_json::Map::new();
-        params.insert(
-            "command".into(),
-            serde_json::Value::String(command.to_string()),
-        );
-        let val = self.call("poor-cli/executeCommand", serde_json::Value::Object(params))?;
+        params.insert("command".into(), Value::String(command.to_string()));
+        let val = self.call("poor-cli/executeCommand", Value::Object(params))?;
         Ok(val
             .get("output")
             .and_then(|v| v.as_str())
@@ -342,7 +595,6 @@ impl RpcClient {
             .to_string())
     }
 
-    /// Read a file through the backend.
     pub fn read_file(
         &self,
         file_path: &str,
@@ -350,18 +602,14 @@ impl RpcClient {
         end_line: Option<u64>,
     ) -> Result<String, String> {
         let mut params = serde_json::Map::new();
-        params.insert(
-            "filePath".into(),
-            serde_json::Value::String(file_path.to_string()),
-        );
+        params.insert("filePath".into(), Value::String(file_path.to_string()));
         if let Some(start) = start_line {
-            params.insert("startLine".into(), serde_json::Value::Number(start.into()));
+            params.insert("startLine".into(), Value::Number(start.into()));
         }
         if let Some(end) = end_line {
-            params.insert("endLine".into(), serde_json::Value::Number(end.into()));
+            params.insert("endLine".into(), Value::Number(end.into()));
         }
-
-        let val = self.call("poor-cli/readFile", serde_json::Value::Object(params))?;
+        let val = self.call("poor-cli/readFile", Value::Object(params))?;
         Ok(val
             .get("content")
             .and_then(|v| v.as_str())
@@ -369,18 +617,13 @@ impl RpcClient {
             .to_string())
     }
 
-    /// Clear backend conversation history.
     pub fn clear_history(&self) -> Result<(), String> {
-        let _ = self.call(
-            "poor-cli/clearHistory",
-            serde_json::Value::Object(Default::default()),
-        )?;
+        let _ = self.call("poor-cli/clearHistory", Value::Object(Default::default()))?;
         Ok(())
     }
 
-    /// Shutdown the server.
     pub fn shutdown(&self) -> Result<(), String> {
-        let _ = self.call("shutdown", serde_json::Value::Object(Default::default()));
+        let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
         }
@@ -400,6 +643,16 @@ pub enum RpcCommand {
     Chat {
         message: String,
         reply: SyncSender<Result<String, String>>,
+    },
+    ChatStreaming {
+        message: String,
+        request_id: String,
+        reply: SyncSender<Result<String, String>>,
+    },
+    CancelRequest,
+    SendNotification {
+        method: String,
+        params: Value,
     },
     ExecuteCommand {
         command: String,
@@ -455,6 +708,22 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                     .chat(&message, &[])
                     .map(|r| r.content.unwrap_or_default());
                 let _ = reply.send(result);
+            }
+            Ok(RpcCommand::ChatStreaming {
+                message,
+                request_id,
+                reply,
+            }) => {
+                let result = client
+                    .chat_streaming(&message, &request_id)
+                    .map(|r| r.content.unwrap_or_default());
+                let _ = reply.send(result);
+            }
+            Ok(RpcCommand::CancelRequest) => {
+                let _ = client.cancel_request();
+            }
+            Ok(RpcCommand::SendNotification { method, params }) => {
+                let _ = client.send_notification(&method, params);
             }
             Ok(RpcCommand::ExecuteCommand { command, reply }) => {
                 let _ = reply.send(client.execute_command(&command));

@@ -179,6 +179,8 @@ class PoorCLIServer:
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
+            "poor-cli/cancelRequest": self.handle_cancel_request,
+            "poor-cli/chatStreaming": self.handle_chat_streaming,
         }
     
     # =========================================================================
@@ -209,6 +211,10 @@ class PoorCLIServer:
                         "Expected one of: prompt, auto-safe, danger-full-access."
                     ) from e
 
+            # Client declares streaming support
+            if params.get("streaming"):
+                self._client_streaming = True
+
             await self.core.initialize(
                 provider_name=params.get("provider"),
                 model_name=params.get("model"),
@@ -217,12 +223,13 @@ class PoorCLIServer:
             self.initialized = True
             provider_info = self.core.get_provider_info()
             set_log_context(provider=provider_info.get("name"))
-            
+
             return {
                 "capabilities": {
                     "completionProvider": True,
                     "inlineCompletionProvider": True,
                     "chatProvider": True,
+                    "chatStreamingProvider": True,
                     "fileOperations": True,
                     "permissionMode": self.permission_mode,
                     "providerInfo": provider_info
@@ -763,6 +770,95 @@ class PoorCLIServer:
             return value.value
         return value
     
+    async def handle_cancel_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Cancel an in-flight agentic loop."""
+        self.core.cancel_request()
+        return {"success": True}
+
+    async def handle_chat_streaming(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle chat with structured CoreEvent streaming.
+
+        Sends JSON-RPC notifications for each CoreEvent, then returns a
+        final RPC result with the accumulated text.
+        """
+        self._ensure_initialized()
+
+        message = params.get("message", "")
+        context_files = params.get("contextFiles")
+        request_id = params.get("requestId", "")
+
+        accumulated_text = ""
+        async for event in self.core.send_message_events(
+            message=message,
+            context_files=context_files,
+            request_id=request_id,
+        ):
+            if event.type == "text_chunk":
+                notification = JsonRpcMessage(
+                    method="poor-cli/streamChunk",
+                    params={"requestId": request_id, "chunk": event.data.get("chunk", ""), "done": False},
+                )
+                await self.write_message_stdio(notification)
+                accumulated_text += event.data.get("chunk", "")
+            elif event.type in ("tool_call_start", "tool_result"):
+                event_type = event.type
+                notification = JsonRpcMessage(
+                    method="poor-cli/toolEvent",
+                    params={
+                        "requestId": request_id,
+                        "eventType": event_type,
+                        "toolName": event.data.get("toolName", ""),
+                        "toolArgs": event.data.get("toolArgs", {}),
+                        "toolResult": event.data.get("toolResult", ""),
+                        "iterationIndex": event.data.get("iterationIndex", 0),
+                        "iterationCap": event.data.get("iterationCap", 25),
+                    },
+                )
+                await self.write_message_stdio(notification)
+            elif event.type == "permission_request":
+                notification = JsonRpcMessage(
+                    method="poor-cli/permissionReq",
+                    params={
+                        "requestId": request_id,
+                        "toolName": event.data.get("toolName", ""),
+                        "toolArgs": event.data.get("toolArgs", {}),
+                        "promptId": event.data.get("promptId", ""),
+                    },
+                )
+                await self.write_message_stdio(notification)
+            elif event.type == "cost_update":
+                notification = JsonRpcMessage(
+                    method="poor-cli/costUpdate",
+                    params={
+                        "requestId": request_id,
+                        "inputTokens": event.data.get("inputTokens", 0),
+                        "outputTokens": event.data.get("outputTokens", 0),
+                        "estimatedCost": event.data.get("estimatedCost", 0.0),
+                    },
+                )
+                await self.write_message_stdio(notification)
+            elif event.type == "progress":
+                notification = JsonRpcMessage(
+                    method="poor-cli/progress",
+                    params={
+                        "requestId": request_id,
+                        "phase": event.data.get("phase", ""),
+                        "message": event.data.get("message", ""),
+                        "iterationIndex": event.data.get("iterationIndex", 0),
+                        "iterationCap": event.data.get("iterationCap", 25),
+                    },
+                )
+                await self.write_message_stdio(notification)
+            elif event.type == "done":
+                done_notification = JsonRpcMessage(
+                    method="poor-cli/streamChunk",
+                    params={"requestId": request_id, "chunk": "", "done": True, "reason": event.data.get("reason", "complete")},
+                )
+                await self.write_message_stdio(done_notification)
+
+        return {"content": accumulated_text, "role": "assistant"}
+
     def _ensure_initialized(self) -> None:
         """Ensure the server is initialized."""
         if not self.initialized:
@@ -970,44 +1066,30 @@ class PoorCLIServer:
 class StreamingJsonRpcServer(PoorCLIServer):
     """
     Extended server with streaming support.
-    
-    Overrides chat and inline complete to send streaming notifications.
+
+    Kept for backward compatibility. New streaming uses
+    PoorCLIServer.handle_chat_streaming() with CoreEvent notifications.
     """
-    
-    async def handle_chat_streaming(self, params: Dict[str, Any], request_id: int) -> None:
-        """
-        Handle chat with streaming responses.
-        
-        Sends partial results as notifications with method "poor-cli/streamChunk".
-        """
+
+    async def handle_chat_streaming_legacy(self, params: Dict[str, Any], request_id: int) -> None:
+        """Legacy text-only streaming handler."""
         self._ensure_initialized()
-        
+
         message = params.get("message", "")
         context_files = params.get("contextFiles")
-        
+
         async for chunk in self.core.send_message(
-            message=message,
-            context_files=context_files
+            message=message, context_files=context_files
         ):
-            # Send streaming notification
             notification = JsonRpcMessage(
                 method="poor-cli/streamChunk",
-                params={
-                    "requestId": request_id,
-                    "chunk": chunk,
-                    "done": False
-                }
+                params={"requestId": request_id, "chunk": chunk, "done": False},
             )
             await self.write_message_stdio(notification)
-        
-        # Send final notification
+
         final = JsonRpcMessage(
             method="poor-cli/streamChunk",
-            params={
-                "requestId": request_id,
-                "chunk": "",
-                "done": True
-            }
+            params={"requestId": request_id, "chunk": "", "done": True},
         )
         await self.write_message_stdio(final)
 

@@ -151,6 +151,19 @@ pub struct App {
     pub last_user_message: Option<String>,
     pub pending_images: Vec<String>,
     pub pinned_context_files: Vec<String>,
+
+    // ── Streaming / agentic state ───
+    pub streaming_message: Option<usize>, // index of in-progress assistant message
+    pub current_iteration: u32,
+    pub iteration_cap: u32,
+    pub active_tool: Option<String>,
+    pub request_id_counter: u64,
+
+    // ── Real token tracking (from server) ───
+    pub turn_input_tokens: u64,
+    pub turn_output_tokens: u64,
+    pub cumulative_input_tokens: u64,
+    pub cumulative_output_tokens: u64,
 }
 
 impl Default for App {
@@ -188,6 +201,15 @@ impl Default for App {
             last_user_message: None,
             pending_images: Vec::new(),
             pinned_context_files: Vec::new(),
+            streaming_message: None,
+            current_iteration: 0,
+            iteration_cap: 25,
+            active_tool: None,
+            request_id_counter: 0,
+            turn_input_tokens: 0,
+            turn_output_tokens: 0,
+            cumulative_input_tokens: 0,
+            cumulative_output_tokens: 0,
         }
     }
 }
@@ -416,6 +438,39 @@ impl App {
                 self.status_message = None;
             }
         }
+    }
+
+    pub fn next_request_id(&mut self) -> String {
+        self.request_id_counter += 1;
+        format!("req-{}", self.request_id_counter)
+    }
+
+    pub fn start_streaming_message(&mut self) {
+        let idx = self.messages.len();
+        self.messages.push(ChatMessage::assistant(""));
+        self.streaming_message = Some(idx);
+        self.current_iteration = 0;
+        self.turn_input_tokens = 0;
+        self.turn_output_tokens = 0;
+    }
+
+    pub fn append_streaming_chunk(&mut self, chunk: &str) {
+        if let Some(idx) = self.streaming_message {
+            if let Some(msg) = self.messages.get_mut(idx) {
+                msg.content.push_str(chunk);
+            }
+        }
+    }
+
+    pub fn finalize_streaming(&mut self) {
+        if let Some(idx) = self.streaming_message {
+            if let Some(msg) = self.messages.get(idx) {
+                self.record_assistant_output(&msg.content.clone());
+            }
+        }
+        self.streaming_message = None;
+        self.active_tool = None;
+        self.scroll_offset = 0;
     }
 
     pub fn record_user_input(&mut self, text: &str) {

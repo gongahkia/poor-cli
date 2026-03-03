@@ -19,7 +19,7 @@ use serde_json::Value;
 
 use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry};
 use poor_cli_tui::input::{self, InputAction};
-use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand};
+use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
 use poor_cli_tui::ui;
 
 // ── CLI arguments ────────────────────────────────────────────────────
@@ -70,6 +70,35 @@ enum ServerMsg {
     },
     Error {
         message: String,
+    },
+    // ── Streaming notifications ───
+    StreamChunk {
+        chunk: String,
+        done: bool,
+        reason: Option<String>,
+    },
+    ToolEvent {
+        event_type: String,
+        tool_name: String,
+        tool_args: Value,
+        tool_result: String,
+        iteration_index: u32,
+        iteration_cap: u32,
+    },
+    PermissionRequest {
+        tool_name: String,
+        tool_args: Value,
+        prompt_id: String,
+    },
+    Progress {
+        phase: String,
+        message: String,
+        iteration_index: u32,
+        iteration_cap: u32,
+    },
+    CostUpdate {
+        input_tokens: u64,
+        output_tokens: u64,
     },
 }
 
@@ -156,52 +185,86 @@ fn run_app(
     };
 
     let tx_init = tx.clone();
+    let tx_notif = tx.clone();
     thread::spawn(
-        move || match RpcClient::spawn(&python_bin, cwd.as_deref()) {
-            Ok(client) => match client.initialize(
-                provider.as_deref(),
-                model.as_deref(),
-                None,
-                permission_mode.as_deref(),
-            ) {
-                Ok(init) => {
-                    let (prov, mdl) = if let Some(caps) = &init.capabilities {
-                        let prov = caps
-                            .pointer("/providerInfo/name")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| provider.clone().unwrap_or_else(|| "gemini".into()));
-                        let mdl = caps
-                            .pointer("/providerInfo/model")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                model
-                                    .clone()
-                                    .unwrap_or_else(|| "gemini-2.0-flash-exp".into())
-                            });
-                        (prov, mdl)
-                    } else {
-                        (
-                            provider.clone().unwrap_or_else(|| "gemini".into()),
-                            model
-                                .clone()
-                                .unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
-                        )
-                    };
-                    let _ = tx_init.send(ServerMsg::Initialized {
-                        provider: prov,
-                        model: mdl,
-                        version: init.version.unwrap_or_else(|| "0.4.0".into()),
-                    });
-                    run_rpc_worker(client, rpc_cmd_rx);
+        move || match RpcClient::spawn_with_notifications(&python_bin, cwd.as_deref()) {
+            Ok((client, notification_rx)) => {
+                // Spawn notification reader thread → maps ServerNotification → ServerMsg
+                thread::spawn(move || {
+                    loop {
+                        match notification_rx.recv() {
+                            Ok(notif) => {
+                                let msg = match notif {
+                                    ServerNotification::StreamChunk { chunk, done, reason, .. } => {
+                                        ServerMsg::StreamChunk { chunk, done, reason }
+                                    }
+                                    ServerNotification::ToolEvent {
+                                        event_type, tool_name, tool_args, tool_result,
+                                        iteration_index, iteration_cap, ..
+                                    } => ServerMsg::ToolEvent {
+                                        event_type, tool_name, tool_args, tool_result,
+                                        iteration_index, iteration_cap,
+                                    },
+                                    ServerNotification::PermissionRequest {
+                                        tool_name, tool_args, prompt_id, ..
+                                    } => ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id },
+                                    ServerNotification::Progress {
+                                        phase, message, iteration_index, iteration_cap, ..
+                                    } => ServerMsg::Progress { phase, message, iteration_index, iteration_cap },
+                                    ServerNotification::CostUpdate {
+                                        input_tokens, output_tokens, ..
+                                    } => ServerMsg::CostUpdate { input_tokens, output_tokens },
+                                };
+                                if tx_notif.send(msg).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+
+                match client.initialize(
+                    provider.as_deref(),
+                    model.as_deref(),
+                    None,
+                    permission_mode.as_deref(),
+                ) {
+                    Ok(init) => {
+                        let (prov, mdl) = if let Some(caps) = &init.capabilities {
+                            let prov = caps
+                                .pointer("/providerInfo/name")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| provider.clone().unwrap_or_else(|| "gemini".into()));
+                            let mdl = caps
+                                .pointer("/providerInfo/model")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| {
+                                    model.clone().unwrap_or_else(|| "gemini-2.0-flash-exp".into())
+                                });
+                            (prov, mdl)
+                        } else {
+                            (
+                                provider.clone().unwrap_or_else(|| "gemini".into()),
+                                model.clone().unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
+                            )
+                        };
+                        let _ = tx_init.send(ServerMsg::Initialized {
+                            provider: prov,
+                            model: mdl,
+                            version: init.version.unwrap_or_else(|| "0.4.0".into()),
+                        });
+                        run_rpc_worker(client, rpc_cmd_rx);
+                    }
+                    Err(e) => {
+                        let _ = tx_init.send(ServerMsg::Error {
+                            message: format!("Initialization failed: {e}"),
+                        });
+                    }
                 }
-                Err(e) => {
-                    let _ = tx_init.send(ServerMsg::Error {
-                        message: format!("Initialization failed: {e}"),
-                    });
-                }
-            },
+            }
             Err(e) => {
                 let _ = tx_init.send(ServerMsg::Error {
                     message: format!("Failed to start server: {e}"),
@@ -258,6 +321,47 @@ fn run_app(
                     app.stop_waiting();
                     app.push_message(ChatMessage::error(message));
                 }
+                ServerMsg::StreamChunk { chunk, done, reason } => {
+                    if done {
+                        app.finalize_streaming();
+                        app.stop_waiting();
+                    } else if !chunk.is_empty() {
+                        if app.streaming_message.is_none() {
+                            app.start_streaming_message();
+                        }
+                        app.append_streaming_chunk(&chunk);
+                    }
+                }
+                ServerMsg::ToolEvent {
+                    event_type, tool_name, tool_args, tool_result,
+                    iteration_index, iteration_cap,
+                } => {
+                    app.current_iteration = iteration_index;
+                    app.iteration_cap = iteration_cap;
+                    if event_type == "tool_call_start" {
+                        app.active_tool = Some(tool_name.clone());
+                        let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
+                        app.push_message(ChatMessage::tool_call(&tool_name, args_str));
+                    } else if event_type == "tool_result" {
+                        app.active_tool = None;
+                        app.push_message(ChatMessage::tool_result(&tool_name, tool_result));
+                    }
+                }
+                ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id } => {
+                    let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
+                    app.permission_message = format!("{tool_name}: {args_str}");
+                    app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
+                }
+                ServerMsg::Progress { phase, message, iteration_index, iteration_cap } => {
+                    app.current_iteration = iteration_index;
+                    app.iteration_cap = iteration_cap;
+                }
+                ServerMsg::CostUpdate { input_tokens, output_tokens } => {
+                    app.turn_input_tokens += input_tokens;
+                    app.turn_output_tokens += output_tokens;
+                    app.cumulative_input_tokens += input_tokens;
+                    app.cumulative_output_tokens += output_tokens;
+                }
             }
         }
 
@@ -281,6 +385,8 @@ fn run_app(
                 }
                 InputAction::Cancel => {
                     cancel_token.store(true, Ordering::SeqCst);
+                    let _ = rpc_cmd_tx.send(RpcCommand::CancelRequest);
+                    app.finalize_streaming();
                     app.stop_waiting();
                     app.set_status("Request cancelled");
                 }
@@ -363,20 +469,24 @@ fn send_chat_request(
     app.record_user_input(&display_message);
     app.push_message(ChatMessage::user(display_message));
     app.start_waiting();
+    app.turn_input_tokens = 0;
+    app.turn_output_tokens = 0;
 
+    // Use streaming endpoint — notifications arrive via the notification channel
+    let request_id = app.next_request_id();
     let tx2 = tx.clone();
     let cancel = cancel_token.clone();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-    let _ = rpc_cmd_tx.send(RpcCommand::Chat {
+    let _ = rpc_cmd_tx.send(RpcCommand::ChatStreaming {
         message: backend_message,
+        request_id,
         reply: reply_tx,
     });
 
     thread::spawn(move || match reply_rx.recv() {
-        Ok(Ok(content)) => {
-            if !cancel.load(Ordering::SeqCst) {
-                let _ = tx2.send(ServerMsg::ChatResponse { content });
-            }
+        Ok(Ok(_content)) => {
+            // Streaming already delivered chunks via notifications.
+            // The final result is ignored since finalize_streaming handles it.
         }
         Ok(Err(e)) => {
             if !cancel.load(Ordering::SeqCst) {
