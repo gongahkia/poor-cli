@@ -150,6 +150,7 @@ pub struct App {
     pub output_tokens_estimate: usize,
     pub last_user_message: Option<String>,
     pub pending_images: Vec<String>,
+    pub pinned_context_files: Vec<String>,
 }
 
 impl Default for App {
@@ -186,6 +187,7 @@ impl Default for App {
             output_tokens_estimate: 0,
             last_user_message: None,
             pending_images: Vec::new(),
+            pinned_context_files: Vec::new(),
         }
     }
 }

@@ -61,6 +61,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/files",
+        description: "List pinned context files",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/new-session",
         description: "Start a fresh session",
         recommended: true,
@@ -136,6 +141,21 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: false,
     },
     SlashCommandSpec {
+        command: "/add",
+        description: "Pin file/directory for context",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/drop",
+        description: "Unpin context file",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/clear-files",
+        description: "Clear all pinned context files",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/commit",
         description: "Create commit message from staged diff",
         recommended: false,
@@ -168,6 +188,31 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         command: "/prompts",
         description: "List saved prompts",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/run",
+        description: "Run shell command via backend",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/read",
+        description: "Read file through backend",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/pwd",
+        description: "Show current working directory",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/ls",
+        description: "List files in directory",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/status",
+        description: "Show session status summary",
         recommended: false,
     },
 ];

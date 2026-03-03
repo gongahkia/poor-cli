@@ -1,5 +1,5 @@
 /// Entry point for the poor-cli Rust TUI.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -338,7 +338,8 @@ fn handle_submit(
         return handle_slash_command(app, tx, rpc_cmd_tx, cancel_token, watch_state, trimmed);
     }
 
-    let backend_message = with_pending_images(app, trimmed);
+    let backend_with_files = with_context_files(app, trimmed);
+    let backend_message = with_pending_images(app, &backend_with_files);
     send_chat_request(
         app,
         tx,
@@ -392,6 +393,244 @@ fn send_chat_request(
     });
 }
 
+const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
+const MAX_CONTEXT_BYTES_PER_FILE: usize = 32_000;
+const MAX_CONTEXT_TOTAL_BYTES: usize = 180_000;
+
+fn with_context_files(app: &mut App, message: &str) -> String {
+    let inline_specs = extract_at_references(message);
+    let mut specs = inline_specs.clone();
+    specs.extend(app.pinned_context_files.clone());
+
+    if specs.is_empty() {
+        return message.to_string();
+    }
+
+    let resolved = resolve_context_specs(app, &specs, MAX_CONTEXT_FILES_PER_REQUEST);
+    if resolved.is_empty() {
+        return message.to_string();
+    }
+
+    let mut total_bytes = 0usize;
+    let mut attached = Vec::new();
+    let mut sections = Vec::new();
+
+    for path in resolved {
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => continue,
+        };
+        if bytes.contains(&0) {
+            continue;
+        }
+
+        let content = if bytes.len() > MAX_CONTEXT_BYTES_PER_FILE {
+            String::from_utf8_lossy(&bytes[..MAX_CONTEXT_BYTES_PER_FILE]).to_string()
+        } else {
+            String::from_utf8_lossy(&bytes).to_string()
+        };
+
+        if content.trim().is_empty() {
+            continue;
+        }
+
+        let increment = content.len();
+        if total_bytes + increment > MAX_CONTEXT_TOTAL_BYTES {
+            break;
+        }
+        total_bytes += increment;
+
+        let display = display_project_path(app, &path);
+        let language = detect_language_from_path(&display);
+        attached.push(display.clone());
+        sections.push(format!(
+            "File: {display}\n```{language}\n{}\n```",
+            truncate_block(&content, MAX_CONTEXT_BYTES_PER_FILE)
+        ));
+    }
+
+    if sections.is_empty() {
+        return message.to_string();
+    }
+
+    let attached_summary = attached
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let extra = attached.len().saturating_sub(3);
+    if extra > 0 {
+        app.set_status(format!(
+            "Attached {} file refs via @ and pinned files ({attached_summary}, +{extra} more)",
+            attached.len()
+        ));
+    } else {
+        app.set_status(format!(
+            "Attached {} file refs via @ and pinned files ({attached_summary})",
+            attached.len()
+        ));
+    }
+
+    format!(
+        "{message}\n\nReferenced project files:\n\n{}",
+        sections.join("\n\n")
+    )
+}
+
+fn extract_at_references(message: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut refs = Vec::new();
+
+    for token in message.split_whitespace() {
+        if !token.starts_with('@') || token.len() <= 1 {
+            continue;
+        }
+
+        let spec = token[1..]
+            .trim_matches(|c: char| {
+                matches!(
+                    c,
+                    '"' | '\'' | '`' | ',' | ';' | ':' | ')' | ']' | '}' | '(' | '[' | '{'
+                )
+            })
+            .trim();
+        if spec.is_empty() {
+            continue;
+        }
+
+        let spec_owned = spec.to_string();
+        if seen.insert(spec_owned.clone()) {
+            refs.push(spec_owned);
+        }
+    }
+
+    refs
+}
+
+fn resolve_context_specs(app: &App, specs: &[String], limit: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for spec in specs {
+        for path in resolve_context_spec(app, spec) {
+            let key = path.to_string_lossy().to_string();
+            if seen.insert(key) {
+                out.push(path);
+            }
+            if out.len() >= limit {
+                return out;
+            }
+        }
+    }
+
+    out
+}
+
+fn resolve_context_spec(app: &App, spec: &str) -> Vec<PathBuf> {
+    let cwd = Path::new(&app.cwd);
+    let raw_path = PathBuf::from(spec);
+    let candidate = if raw_path.is_absolute() {
+        raw_path
+    } else {
+        cwd.join(raw_path)
+    };
+
+    if candidate.is_file() {
+        return vec![candidate];
+    }
+
+    if candidate.is_dir() {
+        return collect_directory_files(&candidate, 8);
+    }
+
+    find_suffix_matches(cwd, spec, 5)
+}
+
+fn collect_directory_files(root: &Path, limit: usize) -> Vec<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if should_skip_dir(&name) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+
+            if path.is_file() {
+                files.push(path);
+                if files.len() >= limit {
+                    return files;
+                }
+            }
+        }
+    }
+
+    files
+}
+
+fn find_suffix_matches(root: &Path, suffix: &str, limit: usize) -> Vec<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    let mut matches = Vec::new();
+    let normalized = suffix.trim_start_matches("./");
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if should_skip_dir(&name) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+
+            if !path.is_file() {
+                continue;
+            }
+
+            let rel = path
+                .strip_prefix(root)
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string());
+            if rel == normalized || rel.ends_with(normalized) {
+                matches.push(path);
+                if matches.len() >= limit {
+                    return matches;
+                }
+            }
+        }
+    }
+
+    matches
+}
+
+fn display_project_path(app: &App, path: &Path) -> String {
+    let cwd = Path::new(&app.cwd);
+    path.strip_prefix(cwd)
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
 fn with_pending_images(app: &mut App, message: &str) -> String {
     if app.pending_images.is_empty() {
         return message.to_string();
@@ -429,6 +668,8 @@ fn handle_slash_command(
     if lowered == "/help" {
         let help = "\
 **Available Commands:**\n\n\
+Type `@path/to/file` in any message to attach file context.\n\
+\n\
 **Session Management:**\n\
   /help                Show this help message\n\
   /quit, /exit         Exit poor-cli and print session summary\n\
@@ -456,12 +697,22 @@ fn handle_slash_command(
   /unwatch             Stop active watch mode\n\
   /tools               List backend tool declarations\n\
   /cost                Show token and estimated cost usage\n\n\
+**Context Files:**\n\
+  /add <path>          Pin file/directory as persistent context\n\
+  /drop <path>         Remove pinned context file\n\
+  /files               List currently pinned context files\n\
+  /clear-files         Remove all pinned context files\n\n\
 **Prompt Library:**\n\
   /save-prompt <name> <text>  Save reusable prompt text\n\
   /use <name>                 Load and send saved prompt\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
-  /copy                Save last assistant response to /tmp/poor-cli-last-response.txt";
+  /copy                Save last assistant response to /tmp/poor-cli-last-response.txt\n\
+  /run <command>       Run shell command through backend\n\
+  /read <file>         Read a file from backend\n\
+  /pwd                 Show current working directory\n\
+  /ls [path]           List files (default: current directory)\n\
+  /status              Show quick session status";
         app.push_message(ChatMessage::system(help));
         return false;
     }
@@ -806,6 +1057,177 @@ Version: v{}",
                 "No previous request to edit.".to_string(),
             ));
         }
+        return false;
+    }
+
+    if lowered.starts_with("/add ") {
+        let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        if spec.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /add <path>".to_string()));
+            return false;
+        }
+
+        let resolved = resolve_context_spec(app, spec);
+        if resolved.is_empty() {
+            app.push_message(ChatMessage::error(format!("No files matched: {spec}")));
+            return false;
+        }
+
+        let mut added = 0usize;
+        for path in resolved {
+            let display = display_project_path(app, &path);
+            if !app.pinned_context_files.contains(&display) {
+                app.pinned_context_files.push(display);
+                added += 1;
+            }
+        }
+        app.pinned_context_files.sort();
+        app.pinned_context_files.dedup();
+
+        if added == 0 {
+            app.push_message(ChatMessage::system(
+                "All matched files were already pinned.".to_string(),
+            ));
+        } else {
+            app.set_status(format!(
+                "Pinned {added} context file(s); total: {}",
+                app.pinned_context_files.len()
+            ));
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/drop ") {
+        let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        if spec.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /drop <path>".to_string()));
+            return false;
+        }
+
+        let before = app.pinned_context_files.len();
+        app.pinned_context_files
+            .retain(|p| p != spec && !p.ends_with(&format!("/{spec}")));
+        let removed = before.saturating_sub(app.pinned_context_files.len());
+
+        if removed == 0 {
+            app.push_message(ChatMessage::system(format!(
+                "No pinned file matched: {spec}"
+            )));
+        } else {
+            app.set_status(format!(
+                "Removed {removed} pinned file(s); total: {}",
+                app.pinned_context_files.len()
+            ));
+        }
+        return false;
+    }
+
+    if lowered == "/files" {
+        if app.pinned_context_files.is_empty() {
+            app.push_message(ChatMessage::system(
+                "No pinned context files.\nUse /add <path> or @path in a prompt.".to_string(),
+            ));
+        } else {
+            let mut lines = vec![
+                format!(
+                    "**Pinned Context Files ({}):**",
+                    app.pinned_context_files.len()
+                ),
+                String::new(),
+            ];
+            for file in &app.pinned_context_files {
+                lines.push(format!("- {file}"));
+            }
+            app.push_message(ChatMessage::system(lines.join("\n")));
+        }
+        return false;
+    }
+
+    if lowered == "/clear-files" {
+        let removed = app.pinned_context_files.len();
+        app.pinned_context_files.clear();
+        app.set_status(format!("Cleared {removed} pinned context file(s)"));
+        return false;
+    }
+
+    if lowered.starts_with("/run ") {
+        let command = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        if command.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /run <command>".to_string()));
+            return false;
+        }
+
+        match rpc_execute_command_blocking(rpc_cmd_tx, command) {
+            Ok(output) => app.push_message(ChatMessage::system(format!(
+                "**Command:** `{command}`\n\n{}",
+                truncate_block(&output, 1600)
+            ))),
+            Err(e) => app.push_message(ChatMessage::error(format!("Command failed: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/read ") {
+        let file_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        if file_path.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /read <file>".to_string()));
+            return false;
+        }
+
+        match rpc_read_file_blocking(rpc_cmd_tx, file_path) {
+            Ok(content) => {
+                let language = detect_language_from_path(file_path);
+                app.push_message(ChatMessage::system(format!(
+                    "File: `{file_path}`\n```{language}\n{}\n```",
+                    truncate_block(&content, 3200)
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Read failed: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/pwd" {
+        app.push_message(ChatMessage::system(format!(
+            "Current directory: `{}`",
+            app.cwd
+        )));
+        return false;
+    }
+
+    if lowered == "/ls" || lowered.starts_with("/ls ") {
+        let path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or(".");
+        let command = format!("ls -la {}", shell_escape_single_quotes(path));
+        match rpc_execute_command_blocking(rpc_cmd_tx, &command) {
+            Ok(output) => app.push_message(ChatMessage::system(format!(
+                "**Listing:** `{path}`\n\n{}",
+                truncate_block(&output, 1600)
+            ))),
+            Err(e) => app.push_message(ChatMessage::error(format!("ls failed: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/status" {
+        let status = format!(
+            "**Session Status:**\n\
+Provider: {}/{}\n\
+CWD: {}\n\
+Pinned files: {}\n\
+Queued images: {}\n\
+Watch mode: {}",
+            app.provider_name,
+            app.model_name,
+            app.cwd,
+            app.pinned_context_files.len(),
+            app.pending_images.len(),
+            if watch_state.is_running() {
+                "active"
+            } else {
+                "inactive"
+            }
+        );
+        app.push_message(ChatMessage::system(status));
         return false;
     }
 
