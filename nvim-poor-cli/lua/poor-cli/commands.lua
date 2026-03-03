@@ -142,6 +142,38 @@ function M.setup()
         local lsp = require("poor-cli.lsp")
         lsp.fix_diagnostics()
     end, { desc = "Fix LSP diagnostics with AI" })
+
+    -- Toggle auto-trigger
+    vim.api.nvim_create_user_command("PoorCliAutoTrigger", function()
+        local cfg = require("poor-cli.config")
+        local current = cfg.get("auto_trigger")
+        cfg.config.auto_trigger = not current
+        if cfg.config.auto_trigger then
+            -- re-setup autocmd
+            local augroup = vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
+            vim.api.nvim_create_autocmd("TextChangedI", {
+                group = augroup,
+                callback = function()
+                    if rpc.is_running() then inline.auto_trigger() end
+                end,
+            })
+            vim.notify("[poor-cli] Auto-trigger ON", vim.log.levels.INFO)
+        else
+            vim.api.nvim_create_augroup("poor-cli-auto-trigger", { clear = true })
+            inline.cancel_auto_trigger()
+            vim.notify("[poor-cli] Auto-trigger OFF", vim.log.levels.INFO)
+        end
+    end, { desc = "Toggle auto-trigger for inline completion" })
+
+    -- Accept word (command form)
+    vim.api.nvim_create_user_command("PoorCliAcceptWord", function()
+        inline.accept_word()
+    end, { desc = "Accept next word of inline completion" })
+
+    -- Accept line (command form)
+    vim.api.nvim_create_user_command("PoorCliAcceptLine", function()
+        inline.accept_line()
+    end, { desc = "Accept current line of inline completion" })
 end
 
 -- Explain code (line range or current line)
@@ -209,14 +241,13 @@ function M.refactor_code(range, line1, line2)
                 end
                 
                 if result and result.content then
-                    -- Clean up code block markers if present
                     local new_code = result.content
                     new_code = new_code:gsub("^```[%w]*\n", ""):gsub("\n```$", "")
-                    
                     local new_lines = vim.split(new_code, "\n", { plain = true })
+                    -- wrap in undo group so single u reverts
+                    pcall(vim.cmd, "undojoin")
                     vim.api.nvim_buf_set_lines(0, line1 - 1, line2, false, new_lines)
-                    
-                    vim.notify("[poor-cli] Refactored!", vim.log.levels.INFO)
+                    vim.notify("[poor-cli] Refactored! (undo with u)", vim.log.levels.INFO)
                 end
             end)
         end)
@@ -255,10 +286,23 @@ function M.generate_tests()
     
     local language = vim.bo.filetype
     
+    local file_path = vim.fn.expand("%:p")
+    -- gather imports from top of file for context
+    local buf_lines = vim.api.nvim_buf_get_lines(0, 0, math.min(30, vim.api.nvim_buf_line_count(0)), false)
+    local imports = {}
+    for _, l in ipairs(buf_lines) do
+        if l:match("^import ") or l:match("^from ") or l:match("^use ") or
+           l:match("^require") or l:match("^#include") or l:match("^const .* = require") then
+            table.insert(imports, l)
+        end
+    end
+    local imports_ctx = #imports > 0 and ("\nImports:\n" .. table.concat(imports, "\n") .. "\n") or ""
+
     vim.notify("[poor-cli] Generating tests...", vim.log.levels.INFO)
-    
+
     rpc.request("poor-cli/chat", {
-        message = "Generate unit tests for this " .. language .. " code. " ..
+        message = "Generate unit tests for this " .. language .. " code from " .. file_path .. ".\n" ..
+                  imports_ctx ..
                   "Return ONLY the test code, no explanations.\n\n" ..
                   "```" .. language .. "\n" .. code .. "\n```"
     }, function(result, err)
@@ -269,17 +313,22 @@ function M.generate_tests()
             end
             
             if result and result.content then
-                -- Open a new split with the tests
-                vim.cmd("below new")
+                -- derive test file name from source
+                local base = vim.fn.fnamemodify(file_path, ":t:r")
+                local ext = vim.fn.fnamemodify(file_path, ":e")
+                local test_name = "test_" .. base .. "." .. ext
+                if language == "javascript" or language == "typescript" or language == "typescriptreact" then
+                    test_name = base .. ".test." .. ext
+                elseif language == "rust" then
+                    test_name = base .. "_test." .. ext
+                end
+                vim.cmd("below new " .. test_name)
                 vim.bo.filetype = language
-                
                 local test_code = result.content
                 test_code = test_code:gsub("^```[%w]*\n", ""):gsub("\n```$", "")
-                
                 local lines = vim.split(test_code, "\n", { plain = true })
                 vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-                
-                vim.notify("[poor-cli] Tests generated!", vim.log.levels.INFO)
+                vim.notify("[poor-cli] Tests generated in " .. test_name, vim.log.levels.INFO)
             end
         end)
     end)

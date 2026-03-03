@@ -181,45 +181,55 @@ function M.get_full_lsp_context()
     return table.concat(parts, "\n")
 end
 
--- Command: Fix diagnostics with AI
+-- Apply AI-generated code to buffer wrapped in a single undo group
+function M.apply_with_undo(bufnr, new_lines)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd("undojoin")
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+    end)
+end
+
+-- Command: Fix diagnostics with AI (applies fix directly with undo support)
 function M.fix_diagnostics()
     local rpc = require("poor-cli.rpc")
     local chat = require("poor-cli.chat")
-    
     if not rpc.is_running() then
         vim.notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
     end
-    
     local diagnostics = M.get_buffer_diagnostics()
     if not diagnostics or #diagnostics == 0 then
         vim.notify("[poor-cli] No diagnostics in current buffer", vim.log.levels.INFO)
         return
     end
-    
-    -- Get current buffer content
-    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    local bufnr = vim.api.nvim_get_current_buf()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, "\n")
-    local language = vim.bo.filetype
-    
+    local language = vim.bo[bufnr].filetype
     local diagnostics_text = M.format_diagnostics_for_prompt(diagnostics)
-    
+    local file_path = vim.fn.expand("%:p")
     chat.open()
-    
     vim.notify("[poor-cli] Analyzing diagnostics...", vim.log.levels.INFO)
-    
     rpc.request("poor-cli/chat", {
-        message = "Fix the following issues in this " .. language .. " code:\n\n" ..
-                  diagnostics_text .. "\n\n```" .. language .. "\n" .. content .. "\n```\n\n" ..
-                  "Provide the corrected code and explain each fix.",
+        message = "Fix the following issues in this " .. language .. " code.\n" ..
+                  "Return ONLY the complete corrected file, no explanations.\n\n" ..
+                  diagnostics_text .. "\n\n```" .. language .. "\n" .. content .. "\n```",
     }, function(result, err)
         vim.schedule(function()
             if err then
                 chat.append_message("assistant", "Error: " .. vim.inspect(err))
-            elseif result and result.content then
-                chat.append_message("user", "Fix diagnostics:\n" .. diagnostics_text)
-                chat.append_message("assistant", result.content)
+                return
             end
+            if not result or not result.content then return end
+            local new_code = result.content
+            new_code = new_code:gsub("^```[%w]*\n", ""):gsub("\n```$", "")
+            local new_lines = vim.split(new_code, "\n", { plain = true })
+            -- apply with single undo group
+            M.apply_with_undo(bufnr, new_lines)
+            chat.append_message("user", "Fix diagnostics:\n" .. diagnostics_text)
+            chat.append_message("assistant", "Applied fixes to " .. file_path)
+            vim.notify("[poor-cli] Diagnostics fixed (undo with u)", vim.log.levels.INFO)
         end)
     end)
 end
