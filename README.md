@@ -7,9 +7,13 @@
 
 [BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal *(now also available in **[Neovim](https://neovim.io/)**)*.
 
-<div align="center">
-    <img src="./asset/logo/1.png" width="35%">
-</div>
+```text
+ ____   ___   ___  ____        ____ _     ___
+|  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
+| |_) | | | | | | | |_) |    | |   | |    | |
+|  __/| |_| | |_| |  _ <     | |___| |___ | |
+|_|    \___/ \___/|_| \_\     \____|_____|___|
+```
 
 ## Stack
 

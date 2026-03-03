@@ -712,9 +712,16 @@ class PoorCLIAsync:
                 if not user_input.strip():
                     continue
 
+                normalized_input = user_input.strip().lower()
+                if normalized_input in {"/quit", "/exit"}:
+                    self.running = False
+                    break
+
                 # Handle commands
                 if user_input.startswith("/"):
                     await self.handle_command(user_input)
+                    if not self.running:
+                        break
                     continue
 
                 # Save user input for potential /retry
