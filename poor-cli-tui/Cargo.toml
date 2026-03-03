@@ -1,0 +1,25 @@
+[package]
+name = "poor-cli-tui"
+version = "0.4.0"
+edition = "2021"
+description = "Rust TUI for poor-cli - Claude Code / Codex inspired terminal interface"
+license = "MIT"
+
+[[bin]]
+name = "poor-cli-tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+unicode-width = "0.2"
+textwrap = "0.16"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

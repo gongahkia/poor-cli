@@ -156,6 +156,10 @@ class PoorCLIServer:
         self.handlers = {
             "initialize": self.handle_initialize,
             "shutdown": self.handle_shutdown,
+            "chat": self.handle_chat,
+            "listProviders": self.handle_list_providers,
+            "switchProvider": self.handle_switch_provider,
+            "getConfig": self.handle_get_config,
             "poor-cli/chat": self.handle_chat,
             "poor-cli/inlineComplete": self.handle_inline_complete,
             "poor-cli/applyEdit": self.handle_apply_edit,
@@ -436,6 +440,50 @@ class PoorCLIServer:
         self._ensure_initialized()
         await self.core.clear_history()
         return {"success": True}
+
+    async def handle_list_providers(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        List all available providers with their models.
+
+        Returns:
+            Dictionary of provider name -> {available, models, ...}
+        """
+        from .providers.provider_factory import ProviderFactory
+
+        result: Dict[str, Any] = {}
+        for name, cls in ProviderFactory.list_providers().items():
+            info = ProviderFactory.get_provider_info(name) or {}
+            # Provide default model suggestions per provider
+            model_suggestions: Dict[str, list] = {
+                "gemini": ["gemini-2.0-flash-exp", "gemini-1.5-pro"],
+                "openai": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
+                "anthropic": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
+                "claude": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
+                "ollama": ["llama3", "codellama", "mistral", "phi3"],
+            }
+            result[name] = {
+                "available": info.get("available", True),
+                "models": model_suggestions.get(name, []),
+            }
+        return result
+
+    async def handle_get_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return the current configuration for the Rust TUI.
+
+        Returns:
+            Serialized config dictionary.
+        """
+        self._ensure_initialized()
+        config = self.core.config_manager.config
+        provider_info = self.core.get_provider_info()
+        return {
+            "provider": provider_info.get("name", "unknown"),
+            "model": provider_info.get("model", "unknown"),
+            "streaming": config.ui.enable_streaming,
+            "version": getattr(self.core, "_version", "0.4.0"),
+            "permissionMode": self.permission_mode,
+        }
     
     def _ensure_initialized(self) -> None:
         """Ensure the server is initialized."""
