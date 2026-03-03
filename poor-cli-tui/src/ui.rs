@@ -18,7 +18,7 @@ use ratatui::{
 };
 
 use crate::app::{App, AppMode, MessageRole};
-use crate::input::SLASH_COMMANDS;
+use crate::input::{SlashCommandSpec, SLASH_COMMANDS};
 use crate::markdown;
 use crate::theme;
 
@@ -38,6 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_chat_area(frame, app, chunks[1]);
     draw_input_bar(frame, app, chunks[2]);
     draw_hint_bar(frame, app, chunks[3]);
+    draw_command_palette(frame, app);
 
     // Overlays
     if app.mode == AppMode::ProviderSelect {
@@ -92,6 +93,15 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     if app.is_local_provider {
         spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled("[local]", theme::local_badge_style()));
+    }
+
+    let total_tokens = app.input_tokens_estimate + app.output_tokens_estimate;
+    if total_tokens > 0 {
+        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("{total_tokens}tok"),
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     if app.server_connected {
@@ -351,18 +361,14 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else if app.mode == AppMode::Command {
         // Show matching commands
         let prefix = &app.input_buffer;
-        let matches: Vec<&&str> = SLASH_COMMANDS
-            .iter()
-            .filter(|cmd| cmd.starts_with(prefix.as_str()))
-            .take(6)
-            .collect();
+        let matches = matching_commands(prefix);
         let mut spans = vec![Span::styled("  ", Style::default())];
-        for (i, m) in matches.iter().enumerate() {
+        for (i, m) in matches.into_iter().take(6).enumerate() {
             if i > 0 {
                 spans.push(Span::styled("  ", Style::default()));
             }
             spans.push(Span::styled(
-                m.to_string(),
+                m.command.to_string(),
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -386,6 +392,84 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
     let hint = Paragraph::new(Line::from(spans))
         .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint, area);
+}
+
+fn draw_command_palette(frame: &mut Frame, app: &App) {
+    if app.waiting || !app.input_buffer.starts_with('/') {
+        return;
+    }
+
+    let commands = if app.input_buffer.trim() == "/" {
+        SLASH_COMMANDS
+            .iter()
+            .filter(|spec| spec.recommended)
+            .collect::<Vec<&SlashCommandSpec>>()
+    } else {
+        matching_commands(&app.input_buffer)
+    };
+
+    if commands.is_empty() {
+        return;
+    }
+
+    let display_items: Vec<&SlashCommandSpec> = commands.into_iter().take(8).collect();
+    let palette_height = (display_items.len() as u16 + 2).min(frame.area().height.saturating_sub(5));
+    if palette_height < 3 {
+        return;
+    }
+
+    let width = frame.area().width.min(72);
+    let x = 2.min(frame.area().width.saturating_sub(width));
+    let y = frame
+        .area()
+        .height
+        .saturating_sub(palette_height + 4)
+        .max(1);
+    let area = Rect::new(x, y, width, palette_height);
+
+    frame.render_widget(Clear, area);
+
+    let items: Vec<ListItem> = display_items
+        .iter()
+        .map(|spec| {
+            let desc_style = if spec.recommended {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{:<14}", spec.command),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(spec.description.to_string(), desc_style),
+            ]))
+        })
+        .collect();
+
+    let title = if app.input_buffer.trim() == "/" {
+        " Commands (recommended first) "
+    } else {
+        " Commands "
+    };
+
+    let list = List::new(items).block(
+        Block::default()
+            .title(Span::styled(
+                title,
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(60, 70, 95))),
+    );
+    frame.render_widget(list, area);
+}
+
+fn matching_commands(prefix: &str) -> Vec<&'static SlashCommandSpec> {
+    SLASH_COMMANDS
+        .iter()
+        .filter(|spec| spec.command.starts_with(prefix))
+        .collect()
 }
 
 // ── Provider select overlay ──────────────────────────────────────────

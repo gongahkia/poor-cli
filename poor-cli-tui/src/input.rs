@@ -20,47 +20,156 @@ pub enum InputAction {
     Cancel,
 }
 
-/// Slash commands available for auto-complete.
-pub const SLASH_COMMANDS: &[&str] = &[
-    "/help",
-    "/quit",
-    "/exit",
-    "/clear",
-    "/clear-output",
-    "/history",
-    "/sessions",
-    "/new-session",
-    "/retry",
-    "/search",
-    "/edit-last",
-    "/copy",
-    "/checkpoints",
-    "/checkpoint",
-    "/save",
-    "/rewind",
-    "/undo",
-    "/restore",
-    "/diff",
-    "/provider",
-    "/providers",
-    "/switch",
-    "/export",
-    "/config",
-    "/verbose",
-    "/plan-mode",
-    "/cost",
-    "/model-info",
-    "/permission-mode",
-    "/commit",
-    "/review",
-    "/test",
-    "/image",
-    "/watch",
-    "/unwatch",
-    "/save-prompt",
-    "/use",
-    "/prompts",
-    "/tools",
+/// Metadata for slash-command completion and palette rendering.
+#[derive(Clone, Copy)]
+pub struct SlashCommandSpec {
+    pub command: &'static str,
+    pub description: &'static str,
+    pub recommended: bool,
+}
+
+/// Slash commands available in the Rust TUI.
+pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
+    SlashCommandSpec {
+        command: "/help",
+        description: "Show all available commands",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/review",
+        description: "Review code or staged diff",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/test",
+        description: "Generate tests for a file",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/provider",
+        description: "Show active provider",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/switch",
+        description: "Switch provider/model",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/history",
+        description: "Show recent messages",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/new-session",
+        description: "Start a fresh session",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/permission-mode",
+        description: "Show permission mode",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/quit",
+        description: "Exit the TUI",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/exit",
+        description: "Exit the TUI (alias)",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/clear",
+        description: "Clear conversation history",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/clear-output",
+        description: "Clear screen output only",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/providers",
+        description: "List providers and models",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/config",
+        description: "Show active configuration",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/model-info",
+        description: "Show model capabilities",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/cost",
+        description: "Show usage and cost estimate",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/tools",
+        description: "List backend tools",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/retry",
+        description: "Retry last request",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/search",
+        description: "Search session messages",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/edit-last",
+        description: "Edit and resend last prompt",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/copy",
+        description: "Copy last assistant response",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/commit",
+        description: "Create commit message from staged diff",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/image",
+        description: "Queue image for next message",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/watch",
+        description: "Watch directory for changes",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/unwatch",
+        description: "Stop watch mode",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/save-prompt",
+        description: "Save reusable prompt",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/use",
+        description: "Load and run saved prompt",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/prompts",
+        description: "List saved prompts",
+        recommended: false,
+    },
 ];
 
 /// Process a crossterm event and update app state.
@@ -292,21 +401,25 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) -> InputAction {
 /// Auto-complete the slash command in the input buffer.
 fn autocomplete_command(app: &mut App) {
     let prefix = app.input_buffer.as_str();
-    let matches: Vec<&&str> = SLASH_COMMANDS
+    let matches: Vec<&&SlashCommandSpec> = SLASH_COMMANDS
         .iter()
-        .filter(|cmd| cmd.starts_with(prefix) && **cmd != prefix)
+        .filter(|spec| spec.command.starts_with(prefix) && spec.command != prefix)
         .collect();
 
     if matches.len() == 1 {
         // Single match: complete it
-        app.input_buffer = matches[0].to_string();
+        app.input_buffer = matches[0].command.to_string();
         app.input_cursor = app.input_buffer.len();
     } else if matches.len() > 1 {
         // Multiple matches: find common prefix
-        let first = matches[0];
+        let first = matches[0].command;
         let common_len = first
             .char_indices()
-            .take_while(|(i, c)| matches.iter().all(|m| m.as_bytes().get(*i) == Some(&(*c as u8))))
+            .take_while(|(i, c)| {
+                matches
+                    .iter()
+                    .all(|m| m.command.as_bytes().get(*i) == Some(&(*c as u8)))
+            })
             .last()
             .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(prefix.len());
@@ -316,7 +429,7 @@ fn autocomplete_command(app: &mut App) {
             app.input_cursor = app.input_buffer.len();
         }
         // Show completions as status
-        let completions: Vec<&str> = matches.iter().map(|s| **s).collect();
+        let completions: Vec<&str> = matches.iter().map(|s| s.command).collect();
         app.set_status(completions.join("  "));
     }
 }
