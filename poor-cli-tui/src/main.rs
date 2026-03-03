@@ -345,6 +345,16 @@ fn run_app(
                     if done {
                         app.finalize_streaming();
                         app.stop_waiting();
+                        // Advance plan if we're executing plan steps
+                        if !app.plan_steps.is_empty() && app.plan_current_step < app.plan_steps.len() {
+                            app.advance_plan_step();
+                            if app.plan_current_step < app.plan_steps.len() {
+                                app.mode = poor_cli_tui::app::AppMode::PlanReview;
+                            } else {
+                                app.push_message(ChatMessage::system("Plan complete.".to_string()));
+                                app.clear_plan();
+                            }
+                        }
                     } else if !chunk.is_empty() {
                         if app.streaming_message.is_none() {
                             app.start_streaming_message();
