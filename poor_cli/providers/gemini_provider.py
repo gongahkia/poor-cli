@@ -150,26 +150,30 @@ class GeminiProvider(BaseProvider):
         normalized_message = self._normalize_message(message)
 
         for attempt in range(self.max_retries):
+            received_chunk = False
             try:
                 stream = await asyncio.wait_for(
                     self.chat.send_message_stream(normalized_message),
                     timeout=self.timeout,
                 )
 
-                async for chunk in stream:
+                while True:
+                    chunk = await asyncio.wait_for(stream.__anext__(), timeout=self.timeout)
+                    received_chunk = True
                     yield self._parse_response(chunk, is_chunk=True)
 
+            except StopAsyncIteration:
                 return
 
             except asyncio.TimeoutError as e:
-                if attempt < self.max_retries - 1:
+                if not received_chunk and attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (2 ** attempt))
                     continue
                 raise APITimeoutError("Gemini streaming request timeout", str(e))
 
             except genai_errors.APIError as e:
                 mapped = self._map_api_error(e)
-                if self._is_retryable_error(e) and attempt < self.max_retries - 1:
+                if not received_chunk and self._is_retryable_error(e) and attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (2 ** attempt))
                     continue
                 raise mapped

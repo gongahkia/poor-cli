@@ -381,6 +381,8 @@ fn run_app(
                     app.set_status("Provider switched successfully");
                 }
                 ServerMsg::Error { message } => {
+                    app.finalize_streaming();
+                    app.active_tool = None;
                     app.stop_waiting();
                     app.push_message(ChatMessage::error(message));
                 }
@@ -605,6 +607,8 @@ fn send_chat_request(
     backend_message: String,
     display_message: String,
 ) {
+    const STREAM_REPLY_TIMEOUT_SECS: u64 = 130;
+
     cancel_token.store(false, Ordering::SeqCst);
     app.record_user_input(&display_message);
     app.push_message(ChatMessage::user(display_message));
@@ -617,30 +621,46 @@ fn send_chat_request(
     let tx2 = tx.clone();
     let cancel = cancel_token.clone();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-    let _ = rpc_cmd_tx.send(RpcCommand::ChatStreaming {
-        message: backend_message,
-        request_id,
-        reply: reply_tx,
-    });
+    if rpc_cmd_tx
+        .send(RpcCommand::ChatStreaming {
+            message: backend_message,
+            request_id,
+            reply: reply_tx,
+        })
+        .is_err()
+    {
+        app.stop_waiting();
+        app.push_message(ChatMessage::error("Failed to send request: RPC worker unavailable"));
+        return;
+    }
 
-    thread::spawn(move || match reply_rx.recv() {
-        Ok(Ok(_content)) => {
-            // Streaming already delivered chunks via notifications.
-            // The final result is ignored since finalize_streaming handles it.
-        }
-        Ok(Err(e)) => {
-            if !cancel.load(Ordering::SeqCst) {
-                let _ = tx2.send(ServerMsg::Error { message: e });
+    thread::spawn(
+        move || match reply_rx.recv_timeout(Duration::from_secs(STREAM_REPLY_TIMEOUT_SECS)) {
+            Ok(Ok(_content)) => {
+                // Streaming already delivered chunks via notifications.
+                // The final result is ignored since finalize_streaming handles it.
             }
-        }
-        Err(_) => {
-            if !cancel.load(Ordering::SeqCst) {
-                let _ = tx2.send(ServerMsg::Error {
-                    message: "RPC worker unavailable".into(),
-                });
+            Ok(Err(e)) => {
+                if !cancel.load(Ordering::SeqCst) {
+                    let _ = tx2.send(ServerMsg::Error { message: e });
+                }
             }
-        }
-    });
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if !cancel.load(Ordering::SeqCst) {
+                    let _ = tx2.send(ServerMsg::Error {
+                        message: "Timed out waiting for backend response".into(),
+                    });
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if !cancel.load(Ordering::SeqCst) {
+                    let _ = tx2.send(ServerMsg::Error {
+                        message: "RPC worker reply channel disconnected".into(),
+                    });
+                }
+            }
+        },
+    );
 }
 
 const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
@@ -2018,6 +2038,8 @@ Total: **${:.4}**",
     }
 
     if lowered.starts_with("/plan ") {
+        const PLAN_REPLY_TIMEOUT_SECS: u64 = 130;
+
         let request = raw.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
         if request.is_empty() {
             app.push_message(ChatMessage::system(
@@ -2036,14 +2058,20 @@ Task: {request}"
         app.start_waiting();
         let tx2 = tx.clone();
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        let _ = rpc_cmd_tx.send(RpcCommand::ChatStreaming {
-            message: plan_prompt,
-            request_id: app.next_request_id(),
-            reply: reply_tx,
-        });
+        if rpc_cmd_tx
+            .send(RpcCommand::ChatStreaming {
+                message: plan_prompt,
+                request_id: app.next_request_id(),
+                reply: reply_tx,
+            })
+            .is_err()
+        {
+            app.stop_waiting();
+            app.push_message(ChatMessage::error("Failed to send /plan request: RPC worker unavailable"));
+            return false;
+        }
         let request_clone = request.clone();
-        thread::spawn(move || {
-            match reply_rx.recv() {
+        thread::spawn(move || match reply_rx.recv_timeout(Duration::from_secs(PLAN_REPLY_TIMEOUT_SECS)) {
                 Ok(Ok(content)) => {
                     // Parse numbered steps
                     let steps: Vec<String> = content
@@ -2065,10 +2093,8 @@ Task: {request}"
                         })
                         .collect();
                     if steps.is_empty() {
-                        let _ = tx2.send(ServerMsg::SystemMessage {
-                            content: format!(
-                                "Could not parse plan steps from response:\n{content}"
-                            ),
+                        let _ = tx2.send(ServerMsg::Error {
+                            message: format!("Could not parse plan steps from response:\n{content}"),
                         });
                     } else {
                         let _ = tx2.send(ServerMsg::SystemMessage {
@@ -2079,13 +2105,18 @@ Task: {request}"
                 Ok(Err(e)) => {
                     let _ = tx2.send(ServerMsg::Error { message: e });
                 }
-                Err(_) => {
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let _ = tx2.send(ServerMsg::Error {
+                        message: "Timed out waiting for /plan response".into(),
+                    });
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
                     let _ = tx2.send(ServerMsg::Error {
                         message: "RPC unavailable".into(),
                     });
                 }
-            }
-        });
+            },
+        );
         return false;
     }
 

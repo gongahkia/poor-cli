@@ -1131,25 +1131,29 @@ class PoorCLIServer:
         """
         try:
             loop = asyncio.get_event_loop()
+            stdin_reader = getattr(sys.stdin, "buffer", sys.stdin)
 
             # Read headers byte-by-byte so fragmented header chunks are handled correctly.
-            header_buffer = ""
+            header_buffer = b""
             header_delimiter = None
             while header_delimiter is None:
-                chunk = await loop.run_in_executor(None, lambda: sys.stdin.read(1))
+                chunk = await loop.run_in_executor(None, lambda: stdin_reader.read(1))
                 if not chunk:
                     return None  # EOF
+                if isinstance(chunk, str):
+                    chunk = chunk.encode("utf-8")
                 header_buffer += chunk
 
-                if "\r\n\r\n" in header_buffer:
-                    header_delimiter = "\r\n\r\n"
-                elif "\n\n" in header_buffer:
-                    header_delimiter = "\n\n"
+                if b"\r\n\r\n" in header_buffer:
+                    header_delimiter = b"\r\n\r\n"
+                elif b"\n\n" in header_buffer:
+                    header_delimiter = b"\n\n"
 
             header_text, body_prefix = header_buffer.split(header_delimiter, 1)
+            header_text_decoded = header_text.decode("ascii", errors="replace")
 
             content_length = 0
-            for raw_line in header_text.splitlines():
+            for raw_line in header_text_decoded.splitlines():
                 line = raw_line.strip()
                 if line.lower().startswith("content-length:"):
                     content_length = int(line.split(":", 1)[1].strip())
@@ -1163,14 +1167,16 @@ class PoorCLIServer:
             while len(body) < content_length:
                 remaining = content_length - len(body)
                 chunk = await loop.run_in_executor(
-                    None, lambda size=remaining: sys.stdin.read(size)
+                    None, lambda size=remaining: stdin_reader.read(size)
                 )
                 if not chunk:
                     return None
+                if isinstance(chunk, str):
+                    chunk = chunk.encode("utf-8")
                 body += chunk
 
             body = body[:content_length]
-            return JsonRpcMessage.from_json(body)
+            return JsonRpcMessage.from_json(body.decode("utf-8"))
 
         except json.JSONDecodeError as e:
             self.logger.error(f"JSON parse error: {e}")
@@ -1189,11 +1195,18 @@ class PoorCLIServer:
             message: The message to write.
         """
         try:
-            body = message.to_json()
-            content = f"Content-Length: {len(body)}\r\n\r\n{body}"
+            body = message.to_json().encode("utf-8")
+            header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
 
-            sys.stdout.write(content)
-            sys.stdout.flush()
+            stdout_writer = getattr(sys.stdout, "buffer", None)
+            if stdout_writer is not None:
+                stdout_writer.write(header)
+                stdout_writer.write(body)
+                stdout_writer.flush()
+            else:
+                # Fallback for tests or environments without binary stdio handles.
+                sys.stdout.write((header + body).decode("utf-8"))
+                sys.stdout.flush()
 
         except Exception as e:
             self.logger.error(f"Write error: {e}")
