@@ -62,8 +62,7 @@ class GeminiProvider(BaseProvider):
         """
         if not GENAI_AVAILABLE:
             raise ConfigurationError(
-                "Gemini provider requires 'google-genai'. "
-                "Install with: pip install google-genai"
+                "Gemini provider requires 'google-genai'. " "Install with: pip install google-genai"
             )
 
         super().__init__(api_key, model_name)
@@ -94,9 +93,7 @@ class GeminiProvider(BaseProvider):
 
             if tools:
                 # Existing tool declarations already match Gemini function schema.
-                config_kwargs["tools"] = [
-                    genai_types.Tool(function_declarations=tools)
-                ]
+                config_kwargs["tools"] = [genai_types.Tool(function_declarations=tools)]
 
             if system_instruction:
                 config_kwargs["system_instruction"] = system_instruction
@@ -128,14 +125,14 @@ class GeminiProvider(BaseProvider):
 
             except asyncio.TimeoutError as e:
                 if attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
                     continue
                 raise APITimeoutError("Gemini request timeout", str(e))
 
             except genai_errors.APIError as e:
                 mapped = self._map_api_error(e)
                 if self._is_retryable_error(e) and attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
                     continue
                 raise mapped
 
@@ -167,14 +164,18 @@ class GeminiProvider(BaseProvider):
 
             except asyncio.TimeoutError as e:
                 if not received_chunk and attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
                     continue
                 raise APITimeoutError("Gemini streaming request timeout", str(e))
 
             except genai_errors.APIError as e:
                 mapped = self._map_api_error(e)
-                if not received_chunk and self._is_retryable_error(e) and attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                if (
+                    not received_chunk
+                    and self._is_retryable_error(e)
+                    and attempt < self.max_retries - 1
+                ):
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
                     continue
                 raise mapped
 

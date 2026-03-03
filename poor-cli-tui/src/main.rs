@@ -630,12 +630,14 @@ fn send_chat_request(
         .is_err()
     {
         app.stop_waiting();
-        app.push_message(ChatMessage::error("Failed to send request: RPC worker unavailable"));
+        app.push_message(ChatMessage::error(
+            "Failed to send request: RPC worker unavailable",
+        ));
         return;
     }
 
-    thread::spawn(
-        move || match reply_rx.recv_timeout(Duration::from_secs(STREAM_REPLY_TIMEOUT_SECS)) {
+    thread::spawn(move || {
+        match reply_rx.recv_timeout(Duration::from_secs(STREAM_REPLY_TIMEOUT_SECS)) {
             Ok(Ok(_content)) => {
                 // Streaming already delivered chunks via notifications.
                 // The final result is ignored since finalize_streaming handles it.
@@ -659,8 +661,8 @@ fn send_chat_request(
                     });
                 }
             }
-        },
-    );
+        }
+    });
 }
 
 const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
@@ -2067,11 +2069,14 @@ Task: {request}"
             .is_err()
         {
             app.stop_waiting();
-            app.push_message(ChatMessage::error("Failed to send /plan request: RPC worker unavailable"));
+            app.push_message(ChatMessage::error(
+                "Failed to send /plan request: RPC worker unavailable",
+            ));
             return false;
         }
         let request_clone = request.clone();
-        thread::spawn(move || match reply_rx.recv_timeout(Duration::from_secs(PLAN_REPLY_TIMEOUT_SECS)) {
+        thread::spawn(move || {
+            match reply_rx.recv_timeout(Duration::from_secs(PLAN_REPLY_TIMEOUT_SECS)) {
                 Ok(Ok(content)) => {
                     // Parse numbered steps
                     let steps: Vec<String> = content
@@ -2094,7 +2099,9 @@ Task: {request}"
                         .collect();
                     if steps.is_empty() {
                         let _ = tx2.send(ServerMsg::Error {
-                            message: format!("Could not parse plan steps from response:\n{content}"),
+                            message: format!(
+                                "Could not parse plan steps from response:\n{content}"
+                            ),
                         });
                     } else {
                         let _ = tx2.send(ServerMsg::SystemMessage {
@@ -2115,8 +2122,8 @@ Task: {request}"
                         message: "RPC unavailable".into(),
                     });
                 }
-            },
-        );
+            }
+        });
         return false;
     }
 
