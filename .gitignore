@@ -71,3 +71,5 @@ dmypy.json
 
 # Add file cache to gitignore
 /.poor-cli/cache/
+
+target/
