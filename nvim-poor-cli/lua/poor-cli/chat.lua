@@ -128,45 +128,156 @@ function M.append_message(role, content)
     table.insert(M.history, { role = role, content = content })
 end
 
--- Send a message
+-- Send a message (uses streaming endpoint when available)
 function M.send(message)
     if not message or message == "" then
         return
     end
-    
+
     if not rpc.is_running() then
         vim.notify("[poor-cli] Server not running", vim.log.levels.WARN)
         return
     end
-    
-    -- Append user message
+
     M.append_message("user", message)
-    
-    -- Show loading indicator
-    M.append_loading()
-    
-    -- Get context files (open buffers)
     local context_files = M.get_context_files()
-    
-    -- Send request
-    rpc.request("poor-cli/chat", {
+
+    -- Use streaming endpoint
+    M.streaming_request_id = tostring(os.time()) .. "-" .. tostring(math.random(1000, 9999))
+    M._start_streaming_block()
+
+    rpc.request("poor-cli/chatStreaming", {
         message = message,
         contextFiles = context_files,
+        requestId = M.streaming_request_id,
     }, function(result, err)
         vim.schedule(function()
-            -- Remove loading indicator
-            M.remove_loading()
-            
+            M._finalize_streaming_block()
             if err then
                 M.append_message("assistant", "Error: " .. vim.inspect(err))
-                return
-            end
-            
-            if result and result.content then
-                M.append_message("assistant", result.content)
             end
         end)
     end)
+end
+
+-- Start a streaming assistant message block
+function M._start_streaming_block()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    local header = { "## 🤖 Assistant", "" }
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, header)
+    M.streaming_buf_line = line_count + #header -- 0-indexed line where text goes
+end
+
+-- Append a streaming chunk to the current block
+function M._append_streaming_chunk(chunk)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    if not M.streaming_buf_line then
+        return
+    end
+    if not chunk or chunk == "" then
+        return
+    end
+
+    -- Get current last line of the streaming block
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    local last_line_idx = line_count - 1
+    local last_line = vim.api.nvim_buf_get_lines(M.buf, last_line_idx, line_count, false)[1] or ""
+
+    -- Split chunk by newlines and append
+    local parts = vim.split(chunk, "\n", { plain = true })
+    if #parts == 1 then
+        vim.api.nvim_buf_set_lines(M.buf, last_line_idx, line_count, false, { last_line .. parts[1] })
+    else
+        local lines = { last_line .. parts[1] }
+        for i = 2, #parts do
+            table.insert(lines, parts[i])
+        end
+        vim.api.nvim_buf_set_lines(M.buf, last_line_idx, line_count, false, lines)
+    end
+
+    -- Scroll to bottom
+    if M.win and vim.api.nvim_win_is_valid(M.win) then
+        local new_count = vim.api.nvim_buf_line_count(M.buf)
+        pcall(vim.api.nvim_win_set_cursor, M.win, { new_count, 0 })
+    end
+end
+
+-- Finalize streaming block
+function M._finalize_streaming_block()
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    if M.streaming_buf_line then
+        local line_count = vim.api.nvim_buf_line_count(M.buf)
+        vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "", "---", "" })
+    end
+    M.streaming_buf_line = nil
+    M.streaming_request_id = nil
+end
+
+-- Setup streaming autocmds
+function M.setup_streaming_autocmds()
+    local group = vim.api.nvim_create_augroup("PoorCliChatStreaming", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliStreamChunk",
+        callback = function(ev)
+            local data = ev.data or {}
+            if data.done then
+                vim.schedule(function()
+                    M._finalize_streaming_block()
+                end)
+            elseif data.chunk and data.chunk ~= "" then
+                vim.schedule(function()
+                    M._append_streaming_chunk(data.chunk)
+                end)
+            end
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliToolEvent",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                if data.event_type == "tool_call_start" then
+                    M._append_tool_call(data.tool_name, data.tool_args)
+                elseif data.event_type == "tool_result" then
+                    M._append_tool_result(data.tool_name, data.tool_result)
+                end
+            end)
+        end,
+    })
+end
+
+-- Append a tool call block to the chat buffer
+function M._append_tool_call(name, args)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    local args_str = type(args) == "table" and vim.inspect(args) or tostring(args or "")
+    local lines = { "**🔧 " .. (name or "tool") .. "**", "```", args_str, "```", "" }
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+end
+
+-- Append a tool result block
+function M._append_tool_result(name, result)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    local result_str = tostring(result or "")
+    if #result_str > 500 then
+        result_str = result_str:sub(1, 500) .. "…"
+    end
+    local lines = { "**✓ " .. (name or "tool") .. " result**", "```", result_str, "```", "" }
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
 end
 
 -- Get list of open buffer file paths for context

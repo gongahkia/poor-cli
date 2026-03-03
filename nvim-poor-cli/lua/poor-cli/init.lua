@@ -30,6 +30,7 @@ function M.setup(opts)
     M.commands.setup()
     M.keymaps.setup()
     M.autocmds.setup()
+    M.chat.setup_streaming_autocmds()
     
     -- Health check on setup if requested
     if M.config.get("check_health_on_setup") then
