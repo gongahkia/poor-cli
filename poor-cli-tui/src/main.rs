@@ -321,7 +321,7 @@ fn run_app(
                     app.stop_waiting();
                     app.push_message(ChatMessage::error(message));
                 }
-                ServerMsg::StreamChunk { chunk, done, reason } => {
+                ServerMsg::StreamChunk { chunk, done, reason: _ } => {
                     if done {
                         app.finalize_streaming();
                         app.stop_waiting();
@@ -347,7 +347,7 @@ fn run_app(
                         app.push_message(ChatMessage::tool_result(&tool_name, tool_result));
                     }
                 }
-                ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id } => {
+                ServerMsg::PermissionRequest { tool_name, tool_args, prompt_id: _ } => {
                     let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
                     app.permission_message = format!("{tool_name}: {args_str}");
                     app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
