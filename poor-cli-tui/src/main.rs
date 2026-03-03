@@ -306,7 +306,25 @@ fn run_app(
                     app.push_message(ChatMessage::assistant(content));
                 }
                 ServerMsg::SystemMessage { content } => {
-                    app.push_message(ChatMessage::system(content));
+                    if content.starts_with("__PLAN__:") {
+                        // Parse plan steps from internal format
+                        let rest = &content["__PLAN__:".len()..];
+                        if let Some(colon_pos) = rest.find(':') {
+                            let request = rest[..colon_pos].to_string();
+                            let steps: Vec<String> = rest[colon_pos + 1..]
+                                .lines()
+                                .filter(|l| !l.trim().is_empty())
+                                .map(|l| l.to_string())
+                                .collect();
+                            if !steps.is_empty() {
+                                app.stop_waiting();
+                                app.finalize_streaming();
+                                app.set_plan(steps, request);
+                            }
+                        }
+                    } else {
+                        app.push_message(ChatMessage::system(content));
+                    }
                 }
                 ServerMsg::Providers { providers } => {
                     app.providers = providers;
@@ -429,6 +447,32 @@ fn run_app(
                             "allowed": allowed,
                         }),
                     });
+                }
+                InputAction::PlanApproved => {
+                    // Execute the plan step by step
+                    if let Some(step_desc) = app.current_plan_step_description().map(|s| s.to_string()) {
+                        let exec_msg = format!(
+                            "Execute step {} of my plan: {}\n\nOriginal request: {}",
+                            app.plan_current_step + 1,
+                            step_desc,
+                            app.plan_original_request,
+                        );
+                        if app.plan_current_step < app.plan_steps.len() {
+                            app.plan_steps[app.plan_current_step].status = poor_cli_tui::app::PlanStepStatus::Running;
+                        }
+                        send_chat_request(
+                            &mut app,
+                            &tx,
+                            &rpc_cmd_tx,
+                            &cancel_token,
+                            exec_msg.clone(),
+                            format!("[plan step {}] {}", app.plan_current_step + 1, step_desc),
+                        );
+                    }
+                }
+                InputAction::PlanCancelled => {
+                    app.clear_plan();
+                    app.set_status("Plan cancelled");
                 }
                 InputAction::Redraw => {}
                 InputAction::None => {}
@@ -1569,15 +1613,22 @@ Watch mode: {}",
                 (30.0, 60.0)
             };
 
-        let input_cost = (app.input_tokens_estimate as f64 / 1_000_000.0) * input_per_million;
-        let output_cost = (app.output_tokens_estimate as f64 / 1_000_000.0) * output_per_million;
+        // Use real token counts if available, else estimates
+        let (in_tokens, out_tokens) = if app.cumulative_input_tokens > 0 || app.cumulative_output_tokens > 0 {
+            (app.cumulative_input_tokens as f64, app.cumulative_output_tokens as f64)
+        } else {
+            (app.input_tokens_estimate as f64, app.output_tokens_estimate as f64)
+        };
+        let input_cost = (in_tokens / 1_000_000.0) * input_per_million;
+        let output_cost = (out_tokens / 1_000_000.0) * output_per_million;
         let total = input_cost + output_cost;
 
+        let real_label = if app.cumulative_input_tokens > 0 { "" } else { " (estimated)" };
         let text = format!(
             "**Session Usage Statistics:**\n\n\
 Requests: {}\n\
-Input: {} chars (~{} tokens)\n\
-Output: {} chars (~{} tokens)\n\n\
+Input: {} chars ({} tokens{real_label})\n\
+Output: {} chars ({} tokens{real_label})\n\n\
 **Estimated Cost:**\n\
 Provider: {} ({})\n\
 Input Cost: ${:.4}\n\
@@ -1585,9 +1636,9 @@ Output Cost: ${:.4}\n\
 Total: **${:.4}**",
             app.session_requests,
             app.input_chars,
-            app.input_tokens_estimate,
+            in_tokens as u64,
             app.output_chars,
-            app.output_tokens_estimate,
+            out_tokens as u64,
             app.provider_name,
             app.model_name,
             input_cost,
@@ -1872,6 +1923,68 @@ Total: **${:.4}**",
         } else {
             app.push_message(ChatMessage::system("No active watch task.".to_string()));
         }
+        return false;
+    }
+
+    if lowered.starts_with("/plan ") {
+        let request = raw.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
+        if request.is_empty() {
+            app.push_message(ChatMessage::system("Usage: /plan <task description>".to_string()));
+            return false;
+        }
+        // Ask the AI to generate a plan
+        let plan_prompt = format!(
+            "Generate a step-by-step plan for the following task. \
+Return ONLY a numbered list (1. step, 2. step, etc.) with no other text.\n\n\
+Task: {request}"
+        );
+        app.plan_original_request = request.clone();
+        app.push_message(ChatMessage::user(format!("/plan {request}")));
+        app.start_waiting();
+        let tx2 = tx.clone();
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        let _ = rpc_cmd_tx.send(RpcCommand::ChatStreaming {
+            message: plan_prompt,
+            request_id: app.next_request_id(),
+            reply: reply_tx,
+        });
+        let request_clone = request.clone();
+        thread::spawn(move || {
+            match reply_rx.recv() {
+                Ok(Ok(content)) => {
+                    // Parse numbered steps
+                    let steps: Vec<String> = content
+                        .lines()
+                        .filter(|l| {
+                            let t = l.trim();
+                            !t.is_empty() && t.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                        })
+                        .map(|l| {
+                            // strip "1. " prefix
+                            let t = l.trim();
+                            t.find(". ")
+                                .map(|i| t[i + 2..].to_string())
+                                .unwrap_or_else(|| t.to_string())
+                        })
+                        .collect();
+                    if steps.is_empty() {
+                        let _ = tx2.send(ServerMsg::SystemMessage {
+                            content: format!("Could not parse plan steps from response:\n{content}"),
+                        });
+                    } else {
+                        let _ = tx2.send(ServerMsg::SystemMessage {
+                            content: format!("__PLAN__:{request_clone}:{}", steps.join("\n")),
+                        });
+                    }
+                }
+                Ok(Err(e)) => {
+                    let _ = tx2.send(ServerMsg::Error { message: e });
+                }
+                Err(_) => {
+                    let _ = tx2.send(ServerMsg::Error { message: "RPC unavailable".into() });
+                }
+            }
+        });
         return false;
     }
 

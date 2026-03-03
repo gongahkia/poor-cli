@@ -18,6 +18,10 @@ pub enum InputAction {
     PermissionAnswered(bool),
     /// User cancelled an in-flight request (Ctrl+C / Esc while waiting).
     Cancel,
+    /// Plan approved — execute it.
+    PlanApproved,
+    /// Plan cancelled.
+    PlanCancelled,
 }
 
 /// Metadata for slash-command completion and palette rendering.
@@ -235,6 +239,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         description: "Undo last file change (checkpoint)",
         recommended: false,
     },
+    SlashCommandSpec {
+        command: "/plan",
+        description: "Generate a plan before executing",
+        recommended: true,
+    },
 ];
 
 /// Process a crossterm event and update app state.
@@ -310,6 +319,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         AppMode::Normal | AppMode::Command => handle_key_normal(app, key),
         AppMode::ProviderSelect => handle_key_provider_select(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
+        AppMode::PlanReview => handle_key_plan_review(app, key),
         AppMode::Quitting => InputAction::Quit,
     }
 }
@@ -451,6 +461,20 @@ fn handle_key_permission(app: &mut App, key: KeyEvent) -> InputAction {
             app.permission_answer = Some(false);
             app.mode = AppMode::Normal;
             InputAction::PermissionAnswered(false)
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Enter => {
+            app.mode = AppMode::Normal;
+            InputAction::PlanApproved
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.mode = AppMode::Normal;
+            InputAction::PlanCancelled
         }
         _ => InputAction::None,
     }

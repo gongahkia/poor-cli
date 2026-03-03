@@ -51,6 +51,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::PermissionPrompt {
         draw_permission_prompt(frame, app);
     }
+    if app.mode == AppMode::PlanReview {
+        draw_plan_review(frame, app);
+    }
 }
 
 // ── Status bar ───────────────────────────────────────────────────────
@@ -453,6 +456,8 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
             Span::styled("Esc", Style::default().fg(Color::DarkGray)),
             Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Alt+↵", Style::default().fg(Color::DarkGray)),
+            Span::styled(": newline  ", Style::default().fg(Color::DarkGray)),
             Span::styled("PgUp/PgDn", Style::default().fg(Color::DarkGray)),
             Span::styled(": scroll  ", Style::default().fg(Color::DarkGray)),
             Span::styled("↑↓", Style::default().fg(Color::DarkGray)),
@@ -649,6 +654,59 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow))
+            .padding(Padding::new(0, 0, 0, 0)),
+    );
+    frame.render_widget(para, area);
+}
+
+// ── Plan review overlay ──────────────────────────────────────────────
+
+fn draw_plan_review(frame: &mut Frame, app: &App) {
+    let area = centered_rect(70, 70, frame.area());
+    frame.render_widget(Clear, area);
+
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  📋 Plan Review",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    for (i, step) in app.plan_steps.iter().enumerate() {
+        let (marker, style) = match step.status {
+            crate::app::PlanStepStatus::Pending => {
+                if i == app.plan_current_step {
+                    ("▸ ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+                } else {
+                    ("  ", Style::default().fg(Color::DarkGray))
+                }
+            }
+            crate::app::PlanStepStatus::Running => ("⠋ ", Style::default().fg(Color::Cyan)),
+            crate::app::PlanStepStatus::Done => ("✓ ", Style::default().fg(Color::Green)),
+            crate::app::PlanStepStatus::Skipped => ("✗ ", Style::default().fg(Color::DarkGray)),
+        };
+        lines.push(Line::from(Span::styled(
+            format!("  {marker}{}", step.description),
+            style,
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(" to execute, ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(" to cancel", Style::default().fg(Color::DarkGray)),
+    ]));
+    lines.push(Line::from(""));
+
+    let para = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
             .padding(Padding::new(0, 0, 0, 0)),
     );
     frame.render_widget(para, area);

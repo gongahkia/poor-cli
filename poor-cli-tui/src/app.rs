@@ -85,11 +85,25 @@ impl ChatMessage {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppMode {
     Normal,
-    // Command input mode (slash commands)
     Command,
     ProviderSelect,
     PermissionPrompt,
+    PlanReview,
     Quitting,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlanStep {
+    pub description: String,
+    pub status: PlanStepStatus,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlanStepStatus {
+    Pending,
+    Running,
+    Done,
+    Skipped,
 }
 
 /// Spinner frames for the thinking indicator.
@@ -169,6 +183,11 @@ pub struct App {
     pub active_tool: Option<String>,
     pub request_id_counter: u64,
 
+    // ── Plan mode state ───
+    pub plan_steps: Vec<PlanStep>,
+    pub plan_current_step: usize,
+    pub plan_original_request: String,
+
     // ── Real token tracking (from server) ───
     pub turn_input_tokens: u64,
     pub turn_output_tokens: u64,
@@ -217,6 +236,9 @@ impl Default for App {
             iteration_cap: 25,
             active_tool: None,
             request_id_counter: 0,
+            plan_steps: Vec::new(),
+            plan_current_step: 0,
+            plan_original_request: String::new(),
             turn_input_tokens: 0,
             turn_output_tokens: 0,
             cumulative_input_tokens: 0,
@@ -482,6 +504,33 @@ impl App {
         self.streaming_message = None;
         self.active_tool = None;
         self.scroll_offset = 0;
+    }
+
+    pub fn set_plan(&mut self, steps: Vec<String>, original_request: String) {
+        self.plan_steps = steps.into_iter().map(|s| PlanStep {
+            description: s,
+            status: PlanStepStatus::Pending,
+        }).collect();
+        self.plan_current_step = 0;
+        self.plan_original_request = original_request;
+        self.mode = AppMode::PlanReview;
+    }
+
+    pub fn advance_plan_step(&mut self) {
+        if self.plan_current_step < self.plan_steps.len() {
+            self.plan_steps[self.plan_current_step].status = PlanStepStatus::Done;
+            self.plan_current_step += 1;
+        }
+    }
+
+    pub fn current_plan_step_description(&self) -> Option<&str> {
+        self.plan_steps.get(self.plan_current_step).map(|s| s.description.as_str())
+    }
+
+    pub fn clear_plan(&mut self) {
+        self.plan_steps.clear();
+        self.plan_current_step = 0;
+        self.plan_original_request.clear();
     }
 
     pub fn record_user_input(&mut self, text: &str) {
