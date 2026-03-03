@@ -1,3 +1,4 @@
+add poor-cli-multiplayer support in the future
 test everything works if it should be working
 take screenshots
 update entire readme
