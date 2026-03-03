@@ -14,6 +14,8 @@ M.input_buf = nil
 M.input_win = nil
 M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
 M.loading_marker = nil
+M.streaming_buf_line = nil -- line where current streaming response starts
+M.streaming_request_id = nil
 
 -- Open chat panel
 function M.open()

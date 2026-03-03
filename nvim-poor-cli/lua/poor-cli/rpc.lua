@@ -324,17 +324,60 @@ end
 
 -- Handle notifications from server
 function M.handle_notification(message)
+    local params = message.params or {}
     if message.method == "poor-cli/streamChunk" then
-        -- Handle streaming chunk
-        local params = message.params or {}
-        local request_id = params.requestId
-        local chunk = params.chunk
-        local done = params.done
-        
-        -- Emit event for streaming handlers
         vim.api.nvim_exec_autocmds("User", {
             pattern = "PoorCliStreamChunk",
-            data = { request_id = request_id, chunk = chunk, done = done },
+            data = {
+                request_id = params.requestId or "",
+                chunk = params.chunk or "",
+                done = params.done or false,
+                reason = params.reason,
+            },
+        })
+    elseif message.method == "poor-cli/toolEvent" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliToolEvent",
+            data = {
+                request_id = params.requestId or "",
+                event_type = params.eventType or "",
+                tool_name = params.toolName or "",
+                tool_args = params.toolArgs or {},
+                tool_result = params.toolResult or "",
+                iteration_index = params.iterationIndex or 0,
+                iteration_cap = params.iterationCap or 25,
+            },
+        })
+    elseif message.method == "poor-cli/permissionReq" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliPermissionReq",
+            data = {
+                request_id = params.requestId or "",
+                tool_name = params.toolName or "",
+                tool_args = params.toolArgs or {},
+                prompt_id = params.promptId or "",
+            },
+        })
+    elseif message.method == "poor-cli/progress" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliProgress",
+            data = {
+                request_id = params.requestId or "",
+                phase = params.phase or "",
+                message = params.message or "",
+                iteration_index = params.iterationIndex or 0,
+                iteration_cap = params.iterationCap or 25,
+            },
+        })
+    elseif message.method == "poor-cli/costUpdate" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliCostUpdate",
+            data = {
+                request_id = params.requestId or "",
+                input_tokens = params.inputTokens or 0,
+                output_tokens = params.outputTokens or 0,
+                estimated_cost = params.estimatedCost or 0,
+            },
         })
     end
 end
