@@ -283,6 +283,13 @@ function M.trigger()
     local file_path = vim.fn.expand("%:p")
     local language = vim.bo[bufnr].filetype
     
+    -- Gather LSP context if available
+    local lsp_context = ""
+    local ok, lsp = pcall(require, "poor-cli.lsp")
+    if ok then
+        lsp_context = lsp.get_full_lsp_context() or ""
+    end
+
     -- Request completion
     local request_context = create_inline_request_context(bufnr, line, col)
 
@@ -292,6 +299,7 @@ function M.trigger()
         instruction = "",
         filePath = file_path,
         language = language,
+        lspContext = lsp_context,
     }, function(result, err)
         handle_inline_response(request_context, result, err)
     end)
@@ -410,6 +418,100 @@ function M.complete_selection()
             end
         end)
     end)
+end
+
+-- Accept current line of ghost text only
+function M.accept_line()
+    if not M.current_completion then
+        return false
+    end
+    local comp = M.current_completion
+    local text = comp.text
+    local first_nl = text:find("\n")
+    if not first_nl then
+        return M.accept() -- single line, accept all
+    end
+    local line_text = text:sub(1, first_nl - 1)
+    local remaining = text:sub(first_nl + 1)
+    M.clear_ghost_text()
+    -- insert the line
+    local bufnr = comp.bufnr
+    local line = comp.line
+    local col = comp.col
+    local current_line = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
+    local before, after, safe_col = split_line_at_byte_col(current_line, col)
+    local new_line = before .. line_text
+    local next_line = after
+    vim.api.nvim_buf_set_lines(bufnr, line, line + 1, false, { new_line, next_line })
+    vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
+    -- show remaining as new ghost text
+    if remaining ~= "" then
+        M.show_ghost_text(remaining)
+    end
+    return true
+end
+
+-- Accept next word of ghost text
+function M.accept_word()
+    if not M.current_completion then
+        return false
+    end
+    local comp = M.current_completion
+    local text = comp.text
+    -- find end of next word
+    local word_end = text:match("^(%S+%s?)")
+    if not word_end then
+        return M.accept()
+    end
+    local remaining = text:sub(#word_end + 1)
+    M.clear_ghost_text()
+    local bufnr = comp.bufnr
+    local line = comp.line
+    local col = comp.col
+    local current_line = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
+    local before, after, safe_col = split_line_at_byte_col(current_line, col)
+    -- word_end should not contain newlines for word accept
+    if word_end:find("\n") then
+        word_end = word_end:sub(1, word_end:find("\n") - 1)
+        remaining = text:sub(#word_end + 1)
+    end
+    local new_line = before .. word_end .. after
+    vim.api.nvim_buf_set_lines(bufnr, line, line + 1, false, { new_line })
+    local new_col = safe_col + byte_len(word_end)
+    vim.api.nvim_win_set_cursor(0, { line + 1, new_col })
+    if remaining ~= "" then
+        M.current_completion = { bufnr = bufnr, line = line, col = new_col, text = remaining }
+        M.show_ghost_text(remaining)
+    end
+    return true
+end
+
+-- Auto-trigger state
+M._auto_trigger_timer = nil
+
+-- Debounced auto-trigger from TextChangedI
+function M.auto_trigger()
+    local config = require("poor-cli.config")
+    local delay = config.get("trigger_delay") or 500
+    if M._auto_trigger_timer then
+        pcall(function() M._auto_trigger_timer:stop(); M._auto_trigger_timer:close() end)
+        M._auto_trigger_timer = nil
+    end
+    M._auto_trigger_timer = vim.defer_fn(function()
+        M._auto_trigger_timer = nil
+        local rpc = require("poor-cli.rpc")
+        if rpc.is_running() and not M.has_completion() then
+            M.trigger()
+        end
+    end, delay)
+end
+
+-- Cancel pending auto-trigger
+function M.cancel_auto_trigger()
+    if M._auto_trigger_timer then
+        pcall(function() M._auto_trigger_timer:stop(); M._auto_trigger_timer:close() end)
+        M._auto_trigger_timer = nil
+    end
 end
 
 -- Check if ghost text is visible

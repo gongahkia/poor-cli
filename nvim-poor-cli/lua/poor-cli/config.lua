@@ -35,13 +35,18 @@ M.defaults = {
     max_context_files = 20, -- Maximum open buffers sent as chat context
     
     -- Auto-completion settings
-    auto_trigger = false,  -- Auto-trigger on CursorHoldI
-    trigger_delay = 500,   -- Delay in ms for auto-trigger
+    auto_trigger = false,  -- Auto-trigger on TextChangedI (debounced)
+    trigger_delay = 500,   -- Debounce delay in ms for auto-trigger
     request_timeout = 15000, -- RPC request timeout in ms
-    
+    auto_fix_diagnostics = false, -- Auto-suggest fix for error diagnostics
+
+    -- Keymaps for partial acceptance
+    accept_line_key = "<Tab>",   -- Accept current line of ghost text
+    accept_word_key = "<C-Right>", -- Accept next word of ghost text
+
     -- Health check on setup
     check_health_on_setup = false,
-    
+
     -- Debug mode
     debug = false,
 }

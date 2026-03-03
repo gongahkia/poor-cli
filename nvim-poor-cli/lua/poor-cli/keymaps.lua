@@ -13,16 +13,25 @@ function M.setup()
         inline.trigger()
     end, { desc = "Trigger poor-cli completion" })
     
-    -- Accept completion - only if ghost text is visible, otherwise fallback
+    -- Accept completion line - only if ghost text is visible, otherwise fallback
     vim.keymap.set("i", config.get("accept_key"), function()
         if inline.has_completion() then
-            inline.accept()
+            inline.accept_line()
         else
-            -- Fallback to normal Tab behavior
             return vim.api.nvim_replace_termcodes("<Tab>", true, false, true)
         end
-    end, { expr = true, desc = "Accept poor-cli completion or Tab" })
-    
+    end, { expr = true, desc = "Accept poor-cli completion line or Tab" })
+
+    -- Accept next word of ghost text
+    vim.keymap.set("i", config.get("accept_word_key"), function()
+        if inline.has_completion() then
+            inline.accept_word()
+            return ""
+        else
+            return vim.api.nvim_replace_termcodes("<C-Right>", true, false, true)
+        end
+    end, { expr = true, desc = "Accept poor-cli completion word or Ctrl+Right" })
+
     -- Dismiss completion
     vim.keymap.set("i", config.get("dismiss_key"), function()
         if inline.has_completion() then
