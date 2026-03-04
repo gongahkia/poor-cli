@@ -386,15 +386,15 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
 }
 
 impl RpcClient {
-    /// Spawn the Python JSON-RPC server as a child process.
-    /// Returns the client and a notification receiver channel.
-    pub fn spawn_with_notifications(
+    fn build_server_command(
         python_bin: &str,
         cwd: Option<&str>,
-    ) -> Result<(Self, Receiver<ServerNotification>), String> {
+        server_args: &[String],
+    ) -> Command {
         let mut cmd = Command::new(python_bin);
         cmd.arg("-m")
             .arg("poor_cli.server")
+            .args(server_args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -403,7 +403,25 @@ impl RpcClient {
             cmd.current_dir(dir);
         }
 
-        let mut child = cmd
+        cmd
+    }
+
+    /// Spawn the Python JSON-RPC server as a child process.
+    /// Returns the client and a notification receiver channel.
+    pub fn spawn_with_notifications(
+        python_bin: &str,
+        cwd: Option<&str>,
+    ) -> Result<(Self, Receiver<ServerNotification>), String> {
+        Self::spawn_with_notifications_args(python_bin, cwd, &[])
+    }
+
+    /// Spawn the Python JSON-RPC server with extra command-line arguments.
+    pub fn spawn_with_notifications_args(
+        python_bin: &str,
+        cwd: Option<&str>,
+        server_args: &[String],
+    ) -> Result<(Self, Receiver<ServerNotification>), String> {
+        let mut child = Self::build_server_command(python_bin, cwd, server_args)
             .spawn()
             .map_err(|e| format!("Failed to start Python server: {e}"))?;
 
@@ -471,18 +489,7 @@ impl RpcClient {
 
     /// Legacy spawn without notifications (falls back to blocking call()).
     pub fn spawn(python_bin: &str, cwd: Option<&str>) -> Result<Self, String> {
-        let mut cmd = Command::new(python_bin);
-        cmd.arg("-m")
-            .arg("poor_cli.server")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
-
-        let child = cmd
+        let child = Self::build_server_command(python_bin, cwd, &[])
             .spawn()
             .map_err(|e| format!("Failed to start Python server: {e}"))?;
 
@@ -1275,5 +1282,37 @@ mod tests {
         let cleaned = sanitize_rpc_error_message(&"x".repeat(800));
         assert!(cleaned.len() <= 360);
         assert!(cleaned.ends_with("..."));
+    }
+
+    #[test]
+    fn build_server_command_includes_extra_args() {
+        let args = vec![
+            "--bridge".to_string(),
+            "--url".to_string(),
+            "wss://example.test/rpc".to_string(),
+            "--room".to_string(),
+            "dev".to_string(),
+            "--token".to_string(),
+            "tok".to_string(),
+        ];
+        let cmd = RpcClient::build_server_command("python3", Some("/tmp"), &args);
+        let collected = cmd
+            .get_args()
+            .map(|v| v.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            collected,
+            vec![
+                "-m",
+                "poor_cli.server",
+                "--bridge",
+                "--url",
+                "wss://example.test/rpc",
+                "--room",
+                "dev",
+                "--token",
+                "tok",
+            ]
+        );
     }
 }
