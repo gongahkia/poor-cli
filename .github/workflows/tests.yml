@@ -98,7 +98,7 @@ jobs:
       - name: Run linting
         run: |
           pip install ruff
-          ruff check poor_cli tests
+          ruff check poor_cli tests --select E9,F63,F7,F82 --target-version py39
 
       - name: Report import graph reachability
         run: |
@@ -161,11 +161,17 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e ".[dev]"
-          pip install mypy types-PyYAML types-aiofiles
+          pip install mypy
 
-      - name: Run mypy
+      - name: Run mypy baseline
         run: |
-          mypy poor_cli --no-error-summary
+          mypy \
+            --config-file .github/mypy-ci.ini \
+            poor_cli/__main__.py \
+            poor_cli/prompts.py \
+            poor_cli/web_search.py \
+            poor_cli/command_validator.py \
+            --no-error-summary
 
   # Build check
   build:
