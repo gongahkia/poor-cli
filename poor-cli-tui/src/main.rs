@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -587,6 +588,20 @@ fn handle_submit(
         return false;
     }
 
+    if let Some(prompt_name) = app.pending_prompt_save_name.clone() {
+        if !trimmed.starts_with('/') {
+            app.pending_prompt_save_name = None;
+            match save_prompt(app, &prompt_name, trimmed) {
+                Ok(path) => app.set_status(format!("Saved prompt: {}", path.display())),
+                Err(e) => app.push_message(ChatMessage::error(e)),
+            }
+            return false;
+        }
+
+        app.pending_prompt_save_name = None;
+        app.set_status("Prompt capture cancelled");
+    }
+
     if trimmed.starts_with('/') {
         return handle_slash_command(app, tx, rpc_cmd_tx, cancel_token, watch_state, trimmed);
     }
@@ -1109,10 +1124,20 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /clear               Clear conversation history\n\
   /clear-output        Clear visible output, keep backend history\n\
   /history [N]         Show recent session messages\n\
+  /sessions            List recent sessions\n\
   /new-session         Start a fresh session\n\
+  /export [format]     Export active session (json|md|txt)\n\
   /retry               Retry your last message\n\
   /search <term>       Search messages in this session\n\
   /edit-last           Put last message back into input\n\n\
+**Checkpoints & Undo:**\n\
+  /checkpoints         List checkpoints\n\
+  /checkpoint          Create manual checkpoint\n\
+  /save                Quick checkpoint alias\n\
+  /rewind [id|last]    Restore checkpoint by id (default: last)\n\
+  /restore             Restore latest checkpoint\n\
+  /undo                Restore latest checkpoint (alias)\n\
+  /diff <f1> <f2>      Compare two files\n\n\
 **Provider Management:**\n\
   /provider            Show current provider capabilities\n\
   /providers           List available providers\n\
@@ -1126,7 +1151,9 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /set <key> <value>   Set a config option value\n\
   /theme [dark|light]  Show or set UI + code-block theme\n\
   /broke               Set response mode to terse, token-minimal output\n\
-  /my-treat            Set response mode to rich, comprehensive output\n\n\
+  /my-treat            Set response mode to rich, comprehensive output\n\
+  /verbose             Toggle verbose logging\n\
+  /plan-mode           Toggle plan mode\n\n\
 **Git Integration:**\n\
   /commit              Generate commit message from staged diff\n\
   /review [file]       Review a file or staged diff\n\n\
@@ -1143,11 +1170,12 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /files               List currently pinned context files\n\
   /clear-files         Remove all pinned context files\n\n\
 **Prompt Library:**\n\
-  /save-prompt <name> <text>  Save reusable prompt text\n\
+  /save-prompt <name> <text>  Save reusable prompt text immediately\n\
+  /save-prompt <name>         Capture next input as prompt text\n\
   /use <name>                 Load and send saved prompt\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
-  /copy                Save last assistant response to /tmp/poor-cli-last-response.txt\n\
+  /copy                Copy last assistant response to clipboard\n\
   /run <command>       Run shell command through backend\n\
   /read <file>         Read a file from backend\n\
   /pwd                 Show current working directory\n\
@@ -1526,6 +1554,48 @@ Version: v{}",
         return false;
     }
 
+    if lowered == "/verbose" {
+        match rpc_toggle_config_blocking(rpc_cmd_tx, "ui.verbose_logging") {
+            Ok(result) => {
+                let enabled = result
+                    .get("value")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let message = if enabled {
+                    "Verbose logging enabled (INFO/DEBUG messages will be shown)"
+                } else {
+                    "Verbose logging disabled (only WARNING/ERROR messages will be shown)"
+                };
+                app.push_message(ChatMessage::system(message.to_string()));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to toggle verbose logging: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/plan-mode" {
+        match rpc_toggle_config_blocking(rpc_cmd_tx, "plan_mode.enabled") {
+            Ok(result) => {
+                let enabled = result
+                    .get("value")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let message = if enabled {
+                    "Plan mode enabled (preview before execution)"
+                } else {
+                    "Plan mode disabled (direct execution)"
+                };
+                app.push_message(ChatMessage::system(message.to_string()));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to toggle plan mode: {e}"
+            ))),
+        }
+        return false;
+    }
+
     if lowered.starts_with("/permission-mode") {
         let maybe_mode = raw.split_whitespace().nth(1);
         if let Some(mode) = maybe_mode {
@@ -1573,14 +1643,53 @@ Version: v{}",
     }
 
     if lowered == "/model-info" {
-        let info = match app.provider_name.as_str() {
-            "gemini" => "**Gemini Models:**\n  • Free tier available\n  • Fast inference\n  • Good at code generation\n  • Strong multilingual support",
-            "openai" => "**OpenAI Models:**\n  • GPT-4: Most capable, slower, higher cost\n  • GPT-3.5: Fast, cost-effective\n  • Strong reasoning and instruction following",
-            "anthropic" => "**Anthropic Models:**\n  • Claude Sonnet: Balanced capability\n  • Strong analysis and code review\n  • Large context windows",
-            "ollama" => "**Ollama (Local):**\n  • Runs entirely on your machine\n  • No API costs\n  • Privacy-focused\n  • Speed depends on hardware",
-            _ => "No detailed info available for this provider.",
-        };
-        app.push_message(ChatMessage::system(info.to_string()));
+        match rpc_get_provider_info_blocking(rpc_cmd_tx) {
+            Ok(value) => {
+                let provider = value
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(app.provider_name.as_str());
+                let model = value
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(app.model_name.as_str());
+                let caps = value.get("capabilities").unwrap_or(&Value::Null);
+                let streaming = bool_icon(caps.get("streaming").and_then(|v| v.as_bool()));
+                let function_calling =
+                    bool_icon(caps.get("function_calling").and_then(|v| v.as_bool()));
+                let vision = bool_icon(caps.get("vision").and_then(|v| v.as_bool()));
+                let max_context = caps
+                    .get("max_context_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                let provider_notes = match provider {
+                    "gemini" => "Gemini models offer a free tier, fast inference, and strong code generation.",
+                    "openai" => "OpenAI models provide strong reasoning and broad tool-calling support.",
+                    "anthropic" | "claude" => "Anthropic models are strong at analysis and long-form reasoning.",
+                    "ollama" => "Ollama runs models locally with no API costs and better data locality.",
+                    _ => "No provider-specific notes available.",
+                };
+
+                let info = format!(
+                    "**Current Model Configuration**\n\n\
+Provider: {provider}\n\
+Model: {model}\n\n\
+**Capabilities**\n\
+Streaming: {streaming}\n\
+Function Calling: {function_calling}\n\
+Vision: {vision}\n\
+Context Window: {max_context} tokens\n\n\
+**Notes**\n\
+{provider_notes}"
+                );
+                app.push_message(ChatMessage::system(info));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to fetch model information: {e}"
+            ))),
+        }
         return false;
     }
 
@@ -1630,35 +1739,86 @@ Version: v{}",
             .and_then(|n| n.parse::<usize>().ok())
             .unwrap_or(10);
 
-        let mut rendered = Vec::new();
-        for msg in app
-            .messages
-            .iter()
-            .rev()
-            .filter(|m| matches!(m.role, MessageRole::User | MessageRole::Assistant))
-            .take(count)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-        {
-            let role = match msg.role {
-                MessageRole::User => "You",
-                MessageRole::Assistant => "Assistant",
-                _ => "Message",
-            };
-            rendered.push(format!("**{role}:** {}", truncate_line(&msg.content, 220)));
-        }
+        match rpc_list_history_blocking(rpc_cmd_tx, count as u64) {
+            Ok(payload) => {
+                let messages = payload
+                    .get("messages")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if messages.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "No messages in this session.".to_string(),
+                    ));
+                    return false;
+                }
 
-        if rendered.is_empty() {
-            app.push_message(ChatMessage::system(
-                "No messages in this session.".to_string(),
-            ));
-        } else {
-            app.push_message(ChatMessage::system(format!(
-                "**History (last {} messages):**\n\n{}",
-                rendered.len(),
-                rendered.join("\n\n")
-            )));
+                let mut lines = Vec::new();
+                for msg in messages {
+                    let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let role_name = if role == "user" { "You" } else { "Assistant" };
+                    let timestamp = msg.get("timestamp").and_then(|v| v.as_str()).unwrap_or("-");
+                    let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                    lines.push(format!(
+                        "**{role_name}** ({timestamp})\n{}",
+                        truncate_line(content, 260)
+                    ));
+                }
+
+                app.push_message(ChatMessage::system(format!(
+                    "**History (last {} messages):**\n\n{}",
+                    lines.len(),
+                    lines.join("\n\n")
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to load session history: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/sessions" {
+        match rpc_list_sessions_blocking(rpc_cmd_tx, 10) {
+            Ok(payload) => {
+                let sessions = payload
+                    .get("sessions")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if sessions.is_empty() {
+                    app.push_message(ChatMessage::system("No previous sessions found.".to_string()));
+                    return false;
+                }
+
+                let mut lines = vec!["**Recent Sessions:**".to_string(), String::new()];
+                for session in sessions {
+                    let session_id = session
+                        .get("sessionId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let started = session
+                        .get("startedAt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-");
+                    let message_count = session
+                        .get("messageCount")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let active = session
+                        .get("isActive")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let marker = if active { " (active)" } else { "" };
+                    lines.push(format!(
+                        "- `{session_id}`{marker} • {started} • {message_count} message(s)"
+                    ));
+                }
+                app.push_message(ChatMessage::system(lines.join("\n")));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to list sessions: {e}"
+            ))),
         }
         return false;
     }
@@ -1688,32 +1848,46 @@ Version: v{}",
             return false;
         }
 
-        let needle = term.to_lowercase();
-        let matches = app
-            .messages
-            .iter()
-            .filter(|m| {
-                matches!(m.role, MessageRole::User | MessageRole::Assistant)
-                    && m.content.to_lowercase().contains(&needle)
-            })
-            .take(30)
-            .map(|m| {
-                let role = match m.role {
-                    MessageRole::User => "You",
-                    MessageRole::Assistant => "Assistant",
-                    _ => "Message",
-                };
-                format!("- **{role}**: {}", truncate_line(&m.content, 180))
-            })
-            .collect::<Vec<_>>();
+        match rpc_search_history_blocking(rpc_cmd_tx, term) {
+            Ok(payload) => {
+                let total_matches = payload
+                    .get("totalMatches")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let matches = payload
+                    .get("matches")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if matches.is_empty() {
+                    app.push_message(ChatMessage::system(format!("No matches for: {term}")));
+                    return false;
+                }
 
-        if matches.is_empty() {
-            app.push_message(ChatMessage::system(format!("No matches for: {term}")));
-        } else {
-            app.push_message(ChatMessage::system(format!(
-                "**Search results for '{term}':**\n\n{}",
-                matches.join("\n")
-            )));
+                let mut lines = Vec::new();
+                for msg in matches {
+                    let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let role_name = if role == "user" { "You" } else { "Assistant" };
+                    let timestamp = msg.get("timestamp").and_then(|v| v.as_str()).unwrap_or("-");
+                    let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                    lines.push(format!(
+                        "- **{role_name}** ({timestamp}): {}",
+                        truncate_line(content, 180)
+                    ));
+                }
+
+                let mut response = format!(
+                    "**Search results for '{term}' ({total_matches} matches):**\n\n{}",
+                    lines.join("\n")
+                );
+                if total_matches > lines.len() as u64 {
+                    response.push_str(&format!("\n\nShowing {} of {total_matches} matches.", lines.len()));
+                }
+                app.push_message(ChatMessage::system(response));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to search session history: {e}"
+            ))),
         }
         return false;
     }
@@ -1909,15 +2083,210 @@ Watch mode: {}",
         return false;
     }
 
+    if lowered == "/checkpoints" || lowered.starts_with("/checkpoints ") {
+        let limit = raw
+            .split_whitespace()
+            .nth(1)
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or(20);
+
+        match rpc_list_checkpoints_blocking(rpc_cmd_tx, limit) {
+            Ok(payload) => {
+                let available = payload
+                    .get("available")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if !available {
+                    app.push_message(ChatMessage::system(
+                        "Checkpoint system not available.".to_string(),
+                    ));
+                    return false;
+                }
+
+                let checkpoints = payload
+                    .get("checkpoints")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if checkpoints.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "No checkpoints available.".to_string(),
+                    ));
+                    return false;
+                }
+
+                let storage_bytes = payload
+                    .get("storageSizeBytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let storage_path = payload
+                    .get("storagePath")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let mut lines = vec![
+                    format!("**Checkpoints ({}):**", checkpoints.len()),
+                    format!("Storage: {} ({storage_path})", format_bytes(storage_bytes)),
+                    String::new(),
+                ];
+                for cp in checkpoints {
+                    let id = cp
+                        .get("checkpointId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let created = cp.get("createdAt").and_then(|v| v.as_str()).unwrap_or("-");
+                    let description = cp
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let file_count = cp.get("fileCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let total_size = cp
+                        .get("totalSizeBytes")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    lines.push(format!(
+                        "- `{id}` • {created} • {file_count} file(s) • {} • {description}",
+                        format_bytes(total_size)
+                    ));
+                }
+                app.push_message(ChatMessage::system(lines.join("\n")));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to list checkpoints: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/checkpoint" || lowered == "/save" {
+        let (description, operation_type) = if lowered == "/save" {
+            ("Quick save".to_string(), "manual".to_string())
+        } else {
+            ("Manual checkpoint".to_string(), "manual".to_string())
+        };
+
+        match rpc_create_checkpoint_blocking(rpc_cmd_tx, &description, &operation_type) {
+            Ok(payload) => {
+                let checkpoint_id = payload
+                    .get("checkpointId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let file_count = payload.get("fileCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                app.push_message(ChatMessage::system(format!(
+                    "Created checkpoint `{checkpoint_id}` with {file_count} file(s)."
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to create checkpoint: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/rewind") || lowered == "/restore" || lowered == "/undo" {
+        let checkpoint_id = if lowered == "/restore" || lowered == "/undo" {
+            Some("last".to_string())
+        } else {
+            raw.split_whitespace()
+                .nth(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or_else(|| Some("last".to_string()))
+        };
+
+        match rpc_restore_checkpoint_blocking(rpc_cmd_tx, checkpoint_id.as_deref()) {
+            Ok(payload) => {
+                let restored = payload
+                    .get("restoredFiles")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let checkpoint_id = payload
+                    .get("checkpointId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                app.push_message(ChatMessage::system(format!(
+                    "Restored checkpoint `{checkpoint_id}` ({restored} file(s) restored)."
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to restore checkpoint: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/diff") {
+        let parts: Vec<&str> = raw.split_whitespace().collect();
+        if parts.len() < 3 {
+            app.push_message(ChatMessage::system(
+                "Usage: /diff <file1> <file2>".to_string(),
+            ));
+            return false;
+        }
+
+        match rpc_compare_files_blocking(rpc_cmd_tx, parts[1], parts[2]) {
+            Ok(diff) => {
+                if diff.trim() == "(No differences)" {
+                    app.push_message(ChatMessage::system(diff));
+                } else {
+                    app.push_message(ChatMessage::diff_view(
+                        format!("{} vs {}", parts[1], parts[2]),
+                        truncate_block(&diff, 20_000),
+                    ));
+                }
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to compare files: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/export" || lowered.starts_with("/export ") {
+        let export_format = raw.split_whitespace().nth(1).unwrap_or("json").to_lowercase();
+        if !matches!(export_format.as_str(), "json" | "md" | "txt" | "markdown") {
+            app.push_message(ChatMessage::system(
+                "Usage: /export [json|md|txt]".to_string(),
+            ));
+            return false;
+        }
+
+        match rpc_export_conversation_blocking(rpc_cmd_tx, &export_format) {
+            Ok(payload) => {
+                let file_path = payload
+                    .get("filePath")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(unknown)");
+                let format_value = payload
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(export_format.as_str());
+                let message_count = payload
+                    .get("messageCount")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let size_bytes = payload.get("sizeBytes").and_then(|v| v.as_u64()).unwrap_or(0);
+                app.push_message(ChatMessage::system(format!(
+                    "Export complete.\n\nFile: `{file_path}`\nFormat: `{format_value}`\nMessages: {message_count}\nSize: {}",
+                    format_bytes(size_bytes)
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to export conversation: {e}"
+            ))),
+        }
+        return false;
+    }
+
     if lowered == "/copy" {
         if let Some(content) = last_assistant_message(app) {
-            let path = Path::new("/tmp/poor-cli-last-response.txt");
-            match fs::write(path, content) {
-                Ok(()) => {
-                    app.set_status("Saved assistant response to /tmp/poor-cli-last-response.txt")
-                }
+            match copy_to_clipboard(&content) {
+                Ok(()) => app.set_status(format!(
+                    "Copied {} characters to clipboard",
+                    content.chars().count()
+                )),
                 Err(e) => app.push_message(ChatMessage::error(format!(
-                    "Failed to save assistant response: {e}"
+                    "Failed to copy response to clipboard: {e}"
                 ))),
             }
         } else {
@@ -2137,10 +2506,19 @@ Total: **${:.4}**",
         let name = parts.next().unwrap_or("").trim();
         let content = parts.next().unwrap_or("").trim();
 
-        if name.is_empty() || content.is_empty() {
+        if name.is_empty() {
             app.push_message(ChatMessage::system(
-                "Usage: /save-prompt <name> <text>".to_string(),
+                "Usage: /save-prompt <name> [text]".to_string(),
             ));
+            return false;
+        }
+
+        if content.is_empty() {
+            app.pending_prompt_save_name = Some(name.to_string());
+            app.push_message(ChatMessage::system(format!(
+                "Enter prompt text and press Enter to save as **{name}**.\n\
+Submitting any slash command will cancel capture."
+            )));
             return false;
         }
 
@@ -2356,21 +2734,6 @@ Task: {request}"
                 }
             }
         });
-        return false;
-    }
-
-    if lowered == "/undo" {
-        // Ask the AI to undo the last file change using checkpoint
-        let undo_msg =
-            "Undo the last file change. Use the checkpoint system to restore the previous version.";
-        send_chat_request(
-            app,
-            tx,
-            rpc_cmd_tx,
-            cancel_token,
-            undo_msg.to_string(),
-            "/undo".to_string(),
-        );
         return false;
     }
 
@@ -2933,6 +3296,218 @@ fn rpc_clear_history_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<(
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for clear history response".to_string())?
+}
+
+fn rpc_list_sessions_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListSessions {
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request sessions: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for sessions response".to_string())?
+}
+
+fn rpc_list_history_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    count: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListHistory {
+            count,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request history: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for history response".to_string())?
+}
+
+fn rpc_search_history_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    term: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SearchHistory {
+            term: term.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request search: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for search response".to_string())?
+}
+
+fn rpc_list_checkpoints_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListCheckpoints {
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request checkpoints: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for checkpoints response".to_string())?
+}
+
+fn rpc_create_checkpoint_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    description: &str,
+    operation_type: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::CreateCheckpoint {
+            description: description.to_string(),
+            operation_type: operation_type.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request checkpoint creation: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for checkpoint creation".to_string())?
+}
+
+fn rpc_restore_checkpoint_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    checkpoint_id: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RestoreCheckpoint {
+            checkpoint_id: checkpoint_id.map(|s| s.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request checkpoint restore: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for checkpoint restore".to_string())?
+}
+
+fn rpc_compare_files_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    file1: &str,
+    file2: &str,
+) -> Result<String, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::CompareFiles {
+            file1: file1.to_string(),
+            file2: file2.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request file comparison: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for file diff response".to_string())?
+}
+
+fn rpc_export_conversation_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    export_format: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ExportConversation {
+            format: export_format.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request conversation export: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for export response".to_string())?
+}
+
+fn copy_to_clipboard(content: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return copy_with_command("pbcopy", &[], content);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return copy_with_command("clip", &[], content);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for (bin, args) in [
+            ("wl-copy", Vec::<&str>::new()),
+            ("xclip", vec!["-selection", "clipboard"]),
+            ("xsel", vec!["--clipboard", "--input"]),
+        ] {
+            if copy_with_command(bin, &args, content).is_ok() {
+                return Ok(());
+            }
+        }
+        return Err(
+            "No clipboard utility found. Install wl-copy, xclip, or xsel.".to_string(),
+        );
+    }
+
+    #[allow(unreachable_code)]
+    Err("Clipboard is not supported on this platform.".to_string())
+}
+
+fn copy_with_command(bin: &str, args: &[&str], content: &str) -> Result<(), String> {
+    let mut child = Command::new(bin)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to run `{bin}`: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write as _;
+        stdin
+            .write_all(content.as_bytes())
+            .map_err(|e| format!("Failed writing to `{bin}` stdin: {e}"))?;
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("Failed waiting for `{bin}`: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("`{bin}` exited with status {status}"))
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut value = bytes as f64;
+    let mut unit = 0usize;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
 }
 
 #[cfg(test)]

@@ -968,6 +968,7 @@ class PoorCLICore:
                 "streaming": caps.supports_streaming,
                 "function_calling": caps.supports_function_calling,
                 "vision": caps.supports_vision,
+                "max_context_tokens": caps.max_context_tokens,
             }
         
         return {

@@ -805,6 +805,70 @@ impl RpcClient {
         Ok(())
     }
 
+    pub fn list_sessions(&self, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/listSessions", Value::Object(params))
+    }
+
+    pub fn list_history(&self, count: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("count".into(), Value::Number(count.into()));
+        self.call("poor-cli/listHistory", Value::Object(params))
+    }
+
+    pub fn search_history(&self, term: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("term".into(), Value::String(term.to_string()));
+        self.call("poor-cli/searchHistory", Value::Object(params))
+    }
+
+    pub fn list_checkpoints(&self, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/listCheckpoints", Value::Object(params))
+    }
+
+    pub fn create_checkpoint(
+        &self,
+        description: &str,
+        operation_type: &str,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("description".into(), Value::String(description.to_string()));
+        params.insert(
+            "operationType".into(),
+            Value::String(operation_type.to_string()),
+        );
+        self.call("poor-cli/createCheckpoint", Value::Object(params))
+    }
+
+    pub fn restore_checkpoint(&self, checkpoint_id: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(id) = checkpoint_id {
+            params.insert("checkpointId".into(), Value::String(id.to_string()));
+        }
+        self.call("poor-cli/restoreCheckpoint", Value::Object(params))
+    }
+
+    pub fn compare_files(&self, file1: &str, file2: &str) -> Result<String, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("file1".into(), Value::String(file1.to_string()));
+        params.insert("file2".into(), Value::String(file2.to_string()));
+        let val = self.call("poor-cli/compareFiles", Value::Object(params))?;
+        Ok(val
+            .get("diff")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string())
+    }
+
+    pub fn export_conversation(&self, export_format: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("format".into(), Value::String(export_format.to_string()));
+        self.call("poor-cli/exportConversation", Value::Object(params))
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {
@@ -870,6 +934,40 @@ pub enum RpcCommand {
     },
     ClearHistory {
         reply: SyncSender<Result<(), String>>,
+    },
+    ListSessions {
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListHistory {
+        count: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SearchHistory {
+        term: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListCheckpoints {
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    CreateCheckpoint {
+        description: String,
+        operation_type: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    RestoreCheckpoint {
+        checkpoint_id: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    CompareFiles {
+        file1: String,
+        file2: String,
+        reply: SyncSender<Result<String, String>>,
+    },
+    ExportConversation {
+        format: String,
+        reply: SyncSender<Result<Value, String>>,
     },
     ListProviders {
         reply: SyncSender<Result<Vec<ProviderInfo>, String>>,
@@ -943,6 +1041,41 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ClearHistory { reply }) => {
                 let _ = reply.send(client.clear_history());
+            }
+            Ok(RpcCommand::ListSessions { limit, reply }) => {
+                let _ = reply.send(client.list_sessions(limit));
+            }
+            Ok(RpcCommand::ListHistory { count, reply }) => {
+                let _ = reply.send(client.list_history(count));
+            }
+            Ok(RpcCommand::SearchHistory { term, reply }) => {
+                let _ = reply.send(client.search_history(&term));
+            }
+            Ok(RpcCommand::ListCheckpoints { limit, reply }) => {
+                let _ = reply.send(client.list_checkpoints(limit));
+            }
+            Ok(RpcCommand::CreateCheckpoint {
+                description,
+                operation_type,
+                reply,
+            }) => {
+                let _ = reply.send(client.create_checkpoint(&description, &operation_type));
+            }
+            Ok(RpcCommand::RestoreCheckpoint {
+                checkpoint_id,
+                reply,
+            }) => {
+                let _ = reply.send(client.restore_checkpoint(checkpoint_id.as_deref()));
+            }
+            Ok(RpcCommand::CompareFiles {
+                file1,
+                file2,
+                reply,
+            }) => {
+                let _ = reply.send(client.compare_files(&file1, &file2));
+            }
+            Ok(RpcCommand::ExportConversation { format, reply }) => {
+                let _ = reply.send(client.export_conversation(&format));
             }
             Ok(RpcCommand::ListProviders { reply }) => {
                 let _ = reply.send(client.list_providers());

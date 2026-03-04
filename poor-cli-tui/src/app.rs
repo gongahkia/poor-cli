@@ -221,6 +221,7 @@ pub struct App {
     pub last_user_message: Option<String>,
     pub pending_images: Vec<String>,
     pub pinned_context_files: Vec<String>,
+    pub pending_prompt_save_name: Option<String>,
 
     // ── Streaming / agentic state ───
     pub streaming_message: Option<usize>, // index of in-progress assistant message
@@ -279,6 +280,7 @@ impl Default for App {
             last_user_message: None,
             pending_images: Vec::new(),
             pinned_context_files: Vec::new(),
+            pending_prompt_save_name: None,
             streaming_message: None,
             current_iteration: 0,
             iteration_cap: 25,

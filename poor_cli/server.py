@@ -9,12 +9,15 @@ import argparse
 import ast
 import asyncio
 import copy
+import difflib
 import json
 import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config import PermissionMode
@@ -310,6 +313,14 @@ class PoorCLIServer:
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
+            "poor-cli/listSessions": self.handle_list_sessions,
+            "poor-cli/listHistory": self.handle_list_history,
+            "poor-cli/searchHistory": self.handle_search_history,
+            "poor-cli/listCheckpoints": self.handle_list_checkpoints,
+            "poor-cli/createCheckpoint": self.handle_create_checkpoint,
+            "poor-cli/restoreCheckpoint": self.handle_restore_checkpoint,
+            "poor-cli/compareFiles": self.handle_compare_files,
+            "poor-cli/exportConversation": self.handle_export_conversation,
             "poor-cli/cancelRequest": self.handle_cancel_request,
             "poor-cli/chatStreaming": self.handle_chat_streaming,
         }
@@ -727,6 +738,365 @@ class PoorCLIServer:
                 "value": not current,
             }
         )
+
+    def _get_repo_config(self):
+        from .repo_config import get_repo_config
+
+        auto_migrate = True
+        if self.core.config is not None:
+            auto_migrate = self.core.config.history.auto_migrate_legacy_history
+        return get_repo_config(enable_legacy_history_migration=auto_migrate)
+
+    @staticmethod
+    def _clamp_count(value: Any, default: int, min_value: int, max_value: int) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(min(parsed, max_value), min_value)
+
+    @staticmethod
+    def _resolve_path(path_text: str) -> Path:
+        path = Path(path_text).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path.resolve()
+
+    async def handle_list_sessions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List recent repo-scoped chat sessions."""
+        self._ensure_initialized()
+
+        limit = self._clamp_count(params.get("limit"), default=10, min_value=1, max_value=200)
+        repo_config = self._get_repo_config()
+        sessions = repo_config.list_sessions(limit=limit)
+        active_session_id = (
+            repo_config.current_session.session_id if repo_config.current_session else None
+        )
+
+        return {
+            "sessions": [
+                {
+                    "sessionId": session.session_id,
+                    "startedAt": session.started_at,
+                    "endedAt": session.ended_at,
+                    "model": session.model,
+                    "messageCount": len(session.messages),
+                    "isActive": session.session_id == active_session_id,
+                }
+                for session in sessions
+            ],
+            "activeSessionId": active_session_id,
+        }
+
+    async def handle_list_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return recent messages from the active repo-scoped session."""
+        self._ensure_initialized()
+
+        count = self._clamp_count(params.get("count"), default=10, min_value=1, max_value=1000)
+        repo_config = self._get_repo_config()
+        messages = repo_config.get_recent_messages(count=count)
+        session_id = repo_config.current_session.session_id if repo_config.current_session else None
+
+        return {
+            "sessionId": session_id,
+            "messages": [
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp,
+                }
+                for msg in messages
+            ],
+        }
+
+    async def handle_search_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Search recent messages in the active session history."""
+        self._ensure_initialized()
+
+        term = str(params.get("term", "")).strip()
+        if not term:
+            raise InvalidParamsError("Missing term")
+
+        window = self._clamp_count(params.get("window"), default=1000, min_value=1, max_value=5000)
+        limit = self._clamp_count(params.get("limit"), default=20, min_value=1, max_value=200)
+        repo_config = self._get_repo_config()
+        messages = repo_config.get_recent_messages(count=window)
+        lowered = term.lower()
+
+        matches = [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "timestamp": msg.timestamp,
+            }
+            for msg in messages
+            if lowered in msg.content.lower()
+        ]
+
+        return {
+            "term": term,
+            "totalMatches": len(matches),
+            "matches": matches[:limit],
+        }
+
+    async def handle_list_checkpoints(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List available checkpoints with storage metadata."""
+        self._ensure_initialized()
+
+        manager = self.core.checkpoint_manager
+        if manager is None:
+            return {
+                "available": False,
+                "checkpoints": [],
+                "storageSizeBytes": 0,
+                "storagePath": "",
+            }
+
+        limit = self._clamp_count(params.get("limit"), default=20, min_value=1, max_value=200)
+        checkpoints = manager.list_checkpoints(limit=limit)
+        return {
+            "available": True,
+            "checkpoints": [
+                {
+                    "checkpointId": cp.checkpoint_id,
+                    "createdAt": cp.created_at,
+                    "description": cp.description,
+                    "operationType": cp.operation_type,
+                    "fileCount": cp.get_file_count(),
+                    "totalSizeBytes": cp.get_total_size(),
+                    "tags": cp.tags,
+                }
+                for cp in checkpoints
+            ],
+            "storageSizeBytes": manager.get_storage_size(),
+            "storagePath": str(manager.checkpoints_dir),
+        }
+
+    def _discover_default_checkpoint_files(self, limit: int = 10) -> List[str]:
+        files: List[str] = []
+        for path in Path.cwd().rglob("*.py"):
+            if not path.is_file():
+                continue
+            path_parts = set(path.parts)
+            if ".git" in path_parts or ".poor-cli" in path_parts:
+                continue
+            files.append(str(path.resolve()))
+            if len(files) >= limit:
+                break
+        return files
+
+    async def handle_create_checkpoint(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a manual checkpoint and return summary metadata."""
+        self._ensure_initialized()
+
+        manager = self.core.checkpoint_manager
+        if manager is None:
+            raise PoorCLIError("Checkpoint system not available")
+
+        description = str(params.get("description", "Manual checkpoint")).strip() or "Manual checkpoint"
+        operation_type = str(params.get("operationType", "manual")).strip() or "manual"
+
+        raw_file_paths = params.get("filePaths")
+        file_paths: List[str]
+        if raw_file_paths is None:
+            file_paths = self._discover_default_checkpoint_files(limit=10)
+        elif isinstance(raw_file_paths, list):
+            file_paths = [str(self._resolve_path(str(path))) for path in raw_file_paths if str(path).strip()]
+        else:
+            raise InvalidParamsError("filePaths must be a list of file paths")
+
+        if not file_paths:
+            raise PoorCLIError("No files found to checkpoint")
+
+        raw_tags = params.get("tags")
+        tags: Optional[List[str]] = None
+        if isinstance(raw_tags, list):
+            tags = [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+
+        checkpoint = await asyncio.to_thread(
+            manager.create_checkpoint,
+            file_paths,
+            description,
+            operation_type,
+            tags,
+        )
+
+        return {
+            "checkpointId": checkpoint.checkpoint_id,
+            "createdAt": checkpoint.created_at,
+            "description": checkpoint.description,
+            "operationType": checkpoint.operation_type,
+            "fileCount": checkpoint.get_file_count(),
+            "totalSizeBytes": checkpoint.get_total_size(),
+            "tags": checkpoint.tags,
+        }
+
+    async def handle_restore_checkpoint(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Restore a checkpoint by ID (or restore the latest checkpoint)."""
+        self._ensure_initialized()
+
+        manager = self.core.checkpoint_manager
+        if manager is None:
+            raise PoorCLIError("Checkpoint system not available")
+
+        requested_id = str(params.get("checkpointId", "")).strip()
+        if not requested_id or requested_id == "last":
+            checkpoints = manager.list_checkpoints(limit=1)
+            if not checkpoints:
+                raise PoorCLIError("No checkpoints available to restore")
+            checkpoint = checkpoints[0]
+        else:
+            checkpoint = manager.get_checkpoint(requested_id)
+            if checkpoint is None:
+                raise InvalidParamsError(f"Checkpoint not found: {requested_id}")
+
+        restored_count = await asyncio.to_thread(
+            manager.restore_checkpoint,
+            checkpoint.checkpoint_id,
+        )
+
+        return {
+            "checkpointId": checkpoint.checkpoint_id,
+            "restoredFiles": restored_count,
+            "description": checkpoint.description,
+            "createdAt": checkpoint.created_at,
+        }
+
+    async def handle_compare_files(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a unified diff for two files."""
+        self._ensure_initialized()
+
+        file1 = str(params.get("file1", "")).strip()
+        file2 = str(params.get("file2", "")).strip()
+        if not file1 or not file2:
+            raise InvalidParamsError("Missing file paths. Usage: /diff <file1> <file2>")
+
+        path1 = self._resolve_path(file1)
+        path2 = self._resolve_path(file2)
+        if not path1.is_file():
+            raise InvalidParamsError(f"File not found: {file1}")
+        if not path2.is_file():
+            raise InvalidParamsError(f"File not found: {file2}")
+
+        text1 = path1.read_text(encoding="utf-8", errors="ignore")
+        text2 = path2.read_text(encoding="utf-8", errors="ignore")
+        diff = "".join(
+            difflib.unified_diff(
+                text1.splitlines(keepends=True),
+                text2.splitlines(keepends=True),
+                fromfile=str(path1),
+                tofile=str(path2),
+            )
+        )
+        if not diff:
+            diff = "(No differences)"
+
+        return {"diff": diff}
+
+    async def handle_export_conversation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export active-session conversation history to json/md/txt."""
+        self._ensure_initialized()
+
+        export_format = str(params.get("format", "json")).strip().lower() or "json"
+        if export_format == "markdown":
+            export_format = "md"
+        if export_format not in {"json", "md", "txt"}:
+            raise InvalidParamsError("Invalid format. Supported: json, md, txt")
+
+        repo_config = self._get_repo_config()
+        if not repo_config.current_session:
+            raise PoorCLIError("No active session to export")
+
+        messages = repo_config.get_recent_messages(count=100000)
+        if not messages:
+            raise PoorCLIError("No messages in current session")
+
+        session = repo_config.current_session
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"conversation_{session.session_id[:8]}_{timestamp}.{export_format}"
+        output_path = Path.cwd() / filename
+
+        if export_format == "json":
+            payload = {
+                "session_id": session.session_id,
+                "exported_at": datetime.now().isoformat(),
+                "provider": self.core.config.model.provider if self.core.config else "unknown",
+                "model": self.core.config.model.model_name if self.core.config else "unknown",
+                "message_count": len(messages),
+                "messages": [
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                        "timestamp": msg.timestamp,
+                    }
+                    for msg in messages
+                ],
+            }
+            output_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        elif export_format == "md":
+            lines = [
+                "# Conversation Export",
+                "",
+                f"**Session ID:** {session.session_id}",
+                f"**Provider:** {self.core.config.model.provider if self.core.config else 'unknown'}",
+                f"**Model:** {self.core.config.model.model_name if self.core.config else 'unknown'}",
+                f"**Exported:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"**Messages:** {len(messages)}",
+                "",
+                "---",
+                "",
+            ]
+            for idx, msg in enumerate(messages, 1):
+                role_name = "User" if msg.role == "user" else "Assistant"
+                lines.extend(
+                    [
+                        f"## Message {idx}: {role_name}",
+                        "",
+                        f"*{msg.timestamp}*",
+                        "",
+                        msg.content,
+                        "",
+                        "---",
+                        "",
+                    ]
+                )
+            output_path.write_text("\n".join(lines), encoding="utf-8")
+        else:
+            lines = [
+                "=" * 60,
+                "CONVERSATION EXPORT",
+                "=" * 60,
+                "",
+                f"Session ID: {session.session_id}",
+                f"Provider: {self.core.config.model.provider if self.core.config else 'unknown'}",
+                f"Model: {self.core.config.model.model_name if self.core.config else 'unknown'}",
+                f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"Messages: {len(messages)}",
+                "",
+                "=" * 60,
+                "",
+            ]
+            for msg in messages:
+                role_name = "USER" if msg.role == "user" else "ASSISTANT"
+                lines.extend(
+                    [
+                        f"[{role_name}] {msg.timestamp}",
+                        "-" * 60,
+                        msg.content,
+                        "",
+                    ]
+                )
+            output_path.write_text("\n".join(lines), encoding="utf-8")
+
+        return {
+            "filePath": str(output_path),
+            "format": export_format,
+            "messageCount": len(messages),
+            "sizeBytes": output_path.stat().st_size,
+        }
 
     def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
         """Flatten nested dict/list/scalars into a dot-path list."""

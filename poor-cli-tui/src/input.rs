@@ -65,6 +65,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/sessions",
+        description: "List recent sessions",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/files",
         description: "List pinned context files",
         recommended: true,
@@ -135,6 +140,16 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: false,
     },
     SlashCommandSpec {
+        command: "/verbose",
+        description: "Toggle verbose logging",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/plan-mode",
+        description: "Toggle plan mode",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/toggle",
         description: "Toggle boolean config value",
         recommended: false,
@@ -192,6 +207,41 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         command: "/commit",
         description: "Create commit message from staged diff",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/checkpoints",
+        description: "List available checkpoints",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/checkpoint",
+        description: "Create manual checkpoint",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/save",
+        description: "Quick checkpoint alias",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/rewind",
+        description: "Restore checkpoint by id or latest",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/restore",
+        description: "Restore latest checkpoint",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/diff",
+        description: "Compare two files",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/export",
+        description: "Export conversation history",
         recommended: false,
     },
     SlashCommandSpec {
