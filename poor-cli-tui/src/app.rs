@@ -385,6 +385,7 @@ impl App {
     /// Add a welcome message on startup.
     pub fn add_welcome(&mut self) {
         self.messages.push(ChatMessage::system(self.welcome_text()));
+        self.scroll_offset = 0;
     }
 
     /// Retroactively update the welcome message after init completes.
@@ -395,6 +396,7 @@ impl App {
                 msg.content = text;
             }
         }
+        self.scroll_offset = 0;
     }
 
     /// Push a message and auto-scroll to bottom.
@@ -619,6 +621,7 @@ impl App {
         self.current_iteration = 0;
         self.turn_input_tokens = 0;
         self.turn_output_tokens = 0;
+        self.scroll_offset = 0;
     }
 
     pub fn append_streaming_chunk(&mut self, chunk: &str) {
@@ -626,6 +629,9 @@ impl App {
             if let Some(msg) = self.messages.get_mut(idx) {
                 msg.content.push_str(chunk);
             }
+        }
+        if self.scroll_offset <= 1 {
+            self.scroll_offset = 0;
         }
     }
 
