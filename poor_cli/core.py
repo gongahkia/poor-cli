@@ -230,9 +230,20 @@ class PoorCLICore:
             current_dir = os.getcwd()
             self._system_instruction = build_tool_calling_system_instruction(current_dir)
             
+            provider_capabilities = self.provider.get_capabilities()
+            init_tools = (
+                tool_declarations if provider_capabilities.supports_function_calling else []
+            )
+            if not provider_capabilities.supports_function_calling:
+                logger.info(
+                    "Provider %s/%s does not support function calling; initializing without tools",
+                    self.config.model.provider,
+                    self.config.model.model_name,
+                )
+
             # Initialize provider with tools and system instruction
             await self.provider.initialize(
-                tools=tool_declarations,
+                tools=init_tools,
                 system_instruction=self._system_instruction
             )
             
@@ -1071,8 +1082,18 @@ class PoorCLICore:
 
         # Initialize provider with tools before committing the switch.
         tool_declarations = self.tool_registry.get_tool_declarations()
+        provider_capabilities = candidate_provider.get_capabilities()
+        init_tools = (
+            tool_declarations if provider_capabilities.supports_function_calling else []
+        )
+        if not provider_capabilities.supports_function_calling:
+            logger.info(
+                "Provider %s/%s does not support function calling; switching without tools",
+                provider_name,
+                model_name,
+            )
         await candidate_provider.initialize(
-            tools=tool_declarations,
+            tools=init_tools,
             system_instruction=self._system_instruction
         )
 

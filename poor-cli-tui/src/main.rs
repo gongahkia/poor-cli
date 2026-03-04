@@ -4731,23 +4731,42 @@ Context Window: {max_context} tokens\n\n\
                 }
             }
             "list" | "list-models" => {
-                match rpc_execute_command_with_timeout_blocking(
-                    rpc_cmd_tx,
-                    "ollama list",
-                    Some(60),
-                    75,
-                ) {
-                    Ok(output) => show_command_info_popup(
-                        app,
-                        raw,
-                        format!(
-                            "**Installed Ollama Models**\n```text\n{}\n```",
-                            truncate_block(&output, 3200)
-                        ),
-                    ),
-                    Err(e) => app.push_message(ChatMessage::error(format!(
+                let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+                let _ = rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx });
+                match reply_rx.recv_timeout(Duration::from_secs(20)) {
+                    Ok(Ok(providers)) => {
+                        let ollama = providers
+                            .iter()
+                            .find(|provider| provider.name.eq_ignore_ascii_case("ollama"));
+                        if let Some(provider) = ollama {
+                            if provider.models.is_empty() {
+                                show_command_info_popup(
+                                    app,
+                                    raw,
+                                    "No installed Ollama models were detected.\n\nTry `/ollama pull <model>`."
+                                        .to_string(),
+                                );
+                            } else {
+                                let mut lines = vec!["**Installed Ollama Models**".to_string()];
+                                lines.extend(
+                                    provider.models.iter().map(|model| format!("- `{model}`")),
+                                );
+                                show_command_info_popup(app, raw, lines.join("\n"));
+                            }
+                        } else {
+                            app.push_message(ChatMessage::error(
+                                "Failed to list Ollama models: provider metadata unavailable"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                    Ok(Err(e)) => app.push_message(ChatMessage::error(format!(
                         "Failed to list Ollama models: {e}"
                     ))),
+                    Err(_) => app.push_message(ChatMessage::error(
+                        "Failed to list Ollama models: timed out waiting for provider metadata"
+                            .to_string(),
+                    )),
                 }
             }
             "ps" => {

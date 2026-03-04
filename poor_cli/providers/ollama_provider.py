@@ -63,6 +63,27 @@ class OllamaProvider(BaseProvider):
 
         logger.info(f"Ollama provider initialized (server: {self.base_url})")
 
+    @staticmethod
+    def _tools_not_supported(error_text: str) -> bool:
+        """Detect Ollama errors that indicate tool payloads are unsupported for the model."""
+        lowered = (error_text or "").lower()
+        return (
+            "does not support tools" in lowered
+            or "tool calls are not supported" in lowered
+            or ("tools" in lowered and "not support" in lowered)
+        )
+
+    def _build_chat_request(self, stream: bool) -> Dict[str, Any]:
+        """Build a chat request payload, including tools only when enabled."""
+        request_data = {
+            "model": self.model_name,
+            "messages": self.messages,
+            "stream": stream,
+        }
+        if self.tools:
+            request_data["tools"] = self.tools
+        return request_data
+
     async def initialize(self, tools: Optional[List[Dict[str, Any]]] = None,
                         system_instruction: Optional[str] = None):
         """Initialize with tools and system instructions"""
@@ -113,15 +134,7 @@ class OllamaProvider(BaseProvider):
         for attempt in range(self.max_retries):
             try:
                 # Prepare request
-                request_data = {
-                    "model": self.model_name,
-                    "messages": self.messages,
-                    "stream": False
-                }
-
-                # Add tools if available (note: tool support varies by model)
-                if self.tools:
-                    request_data["tools"] = self.tools
+                request_data = self._build_chat_request(stream=False)
 
                 # Send request
                 async with aiohttp.ClientSession() as session:
@@ -155,7 +168,16 @@ class OllamaProvider(BaseProvider):
                     continue
                 raise APIConnectionError("Ollama connection error", str(e))
 
-            except APIError:
+            except APIError as e:
+                error_text = str(e)
+                if self.tools and self._tools_not_supported(error_text):
+                    logger.warning(
+                        "Model %s does not support tools; retrying without tool payloads",
+                        self.model_name,
+                    )
+                    self.tools = None
+                    if attempt < self.max_retries - 1:
+                        continue
                 raise
 
             except Exception as e:
@@ -165,70 +187,71 @@ class OllamaProvider(BaseProvider):
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from Ollama"""
         self._append_message(message)
+        attempted_without_tools = False
 
-        try:
-            # Prepare request
-            request_data = {
-                "model": self.model_name,
-                "messages": self.messages,
-                "stream": True
-            }
+        while True:
+            try:
+                request_data = self._build_chat_request(stream=True)
+                accumulated_content = ""
 
-            if self.tools:
-                request_data["tools"] = self.tools
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{self.base_url}/api/chat",
+                        json=request_data,
+                        timeout=aiohttp.ClientTimeout(total=self.timeout)
+                    ) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            raise APIError(f"Ollama error {resp.status}: {error_text}", error_text)
 
-            # Stream response
-            accumulated_content = ""
+                        # Read streaming response line by line
+                        async for line in resp.content:
+                            if line:
+                                try:
+                                    chunk_data = json.loads(line.decode('utf-8'))
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.base_url}/api/chat",
-                    json=request_data,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
-                ) as resp:
-                    if resp.status != 200:
-                        error_text = await resp.text()
-                        raise APIError(f"Ollama error {resp.status}: {error_text}", error_text)
+                                    # Extract message content
+                                    if 'message' in chunk_data:
+                                        msg = chunk_data['message']
+                                        if 'content' in msg and msg['content']:
+                                            accumulated_content += msg['content']
 
-                    # Read streaming response line by line
-                    async for line in resp.content:
-                        if line:
-                            try:
-                                chunk_data = json.loads(line.decode('utf-8'))
+                                            yield ProviderResponse(
+                                                content=msg['content'],
+                                                role="assistant",
+                                                raw_response=chunk_data,
+                                                metadata={"is_chunk": True}
+                                            )
 
-                                # Extract message content
-                                if 'message' in chunk_data:
-                                    msg = chunk_data['message']
-                                    if 'content' in msg and msg['content']:
-                                        accumulated_content += msg['content']
+                                    # Check if done
+                                    if chunk_data.get('done', False):
+                                        break
 
-                                        yield ProviderResponse(
-                                            content=msg['content'],
-                                            role="assistant",
-                                            raw_response=chunk_data,
-                                            metadata={"is_chunk": True}
-                                        )
+                                except json.JSONDecodeError:
+                                    logger.warning(f"Failed to parse Ollama chunk: {line}")
+                                    continue
 
-                                # Check if done
-                                if chunk_data.get('done', False):
-                                    break
-
-                            except json.JSONDecodeError:
-                                logger.warning(f"Failed to parse Ollama chunk: {line}")
-                                continue
-
-            # Add final message to history
-            if accumulated_content:
-                self.messages.append({
-                    "role": "assistant",
-                    "content": accumulated_content
-                })
-
-        except APIError:
-            raise
-        except Exception as e:
-            logger.debug(f"Ollama streaming request failed: {e}")
-            raise APIError("Ollama streaming error", str(e))
+                # Add final message to history
+                if accumulated_content:
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": accumulated_content
+                    })
+                return
+            except APIError as e:
+                error_text = str(e)
+                if self.tools and self._tools_not_supported(error_text) and not attempted_without_tools:
+                    logger.warning(
+                        "Model %s does not support tools; retrying stream without tool payloads",
+                        self.model_name,
+                    )
+                    self.tools = None
+                    attempted_without_tools = True
+                    continue
+                raise
+            except Exception as e:
+                logger.debug(f"Ollama streaming request failed: {e}")
+                raise APIError("Ollama streaming error", str(e))
 
     def _append_message(self, message: Any) -> None:
         """Append or extend chat history with user/tool messages."""

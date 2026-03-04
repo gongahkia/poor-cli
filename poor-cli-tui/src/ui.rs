@@ -79,14 +79,15 @@ pub fn draw(frame: &mut Frame, app: &App) {
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     let dim = theme::muted_fg(mode);
-    let provider_short = if app.provider_name.len() > 4 {
-        &app.provider_name[..4]
+    let model_full = format!("{}/{}", app.provider_name, app.model_name);
+    let model_display = ellipsize_middle(&model_full, 34);
+    let (status_label, status_color) = if !app.server_connected {
+        ("offline", theme::error(mode))
+    } else if app.waiting || app.streaming_message.is_some() {
+        ("busy", theme::warning(mode))
     } else {
-        &app.provider_name
+        ("online", theme::success(mode))
     };
-    let provider_upper = provider_short.to_uppercase();
-
-    let model_display = app.model_name.split('-').last().unwrap_or(&app.model_name);
 
     let mut spans = vec![
         Span::styled(
@@ -97,13 +98,21 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ),
         Span::styled(format!(" v{} ", app.version), Style::default().fg(dim)),
         Span::styled("│ ", Style::default().fg(dim)),
+        Span::styled("model:", Style::default().fg(dim)),
         Span::styled(
-            format!("{provider_upper}"),
+            format!(" {model_display}"),
             Style::default()
                 .fg(theme::system_color(mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("/{model_display}"), Style::default().fg(dim)),
+        Span::styled(" │ ", Style::default().fg(dim)),
+        Span::styled("status:", Style::default().fg(dim)),
+        Span::styled(" ", Style::default().fg(dim)),
+        Span::styled("●", Style::default().fg(status_color)),
+        Span::styled(
+            format!(" {status_label}"),
+            Style::default().fg(status_color),
+        ),
     ];
 
     if app.streaming_enabled {
@@ -147,19 +156,6 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    if app.server_connected {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        let dot_color = if app.is_local_provider {
-            theme::system_color(mode)
-        } else {
-            theme::success(mode)
-        };
-        spans.push(Span::styled("●", Style::default().fg(dot_color)));
-    } else {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled("●", Style::default().fg(theme::error(mode))));
-    }
-
     if !app.cwd.is_empty() {
         let cwd_short = app.cwd.split('/').last().unwrap_or(&app.cwd);
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
@@ -195,6 +191,29 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style(mode));
     frame.render_widget(bar, area);
+}
+
+fn ellipsize_middle(value: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= max_chars {
+        return value.to_string();
+    }
+    if max_chars <= 3 {
+        return "...".to_string();
+    }
+
+    let head_len = (max_chars - 1) / 2;
+    let tail_len = max_chars - head_len - 1;
+    let head: String = chars.iter().take(head_len).collect();
+    let tail: String = chars
+        .iter()
+        .rev()
+        .take(tail_len)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{head}…{tail}")
 }
 
 // ── Chat area ────────────────────────────────────────────────────────
@@ -812,7 +831,8 @@ fn draw_info_popup(frame: &mut Frame, app: &App) {
         app.info_popup_title.as_str()
     };
 
-    let popup = Paragraph::new(Text::from(app.info_popup_content.clone()))
+    let markdown_lines = markdown::render_markdown(&app.info_popup_content, mode);
+    let popup = Paragraph::new(Text::from(markdown_lines))
         .wrap(Wrap { trim: false })
         .scroll((app.info_popup_scroll, 0))
         .block(
