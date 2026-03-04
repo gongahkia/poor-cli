@@ -1857,6 +1857,26 @@ fn show_command_info_popup(app: &mut App, raw: &str, body: impl Into<String>) {
     app.open_info_popup(popup_title_from_command(raw), body.into());
 }
 
+fn resolve_close_slash_command(raw: &str) -> Option<(String, String, String)> {
+    let command_end = raw
+        .char_indices()
+        .find(|(_, ch)| ch.is_whitespace())
+        .map(|(index, _)| index)
+        .unwrap_or(raw.len());
+    if command_end == 0 {
+        return None;
+    }
+
+    let typed_command = &raw[..command_end];
+    if input::is_known_slash_command(typed_command) {
+        return None;
+    }
+
+    let resolved = input::closest_slash_command(typed_command)?;
+    let rewritten = format!("{resolved}{}", &raw[command_end..]);
+    Some((rewritten, typed_command.to_string(), resolved.to_string()))
+}
+
 // ── Slash command handler ─────────────────────────────────────────────
 
 fn handle_slash_command(
@@ -1869,7 +1889,13 @@ fn handle_slash_command(
     qa_watch_state: &mut QaWatchState,
     cmd: &str,
 ) -> bool {
-    let raw = cmd.trim();
+    let mut normalized = cmd.trim().to_string();
+    if let Some((rewritten, typed, resolved)) = resolve_close_slash_command(&normalized) {
+        app.set_status(format!("Assuming `{resolved}` for `{typed}`"));
+        normalized = rewritten;
+    }
+
+    let raw = normalized.as_str();
     let lowered = raw.to_lowercase();
 
     if lowered == "/quit" || lowered == "/exit" {

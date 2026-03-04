@@ -420,6 +420,92 @@ pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
         .collect()
 }
 
+/// Check if a slash command token exactly matches a known command (case-insensitive).
+pub fn is_known_slash_command(token: &str) -> bool {
+    let normalized = token.trim().to_ascii_lowercase();
+    if !normalized.starts_with('/') {
+        return false;
+    }
+    SLASH_COMMANDS
+        .iter()
+        .any(|spec| spec.command == normalized.as_str())
+}
+
+/// Resolve a likely typo to a known slash command.
+///
+/// Returns `Some(command)` only when there is a single confident nearest match.
+pub fn closest_slash_command(token: &str) -> Option<&'static str> {
+    let normalized = token.trim().to_ascii_lowercase();
+    if !normalized.starts_with('/') {
+        return None;
+    }
+
+    if is_known_slash_command(&normalized) {
+        return None;
+    }
+
+    let mut best: Option<(&'static str, usize, usize)> = None;
+    let mut second_best_distance: Option<usize> = None;
+
+    for spec in SLASH_COMMANDS {
+        let distance = levenshtein_distance(&normalized, spec.command);
+        let max_len = normalized.chars().count().max(spec.command.chars().count());
+        let allowed_distance = match max_len {
+            0..=4 => 1,
+            5..=8 => 2,
+            _ => 3,
+        };
+        if distance > allowed_distance {
+            continue;
+        }
+
+        match best {
+            None => best = Some((spec.command, distance, max_len)),
+            Some((_, best_distance, best_len)) => {
+                if (distance, max_len) < (best_distance, best_len) {
+                    second_best_distance = Some(best_distance);
+                    best = Some((spec.command, distance, max_len));
+                } else if second_best_distance.is_none_or(|current| distance < current) {
+                    second_best_distance = Some(distance);
+                }
+            }
+        }
+    }
+
+    let (best_command, best_distance, _) = best?;
+    if second_best_distance == Some(best_distance) {
+        return None;
+    }
+
+    Some(best_command)
+}
+
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+
+    if a_chars.is_empty() {
+        return b_chars.len();
+    }
+    if b_chars.is_empty() {
+        return a_chars.len();
+    }
+
+    let mut prev: Vec<usize> = (0..=b_chars.len()).collect();
+    let mut curr = vec![0; b_chars.len() + 1];
+
+    for (i, &a_char) in a_chars.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, &b_char) in b_chars.iter().enumerate() {
+            let cost = if a_char == b_char { 0 } else { 1 };
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b_chars.len()]
+}
+
 fn visible_command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
     command_palette_matches(prefix)
         .into_iter()
@@ -952,5 +1038,26 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.input_buffer, expected);
+    }
+
+    #[test]
+    fn known_command_match_is_case_insensitive() {
+        assert!(is_known_slash_command("/HeLp"));
+    }
+
+    #[test]
+    fn closest_command_resolves_simple_typo() {
+        assert_eq!(closest_slash_command("/hepl"), Some("/help"));
+        assert_eq!(closest_slash_command("/statuz"), Some("/status"));
+    }
+
+    #[test]
+    fn closest_command_rejects_ambiguous_typo() {
+        assert_eq!(closest_slash_command("/providerz"), None);
+    }
+
+    #[test]
+    fn closest_command_rejects_distant_typo() {
+        assert_eq!(closest_slash_command("/zzzzzz"), None);
     }
 }
