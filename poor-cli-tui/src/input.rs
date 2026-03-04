@@ -80,6 +80,16 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/broke",
+        description: "Set poor mode (terse responses)",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/my-treat",
+        description: "Set rich mode (comprehensive responses)",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/settings",
         description: "List editable config settings",
         recommended: true,

@@ -106,6 +106,21 @@ pub enum PlanStepStatus {
     Skipped,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponseMode {
+    Poor,
+    Rich,
+}
+
+impl ResponseMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Poor => "poor",
+            Self::Rich => "rich",
+        }
+    }
+}
+
 /// Spinner frames for the thinking indicator.
 pub const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -193,6 +208,7 @@ pub struct App {
     pub turn_output_tokens: u64,
     pub cumulative_input_tokens: u64,
     pub cumulative_output_tokens: u64,
+    pub response_mode: ResponseMode,
 }
 
 impl Default for App {
@@ -243,6 +259,7 @@ impl Default for App {
             turn_output_tokens: 0,
             cumulative_input_tokens: 0,
             cumulative_output_tokens: 0,
+            response_mode: ResponseMode::Rich,
         }
     }
 }
