@@ -910,16 +910,36 @@ fn run_app(
                         let tx2 = tx.clone();
                         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
                         let _ = rpc_cmd_tx.send(RpcCommand::SwitchProvider {
-                            provider: name,
+                            provider: name.clone(),
                             model,
                             reply: reply_tx,
                         });
                         thread::spawn(move || {
-                            if let Ok(Ok((prov, mdl))) = reply_rx.recv() {
-                                let _ = tx2.send(ServerMsg::ProviderSwitched {
-                                    provider: prov,
-                                    model: mdl,
-                                });
+                            match reply_rx.recv() {
+                                Ok(Ok((prov, mdl))) => {
+                                    let _ = tx2.send(ServerMsg::ProviderSwitched {
+                                        provider: prov,
+                                        model: mdl,
+                                    });
+                                }
+                                Ok(Err(error)) => {
+                                    let mut message = format!(
+                                        "Failed to switch provider `{name}`: {error}"
+                                    );
+                                    if name.eq_ignore_ascii_case("ollama") {
+                                        message.push_str(
+                                            "\nTry `/ollama start`, then `/ollama pull <model>`, and switch again.",
+                                        );
+                                    }
+                                    let _ = tx2.send(ServerMsg::Error { message });
+                                }
+                                Err(_) => {
+                                    let _ = tx2.send(ServerMsg::Error {
+                                        message: format!(
+                                            "Failed to switch provider `{name}`: backend response channel closed"
+                                        ),
+                                    });
+                                }
                             }
                         });
                     }

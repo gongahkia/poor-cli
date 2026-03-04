@@ -1383,8 +1383,11 @@ class PoorCLIServer:
         return " ".join(shlex.quote(part) for part in command_parts)
 
     @staticmethod
-    def _resolve_service_executable(command_name: str) -> Optional[str]:
-        """Resolve a command to an executable path, if possible."""
+    def _resolve_service_executable(
+        command_name: str,
+        service_name: Optional[str] = None,
+    ) -> Optional[str]:
+        """Resolve a command to an executable path, with service-specific fallbacks."""
         if not command_name:
             return None
 
@@ -1394,7 +1397,41 @@ class PoorCLIServer:
                 return str(command_path)
             return None
 
-        return shutil.which(command_name)
+        resolved = shutil.which(command_name)
+        if resolved:
+            return resolved
+
+        # GUI-launched apps on macOS often lack Homebrew PATH entries.
+        # Keep this narrowly scoped to Ollama so other services remain explicit.
+        if (service_name or "").strip().lower() == "ollama" or command_name == "ollama":
+            fallback_candidates: List[str] = []
+
+            env_override = os.environ.get("OLLAMA_BIN") or os.environ.get("OLLAMA_PATH")
+            if env_override:
+                fallback_candidates.append(env_override)
+
+            if sys.platform == "darwin":
+                fallback_candidates.extend(
+                    ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"]
+                )
+            elif os.name == "nt":
+                fallback_candidates.extend(
+                    [
+                        r"C:\\Program Files\\Ollama\\ollama.exe",
+                        r"C:\\Program Files (x86)\\Ollama\\ollama.exe",
+                    ]
+                )
+            else:
+                fallback_candidates.extend(
+                    ["/usr/local/bin/ollama", "/usr/bin/ollama", "/snap/bin/ollama"]
+                )
+
+            for candidate in fallback_candidates:
+                candidate_path = Path(candidate).expanduser()
+                if candidate_path.is_file() and os.access(candidate_path, os.X_OK):
+                    return str(candidate_path)
+
+        return None
 
     def _ollama_base_url(self) -> str:
         """Resolve configured Ollama base URL with a safe default."""
@@ -1490,7 +1527,10 @@ class PoorCLIServer:
             managed.command if managed is not None else (default_command or [])
         )
         executable_path = (
-            self._resolve_service_executable(command_for_availability[0])
+            self._resolve_service_executable(
+                command_for_availability[0],
+                service_name=service_name,
+            )
             if command_for_availability
             else None
         )
@@ -1586,11 +1626,15 @@ class PoorCLIServer:
             if cwd_value is None and existing is not None and existing.cwd:
                 cwd_value = existing.cwd
 
-            executable_path = self._resolve_service_executable(command_parts[0])
+            executable_path = self._resolve_service_executable(
+                command_parts[0],
+                service_name=service_name,
+            )
             if executable_path is None:
                 raise InvalidParamsError(
                     f"Command not found for service '{service_name}': {command_parts[0]}"
                 )
+            command_parts[0] = executable_path
 
             if (
                 service_name == "ollama"
@@ -1647,11 +1691,34 @@ class PoorCLIServer:
                     f"{runtime.last_exit_code}. Check logs: {log_path}"
                 )
 
+            message = "Service started."
+            if service_name == "ollama":
+                # Ollama can take a few seconds before port 11434 accepts requests.
+                # Wait briefly so `/ollama start` is reliably usable right away.
+                warmed_up = False
+                for _ in range(40):  # ~8 seconds
+                    if self._is_ollama_reachable():
+                        warmed_up = True
+                        break
+                    if process.returncode is not None:
+                        runtime.last_exit_code = process.returncode
+                        await self._stop_managed_service_locked(runtime, timeout_seconds=0.1)
+                        raise PoorCLIError(
+                            f"Service '{service_name}' exited during startup with code "
+                            f"{runtime.last_exit_code}. Check logs: {log_path}"
+                        )
+                    await asyncio.sleep(0.2)
+                if not warmed_up:
+                    message = (
+                        "Service started, but Ollama is still warming up. "
+                        "Run `/ollama status` and retry shortly."
+                    )
+
             return self._service_payload_locked(
                 service_name,
                 created=True,
                 stopped=False,
-                message="Service started.",
+                message=message,
             )
 
     async def handle_stop_service(self, params: Dict[str, Any]) -> Dict[str, Any]:
