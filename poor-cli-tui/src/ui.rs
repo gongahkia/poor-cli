@@ -19,7 +19,7 @@ use ratatui::{
 use textwrap::Options;
 
 use crate::app::{App, AppMode, MessageRole};
-use crate::input::{SlashCommandSpec, SLASH_COMMANDS};
+use crate::input::{command_palette_matches, SlashCommandSpec};
 use crate::markdown;
 use crate::theme;
 

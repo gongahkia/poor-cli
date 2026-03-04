@@ -624,16 +624,12 @@ fn should_autocomplete_on_enter(app: &App) -> bool {
     }
 
     // If the command is already exact, submit immediately.
-    !SLASH_COMMANDS.iter().any(|spec| spec.command == trimmed)
+    !command_completion_matches(trimmed).is_empty()
 }
 
 /// Auto-complete the slash command in the input buffer.
 fn autocomplete_command(app: &mut App) -> bool {
-    let prefix = app.input_buffer.as_str();
-    let matches: Vec<&SlashCommandSpec> = SLASH_COMMANDS
-        .iter()
-        .filter(|spec| spec.command.starts_with(prefix) && spec.command != prefix)
-        .collect();
+    let matches = command_completion_matches(app.input_buffer.as_str());
 
     if matches.is_empty() {
         return false;
@@ -643,37 +639,60 @@ fn autocomplete_command(app: &mut App) -> bool {
         // Single match: complete it
         app.input_buffer = matches[0].command.to_string();
         app.input_cursor = app.input_buffer.len();
-        return true;
-    } else if matches.len() > 1 {
-        // Multiple matches: find common prefix
-        let first = matches[0].command;
-        let common_len = first
-            .char_indices()
-            .take_while(|(i, c)| {
-                matches
-                    .iter()
-                    .all(|m| m.command.as_bytes().get(*i) == Some(&(*c as u8)))
-            })
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(prefix.len());
-
-        if common_len > prefix.len() {
-            app.input_buffer = first[..common_len].to_string();
-            app.input_cursor = app.input_buffer.len();
-            return true;
-        }
-
-        // Show completions as status and pick the first suggestion on Enter/Tab
-        // so command entry can proceed without requiring repeated key presses.
-        let completions: Vec<&str> = matches.iter().map(|s| s.command).collect();
-        app.set_status(completions.join("  "));
-        app.input_buffer = first.to_string();
-        app.input_cursor = app.input_buffer.len();
+        app.command_match_index = 0;
         return true;
     }
 
-    false
+    // Multiple matches: confirm currently selected candidate from visible palette.
+    let visible_matches = visible_command_palette_matches(app.input_buffer.as_str());
+    if visible_matches.is_empty() {
+        return false;
+    }
+
+    let selected_idx = app
+        .command_match_index
+        .min(visible_matches.len().saturating_sub(1));
+    app.input_buffer = visible_matches[selected_idx].command.to_string();
+    app.input_cursor = app.input_buffer.len();
+    app.command_match_index = 0;
+    true
+}
+
+fn clamp_command_match_index(app: &mut App) {
+    let matches = visible_command_palette_matches(app.input_buffer.as_str());
+    if matches.is_empty() {
+        app.command_match_index = 0;
+    } else if app.command_match_index >= matches.len() {
+        app.command_match_index = 0;
+    }
+}
+
+fn navigate_command_matches(app: &mut App, forward: bool) -> bool {
+    let trimmed = app.input_buffer.trim();
+    if !trimmed.starts_with('/') || trimmed.contains(char::is_whitespace) {
+        return false;
+    }
+
+    let matches = visible_command_palette_matches(trimmed);
+    if matches.len() <= 1 {
+        return false;
+    }
+
+    clamp_command_match_index(app);
+    if forward {
+        app.command_match_index = (app.command_match_index + 1) % matches.len();
+    } else if app.command_match_index == 0 {
+        app.command_match_index = matches.len() - 1;
+    } else {
+        app.command_match_index -= 1;
+    }
+
+    let selected = matches[app.command_match_index];
+    app.set_status(format!(
+        "Selected {} - {}",
+        selected.command, selected.description
+    ));
+    true
 }
 
 #[cfg(test)]
@@ -682,6 +701,14 @@ mod tests {
 
     fn key_enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    fn key_up() -> KeyEvent {
+        KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)
+    }
+
+    fn key_down() -> KeyEvent {
+        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)
     }
 
     #[test]
@@ -725,5 +752,36 @@ mod tests {
             InputAction::Submit(text) => assert_eq!(text, "/theme da"),
             _ => panic!("expected submit action"),
         }
+    }
+
+    #[test]
+    fn arrow_keys_navigate_command_matches() {
+        let mut app = App::new();
+        app.input_buffer = "/pro".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        let down = handle_key_normal(&mut app, key_down());
+        assert!(matches!(down, InputAction::Redraw));
+        assert_eq!(app.command_match_index, 1);
+
+        let up = handle_key_normal(&mut app, key_up());
+        assert!(matches!(up, InputAction::Redraw));
+        assert_eq!(app.command_match_index, 0);
+    }
+
+    #[test]
+    fn enter_confirms_selected_match_when_multiple_exist() {
+        let mut app = App::new();
+        app.input_buffer = "/pro".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        // `/pro` currently has: /provider, /providers, /prompts.
+        handle_key_normal(&mut app, key_down());
+        let action = handle_key_normal(&mut app, key_enter());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.input_buffer, "/providers");
     }
 }
