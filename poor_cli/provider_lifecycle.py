@@ -1,5 +1,5 @@
 """
-Provider lifecycle service for PoorCLIAsync.
+Provider lifecycle service for poor-cli clients.
 
 This module encapsulates provider creation, interactive provider switching,
 and provider listing, with typed interfaces for dependencies.
@@ -60,7 +60,7 @@ class ProviderFactoryLike(Protocol):
 
 
 class ProviderLifecycleService:
-    """Handles provider lifecycle concerns for the REPL."""
+    """Handles provider lifecycle concerns for interactive clients."""
 
     def __init__(
         self,

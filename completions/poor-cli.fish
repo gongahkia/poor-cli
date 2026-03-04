@@ -7,8 +7,8 @@ complete -c poor-cli-sync -e
 
 # Session Management
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "/help" -d "Show help message"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/quit" -d "Exit the REPL"
-complete -c poor-cli -f -n "__fish_use_subcommand" -a "/exit" -d "Exit the REPL"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "/quit" -d "Exit poor-cli"
+complete -c poor-cli -f -n "__fish_use_subcommand" -a "/exit" -d "Exit poor-cli"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "/clear" -d "Clear conversation"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "/history" -d "Show recent messages"
 complete -c poor-cli -f -n "__fish_use_subcommand" -a "/sessions" -d "List all sessions"

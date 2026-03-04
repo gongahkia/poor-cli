@@ -111,7 +111,7 @@ class PoorCLICore:
     Headless AI coding assistant engine.
     
     This is the core wrapper layer shared by supported clients:
-    - CLI (repl_async.py)
+    - Rust TUI (via JSON-RPC server)
     - Neovim plugin (via JSON-RPC server)
     
     Attributes:

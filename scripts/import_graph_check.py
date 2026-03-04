@@ -13,7 +13,6 @@ POOR_CLI_DIR = REPO_ROOT / "poor_cli"
 TESTS_DIR = REPO_ROOT / "tests"
 
 ENTRYPOINT_MODULES = {
-    "poor_cli.repl_async",
     "poor_cli.server",
 }
 

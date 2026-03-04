@@ -5,6 +5,7 @@ Tests for the JSON-RPC server.
 import json
 import pytest
 from collections import deque
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -217,10 +218,99 @@ class TestPoorCLIServer:
             "poor-cli/chat",
             "poor-cli/inlineComplete",
             "poor-cli/getProviderInfo",
+            "poor-cli/listSessions",
+            "poor-cli/listCheckpoints",
+            "poor-cli/exportConversation",
         ]
 
         for method in required:
             assert method in server.handlers, f"Missing handler: {method}"
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_serializes_active_and_completed(self, server):
+        """Session listing returns active marker and message counts."""
+        server.initialized = True
+        active = SimpleNamespace(
+            session_id="session-active",
+            started_at="2026-03-04T10:00:00",
+            ended_at=None,
+            model="gemini-test",
+            messages=[1, 2],
+        )
+        completed = SimpleNamespace(
+            session_id="session-done",
+            started_at="2026-03-03T10:00:00",
+            ended_at="2026-03-03T10:05:00",
+            model="gemini-test",
+            messages=[1],
+        )
+        repo_config = SimpleNamespace(
+            current_session=active,
+            list_sessions=MagicMock(return_value=[active, completed]),
+        )
+
+        with patch.object(server, "_get_repo_config", return_value=repo_config):
+            result = await server.handle_list_sessions({"limit": 10})
+
+        assert result["activeSessionId"] == "session-active"
+        assert result["sessions"][0]["isActive"] is True
+        assert result["sessions"][0]["messageCount"] == 2
+        assert result["sessions"][1]["isActive"] is False
+
+    @pytest.mark.asyncio
+    async def test_compare_files_returns_unified_diff(self, server, tmp_path):
+        """File comparison endpoint returns unified diff output."""
+        server.initialized = True
+        left = tmp_path / "left.txt"
+        right = tmp_path / "right.txt"
+        left.write_text("line-a\nline-b\n", encoding="utf-8")
+        right.write_text("line-a\nline-c\n", encoding="utf-8")
+
+        result = await server.handle_compare_files(
+            {"file1": str(left), "file2": str(right)}
+        )
+
+        assert "---" in result["diff"]
+        assert "+++" in result["diff"]
+        assert "-line-b" in result["diff"]
+        assert "+line-c" in result["diff"]
+
+    @pytest.mark.asyncio
+    async def test_export_conversation_writes_output_file(self, server, tmp_path, monkeypatch):
+        """Conversation export writes a file and returns file metadata."""
+        server.initialized = True
+        monkeypatch.chdir(tmp_path)
+
+        server.core.config = SimpleNamespace(
+            model=SimpleNamespace(provider="gemini", model_name="gemini-test"),
+            history=SimpleNamespace(auto_migrate_legacy_history=True),
+        )
+        current_session = SimpleNamespace(session_id="session-12345678")
+        repo_config = SimpleNamespace(
+            current_session=current_session,
+            get_recent_messages=MagicMock(
+                return_value=[
+                    SimpleNamespace(
+                        role="user",
+                        content="hello",
+                        timestamp="2026-03-04T10:00:00",
+                    ),
+                    SimpleNamespace(
+                        role="assistant",
+                        content="world",
+                        timestamp="2026-03-04T10:00:01",
+                    ),
+                ]
+            ),
+        )
+
+        with patch.object(server, "_get_repo_config", return_value=repo_config):
+            result = await server.handle_export_conversation({"format": "json"})
+
+        output_path = tmp_path / Path(result["filePath"]).name
+        assert output_path.exists()
+        assert result["messageCount"] == 2
+        assert result["sizeBytes"] > 0
 
     @pytest.mark.asyncio
     async def test_dispatch_invalid_request(self, server):

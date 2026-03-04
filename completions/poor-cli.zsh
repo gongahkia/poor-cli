@@ -10,8 +10,8 @@ _poor_cli() {
 
     commands=(
         '/help:Show help message'
-        '/quit:Exit the REPL'
-        '/exit:Exit the REPL'
+        '/quit:Exit poor-cli'
+        '/exit:Exit poor-cli'
         '/clear:Clear conversation history'
         '/history:Show recent messages'
         '/sessions:List all sessions'

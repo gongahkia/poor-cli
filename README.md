@@ -18,7 +18,7 @@
 ## Stack
 
 * *Script*: [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html) 
-* *Core Dependencies*: [google-generativeai](https://pypi.org/project/google-generativeai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/), [prompt_toolkit](https://pypi.org/project/prompt_toolkit/)
+* *Core Dependencies*: [google-generativeai](https://pypi.org/project/google-generativeai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
 * *Optional Provider Dependencies*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
 * *Development Tools*: [black](https://black.readthedocs.io/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy.readthedocs.io/), [pytest](https://docs.pytest.org/)
 * *Infrastructure*: [SQLite 3](https://www.sqlite.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
@@ -93,10 +93,21 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `/clear` - Clear current conversation
 - `/clear-output` - Clear visible output
 - `/history [N]` - Show recent messages (default: 10)
+- `/sessions` - List recent sessions
 - `/new-session` - Start fresh session
+- `/export [json|md|txt]` - Export active session history
 - `/retry` - Retry last request
 - `/search <term>` - Search session messages
 - `/edit-last` - Load previous message into input
+
+**Checkpoints & Undo:**
+- `/checkpoints` - List checkpoints
+- `/checkpoint` - Create manual checkpoint
+- `/save` - Quick checkpoint alias
+- `/rewind [id|last]` - Restore checkpoint by ID or latest
+- `/restore` - Restore latest checkpoint
+- `/undo` - Restore latest checkpoint (alias)
+- `/diff <file1> <file2>` - Compare two files
 
 **Git Integration:**
 - `/commit` - Generate commit message from staged diff
@@ -110,7 +121,8 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `/model-info` - Show provider model notes
 
 **Prompt Library & Watch:**
-- `/save-prompt <name> <text>` - Save reusable prompt
+- `/save-prompt <name> <text>` - Save reusable prompt text immediately
+- `/save-prompt <name>` - Capture next input as reusable prompt text
 - `/use <name>` - Load and run saved prompt
 - `/prompts` - List saved prompts
 - `/watch <dir>` - Watch directory and auto-analyze changes
@@ -122,9 +134,12 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `/theme [dark|light]` - Show or set UI/code-block theme
 - `/broke` - Set poor mode (terse, token-minimal responses; session-only)
 - `/my-treat` - Set rich mode (comprehensive responses; session-only, default)
+- `/verbose` - Toggle verbose logging
+- `/plan-mode` - Toggle plan mode
 - `/cost` - Show token/cost estimate
 - `/tools` - List backend tool declarations
 - `/image <path>` - Queue image path for next request
+- `/copy` - Copy last assistant response to clipboard
 
 **Neovim Commands:**
 - `:PoorCliStart`: Start the AI server
