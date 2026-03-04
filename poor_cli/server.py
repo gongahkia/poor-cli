@@ -8,10 +8,12 @@ It supports stdio transport for Neovim integration.
 import argparse
 import ast
 import asyncio
+import contextlib
 import copy
 import difflib
 import json
 import logging
+import shutil
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -1668,10 +1670,264 @@ class StreamingJsonRpcServer(PoorCLIServer):
 # =============================================================================
 
 
+class NgrokTunnel:
+    """Helper for launching ngrok and extracting a public URL."""
+
+    def __init__(self, target_addr: str):
+        self.target_addr = target_addr
+        self.process: Optional[asyncio.subprocess.Process] = None
+        self.public_url: Optional[str] = None
+
+    async def start(self, timeout_seconds: float = 12.0) -> Optional[str]:
+        """Start ngrok and wait for a public HTTPS URL."""
+        if shutil.which("ngrok") is None:
+            logger.warning("ngrok not found in PATH; tunnel disabled")
+            return None
+
+        self.process = await asyncio.create_subprocess_exec(
+            "ngrok",
+            "http",
+            self.target_addr,
+            "--log=stdout",
+            "--log-format=json",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        if self.process.stdout is None:
+            logger.warning("ngrok stdout unavailable; tunnel URL could not be determined")
+            return None
+
+        deadline = asyncio.get_event_loop().time() + timeout_seconds
+        while asyncio.get_event_loop().time() < deadline:
+            remaining = max(deadline - asyncio.get_event_loop().time(), 0.05)
+            try:
+                line = await asyncio.wait_for(self.process.stdout.readline(), timeout=remaining)
+            except asyncio.TimeoutError:
+                break
+
+            if not line:
+                break
+
+            text = line.decode("utf-8", errors="ignore").strip()
+            if not text:
+                continue
+
+            url = None
+            try:
+                payload = json.loads(text)
+                if isinstance(payload, dict):
+                    url = payload.get("url")
+                    if not url:
+                        nested = payload.get("obj")
+                        if isinstance(nested, dict):
+                            url = nested.get("url")
+            except json.JSONDecodeError:
+                pass
+
+            if isinstance(url, str) and url.startswith("https://"):
+                self.public_url = url
+                logger.info(f"ngrok tunnel ready: {url}")
+                return url
+
+        logger.warning("Timed out waiting for ngrok public URL")
+        return None
+
+    async def stop(self) -> None:
+        """Terminate ngrok process if running."""
+        if self.process is None:
+            return
+
+        if self.process.returncode is None:
+            self.process.terminate()
+            try:
+                await asyncio.wait_for(self.process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                self.process.kill()
+                with contextlib.suppress(Exception):
+                    await self.process.wait()
+
+        self.process = None
+
+
+def _print_multiplayer_join_hints(
+    ws_url: str,
+    tokens: Dict[str, Dict[str, str]],
+) -> None:
+    """Print host-local room/token join instructions."""
+    print("\npoor-cli multiplayer host is ready.", file=sys.stderr)
+    print(f"WebSocket endpoint: {ws_url}", file=sys.stderr)
+    print("", file=sys.stderr)
+    for room_name in sorted(tokens.keys()):
+        viewer_token = tokens[room_name].get("viewer", "")
+        prompter_token = tokens[room_name].get("prompter", "")
+        print(f"Room: {room_name}", file=sys.stderr)
+        print(f"  viewer token:   {viewer_token}", file=sys.stderr)
+        print(f"  prompter token: {prompter_token}", file=sys.stderr)
+        print(
+            f"  TUI join: poor-cli --remote-url {ws_url} --remote-room {room_name} --remote-token {prompter_token}",
+            file=sys.stderr,
+        )
+        print(
+            f"  Neovim: multiplayer={{ enabled=true, url='{ws_url}', room='{room_name}', token='{prompter_token}' }}",
+            file=sys.stderr,
+        )
+        print("", file=sys.stderr)
+
+
+async def _run_stdio_bridge(
+    url: str,
+    room: str,
+    token: str,
+) -> None:
+    """Run a stdio <-> WebSocket JSON-RPC bridge."""
+    try:
+        import aiohttp
+    except ImportError as e:
+        raise RuntimeError(
+            "Bridge mode requires aiohttp. Install dependencies with: pip install -r requirements.txt"
+        ) from e
+
+    io_server = PoorCLIServer()
+    logger.info(f"Starting stdio bridge to {url} (room={room})")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.ws_connect(url, heartbeat=30) as ws:
+            stdin_eof = asyncio.Event()
+
+            async def _ws_to_stdio() -> None:
+                async for message in ws:
+                    if message.type != aiohttp.WSMsgType.TEXT:
+                        if message.type in {
+                            aiohttp.WSMsgType.CLOSE,
+                            aiohttp.WSMsgType.CLOSING,
+                            aiohttp.WSMsgType.CLOSED,
+                        }:
+                            break
+                        continue
+
+                    try:
+                        payload = json.loads(message.data)
+                    except json.JSONDecodeError:
+                        logger.warning("Bridge received non-JSON websocket payload")
+                        continue
+
+                    if not isinstance(payload, dict):
+                        logger.warning("Bridge received non-object websocket payload")
+                        continue
+
+                    rpc_msg = JsonRpcMessage.from_dict(payload)
+                    await io_server.write_message_stdio(rpc_msg)
+
+            async def _stdio_to_ws() -> None:
+                while True:
+                    rpc_msg = await io_server.read_message_stdio()
+                    if rpc_msg is None:
+                        stdin_eof.set()
+                        break
+
+                    if rpc_msg.method == "initialize":
+                        params = dict(rpc_msg.params or {})
+                        params.setdefault("room", room)
+                        params.setdefault("inviteToken", token)
+                        params.setdefault("clientName", "stdio-bridge")
+                        rpc_msg.params = params
+
+                    await ws.send_str(rpc_msg.to_json())
+
+            ws_reader = asyncio.create_task(_ws_to_stdio(), name="poor-cli-bridge-ws-reader")
+            stdio_reader = asyncio.create_task(_stdio_to_ws(), name="poor-cli-bridge-stdio-reader")
+
+            try:
+                await stdio_reader
+
+                # Drain in-flight websocket responses/notifications briefly before shutdown.
+                if stdin_eof.is_set():
+                    drain_deadline = asyncio.get_event_loop().time() + 0.25
+                    while not ws_reader.done() and asyncio.get_event_loop().time() < drain_deadline:
+                        await asyncio.sleep(0.01)
+                    await ws.close()
+
+                await ws_reader
+            finally:
+                for task in (stdio_reader, ws_reader):
+                    if not task.done():
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await task
+
+
+async def _run_multiplayer_host(
+    bind_host: str,
+    port: int,
+    rooms: List[str],
+    permission_mode: str,
+    enable_ngrok: bool,
+) -> None:
+    """Run multiplayer WebSocket host mode."""
+    from .multiplayer import MultiplayerHost
+
+    host = MultiplayerHost(
+        bind_host=bind_host,
+        port=port,
+        room_names=rooms,
+        server_factory=PoorCLIServer,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+        default_permission_mode=permission_mode,
+    )
+
+    tunnel: Optional[NgrokTunnel] = None
+    await host.start()
+    base_ws_url = f"ws://{bind_host}:{port}/rpc"
+    _print_multiplayer_join_hints(base_ws_url, host.get_room_tokens())
+
+    if enable_ngrok:
+        tunnel = NgrokTunnel(f"{bind_host}:{port}")
+        public_https = await tunnel.start()
+        if public_https:
+            public_ws = public_https.replace("https://", "wss://", 1) + "/rpc"
+            _print_multiplayer_join_hints(public_ws, host.get_room_tokens())
+        else:
+            logger.warning("ngrok helper failed; host is still running on local interface")
+
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    finally:
+        await host.stop()
+        if tunnel is not None:
+            await tunnel.stop()
+
+
 def main() -> None:
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="PoorCLI JSON-RPC Server for editor integration")
     parser.add_argument("--stdio", action="store_true", help="Use stdio transport (for Neovim)")
+    parser.add_argument("--host", action="store_true", help="Run multiplayer WebSocket host mode")
+    parser.add_argument("--bind", default="127.0.0.1", help="Host bind address for --host mode")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Host port for --host mode (default: 8765)",
+    )
+    parser.add_argument(
+        "--room",
+        action="append",
+        default=[],
+        help="Multiplayer room name (repeatable in --host mode)",
+    )
+    parser.add_argument(
+        "--permission-mode",
+        default="prompt",
+        choices=[mode.value for mode in PermissionMode],
+        help="Default permission mode for multiplayer room engines",
+    )
+    parser.add_argument("--ngrok", action="store_true", help="Launch ngrok helper in --host mode")
+    parser.add_argument("--bridge", action="store_true", help="Run stdio <-> WebSocket bridge mode")
+    parser.add_argument("--url", help="WebSocket URL for --bridge mode (ws:// or wss://)")
+    parser.add_argument("--token", help="Invite token for --bridge mode")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
@@ -1684,9 +1940,34 @@ def main() -> None:
         stream=sys.stderr,  # Log to stderr to keep stdout clean for JSON-RPC
     )
 
-    server = PoorCLIServer()
+    if args.host and args.bridge:
+        raise SystemExit("Choose exactly one mode: either --host or --bridge (not both).")
 
-    # Stdio is the only supported transport.
+    if args.bridge:
+        if not args.url:
+            raise SystemExit("--bridge requires --url")
+        bridge_room = args.room[0] if args.room else ""
+        if not bridge_room:
+            raise SystemExit("--bridge requires --room <name>")
+        if not args.token:
+            raise SystemExit("--bridge requires --token")
+        asyncio.run(_run_stdio_bridge(args.url, bridge_room, args.token))
+        return
+
+    if args.host:
+        asyncio.run(
+            _run_multiplayer_host(
+                bind_host=args.bind,
+                port=args.port,
+                rooms=args.room,
+                permission_mode=args.permission_mode,
+                enable_ngrok=args.ngrok,
+            )
+        )
+        return
+
+    server = PoorCLIServer()
+    # Default mode remains stdio for backward compatibility.
     asyncio.run(server.run_stdio())
 
 
