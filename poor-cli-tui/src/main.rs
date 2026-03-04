@@ -1343,7 +1343,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
   /copy                Copy last assistant response to clipboard\n\
-  /host-server [arg]   Start/share host session (arg: room|status|stop)\n\
+  /host-server ...     Start/share/manage host session and members\n\
   /join-server <code>  Join host using invite code or url/room/token\n\
   /service ...         Manage local background services (start/stop/status/logs)\n\
   /ollama ...          Convenience wrapper for Ollama lifecycle/model commands\n\
@@ -3868,6 +3868,105 @@ fn format_host_server_payload(payload: &Value) -> String {
         }
         if !viewer_code.is_empty() {
             lines.push(format!("- Viewer invite code: `{viewer_code}`"));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn host_server_usage_text() -> &'static str {
+    "Usage: /host-server [room]\n\
+       /host-server status\n\
+       /host-server stop\n\
+       /host-server members [room]\n\
+       /host-server kick <connection-id> [room]\n\
+       /host-server role <connection-id> <viewer|prompter> [room]\n\
+       /host-server promote <connection-id> [room]\n\
+       /host-server demote <connection-id> [room]"
+}
+
+fn format_host_members_payload(payload: &Value) -> String {
+    let running = payload
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !running {
+        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+    }
+
+    let rooms = payload
+        .get("rooms")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if rooms.is_empty() {
+        return "No active rooms found on host.".to_string();
+    }
+
+    let mut lines = vec!["**Host Members**".to_string()];
+    for room in rooms {
+        let room_name = room
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let member_count = room
+            .get("memberCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        lines.push(String::new());
+        lines.push(format!("**Room `{room_name}`** ({member_count} member(s))"));
+
+        let members = room
+            .get("members")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if members.is_empty() {
+            lines.push("- No connected members".to_string());
+            continue;
+        }
+
+        for member in members {
+            let connection_id = member
+                .get("connectionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let role = member
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let client_name = member
+                .get("clientName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let active = member
+                .get("active")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let connected = member
+                .get("connected")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let joined_at = member
+                .get("joinedAt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let state = if connected { "connected" } else { "disconnected" };
+            let active_label = if active { ", active" } else { "" };
+            let name_label = if client_name.is_empty() {
+                String::new()
+            } else {
+                format!(" ({client_name})")
+            };
+
+            lines.push(format!(
+                "- `{connection_id}`{name_label}: **{role}** ({state}{active_label})"
+            ));
+            if !joined_at.is_empty() {
+                lines.push(format!("  joined: `{joined_at}`"));
+            }
         }
     }
 
