@@ -159,6 +159,32 @@ impl WatchState {
     }
 }
 
+#[derive(Default)]
+struct QaWatchState {
+    stop_flag: Option<Arc<AtomicBool>>,
+    handle: Option<thread::JoinHandle<()>>,
+    directory: Option<String>,
+    command: Option<String>,
+}
+
+impl QaWatchState {
+    fn is_running(&self) -> bool {
+        self.handle.is_some()
+    }
+
+    fn stop(&mut self) {
+        if let Some(flag) = &self.stop_flag {
+            flag.store(true, Ordering::SeqCst);
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+        self.stop_flag = None;
+        self.directory = None;
+        self.command = None;
+    }
+}
+
 type SessionLogWriter = Arc<Mutex<fs::File>>;
 
 #[derive(Clone)]
@@ -184,6 +210,11 @@ struct TaskItem {
     title: String,
     done: bool,
     created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProfileState {
+    name: String,
 }
 
 fn unix_ts_millis() -> u128 {
@@ -583,6 +614,15 @@ fn run_app(
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
     app.add_welcome();
+    if let Ok(Some(saved_profile)) = load_profile_state(&app) {
+        let _ = apply_execution_profile(
+            &mut app,
+            &rpc_cmd_tx,
+            &saved_profile.name,
+            false,
+        );
+    }
+    refresh_context_budget_state(&mut app);
     if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
     {
         app.push_message(ChatMessage::system(format!(
@@ -594,6 +634,7 @@ fn run_app(
 
     let cancel_token: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let mut watch_state = WatchState::default();
+    let mut qa_watch_state = QaWatchState::default();
 
     loop {
         terminal.draw(|f| ui::draw(f, &app))?;
@@ -852,6 +893,7 @@ fn run_app(
                         &launch,
                         &cancel_token,
                         &mut watch_state,
+                        &mut qa_watch_state,
                         &text,
                     ) {
                         break;
@@ -934,6 +976,7 @@ fn run_app(
     }
 
     watch_state.stop();
+    qa_watch_state.stop();
     let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
     write_session_log(session_log.as_ref(), "tui_session_end");
     Ok(app.session_summary_text())
@@ -948,6 +991,7 @@ fn handle_submit(
     launch: &BackendLaunchContext,
     cancel_token: &Arc<AtomicBool>,
     watch_state: &mut WatchState,
+    qa_watch_state: &mut QaWatchState,
     text: &str,
 ) -> bool {
     let trimmed = text.trim();
@@ -1036,6 +1080,7 @@ fn handle_submit(
             launch,
             cancel_token,
             watch_state,
+            qa_watch_state,
             trimmed,
         );
     }
@@ -1736,6 +1781,7 @@ fn handle_slash_command(
     launch: &BackendLaunchContext,
     cancel_token: &Arc<AtomicBool>,
     watch_state: &mut WatchState,
+    qa_watch_state: &mut QaWatchState,
     cmd: &str,
 ) -> bool {
     let raw = cmd.trim();
@@ -1814,10 +1860,14 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 **Utilities:**\n\
   !<command> [| question]  Run local bash and optionally ask about output\n\
   /doctor              Run environment/provider/service diagnostics\n\
+  /bootstrap           Detect project type and show solo quickstart\n\
   /focus ...           Manage persistent focus goal (`start|status|done`)\n\
   /resume              Summarize last session + branch/checkpoint state\n\
   /workspace-map [path] Build repository file/entrypoint map\n\
+  /context-budget [tokens] Rank and preview auto-selected context files\n\
   /autopilot ...       Toggle bounded autonomous execution mode\n\
+  /qa ...              Background incremental QA watch (`start|stop|status`)\n\
+  /profile ...         Apply execution profile (`speed|safe|deep-review`)\n\
   /tasks ...           Manage local task board (`add|done|drop|clear`)\n\
   /copy                Copy last assistant response to clipboard\n\
   /onboarding ...      Guided walkthrough of core commands\n\

@@ -120,8 +120,28 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: false,
     },
     SlashCommandSpec {
+        command: "/bootstrap",
+        description: "Detect project type and suggest quickstart commands",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/context-budget",
+        description: "Rank context files against a token budget",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/autopilot",
         description: "Toggle bounded autonomous execution mode",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/qa",
+        description: "Run background QA watch for lint/tests",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/profile",
+        description: "Set execution profile (speed|safe|deep-review)",
         recommended: false,
     },
     SlashCommandSpec {
