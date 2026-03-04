@@ -455,13 +455,18 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
             // Check mode switch
             if app.input_buffer.starts_with('/') {
                 app.mode = AppMode::Command;
+                app.command_match_index = 0;
             } else {
                 app.mode = AppMode::Normal;
+                app.command_match_index = 0;
             }
+            clamp_command_match_index(app);
             InputAction::Redraw
         }
         KeyCode::Delete => {
             app.delete_char();
+            app.command_match_index = 0;
+            clamp_command_match_index(app);
             InputAction::Redraw
         }
         KeyCode::Left => {
@@ -481,10 +486,16 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
             InputAction::Redraw
         }
         KeyCode::Up => {
+            if navigate_command_matches(app, false) {
+                return InputAction::Redraw;
+            }
             app.history_prev();
             InputAction::Redraw
         }
         KeyCode::Down => {
+            if navigate_command_matches(app, true) {
+                return InputAction::Redraw;
+            }
             app.history_next();
             InputAction::Redraw
         }
@@ -501,6 +512,7 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
             if app.input_buffer.starts_with('/') {
                 autocomplete_command(app);
             }
+            clamp_command_match_index(app);
             InputAction::Redraw
         }
         KeyCode::Esc => {
@@ -509,6 +521,7 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
                 app.input_cursor = 0;
                 app.mode = AppMode::Normal;
             }
+            app.command_match_index = 0;
             InputAction::Redraw
         }
         KeyCode::Char(c) => {
@@ -516,9 +529,12 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
             // Check if entering command mode
             if app.input_buffer.starts_with('/') {
                 app.mode = AppMode::Command;
+                app.command_match_index = 0;
             } else {
                 app.mode = AppMode::Normal;
+                app.command_match_index = 0;
             }
+            clamp_command_match_index(app);
             InputAction::Redraw
         }
         _ => InputAction::None,
