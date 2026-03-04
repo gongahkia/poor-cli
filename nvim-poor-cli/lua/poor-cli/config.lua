@@ -28,6 +28,14 @@ M.defaults = {
     provider = nil,
     model = nil,
     api_key_env = nil,
+
+    -- Multiplayer remote bridge mode
+    multiplayer = {
+        enabled = false,
+        url = nil,
+        room = nil,
+        token = nil,
+    },
     
     -- UI options
     chat_width = 60,

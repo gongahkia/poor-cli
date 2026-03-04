@@ -80,6 +80,30 @@ local function schedule_restart()
     )
 end
 
+-- Resolve the command used to start the backend server/bridge.
+function M.resolve_server_command()
+    local multiplayer = config.get("multiplayer") or {}
+    if type(multiplayer) == "table" and multiplayer.enabled then
+        local url = multiplayer.url
+        local room = multiplayer.room
+        local token = multiplayer.token
+        if not url or url == "" or not room or room == "" or not token or token == "" then
+            return nil, "multiplayer.enabled requires multiplayer.url, multiplayer.room, and multiplayer.token"
+        end
+        return {
+            "poor-cli-server",
+            "--bridge",
+            "--url",
+            url,
+            "--room",
+            room,
+            "--token",
+            token,
+        }
+    end
+    return config.get("server_cmd"), nil
+end
+
 -- Start the server
 function M.start(is_restart)
     if M.job_id then
@@ -90,9 +114,13 @@ function M.start(is_restart)
     clear_restart_timer()
     M.manual_stop = false
 
-    local cmd = config.get("server_cmd")
+    local cmd, err = M.resolve_server_command()
+    if not cmd then
+        vim.notify("[poor-cli] " .. (err or "Failed to resolve server command"), vim.log.levels.ERROR)
+        return nil
+    end
     if config.is_debug() then
-        vim.notify("[poor-cli] Starting server: " .. cmd, vim.log.levels.DEBUG)
+        vim.notify("[poor-cli] Starting server: " .. vim.inspect(cmd), vim.log.levels.DEBUG)
     end
 
     M.job_id = vim.fn.jobstart(cmd, {

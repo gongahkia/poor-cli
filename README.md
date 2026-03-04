@@ -49,6 +49,7 @@ $ ./run_tui.sh
 $ python -m poor_cli         # wrapper that launches the Rust TUI
 $ pip install -e .
 $ poor-cli                   # wrapper that launches the Rust TUI
+$ poor-cli --remote-url ws://127.0.0.1:8765/rpc --remote-room dev --remote-token <token>
 $ ./uninstall.sh
 ```
 
@@ -81,6 +82,56 @@ $ docker run -it --env-file .env poor-cli
     end,
 }
 ```
+
+## Multiplayer (LAN / Tunnel)
+
+`poor-cli-server` can run in multiplayer WebSocket host mode with room-scoped
+invite tokens and role permissions (`viewer` or `prompter`).
+
+### Start host (LAN)
+
+```console
+$ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev --room docs
+```
+
+The host prints:
+- room names
+- viewer/prompter tokens per room
+- ready-to-run join command examples
+
+### Optional ngrok helper
+
+```console
+$ poor-cli-server --host --bind 127.0.0.1 --port 8765 --room dev --ngrok
+```
+
+If `ngrok` is available in PATH, the host also prints `wss://.../rpc` join URLs.
+If ngrok is unavailable/fails, local hosting continues normally.
+
+### Join from TUI
+
+```console
+$ poor-cli --remote-url ws://HOST:8765/rpc --remote-room dev --remote-token <prompter-or-viewer-token>
+```
+
+### Join from Neovim
+
+```lua
+require("poor-cli").setup({
+    multiplayer = {
+        enabled = true,
+        url = "ws://HOST:8765/rpc",
+        room = "dev",
+        token = "<prompter-or-viewer-token>",
+    },
+})
+```
+
+### Tunnel alternatives
+
+You can use cloudflared, Tailscale funnel, or any reverse tunnel/provider.
+Expose the host `/rpc` endpoint and pass the resulting `ws://` or `wss://` URL
+to `--remote-url` / `multiplayer.url`.
 
 ## Available Commands
 
