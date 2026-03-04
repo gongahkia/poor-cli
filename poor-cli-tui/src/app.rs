@@ -193,6 +193,7 @@ pub struct App {
     // ── Command history ───
     pub command_history: VecDeque<String>,
     pub history_index: Option<usize>,
+    pub command_match_index: usize,
 
     // ── Permission prompt state ───
     pub permission_message: String,
@@ -264,6 +265,7 @@ impl Default for App {
             wait_start: None,
             command_history: VecDeque::with_capacity(100),
             history_index: None,
+            command_match_index: 0,
             permission_message: String::new(),
             permission_answer: None,
             permission_prompt_id: String::new(),
@@ -454,6 +456,7 @@ impl App {
         self.input_buffer.clear();
         self.input_cursor = 0;
         self.history_index = None;
+        self.command_match_index = 0;
 
         // Save to history
         if !text.is_empty() {
@@ -470,6 +473,7 @@ impl App {
         if self.command_history.is_empty() {
             return;
         }
+        self.command_match_index = 0;
         let idx = match self.history_index {
             None => 0,
             Some(i) => (i + 1).min(self.command_history.len() - 1),
@@ -483,6 +487,7 @@ impl App {
 
     /// Navigate to the next history entry.
     pub fn history_next(&mut self) {
+        self.command_match_index = 0;
         match self.history_index {
             None => {}
             Some(0) => {

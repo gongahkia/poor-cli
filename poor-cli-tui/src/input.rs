@@ -311,6 +311,37 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     },
 ];
 
+pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
+    let trimmed = prefix.trim();
+    if !trimmed.starts_with('/') {
+        return Vec::new();
+    }
+
+    if trimmed == "/" {
+        return SLASH_COMMANDS
+            .iter()
+            .filter(|spec| spec.recommended)
+            .collect();
+    }
+
+    SLASH_COMMANDS
+        .iter()
+        .filter(|spec| spec.command.starts_with(trimmed))
+        .collect()
+}
+
+fn visible_command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
+    command_palette_matches(prefix).into_iter().take(8).collect()
+}
+
+fn command_completion_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
+    let trimmed = prefix.trim();
+    command_palette_matches(trimmed)
+        .into_iter()
+        .filter(|spec| spec.command != trimmed)
+        .collect()
+}
+
 /// Process a crossterm event and update app state.
 pub fn handle_event(app: &mut App, event: Event) -> InputAction {
     match event {
