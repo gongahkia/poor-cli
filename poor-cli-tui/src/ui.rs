@@ -11,7 +11,7 @@
 /// └───────────────────────────────────────────┘
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
     Frame,
@@ -183,9 +183,10 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 // ── Chat area ────────────────────────────────────────────────────────
 
 fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
     if app.messages.is_empty() {
         let empty = Paragraph::new("Start typing to begin a conversation...")
-            .style(Style::default().fg(Color::DarkGray))
+            .style(Style::default().fg(theme::muted_fg(mode)))
             .block(
                 Block::default()
                     .borders(Borders::NONE)
@@ -204,24 +205,24 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         match &msg.role {
             MessageRole::User => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ● ", Style::default().fg(theme::USER_COLOR)),
-                    Span::styled("You", theme::user_label_style()),
+                    Span::styled("  ● ", Style::default().fg(theme::user_color(mode))),
+                    Span::styled("You", theme::user_label_style(mode)),
                 ]));
                 // Render user content with simple wrapping
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(Span::styled(
                         format!("    {line}"),
-                        Style::default().fg(Color::White),
+                        Style::default().fg(theme::base_fg(mode)),
                     )));
                 }
             }
             MessageRole::Assistant => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ● ", Style::default().fg(theme::ASSISTANT_COLOR)),
-                    Span::styled("Assistant", theme::assistant_label_style()),
+                    Span::styled("  ● ", Style::default().fg(theme::assistant_color(mode))),
+                    Span::styled("Assistant", theme::assistant_label_style(mode)),
                 ]));
                 // Render assistant content as markdown
-                let md_lines = markdown::render_markdown(&msg.content);
+                let md_lines = markdown::render_markdown(&msg.content, mode);
                 for ml in md_lines {
                     let mut padded_spans: Vec<Span<'static>> = vec![Span::raw("    ".to_string())];
                     padded_spans.extend(ml.spans);
@@ -230,43 +231,43 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
             }
             MessageRole::System => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ◆ ", Style::default().fg(theme::SYSTEM_COLOR)),
+                    Span::styled("  ◆ ", Style::default().fg(theme::system_color(mode))),
                     Span::styled(
                         "System",
                         Style::default()
-                            .fg(theme::SYSTEM_COLOR)
+                            .fg(theme::system_color(mode))
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]));
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(Span::styled(
                         format!("    {line}"),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(theme::muted_fg(mode)),
                     )));
                 }
             }
             MessageRole::ToolCall { name } => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ┌─ ", theme::tool_border_style()),
-                    Span::styled(name.clone(), theme::tool_title_style()),
-                    Span::styled(" ──────────────", theme::tool_border_style()),
+                    Span::styled("  ┌─ ", theme::tool_border_style(mode)),
+                    Span::styled(name.clone(), theme::tool_title_style(mode)),
+                    Span::styled(" ──────────────", theme::tool_border_style(mode)),
                 ]));
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style()),
-                        Span::styled(line.to_string(), Style::default().fg(Color::DarkGray)),
+                        Span::styled("  │ ", theme::tool_border_style(mode)),
+                        Span::styled(line.to_string(), Style::default().fg(theme::muted_fg(mode))),
                     ]));
                 }
                 all_lines.push(Line::from(Span::styled(
                     "  └────────────────────",
-                    theme::tool_border_style(),
+                    theme::tool_border_style(mode),
                 )));
             }
             MessageRole::ToolResult { name } => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ┌─ ", theme::tool_border_style()),
-                    Span::styled(format!("{name} result"), theme::tool_title_style()),
-                    Span::styled(" ─────", theme::tool_border_style()),
+                    Span::styled("  ┌─ ", theme::tool_border_style(mode)),
+                    Span::styled(format!("{name} result"), theme::tool_title_style(mode)),
+                    Span::styled(" ─────", theme::tool_border_style(mode)),
                 ]));
                 // Truncate long tool output
                 let content = if msg.content.len() > 500 {
@@ -276,69 +277,69 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                 };
                 for line in content.lines().take(15) {
                     all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style()),
-                        Span::styled(line.to_string(), Style::default().fg(Color::DarkGray)),
+                        Span::styled("  │ ", theme::tool_border_style(mode)),
+                        Span::styled(line.to_string(), Style::default().fg(theme::muted_fg(mode))),
                     ]));
                 }
                 if msg.content.lines().count() > 15 {
                     all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style()),
+                        Span::styled("  │ ", theme::tool_border_style(mode)),
                         Span::styled(
                             "... (truncated)".to_string(),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(theme::muted_fg(mode)),
                         ),
                     ]));
                 }
                 all_lines.push(Line::from(Span::styled(
                     "  └────────────────────",
-                    theme::tool_border_style(),
+                    theme::tool_border_style(mode),
                 )));
             }
             MessageRole::DiffView { name } => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ┌─ ", theme::tool_border_style()),
-                    Span::styled(format!("{name} diff"), theme::tool_title_style()),
-                    Span::styled(" ─────", theme::tool_border_style()),
+                    Span::styled("  ┌─ ", theme::tool_border_style(mode)),
+                    Span::styled(format!("{name} diff"), theme::tool_title_style(mode)),
+                    Span::styled(" ─────", theme::tool_border_style(mode)),
                 ]));
                 for line in msg.content.lines().take(40) {
                     let (prefix, style) = if line.starts_with('+') && !line.starts_with("+++") {
-                        ("  │+", Style::default().fg(Color::Green))
+                        ("  │+", Style::default().fg(theme::success(mode)))
                     } else if line.starts_with('-') && !line.starts_with("---") {
-                        ("  │-", Style::default().fg(Color::Red))
+                        ("  │-", Style::default().fg(theme::error(mode)))
                     } else if line.starts_with("@@") {
-                        ("  │ ", Style::default().fg(Color::Cyan))
+                        ("  │ ", Style::default().fg(theme::accent(mode)))
                     } else {
-                        ("  │ ", Style::default().fg(Color::DarkGray))
+                        ("  │ ", Style::default().fg(theme::muted_fg(mode)))
                     };
                     all_lines.push(Line::from(vec![
-                        Span::styled(prefix.to_string(), theme::tool_border_style()),
+                        Span::styled(prefix.to_string(), theme::tool_border_style(mode)),
                         Span::styled(line.to_string(), style),
                     ]));
                 }
                 if msg.content.lines().count() > 40 {
                     all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style()),
+                        Span::styled("  │ ", theme::tool_border_style(mode)),
                         Span::styled(
                             "... (truncated)".to_string(),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(theme::muted_fg(mode)),
                         ),
                     ]));
                 }
                 all_lines.push(Line::from(Span::styled(
                     "  └────────────────────",
-                    theme::tool_border_style(),
+                    theme::tool_border_style(mode),
                 )));
             }
             MessageRole::Error => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ⚠ ", Style::default().fg(theme::ERROR)),
-                    Span::styled("Error", theme::error_style()),
+                    Span::styled("  ⚠ ", Style::default().fg(theme::error(mode))),
+                    Span::styled("Error", theme::error_style(mode)),
                 ]));
                 let wrap_width = area.width.saturating_sub(8).max(20) as usize;
                 for line in wrap_text_lines(&msg.content, wrap_width) {
                     all_lines.push(Line::from(Span::styled(
                         format!("    {line}"),
-                        Style::default().fg(theme::ERROR),
+                        Style::default().fg(theme::error(mode)),
                     )));
                 }
             }
@@ -424,19 +425,20 @@ mod tests {
 // ── Input bar ────────────────────────────────────────────────────────
 
 fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
     if app.waiting {
         let prompt_spans = vec![
             Span::styled("  ", Style::default()),
-            Span::styled(app.spinner_frame(), theme::spinner_style()),
+            Span::styled(app.spinner_frame(), theme::spinner_style(mode)),
             Span::styled(
                 " Waiting for response... ",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme::muted_fg(mode)),
             ),
         ];
         let input = Paragraph::new(Line::from(prompt_spans)).block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(Color::Rgb(50, 50, 70)))
+                .border_style(Style::default().fg(theme::input_border_color(mode)))
                 .padding(Padding::new(0, 0, 0, 0)),
         );
         frame.render_widget(input, area);
@@ -459,16 +461,16 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(
                     prefix.to_string(),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(theme::accent(mode))
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(part.to_string(), theme::input_style()),
+                Span::styled(part.to_string(), theme::input_style(mode)),
             ]));
         }
         let input = Paragraph::new(lines).block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(Color::Rgb(50, 50, 70))),
+                .border_style(Style::default().fg(theme::input_border_color(mode))),
         );
         frame.render_widget(input, area);
     } else {
@@ -477,15 +479,15 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(
                 "❯ ",
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme::accent(mode))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(app.input_buffer.clone(), theme::input_style()),
-            Span::styled("█", theme::input_cursor_style()),
+            Span::styled(app.input_buffer.clone(), theme::input_style(mode)),
+            Span::styled("█", theme::input_cursor_style(mode)),
             if app.input_buffer.is_empty() {
                 Span::styled(
                     format!(" Type your message ({})...", provider_short.to_uppercase()),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme::muted_fg(mode)),
                 )
             } else {
                 Span::raw("")
@@ -494,7 +496,7 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
         let input = Paragraph::new(Line::from(prompt_spans)).block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(Color::Rgb(50, 50, 70)))
+                .border_style(Style::default().fg(theme::input_border_color(mode)))
                 .padding(Padding::new(0, 0, 0, 0)),
         );
         frame.render_widget(input, area);
@@ -504,10 +506,11 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
 // ── Hint bar ─────────────────────────────────────────────────────────
 
 fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
     let spans = if let Some((status, _)) = &app.status_message {
         vec![Span::styled(
             format!("  {status}"),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(theme::warning(mode)),
         )]
     } else if app.mode == AppMode::Command {
         // Show matching commands
@@ -520,33 +523,34 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             }
             spans.push(Span::styled(
                 m.command.to_string(),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme::muted_fg(mode)),
             ));
         }
         spans
     } else {
         vec![
-            Span::styled("  /help", Style::default().fg(Color::DarkGray)),
-            Span::styled("  /quit", Style::default().fg(Color::DarkGray)),
-            Span::styled("  /switch", Style::default().fg(Color::DarkGray)),
-            Span::styled("  Ctrl+C", Style::default().fg(Color::DarkGray)),
-            Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Esc", Style::default().fg(Color::DarkGray)),
-            Span::styled(": cancel  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Alt+↵", Style::default().fg(Color::DarkGray)),
-            Span::styled(": newline  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("PgUp/PgDn", Style::default().fg(Color::DarkGray)),
-            Span::styled(": scroll  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("↑↓", Style::default().fg(Color::DarkGray)),
-            Span::styled(": history", Style::default().fg(Color::DarkGray)),
+            Span::styled("  /help", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  /quit", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  /switch", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  Ctrl+C", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": cancel  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": cancel  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Alt+↵", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": newline  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": history", Style::default().fg(theme::muted_fg(mode))),
         ]
     };
 
-    let hint = Paragraph::new(Line::from(spans)).style(Style::default().fg(Color::DarkGray));
+    let hint = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));
     frame.render_widget(hint, area);
 }
 
 fn draw_command_palette(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
     if app.waiting || !app.input_buffer.starts_with('/') {
         return;
     }
@@ -586,15 +590,15 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
         .iter()
         .map(|spec| {
             let desc_style = if spec.recommended {
-                Style::default().fg(Color::Cyan)
+                Style::default().fg(theme::accent(mode))
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(theme::muted_fg(mode))
             };
             ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("{:<14}", spec.command),
                     Style::default()
-                        .fg(Color::White)
+                        .fg(theme::base_fg(mode))
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(spec.description.to_string(), desc_style),
@@ -613,11 +617,11 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
             .title(Span::styled(
                 title,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme::accent(mode))
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Rgb(60, 70, 95))),
+            .border_style(Style::default().fg(theme::input_border_color(mode))),
     );
     frame.render_widget(list, area);
 }
@@ -632,6 +636,7 @@ fn matching_commands(prefix: &str) -> Vec<&'static SlashCommandSpec> {
 // ── Provider select overlay ──────────────────────────────────────────
 
 fn draw_provider_select(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
     let area = centered_rect(50, 60, frame.area());
     frame.render_widget(Clear, area);
 
@@ -653,12 +658,12 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
             };
             let style = if i == app.provider_select_idx {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme::accent(mode))
                     .add_modifier(Modifier::BOLD)
             } else if p.available {
-                Style::default().fg(Color::White)
+                Style::default().fg(theme::base_fg(mode))
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(theme::muted_fg(mode))
             };
 
             let local_tag = if p.name.to_lowercase() == "ollama" {
@@ -679,11 +684,11 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
             .title(Span::styled(
                 " Switch Provider ",
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme::accent(mode))
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(Style::default().fg(theme::accent(mode)))
             .padding(Padding::new(1, 1, 1, 1)),
     );
     frame.render_widget(list, area);
@@ -692,6 +697,7 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
 // ── Permission prompt overlay ────────────────────────────────────────
 
 fn draw_permission_prompt(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
     let area = centered_rect(60, 30, frame.area());
     frame.render_widget(Clear, area);
 
@@ -700,29 +706,31 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
         Line::from(Span::styled(
             "  ⚠  Permission Required",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(theme::warning(mode))
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
             format!("  {}", app.permission_message),
-            Style::default().fg(Color::White),
+            Style::default().fg(theme::base_fg(mode)),
         )),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Press ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(
                 "y",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(theme::success(mode))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" to allow, ", Style::default().fg(Color::DarkGray)),
+            Span::styled(" to allow, ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(
                 "n",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::error(mode))
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" to deny", Style::default().fg(Color::DarkGray)),
+            Span::styled(" to deny", Style::default().fg(theme::muted_fg(mode))),
         ]),
         Line::from(""),
     ];
@@ -730,7 +738,7 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
     let para = Paragraph::new(text).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow))
+            .border_style(Style::default().fg(theme::warning(mode)))
             .padding(Padding::new(0, 0, 0, 0)),
     );
     frame.render_widget(para, area);
@@ -739,6 +747,7 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
 // ── Plan review overlay ──────────────────────────────────────────────
 
 fn draw_plan_review(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
 
@@ -747,7 +756,7 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
         Line::from(Span::styled(
             "  📋 Plan Review",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme::accent(mode))
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
@@ -760,16 +769,20 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
                     (
                         "▸ ",
                         Style::default()
-                            .fg(Color::White)
+                            .fg(theme::base_fg(mode))
                             .add_modifier(Modifier::BOLD),
                     )
                 } else {
-                    ("  ", Style::default().fg(Color::DarkGray))
+                    ("  ", Style::default().fg(theme::muted_fg(mode)))
                 }
             }
-            crate::app::PlanStepStatus::Running => ("⠋ ", Style::default().fg(Color::Cyan)),
-            crate::app::PlanStepStatus::Done => ("✓ ", Style::default().fg(Color::Green)),
-            crate::app::PlanStepStatus::Skipped => ("✗ ", Style::default().fg(Color::DarkGray)),
+            crate::app::PlanStepStatus::Running => {
+                ("⠋ ", Style::default().fg(theme::accent(mode)))
+            }
+            crate::app::PlanStepStatus::Done => ("✓ ", Style::default().fg(theme::success(mode))),
+            crate::app::PlanStepStatus::Skipped => {
+                ("✗ ", Style::default().fg(theme::muted_fg(mode)))
+            }
         };
         lines.push(Line::from(Span::styled(
             format!("  {marker}{}", step.description),
@@ -779,26 +792,28 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("  Press ", Style::default().fg(Color::DarkGray)),
+        Span::styled("  Press ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(
             "Enter",
             Style::default()
-                .fg(Color::Green)
+                .fg(theme::success(mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" to execute, ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" to execute, ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(
             "Esc",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::error(mode))
+                .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" to cancel", Style::default().fg(Color::DarkGray)),
+        Span::styled(" to cancel", Style::default().fg(theme::muted_fg(mode))),
     ]));
     lines.push(Line::from(""));
 
     let para = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(Style::default().fg(theme::accent(mode)))
             .padding(Padding::new(0, 0, 0, 0)),
     );
     frame.render_widget(para, area);

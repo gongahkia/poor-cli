@@ -1,5 +1,5 @@
 /// Entry point for the poor-cli Rust TUI.
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use crossterm::{
 use ratatui::prelude::*;
 use serde_json::Value;
 
-use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode};
+use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
 use poor_cli_tui::input::{self, InputAction};
 use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
 use poor_cli_tui::ui;
@@ -341,6 +341,11 @@ fn run_app(
                     app.server_connected = true;
                     app.is_local_provider = app.provider_name == "ollama";
                     app.update_welcome();
+                    if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx) {
+                        if let Some(raw_theme) = cfg.get("theme").and_then(|v| v.as_str()) {
+                            app.theme_mode = ThemeMode::from_ui_theme(raw_theme);
+                        }
+                    }
                     app.set_status("Connected to Python backend");
                 }
                 ServerMsg::ChatResponse { content } => {
@@ -586,7 +591,13 @@ fn handle_submit(
         return handle_slash_command(app, tx, rpc_cmd_tx, cancel_token, watch_state, trimmed);
     }
 
-    let backend_with_files = with_context_files(app, trimmed);
+    let backend_with_files = match with_context_files(app, trimmed) {
+        Ok(message) => message,
+        Err(error_message) => {
+            app.push_message(ChatMessage::error(error_message));
+            return false;
+        }
+    };
     let backend_message = with_pending_images(app, &backend_with_files);
     let backend_message = apply_response_mode_to_user_input(app.response_mode, &backend_message);
     send_chat_request(
@@ -670,18 +681,81 @@ const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
 const MAX_CONTEXT_BYTES_PER_FILE: usize = 32_000;
 const MAX_CONTEXT_TOTAL_BYTES: usize = 180_000;
 
-fn with_context_files(app: &mut App, message: &str) -> String {
-    let inline_specs = extract_at_references(message);
-    let mut specs = inline_specs.clone();
-    specs.extend(app.pinned_context_files.clone());
+fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
+    let inline_specs = extract_at_references(message)?;
 
-    if specs.is_empty() {
-        return message.to_string();
+    let mut resolved = Vec::<PathBuf>::new();
+    let mut seen_paths = HashSet::<String>::new();
+    let mut unresolved_refs = Vec::<String>::new();
+    let mut ambiguous_refs = Vec::<String>::new();
+
+    for spec in &inline_specs {
+        let matches = resolve_context_spec(app, spec);
+        if matches.is_empty() {
+            unresolved_refs.push(spec.clone());
+            continue;
+        }
+
+        if matches.len() > 1 {
+            let preview = matches
+                .iter()
+                .take(3)
+                .map(|path| format!("`{}`", display_project_path(app, path)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            ambiguous_refs.push(format!("`{spec}` -> {preview}"));
+            continue;
+        }
+
+        let path = matches[0].clone();
+        let key = path.to_string_lossy().to_string();
+        if seen_paths.insert(key) {
+            resolved.push(path);
+        }
     }
 
-    let resolved = resolve_context_specs(app, &specs, MAX_CONTEXT_FILES_PER_REQUEST);
+    if !unresolved_refs.is_empty() || !ambiguous_refs.is_empty() {
+        let mut lines = vec!["Cannot send message because one or more `@` references are invalid.".to_string()];
+        if !unresolved_refs.is_empty() {
+            lines.push(format!(
+                "Unresolved: {}",
+                unresolved_refs
+                    .iter()
+                    .map(|spec| format!("`@{spec}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !ambiguous_refs.is_empty() {
+            lines.push(format!(
+                "Ambiguous: {}",
+                ambiguous_refs.join(" ; ")
+            ));
+            lines.push("Use a more specific path (or quote it) so each `@` maps to exactly one file.".to_string());
+        }
+        lines.push("Tip: paths with spaces must be quoted like `@\"docs/My File.md\"`.".to_string());
+        return Err(lines.join("\n"));
+    }
+
+    if !app.pinned_context_files.is_empty() {
+        let pinned_resolved = resolve_context_specs(
+            app,
+            &app.pinned_context_files,
+            MAX_CONTEXT_FILES_PER_REQUEST,
+        );
+        for path in pinned_resolved {
+            if resolved.len() >= MAX_CONTEXT_FILES_PER_REQUEST {
+                break;
+            }
+            let key = path.to_string_lossy().to_string();
+            if seen_paths.insert(key) {
+                resolved.push(path);
+            }
+        }
+    }
+
     if resolved.is_empty() {
-        return message.to_string();
+        return Ok(message.to_string());
     }
 
     let mut total_bytes = 0usize;
@@ -723,7 +797,7 @@ fn with_context_files(app: &mut App, message: &str) -> String {
     }
 
     if sections.is_empty() {
-        return message.to_string();
+        return Ok(message.to_string());
     }
 
     let attached_summary = attached
@@ -745,40 +819,105 @@ fn with_context_files(app: &mut App, message: &str) -> String {
         ));
     }
 
-    format!(
+    Ok(format!(
         "{message}\n\nReferenced project files:\n\n{}",
         sections.join("\n\n")
-    )
+    ))
 }
 
-fn extract_at_references(message: &str) -> Vec<String> {
+fn extract_at_references(message: &str) -> Result<Vec<String>, String> {
     let mut seen = HashSet::new();
     let mut refs = Vec::new();
+    let mut parse_errors = Vec::new();
+    let chars: Vec<char> = message.chars().collect();
+    let mut idx = 0usize;
 
-    for token in message.split_whitespace() {
-        if !token.starts_with('@') || token.len() <= 1 {
+    while idx < chars.len() {
+        if chars[idx] != '@' {
+            idx += 1;
             continue;
         }
 
-        let spec = token[1..]
-            .trim_matches(|c: char| {
-                matches!(
-                    c,
-                    '"' | '\'' | '`' | ',' | ';' | ':' | ')' | ']' | '}' | '(' | '[' | '{'
-                )
-            })
-            .trim();
-        if spec.is_empty() {
+        if !is_reference_boundary(idx.checked_sub(1).and_then(|i| chars.get(i).copied())) {
+            idx += 1;
             continue;
         }
 
-        let spec_owned = spec.to_string();
-        if seen.insert(spec_owned.clone()) {
-            refs.push(spec_owned);
+        let next_idx = idx + 1;
+        if next_idx >= chars.len() || chars[next_idx].is_whitespace() {
+            idx += 1;
+            continue;
         }
+
+        if chars[next_idx] == '"' || chars[next_idx] == '\'' {
+            let quote = chars[next_idx];
+            let mut end_idx = next_idx + 1;
+            while end_idx < chars.len() && chars[end_idx] != quote {
+                end_idx += 1;
+            }
+            if end_idx >= chars.len() {
+                parse_errors.push("unterminated quoted @ reference".to_string());
+                break;
+            }
+
+            let spec = chars[next_idx + 1..end_idx]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string();
+            if spec.is_empty() {
+                parse_errors.push("empty quoted @ reference".to_string());
+            } else if seen.insert(spec.clone()) {
+                refs.push(spec);
+            }
+
+            idx = end_idx + 1;
+            continue;
+        }
+
+        let mut end_idx = next_idx;
+        while end_idx < chars.len() && is_unquoted_reference_char(chars[end_idx]) {
+            end_idx += 1;
+        }
+
+        let spec = chars[next_idx..end_idx]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string();
+        if !spec.is_empty() && seen.insert(spec.clone()) {
+            refs.push(spec);
+        }
+
+        idx = if end_idx > idx { end_idx } else { idx + 1 };
     }
 
-    refs
+    if parse_errors.is_empty() {
+        Ok(refs)
+    } else {
+        Err(format!(
+            "Invalid @ reference syntax: {}",
+            parse_errors.join("; ")
+        ))
+    }
+}
+
+fn is_reference_boundary(previous: Option<char>) -> bool {
+    match previous {
+        None => true,
+        Some(ch) => {
+            ch.is_whitespace()
+                || matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '<')
+        }
+    }
+}
+
+fn is_unquoted_reference_char(ch: char) -> bool {
+    !ch.is_whitespace()
+        && !matches!(
+            ch,
+            '"' | '\'' | '`' | ',' | ';' | ':' | ')' | ']' | '}' | '(' | '[' | '{'
+        )
 }
 
 fn resolve_context_specs(app: &App, specs: &[String], limit: usize) -> Vec<PathBuf> {
@@ -821,23 +960,26 @@ fn resolve_context_spec(app: &App, spec: &str) -> Vec<PathBuf> {
 }
 
 fn collect_directory_files(root: &Path, limit: usize) -> Vec<PathBuf> {
-    let mut stack = vec![root.to_path_buf()];
+    let mut queue = VecDeque::from([root.to_path_buf()]);
     let mut files = Vec::new();
 
-    while let Some(dir) = stack.pop() {
+    while let Some(dir) = queue.pop_front() {
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(_) => continue,
         };
 
-        for entry in entries.flatten() {
+        let mut sorted_entries = entries.flatten().collect::<Vec<_>>();
+        sorted_entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+        for entry in sorted_entries {
             let path = entry.path();
             if path.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if should_skip_dir(&name) {
                     continue;
                 }
-                stack.push(path);
+                queue.push_back(path);
                 continue;
             }
 
@@ -854,24 +996,27 @@ fn collect_directory_files(root: &Path, limit: usize) -> Vec<PathBuf> {
 }
 
 fn find_suffix_matches(root: &Path, suffix: &str, limit: usize) -> Vec<PathBuf> {
-    let mut stack = vec![root.to_path_buf()];
+    let mut queue = VecDeque::from([root.to_path_buf()]);
     let mut matches = Vec::new();
     let normalized = suffix.trim_start_matches("./");
 
-    while let Some(dir) = stack.pop() {
+    while let Some(dir) = queue.pop_front() {
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(_) => continue,
         };
 
-        for entry in entries.flatten() {
+        let mut sorted_entries = entries.flatten().collect::<Vec<_>>();
+        sorted_entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+        for entry in sorted_entries {
             let path = entry.path();
             if path.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if should_skip_dir(&name) {
                     continue;
                 }
-                stack.push(path);
+                queue.push_back(path);
                 continue;
             }
 

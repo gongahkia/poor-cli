@@ -145,6 +145,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: false,
     },
     SlashCommandSpec {
+        command: "/theme",
+        description: "Show or set UI theme (dark/light)",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/tools",
         description: "List backend tools",
         recommended: false,

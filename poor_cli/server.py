@@ -613,6 +613,7 @@ class PoorCLIServer:
         return {
             "provider": provider_info.get("name", "unknown"),
             "model": provider_info.get("model", "unknown"),
+            "theme": config.ui.theme,
             "streaming": config.ui.enable_streaming,
             "showTokenCount": config.ui.show_token_count,
             "markdownRendering": config.ui.markdown_rendering,
