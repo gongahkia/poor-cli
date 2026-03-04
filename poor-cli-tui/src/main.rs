@@ -2153,18 +2153,22 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 
     if lowered == "/broke" {
         app.response_mode = ResponseMode::Poor;
-        app.push_message(ChatMessage::system(
+        show_command_info_popup(
+            app,
+            raw,
             "Response mode set to **poor**.\nReplies will be terse and token-minimal.".to_string(),
-        ));
+        );
         return false;
     }
 
     if lowered == "/my-treat" {
         app.response_mode = ResponseMode::Rich;
-        app.push_message(ChatMessage::system(
+        show_command_info_popup(
+            app,
+            raw,
             "Response mode set to **rich**.\nReplies will prioritize completeness and quality."
                 .to_string(),
-        ));
+        );
         return false;
     }
 
@@ -2528,17 +2532,18 @@ Version: v{}",
     if lowered.starts_with("/toggle ") {
         let key = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if key.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /toggle <key>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /toggle <key>".to_string());
             return false;
         }
 
         match rpc_toggle_config_blocking(rpc_cmd_tx, key) {
             Ok(result) => {
                 let value = result.get("value").cloned().unwrap_or(Value::Null);
-                app.push_message(ChatMessage::system(format!(
-                    "Toggled `{key}` to `{}`",
-                    format_value_for_display(&value)
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Toggled `{key}` to `{}`", format_value_for_display(&value)),
+                );
             }
             Err(e) => {
                 app.push_message(ChatMessage::error(format!("Failed to toggle `{key}`: {e}")))
@@ -2554,7 +2559,7 @@ Version: v{}",
         let raw_value = parts.next().unwrap_or("").trim();
 
         if key.is_empty() || raw_value.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /set <key> <value>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /set <key> <value>".to_string());
             return false;
         }
 
@@ -2569,10 +2574,11 @@ Version: v{}",
                         app.theme_mode = ThemeMode::from_ui_theme(raw_value);
                     }
                 }
-                app.push_message(ChatMessage::system(format!(
-                    "Updated `{key}` = `{}`",
-                    format_value_for_display(&value)
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Updated `{key}` = `{}`", format_value_for_display(&value)),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to set `{key}`: {e}"))),
         }
@@ -2611,10 +2617,11 @@ Version: v{}",
                     .and_then(|v| v.as_str())
                     .unwrap_or(theme_mode.as_str());
                 app.theme_mode = ThemeMode::from_ui_theme(applied);
-                app.push_message(ChatMessage::system(format!(
-                    "Theme set to **{}**.",
-                    app.theme_mode.as_str()
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Theme set to **{}**.", app.theme_mode.as_str()),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to set theme: {e}"))),
         }
@@ -2633,7 +2640,7 @@ Version: v{}",
                 } else {
                     "Verbose logging disabled (only WARNING/ERROR messages will be shown)"
                 };
-                app.push_message(ChatMessage::system(message.to_string()));
+                show_command_info_popup(app, raw, message.to_string());
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to toggle verbose logging: {e}"
@@ -2654,7 +2661,7 @@ Version: v{}",
                 } else {
                     "Plan mode disabled (direct execution)"
                 };
-                app.push_message(ChatMessage::system(message.to_string()));
+                show_command_info_popup(app, raw, message.to_string());
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to toggle plan mode: {e}"
@@ -2682,9 +2689,11 @@ Version: v{}",
                 "security.permission_mode",
                 Value::String(normalized.clone()),
             ) {
-                Ok(_) => app.push_message(ChatMessage::system(format!(
-                    "Permission mode set to **{normalized}**"
-                ))),
+                Ok(_) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Permission mode set to **{normalized}**"),
+                ),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to set permission mode: {e}"
                 ))),
@@ -2910,9 +2919,7 @@ Context Window: {max_context} tokens\n\n\
                 format!("/retry {last}"),
             );
         } else {
-            app.push_message(ChatMessage::system(
-                "No previous request to retry.".to_string(),
-            ));
+            show_command_info_popup(app, raw, "No previous request to retry.".to_string());
         }
         return false;
     }
@@ -2985,9 +2992,7 @@ Context Window: {max_context} tokens\n\n\
             };
             app.set_status("Loaded last message into input");
         } else {
-            app.push_message(ChatMessage::system(
-                "No previous request to edit.".to_string(),
-            ));
+            show_command_info_popup(app, raw, "No previous request to edit.".to_string());
         }
         return false;
     }
@@ -2995,7 +3000,7 @@ Context Window: {max_context} tokens\n\n\
     if lowered.starts_with("/add ") {
         let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if spec.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /add <path>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /add <path>".to_string());
             return false;
         }
 
@@ -3017,9 +3022,11 @@ Context Window: {max_context} tokens\n\n\
         app.pinned_context_files.dedup();
 
         if added == 0 {
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "All matched files were already pinned.".to_string(),
-            ));
+            );
         } else {
             app.set_status(format!(
                 "Pinned {added} context file(s); total: {}",
@@ -3032,7 +3039,7 @@ Context Window: {max_context} tokens\n\n\
     if lowered.starts_with("/drop ") {
         let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if spec.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /drop <path>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /drop <path>".to_string());
             return false;
         }
 
@@ -3042,9 +3049,7 @@ Context Window: {max_context} tokens\n\n\
         let removed = before.saturating_sub(app.pinned_context_files.len());
 
         if removed == 0 {
-            app.push_message(ChatMessage::system(format!(
-                "No pinned file matched: {spec}"
-            )));
+            show_command_info_popup(app, raw, format!("No pinned file matched: {spec}"));
         } else {
             app.set_status(format!(
                 "Removed {removed} pinned file(s); total: {}",
@@ -3201,7 +3206,7 @@ Context Window: {max_context} tokens\n\n\
         match apply_execution_profile(app, rpc_cmd_tx, &selected, true) {
             Ok(summary) => {
                 refresh_context_budget_state(app);
-                app.push_message(ChatMessage::system(summary));
+                show_command_info_popup(app, raw, summary);
             }
             Err(e) => app.push_message(ChatMessage::error(e)),
         }
@@ -3259,9 +3264,11 @@ Context Window: {max_context} tokens\n\n\
         if subcommand == "start" {
             let payload = raw.splitn(3, ' ').nth(2).map(str::trim).unwrap_or("");
             if payload.is_empty() {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "Usage: /focus start <goal> [|| constraints || definition-of-done]".to_string(),
-                ));
+                );
                 return false;
             }
             let parts = payload.split("||").map(str::trim).collect::<Vec<_>>();
@@ -3273,24 +3280,28 @@ Context Window: {max_context} tokens\n\n\
                 completed: false,
             };
             match save_focus_state(app, &state) {
-                Ok(()) => app.push_message(ChatMessage::system(format!(
-                    "Focus started.\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}",
-                    if state.goal.is_empty() {
-                        "(none)"
-                    } else {
-                        &state.goal
-                    },
-                    if state.constraints.is_empty() {
-                        "(none)"
-                    } else {
-                        &state.constraints
-                    },
-                    if state.definition_of_done.is_empty() {
-                        "(none)"
-                    } else {
-                        &state.definition_of_done
-                    }
-                ))),
+                Ok(()) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "Focus started.\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}",
+                        if state.goal.is_empty() {
+                            "(none)"
+                        } else {
+                            &state.goal
+                        },
+                        if state.constraints.is_empty() {
+                            "(none)"
+                        } else {
+                            &state.constraints
+                        },
+                        if state.definition_of_done.is_empty() {
+                            "(none)"
+                        } else {
+                            &state.definition_of_done
+                        }
+                    ),
+                ),
                 Err(e) => app.push_message(ChatMessage::error(e)),
             }
             return false;
@@ -3301,23 +3312,21 @@ Context Window: {max_context} tokens\n\n\
                 Ok(Some(mut state)) => {
                     state.completed = true;
                     match save_focus_state(app, &state) {
-                        Ok(()) => app.push_message(ChatMessage::system(
-                            "Focus marked complete.".to_string(),
-                        )),
+                        Ok(()) => {
+                            show_command_info_popup(app, raw, "Focus marked complete.".to_string())
+                        }
                         Err(e) => app.push_message(ChatMessage::error(e)),
                     }
                 }
-                Ok(None) => app.push_message(ChatMessage::system(
-                    "No active focus to complete.".to_string(),
-                )),
+                Ok(None) => {
+                    show_command_info_popup(app, raw, "No active focus to complete.".to_string())
+                }
                 Err(e) => app.push_message(ChatMessage::error(e)),
             }
             return false;
         }
 
-        app.push_message(ChatMessage::system(
-            "Usage: /focus start|status|done".to_string(),
-        ));
+        show_command_info_popup(app, raw, "Usage: /focus start|status|done".to_string());
         return false;
     }
 
@@ -3394,9 +3403,11 @@ Context Window: {max_context} tokens\n\n\
                     app.context_budget_tokens = value.clamp(1000, 20000);
                 }
                 Err(_) => {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "Usage: /context-budget [token-budget]".to_string(),
-                    ));
+                    );
                     return false;
                 }
             }
@@ -3500,10 +3511,12 @@ Context Window: {max_context} tokens\n\n\
                         .and_then(|value| value.as_str())
                         .unwrap_or("prompt");
                     if mode == "danger-full-access" {
-                        app.push_message(ChatMessage::system(
+                        show_command_info_popup(
+                            app,
+                            raw,
                             "Autopilot guardrail blocked start because permission mode is `danger-full-access`.\nUse `/permission-mode prompt` or rerun with `/autopilot start <cap> --allow-risky`."
                                 .to_string(),
-                        ));
+                        );
                         return false;
                     }
                 }
@@ -3523,22 +3536,28 @@ Context Window: {max_context} tokens\n\n\
                 .clamp(5, 120);
             app.autopilot_enabled = true;
             app.iteration_cap = cap;
-            app.push_message(ChatMessage::system(format!(
-                "Autopilot enabled with iteration cap {cap}."
-            )));
+            show_command_info_popup(
+                app,
+                raw,
+                format!("Autopilot enabled with iteration cap {cap}."),
+            );
             return false;
         }
         if subcommand == "stop" {
             app.autopilot_enabled = false;
             app.iteration_cap = 25;
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "Autopilot disabled. Iteration cap reset to 25.".to_string(),
-            ));
+            );
             return false;
         }
-        app.push_message(ChatMessage::system(
+        show_command_info_popup(
+            app,
+            raw,
             "Usage: /autopilot start [cap] [--allow-risky]\n       /autopilot stop\n       /autopilot status".to_string(),
-        ));
+        );
         return false;
     }
 
@@ -3584,7 +3603,7 @@ Context Window: {max_context} tokens\n\n\
         if subcommand == "add" {
             let title = args.get(2).copied().unwrap_or("").trim();
             if title.is_empty() {
-                app.push_message(ChatMessage::system("Usage: /tasks add <title>".to_string()));
+                show_command_info_popup(app, raw, "Usage: /tasks add <title>".to_string());
                 return false;
             }
             let next_id = tasks.iter().map(|task| task.id).max().unwrap_or(0) + 1;
@@ -3608,7 +3627,7 @@ Context Window: {max_context} tokens\n\n\
                 .and_then(|raw| raw.trim().parse::<u64>().ok())
                 .unwrap_or(0);
             if id == 0 {
-                app.push_message(ChatMessage::system("Usage: /tasks done <id>".to_string()));
+                show_command_info_popup(app, raw, "Usage: /tasks done <id>".to_string());
                 return false;
             }
             let mut found = false;
@@ -3620,7 +3639,7 @@ Context Window: {max_context} tokens\n\n\
                 }
             }
             if !found {
-                app.push_message(ChatMessage::system(format!("Task #{id} not found.")));
+                show_command_info_popup(app, raw, format!("Task #{id} not found."));
                 return false;
             }
             if let Err(e) = save_tasks(app, &tasks) {
@@ -3637,13 +3656,13 @@ Context Window: {max_context} tokens\n\n\
                 .and_then(|raw| raw.trim().parse::<u64>().ok())
                 .unwrap_or(0);
             if id == 0 {
-                app.push_message(ChatMessage::system("Usage: /tasks drop <id>".to_string()));
+                show_command_info_popup(app, raw, "Usage: /tasks drop <id>".to_string());
                 return false;
             }
             let before = tasks.len();
             tasks.retain(|task| task.id != id);
             if tasks.len() == before {
-                app.push_message(ChatMessage::system(format!("Task #{id} not found.")));
+                show_command_info_popup(app, raw, format!("Task #{id} not found."));
                 return false;
             }
             if let Err(e) = save_tasks(app, &tasks) {
@@ -3663,9 +3682,11 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
-        app.push_message(ChatMessage::system(
+        show_command_info_popup(
+            app,
+            raw,
             "Usage: /tasks [list]\n       /tasks add <title>\n       /tasks done <id>\n       /tasks drop <id>\n       /tasks clear".to_string(),
-        ));
+        );
         return false;
     }
 
@@ -3679,7 +3700,7 @@ Context Window: {max_context} tokens\n\n\
         match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, &command, Some(60), 75) {
             Ok(diff) => {
                 if diff.trim().is_empty() {
-                    app.push_message(ChatMessage::system("No diff content found.".to_string()));
+                    show_command_info_popup(app, raw, "No diff content found.".to_string());
                     return false;
                 }
                 let prompt = format!(
@@ -3723,9 +3744,11 @@ Context Window: {max_context} tokens\n\n\
         } else if let Some(previous) = app.last_command_output.clone() {
             previous
         } else {
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "No recent command/test output found.\nRun `/fix-failures <test-or-lint-command>` or execute a command first.".to_string(),
-            ));
+            );
             return false;
         };
 
@@ -3747,7 +3770,7 @@ Context Window: {max_context} tokens\n\n\
     if lowered.starts_with("/run ") {
         let command = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if command.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /run <command>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /run <command>".to_string());
             return false;
         }
 
@@ -3771,7 +3794,7 @@ Context Window: {max_context} tokens\n\n\
     if lowered.starts_with("/read ") {
         let file_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if file_path.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /read <file>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /read <file>".to_string());
             return false;
         }
 
@@ -3818,10 +3841,12 @@ Context Window: {max_context} tokens\n\n\
             app.join_wizard_step = 0;
             app.join_wizard_url.clear();
             app.join_wizard_room.clear();
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "**Join wizard started**\n\nStep 1/3: Enter WebSocket URL (ws://HOST:PORT/rpc or wss://...)\nUse `/join-server cancel` to abort."
                     .to_string(),
-            ));
+            );
             return false;
         }
 
@@ -3835,14 +3860,14 @@ Context Window: {max_context} tokens\n\n\
             app.join_wizard_step = 0;
             app.join_wizard_url.clear();
             app.join_wizard_room.clear();
-            app.push_message(ChatMessage::system("Join wizard cancelled.".to_string()));
+            show_command_info_popup(app, raw, "Join wizard cancelled.".to_string());
             return false;
         }
 
         let (url, room, token) = match parse_join_server_args(raw) {
             Ok(values) => values,
             Err(error_message) => {
-                app.push_message(ChatMessage::system(error_message));
+                show_command_info_popup(app, raw, error_message);
                 return false;
             }
         };
@@ -3882,7 +3907,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "stop" {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
 
@@ -3893,13 +3918,13 @@ Context Window: {max_context} tokens\n\n\
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false)
                     {
-                        app.push_message(ChatMessage::system(
-                            "Multiplayer host stopped.".to_string(),
-                        ));
+                        show_command_info_popup(app, raw, "Multiplayer host stopped.".to_string());
                     } else {
-                        app.push_message(ChatMessage::system(
+                        show_command_info_popup(
+                            app,
+                            raw,
                             "No multiplayer host is currently running.".to_string(),
-                        ));
+                        );
                     }
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
@@ -3929,7 +3954,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "kick" || lowered_subcommand == "remove" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
 
@@ -3955,7 +3980,7 @@ Context Window: {max_context} tokens\n\n\
                         lines.push(String::new());
                         lines.push(format_host_members_payload(&updated));
                     }
-                    app.push_message(ChatMessage::system(lines.join("\n")));
+                    show_command_info_popup(app, raw, lines.join("\n"));
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to remove `{connection_id}`: {e}"
@@ -3971,19 +3996,19 @@ Context Window: {max_context} tokens\n\n\
             let (connection_id, role, room): (&str, &str, Option<&str>) =
                 if lowered_subcommand == "role" {
                     if args.len() < 4 || args.len() > 5 {
-                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        show_command_info_popup(app, raw, host_server_usage_text().to_string());
                         return false;
                     }
                     (args[2], args[3], args.get(4).copied())
                 } else if lowered_subcommand == "promote" {
                     if args.len() < 3 || args.len() > 4 {
-                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        show_command_info_popup(app, raw, host_server_usage_text().to_string());
                         return false;
                     }
                     (args[2], "prompter", args.get(3).copied())
                 } else {
                     if args.len() < 3 || args.len() > 4 {
-                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        show_command_info_popup(app, raw, host_server_usage_text().to_string());
                         return false;
                     }
                     (args[2], "viewer", args.get(3).copied())
@@ -3993,9 +4018,11 @@ Context Window: {max_context} tokens\n\n\
                 "viewer" | "read" | "read-only" => "viewer",
                 "prompter" | "writer" | "editor" | "admin" => "prompter",
                 _ => {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "Invalid role. Use `viewer` or `prompter`.".to_string(),
-                    ));
+                    );
                     return false;
                 }
             };
@@ -4025,7 +4052,7 @@ Context Window: {max_context} tokens\n\n\
                         lines.push(String::new());
                         lines.push(format_host_members_payload(&updated));
                     }
-                    app.push_message(ChatMessage::system(lines.join("\n")));
+                    show_command_info_popup(app, raw, lines.join("\n"));
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to update role for `{connection_id}`: {e}"
@@ -4072,16 +4099,18 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "lobby" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let enable = match args[2].to_ascii_lowercase().as_str() {
                 "on" | "enable" | "enabled" | "true" => true,
                 "off" | "disable" | "disabled" | "false" => false,
                 _ => {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "Usage: /host-server lobby <on|off> [room]".to_string(),
-                    ));
+                    );
                     return false;
                 }
             };
@@ -4093,9 +4122,11 @@ Context Window: {max_context} tokens\n\n\
                         .and_then(|v| v.as_str())
                         .unwrap_or(room.unwrap_or(""));
                     let state = if enable { "enabled" } else { "disabled" };
-                    app.push_message(ChatMessage::system(format!(
-                        "Lobby approvals {state} for room `{room_name}`."
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Lobby approvals {state} for room `{room_name}`."),
+                    );
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to update lobby mode: {e}"
@@ -4106,7 +4137,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "approve" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let connection_id = args[2];
@@ -4117,9 +4148,11 @@ Context Window: {max_context} tokens\n\n\
                         .get("room")
                         .and_then(|v| v.as_str())
                         .unwrap_or(room.unwrap_or(""));
-                    app.push_message(ChatMessage::system(format!(
-                        "Approved `{connection_id}` in room `{room_name}`."
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Approved `{connection_id}` in room `{room_name}`."),
+                    );
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to approve member `{connection_id}`: {e}"
@@ -4130,7 +4163,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "deny" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let connection_id = args[2];
@@ -4141,9 +4174,11 @@ Context Window: {max_context} tokens\n\n\
                         .get("room")
                         .and_then(|v| v.as_str())
                         .unwrap_or(room.unwrap_or(""));
-                    app.push_message(ChatMessage::system(format!(
-                        "Denied `{connection_id}` in room `{room_name}`."
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Denied `{connection_id}` in room `{room_name}`."),
+                    );
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to deny member `{connection_id}`: {e}"
@@ -4154,15 +4189,17 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "rotate-token" {
             if args.len() < 3 || args.len() > 5 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let role = args[2].to_ascii_lowercase();
             if role != "viewer" && role != "prompter" {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "Usage: /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]"
                         .to_string(),
-                ));
+                );
                 return false;
             }
             let mut room: Option<&str> = None;
@@ -4178,9 +4215,11 @@ Context Window: {max_context} tokens\n\n\
                 match arg4.parse::<u64>() {
                     Ok(parsed) => expiry_seconds = Some(parsed),
                     Err(_) => {
-                        app.push_message(ChatMessage::system(
+                        show_command_info_popup(
+                            app,
+                            raw,
                             "Usage: /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]".to_string(),
-                        ));
+                        );
                         return false;
                     }
                 }
@@ -4214,7 +4253,7 @@ Context Window: {max_context} tokens\n\n\
                             lines.push(format!("- Expires at: `{expires_at}`"));
                         }
                     }
-                    app.push_message(ChatMessage::system(lines.join("\n")));
+                    show_command_info_popup(app, raw, lines.join("\n"));
                 }
                 Err(e) => {
                     app.push_message(ChatMessage::error(format!("Failed to rotate token: {e}")))
@@ -4225,7 +4264,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "revoke" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let value = args[2];
@@ -4240,9 +4279,11 @@ Context Window: {max_context} tokens\n\n\
                         .get("kind")
                         .and_then(|v| v.as_str())
                         .unwrap_or("token");
-                    app.push_message(ChatMessage::system(format!(
-                        "Revoked `{value}` ({kind}) in room `{room_name}`."
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Revoked `{value}` ({kind}) in room `{room_name}`."),
+                    );
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to revoke `{value}`: {e}"
@@ -4253,7 +4294,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "handoff" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let connection_id = args[2];
@@ -4264,9 +4305,13 @@ Context Window: {max_context} tokens\n\n\
                         .get("room")
                         .and_then(|v| v.as_str())
                         .unwrap_or(room.unwrap_or(""));
-                    app.push_message(ChatMessage::system(format!(
-                        "Handed off prompter role to `{connection_id}` in room `{room_name}`."
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!(
+                            "Handed off prompter role to `{connection_id}` in room `{room_name}`."
+                        ),
+                    );
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to handoff to `{connection_id}`: {e}"
@@ -4277,14 +4322,16 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "preset" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let preset = args[2].to_ascii_lowercase();
             if preset != "pairing" && preset != "mob" && preset != "review" {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "Usage: /host-server preset <pairing|mob|review> [room]".to_string(),
-                ));
+                );
                 return false;
             }
             let room = args.get(3).copied();
@@ -4298,10 +4345,14 @@ Context Window: {max_context} tokens\n\n\
                         .get("lobbyEnabled")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    app.push_message(ChatMessage::system(format!(
-                        "Applied preset **{preset}** to room `{room_name}` (lobby: {}).",
-                        if lobby_enabled { "on" } else { "off" }
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!(
+                            "Applied preset **{preset}** to room `{room_name}` (lobby: {}).",
+                            if lobby_enabled { "on" } else { "off" }
+                        ),
+                    );
                 }
                 Err(e) => {
                     app.push_message(ChatMessage::error(format!("Failed to set preset: {e}")))
@@ -4419,7 +4470,7 @@ Context Window: {max_context} tokens\n\n\
                 .map(str::trim)
                 .filter(|value| !value.is_empty());
             if service_name.is_empty() {
-                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                show_command_info_popup(app, raw, service_usage_text().to_string());
                 return false;
             }
             match rpc_start_service_blocking(rpc_cmd_tx, service_name, command_text, None) {
@@ -4435,7 +4486,7 @@ Context Window: {max_context} tokens\n\n\
 
         if subcommand == "stop" {
             if args.len() != 3 {
-                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                show_command_info_popup(app, raw, service_usage_text().to_string());
                 return false;
             }
             let service_name = args[2];
@@ -4452,7 +4503,7 @@ Context Window: {max_context} tokens\n\n\
 
         if subcommand == "logs" {
             if args.len() < 3 || args.len() > 4 {
-                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                show_command_info_popup(app, raw, service_usage_text().to_string());
                 return false;
             }
             let service_name = args[2];
@@ -4460,10 +4511,12 @@ Context Window: {max_context} tokens\n\n\
                 Some(raw_count) => match raw_count.parse::<u64>() {
                     Ok(parsed) => Some(parsed),
                     Err(_) => {
-                        app.push_message(ChatMessage::system(
+                        show_command_info_popup(
+                            app,
+                            raw,
                             "lines must be an integer (e.g. `/service logs ollama 120`)"
                                 .to_string(),
-                        ));
+                        );
                         return false;
                     }
                 },
@@ -4553,9 +4606,11 @@ Context Window: {max_context} tokens\n\n\
                     Some(raw_count) => match raw_count.parse::<u64>() {
                         Ok(parsed) => Some(parsed),
                         Err(_) => {
-                            app.push_message(ChatMessage::system(
+                            show_command_info_popup(
+                                app,
+                                raw,
                                 "lines must be an integer (e.g. `/ollama logs 120`)".to_string(),
-                            ));
+                            );
                             return false;
                         }
                     },
@@ -4601,9 +4656,7 @@ Context Window: {max_context} tokens\n\n\
             }
             "pull" => {
                 if args.len() != 3 {
-                    app.push_message(ChatMessage::system(
-                        "Usage: /ollama pull <model>".to_string(),
-                    ));
+                    show_command_info_popup(app, raw, "Usage: /ollama pull <model>".to_string());
                     return false;
                 }
 
@@ -4615,10 +4668,14 @@ Context Window: {max_context} tokens\n\n\
                     Some(1800),
                     1815,
                 ) {
-                    Ok(output) => app.push_message(ChatMessage::system(format!(
-                        "**Command:** `{command}`\n\n```text\n{}\n```",
-                        truncate_block(&output, 3200)
-                    ))),
+                    Ok(output) => show_command_info_popup(
+                        app,
+                        raw,
+                        format!(
+                            "**Command:** `{command}`\n\n```text\n{}\n```",
+                            truncate_block(&output, 3200)
+                        ),
+                    ),
                     Err(e) => app.push_message(ChatMessage::error(format!(
                         "Failed to pull Ollama model `{model}`: {e}"
                     ))),
@@ -4850,9 +4907,11 @@ Multiplayer: {}",
                     .get("fileCount")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                app.push_message(ChatMessage::system(format!(
-                    "Created checkpoint `{checkpoint_id}` with {file_count} file(s)."
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Created checkpoint `{checkpoint_id}` with {file_count} file(s)."),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to create checkpoint: {e}"
@@ -4882,9 +4941,11 @@ Multiplayer: {}",
                     .get("checkpointId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                app.push_message(ChatMessage::system(format!(
-                    "Restored checkpoint `{checkpoint_id}` ({restored} file(s) restored)."
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Restored checkpoint `{checkpoint_id}` ({restored} file(s) restored)."),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to restore checkpoint: {e}"
@@ -4896,16 +4957,14 @@ Multiplayer: {}",
     if lowered.starts_with("/diff") {
         let parts: Vec<&str> = raw.split_whitespace().collect();
         if parts.len() < 3 {
-            app.push_message(ChatMessage::system(
-                "Usage: /diff <file1> <file2>".to_string(),
-            ));
+            show_command_info_popup(app, raw, "Usage: /diff <file1> <file2>".to_string());
             return false;
         }
 
         match rpc_compare_files_blocking(rpc_cmd_tx, parts[1], parts[2]) {
             Ok(diff) => {
                 if diff.trim() == "(No differences)" {
-                    app.push_message(ChatMessage::system(diff));
+                    show_command_info_popup(app, raw, diff);
                 } else {
                     app.push_message(ChatMessage::diff_view(
                         format!("{} vs {}", parts[1], parts[2]),
@@ -4925,9 +4984,7 @@ Multiplayer: {}",
             .unwrap_or("json")
             .to_lowercase();
         if !matches!(export_format.as_str(), "json" | "md" | "txt" | "markdown") {
-            app.push_message(ChatMessage::system(
-                "Usage: /export [json|md|txt]".to_string(),
-            ));
+            show_command_info_popup(app, raw, "Usage: /export [json|md|txt]".to_string());
             return false;
         }
 
@@ -4977,9 +5034,7 @@ Multiplayer: {}",
                 ))),
             }
         } else {
-            app.push_message(ChatMessage::system(
-                "No assistant response to copy.".to_string(),
-            ));
+            show_command_info_popup(app, raw, "No assistant response to copy.".to_string());
         }
         return false;
     }
@@ -5054,24 +5109,32 @@ Total: **${:.4}**",
         if let Some(last) = last_assistant_message(app) {
             let subject = first_line(&last);
             if subject.is_empty() {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "Last assistant response was empty; nothing to commit.".to_string(),
-                ));
+                );
                 return false;
             }
 
             let command = format!("git commit -m {}", shell_escape_single_quotes(&subject));
             match rpc_execute_command_blocking(rpc_cmd_tx, &command) {
-                Ok(output) => app.push_message(ChatMessage::system(format!(
-                    "Commit executed with message: `{subject}`\n\n{}",
-                    truncate_block(&output, 1200)
-                ))),
+                Ok(output) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "Commit executed with message: `{subject}`\n\n{}",
+                        truncate_block(&output, 1200)
+                    ),
+                ),
                 Err(e) => app.push_message(ChatMessage::error(format!("Commit failed: {e}"))),
             }
         } else {
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "No assistant response found to apply as commit message.".to_string(),
-            ));
+            );
         }
         return false;
     }
@@ -5079,17 +5142,16 @@ Total: **${:.4}**",
     if lowered.starts_with("/commit --apply ") {
         let msg = raw.splitn(3, ' ').nth(2).map(str::trim).unwrap_or("");
         if msg.is_empty() {
-            app.push_message(ChatMessage::system(
-                "Usage: /commit --apply <message>".to_string(),
-            ));
+            show_command_info_popup(app, raw, "Usage: /commit --apply <message>".to_string());
             return false;
         }
         let command = format!("git commit -m {}", shell_escape_single_quotes(msg));
         match rpc_execute_command_blocking(rpc_cmd_tx, &command) {
-            Ok(output) => app.push_message(ChatMessage::system(format!(
-                "Commit executed.\n\n{}",
-                truncate_block(&output, 1200)
-            ))),
+            Ok(output) => show_command_info_popup(
+                app,
+                raw,
+                format!("Commit executed.\n\n{}", truncate_block(&output, 1200)),
+            ),
             Err(e) => app.push_message(ChatMessage::error(format!("Commit failed: {e}"))),
         }
         return false;
@@ -5099,9 +5161,11 @@ Total: **${:.4}**",
         match rpc_execute_command_blocking(rpc_cmd_tx, "git diff --staged") {
             Ok(diff) => {
                 if diff.trim().is_empty() || diff.trim() == "(No output)" {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "No staged changes. Stage files with `git add` first.".to_string(),
-                    ));
+                    );
                     return false;
                 }
                 let prompt = build_commit_prompt(&diff);
@@ -5151,7 +5215,7 @@ Total: **${:.4}**",
         };
 
         if code.trim().is_empty() || code.trim() == "(No output)" {
-            app.push_message(ChatMessage::system("Nothing to review.".to_string()));
+            show_command_info_popup(app, raw, "Nothing to review.".to_string());
             return false;
         }
 
@@ -5161,14 +5225,14 @@ Total: **${:.4}**",
     }
 
     if lowered == "/test" {
-        app.push_message(ChatMessage::system("Usage: /test <file>".to_string()));
+        show_command_info_popup(app, raw, "Usage: /test <file>".to_string());
         return false;
     }
 
     if lowered.starts_with("/test ") {
         let file_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if file_path.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /test <file>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /test <file>".to_string());
             return false;
         }
 
@@ -5194,18 +5258,20 @@ Total: **${:.4}**",
         let content = parts.next().unwrap_or("").trim();
 
         if name.is_empty() {
-            app.push_message(ChatMessage::system(
-                "Usage: /save-prompt <name> [text]".to_string(),
-            ));
+            show_command_info_popup(app, raw, "Usage: /save-prompt <name> [text]".to_string());
             return false;
         }
 
         if content.is_empty() {
             app.pending_prompt_save_name = Some(name.to_string());
-            app.push_message(ChatMessage::system(format!(
-                "Enter prompt text and press Enter to save as **{name}**.\n\
+            show_command_info_popup(
+                app,
+                raw,
+                format!(
+                    "Enter prompt text and press Enter to save as **{name}**.\n\
 Submitting any slash command will cancel capture."
-            )));
+                ),
+            );
             return false;
         }
 
@@ -5219,13 +5285,13 @@ Submitting any slash command will cancel capture."
     if lowered.starts_with("/use ") {
         let name = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if name.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /use <name>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /use <name>".to_string());
             return false;
         }
 
         match load_prompt(app, name) {
             Ok(content) => {
-                app.push_message(ChatMessage::system(format!("Loaded prompt: {name}")));
+                show_command_info_popup(app, raw, format!("Loaded prompt: {name}"));
                 send_chat_request(
                     app,
                     tx,
@@ -5260,7 +5326,7 @@ Submitting any slash command will cancel capture."
     if lowered.starts_with("/image ") {
         let image_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if image_path.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /image <path>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /image <path>".to_string());
             return false;
         }
         let path = Path::new(image_path);
@@ -5328,16 +5394,18 @@ Submitting any slash command will cancel capture."
                 app.qa_command.clear();
                 app.set_status("QA watch stopped");
             } else {
-                app.push_message(ChatMessage::system("QA watch is not running.".to_string()));
+                show_command_info_popup(app, raw, "QA watch is not running.".to_string());
             }
             return false;
         }
 
         if subcommand == "start" {
             if qa_watch_state.is_running() {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "QA watch is already running. Use `/qa stop` first.".to_string(),
-                ));
+                );
                 return false;
             }
 
@@ -5384,16 +5452,18 @@ Submitting any slash command will cancel capture."
             return false;
         }
 
-        app.push_message(ChatMessage::system(
+        show_command_info_popup(
+            app,
+            raw,
             "Usage: /qa start [dir] [command...]\n       /qa stop\n       /qa status".to_string(),
-        ));
+        );
         return false;
     }
 
     if lowered.starts_with("/watch ") {
         let directory = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if directory.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /watch <dir>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /watch <dir>".to_string());
             return false;
         }
         if !Path::new(directory).is_dir() {
@@ -5403,9 +5473,11 @@ Submitting any slash command will cancel capture."
             return false;
         }
         if watch_state.is_running() {
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "Watch mode is already active. Use /unwatch first.".to_string(),
-            ));
+            );
             return false;
         }
 
@@ -5430,7 +5502,7 @@ Submitting any slash command will cancel capture."
             watch_state.stop();
             app.set_status("Watch mode stopped");
         } else {
-            app.push_message(ChatMessage::system("No active watch task.".to_string()));
+            show_command_info_popup(app, raw, "No active watch task.".to_string());
         }
         return false;
     }
@@ -5440,9 +5512,7 @@ Submitting any slash command will cancel capture."
 
         let request = raw.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
         if request.is_empty() {
-            app.push_message(ChatMessage::system(
-                "Usage: /plan <task description>".to_string(),
-            ));
+            show_command_info_popup(app, raw, "Usage: /plan <task description>".to_string());
             return false;
         }
         // Ask the AI to generate a plan
