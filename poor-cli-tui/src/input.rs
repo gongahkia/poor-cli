@@ -357,6 +357,12 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
                 app.insert_char('\n');
                 return InputAction::Redraw;
             }
+
+            // If a slash command token is still being typed, prioritize completion over submit.
+            if should_autocomplete_on_enter(app) && autocomplete_command(app) {
+                return InputAction::Redraw;
+            }
+
             let text = app.take_input();
             if text.is_empty() {
                 return InputAction::None;
@@ -509,18 +515,38 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) -> InputAction {
     }
 }
 
+fn should_autocomplete_on_enter(app: &App) -> bool {
+    let trimmed = app.input_buffer.trim();
+    if !trimmed.starts_with('/') {
+        return false;
+    }
+
+    // Only auto-complete the command token, not argument input.
+    if trimmed.contains(char::is_whitespace) {
+        return false;
+    }
+
+    // If the command is already exact, submit immediately.
+    !SLASH_COMMANDS.iter().any(|spec| spec.command == trimmed)
+}
+
 /// Auto-complete the slash command in the input buffer.
-fn autocomplete_command(app: &mut App) {
+fn autocomplete_command(app: &mut App) -> bool {
     let prefix = app.input_buffer.as_str();
     let matches: Vec<&SlashCommandSpec> = SLASH_COMMANDS
         .iter()
         .filter(|spec| spec.command.starts_with(prefix) && spec.command != prefix)
         .collect();
 
+    if matches.is_empty() {
+        return false;
+    }
+
     if matches.len() == 1 {
         // Single match: complete it
         app.input_buffer = matches[0].command.to_string();
         app.input_cursor = app.input_buffer.len();
+        return true;
     } else if matches.len() > 1 {
         // Multiple matches: find common prefix
         let first = matches[0].command;
@@ -538,9 +564,69 @@ fn autocomplete_command(app: &mut App) {
         if common_len > prefix.len() {
             app.input_buffer = first[..common_len].to_string();
             app.input_cursor = app.input_buffer.len();
+            return true;
         }
-        // Show completions as status
+
+        // Show completions as status and pick the first suggestion on Enter/Tab
+        // so command entry can proceed without requiring repeated key presses.
         let completions: Vec<&str> = matches.iter().map(|s| s.command).collect();
         app.set_status(completions.join("  "));
+        app.input_buffer = first.to_string();
+        app.input_cursor = app.input_buffer.len();
+        return true;
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key_enter() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn enter_autocompletes_partial_command() {
+        let mut app = App::new();
+        app.input_buffer = "/new-ses".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        let action = handle_key_normal(&mut app, key_enter());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.input_buffer, "/new-session");
+    }
+
+    #[test]
+    fn enter_submits_exact_command() {
+        let mut app = App::new();
+        app.input_buffer = "/new-session".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        let action = handle_key_normal(&mut app, key_enter());
+
+        match action {
+            InputAction::Submit(text) => assert_eq!(text, "/new-session"),
+            _ => panic!("expected submit action"),
+        }
+    }
+
+    #[test]
+    fn enter_does_not_autocomplete_command_arguments() {
+        let mut app = App::new();
+        app.input_buffer = "/theme da".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        let action = handle_key_normal(&mut app, key_enter());
+
+        match action {
+            InputAction::Submit(text) => assert_eq!(text, "/theme da"),
+            _ => panic!("expected submit action"),
+        }
     }
 }
