@@ -221,8 +221,7 @@ fn run_app(
     let tx_init = tx.clone();
     let tx_notif = tx.clone();
     thread::spawn(move || {
-        match RpcClient::spawn_with_notifications_args(&python_bin, cwd.as_deref(), &server_args)
-        {
+        match RpcClient::spawn_with_notifications_args(&python_bin, cwd.as_deref(), &server_args) {
             Ok((client, notification_rx)) => {
                 // Spawn notification reader thread → maps ServerNotification → ServerMsg
                 thread::spawn(move || loop {
@@ -1174,6 +1173,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /provider            Show current provider capabilities\n\
   /providers           List available providers\n\
   /switch              Switch provider/model\n\
+  /api-key             Show or set provider API keys\n\
   /model-info          Show provider-specific model notes\n\
   /permission-mode [mode]  Show or set backend permission mode\n\n\
 **Configuration:**\n\
@@ -1296,6 +1296,139 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to fetch provider info: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/api-key" {
+        match rpc_get_api_key_status_blocking(rpc_cmd_tx, None) {
+            Ok(payload) => {
+                let providers = payload
+                    .get("providers")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .unwrap_or_default();
+
+                if providers.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "No provider API key status available.".to_string(),
+                    ));
+                    return false;
+                }
+
+                let mut names = providers.keys().cloned().collect::<Vec<_>>();
+                names.sort();
+
+                let mut lines = vec!["**API Key Status**".to_string(), String::new()];
+
+                for provider in names {
+                    let Some(entry) = providers.get(&provider) else {
+                        continue;
+                    };
+                    let configured = entry
+                        .get("configured")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let status_icon = if configured { "✓" } else { "✗" };
+                    let active = if entry
+                        .get("active")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        " (active)"
+                    } else {
+                        ""
+                    };
+                    let masked = entry
+                        .get("masked")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(not set)");
+                    let source = entry
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("none");
+                    let env_var = entry
+                        .get("envVar")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)");
+                    let persisted = if entry
+                        .get("persisted")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        "yes"
+                    } else {
+                        "no"
+                    };
+
+                    lines.push(format!(
+                        "- {status_icon} **{provider}**{active}: `{masked}` (source: {source}; env: `{env_var}`; persisted: {persisted})"
+                    ));
+                }
+
+                lines.push(String::new());
+                lines.push("Set or rotate with `/api-key <provider> <api-key>`".to_string());
+                app.push_message(ChatMessage::system(lines.join("\n")));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to fetch API key status: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/api-key ") {
+        let mut parts = raw.splitn(3, ' ');
+        let _ = parts.next();
+        let provider = parts.next().unwrap_or("").trim();
+        let api_key = parts.next().unwrap_or("").trim();
+
+        if provider.is_empty() || api_key.is_empty() {
+            app.push_message(ChatMessage::system(
+                "Usage: /api-key <provider> <api-key>\nInspect status only: /api-key".to_string(),
+            ));
+            return false;
+        }
+
+        match rpc_set_api_key_blocking(rpc_cmd_tx, provider, api_key, true) {
+            Ok(result) => {
+                let resolved_provider = result
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(provider);
+                let env_var = result
+                    .get("envVar")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(unknown)");
+                let masked_key = result
+                    .get("maskedKey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("********");
+                let persisted = result
+                    .get("persisted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let active_reloaded = result
+                    .get("activeProviderReloaded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let mut lines = vec![format!(
+                    "Stored API key for **{resolved_provider}** (`{env_var}` = `{masked_key}`)."
+                )];
+                if persisted {
+                    lines.push("Persisted to secure local key storage.".to_string());
+                }
+                if active_reloaded {
+                    lines.push("Reloaded the active provider with the updated key.".to_string());
+                } else {
+                    lines.push("Switch providers with `/switch` when needed.".to_string());
+                }
+                app.push_message(ChatMessage::system(lines.join("\n")));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to set API key for `{provider}`: {e}"
             ))),
         }
         return false;
@@ -3329,6 +3462,44 @@ fn rpc_toggle_config_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for config toggle".to_string())?
+}
+
+fn rpc_set_api_key_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    provider: &str,
+    api_key: &str,
+    persist: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetApiKey {
+            provider: provider.to_string(),
+            api_key: api_key.to_string(),
+            persist,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request API key update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for API key update".to_string())?
+}
+
+fn rpc_get_api_key_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    provider: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetApiKeyStatus {
+            provider: provider.map(|s| s.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request API key status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for API key status".to_string())?
 }
 
 fn rpc_clear_history_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<(), String> {

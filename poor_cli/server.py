@@ -13,6 +13,7 @@ import copy
 import difflib
 import json
 import logging
+import os
 import shutil
 import sys
 import uuid
@@ -303,6 +304,8 @@ class PoorCLIServer:
             "switchProvider": self.handle_switch_provider,
             "getConfig": self.handle_get_config,
             "setConfig": self.handle_set_config,
+            "setApiKey": self.handle_set_api_key,
+            "getApiKeyStatus": self.handle_get_api_key_status,
             "poor-cli/chat": self.handle_chat,
             "poor-cli/inlineComplete": self.handle_inline_complete,
             "poor-cli/applyEdit": self.handle_apply_edit,
@@ -315,6 +318,8 @@ class PoorCLIServer:
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
+            "poor-cli/setApiKey": self.handle_set_api_key,
+            "poor-cli/getApiKeyStatus": self.handle_get_api_key_status,
             "poor-cli/listSessions": self.handle_list_sessions,
             "poor-cli/listHistory": self.handle_list_history,
             "poor-cli/searchHistory": self.handle_search_history,
@@ -740,6 +745,156 @@ class PoorCLIServer:
                 "value": not current,
             }
         )
+
+    @staticmethod
+    def _normalize_provider_name(provider_name: str) -> str:
+        provider = provider_name.strip().lower()
+        if provider == "claude":
+            return "anthropic"
+        return provider
+
+    @staticmethod
+    def _mask_api_key(raw_key: Optional[str]) -> str:
+        if not raw_key:
+            return "(not set)"
+        if len(raw_key) <= 8:
+            return "*" * len(raw_key)
+        return f"{raw_key[:4]}…{raw_key[-4:]}"
+
+    async def handle_set_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Store/update a provider API key for this session and secure local storage.
+
+        Params:
+            provider: Provider name (gemini, openai, anthropic, claude)
+            apiKey: Raw API key value
+            persist: Optional bool (default true) to persist in secure key store
+            reloadActiveProvider: Optional bool (default true) to reinitialize current provider
+        """
+        self._ensure_initialized()
+        if self.core.config is None:
+            raise RuntimeError("Core configuration unavailable")
+        if self.core._config_manager is None:
+            raise RuntimeError("Config manager unavailable")
+
+        provider = self._normalize_provider_name(str(params.get("provider", "")))
+        if not provider:
+            raise InvalidParamsError("Missing provider")
+
+        api_key = str(params.get("apiKey", "")).strip()
+        if not api_key:
+            raise InvalidParamsError("Missing apiKey")
+
+        if provider == "ollama":
+            raise InvalidParamsError("Ollama does not require an API key")
+
+        provider_config = self.core.config.model.providers.get(provider)
+        if provider_config is None:
+            raise InvalidParamsError(f"Unknown provider: {provider}")
+
+        persist = bool(params.get("persist", True))
+        reload_active_provider = bool(params.get("reloadActiveProvider", True))
+
+        env_var = provider_config.api_key_env_var
+        os.environ[env_var] = api_key
+        self.core.config.api_keys[provider] = api_key
+        self.core._config_manager.config.api_keys[provider] = api_key
+
+        stored_securely = False
+        if persist:
+            from .api_key_manager import get_api_key_manager
+
+            get_api_key_manager().store_key(
+                provider,
+                api_key,
+                metadata={"env_var": env_var},
+            )
+            stored_securely = True
+
+        active_provider_reloaded = False
+        if reload_active_provider and self.core.config.model.provider == provider:
+            await self.core.switch_provider(
+                provider,
+                self.core.config.model.model_name,
+            )
+            active_provider_reloaded = True
+
+        return {
+            "success": True,
+            "provider": provider,
+            "envVar": env_var,
+            "persisted": stored_securely,
+            "activeProviderReloaded": active_provider_reloaded,
+            "maskedKey": self._mask_api_key(api_key),
+        }
+
+    async def handle_get_api_key_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return non-secret API key configuration status per provider.
+
+        Params:
+            provider: Optional provider filter.
+        """
+        self._ensure_initialized()
+        if self.core.config is None:
+            raise RuntimeError("Core configuration unavailable")
+
+        requested_provider = str(params.get("provider", "")).strip()
+        normalized_provider = self._normalize_provider_name(requested_provider)
+
+        providers: List[str]
+        if normalized_provider:
+            if normalized_provider not in self.core.config.model.providers:
+                raise InvalidParamsError(f"Unknown provider: {requested_provider}")
+            providers = [normalized_provider]
+        else:
+            providers = sorted(self.core.config.model.providers.keys())
+
+        secure_store = None
+        secure_store_entries: Dict[str, Dict[str, Any]] = {}
+        try:
+            from .api_key_manager import get_api_key_manager
+
+            secure_store = get_api_key_manager()
+            secure_store_entries = secure_store.list_providers()
+        except Exception as error:  # pragma: no cover - defensive fallback
+            self.logger.debug(f"API key manager unavailable: {error}")
+
+        active_provider = self._normalize_provider_name(self.core.config.model.provider)
+        status: Dict[str, Dict[str, Any]] = {}
+        for provider in providers:
+            provider_cfg = self.core.config.model.providers[provider]
+            env_var = provider_cfg.api_key_env_var
+
+            env_key = os.getenv(env_var)
+            session_key = self.core.config.api_keys.get(provider)
+            secure_key = None
+            secure_available = provider in secure_store_entries
+            if secure_available and secure_store is not None:
+                secure_key = secure_store.get_key(provider)
+
+            source = "none"
+            key_value = None
+            if env_key:
+                source = "environment"
+                key_value = env_key
+            elif session_key:
+                source = "session"
+                key_value = session_key
+            elif secure_key:
+                source = "secure-store"
+                key_value = secure_key
+
+            status[provider] = {
+                "configured": key_value is not None,
+                "source": source,
+                "envVar": env_var,
+                "active": provider == active_provider,
+                "persisted": secure_available,
+                "masked": self._mask_api_key(key_value),
+            }
+
+        return {"providers": status}
 
     def _get_repo_config(self):
         from .repo_config import get_repo_config

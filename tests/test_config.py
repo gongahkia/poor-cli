@@ -82,3 +82,24 @@ class TestAdditionalConfigFeatures:
 
         assert loaded.ui.show_token_count is False
         assert loaded.mcp_servers["demo"]["command"] == "demo-mcp"
+
+    def test_get_api_key_falls_back_to_secure_store(self, monkeypatch, tmp_path):
+        manager = ConfigManager(config_path=tmp_path / "config.yaml")
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        manager.config.api_keys.clear()
+        monkeypatch.setattr("poor_cli.config.Path.home", lambda: tmp_path)
+        secure_store_file = tmp_path / ".poor-cli" / "keys" / "encrypted_keys.json"
+        secure_store_file.parent.mkdir(parents=True, exist_ok=True)
+        secure_store_file.write_text("{}", encoding="utf-8")
+
+        class _FakeKeyStore:
+            @staticmethod
+            def get_key(provider: str):
+                return "secure-gemini-key" if provider == "gemini" else None
+
+        monkeypatch.setattr(
+            "poor_cli.api_key_manager.get_api_key_manager",
+            lambda: _FakeKeyStore(),
+        )
+
+        assert manager.get_api_key("gemini") == "secure-gemini-key"

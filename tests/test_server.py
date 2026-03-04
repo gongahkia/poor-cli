@@ -3,12 +3,14 @@ Tests for the JSON-RPC server.
 """
 
 import json
+import os
 import pytest
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from poor_cli.config import Config
 from poor_cli.server import (
     PoorCLIServer,
     JsonRpcMessage,
@@ -218,6 +220,8 @@ class TestPoorCLIServer:
             "poor-cli/chat",
             "poor-cli/inlineComplete",
             "poor-cli/getProviderInfo",
+            "poor-cli/setApiKey",
+            "poor-cli/getApiKeyStatus",
             "poor-cli/listSessions",
             "poor-cli/listCheckpoints",
             "poor-cli/exportConversation",
@@ -494,6 +498,58 @@ class TestPoorCLIServer:
 
         assert result["theme"] == "light"
         assert result["provider"] == "gemini"
+
+    @pytest.mark.asyncio
+    async def test_handle_set_api_key_updates_runtime_and_secure_store(self, server):
+        server.initialized = True
+        server.core.config = Config()
+        server.core.config.model.provider = "openai"
+        server.core.config.model.model_name = "gpt-4o"
+        server.core._config_manager = SimpleNamespace(config=server.core.config)
+        server.core.switch_provider = AsyncMock()
+
+        fake_store = MagicMock()
+        with (
+            patch("poor_cli.api_key_manager.get_api_key_manager", return_value=fake_store),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            result = await server.handle_set_api_key(
+                {"provider": "openai", "apiKey": "sk-test-openai-key"}
+            )
+            assert os.environ["OPENAI_API_KEY"] == "sk-test-openai-key"
+
+        assert result["success"] is True
+        assert result["provider"] == "openai"
+        assert result["activeProviderReloaded"] is True
+        assert server.core.config.api_keys["openai"] == "sk-test-openai-key"
+        fake_store.store_key.assert_called_once()
+        server.core.switch_provider.assert_awaited_once_with("openai", "gpt-4o")
+
+    @pytest.mark.asyncio
+    async def test_handle_get_api_key_status_reports_sources(self, server):
+        server.initialized = True
+        server.core.config = Config()
+        server.core.config.model.provider = "openai"
+        server.core.config.api_keys["anthropic"] = "session-anthropic-key"
+
+        fake_store = MagicMock()
+        fake_store.list_providers.return_value = {"gemini": {"created_at": "now"}}
+        fake_store.get_key.side_effect = lambda provider: (
+            "secure-gemini-key" if provider == "gemini" else None
+        )
+
+        with (
+            patch("poor_cli.api_key_manager.get_api_key_manager", return_value=fake_store),
+            patch.dict("os.environ", {"OPENAI_API_KEY": "env-openai-key"}, clear=True),
+        ):
+            result = await server.handle_get_api_key_status({})
+
+        providers = result["providers"]
+        assert providers["openai"]["source"] == "environment"
+        assert providers["openai"]["active"] is True
+        assert providers["anthropic"]["source"] == "session"
+        assert providers["gemini"]["source"] == "secure-store"
+        assert providers["gemini"]["persisted"] is True
 
 
 class TestServerMain:

@@ -169,6 +169,7 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `/provider` - Show current provider info
 - `/providers` - List all available providers and models
 - `/switch` - Switch AI provider
+- `/api-key` - Show or set provider API keys (`/api-key <provider> <key>`)
 - `/model-info` - Show provider model notes
 
 **Prompt Library & Watch:**

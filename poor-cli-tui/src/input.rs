@@ -100,6 +100,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/api-key",
+        description: "Set or inspect provider API keys",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/quit",
         description: "Exit the TUI",
         recommended: false,

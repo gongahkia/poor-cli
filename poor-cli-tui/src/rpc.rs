@@ -774,6 +774,28 @@ impl RpcClient {
         self.call("poor-cli/toggleConfig", Value::Object(params))
     }
 
+    pub fn set_api_key(
+        &self,
+        provider: &str,
+        api_key: &str,
+        persist: bool,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("provider".into(), Value::String(provider.to_string()));
+        params.insert("apiKey".into(), Value::String(api_key.to_string()));
+        params.insert("persist".into(), Value::Bool(persist));
+        params.insert("reloadActiveProvider".into(), Value::Bool(true));
+        self.call("poor-cli/setApiKey", Value::Object(params))
+    }
+
+    pub fn get_api_key_status(&self, provider: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(name) = provider {
+            params.insert("provider".into(), Value::String(name.to_string()));
+        }
+        self.call("poor-cli/getApiKeyStatus", Value::Object(params))
+    }
+
     pub fn execute_command(&self, command: &str) -> Result<String, String> {
         let mut params = serde_json::Map::new();
         params.insert("command".into(), Value::String(command.to_string()));
@@ -939,6 +961,16 @@ pub enum RpcCommand {
         key_path: String,
         reply: SyncSender<Result<Value, String>>,
     },
+    SetApiKey {
+        provider: String,
+        api_key: String,
+        persist: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetApiKeyStatus {
+        provider: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
     ClearHistory {
         reply: SyncSender<Result<(), String>>,
     },
@@ -1045,6 +1077,17 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ToggleConfig { key_path, reply }) => {
                 let _ = reply.send(client.toggle_config(&key_path));
+            }
+            Ok(RpcCommand::SetApiKey {
+                provider,
+                api_key,
+                persist,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_api_key(&provider, &api_key, persist));
+            }
+            Ok(RpcCommand::GetApiKeyStatus { provider, reply }) => {
+                let _ = reply.send(client.get_api_key_status(provider.as_deref()));
             }
             Ok(RpcCommand::ClearHistory { reply }) => {
                 let _ = reply.send(client.clear_history());

@@ -542,7 +542,21 @@ class ConfigManager:
 
         # Check config api_keys dict (backward compatibility)
         if hasattr(self.config, 'api_keys'):
-            return self.config.api_keys.get(provider)
+            key = self.config.api_keys.get(provider)
+            if key:
+                return key
+
+        # Check encrypted secure key store as final fallback.
+        try:
+            secure_store_file = Path.home() / ".poor-cli" / "keys" / "encrypted_keys.json"
+            if not secure_store_file.exists():
+                return None
+
+            from poor_cli.api_key_manager import get_api_key_manager
+
+            return get_api_key_manager().get_key(provider)
+        except Exception as e:
+            logger.debug(f"Secure key store lookup failed for {provider}: {e}")
 
         return None
 

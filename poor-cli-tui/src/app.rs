@@ -458,9 +458,10 @@ impl App {
         self.history_index = None;
         self.command_match_index = 0;
 
-        // Save to history
-        if !text.is_empty() {
-            self.command_history.push_front(text.clone());
+        // Save to history (redact sensitive command arguments).
+        let history_entry = redact_sensitive_history_command(&text);
+        if !history_entry.is_empty() {
+            self.command_history.push_front(history_entry);
             if self.command_history.len() > 100 {
                 self.command_history.pop_back();
             }
@@ -635,6 +636,37 @@ Output: {} chars (~{} tokens)",
             self.output_tokens_estimate
         )
     }
+}
+
+fn redact_sensitive_history_command(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let mut parts = trimmed.split_whitespace();
+    let Some(command) = parts.next() else {
+        return String::new();
+    };
+    let command_lower = command.to_ascii_lowercase();
+
+    if command_lower == "/api-key" || command_lower == "/set-api-key" {
+        if let Some(provider) = parts.next() {
+            if parts.next().is_some() {
+                return format!("{command} {provider} <redacted>");
+            }
+        }
+        return trimmed.to_string();
+    }
+
+    if command_lower == "/set" {
+        let key = parts.next().unwrap_or("");
+        if key == "api_keys" || key.starts_with("api_keys.") {
+            return format!("{command} {key} <redacted>");
+        }
+    }
+
+    trimmed.to_string()
 }
 
 #[cfg(test)]
