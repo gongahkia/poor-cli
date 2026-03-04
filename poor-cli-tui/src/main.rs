@@ -3738,10 +3738,11 @@ Context Window: {max_context} tokens\n\n\
         match rpc_execute_command_blocking(rpc_cmd_tx, command) {
             Ok(output) => {
                 app.last_command_output = Some(output.clone());
-                app.push_message(ChatMessage::system(format!(
-                    "**Command:** `{command}`\n\n{}",
-                    truncate_block(&output, 1600)
-                )))
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("**Command:** `{command}`\n\n{}", truncate_block(&output, 1600)),
+                )
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Command failed: {e}"))),
         }
@@ -3758,10 +3759,14 @@ Context Window: {max_context} tokens\n\n\
         match rpc_read_file_blocking(rpc_cmd_tx, file_path) {
             Ok(content) => {
                 let language = detect_language_from_path(file_path);
-                app.push_message(ChatMessage::system(format!(
-                    "File: `{file_path}`\n```{language}\n{}\n```",
-                    truncate_block(&content, 3200)
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "File: `{file_path}`\n```{language}\n{}\n```",
+                        truncate_block(&content, 3200)
+                    ),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Read failed: {e}"))),
         }
@@ -3769,10 +3774,7 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/pwd" {
-        app.push_message(ChatMessage::system(format!(
-            "Current directory: `{}`",
-            app.cwd
-        )));
+        show_command_info_popup(app, raw, format!("Current directory: `{}`", app.cwd));
         return false;
     }
 
@@ -3780,10 +3782,11 @@ Context Window: {max_context} tokens\n\n\
         let path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or(".");
         let command = format!("ls -la {}", shell_escape_single_quotes(path));
         match rpc_execute_command_blocking(rpc_cmd_tx, &command) {
-            Ok(output) => app.push_message(ChatMessage::system(format!(
-                "**Listing:** `{path}`\n\n{}",
-                truncate_block(&output, 1600)
-            ))),
+            Ok(output) => show_command_info_popup(
+                app,
+                raw,
+                format!("**Listing:** `{path}`\n\n{}", truncate_block(&output, 1600)),
+            ),
             Err(e) => app.push_message(ChatMessage::error(format!("ls failed: {e}"))),
         }
         return false;
@@ -3843,14 +3846,12 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "status" {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
 
             match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_host_server_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_host_server_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch host server status: {e}"
                 ))),
@@ -3889,15 +3890,13 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "members" || lowered_subcommand == "users" {
             if args.len() > 3 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
 
             let room = args.get(2).copied();
             match rpc_list_host_members_blocking(rpc_cmd_tx, room) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_host_members_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_host_members_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch host members: {e}"
                 ))),
@@ -4014,7 +4013,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "share" {
             if args.len() > 4 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let mut role_filter: Option<&str> = None;
@@ -4036,11 +4035,11 @@ Context Window: {max_context} tokens\n\n\
             }
 
             match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
-                Ok(payload) => app.push_message(ChatMessage::system(format_host_share_payload(
-                    &payload,
-                    role_filter,
-                    room_filter,
-                ))),
+                Ok(payload) => show_command_info_popup(
+                    app,
+                    raw,
+                    format_host_share_payload(&payload, role_filter, room_filter),
+                ),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to get host share details: {e}"
                 ))),
@@ -4290,7 +4289,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "activity" {
             if args.len() > 5 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             let mut room: Option<&str> = None;
@@ -4314,15 +4313,15 @@ Context Window: {max_context} tokens\n\n\
                 idx += 1;
             }
             if idx < args.len() {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "Usage: /host-server activity [room] [limit] [event-type]".to_string(),
-                ));
+                );
                 return false;
             }
             match rpc_list_host_activity_blocking(rpc_cmd_tx, room, limit, event_type) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_host_activity_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_host_activity_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch host activity: {e}"
                 ))),
@@ -4331,7 +4330,7 @@ Context Window: {max_context} tokens\n\n\
         }
 
         if lowered_subcommand == "help" {
-            app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+            show_command_info_popup(app, raw, host_server_usage_text().to_string());
             return false;
         }
 
@@ -4339,16 +4338,14 @@ Context Window: {max_context} tokens\n\n\
             None
         } else {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                show_command_info_popup(app, raw, host_server_usage_text().to_string());
                 return false;
             }
             Some(subcommand)
         };
 
         match rpc_start_host_server_blocking(rpc_cmd_tx, room) {
-            Ok(payload) => {
-                app.push_message(ChatMessage::system(format_host_server_payload(&payload)))
-            }
+            Ok(payload) => show_command_info_popup(app, raw, format_host_server_payload(&payload)),
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to start host server: {e}"
             ))),
@@ -4366,20 +4363,18 @@ Context Window: {max_context} tokens\n\n\
             .to_ascii_lowercase();
 
         if subcommand.is_empty() || subcommand == "help" {
-            app.push_message(ChatMessage::system(service_usage_text().to_string()));
+            show_command_info_popup(app, raw, service_usage_text().to_string());
             return false;
         }
 
         if subcommand == "status" || subcommand == "list" {
             if args.len() > 3 {
-                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                show_command_info_popup(app, raw, service_usage_text().to_string());
                 return false;
             }
             let service_name = args.get(2).copied();
             match rpc_get_service_status_blocking(rpc_cmd_tx, service_name) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch service status: {e}"
                 ))),
@@ -4401,9 +4396,7 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_start_service_blocking(rpc_cmd_tx, service_name, command_text, None) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to start service `{service_name}`: {e}"
                 ))),
@@ -4418,9 +4411,7 @@ Context Window: {max_context} tokens\n\n\
             }
             let service_name = args[2];
             match rpc_stop_service_blocking(rpc_cmd_tx, service_name) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to stop service `{service_name}`: {e}"
                 ))),
@@ -4464,15 +4455,21 @@ Context Window: {max_context} tokens\n\n\
                         .unwrap_or("");
 
                     if content.is_empty() {
-                        app.push_message(ChatMessage::system(format!(
-                            "{status_block}\n\nNo logs available yet at `{log_path}`."
-                        )));
+                        show_command_info_popup(
+                            app,
+                            raw,
+                            format!("{status_block}\n\nNo logs available yet at `{log_path}`."),
+                        );
                     } else {
                         app.last_command_output = Some(content.to_string());
-                        app.push_message(ChatMessage::system(format!(
-                            "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
-                            truncate_block(content, 3200)
-                        )));
+                        show_command_info_popup(
+                            app,
+                            raw,
+                            format!(
+                                "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
+                                truncate_block(content, 3200)
+                            ),
+                        );
                     }
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
@@ -4482,7 +4479,7 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
-        app.push_message(ChatMessage::system(service_usage_text().to_string()));
+        show_command_info_popup(app, raw, service_usage_text().to_string());
         return false;
     }
 
@@ -4497,25 +4494,19 @@ Context Window: {max_context} tokens\n\n\
 
         match subcommand.as_str() {
             "" | "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch Ollama status: {e}"
                 ))),
             },
             "start" => match rpc_start_service_blocking(rpc_cmd_tx, "ollama", None, None) {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to start Ollama service: {e}"
                 ))),
             },
             "stop" => match rpc_stop_service_blocking(rpc_cmd_tx, "ollama") {
-                Ok(payload) => {
-                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
-                }
+                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to stop Ollama service: {e}"
                 ))),
@@ -4549,15 +4540,21 @@ Context Window: {max_context} tokens\n\n\
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
                         if content.is_empty() {
-                            app.push_message(ChatMessage::system(format!(
-                                "{status_block}\n\nNo logs available yet at `{log_path}`."
-                            )));
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                format!("{status_block}\n\nNo logs available yet at `{log_path}`."),
+                            );
                         } else {
                             app.last_command_output = Some(content.to_string());
-                            app.push_message(ChatMessage::system(format!(
-                                "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
-                                truncate_block(content, 3200)
-                            )));
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                format!(
+                                    "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
+                                    truncate_block(content, 3200)
+                                ),
+                            );
                         }
                     }
                     Err(e) => app.push_message(ChatMessage::error(format!(
@@ -4597,10 +4594,11 @@ Context Window: {max_context} tokens\n\n\
                     Some(60),
                     75,
                 ) {
-                    Ok(output) => app.push_message(ChatMessage::system(format!(
-                        "**Installed Ollama Models**\n```text\n{}\n```",
-                        truncate_block(&output, 3200)
-                    ))),
+                    Ok(output) => show_command_info_popup(
+                        app,
+                        raw,
+                        format!("**Installed Ollama Models**\n```text\n{}\n```", truncate_block(&output, 3200)),
+                    ),
                     Err(e) => app.push_message(ChatMessage::error(format!(
                         "Failed to list Ollama models: {e}"
                     ))),
@@ -4613,16 +4611,17 @@ Context Window: {max_context} tokens\n\n\
                     Some(60),
                     75,
                 ) {
-                    Ok(output) => app.push_message(ChatMessage::system(format!(
-                        "**Ollama Running Models**\n```text\n{}\n```",
-                        truncate_block(&output, 3200)
-                    ))),
+                    Ok(output) => show_command_info_popup(
+                        app,
+                        raw,
+                        format!("**Ollama Running Models**\n```text\n{}\n```", truncate_block(&output, 3200)),
+                    ),
                     Err(e) => app.push_message(ChatMessage::error(format!(
                         "Failed to inspect Ollama running models: {e}"
                     ))),
                 }
             }
-            _ => app.push_message(ChatMessage::system(ollama_usage_text().to_string())),
+            _ => show_command_info_popup(app, raw, ollama_usage_text().to_string()),
         }
 
         return false;
@@ -4715,7 +4714,7 @@ Multiplayer: {}",
             onboarding_state,
             multiplayer_state
         );
-        app.push_message(ChatMessage::system(status));
+        show_command_info_popup(app, raw, status);
         return false;
     }
 
@@ -4733,9 +4732,11 @@ Multiplayer: {}",
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 if !available {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "Checkpoint system not available.".to_string(),
-                    ));
+                    );
                     return false;
                 }
 
@@ -4745,7 +4746,7 @@ Multiplayer: {}",
                     .cloned()
                     .unwrap_or_default();
                 if checkpoints.is_empty() {
-                    app.push_message(ChatMessage::system("No checkpoints available.".to_string()));
+                    show_command_info_popup(app, raw, "No checkpoints available.".to_string());
                     return false;
                 }
 
@@ -4780,7 +4781,7 @@ Multiplayer: {}",
                         format_bytes(total_size)
                     ));
                 }
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to list checkpoints: {e}"
@@ -4905,10 +4906,14 @@ Multiplayer: {}",
                     .get("sizeBytes")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                app.push_message(ChatMessage::system(format!(
-                    "Export complete.\n\nFile: `{file_path}`\nFormat: `{format_value}`\nMessages: {message_count}\nSize: {}",
-                    format_bytes(size_bytes)
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "Export complete.\n\nFile: `{file_path}`\nFormat: `{format_value}`\nMessages: {message_count}\nSize: {}",
+                        format_bytes(size_bytes)
+                    ),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to export conversation: {e}"
@@ -4998,7 +5003,7 @@ Total: **${:.4}**",
             output_cost,
             total
         );
-        app.push_message(ChatMessage::system(text));
+        show_command_info_popup(app, raw, text);
         return false;
     }
 
@@ -5195,14 +5200,14 @@ Submitting any slash command will cancel capture."
     if lowered == "/prompts" {
         match list_prompts(app) {
             Ok(entries) if entries.is_empty() => {
-                app.push_message(ChatMessage::system("No saved prompts.".to_string()));
+                show_command_info_popup(app, raw, "No saved prompts.".to_string());
             }
             Ok(entries) => {
                 let mut lines = vec!["**Saved Prompts:**".to_string(), String::new()];
                 for (name, preview) in entries {
                     lines.push(format!("- **{name}**: {preview}"));
                 }
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(e)),
         }
@@ -5258,14 +5263,18 @@ Submitting any slash command will cancel capture."
             } else {
                 "stopped"
             };
-            app.push_message(ChatMessage::system(format!(
-                "**QA Watch**\n- Status: {status}\n- Directory: {}\n- Command: {}",
-                qa_watch_state
-                    .directory
-                    .as_deref()
-                    .unwrap_or(app.cwd.as_str()),
-                qa_watch_state.command.as_deref().unwrap_or("(not set)")
-            )));
+            show_command_info_popup(
+                app,
+                raw,
+                format!(
+                    "**QA Watch**\n- Status: {status}\n- Directory: {}\n- Command: {}",
+                    qa_watch_state
+                        .directory
+                        .as_deref()
+                        .unwrap_or(app.cwd.as_str()),
+                    qa_watch_state.command.as_deref().unwrap_or("(not set)")
+                ),
+            );
             return false;
         }
 
