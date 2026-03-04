@@ -366,7 +366,6 @@ async def handle_slash_command(repl, command: str):
                 return
 
             repl.checkpoint_display.display_checkpoint_list(checkpoints)
-            from rich.prompt import Prompt
             checkpoint_id = Prompt.ask("[bold]Enter checkpoint ID to restore[/bold]")
 
         # Get checkpoint
@@ -600,7 +599,6 @@ async def handle_slash_command(repl, command: str):
             return
 
         # Display matches
-        from rich.table import Table
         table = Table(title=f"Search Results: '{search_term}' ({len(matches)} matches)", show_header=True, header_style="bold cyan")
         table.add_column("Role", style="cyan", width=10)
         table.add_column("Preview", style="white", width=60)
