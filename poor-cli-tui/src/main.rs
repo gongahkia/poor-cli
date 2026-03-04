@@ -1472,12 +1472,57 @@ Version: v{}",
         match rpc_set_config_blocking(rpc_cmd_tx, key, parsed_value) {
             Ok(result) => {
                 let value = result.get("value").cloned().unwrap_or(Value::Null);
+                if key == "ui.theme" {
+                    if let Some(theme_str) = value.as_str() {
+                        app.theme_mode = ThemeMode::from_ui_theme(theme_str);
+                    } else {
+                        app.theme_mode = ThemeMode::from_ui_theme(raw_value);
+                    }
+                }
                 app.push_message(ChatMessage::system(format!(
                     "Updated `{key}` = `{}`",
                     format_value_for_display(&value)
                 )));
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to set `{key}`: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/theme" {
+        app.push_message(ChatMessage::system(format!(
+            "Current theme: **{}**\nUse `/theme dark` or `/theme light`.",
+            app.theme_mode.as_str()
+        )));
+        return false;
+    }
+
+    if lowered.starts_with("/theme ") {
+        let raw_mode = raw.split_whitespace().nth(1).unwrap_or("");
+        let Some(theme_mode) = ThemeMode::from_user_input(raw_mode) else {
+            app.push_message(ChatMessage::error(
+                "Invalid theme mode. Use one of: dark, light.".to_string(),
+            ));
+            return false;
+        };
+
+        match rpc_set_config_blocking(
+            rpc_cmd_tx,
+            "ui.theme",
+            Value::String(theme_mode.as_str().to_string()),
+        ) {
+            Ok(result) => {
+                let applied = result
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(theme_mode.as_str());
+                app.theme_mode = ThemeMode::from_ui_theme(applied);
+                app.push_message(ChatMessage::system(format!(
+                    "Theme set to **{}**.",
+                    app.theme_mode.as_str()
+                )));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to set theme: {e}"))),
         }
         return false;
     }
