@@ -1047,8 +1047,7 @@ Type `@path/to/file` in any message to attach file context.\n\
     if lowered == "/broke" {
         app.response_mode = ResponseMode::Poor;
         app.push_message(ChatMessage::system(
-            "Response mode set to **poor**.\nReplies will be terse and token-minimal."
-                .to_string(),
+            "Response mode set to **poor**.\nReplies will be terse and token-minimal.".to_string(),
         ));
         return false;
     }
