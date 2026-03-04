@@ -8,12 +8,14 @@ It supports stdio transport for Neovim integration.
 import argparse
 import ast
 import asyncio
+from collections import deque
 import contextlib
 import copy
 import difflib
 import json
 import logging
 import os
+import shlex
 import shutil
 import socket
 import sys
@@ -23,6 +25,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from .config import PermissionMode
 from .core import PoorCLICore, CoreEvent
@@ -240,6 +243,21 @@ class InvalidParamsError(Exception):
     """Raised when JSON-RPC method params fail validation."""
 
 
+@dataclass
+class ManagedServiceRuntime:
+    """Track a long-running local service process managed by the server."""
+
+    name: str
+    command: List[str]
+    command_display: str
+    cwd: Optional[str]
+    process: asyncio.subprocess.Process
+    log_path: Path
+    log_handle: Any
+    started_at: str
+    last_exit_code: Optional[int] = None
+
+
 # =============================================================================
 # PoorCLI Server
 # =============================================================================
@@ -278,6 +296,9 @@ class PoorCLIServer:
         self._host_public_ws_url: Optional[str] = None
         self._host_rooms: List[str] = []
         self._host_ngrok_enabled = False
+        self._service_lock = asyncio.Lock()
+        self._managed_services: Dict[str, ManagedServiceRuntime] = {}
+        self._service_logs_dir = Path.home() / ".poor-cli" / "services"
 
         self._register_handlers()
 
@@ -318,6 +339,10 @@ class PoorCLIServer:
             "setConfig": self.handle_set_config,
             "setApiKey": self.handle_set_api_key,
             "getApiKeyStatus": self.handle_get_api_key_status,
+            "startService": self.handle_start_service,
+            "stopService": self.handle_stop_service,
+            "getServiceStatus": self.handle_get_service_status,
+            "getServiceLogs": self.handle_get_service_logs,
             "poor-cli/chat": self.handle_chat,
             "poor-cli/inlineComplete": self.handle_inline_complete,
             "poor-cli/applyEdit": self.handle_apply_edit,
@@ -343,6 +368,10 @@ class PoorCLIServer:
             "poor-cli/startHostServer": self.handle_start_host_server,
             "poor-cli/getHostServerStatus": self.handle_get_host_server_status,
             "poor-cli/stopHostServer": self.handle_stop_host_server,
+            "poor-cli/startService": self.handle_start_service,
+            "poor-cli/stopService": self.handle_stop_service,
+            "poor-cli/getServiceStatus": self.handle_get_service_status,
+            "poor-cli/getServiceLogs": self.handle_get_service_logs,
             "poor-cli/cancelRequest": self.handle_cancel_request,
             "poor-cli/chatStreaming": self.handle_chat_streaming,
         }
