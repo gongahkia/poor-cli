@@ -1,13 +1,13 @@
 /// Entry point for the poor-cli Rust TUI.
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs;
-use std::io;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use crossterm::{
@@ -138,6 +138,63 @@ impl WatchState {
     }
 }
 
+type SessionLogWriter = Arc<Mutex<fs::File>>;
+
+#[derive(Clone)]
+struct BackendLaunchContext {
+    python_bin: String,
+    cwd: Option<String>,
+    backend_log_path: Option<String>,
+    session_log: Option<SessionLogWriter>,
+}
+
+fn unix_ts_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+fn setup_session_logs(cwd: &str) -> (Option<SessionLogWriter>, Option<PathBuf>, Option<PathBuf>) {
+    let logs_dir = Path::new(cwd).join(".poor-cli").join("logs");
+    if fs::create_dir_all(&logs_dir).is_err() {
+        return (None, None, None);
+    }
+
+    let session_id = format!("{}-{}", unix_ts_millis(), std::process::id());
+    let tui_log_path = logs_dir.join(format!("tui-{session_id}.log"));
+    let backend_log_path = logs_dir.join(format!("backend-{session_id}.log"));
+
+    let writer = match OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&tui_log_path)
+    {
+        Ok(file) => Some(Arc::new(Mutex::new(file))),
+        Err(_) => None,
+    };
+
+    // Best-effort touch so the backend log path always exists for discovery.
+    let _ = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&backend_log_path);
+
+    (writer, Some(tui_log_path), Some(backend_log_path))
+}
+
+fn write_session_log(log_writer: Option<&SessionLogWriter>, message: &str) {
+    let Some(writer) = log_writer else {
+        return;
+    };
+    let mut guard = match writer.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let _ = writeln!(&mut *guard, "{} {}", unix_ts_millis(), message);
+    let _ = guard.flush();
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -174,124 +231,122 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn build_backend_server_args(cli: &Cli) -> Result<Vec<String>, String> {
     match (&cli.remote_url, &cli.remote_room, &cli.remote_token) {
         (None, None, None) => Ok(vec![]),
-        (Some(url), Some(room), Some(token)) => Ok(vec![
-            "--bridge".to_string(),
-            "--url".to_string(),
-            url.clone(),
-            "--room".to_string(),
-            room.clone(),
-            "--token".to_string(),
-            token.clone(),
-        ]),
+        (Some(url), Some(room), Some(token)) => Ok(build_bridge_server_args(url, room, token)),
         _ => Err(
             "Remote mode requires all of: --remote-url, --remote-room, --remote-token".to_string(),
         ),
     }
 }
 
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    cli: Cli,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let backend_server_args = build_backend_server_args(&cli)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+fn build_bridge_server_args(url: &str, room: &str, token: &str) -> Vec<String> {
+    vec![
+        "--bridge".to_string(),
+        "--url".to_string(),
+        url.to_string(),
+        "--room".to_string(),
+        room.to_string(),
+        "--token".to_string(),
+        token.to_string(),
+    ]
+}
 
-    let mut app = App::new();
-    app.cwd = cli.cwd.clone().unwrap_or_else(|| {
-        std::env::current_dir()
-            .ok()
-            .and_then(|p| p.to_str().map(|s| s.to_string()))
-            .unwrap_or_else(|| ".".into())
-    });
-
-    let (tx, rx) = mpsc::channel::<ServerMsg>();
+fn spawn_backend_worker(
+    tx: &mpsc::Sender<ServerMsg>,
+    launch: BackendLaunchContext,
+    server_args: Vec<String>,
+    provider: Option<String>,
+    model: Option<String>,
+    permission_mode: Option<String>,
+) -> mpsc::Sender<RpcCommand> {
     let (rpc_cmd_tx, rpc_cmd_rx) = mpsc::channel::<RpcCommand>();
-
-    let python_bin = cli.python.clone();
-    let cwd = cli.cwd.clone();
-    let provider = cli.provider.clone();
-    let model = cli.model.clone();
-    let permission_mode = if cli.dangerously_skip_permissions {
-        Some("danger-full-access".to_string())
-    } else {
-        cli.permission_mode.clone()
-    };
-    let server_args = backend_server_args.clone();
-
     let tx_init = tx.clone();
     let tx_notif = tx.clone();
+    let log_ctx = launch.session_log.clone();
+    let mode_label = if server_args.is_empty() {
+        "local".to_string()
+    } else {
+        format!("bridge args={}", server_args.join(" "))
+    };
+
     thread::spawn(move || {
-        match RpcClient::spawn_with_notifications_args(&python_bin, cwd.as_deref(), &server_args) {
+        write_session_log(
+            log_ctx.as_ref(),
+            &format!("backend_spawn_attempt mode={mode_label}"),
+        );
+        match RpcClient::spawn_with_notifications_args(
+            &launch.python_bin,
+            launch.cwd.as_deref(),
+            &server_args,
+            launch.backend_log_path.as_deref(),
+        ) {
             Ok((client, notification_rx)) => {
-                // Spawn notification reader thread → maps ServerNotification → ServerMsg
-                thread::spawn(move || loop {
-                    match notification_rx.recv() {
-                        Ok(notif) => {
-                            let msg = match notif {
-                                ServerNotification::StreamChunk {
-                                    chunk,
-                                    done,
-                                    reason,
-                                    ..
-                                } => ServerMsg::StreamChunk {
-                                    chunk,
-                                    done,
-                                    reason,
-                                },
-                                ServerNotification::ToolEvent {
-                                    event_type,
-                                    tool_name,
-                                    tool_args,
-                                    tool_result,
-                                    diff,
-                                    iteration_index,
-                                    iteration_cap,
-                                    ..
-                                } => ServerMsg::ToolEvent {
-                                    event_type,
-                                    tool_name,
-                                    tool_args,
-                                    tool_result,
-                                    diff,
-                                    iteration_index,
-                                    iteration_cap,
-                                },
-                                ServerNotification::PermissionRequest {
-                                    tool_name,
-                                    tool_args,
-                                    prompt_id,
-                                    ..
-                                } => ServerMsg::PermissionRequest {
-                                    tool_name,
-                                    tool_args,
-                                    prompt_id,
-                                },
-                                ServerNotification::Progress {
-                                    phase,
-                                    message,
-                                    iteration_index,
-                                    iteration_cap,
-                                    ..
-                                } => ServerMsg::Progress {
-                                    phase,
-                                    message,
-                                    iteration_index,
-                                    iteration_cap,
-                                },
-                                ServerNotification::CostUpdate {
-                                    input_tokens,
-                                    output_tokens,
-                                    ..
-                                } => ServerMsg::CostUpdate {
-                                    input_tokens,
-                                    output_tokens,
-                                },
-                            };
-                            if tx_notif.send(msg).is_err() {
-                                break;
-                            }
+                write_session_log(log_ctx.as_ref(), "backend_spawn_ok");
+
+                thread::spawn(move || {
+                    while let Ok(notif) = notification_rx.recv() {
+                        let msg = match notif {
+                            ServerNotification::StreamChunk {
+                                chunk,
+                                done,
+                                reason,
+                                ..
+                            } => ServerMsg::StreamChunk {
+                                chunk,
+                                done,
+                                reason,
+                            },
+                            ServerNotification::ToolEvent {
+                                event_type,
+                                tool_name,
+                                tool_args,
+                                tool_result,
+                                diff,
+                                iteration_index,
+                                iteration_cap,
+                                ..
+                            } => ServerMsg::ToolEvent {
+                                event_type,
+                                tool_name,
+                                tool_args,
+                                tool_result,
+                                diff,
+                                iteration_index,
+                                iteration_cap,
+                            },
+                            ServerNotification::PermissionRequest {
+                                tool_name,
+                                tool_args,
+                                prompt_id,
+                                ..
+                            } => ServerMsg::PermissionRequest {
+                                tool_name,
+                                tool_args,
+                                prompt_id,
+                            },
+                            ServerNotification::Progress {
+                                phase,
+                                message,
+                                iteration_index,
+                                iteration_cap,
+                                ..
+                            } => ServerMsg::Progress {
+                                phase,
+                                message,
+                                iteration_index,
+                                iteration_cap,
+                            },
+                            ServerNotification::CostUpdate {
+                                input_tokens,
+                                output_tokens,
+                                ..
+                            } => ServerMsg::CostUpdate {
+                                input_tokens,
+                                output_tokens,
+                            },
+                        };
+                        if tx_notif.send(msg).is_err() {
+                            break;
                         }
-                        Err(_) => break,
                     }
                 });
 
@@ -302,6 +357,7 @@ fn run_app(
                     permission_mode.as_deref(),
                 ) {
                     Ok(init) => {
+                        write_session_log(log_ctx.as_ref(), "backend_initialize_ok");
                         let (prov, mdl) = if let Some(caps) = &init.capabilities {
                             let prov = caps
                                 .pointer("/providerInfo/name")
@@ -336,6 +392,10 @@ fn run_app(
                         run_rpc_worker(client, rpc_cmd_rx);
                     }
                     Err(e) => {
+                        write_session_log(
+                            log_ctx.as_ref(),
+                            &format!("backend_initialize_error {e}"),
+                        );
                         let _ = tx_init.send(ServerMsg::Error {
                             message: format!("Initialization failed: {e}"),
                         });
@@ -343,6 +403,7 @@ fn run_app(
                 }
             }
             Err(e) => {
+                write_session_log(log_ctx.as_ref(), &format!("backend_spawn_error {e}"));
                 let _ = tx_init.send(ServerMsg::Error {
                     message: format!("Failed to start server: {e}"),
                 });
@@ -350,9 +411,71 @@ fn run_app(
         }
     });
 
+    rpc_cmd_tx
+}
+
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    cli: Cli,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let backend_server_args = build_backend_server_args(&cli)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
+    let mut app = App::new();
+    app.cwd = cli.cwd.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| ".".into())
+    });
+    let (session_log, tui_log_path, backend_log_path) = setup_session_logs(&app.cwd);
+    write_session_log(
+        session_log.as_ref(),
+        &format!(
+            "tui_session_start cwd={} remote_mode={} python_bin={}",
+            app.cwd,
+            !backend_server_args.is_empty(),
+            cli.python
+        ),
+    );
+
+    let (tx, rx) = mpsc::channel::<ServerMsg>();
+    let provider = cli.provider.clone();
+    let model = cli.model.clone();
+    let permission_mode = if cli.dangerously_skip_permissions {
+        Some("danger-full-access".to_string())
+    } else {
+        cli.permission_mode.clone()
+    };
+    let backend_log_path_string = backend_log_path
+        .as_ref()
+        .map(|path| path.to_string_lossy().to_string());
+    let launch = BackendLaunchContext {
+        python_bin: cli.python.clone(),
+        cwd: cli.cwd.clone(),
+        backend_log_path: backend_log_path_string,
+        session_log: session_log.clone(),
+    };
+    let mut rpc_cmd_tx = spawn_backend_worker(
+        &tx,
+        launch.clone(),
+        backend_server_args.clone(),
+        provider.clone(),
+        model.clone(),
+        permission_mode.clone(),
+    );
+
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
     app.add_welcome();
+    if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
+    {
+        app.push_message(ChatMessage::system(format!(
+            "Session logs:\n- TUI: `{}`\n- Backend: `{}`",
+            tui_path.display(),
+            backend_path.display()
+        )));
+    }
 
     let cancel_token: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let mut watch_state = WatchState::default();
@@ -515,7 +638,8 @@ fn run_app(
                     if handle_submit(
                         &mut app,
                         &tx,
-                        &rpc_cmd_tx,
+                        &mut rpc_cmd_tx,
+                        &launch,
                         &cancel_token,
                         &mut watch_state,
                         &text,
@@ -601,6 +725,7 @@ fn run_app(
 
     watch_state.stop();
     let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
+    write_session_log(session_log.as_ref(), "tui_session_end");
     Ok(app.session_summary_text())
 }
 
@@ -609,7 +734,8 @@ fn run_app(
 fn handle_submit(
     app: &mut App,
     tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    rpc_cmd_tx: &mut mpsc::Sender<RpcCommand>,
+    launch: &BackendLaunchContext,
     cancel_token: &Arc<AtomicBool>,
     watch_state: &mut WatchState,
     text: &str,
@@ -634,7 +760,15 @@ fn handle_submit(
     }
 
     if trimmed.starts_with('/') {
-        return handle_slash_command(app, tx, rpc_cmd_tx, cancel_token, watch_state, trimmed);
+        return handle_slash_command(
+            app,
+            tx,
+            rpc_cmd_tx,
+            launch,
+            cancel_token,
+            watch_state,
+            trimmed,
+        );
     }
 
     let backend_with_files = match with_context_files(app, trimmed) {
@@ -1131,7 +1265,8 @@ Cover important reasoning and tradeoffs when relevant."
 fn handle_slash_command(
     app: &mut App,
     tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    rpc_cmd_tx: &mut mpsc::Sender<RpcCommand>,
+    launch: &BackendLaunchContext,
     cancel_token: &Arc<AtomicBool>,
     watch_state: &mut WatchState,
     cmd: &str,
@@ -1208,6 +1343,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
   /copy                Copy last assistant response to clipboard\n\
+  /host-server [arg]   Start/share host session (arg: room|status|stop)\n\
+  /join-server <code>  Join host using invite code or url/room/token\n\
   /run <command>       Run shell command through backend\n\
   /read <file>         Read a file from backend\n\
   /pwd                 Show current working directory\n\
@@ -2232,6 +2369,114 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/join-server" || lowered.starts_with("/join-server ") {
+        let (url, room, token) = match parse_join_server_args(raw) {
+            Ok(values) => values,
+            Err(error_message) => {
+                app.push_message(ChatMessage::system(error_message));
+                return false;
+            }
+        };
+
+        let bridge_args = build_bridge_server_args(&url, &room, &token);
+        write_session_log(
+            launch.session_log.as_ref(),
+            &format!("join_server_request url={url} room={room}"),
+        );
+
+        let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
+        app.server_connected = false;
+        app.finalize_streaming();
+        app.stop_waiting();
+        app.push_message(ChatMessage::system(format!(
+            "Joining multiplayer server `{url}` room `{room}`..."
+        )));
+        app.set_status("Reconnecting backend in join mode");
+
+        *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
+        return false;
+    }
+
+    if lowered == "/host-server" || lowered.starts_with("/host-server ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args.get(1).copied().unwrap_or("").trim();
+        let lowered_subcommand = subcommand.to_ascii_lowercase();
+
+        if lowered_subcommand == "status" {
+            if args.len() > 2 {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server [room]\n       /host-server status\n       /host-server stop".to_string(),
+                ));
+                return false;
+            }
+
+            match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_host_server_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch host server status: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "stop" {
+            if args.len() > 2 {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server [room]\n       /host-server status\n       /host-server stop".to_string(),
+                ));
+                return false;
+            }
+
+            match rpc_stop_host_server_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    if payload
+                        .get("stopped")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        app.push_message(ChatMessage::system(
+                            "Multiplayer host stopped.".to_string(),
+                        ));
+                    } else {
+                        app.push_message(ChatMessage::system(
+                            "No multiplayer host is currently running.".to_string(),
+                        ));
+                    }
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to stop host server: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if args.len() > 2 {
+            app.push_message(ChatMessage::system(
+                "Usage: /host-server [room]\n       /host-server status\n       /host-server stop"
+                    .to_string(),
+            ));
+            return false;
+        }
+
+        let room = if subcommand.is_empty() {
+            None
+        } else {
+            Some(subcommand)
+        };
+
+        match rpc_start_host_server_blocking(rpc_cmd_tx, room) {
+            Ok(payload) => {
+                app.push_message(ChatMessage::system(format_host_server_payload(&payload)))
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to start host server: {e}"
+            ))),
+        }
+        return false;
+    }
+
     if lowered == "/status" {
         let status = format!(
             "**Session Status:**\n\
@@ -3193,6 +3438,49 @@ fn bool_label(value: bool) -> &'static str {
     }
 }
 
+fn parse_join_server_args(raw: &str) -> Result<(String, String, String), String> {
+    let usage = "Usage: /join-server <invite-code>\n       /join-server <ws-url> <room> <token>";
+    let args = raw
+        .split_whitespace()
+        .skip(1)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+
+    if args.is_empty() {
+        return Err(usage.to_string());
+    }
+
+    let (url, room, token) = if args.len() == 1 {
+        let parts = args[0].split('|').collect::<Vec<_>>();
+        if parts.len() != 3 {
+            return Err(usage.to_string());
+        }
+        (
+            parts[0].trim().to_string(),
+            parts[1].trim().to_string(),
+            parts[2].trim().to_string(),
+        )
+    } else if args.len() == 3 {
+        (
+            args[0].to_string(),
+            args[1].to_string(),
+            args[2].to_string(),
+        )
+    } else {
+        return Err(usage.to_string());
+    };
+
+    if url.is_empty() || room.is_empty() || token.is_empty() {
+        return Err(usage.to_string());
+    }
+    if !(url.starts_with("ws://") || url.starts_with("wss://")) {
+        return Err("Join URL must start with ws:// or wss://".to_string());
+    }
+
+    Ok((url, room, token))
+}
+
 fn format_value_for_display(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
@@ -3203,6 +3491,118 @@ fn format_value_for_display(value: &Value) -> String {
             serde_json::to_string(value).unwrap_or_else(|_| "<unserializable>".to_string())
         }
     }
+}
+
+fn format_host_server_payload(payload: &Value) -> String {
+    let running = payload
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !running {
+        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+    }
+
+    let created = payload
+        .get("created")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let bind_host = payload
+        .get("bindHost")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.0.0.0");
+    let port = payload.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
+    let local_ws = payload
+        .get("localWsUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let share_ws = payload
+        .get("shareWsUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let public_ws = payload
+        .get("publicWsUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let mut lines = vec![
+        if created {
+            "Multiplayer host started.".to_string()
+        } else {
+            "Multiplayer host is already running.".to_string()
+        },
+        format!("Bind: `{bind_host}:{port}`"),
+    ];
+
+    if !local_ws.is_empty() {
+        lines.push(format!("Local URL: `{local_ws}`"));
+    }
+    if !share_ws.is_empty() {
+        lines.push(format!("LAN share URL: `{share_ws}`"));
+        if bind_host == "0.0.0.0" && share_ws.contains("127.0.0.1") {
+            lines.push(
+                "LAN IP detection fell back to localhost. Replace `127.0.0.1` with your LAN IP before sharing."
+                    .to_string(),
+            );
+        }
+    }
+    if !public_ws.is_empty() {
+        lines.push(format!("Public URL: `{public_ws}`"));
+    }
+
+    let rooms = payload
+        .get("rooms")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if rooms.is_empty() {
+        lines.push(String::new());
+        lines.push("No multiplayer rooms are available yet.".to_string());
+        return lines.join("\n");
+    }
+
+    for room in rooms {
+        let name = room
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let viewer_token = room
+            .get("viewerToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let prompter_token = room
+            .get("prompterToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let viewer_join = room
+            .get("viewerJoinCommand")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let prompter_join = room
+            .get("prompterJoinCommand")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let viewer_code = room
+            .get("viewerInviteCode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        lines.push(String::new());
+        lines.push(format!("**Room `{name}`**"));
+        lines.push(format!("- Viewer token: `{viewer_token}`"));
+        lines.push(format!("- Prompter token: `{prompter_token}`"));
+        if !viewer_join.is_empty() {
+            lines.push(format!("- Share viewer command: `{viewer_join}`"));
+        }
+        if !prompter_join.is_empty() {
+            lines.push(format!("- Share prompter command: `{prompter_join}`"));
+        }
+        if !viewer_code.is_empty() {
+            lines.push(format!("- Viewer invite code: `{viewer_code}`"));
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn parse_value_literal(raw: &str) -> Value {
@@ -3653,6 +4053,47 @@ fn rpc_export_conversation_blocking(
         .map_err(|_| "Timed out waiting for export response".to_string())?
 }
 
+fn rpc_start_host_server_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StartHostServer {
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host server start: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for host server start response".to_string())?
+}
+
+fn rpc_get_host_server_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetHostServerStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to request host server status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for host server status response".to_string())?
+}
+
+fn rpc_stop_host_server_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StopHostServer { reply: reply_tx })
+        .map_err(|e| format!("Failed to request host server stop: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host server stop response".to_string())?
+}
+
 fn copy_to_clipboard(content: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -3783,6 +4224,41 @@ mod tests {
         let cli = Cli::parse_from(["poor-cli-tui", "--remote-url", "wss://example.test/rpc"]);
         let err = build_backend_server_args(&cli).expect_err("should fail for partial remote args");
         assert!(err.contains("--remote-url"));
+    }
+
+    #[test]
+    fn join_server_parser_accepts_invite_code() {
+        let parsed = parse_join_server_args("/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc")
+            .expect("invite code should parse");
+        assert_eq!(
+            parsed,
+            (
+                "ws://127.0.0.1:8765/rpc".to_string(),
+                "dev".to_string(),
+                "tok-abc".to_string(),
+            )
+        );
+    }
+
+    #[test]
+    fn join_server_parser_accepts_explicit_triplet() {
+        let parsed = parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")
+            .expect("triplet should parse");
+        assert_eq!(
+            parsed,
+            (
+                "wss://host.test/rpc".to_string(),
+                "docs".to_string(),
+                "tok-xyz".to_string(),
+            )
+        );
+    }
+
+    #[test]
+    fn join_server_parser_rejects_invalid_usage() {
+        let err = parse_join_server_args("/join-server checkpoint")
+            .expect_err("single non-code arg should fail");
+        assert!(err.contains("Usage"));
     }
 
     #[test]

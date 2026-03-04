@@ -192,6 +192,9 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `/tools` - List backend tool declarations
 - `/image <path>` - Queue image path for next request
 - `/copy` - Copy last assistant response to clipboard
+- `/host-server [room|status|stop]` - Start/share a multiplayer host from inside TUI
+- `/join-server <invite-code|ws-url room token>` - Join an existing multiplayer host from inside TUI
+- Each TUI run writes session logs under `.poor-cli/logs/` (TUI + backend files)
 
 **Neovim Commands:**
 - `:PoorCliStart`: Start the AI server

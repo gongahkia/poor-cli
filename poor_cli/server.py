@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -266,6 +267,17 @@ class PoorCLIServer:
         self._writer: Optional[asyncio.StreamWriter] = None
         self._client_streaming = False  # set True if client opts in during initialize
         self._pending_permissions: Dict[str, asyncio.Future] = {}  # promptId → Future[bool]
+        self._embedded_multiplayer_room = False
+        self._host_server_lock = asyncio.Lock()
+        self._host_server: Optional[Any] = None
+        self._host_tunnel: Optional["NgrokTunnel"] = None
+        self._host_bind_host = ""
+        self._host_port = 0
+        self._host_local_ws_url = ""
+        self._host_share_ws_url = ""
+        self._host_public_ws_url: Optional[str] = None
+        self._host_rooms: List[str] = []
+        self._host_ngrok_enabled = False
 
         self._register_handlers()
 
@@ -328,6 +340,9 @@ class PoorCLIServer:
             "poor-cli/restoreCheckpoint": self.handle_restore_checkpoint,
             "poor-cli/compareFiles": self.handle_compare_files,
             "poor-cli/exportConversation": self.handle_export_conversation,
+            "poor-cli/startHostServer": self.handle_start_host_server,
+            "poor-cli/getHostServerStatus": self.handle_get_host_server_status,
+            "poor-cli/stopHostServer": self.handle_stop_host_server,
             "poor-cli/cancelRequest": self.handle_cancel_request,
             "poor-cli/chatStreaming": self.handle_chat_streaming,
         }
@@ -389,7 +404,10 @@ class PoorCLIServer:
 
     async def handle_shutdown(self, params: Dict[str, Any]) -> None:
         """Shutdown the server."""
+        del params
         self.logger.info("Shutdown requested")
+        async with self._host_server_lock:
+            await self._shutdown_host_server_locked()
         self._running = False
         return None
 
@@ -1255,6 +1273,287 @@ class PoorCLIServer:
             "sizeBytes": output_path.stat().st_size,
         }
 
+    def _ensure_host_controls_available(self) -> None:
+        """Disallow host lifecycle controls from nested multiplayer room engines."""
+        if self._embedded_multiplayer_room:
+            raise InvalidParamsError(
+                "Host controls are unavailable inside multiplayer room sessions"
+            )
+
+    @staticmethod
+    def _normalize_multiplayer_room_names(
+        raw_rooms: Any,
+        fallback_room: str = "",
+    ) -> List[str]:
+        """Normalize and validate requested room names."""
+        candidates: List[str] = []
+        if isinstance(raw_rooms, list):
+            candidates.extend(str(item) for item in raw_rooms)
+        elif isinstance(raw_rooms, str):
+            candidates.append(raw_rooms)
+        elif raw_rooms is not None:
+            raise InvalidParamsError("rooms must be a list of names or a single string")
+
+        if fallback_room.strip():
+            candidates.append(fallback_room.strip())
+
+        if not candidates:
+            candidates.append("dev")
+
+        normalized: List[str] = []
+        for raw_room in candidates:
+            room_name = raw_room.strip()
+            if not room_name:
+                continue
+            if len(room_name) > 64:
+                raise InvalidParamsError(f"Room name too long: {room_name}")
+            if not all(ch.isalnum() or ch in {"-", "_", "."} for ch in room_name):
+                raise InvalidParamsError(
+                    f"Invalid room name: {room_name}. Use letters, numbers, '-', '_' or '.'."
+                )
+            if room_name not in normalized:
+                normalized.append(room_name)
+
+        if not normalized:
+            raise InvalidParamsError("At least one non-empty room name is required")
+
+        return normalized
+
+    @staticmethod
+    def _resolve_multiplayer_share_host(bind_host: str) -> str:
+        """Resolve a shareable host/IP when binding to wildcard interfaces."""
+        host = bind_host.strip()
+        if host and host not in {"0.0.0.0", "::"}:
+            return host
+
+        try:
+            with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as sock:
+                sock.connect(("8.8.8.8", 80))
+                lan_ip = sock.getsockname()[0]
+                if lan_ip and not lan_ip.startswith("127."):
+                    return lan_ip
+        except OSError:
+            pass
+
+        return "127.0.0.1"
+
+    @staticmethod
+    def _is_port_bindable(bind_host: str, port: int) -> bool:
+        """Return True when the given host/port pair can be bound."""
+        try:
+            address_info = socket.getaddrinfo(bind_host, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as e:
+            raise InvalidParamsError(f"Invalid bind host: {bind_host}") from e
+
+        for family, socktype, proto, _, sockaddr in address_info:
+            with contextlib.closing(socket.socket(family, socktype, proto)) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    sock.bind(sockaddr)
+                    return True
+                except OSError:
+                    continue
+
+        return False
+
+    def _select_multiplayer_port(self, bind_host: str, requested_port: Optional[int]) -> int:
+        """Choose a usable host port, preferring 8765+ when unspecified."""
+        if requested_port is not None:
+            if requested_port <= 0 or requested_port > 65535:
+                raise InvalidParamsError("port must be between 1 and 65535")
+            if not self._is_port_bindable(bind_host, requested_port):
+                raise InvalidParamsError(f"Port {requested_port} is unavailable on {bind_host}")
+            return requested_port
+
+        for port_candidate in range(8765, 8865):
+            if self._is_port_bindable(bind_host, port_candidate):
+                return port_candidate
+
+        raise InvalidParamsError(
+            "Unable to find an open port in the 8765-8864 range. Specify `port` explicitly."
+        )
+
+    def _compose_host_server_payload(self, *, created: bool, stopped: bool) -> Dict[str, Any]:
+        """Build a stable payload describing the active host state."""
+        if self._host_server is None:
+            return {
+                "running": False,
+                "created": created,
+                "stopped": stopped,
+                "rooms": [],
+            }
+
+        tokens: Dict[str, Dict[str, str]] = self._host_server.get_room_tokens()
+        join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
+        rooms: List[Dict[str, Any]] = []
+        for room_name in sorted(tokens.keys()):
+            role_map = tokens.get(room_name, {})
+            viewer_token = str(role_map.get("viewer", ""))
+            prompter_token = str(role_map.get("prompter", ""))
+
+            viewer_join_command = ""
+            prompter_join_command = ""
+            viewer_invite_code = ""
+            prompter_invite_code = ""
+            if join_ws_url:
+                if viewer_token:
+                    viewer_join_command = (
+                        f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
+                        f"--remote-token {viewer_token}"
+                    )
+                    viewer_invite_code = f"{join_ws_url}|{room_name}|{viewer_token}"
+                if prompter_token:
+                    prompter_join_command = (
+                        f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
+                        f"--remote-token {prompter_token}"
+                    )
+                    prompter_invite_code = f"{join_ws_url}|{room_name}|{prompter_token}"
+
+            rooms.append(
+                {
+                    "name": room_name,
+                    "viewerToken": viewer_token,
+                    "prompterToken": prompter_token,
+                    "viewerJoinCommand": viewer_join_command,
+                    "prompterJoinCommand": prompter_join_command,
+                    "viewerInviteCode": viewer_invite_code,
+                    "prompterInviteCode": prompter_invite_code,
+                }
+            )
+
+        return {
+            "running": True,
+            "created": created,
+            "stopped": stopped,
+            "bindHost": self._host_bind_host,
+            "port": self._host_port,
+            "localWsUrl": self._host_local_ws_url,
+            "shareWsUrl": self._host_share_ws_url,
+            "publicWsUrl": self._host_public_ws_url,
+            "joinWsUrl": join_ws_url,
+            "permissionMode": self.permission_mode,
+            "ngrokEnabled": self._host_ngrok_enabled,
+            "rooms": rooms,
+        }
+
+    async def _shutdown_host_server_locked(self) -> bool:
+        """Stop active host/tunnel and reset state. Call only while holding lock."""
+        host = self._host_server
+        tunnel = self._host_tunnel
+        was_running = host is not None
+
+        self._host_server = None
+        self._host_tunnel = None
+        self._host_bind_host = ""
+        self._host_port = 0
+        self._host_local_ws_url = ""
+        self._host_share_ws_url = ""
+        self._host_public_ws_url = None
+        self._host_rooms = []
+        self._host_ngrok_enabled = False
+
+        if host is not None:
+            await host.stop()
+        if tunnel is not None:
+            await tunnel.stop()
+
+        return was_running
+
+    async def handle_start_host_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Start an in-process multiplayer host and return join details/tokens.
+
+        Params:
+            room: Optional room name shortcut
+            rooms: Optional list of room names
+            bindHost: Optional bind host (default 0.0.0.0)
+            port: Optional port; auto-selects from 8765+ when omitted
+            ngrok: Optional bool to launch ngrok helper
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        bind_host = str(params.get("bindHost", "0.0.0.0")).strip() or "0.0.0.0"
+        room_hint = str(params.get("room", "")).strip()
+        rooms = self._normalize_multiplayer_room_names(params.get("rooms"), room_hint)
+
+        requested_port: Optional[int] = None
+        raw_port = params.get("port")
+        if raw_port not in (None, ""):
+            try:
+                requested_port = int(raw_port)
+            except (TypeError, ValueError) as e:
+                raise InvalidParamsError("port must be an integer") from e
+
+        enable_ngrok = bool(params.get("ngrok", False))
+
+        async with self._host_server_lock:
+            if self._host_server is not None:
+                return self._compose_host_server_payload(created=False, stopped=False)
+
+            port = self._select_multiplayer_port(bind_host, requested_port)
+
+            from .multiplayer import MultiplayerHost
+
+            host = MultiplayerHost(
+                bind_host=bind_host,
+                port=port,
+                room_names=rooms,
+                server_factory=PoorCLIServer,
+                message_cls=JsonRpcMessage,
+                rpc_error_cls=JsonRpcError,
+                default_permission_mode=self.permission_mode,
+            )
+            try:
+                await host.start()
+            except Exception:
+                with contextlib.suppress(Exception):
+                    await host.stop()
+                raise
+
+            tunnel: Optional[Any] = None
+            public_ws_url: Optional[str] = None
+            if enable_ngrok:
+                tunnel = NgrokTunnel(f"{bind_host}:{port}")
+                try:
+                    public_https = await tunnel.start()
+                    if public_https:
+                        public_ws_url = public_https.replace("https://", "wss://", 1) + "/rpc"
+                except Exception as error:
+                    self.logger.warning(f"ngrok helper failed while starting host: {error}")
+
+            local_host = "127.0.0.1" if bind_host in {"0.0.0.0", "::"} else bind_host
+            share_host = self._resolve_multiplayer_share_host(bind_host)
+
+            self._host_server = host
+            self._host_tunnel = tunnel
+            self._host_bind_host = bind_host
+            self._host_port = port
+            self._host_local_ws_url = f"ws://{local_host}:{port}/rpc"
+            self._host_share_ws_url = f"ws://{share_host}:{port}/rpc"
+            self._host_public_ws_url = public_ws_url
+            self._host_rooms = rooms
+            self._host_ngrok_enabled = enable_ngrok
+
+            return self._compose_host_server_payload(created=True, stopped=False)
+
+    async def handle_get_host_server_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return current in-process multiplayer host status."""
+        del params
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+        async with self._host_server_lock:
+            return self._compose_host_server_payload(created=False, stopped=False)
+
+    async def handle_stop_host_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop an active in-process multiplayer host if one is running."""
+        del params
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+        async with self._host_server_lock:
+            was_running = await self._shutdown_host_server_locked()
+            return self._compose_host_server_payload(created=False, stopped=was_running)
+
     def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
         """Flatten nested dict/list/scalars into a dot-path list."""
         if isinstance(value, dict):
@@ -1783,6 +2082,9 @@ class PoorCLIServer:
             except Exception as e:
                 self.logger.exception("Error in main loop")
 
+        async with self._host_server_lock:
+            with contextlib.suppress(Exception):
+                await self._shutdown_host_server_locked()
         self.logger.info("Stdio server stopped")
 
 
@@ -2089,10 +2391,22 @@ def main() -> None:
 
     # Set up logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
+    handlers: List[logging.Handler] = []
+    log_file = os.environ.get("POOR_CLI_SERVER_LOG_FILE", "").strip()
+    if log_file:
+        try:
+            log_path = Path(log_file).expanduser()
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+        except Exception as error:
+            print(f"Warning: failed to open server log file {log_file}: {error}", file=sys.stderr)
+    if not handlers:
+        handlers.append(logging.StreamHandler(sys.stderr))
+
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        stream=sys.stderr,  # Log to stderr to keep stdout clean for JSON-RPC
+        handlers=handlers,  # Default to file logging when POOR_CLI_SERVER_LOG_FILE is set.
     )
 
     if args.host and args.bridge:

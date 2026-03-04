@@ -50,6 +50,47 @@ class _InlineEventLoop:
         return fn()
 
 
+class _FakeMultiplayerHost:
+    instances = []
+
+    def __init__(
+        self,
+        *,
+        bind_host,
+        port,
+        room_names,
+        server_factory,
+        message_cls,
+        rpc_error_cls,
+        default_permission_mode,
+    ):
+        self.bind_host = bind_host
+        self.port = port
+        self.room_names = list(room_names)
+        self.server_factory = server_factory
+        self.message_cls = message_cls
+        self.rpc_error_cls = rpc_error_cls
+        self.default_permission_mode = default_permission_mode
+        self.started = False
+        self.stopped = False
+        _FakeMultiplayerHost.instances.append(self)
+
+    async def start(self):
+        self.started = True
+
+    async def stop(self):
+        self.stopped = True
+
+    def get_room_tokens(self):
+        return {
+            room: {
+                "viewer": f"{room}-viewer-token",
+                "prompter": f"{room}-prompter-token",
+            }
+            for room in self.room_names
+        }
+
+
 class TestJsonRpcMessage:
     """Test JsonRpcMessage parsing and serialization."""
 
@@ -225,10 +266,59 @@ class TestPoorCLIServer:
             "poor-cli/listSessions",
             "poor-cli/listCheckpoints",
             "poor-cli/exportConversation",
+            "poor-cli/startHostServer",
+            "poor-cli/getHostServerStatus",
+            "poor-cli/stopHostServer",
         ]
 
         for method in required:
             assert method in server.handlers, f"Missing handler: {method}"
+
+    @pytest.mark.asyncio
+    async def test_host_server_lifecycle_start_status_stop(self, server):
+        """In-process host lifecycle returns shareable room join details."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch("poor_cli.multiplayer.MultiplayerHost", _FakeMultiplayerHost),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            started = await server.handle_start_host_server(
+                {"room": "dev", "bindHost": "0.0.0.0", "port": 8765}
+            )
+            status = await server.handle_get_host_server_status({})
+            stopped = await server.handle_stop_host_server({})
+
+        assert started["running"] is True
+        assert started["created"] is True
+        assert started["shareWsUrl"] == "ws://192.168.1.42:8765/rpc"
+        assert started["rooms"][0]["name"] == "dev"
+        assert "poor-cli --remote-url" in started["rooms"][0]["viewerJoinCommand"]
+        assert status["running"] is True
+        assert stopped["running"] is False
+        assert stopped["stopped"] is True
+        assert _FakeMultiplayerHost.instances[-1].stopped is True
+
+    @pytest.mark.asyncio
+    async def test_host_server_start_is_idempotent_when_already_running(self, server):
+        """Starting host twice returns existing host details without recreating."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch("poor_cli.multiplayer.MultiplayerHost", _FakeMultiplayerHost),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            first = await server.handle_start_host_server({"room": "dev", "port": 8765})
+            second = await server.handle_start_host_server({"room": "docs", "port": 9000})
+            await server.handle_stop_host_server({})
+
+        assert first["created"] is True
+        assert second["created"] is False
+        assert len(_FakeMultiplayerHost.instances) == 1
 
     @pytest.mark.asyncio
     async def test_list_sessions_serializes_active_and_completed(self, server):

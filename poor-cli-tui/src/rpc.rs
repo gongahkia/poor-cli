@@ -390,6 +390,7 @@ impl RpcClient {
         python_bin: &str,
         cwd: Option<&str>,
         server_args: &[String],
+        backend_log_file: Option<&str>,
     ) -> Command {
         let mut cmd = Command::new(python_bin);
         cmd.arg("-m")
@@ -398,6 +399,10 @@ impl RpcClient {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        if let Some(log_path) = backend_log_file {
+            cmd.env("POOR_CLI_SERVER_LOG_FILE", log_path);
+        }
 
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
@@ -412,7 +417,7 @@ impl RpcClient {
         python_bin: &str,
         cwd: Option<&str>,
     ) -> Result<(Self, Receiver<ServerNotification>), String> {
-        Self::spawn_with_notifications_args(python_bin, cwd, &[])
+        Self::spawn_with_notifications_args(python_bin, cwd, &[], None)
     }
 
     /// Spawn the Python JSON-RPC server with extra command-line arguments.
@@ -420,8 +425,9 @@ impl RpcClient {
         python_bin: &str,
         cwd: Option<&str>,
         server_args: &[String],
+        backend_log_file: Option<&str>,
     ) -> Result<(Self, Receiver<ServerNotification>), String> {
-        let mut child = Self::build_server_command(python_bin, cwd, server_args)
+        let mut child = Self::build_server_command(python_bin, cwd, server_args, backend_log_file)
             .spawn()
             .map_err(|e| format!("Failed to start Python server: {e}"))?;
 
@@ -489,7 +495,7 @@ impl RpcClient {
 
     /// Legacy spawn without notifications (falls back to blocking call()).
     pub fn spawn(python_bin: &str, cwd: Option<&str>) -> Result<Self, String> {
-        let child = Self::build_server_command(python_bin, cwd, &[])
+        let child = Self::build_server_command(python_bin, cwd, &[], None)
             .spawn()
             .map_err(|e| format!("Failed to start Python server: {e}"))?;
 
@@ -898,6 +904,25 @@ impl RpcClient {
         self.call("poor-cli/exportConversation", Value::Object(params))
     }
 
+    pub fn start_host_server(&self, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/startHostServer", Value::Object(params))
+    }
+
+    pub fn get_host_server_status(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getHostServerStatus",
+            Value::Object(Default::default()),
+        )
+    }
+
+    pub fn stop_host_server(&self) -> Result<Value, String> {
+        self.call("poor-cli/stopHostServer", Value::Object(Default::default()))
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {
@@ -1006,6 +1031,16 @@ pub enum RpcCommand {
     },
     ExportConversation {
         format: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    StartHostServer {
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetHostServerStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    StopHostServer {
         reply: SyncSender<Result<Value, String>>,
     },
     ListProviders {
@@ -1126,6 +1161,15 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ExportConversation { format, reply }) => {
                 let _ = reply.send(client.export_conversation(&format));
+            }
+            Ok(RpcCommand::StartHostServer { room, reply }) => {
+                let _ = reply.send(client.start_host_server(room.as_deref()));
+            }
+            Ok(RpcCommand::GetHostServerStatus { reply }) => {
+                let _ = reply.send(client.get_host_server_status());
+            }
+            Ok(RpcCommand::StopHostServer { reply }) => {
+                let _ = reply.send(client.stop_host_server());
             }
             Ok(RpcCommand::ListProviders { reply }) => {
                 let _ = reply.send(client.list_providers());
@@ -1338,7 +1382,7 @@ mod tests {
             "--token".to_string(),
             "tok".to_string(),
         ];
-        let cmd = RpcClient::build_server_command("python3", Some("/tmp"), &args);
+        let cmd = RpcClient::build_server_command("python3", Some("/tmp"), &args, None);
         let collected = cmd
             .get_args()
             .map(|v| v.to_string_lossy().to_string())

@@ -87,6 +87,9 @@ class MultiplayerHost:
         "setConfig",
         "switchProvider",
         "poor-cli/switchProvider",
+        "poor-cli/startHostServer",
+        "poor-cli/getHostServerStatus",
+        "poor-cli/stopHostServer",
         "poor-cli/cancelRequest",
         "shutdown",
     }
@@ -126,6 +129,7 @@ class MultiplayerHost:
     def _create_room(self, room_name: str) -> RoomState:
         server = self.server_factory()
         server.permission_mode = self.default_permission_mode
+        server._embedded_multiplayer_room = True
 
         tokens = {
             "viewer": InviteToken(token=secrets.token_urlsafe(18), role="viewer"),

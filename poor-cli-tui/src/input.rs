@@ -85,6 +85,16 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/host-server",
+        description: "Start/share multiplayer host session",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/join-server",
+        description: "Join multiplayer host by invite code",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/broke",
         description: "Set poor mode (terse responses)",
         recommended: false,
@@ -631,7 +641,12 @@ fn should_autocomplete_on_enter(app: &App) -> bool {
         return false;
     }
 
-    // If the command is already exact, submit immediately.
+    // Exact command matches should submit immediately, even if a longer command
+    // shares the same prefix (for example, /checkpoint vs /checkpoints).
+    if SLASH_COMMANDS.iter().any(|spec| spec.command == trimmed) {
+        return false;
+    }
+
     !command_completion_matches(trimmed).is_empty()
 }
 
@@ -743,6 +758,36 @@ mod tests {
 
         match action {
             InputAction::Submit(text) => assert_eq!(text, "/new-session"),
+            _ => panic!("expected submit action"),
+        }
+    }
+
+    #[test]
+    fn enter_submits_exact_command_when_longer_variant_exists() {
+        let mut app = App::new();
+        app.input_buffer = "/checkpoint".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        let action = handle_key_normal(&mut app, key_enter());
+
+        match action {
+            InputAction::Submit(text) => assert_eq!(text, "/checkpoint"),
+            _ => panic!("expected submit action"),
+        }
+    }
+
+    #[test]
+    fn enter_submits_exact_command_with_plural_variant() {
+        let mut app = App::new();
+        app.input_buffer = "/provider".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Command;
+
+        let action = handle_key_normal(&mut app, key_enter());
+
+        match action {
+            InputAction::Submit(text) => assert_eq!(text, "/provider"),
             _ => panic!("expected submit action"),
         }
     }
