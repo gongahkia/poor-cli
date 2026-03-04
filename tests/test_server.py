@@ -516,7 +516,7 @@ class TestPoorCLIServer:
         assert started["running"] is True
         assert started["created"] is True
         spawn_args = spawn_mock.await_args.args
-        assert spawn_args[0] == "ollama"
+        assert Path(spawn_args[0]).name == "ollama"
         assert spawn_args[1] == "serve"
 
     @pytest.mark.asyncio
