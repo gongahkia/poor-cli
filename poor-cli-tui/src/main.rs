@@ -288,6 +288,36 @@ fn build_bridge_server_args(url: &str, room: &str, token: &str) -> Vec<String> {
     ]
 }
 
+fn reconnect_to_remote_server(
+    app: &mut App,
+    tx: &mpsc::Sender<ServerMsg>,
+    rpc_cmd_tx: &mut mpsc::Sender<RpcCommand>,
+    launch: &BackendLaunchContext,
+    url: &str,
+    room: &str,
+    token: &str,
+) {
+    let bridge_args = build_bridge_server_args(url, room, token);
+    write_session_log(
+        launch.session_log.as_ref(),
+        &format!("join_server_request url={url} room={room}"),
+    );
+
+    let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
+    app.server_connected = false;
+    app.finalize_streaming();
+    app.stop_waiting();
+    app.multiplayer_enabled = true;
+    app.multiplayer_room = room.to_string();
+    app.multiplayer_role.clear();
+    app.push_message(ChatMessage::system(format!(
+        "Joining multiplayer server `{url}` room `{room}`..."
+    )));
+    app.set_status("Reconnecting backend in join mode");
+
+    *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
+}
+
 fn spawn_backend_worker(
     tx: &mpsc::Sender<ServerMsg>,
     launch: BackendLaunchContext,
@@ -925,6 +955,65 @@ fn handle_submit(
         return false;
     }
 
+    if app.join_wizard_active && !trimmed.starts_with('/') {
+        match app.join_wizard_step {
+            0 => {
+                match preflight_join_endpoint(trimmed) {
+                    Ok(ok_message) => {
+                        app.join_wizard_url = trimmed.to_string();
+                        app.join_wizard_step = 1;
+                        app.push_message(ChatMessage::system(format!(
+                            "{ok_message}\n\nStep 2/3: Enter room name."
+                        )));
+                    }
+                    Err(e) => {
+                        app.push_message(ChatMessage::error(format!(
+                            "Join preflight failed: {e}\nRe-enter WebSocket URL (ws:// or wss://), or run `/join-server cancel`."
+                        )));
+                    }
+                }
+                return false;
+            }
+            1 => {
+                if trimmed.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "Room name cannot be empty. Enter room name, or `/join-server cancel`."
+                            .to_string(),
+                    ));
+                    return false;
+                }
+                app.join_wizard_room = trimmed.to_string();
+                app.join_wizard_step = 2;
+                app.push_message(ChatMessage::system(
+                    "Step 3/3: Enter invite token.".to_string(),
+                ));
+                return false;
+            }
+            2 => {
+                if trimmed.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "Invite token cannot be empty. Enter token, or `/join-server cancel`."
+                            .to_string(),
+                    ));
+                    return false;
+                }
+                let url = app.join_wizard_url.clone();
+                let room = app.join_wizard_room.clone();
+                let token = trimmed.to_string();
+                app.join_wizard_active = false;
+                app.join_wizard_step = 0;
+                app.join_wizard_url.clear();
+                app.join_wizard_room.clear();
+                reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+                return false;
+            }
+            _ => {
+                app.join_wizard_active = false;
+                app.join_wizard_step = 0;
+            }
+        }
+    }
+
     if let Some(prompt_name) = app.pending_prompt_save_name.clone() {
         if !trimmed.starts_with('/') {
             app.pending_prompt_save_name = None;
@@ -959,6 +1048,7 @@ fn handle_submit(
             BANG_COMMAND_RESPONSE_TIMEOUT_SECS,
         ) {
             Ok(output) => {
+                app.last_command_output = Some(output.clone());
                 let command_preview = truncate_block(&output, 1200);
                 app.push_message(ChatMessage::system(format!(
                     "**Bash command executed:** `{}`\n```text\n{command_preview}\n```",
@@ -2834,10 +2924,13 @@ Context Window: {max_context} tokens\n\n\
         }
 
         match rpc_execute_command_blocking(rpc_cmd_tx, command) {
-            Ok(output) => app.push_message(ChatMessage::system(format!(
-                "**Command:** `{command}`\n\n{}",
-                truncate_block(&output, 1600)
-            ))),
+            Ok(output) => {
+                app.last_command_output = Some(output.clone());
+                app.push_message(ChatMessage::system(format!(
+                    "**Command:** `{command}`\n\n{}",
+                    truncate_block(&output, 1600)
+                )))
+            }
             Err(e) => app.push_message(ChatMessage::error(format!("Command failed: {e}"))),
         }
         return false;
@@ -2885,6 +2978,33 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/join-server" || lowered.starts_with("/join-server ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        if args.len() == 1 {
+            app.join_wizard_active = true;
+            app.join_wizard_step = 0;
+            app.join_wizard_url.clear();
+            app.join_wizard_room.clear();
+            app.push_message(ChatMessage::system(
+                "**Join wizard started**\n\nStep 1/3: Enter WebSocket URL (ws://HOST:PORT/rpc or wss://...)\nUse `/join-server cancel` to abort."
+                    .to_string(),
+            ));
+            return false;
+        }
+
+        if args.len() == 2
+            && matches!(
+                args[1].to_ascii_lowercase().as_str(),
+                "cancel" | "abort" | "stop"
+            )
+        {
+            app.join_wizard_active = false;
+            app.join_wizard_step = 0;
+            app.join_wizard_url.clear();
+            app.join_wizard_room.clear();
+            app.push_message(ChatMessage::system("Join wizard cancelled.".to_string()));
+            return false;
+        }
+
         let (url, room, token) = match parse_join_server_args(raw) {
             Ok(values) => values,
             Err(error_message) => {
@@ -2893,22 +3013,14 @@ Context Window: {max_context} tokens\n\n\
             }
         };
 
-        let bridge_args = build_bridge_server_args(&url, &room, &token);
-        write_session_log(
-            launch.session_log.as_ref(),
-            &format!("join_server_request url={url} room={room}"),
-        );
+        if let Err(e) = preflight_join_endpoint(&url) {
+            app.push_message(ChatMessage::error(format!(
+                "Join preflight failed: {e}\nUse `/join-server` for wizard mode."
+            )));
+            return false;
+        }
 
-        let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
-        app.server_connected = false;
-        app.finalize_streaming();
-        app.stop_waiting();
-        app.push_message(ChatMessage::system(format!(
-            "Joining multiplayer server `{url}` room `{room}`..."
-        )));
-        app.set_status("Reconnecting backend in join mode");
-
-        *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
+        reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
         return false;
     }
 
@@ -3088,6 +3200,296 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
+        if lowered_subcommand == "share" {
+            if args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let mut role_filter: Option<&str> = None;
+            let mut room_filter: Option<&str> = None;
+            if let Some(first) = args.get(2).copied() {
+                let first_lower = first.to_ascii_lowercase();
+                if first_lower == "viewer" || first_lower == "prompter" {
+                    role_filter = Some(first);
+                    room_filter = args.get(3).copied();
+                } else {
+                    room_filter = Some(first);
+                    if let Some(second) = args.get(3).copied() {
+                        let second_lower = second.to_ascii_lowercase();
+                        if second_lower == "viewer" || second_lower == "prompter" {
+                            role_filter = Some(second);
+                        }
+                    }
+                }
+            }
+
+            match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => app.push_message(ChatMessage::system(format_host_share_payload(
+                    &payload,
+                    role_filter,
+                    room_filter,
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to get host share details: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "lobby" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let enable = match args[2].to_ascii_lowercase().as_str() {
+                "on" | "enable" | "enabled" | "true" => true,
+                "off" | "disable" | "disabled" | "false" => false,
+                _ => {
+                    app.push_message(ChatMessage::system(
+                        "Usage: /host-server lobby <on|off> [room]".to_string(),
+                    ));
+                    return false;
+                }
+            };
+            let room = args.get(3).copied();
+            match rpc_set_host_lobby_blocking(rpc_cmd_tx, enable, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let state = if enable { "enabled" } else { "disabled" };
+                    app.push_message(ChatMessage::system(format!(
+                        "Lobby approvals {state} for room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to update lobby mode: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "approve" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_approve_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    app.push_message(ChatMessage::system(format!(
+                        "Approved `{connection_id}` in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to approve member `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "deny" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_deny_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    app.push_message(ChatMessage::system(format!(
+                        "Denied `{connection_id}` in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to deny member `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "rotate-token" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let role = args[2].to_ascii_lowercase();
+            if role != "viewer" && role != "prompter" {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server rotate-token <viewer|prompter> [room]".to_string(),
+                ));
+                return false;
+            }
+            let room = args.get(3).copied();
+            match rpc_rotate_host_token_blocking(rpc_cmd_tx, &role, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let token = payload
+                        .get("token")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let join_command = payload
+                        .get("joinCommand")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let invite_code = payload
+                        .get("inviteCode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let mut lines = vec![format!(
+                        "Rotated **{role}** token for room `{room_name}`: `{token}`"
+                    )];
+                    if !join_command.is_empty() {
+                        lines.push(format!("- Join command: `{join_command}`"));
+                    }
+                    if !invite_code.is_empty() {
+                        lines.push(format!("- Invite code: `{invite_code}`"));
+                    }
+                    app.push_message(ChatMessage::system(lines.join("\n")));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to rotate token: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "revoke" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let value = args[2];
+            let room = args.get(3).copied();
+            match rpc_revoke_host_token_blocking(rpc_cmd_tx, value, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let kind = payload
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("token");
+                    app.push_message(ChatMessage::system(format!(
+                        "Revoked `{value}` ({kind}) in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to revoke `{value}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "handoff" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_handoff_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    app.push_message(ChatMessage::system(format!(
+                        "Handed off prompter role to `{connection_id}` in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to handoff to `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "preset" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let preset = args[2].to_ascii_lowercase();
+            if preset != "pairing" && preset != "mob" && preset != "review" {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server preset <pairing|mob|review> [room]".to_string(),
+                ));
+                return false;
+            }
+            let room = args.get(3).copied();
+            match rpc_set_host_preset_blocking(rpc_cmd_tx, &preset, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let lobby_enabled = payload
+                        .get("lobbyEnabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    app.push_message(ChatMessage::system(format!(
+                        "Applied preset **{preset}** to room `{room_name}` (lobby: {}).",
+                        if lobby_enabled { "on" } else { "off" }
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to set preset: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "activity" {
+            if args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let mut room: Option<&str> = None;
+            let mut limit: u64 = 30;
+            if let Some(first) = args.get(2).copied() {
+                if let Ok(parsed) = first.parse::<u64>() {
+                    limit = parsed;
+                } else {
+                    room = Some(first);
+                }
+            }
+            if let Some(second) = args.get(3).copied() {
+                match second.parse::<u64>() {
+                    Ok(parsed) => limit = parsed,
+                    Err(_) => {
+                        app.push_message(ChatMessage::system(
+                            "Usage: /host-server activity [room] [limit]".to_string(),
+                        ));
+                        return false;
+                    }
+                }
+            }
+            match rpc_list_host_activity_blocking(rpc_cmd_tx, room, limit) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_host_activity_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch host activity: {e}"
+                ))),
+            }
+            return false;
+        }
+
         if lowered_subcommand == "help" {
             app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
             return false;
@@ -3226,6 +3628,7 @@ Context Window: {max_context} tokens\n\n\
                             "{status_block}\n\nNo logs available yet at `{log_path}`."
                         )));
                     } else {
+                        app.last_command_output = Some(content.to_string());
                         app.push_message(ChatMessage::system(format!(
                             "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
                             truncate_block(content, 3200)
@@ -3310,6 +3713,7 @@ Context Window: {max_context} tokens\n\n\
                                 "{status_block}\n\nNo logs available yet at `{log_path}`."
                             )));
                         } else {
+                            app.last_command_output = Some(content.to_string());
                             app.push_message(ChatMessage::system(format!(
                                 "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
                                 truncate_block(content, 3200)
