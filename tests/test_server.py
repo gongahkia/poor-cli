@@ -16,6 +16,7 @@ from poor_cli.server import (
     PoorCLIServer,
     JsonRpcMessage,
     JsonRpcError,
+    InvalidParamsError,
     _sanitize_exception_message,
     main,
 )
@@ -74,6 +75,20 @@ class _FakeMultiplayerHost:
         self.default_permission_mode = default_permission_mode
         self.started = False
         self.stopped = False
+        self.room_members = {
+            room: [
+                {
+                    "connectionId": f"{room}-viewer",
+                    "role": "viewer",
+                    "clientName": f"{room}-client",
+                    "initialized": True,
+                    "connected": True,
+                    "active": False,
+                    "joinedAt": "now",
+                }
+            ]
+            for room in self.room_names
+        }
         _FakeMultiplayerHost.instances.append(self)
 
     async def start(self):
@@ -90,6 +105,37 @@ class _FakeMultiplayerHost:
             }
             for room in self.room_names
         }
+
+    def list_room_members(self, room_name=None):
+        names = [room_name] if room_name else list(self.room_members.keys())
+        payload = []
+        for name in names:
+            members = [dict(member) for member in self.room_members.get(name, [])]
+            payload.append(
+                {
+                    "name": name,
+                    "memberCount": len(members),
+                    "members": members,
+                    "queueDepth": 0,
+                    "activeConnectionId": "",
+                }
+            )
+        return payload
+
+    async def remove_room_member(self, room_name, connection_id):
+        members = self.room_members.get(room_name, [])
+        before = len(members)
+        self.room_members[room_name] = [
+            member for member in members if member.get("connectionId") != connection_id
+        ]
+        return len(self.room_members[room_name]) != before
+
+    async def set_room_member_role(self, room_name, connection_id, role):
+        for member in self.room_members.get(room_name, []):
+            if member.get("connectionId") == connection_id:
+                member["role"] = role
+                return True
+        return False
 
 
 class _FakeManagedProcess:
@@ -291,6 +337,9 @@ class TestPoorCLIServer:
             "poor-cli/startHostServer",
             "poor-cli/getHostServerStatus",
             "poor-cli/stopHostServer",
+            "poor-cli/listHostMembers",
+            "poor-cli/removeHostMember",
+            "poor-cli/setHostMemberRole",
             "poor-cli/startService",
             "poor-cli/stopService",
             "poor-cli/getServiceStatus",
@@ -351,6 +400,64 @@ class TestPoorCLIServer:
         assert first["created"] is True
         assert second["created"] is False
         assert len(_FakeMultiplayerHost.instances) == 1
+
+    @pytest.mark.asyncio
+    async def test_host_member_admin_controls_list_role_remove(self, server):
+        """Host admin handlers can list members, change role, and remove users."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            await server.handle_start_host_server({"room": "dev", "port": 8765})
+            members = await server.handle_list_host_members({})
+            assert members["running"] is True
+            assert members["rooms"][0]["name"] == "dev"
+            assert members["rooms"][0]["memberCount"] == 1
+
+            target_id = members["rooms"][0]["members"][0]["connectionId"]
+            role_update = await server.handle_set_host_member_role(
+                {"connectionId": target_id, "role": "prompter"}
+            )
+            assert role_update["success"] is True
+            assert role_update["role"] == "prompter"
+
+            removed = await server.handle_remove_host_member({"connectionId": target_id})
+            assert removed["success"] is True
+            assert removed["removed"] is True
+
+            refreshed = await server.handle_list_host_members({"room": "dev"})
+            assert refreshed["rooms"][0]["memberCount"] == 0
+            await server.handle_stop_host_server({})
+
+    @pytest.mark.asyncio
+    async def test_host_member_role_requires_explicit_room_when_multiple_rooms(self, server):
+        """Role updates without room are rejected when multiple rooms are active."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            await server.handle_start_host_server({"rooms": ["dev", "docs"], "port": 8765})
+
+            with pytest.raises(InvalidParamsError):
+                await server.handle_set_host_member_role(
+                    {"connectionId": "dev-viewer", "role": "prompter"}
+                )
+
+            await server.handle_stop_host_server({})
 
     @pytest.mark.asyncio
     async def test_service_lifecycle_start_status_logs_stop(self, server, tmp_path):

@@ -1260,6 +1260,106 @@ Cover important reasoning and tradeoffs when relevant."
     format!("{mode_instruction}\n\nUser request:\n{user_input}")
 }
 
+struct OnboardingStep {
+    title: &'static str,
+    objective: &'static str,
+    commands: &'static [&'static str],
+    try_now: &'static str,
+}
+
+const ONBOARDING_STEPS: &[OnboardingStep] = &[
+    OnboardingStep {
+        title: "Get Oriented",
+        objective:
+            "Start with visibility into your session and where to find command docs quickly.",
+        commands: &["/help", "/status", "/history 10", "/search <term>"],
+        try_now: "/status",
+    },
+    OnboardingStep {
+        title: "Choose Provider + Model",
+        objective: "Inspect your active model, switch when needed, and configure provider auth.",
+        commands: &["/provider", "/providers", "/switch", "/api-key"],
+        try_now: "/provider",
+    },
+    OnboardingStep {
+        title: "Run Local Services",
+        objective: "Control local dependencies from the TUI instead of shelling out.",
+        commands: &[
+            "/service status",
+            "/service start <name> <command...>",
+            "/service logs <name> [lines]",
+            "/ollama start",
+        ],
+        try_now: "/service status",
+    },
+    OnboardingStep {
+        title: "Host Multiplayer Sessions",
+        objective: "Start a room, invite collaborators, and manage member access from host mode.",
+        commands: &[
+            "/host-server",
+            "/host-server members [room]",
+            "/host-server kick <connection-id> [room]",
+            "/host-server role <connection-id> <viewer|prompter> [room]",
+            "/join-server <code>",
+        ],
+        try_now: "/host-server",
+    },
+    OnboardingStep {
+        title: "Daily Coding Workflow",
+        objective: "Use these commands for context, review, tests, and quick rollback checkpoints.",
+        commands: &[
+            "/add <path>",
+            "/files",
+            "/review [file]",
+            "/test <file>",
+            "/checkpoint",
+            "/rewind [id|last]",
+        ],
+        try_now: "/files",
+    },
+];
+
+fn onboarding_step_count() -> usize {
+    ONBOARDING_STEPS.len()
+}
+
+fn onboarding_navigation_hint() -> &'static str {
+    "Navigation: `/onboarding next` • `/onboarding prev` • `/onboarding <step>` • `/onboarding exit`"
+}
+
+fn format_onboarding_step(step_index: usize) -> String {
+    if ONBOARDING_STEPS.is_empty() {
+        return "Onboarding is currently unavailable.".to_string();
+    }
+
+    let total = onboarding_step_count();
+    let idx = step_index.min(total.saturating_sub(1));
+    let step = &ONBOARDING_STEPS[idx];
+
+    let mut lines = vec![
+        format!("**Onboarding {}/{}: {}**", idx + 1, total, step.title),
+        String::new(),
+        step.objective.to_string(),
+        String::new(),
+        "**Core commands**".to_string(),
+    ];
+
+    lines.extend(step.commands.iter().map(|cmd| format!("- `{cmd}`")));
+    lines.push(String::new());
+    lines.push(format!("Try now: `{}`", step.try_now));
+
+    if idx + 1 == total {
+        lines.push(
+            "You reached the final step. Run `/onboarding exit` to end this onboarding session."
+                .to_string(),
+        );
+    }
+
+    lines.push(String::new());
+    lines.push(onboarding_navigation_hint().to_string());
+    lines.join("\n")
+}
+
 // ── Slash command handler ─────────────────────────────────────────────
 
 fn handle_slash_command(
@@ -1286,6 +1386,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 \n\
 **Session Management:**\n\
   /help                Show this help message\n\
+  /onboarding ...      Start interactive onboarding (`next`, `prev`, `<step>`, `exit`)\n\
   /quit, /exit         Exit poor-cli and print session summary\n\
   /clear               Clear conversation history\n\
   /clear-output        Clear visible output, keep backend history\n\
@@ -1343,6 +1444,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
   /copy                Copy last assistant response to clipboard\n\
+  /onboarding ...      Guided walkthrough of core commands\n\
   /host-server ...     Start/share/manage host session and members\n\
   /host-server members [room]               List connected room members\n\
   /host-server kick <connection-id> [room]  Remove a connected member\n\
@@ -1359,10 +1461,138 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         return false;
     }
 
+    if lowered == "/onboarding" || lowered.starts_with("/onboarding ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let total_steps = onboarding_step_count();
+
+        if total_steps == 0 {
+            app.push_message(ChatMessage::system(
+                "Onboarding is currently unavailable.".to_string(),
+            ));
+            return false;
+        }
+
+        if subcommand.is_empty()
+            || subcommand == "start"
+            || subcommand == "begin"
+            || subcommand == "restart"
+        {
+            app.onboarding_active = true;
+            app.onboarding_step = 0;
+            app.push_message(ChatMessage::system(format!(
+                "**Interactive onboarding started.**\n\n{}",
+                format_onboarding_step(app.onboarding_step)
+            )));
+            return false;
+        }
+
+        if subcommand == "help" {
+            app.push_message(ChatMessage::system(onboarding_usage_text().to_string()));
+            return false;
+        }
+
+        if subcommand == "exit" || subcommand == "done" || subcommand == "quit" {
+            app.onboarding_active = false;
+            app.onboarding_step = 0;
+            app.push_message(ChatMessage::system(
+                "Onboarding ended.\nRun `/onboarding` anytime to start again.".to_string(),
+            ));
+            return false;
+        }
+
+        if subcommand == "show" || subcommand == "repeat" || subcommand == "resume" {
+            if !app.onboarding_active {
+                app.onboarding_active = true;
+                app.onboarding_step = 0;
+            }
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        if subcommand == "next" {
+            if !app.onboarding_active {
+                app.onboarding_active = true;
+                app.onboarding_step = 0;
+                app.push_message(ChatMessage::system(format!(
+                    "No active onboarding session found; started at step 1.\n\n{}",
+                    format_onboarding_step(app.onboarding_step)
+                )));
+                return false;
+            }
+
+            if app.onboarding_step + 1 >= total_steps {
+                app.push_message(ChatMessage::system(
+                    "You are already at the last onboarding step.\nUse `/onboarding exit` to end the onboarding session.".to_string(),
+                ));
+                return false;
+            }
+
+            app.onboarding_step += 1;
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        if subcommand == "prev" || subcommand == "previous" || subcommand == "back" {
+            if !app.onboarding_active {
+                app.onboarding_active = true;
+                app.onboarding_step = 0;
+                app.push_message(ChatMessage::system(format!(
+                    "No active onboarding session found; started at step 1.\n\n{}",
+                    format_onboarding_step(app.onboarding_step)
+                )));
+                return false;
+            }
+
+            if app.onboarding_step == 0 {
+                app.push_message(ChatMessage::system(
+                    "You are already at the first onboarding step.".to_string(),
+                ));
+                return false;
+            }
+
+            app.onboarding_step -= 1;
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        if let Ok(step_number) = subcommand.parse::<usize>() {
+            if step_number == 0 || step_number > total_steps {
+                app.push_message(ChatMessage::system(format!(
+                    "Step must be between 1 and {total_steps}.\n{}",
+                    onboarding_usage_text()
+                )));
+                return false;
+            }
+            app.onboarding_active = true;
+            app.onboarding_step = step_number - 1;
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(onboarding_usage_text().to_string()));
+        return false;
+    }
+
     if lowered == "/clear" {
         app.messages.clear();
         app.add_welcome();
         app.last_user_message = None;
+        app.onboarding_active = false;
+        app.onboarding_step = 0;
         match rpc_clear_history_blocking(rpc_cmd_tx) {
             Ok(()) => app.set_status("Conversation history cleared"),
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -1383,6 +1613,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         app.messages.clear();
         app.add_welcome();
         app.last_user_message = None;
+        app.onboarding_active = false;
+        app.onboarding_step = 0;
         match rpc_clear_history_blocking(rpc_cmd_tx) {
             Ok(()) => app.set_status("Started new session"),
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -2544,7 +2776,12 @@ Context Window: {max_context} tokens\n\n\
                 }
             };
 
-            match rpc_set_host_member_role_blocking(rpc_cmd_tx, connection_id, normalized_role, room) {
+            match rpc_set_host_member_role_blocking(
+                rpc_cmd_tx,
+                connection_id,
+                normalized_role,
+                room,
+            ) {
                 Ok(payload) => {
                     let room_name = payload
                         .get("room")
@@ -2635,7 +2872,10 @@ Context Window: {max_context} tokens\n\n\
             let _ = split.next();
             let _ = split.next();
             let service_name = split.next().unwrap_or("").trim();
-            let command_text = split.next().map(str::trim).filter(|value| !value.is_empty());
+            let command_text = split
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
             if service_name.is_empty() {
                 app.push_message(ChatMessage::system(service_usage_text().to_string()));
                 return false;
@@ -2736,25 +2976,25 @@ Context Window: {max_context} tokens\n\n\
 
         match subcommand.as_str() {
             "" | "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
-                Ok(payload) => app.push_message(ChatMessage::system(format_service_status_payload(
-                    &payload,
-                ))),
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch Ollama status: {e}"
                 ))),
             },
             "start" => match rpc_start_service_blocking(rpc_cmd_tx, "ollama", None, None) {
-                Ok(payload) => app.push_message(ChatMessage::system(format_service_status_payload(
-                    &payload,
-                ))),
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to start Ollama service: {e}"
                 ))),
             },
             "stop" => match rpc_stop_service_blocking(rpc_cmd_tx, "ollama") {
-                Ok(payload) => app.push_message(ChatMessage::system(format_service_status_payload(
-                    &payload,
-                ))),
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to stop Ollama service: {e}"
                 ))),
@@ -2867,6 +3107,15 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/status" {
+        let onboarding_state = if app.onboarding_active {
+            format!(
+                "active ({}/{})",
+                app.onboarding_step.saturating_add(1),
+                onboarding_step_count()
+            )
+        } else {
+            "inactive".to_string()
+        };
         let status = format!(
             "**Session Status:**\n\
 Provider: {}/{}\n\
@@ -2874,7 +3123,8 @@ CWD: {}\n\
 Response mode: {}\n\
 Pinned files: {}\n\
 Queued images: {}\n\
-Watch mode: {}",
+Watch mode: {}\n\
+Onboarding: {}",
             app.provider_name,
             app.model_name,
             app.cwd,
@@ -2885,7 +3135,8 @@ Watch mode: {}",
                 "active"
             } else {
                 "inactive"
-            }
+            },
+            onboarding_state
         );
         app.push_message(ChatMessage::system(status));
         return false;
@@ -4077,7 +4328,11 @@ fn format_host_members_payload(payload: &Value) -> String {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let state = if connected { "connected" } else { "disconnected" };
+            let state = if connected {
+                "connected"
+            } else {
+                "disconnected"
+            };
             let active_label = if active { ", active" } else { "" };
             let name_label = if client_name.is_empty() {
                 String::new()
@@ -4109,6 +4364,16 @@ fn ollama_usage_text() -> &'static str {
        /ollama logs [lines]\n\
        /ollama pull <model>\n\
        /ollama list-models"
+}
+
+fn onboarding_usage_text() -> &'static str {
+    "Usage: /onboarding\n\
+       /onboarding start\n\
+       /onboarding next\n\
+       /onboarding prev\n\
+       /onboarding <step-number>\n\
+       /onboarding show\n\
+       /onboarding exit"
 }
 
 fn format_single_service_payload(payload: &Value) -> String {
@@ -4211,7 +4476,8 @@ fn format_single_service_payload(payload: &Value) -> String {
 fn format_service_status_payload(payload: &Value) -> String {
     if let Some(services) = payload.get("services").and_then(|v| v.as_array()) {
         if services.is_empty() {
-            return "No managed services found.\nUse `/service start <name> <command...>`.".to_string();
+            return "No managed services found.\nUse `/service start <name> <command...>`."
+                .to_string();
         }
 
         let mut lines = vec!["**Services:**".to_string(), String::new()];
@@ -5046,6 +5312,21 @@ mod tests {
         let err = parse_join_server_args("/join-server checkpoint")
             .expect_err("single non-code arg should fail");
         assert!(err.contains("Usage"));
+    }
+
+    #[test]
+    fn onboarding_step_renderer_includes_navigation() {
+        let rendered = format_onboarding_step(0);
+        assert!(rendered.contains("Onboarding 1/"));
+        assert!(rendered.contains("Navigation:"));
+        assert!(rendered.contains("/onboarding next"));
+    }
+
+    #[test]
+    fn onboarding_step_renderer_clamps_out_of_range_step() {
+        let rendered = format_onboarding_step(usize::MAX);
+        assert!(rendered.contains("Onboarding"));
+        assert!(rendered.contains("final step"));
     }
 
     #[test]

@@ -40,6 +40,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/onboarding",
+        description: "Start guided CLI onboarding",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/review",
         description: "Review code or staged diff",
         recommended: true,

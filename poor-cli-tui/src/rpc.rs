@@ -1311,11 +1311,8 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                 room,
                 reply,
             }) => {
-                let _ = reply.send(client.set_host_member_role(
-                    &connection_id,
-                    &role,
-                    room.as_deref(),
-                ));
+                let _ =
+                    reply.send(client.set_host_member_role(&connection_id, &role, room.as_deref()));
             }
             Ok(RpcCommand::StartService {
                 name,

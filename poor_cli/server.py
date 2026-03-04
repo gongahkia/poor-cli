@@ -2052,8 +2052,8 @@ class PoorCLIServer:
         if self._host_server is None:
             return []
 
-        host_rooms = getattr(self._host_server, "rooms", {})
-        if isinstance(host_rooms, dict):
+        host_rooms = getattr(self._host_server, "rooms", None)
+        if isinstance(host_rooms, dict) and host_rooms:
             return sorted(str(name) for name in host_rooms.keys())
         return sorted(str(name) for name in self._host_rooms)
 

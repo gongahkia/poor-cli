@@ -223,6 +223,8 @@ pub struct App {
     pub pending_images: Vec<String>,
     pub pinned_context_files: Vec<String>,
     pub pending_prompt_save_name: Option<String>,
+    pub onboarding_active: bool,
+    pub onboarding_step: usize,
 
     // ── Streaming / agentic state ───
     pub streaming_message: Option<usize>, // index of in-progress assistant message
@@ -283,6 +285,8 @@ impl Default for App {
             pending_images: Vec::new(),
             pinned_context_files: Vec::new(),
             pending_prompt_save_name: None,
+            onboarding_active: false,
+            onboarding_step: 0,
             streaming_message: None,
             current_iteration: 0,
             iteration_cap: 25,
@@ -318,6 +322,7 @@ impl App {
             AI-powered coding assistant in your terminal\n\n\
             Commands:\n  \
             /help         Show all commands\n  \
+            /onboarding   Interactive command walkthrough\n  \
             /switch       Switch AI provider\n  \
             /providers    List all providers\n  \
             /quit         Exit\n\n\
