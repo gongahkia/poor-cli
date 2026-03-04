@@ -5,7 +5,7 @@
 
 # `poor-cli`
 
-[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper that lives in your Terminal *(now also available in **[Neovim](https://neovim.io/)**)*.
+[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper *(for the poor man)* that lives in your Terminal *(now also available in **[Neovim](https://neovim.io/)**)*.
 
 ```text
  ____   ___   ___  ____        ____ _     ___
