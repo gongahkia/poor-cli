@@ -1913,9 +1913,6 @@ class ToolRegistryAsync:
 
     async def fetch_url(self, url: str, timeout: int = 20, max_chars: int = 12000) -> str:
         """Fetch and summarize content from an HTTP(S) URL."""
-        if not AIOHTTP_AVAILABLE:
-            raise ToolExecutionError("fetch_url", "fetch_url requires aiohttp")
-
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
             raise ValidationError("Only http and https URLs are allowed")
@@ -1923,6 +1920,8 @@ class ToolRegistryAsync:
             raise ValidationError("URL must include a valid hostname")
         if not self._is_host_public(parsed.hostname):
             raise ValidationError("Refusing to fetch local/private network addresses")
+        if not AIOHTTP_AVAILABLE:
+            raise ToolExecutionError("fetch_url", "fetch_url requires aiohttp")
 
         timeout = max(timeout, 1)
         max_chars = max(max_chars, 200)
