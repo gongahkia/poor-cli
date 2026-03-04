@@ -331,7 +331,10 @@ pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
 }
 
 fn visible_command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
-    command_palette_matches(prefix).into_iter().take(8).collect()
+    command_palette_matches(prefix)
+        .into_iter()
+        .take(8)
+        .collect()
 }
 
 fn command_completion_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {

@@ -1755,7 +1755,10 @@ Context Window: {max_context} tokens\n\n\
 
                 let mut lines = Vec::new();
                 for msg in messages {
-                    let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let role = msg
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     let role_name = if role == "user" { "You" } else { "Assistant" };
                     let timestamp = msg.get("timestamp").and_then(|v| v.as_str()).unwrap_or("-");
                     let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -1787,7 +1790,9 @@ Context Window: {max_context} tokens\n\n\
                     .cloned()
                     .unwrap_or_default();
                 if sessions.is_empty() {
-                    app.push_message(ChatMessage::system("No previous sessions found.".to_string()));
+                    app.push_message(ChatMessage::system(
+                        "No previous sessions found.".to_string(),
+                    ));
                     return false;
                 }
 
@@ -1816,9 +1821,7 @@ Context Window: {max_context} tokens\n\n\
                 }
                 app.push_message(ChatMessage::system(lines.join("\n")));
             }
-            Err(e) => app.push_message(ChatMessage::error(format!(
-                "Failed to list sessions: {e}"
-            ))),
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to list sessions: {e}"))),
         }
         return false;
     }
@@ -1866,7 +1869,10 @@ Context Window: {max_context} tokens\n\n\
 
                 let mut lines = Vec::new();
                 for msg in matches {
-                    let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let role = msg
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     let role_name = if role == "user" { "You" } else { "Assistant" };
                     let timestamp = msg.get("timestamp").and_then(|v| v.as_str()).unwrap_or("-");
                     let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -1881,7 +1887,10 @@ Context Window: {max_context} tokens\n\n\
                     lines.join("\n")
                 );
                 if total_matches > lines.len() as u64 {
-                    response.push_str(&format!("\n\nShowing {} of {total_matches} matches.", lines.len()));
+                    response.push_str(&format!(
+                        "\n\nShowing {} of {total_matches} matches.",
+                        lines.len()
+                    ));
                 }
                 app.push_message(ChatMessage::system(response));
             }
@@ -2109,9 +2118,7 @@ Watch mode: {}",
                     .cloned()
                     .unwrap_or_default();
                 if checkpoints.is_empty() {
-                    app.push_message(ChatMessage::system(
-                        "No checkpoints available.".to_string(),
-                    ));
+                    app.push_message(ChatMessage::system("No checkpoints available.".to_string()));
                     return false;
                 }
 
@@ -2135,10 +2142,7 @@ Watch mode: {}",
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
                     let created = cp.get("createdAt").and_then(|v| v.as_str()).unwrap_or("-");
-                    let description = cp
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let description = cp.get("description").and_then(|v| v.as_str()).unwrap_or("");
                     let file_count = cp.get("fileCount").and_then(|v| v.as_u64()).unwrap_or(0);
                     let total_size = cp
                         .get("totalSizeBytes")
@@ -2171,7 +2175,10 @@ Watch mode: {}",
                     .get("checkpointId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let file_count = payload.get("fileCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                let file_count = payload
+                    .get("fileCount")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 app.push_message(ChatMessage::system(format!(
                     "Created checkpoint `{checkpoint_id}` with {file_count} file(s)."
                 )));
@@ -2235,15 +2242,17 @@ Watch mode: {}",
                     ));
                 }
             }
-            Err(e) => app.push_message(ChatMessage::error(format!(
-                "Failed to compare files: {e}"
-            ))),
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to compare files: {e}"))),
         }
         return false;
     }
 
     if lowered == "/export" || lowered.starts_with("/export ") {
-        let export_format = raw.split_whitespace().nth(1).unwrap_or("json").to_lowercase();
+        let export_format = raw
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("json")
+            .to_lowercase();
         if !matches!(export_format.as_str(), "json" | "md" | "txt" | "markdown") {
             app.push_message(ChatMessage::system(
                 "Usage: /export [json|md|txt]".to_string(),
@@ -2265,7 +2274,10 @@ Watch mode: {}",
                     .get("messageCount")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                let size_bytes = payload.get("sizeBytes").and_then(|v| v.as_u64()).unwrap_or(0);
+                let size_bytes = payload
+                    .get("sizeBytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 app.push_message(ChatMessage::system(format!(
                     "Export complete.\n\nFile: `{file_path}`\nFormat: `{format_value}`\nMessages: {message_count}\nSize: {}",
                     format_bytes(size_bytes)
@@ -3460,9 +3472,7 @@ fn copy_to_clipboard(content: &str) -> Result<(), String> {
                 return Ok(());
             }
         }
-        return Err(
-            "No clipboard utility found. Install wl-copy, xclip, or xsel.".to_string(),
-        );
+        return Err("No clipboard utility found. Install wl-copy, xclip, or xsel.".to_string());
     }
 
     #[allow(unreachable_code)]

@@ -515,7 +515,7 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else if app.mode == AppMode::Command {
         // Show matching commands
         let prefix = &app.input_buffer;
-        let matches = matching_commands(prefix);
+        let matches = command_palette_matches(prefix);
         let mut spans = vec![Span::styled("  ", Style::default())];
         for (i, m) in matches.into_iter().take(6).enumerate() {
             if i > 0 {
@@ -555,14 +555,7 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
         return;
     }
 
-    let commands = if app.input_buffer.trim() == "/" {
-        SLASH_COMMANDS
-            .iter()
-            .filter(|spec| spec.recommended)
-            .collect::<Vec<&SlashCommandSpec>>()
-    } else {
-        matching_commands(&app.input_buffer)
-    };
+    let commands = command_palette_matches(&app.input_buffer);
 
     if commands.is_empty() {
         return;
@@ -586,21 +579,34 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Clear, area);
 
+    let selected_index = app
+        .command_match_index
+        .min(display_items.len().saturating_sub(1));
+
     let items: Vec<ListItem> = display_items
         .iter()
-        .map(|spec| {
-            let desc_style = if spec.recommended {
+        .enumerate()
+        .map(|(idx, spec)| {
+            let is_selected = idx == selected_index;
+            let command_style = if is_selected {
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(theme::base_fg(mode))
+                    .add_modifier(Modifier::BOLD)
+            };
+            let desc_style = if is_selected {
+                Style::default().fg(theme::base_fg(mode))
+            } else if spec.recommended {
                 Style::default().fg(theme::accent(mode))
             } else {
                 Style::default().fg(theme::muted_fg(mode))
             };
+            let marker = if is_selected { "▸ " } else { "  " };
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("{:<14}", spec.command),
-                    Style::default()
-                        .fg(theme::base_fg(mode))
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(format!("{marker}{:<12}", spec.command), command_style),
                 Span::styled(spec.description.to_string(), desc_style),
             ]))
         })
@@ -624,13 +630,6 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
             .border_style(Style::default().fg(theme::input_border_color(mode))),
     );
     frame.render_widget(list, area);
-}
-
-fn matching_commands(prefix: &str) -> Vec<&'static SlashCommandSpec> {
-    SLASH_COMMANDS
-        .iter()
-        .filter(|spec| spec.command.starts_with(prefix))
-        .collect()
 }
 
 // ── Provider select overlay ──────────────────────────────────────────
