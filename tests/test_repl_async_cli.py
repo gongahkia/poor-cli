@@ -259,6 +259,78 @@ class TestPermissionModeTransitions:
         mock_to_thread.assert_not_awaited()
 
 
+class TestResponseModeShaping:
+    """Test request-origin-aware response mode prompt shaping."""
+
+    @staticmethod
+    def _build_repl(response_mode: str):
+        repl = object.__new__(PoorCLIAsync)
+        repl.config = SimpleNamespace(
+            model=SimpleNamespace(provider="gemini"),
+            ui=SimpleNamespace(enable_streaming=False),
+        )
+        repl.response_mode = response_mode
+        repl.session_stats = {
+            "requests": 0,
+            "input_chars": 0,
+            "output_chars": 0,
+            "input_tokens_estimate": 0,
+            "output_tokens_estimate": 0,
+        }
+        repl.repo_config = None
+        repl.console = MagicMock()
+        repl._request_counter = 0
+        repl._prepare_user_input_payload = MagicMock(side_effect=lambda payload: payload)
+        repl._process_request_streaming = AsyncMock()
+        repl._process_request_normal = AsyncMock()
+        return repl
+
+    @pytest.mark.asyncio
+    async def test_chat_origin_in_poor_mode_includes_terse_instruction(self):
+        repl = self._build_repl("poor")
+
+        ok = await PoorCLIAsync.process_request(
+            repl,
+            "Summarize this file",
+            request_origin="chat",
+        )
+
+        assert ok is True
+        sent_payload = repl._process_request_normal.await_args.args[0]
+        assert "response mode is poor" in sent_payload.lower()
+        assert "summarize this file" in sent_payload.lower()
+
+    @pytest.mark.asyncio
+    async def test_chat_origin_in_rich_mode_includes_quality_instruction(self):
+        repl = self._build_repl("rich")
+
+        ok = await PoorCLIAsync.process_request(
+            repl,
+            "Summarize this file",
+            request_origin="chat",
+        )
+
+        assert ok is True
+        sent_payload = repl._process_request_normal.await_args.args[0]
+        assert "response mode is rich" in sent_payload.lower()
+        assert "summarize this file" in sent_payload.lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("origin", ["structured_command", "automation"])
+    async def test_non_chat_origins_skip_mode_shaping(self, origin):
+        repl = self._build_repl("poor")
+
+        ok = await PoorCLIAsync.process_request(
+            repl,
+            "Summarize this file",
+            request_origin=origin,
+        )
+
+        assert ok is True
+        sent_payload = repl._process_request_normal.await_args.args[0]
+        assert sent_payload == "Summarize this file"
+
+
 class TestHistoryCommands:
     """Test repo-config-backed history command behavior."""
 

@@ -35,6 +35,8 @@ class CommandCompleter(Completer):
         SlashCommandSpec("/history", "Show recent messages", recommended=True),
         SlashCommandSpec("/new-session", "Start a fresh session", recommended=True),
         SlashCommandSpec("/permission-mode", "Set permission mode", recommended=True),
+        SlashCommandSpec("/broke", "Set poor mode (terse responses)"),
+        SlashCommandSpec("/my-treat", "Set rich mode (comprehensive responses)"),
         SlashCommandSpec("/quit", "Exit the REPL"),
         SlashCommandSpec("/exit", "Exit the REPL (alias)"),
         SlashCommandSpec("/clear", "Clear conversation history"),

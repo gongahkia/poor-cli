@@ -40,6 +40,24 @@ async def test_review_command_with_file_uses_read_file():
 
     repl.tool_registry.read_file.assert_awaited_once_with(file_path="app.py")
     repl.process_request.assert_awaited_once()
+    assert repl.process_request.await_args.kwargs["request_origin"] == "structured_command"
+
+
+@pytest.mark.asyncio
+async def test_test_command_with_file_uses_structured_command_origin():
+    repl = SimpleNamespace(
+        tool_registry=SimpleNamespace(
+            read_file=AsyncMock(return_value="def add(a, b): return a + b"),
+        ),
+        process_request=AsyncMock(),
+        console=MagicMock(),
+    )
+
+    await handle_slash_command(repl, "/test calc.py")
+
+    repl.tool_registry.read_file.assert_awaited_once_with(file_path="calc.py")
+    repl.process_request.assert_awaited_once()
+    assert repl.process_request.await_args.kwargs["request_origin"] == "structured_command"
 
 
 @pytest.mark.asyncio
@@ -49,6 +67,34 @@ async def test_test_command_requires_file_argument():
     await handle_slash_command(repl, "/test")
 
     repl.console.print.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_broke_command_sets_poor_mode():
+    repl = SimpleNamespace(
+        response_mode="rich",
+        console=MagicMock(),
+    )
+
+    await handle_slash_command(repl, "/broke")
+
+    assert repl.response_mode == "poor"
+    printed = repl.console.print.call_args.args[0].lower()
+    assert "poor" in printed
+
+
+@pytest.mark.asyncio
+async def test_my_treat_command_sets_rich_mode():
+    repl = SimpleNamespace(
+        response_mode="poor",
+        console=MagicMock(),
+    )
+
+    await handle_slash_command(repl, "/my-treat")
+
+    assert repl.response_mode == "rich"
+    printed = repl.console.print.call_args.args[0].lower()
+    assert "rich" in printed
 
 
 @pytest.mark.asyncio

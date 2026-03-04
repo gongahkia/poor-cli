@@ -38,6 +38,14 @@ def test_prefix_filters_to_matching_supported_commands():
     ]
 
 
+def test_response_mode_commands_are_available_via_prefix_completion():
+    broke = _command_completions("/br")
+    my_treat = _command_completions("/my")
+
+    assert [completion.text for completion in broke] == ["/broke"]
+    assert [completion.text for completion in my_treat] == ["/my-treat"]
+
+
 def test_extract_command_token_ignores_leading_whitespace():
     assert CommandCompleter.extract_command_token("   /review app.py") == "/review"
 

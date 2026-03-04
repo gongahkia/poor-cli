@@ -116,6 +116,8 @@ async def handle_slash_command(repl, command: str):
                 "[cyan]Configuration:[/cyan]\n"
                 "/config        - Show current configuration\n"
                 "/permission-mode [mode] - Show or set permission mode\n"
+                "/broke         - Set response mode to terse, token-minimal output\n"
+                "/my-treat      - Set response mode to rich, comprehensive output\n"
                 "/verbose       - Toggle verbose logging\n"
                 "/plan-mode     - Toggle plan mode\n"
                 "/cost          - Show API usage and cost estimates\n"
@@ -224,6 +226,20 @@ async def handle_slash_command(repl, command: str):
 
         repl._set_permission_mode(mode)
         repl.console.print(f"[green]Permission mode set to {mode.value}[/green]")
+
+    elif cmd == "/broke":
+        repl.response_mode = "poor"
+        repl.console.print(
+            "[green]Response mode set to poor.[/green] "
+            "[dim]Replies will be terse and token-minimal.[/dim]"
+        )
+
+    elif cmd == "/my-treat":
+        repl.response_mode = "rich"
+        repl.console.print(
+            "[green]Response mode set to rich.[/green] "
+            "[dim]Replies will prioritize completeness and quality.[/dim]"
+        )
 
     elif cmd == "/history" or cmd.startswith("/history "):
         # Show recent messages from chat history
@@ -456,7 +472,7 @@ async def handle_slash_command(repl, command: str):
             return
 
         formatted = format_prompt(PROMPT_REVIEW_CODE, language=language, code=content)
-        await repl.process_request(formatted)
+        await repl.process_request(formatted, request_origin="structured_command")
 
     elif cmd == "/test":
         repl.console.print("[yellow]Usage: /test <file>[/yellow]")
@@ -474,7 +490,7 @@ async def handle_slash_command(repl, command: str):
 
         language = _detect_language_from_path(file_path)
         formatted = format_prompt(PROMPT_GENERATE_TESTS, language=language, code=content)
-        await repl.process_request(formatted)
+        await repl.process_request(formatted, request_origin="structured_command")
 
     elif cmd.startswith("/save-prompt "):
         name = raw_command.split(maxsplit=1)[1].strip()

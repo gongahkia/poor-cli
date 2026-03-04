@@ -101,6 +101,7 @@ class PoorCLIAsync:
         self.lsp_client = None
         self._watch_task: Optional[asyncio.Task] = None
         self.session_started_at = time.time()
+        self.response_mode = "rich"  # Session-only response shaping for interactive chat.
 
         # Usage tracking for /cost
         self.session_stats = {
@@ -701,7 +702,8 @@ class PoorCLIAsync:
                         + self.session_stats.get("output_tokens_estimate", 0)
                     )
                     token_info = f" [{est:,}tok]"
-                prompt_text = f"\nYou ({provider_short}/{model_short}){token_info}: "
+                mode_marker = f" [{self.response_mode}]"
+                prompt_text = f"\nYou ({provider_short}/{model_short}){mode_marker}{token_info}: "
 
                 # Smart input: history, slash-command recommendations, and path completion.
                 user_input = await self.input_manager.get_input(
@@ -782,7 +784,7 @@ class PoorCLIAsync:
             total = len(prompts)
             for idx, prompt in enumerate(prompts):
                 self.console.print(f"[dim]--- Prompt {idx + 1}/{total} ---[/dim]")
-                await self.process_request(prompt)
+                await self.process_request(prompt, request_origin="automation")
                 self.console.print()
             return 0
         finally:
@@ -951,7 +953,32 @@ class PoorCLIAsync:
         finally:
             self.pending_images = []
 
-    async def process_request(self, user_input: str) -> bool:
+    def _get_response_mode_instruction(self) -> str:
+        """Return the instruction prefix that controls chat response style."""
+        normalized_mode = (self.response_mode or "rich").strip().lower()
+        if normalized_mode == "poor":
+            return (
+                "Response mode is poor. Keep the answer as short as possible while still correct. "
+                "Use minimal tokens and avoid extra explanation unless explicitly requested."
+            )
+        return (
+            "Response mode is rich. Prioritize quality, completeness, and clear structure. "
+            "Cover important reasoning and tradeoffs when relevant."
+        )
+
+    def _apply_response_mode_to_user_input(
+        self,
+        user_input: str,
+        request_origin: str,
+    ) -> str:
+        """Apply session response mode only to normal chat-origin requests."""
+        if request_origin != "chat":
+            return user_input
+
+        mode_instruction = self._get_response_mode_instruction()
+        return f"{mode_instruction}\n\nUser request:\n{user_input}"
+
+    async def process_request(self, user_input: str, request_origin: str = "chat") -> bool:
         """Process one user request and return whether it succeeded."""
         # Track execution time
         start_time = time.time()
@@ -960,7 +987,7 @@ class PoorCLIAsync:
         set_log_context(request_id=request_id, provider=self.config.model.provider)
 
         try:
-            logger.info(f"Processing user request: {user_input[:100]}...")
+            logger.info(f"Processing user request ({request_origin}): {user_input[:100]}...")
             original_user_input = user_input
 
             # Track usage stats
@@ -975,7 +1002,11 @@ class PoorCLIAsync:
                 except Exception as e:
                     logger.error(f"Failed to log user message to repo config: {e}")
 
-            user_payload = self._prepare_user_input_payload(original_user_input)
+            provider_input = self._apply_response_mode_to_user_input(
+                original_user_input,
+                request_origin=request_origin,
+            )
+            user_payload = self._prepare_user_input_payload(provider_input)
 
             # Use streaming if enabled
             if self.config.ui.enable_streaming:

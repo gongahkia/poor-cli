@@ -116,6 +116,8 @@ $ docker run -it --env-file .env poor-cli
 **Configuration:**
 - `/config` - Show current configuration
 - `/permission-mode` - Show active permission mode
+- `/broke` - Set poor mode (terse, token-minimal responses; session-only)
+- `/my-treat` - Set rich mode (comprehensive responses; session-only, default)
 - `/cost` - Show token/cost estimate
 - `/tools` - List backend tool declarations
 - `/image <path>` - Queue image path for next request

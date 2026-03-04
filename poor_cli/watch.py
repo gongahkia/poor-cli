@@ -76,4 +76,4 @@ async def run_watch_mode(
 
         parts.append(prompt)
         combined = "\n".join(parts)
-        await repl.process_request(combined)
+        await repl.process_request(combined, request_origin="automation")
