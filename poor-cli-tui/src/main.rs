@@ -615,12 +615,7 @@ fn run_app(
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
-        let _ = apply_execution_profile(
-            &mut app,
-            &rpc_cmd_tx,
-            &saved_profile.name,
-            false,
-        );
+        let _ = apply_execution_profile(&mut app, &rpc_cmd_tx, &saved_profile.name, false);
     }
     refresh_context_budget_state(&mut app);
     if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
@@ -1124,6 +1119,7 @@ fn handle_submit(
         return false;
     }
 
+    refresh_context_budget_state(app);
     let backend_with_files = match with_context_files(app, trimmed) {
         Ok(message) => message,
         Err(error_message) => {
@@ -1289,6 +1285,27 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         }
     }
 
+    if resolved.is_empty()
+        && inline_specs.is_empty()
+        && app.pinned_context_files.is_empty()
+        && !app.context_budget_files.is_empty()
+    {
+        for relative in app.context_budget_files.iter().take(6) {
+            let path = if Path::new(relative).is_absolute() {
+                PathBuf::from(relative)
+            } else {
+                Path::new(&app.cwd).join(relative)
+            };
+            if !path.is_file() {
+                continue;
+            }
+            let key = path.to_string_lossy().to_string();
+            if seen_paths.insert(key) {
+                resolved.push(path);
+            }
+        }
+    }
+
     if resolved.is_empty() {
         return Ok(message.to_string());
     }
@@ -1342,15 +1359,22 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         .collect::<Vec<_>>()
         .join(", ");
     let extra = attached.len().saturating_sub(3);
+    let source_label = if inline_specs.is_empty() && app.pinned_context_files.is_empty() {
+        "auto-selected context budget files"
+    } else {
+        "@ references and pinned files"
+    };
     if extra > 0 {
         app.set_status(format!(
-            "Attached {} file refs via @ and pinned files ({attached_summary}, +{extra} more)",
-            attached.len()
+            "Attached {} {} ({attached_summary}, +{extra} more)",
+            attached.len(),
+            source_label
         ));
     } else {
         app.set_status(format!(
-            "Attached {} file refs via @ and pinned files ({attached_summary})",
-            attached.len()
+            "Attached {} {} ({attached_summary})",
+            attached.len(),
+            source_label
         ));
     }
 
@@ -1684,8 +1708,14 @@ const ONBOARDING_STEPS: &[OnboardingStep] = &[
         title: "Get Oriented",
         objective:
             "Start with visibility into your session and where to find command docs quickly.",
-        commands: &["/help", "/status", "/history 10", "/search <term>"],
-        try_now: "/status",
+        commands: &[
+            "/help",
+            "/status",
+            "/bootstrap",
+            "/profile status",
+            "/search <term>",
+        ],
+        try_now: "/bootstrap",
     },
     OnboardingStep {
         title: "Choose Provider + Model",
@@ -1879,11 +1909,11 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /host-server lobby <on|off> [room]        Toggle lobby approval mode\n\
   /host-server approve <id> [room]           Approve pending member\n\
   /host-server deny <id> [room]              Deny pending member\n\
-  /host-server rotate-token <viewer|prompter> [room]  Rotate invite token\n\
+  /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]  Rotate invite token\n\
   /host-server revoke <token|id> [room]      Revoke token or disconnect member\n\
   /host-server handoff <id> [room]           Transfer prompter role\n\
   /host-server preset <pairing|mob|review> [room]  Apply room collaboration preset\n\
-  /host-server activity [room] [limit]       Show room activity log\n\
+  /host-server activity [room] [limit] [event-type]  Show room activity log\n\
   /join-server <code>  Join host using invite code or url/room/token\n\
   /join-server         Launch interactive join wizard\n\
   /service ...         Manage local background services (start/stop/status/logs)\n\
@@ -2033,6 +2063,11 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         app.join_wizard_step = 0;
         app.join_wizard_url.clear();
         app.join_wizard_room.clear();
+        if qa_watch_state.is_running() {
+            qa_watch_state.stop();
+            app.qa_mode_enabled = false;
+            app.qa_command.clear();
+        }
         match rpc_clear_history_blocking(rpc_cmd_tx) {
             Ok(()) => app.set_status("Conversation history cleared"),
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -2059,6 +2094,11 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         app.join_wizard_step = 0;
         app.join_wizard_url.clear();
         app.join_wizard_room.clear();
+        if qa_watch_state.is_running() {
+            qa_watch_state.stop();
+            app.qa_mode_enabled = false;
+            app.qa_command.clear();
+        }
         match rpc_clear_history_blocking(rpc_cmd_tx) {
             Ok(()) => app.set_status("Started new session"),
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -3042,7 +3082,12 @@ Context Window: {max_context} tokens\n\n\
                     .unwrap_or_default();
                 let running = services
                     .iter()
-                    .filter(|entry| entry.get("running").and_then(|v| v.as_bool()).unwrap_or(false))
+                    .filter(|entry| {
+                        entry
+                            .get("running")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    })
                     .count();
                 lines.push(format!(
                     "- Managed services running: {running}/{}",
@@ -3052,7 +3097,12 @@ Context Window: {max_context} tokens\n\n\
             Err(e) => lines.push(format!("- Service check failed: {e}")),
         }
 
-        match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, "git rev-parse --abbrev-ref HEAD", Some(15), 20) {
+        match rpc_execute_command_with_timeout_blocking(
+            rpc_cmd_tx,
+            "git rev-parse --abbrev-ref HEAD",
+            Some(15),
+            20,
+        ) {
             Ok(branch) => lines.push(format!("- Git branch: `{}`", first_line(&branch))),
             Err(_) => lines.push("- Git branch: unavailable (not a git repo?)".to_string()),
         }
@@ -3060,6 +3110,45 @@ Context Window: {max_context} tokens\n\n\
         lines.push(String::new());
         lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, and `/status`.".to_string());
         app.push_message(ChatMessage::system(lines.join("\n")));
+        return false;
+    }
+
+    if lowered == "/bootstrap" || lowered.starts_with("/bootstrap ") {
+        let root_raw = raw
+            .splitn(2, ' ')
+            .nth(1)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let root = root_raw
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(&app.cwd));
+        app.push_message(ChatMessage::system(format_bootstrap_report(&root)));
+        return false;
+    }
+
+    if lowered == "/profile" || lowered.starts_with("/profile ") {
+        let selected = raw
+            .split_whitespace()
+            .nth(1)
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_else(|| "status".to_string());
+        if selected == "status" {
+            app.push_message(ChatMessage::system(format!(
+                "**Execution Profile**\n- Active: `{}`\n- Response mode: `{}`\n- Context budget: {} tokens\n\nAvailable profiles:\n- `speed`: smaller context, terse output, faster loop\n- `safe`: balanced defaults, review-oriented safety\n- `deep-review`: larger context, richer analysis depth\n\nSet with `/profile <name>`",
+                app.execution_profile,
+                app.response_mode.as_str(),
+                app.context_budget_tokens
+            )));
+            return false;
+        }
+
+        match apply_execution_profile(app, rpc_cmd_tx, &selected, true) {
+            Ok(summary) => {
+                refresh_context_budget_state(app);
+                app.push_message(ChatMessage::system(summary));
+            }
+            Err(e) => app.push_message(ChatMessage::error(e)),
+        }
         return false;
     }
 
@@ -3123,7 +3212,11 @@ Context Window: {max_context} tokens\n\n\
             match save_focus_state(app, &state) {
                 Ok(()) => app.push_message(ChatMessage::system(format!(
                     "Focus started.\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}",
-                    if state.goal.is_empty() { "(none)" } else { &state.goal },
+                    if state.goal.is_empty() {
+                        "(none)"
+                    } else {
+                        &state.goal
+                    },
                     if state.constraints.is_empty() {
                         "(none)"
                     } else {
@@ -3188,9 +3281,14 @@ Context Window: {max_context} tokens\n\n\
                         .get("sessionId")
                         .and_then(|v| v.as_str())
                         .unwrap_or("(unknown)");
-                    let model = first.get("model").and_then(|v| v.as_str()).unwrap_or("(unknown)");
-                    let message_count =
-                        first.get("messageCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let model = first
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)");
+                    let message_count = first
+                        .get("messageCount")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
                     lines.push(format!(
                         "- Last session: `{session_id}` on `{model}` ({message_count} messages)"
                     ));
@@ -3199,12 +3297,8 @@ Context Window: {max_context} tokens\n\n\
             Err(e) => lines.push(format!("- Session lookup failed: {e}")),
         }
 
-        match rpc_execute_command_with_timeout_blocking(
-            rpc_cmd_tx,
-            "git status -sb",
-            Some(20),
-            25,
-        ) {
+        match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, "git status -sb", Some(20), 25)
+        {
             Ok(status) => lines.push(format!("- Git status: `{}`", first_line(&status))),
             Err(e) => lines.push(format!("- Git status unavailable: {e}")),
         }
@@ -3222,8 +3316,31 @@ Context Window: {max_context} tokens\n\n\
         }
 
         lines.push(String::new());
-        lines.push("Suggested next steps: `/status`, `/history 10`, `/checkpoints`, `/review`.".to_string());
+        lines.push(
+            "Suggested next steps: `/status`, `/history 10`, `/checkpoints`, `/review`."
+                .to_string(),
+        );
         app.push_message(ChatMessage::system(lines.join("\n")));
+        return false;
+    }
+
+    if lowered == "/context-budget" || lowered.starts_with("/context-budget ") {
+        if let Some(raw_budget) = raw.split_whitespace().nth(1) {
+            match raw_budget.parse::<usize>() {
+                Ok(value) => {
+                    app.context_budget_tokens = value.clamp(1000, 20000);
+                }
+                Err(_) => {
+                    app.push_message(ChatMessage::system(
+                        "Usage: /context-budget [token-budget]".to_string(),
+                    ));
+                    return false;
+                }
+            }
+        }
+
+        refresh_context_budget_state(app);
+        app.push_message(ChatMessage::system(format_context_budget_report(app)));
         return false;
     }
 
@@ -3253,7 +3370,12 @@ Context Window: {max_context} tokens\n\n\
             if let Some(name) = file.file_name().and_then(|v| v.to_str()) {
                 if matches!(
                     name,
-                    "Cargo.toml" | "pyproject.toml" | "package.json" | "Makefile" | "main.rs" | "main.py"
+                    "Cargo.toml"
+                        | "pyproject.toml"
+                        | "package.json"
+                        | "Makefile"
+                        | "main.rs"
+                        | "main.py"
                 ) {
                     entrypoints.push(file.to_string_lossy().to_string());
                 }
@@ -3293,16 +3415,46 @@ Context Window: {max_context} tokens\n\n\
         if subcommand == "status" {
             app.push_message(ChatMessage::system(format!(
                 "Autopilot: {}\nIteration cap: {}",
-                if app.autopilot_enabled { "enabled" } else { "disabled" },
+                if app.autopilot_enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
                 app.iteration_cap
             )));
             return false;
         }
         if subcommand == "start" {
+            let allow_risky = args
+                .iter()
+                .any(|value| value.trim().eq_ignore_ascii_case("--allow-risky"));
+            if !allow_risky {
+                if let Ok(cfg) = rpc_get_config_blocking(rpc_cmd_tx) {
+                    let mode = cfg
+                        .get("permissionMode")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("prompt");
+                    if mode == "danger-full-access" {
+                        app.push_message(ChatMessage::system(
+                            "Autopilot guardrail blocked start because permission mode is `danger-full-access`.\nUse `/permission-mode prompt` or rerun with `/autopilot start <cap> --allow-risky`."
+                                .to_string(),
+                        ));
+                        return false;
+                    }
+                }
+            }
             let cap = args
                 .get(2)
                 .and_then(|raw| raw.parse::<u32>().ok())
-                .unwrap_or(40)
+                .unwrap_or_else(|| {
+                    if app.execution_profile == "speed" {
+                        30
+                    } else if app.execution_profile == "deep-review" {
+                        60
+                    } else {
+                        40
+                    }
+                })
                 .clamp(5, 120);
             app.autopilot_enabled = true;
             app.iteration_cap = cap;
@@ -3320,7 +3472,7 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
         app.push_message(ChatMessage::system(
-            "Usage: /autopilot start|stop|status [cap]".to_string(),
+            "Usage: /autopilot start [cap] [--allow-risky]\n       /autopilot stop\n       /autopilot status".to_string(),
         ));
         return false;
     }
@@ -3460,9 +3612,7 @@ Context Window: {max_context} tokens\n\n\
         match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, &command, Some(60), 75) {
             Ok(diff) => {
                 if diff.trim().is_empty() {
-                    app.push_message(ChatMessage::system(
-                        "No diff content found.".to_string(),
-                    ));
+                    app.push_message(ChatMessage::system("No diff content found.".to_string()));
                     return false;
                 }
                 let prompt = format!(
@@ -3478,9 +3628,7 @@ Context Window: {max_context} tokens\n\n\
                     raw.to_string(),
                 );
             }
-            Err(e) => app.push_message(ChatMessage::error(format!(
-                "Failed to collect diff: {e}"
-            ))),
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to collect diff: {e}"))),
         }
         return false;
     }
@@ -3488,8 +3636,12 @@ Context Window: {max_context} tokens\n\n\
     if lowered == "/fix-failures" || lowered.starts_with("/fix-failures ") {
         let command_hint = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         let failure_output = if !command_hint.is_empty() {
-            match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, command_hint, Some(300), 320)
-            {
+            match rpc_execute_command_with_timeout_blocking(
+                rpc_cmd_tx,
+                command_hint,
+                Some(300),
+                320,
+            ) {
                 Ok(output) => {
                     app.last_command_output = Some(output.clone());
                     output
@@ -3928,28 +4080,45 @@ Context Window: {max_context} tokens\n\n\
         }
 
         if lowered_subcommand == "rotate-token" {
-            if args.len() < 3 || args.len() > 4 {
+            if args.len() < 3 || args.len() > 5 {
                 app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
                 return false;
             }
             let role = args[2].to_ascii_lowercase();
             if role != "viewer" && role != "prompter" {
                 app.push_message(ChatMessage::system(
-                    "Usage: /host-server rotate-token <viewer|prompter> [room]".to_string(),
+                    "Usage: /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]"
+                        .to_string(),
                 ));
                 return false;
             }
-            let room = args.get(3).copied();
-            match rpc_rotate_host_token_blocking(rpc_cmd_tx, &role, room) {
+            let mut room: Option<&str> = None;
+            let mut expiry_seconds: Option<u64> = None;
+            if let Some(arg3) = args.get(3).copied() {
+                if let Ok(parsed) = arg3.parse::<u64>() {
+                    expiry_seconds = Some(parsed);
+                } else {
+                    room = Some(arg3);
+                }
+            }
+            if let Some(arg4) = args.get(4).copied() {
+                match arg4.parse::<u64>() {
+                    Ok(parsed) => expiry_seconds = Some(parsed),
+                    Err(_) => {
+                        app.push_message(ChatMessage::system(
+                            "Usage: /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]".to_string(),
+                        ));
+                        return false;
+                    }
+                }
+            }
+            match rpc_rotate_host_token_blocking(rpc_cmd_tx, &role, room, expiry_seconds) {
                 Ok(payload) => {
                     let room_name = payload
                         .get("room")
                         .and_then(|v| v.as_str())
                         .unwrap_or(room.unwrap_or(""));
-                    let token = payload
-                        .get("token")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let token = payload.get("token").and_then(|v| v.as_str()).unwrap_or("");
                     let join_command = payload
                         .get("joinCommand")
                         .and_then(|v| v.as_str())
@@ -3967,11 +4136,16 @@ Context Window: {max_context} tokens\n\n\
                     if !invite_code.is_empty() {
                         lines.push(format!("- Invite code: `{invite_code}`"));
                     }
+                    if let Some(expires_at) = payload.get("expiresAt").and_then(|v| v.as_str()) {
+                        if !expires_at.is_empty() {
+                            lines.push(format!("- Expires at: `{expires_at}`"));
+                        }
+                    }
                     app.push_message(ChatMessage::system(lines.join("\n")));
                 }
-                Err(e) => app.push_message(ChatMessage::error(format!(
-                    "Failed to rotate token: {e}"
-                ))),
+                Err(e) => {
+                    app.push_message(ChatMessage::error(format!("Failed to rotate token: {e}")))
+                }
             }
             return false;
         }
@@ -4056,39 +4230,45 @@ Context Window: {max_context} tokens\n\n\
                         if lobby_enabled { "on" } else { "off" }
                     )));
                 }
-                Err(e) => app.push_message(ChatMessage::error(format!(
-                    "Failed to set preset: {e}"
-                ))),
+                Err(e) => {
+                    app.push_message(ChatMessage::error(format!("Failed to set preset: {e}")))
+                }
             }
             return false;
         }
 
         if lowered_subcommand == "activity" {
-            if args.len() > 4 {
+            if args.len() > 5 {
                 app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
                 return false;
             }
             let mut room: Option<&str> = None;
             let mut limit: u64 = 30;
-            if let Some(first) = args.get(2).copied() {
-                if let Ok(parsed) = first.parse::<u64>() {
+            let mut event_type: Option<&str> = None;
+            let mut idx = 2usize;
+            if let Some(arg) = args.get(idx).copied() {
+                if arg.parse::<u64>().is_err() {
+                    room = Some(arg);
+                    idx += 1;
+                }
+            }
+            if let Some(arg) = args.get(idx).copied() {
+                if let Ok(parsed) = arg.parse::<u64>() {
                     limit = parsed;
-                } else {
-                    room = Some(first);
+                    idx += 1;
                 }
             }
-            if let Some(second) = args.get(3).copied() {
-                match second.parse::<u64>() {
-                    Ok(parsed) => limit = parsed,
-                    Err(_) => {
-                        app.push_message(ChatMessage::system(
-                            "Usage: /host-server activity [room] [limit]".to_string(),
-                        ));
-                        return false;
-                    }
-                }
+            if let Some(arg) = args.get(idx).copied() {
+                event_type = Some(arg);
+                idx += 1;
             }
-            match rpc_list_host_activity_blocking(rpc_cmd_tx, room, limit) {
+            if idx < args.len() {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server activity [room] [limit] [event-type]".to_string(),
+                ));
+                return false;
+            }
+            match rpc_list_host_activity_blocking(rpc_cmd_tx, room, limit, event_type) {
                 Ok(payload) => {
                     app.push_message(ChatMessage::system(format_host_activity_payload(&payload)))
                 }
@@ -4398,6 +4578,7 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/status" {
+        refresh_context_budget_state(app);
         let onboarding_state = if app.onboarding_active {
             format!(
                 "active ({}/{})",
@@ -4446,7 +4627,10 @@ Context Window: {max_context} tokens\n\n\
 Provider: {}/{}\n\
 CWD: {}\n\
 Response mode: {}\n\
+Profile: {}\n\
 Autopilot: {}\n\
+Context budget: {} tok ({} file(s), ~{} tok used)\n\
+QA watch: {}\n\
 Pinned files: {}\n\
 Queued images: {}\n\
 Watch mode: {}\n\
@@ -4456,7 +4640,20 @@ Multiplayer: {}",
             app.model_name,
             app.cwd,
             app.response_mode.as_str(),
-            if app.autopilot_enabled { "enabled" } else { "disabled" },
+            app.execution_profile,
+            if app.autopilot_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+            app.context_budget_tokens,
+            app.context_budget_files.len(),
+            app.context_budget_estimated_tokens,
+            if qa_watch_state.is_running() {
+                "running"
+            } else {
+                "stopped"
+            },
             app.pinned_context_files.len(),
             app.pending_images.len(),
             if watch_state.is_running() {
@@ -4995,6 +5192,101 @@ Submitting any slash command will cancel capture."
         return false;
     }
 
+    if lowered == "/qa" || lowered.starts_with("/qa ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        if subcommand == "status" {
+            let status = if qa_watch_state.is_running() {
+                "running"
+            } else {
+                "stopped"
+            };
+            app.push_message(ChatMessage::system(format!(
+                "**QA Watch**\n- Status: {status}\n- Directory: {}\n- Command: {}",
+                qa_watch_state
+                    .directory
+                    .as_deref()
+                    .unwrap_or(app.cwd.as_str()),
+                qa_watch_state.command.as_deref().unwrap_or("(not set)")
+            )));
+            return false;
+        }
+
+        if subcommand == "stop" {
+            if qa_watch_state.is_running() {
+                qa_watch_state.stop();
+                app.qa_mode_enabled = false;
+                app.qa_command.clear();
+                app.set_status("QA watch stopped");
+            } else {
+                app.push_message(ChatMessage::system("QA watch is not running.".to_string()));
+            }
+            return false;
+        }
+
+        if subcommand == "start" {
+            if qa_watch_state.is_running() {
+                app.push_message(ChatMessage::system(
+                    "QA watch is already running. Use `/qa stop` first.".to_string(),
+                ));
+                return false;
+            }
+
+            let tail = raw
+                .split_once(' ')
+                .map(|(_, rest)| rest.trim())
+                .and_then(|rest| rest.split_once(' ').map(|(_, after)| after.trim()))
+                .unwrap_or("");
+            let mut directory = app.cwd.clone();
+            let mut command = default_qa_command_for_workspace(Path::new(&app.cwd));
+
+            if !tail.is_empty() {
+                let mut parts = tail.split_whitespace();
+                if let Some(first) = parts.next() {
+                    if Path::new(first).is_dir() {
+                        directory = first.to_string();
+                        let rest = parts.collect::<Vec<_>>().join(" ");
+                        if !rest.trim().is_empty() {
+                            command = rest.trim().to_string();
+                        }
+                    } else {
+                        command = tail.to_string();
+                    }
+                }
+            }
+
+            if !Path::new(&directory).is_dir() {
+                app.push_message(ChatMessage::error(format!(
+                    "Directory not found: {directory}"
+                )));
+                return false;
+            }
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let handle =
+                spawn_qa_watch_worker(directory.clone(), command.clone(), tx.clone(), stop.clone());
+            qa_watch_state.stop_flag = Some(stop);
+            qa_watch_state.handle = Some(handle);
+            qa_watch_state.directory = Some(directory.clone());
+            qa_watch_state.command = Some(command.clone());
+            app.qa_mode_enabled = true;
+            app.qa_command = command.clone();
+            app.set_status(format!("QA watch started: `{command}` on `{directory}`"));
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(
+            "Usage: /qa start [dir] [command...]\n       /qa stop\n       /qa status".to_string(),
+        ));
+        return false;
+    }
+
     if lowered.starts_with("/watch ") {
         let directory = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if directory.is_empty() {
@@ -5222,6 +5514,120 @@ fn spawn_watch_worker(
                         });
                         break;
                     }
+                }
+            }
+        }
+    })
+}
+
+fn default_qa_command_for_workspace(root: &Path) -> String {
+    let traits = detect_project_traits(root);
+    if traits.contains(&"rust") && traits.contains(&"python") {
+        return "cargo test -q && pytest -q".to_string();
+    }
+    if traits.contains(&"rust") {
+        return "cargo test -q".to_string();
+    }
+    if traits.contains(&"python") {
+        return "pytest -q".to_string();
+    }
+    if traits.contains(&"javascript") {
+        return "npm test -- --watch=false".to_string();
+    }
+    "make test".to_string()
+}
+
+fn run_qa_command(directory: &str, command: &str) -> Result<(i32, String), String> {
+    let output = Command::new("sh")
+        .arg("-lc")
+        .arg(command)
+        .current_dir(directory)
+        .output()
+        .map_err(|e| format!("Failed to run QA command `{command}`: {e}"))?;
+
+    let exit_code = output.status.code().unwrap_or(1);
+    let combined = format!(
+        "{}{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        if output.stdout.is_empty() || output.stderr.is_empty() {
+            ""
+        } else {
+            "\n"
+        },
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok((exit_code, truncate_block(&combined, 2800)))
+}
+
+fn spawn_qa_watch_worker(
+    directory: String,
+    command: String,
+    tx: mpsc::Sender<ServerMsg>,
+    stop: Arc<AtomicBool>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let root = PathBuf::from(&directory);
+        let mut previous = snapshot_directory(&root);
+        let mut last_success: Option<bool> = None;
+        let mut last_signature = String::new();
+
+        while !stop.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_secs(2));
+            if stop.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let current = snapshot_directory(&root);
+            let changed = detect_changed_files(&previous, &current);
+            previous = current;
+
+            if changed.is_empty() {
+                continue;
+            }
+
+            let change_preview = changed
+                .iter()
+                .take(6)
+                .map(|path| format!("- {path}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            match run_qa_command(&directory, &command) {
+                Ok((exit_code, output)) => {
+                    let success = exit_code == 0;
+                    let signature = format!("{success}:{}", first_line(&output));
+                    let changed_state = last_success != Some(success);
+                    let changed_signature = signature != last_signature;
+                    last_success = Some(success);
+                    last_signature = signature;
+
+                    if !changed_state && !changed_signature {
+                        continue;
+                    }
+
+                    let status = if success { "PASS" } else { "FAIL" };
+                    let mut lines = vec![
+                        format!("**QA Watch** `{status}` (`{command}`)"),
+                        format!("- Directory: `{directory}`"),
+                        format!("- Changed files: {}", changed.len()),
+                        change_preview,
+                    ];
+
+                    if !output.trim().is_empty() {
+                        lines.push(String::new());
+                        lines.push("```text".to_string());
+                        lines.push(output);
+                        lines.push("```".to_string());
+                    }
+                    let _ = tx.send(ServerMsg::SystemMessage {
+                        content: lines.join("\n"),
+                    });
+                }
+                Err(error) => {
+                    let _ = tx.send(ServerMsg::Error {
+                        message: format!("QA watch failed: {error}"),
+                    });
+                    break;
                 }
             }
         }
@@ -5702,15 +6108,22 @@ fn host_server_usage_text() -> &'static str {
        /host-server lobby <on|off> [room]\n\
        /host-server approve <connection-id> [room]\n\
        /host-server deny <connection-id> [room]\n\
-       /host-server rotate-token <viewer|prompter> [room]\n\
+       /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]\n\
        /host-server revoke <token|connection-id> [room]\n\
        /host-server handoff <connection-id> [room]\n\
        /host-server preset <pairing|mob|review> [room]\n\
-       /host-server activity [room] [limit]"
+       /host-server activity [room] [limit] [event-type]"
 }
 
 fn format_host_activity_payload(payload: &Value) -> String {
-    let room = payload.get("room").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let room = payload
+        .get("room")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let event_filter = payload
+        .get("eventType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let events = payload
         .get("events")
         .and_then(|v| v.as_array())
@@ -5720,7 +6133,13 @@ fn format_host_activity_payload(payload: &Value) -> String {
         return format!("No activity events found for room `{room}`.");
     }
 
-    let mut lines = vec![format!("**Host Activity** room `{room}` ({})", events.len())];
+    let mut lines = vec![format!(
+        "**Host Activity** room `{room}` ({})",
+        events.len()
+    )];
+    if !event_filter.is_empty() {
+        lines.push(format!("Filter: `{event_filter}`"));
+    }
     for event in events {
         let timestamp = event
             .get("timestamp")
@@ -5741,6 +6160,16 @@ fn format_host_activity_payload(payload: &Value) -> String {
         }
         if !request_id.is_empty() {
             line.push_str(&format!(" request=`{request_id}`"));
+        }
+        if let Some(details) = event.get("details").and_then(|v| v.as_object()) {
+            if !details.is_empty() {
+                let details_text = details
+                    .iter()
+                    .map(|(key, value)| format!("{key}={}", value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                line.push_str(&format!(" details: {details_text}"));
+            }
         }
         lines.push(line);
     }
@@ -6078,6 +6507,243 @@ fn truncate_block(text: &str, max_chars: usize) -> String {
     out
 }
 
+fn detect_project_traits(root: &Path) -> Vec<&'static str> {
+    let mut traits = Vec::new();
+    if root.join("Cargo.toml").is_file() {
+        traits.push("rust");
+    }
+    if root.join("pyproject.toml").is_file()
+        || root.join("requirements.txt").is_file()
+        || root.join("setup.py").is_file()
+    {
+        traits.push("python");
+    }
+    if root.join("package.json").is_file() {
+        traits.push("javascript");
+    }
+    traits
+}
+
+fn classify_project_kind(root: &Path) -> String {
+    let traits = detect_project_traits(root);
+    if traits.is_empty() {
+        return "generic".to_string();
+    }
+    if traits.len() == 1 {
+        return traits[0].to_string();
+    }
+    "mixed".to_string()
+}
+
+fn recommended_bootstrap_commands(root: &Path) -> Vec<String> {
+    let traits = detect_project_traits(root);
+    let mut commands = Vec::new();
+    if traits.contains(&"rust") {
+        commands.push("cargo test -q".to_string());
+        commands.push("cargo check".to_string());
+    }
+    if traits.contains(&"python") {
+        commands.push("pytest -q".to_string());
+        commands.push("ruff check .".to_string());
+    }
+    if traits.contains(&"javascript") {
+        commands.push("npm test -- --watch=false".to_string());
+        commands.push("npm run lint".to_string());
+    }
+    if commands.is_empty() {
+        commands.push("make test".to_string());
+        commands.push("git status -sb".to_string());
+    }
+    commands
+}
+
+fn format_bootstrap_report(root: &Path) -> String {
+    let project_kind = classify_project_kind(root);
+    let commands = recommended_bootstrap_commands(root);
+    let mut lines = vec![
+        format!("**Solo Quickstart** (`{}`)", root.to_string_lossy()),
+        format!("- Project type: `{project_kind}`"),
+        String::new(),
+        "**Recommended first commands**".to_string(),
+    ];
+    for command in commands {
+        lines.push(format!("- `{command}`"));
+    }
+    lines.push(String::new());
+    lines.push(
+        "Suggested flow: `/doctor` -> `/focus start ...` -> `/workspace-map` -> `/resume`."
+            .to_string(),
+    );
+    lines.push("Onboarding shortcut: `/onboarding 1`.".to_string());
+    lines.join("\n")
+}
+
+fn estimate_token_cost(char_count: usize) -> usize {
+    (char_count / 4).max(1)
+}
+
+fn is_binary_like_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "ico"
+            | "pdf"
+            | "zip"
+            | "gz"
+            | "tar"
+            | "jar"
+            | "wasm"
+            | "exe"
+            | "dll"
+            | "so"
+            | "dylib"
+            | "ttf"
+            | "otf"
+            | "woff"
+            | "woff2"
+            | "mp3"
+            | "mp4"
+            | "mov"
+            | "avi"
+    )
+}
+
+fn context_relevance_score(path: &Path) -> i32 {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let mut score = match extension.as_str() {
+        "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "go" | "java" | "kt" => 120,
+        "toml" | "yaml" | "yml" | "json" => 80,
+        "md" => 60,
+        "sh" => 70,
+        _ => 40,
+    };
+
+    if matches!(
+        file_name.as_str(),
+        "readme.md"
+            | "cargo.toml"
+            | "pyproject.toml"
+            | "package.json"
+            | "makefile"
+            | "main.rs"
+            | "main.py"
+            | "app.py"
+            | "index.ts"
+            | "index.js"
+    ) {
+        score += 120;
+    }
+    if file_name.contains("test") {
+        score += 40;
+    }
+    if file_name.contains("config") || file_name.ends_with(".env") {
+        score += 30;
+    }
+    if file_name.contains(".lock") {
+        score -= 40;
+    }
+    score
+}
+
+fn compute_context_budget_files(
+    root: &Path,
+    budget_tokens: usize,
+    max_files: usize,
+) -> (Vec<String>, usize) {
+    let mut candidates = Vec::<(i32, String, usize)>::new();
+    for path in collect_directory_files(root, 5000) {
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if is_binary_like_extension(&extension) {
+            continue;
+        }
+        let byte_size = fs::metadata(&path)
+            .ok()
+            .map(|metadata| metadata.len() as usize)
+            .unwrap_or(0);
+        if byte_size == 0 {
+            continue;
+        }
+        let relative = path
+            .strip_prefix(root)
+            .map(|rel| rel.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
+        candidates.push((context_relevance_score(&path), relative, byte_size));
+    }
+
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+
+    let mut selected = Vec::<String>::new();
+    let mut used_tokens = 0usize;
+    for (_, relative, byte_size) in candidates {
+        if selected.len() >= max_files {
+            break;
+        }
+        let estimated = estimate_token_cost(byte_size.min(12_000));
+        if used_tokens + estimated > budget_tokens && !selected.is_empty() {
+            break;
+        }
+        selected.push(relative);
+        used_tokens += estimated;
+    }
+
+    (selected, used_tokens)
+}
+
+fn refresh_context_budget_state(app: &mut App) {
+    let root = PathBuf::from(&app.cwd);
+    if !root.is_dir() {
+        app.context_budget_files.clear();
+        app.context_budget_estimated_tokens = 0;
+        return;
+    }
+
+    let (files, used_tokens) = compute_context_budget_files(&root, app.context_budget_tokens, 12);
+    app.context_budget_files = files;
+    app.context_budget_estimated_tokens = used_tokens;
+}
+
+fn format_context_budget_report(app: &App) -> String {
+    let mut lines = vec![
+        format!(
+            "**Context Budget** (budget={} tok, used~{} tok)",
+            app.context_budget_tokens, app.context_budget_estimated_tokens
+        ),
+        String::new(),
+    ];
+    if app.context_budget_files.is_empty() {
+        lines.push("No candidate files selected.".to_string());
+        return lines.join("\n");
+    }
+
+    for file in app.context_budget_files.iter().take(12) {
+        lines.push(format!("- `{file}`"));
+    }
+    lines.push(String::new());
+    lines.push(
+        "Auto-selection is used when you send prompts without `@refs` or pinned files.".to_string(),
+    );
+    lines.join("\n")
+}
+
 fn command_data_dir(app: &App) -> PathBuf {
     Path::new(&app.cwd).join(".poor-cli")
 }
@@ -6126,9 +6792,106 @@ fn save_tasks(app: &App, tasks: &[TaskItem]) -> Result<(), String> {
     let root = command_data_dir(app);
     fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
     let path = tasks_state_path(app);
-    let serialized =
-        serde_json::to_string_pretty(tasks).map_err(|e| format!("Failed to serialize tasks: {e}"))?;
+    let serialized = serde_json::to_string_pretty(tasks)
+        .map_err(|e| format!("Failed to serialize tasks: {e}"))?;
     fs::write(path, serialized).map_err(|e| format!("Failed to write tasks file: {e}"))
+}
+
+fn profile_state_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("profile.json")
+}
+
+fn load_profile_state(app: &App) -> Result<Option<ProfileState>, String> {
+    let path = profile_state_path(app);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read profile: {e}"))?;
+    let profile: ProfileState =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid profile state: {e}"))?;
+    Ok(Some(profile))
+}
+
+fn save_profile_state(app: &App, profile: &ProfileState) -> Result<(), String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
+    let path = profile_state_path(app);
+    let serialized = serde_json::to_string_pretty(profile)
+        .map_err(|e| format!("Failed to serialize profile: {e}"))?;
+    fs::write(path, serialized).map_err(|e| format!("Failed to write profile: {e}"))
+}
+
+fn apply_execution_profile(
+    app: &mut App,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    profile_name: &str,
+    persist: bool,
+) -> Result<String, String> {
+    let normalized = profile_name.trim().to_ascii_lowercase();
+    let (response_mode, context_budget, permission_mode, iteration_cap, notes) =
+        match normalized.as_str() {
+            "speed" => (
+                ResponseMode::Poor,
+                3200usize,
+                "auto-safe",
+                30u32,
+                "Optimized for fast iteration and lower token usage.",
+            ),
+            "safe" => (
+                ResponseMode::Rich,
+                6000usize,
+                "prompt",
+                40u32,
+                "Balanced defaults with safer execution prompts.",
+            ),
+            "deep-review" | "deep" => (
+                ResponseMode::Rich,
+                9000usize,
+                "prompt",
+                60u32,
+                "Expanded context and deeper analysis defaults.",
+            ),
+            _ => return Err("Unknown profile. Use one of: speed, safe, deep-review".to_string()),
+        };
+
+    app.execution_profile = if normalized == "deep" {
+        "deep-review".to_string()
+    } else {
+        normalized
+    };
+    app.response_mode = response_mode;
+    app.context_budget_tokens = context_budget;
+    app.iteration_cap = iteration_cap;
+
+    let _ = rpc_set_config_blocking(
+        rpc_cmd_tx,
+        "security.permission_mode",
+        Value::String(permission_mode.to_string()),
+    );
+    let _ = rpc_set_config_blocking(
+        rpc_cmd_tx,
+        "ui.response_mode",
+        Value::String(app.response_mode.as_str().to_string()),
+    );
+
+    if persist {
+        save_profile_state(
+            app,
+            &ProfileState {
+                name: app.execution_profile.clone(),
+            },
+        )?;
+    }
+
+    Ok(format!(
+        "Profile set to **{}**.\n- Response mode: `{}`\n- Permission mode: `{}`\n- Context budget: {} tokens\n- Iteration cap default: {}\n\n{}",
+        app.execution_profile,
+        app.response_mode.as_str(),
+        permission_mode,
+        app.context_budget_tokens,
+        app.iteration_cap,
+        notes
+    ))
 }
 
 fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
@@ -6748,12 +7511,14 @@ fn rpc_rotate_host_token_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     role: &str,
     room: Option<&str>,
+    expires_in_seconds: Option<u64>,
 ) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
         .send(RpcCommand::RotateHostToken {
             role: role.to_string(),
             room: room.map(|value| value.to_string()),
+            expires_in_seconds,
             reply: reply_tx,
         })
         .map_err(|e| format!("Failed to request token rotation: {e}"))?;
@@ -6824,12 +7589,14 @@ fn rpc_list_host_activity_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     room: Option<&str>,
     limit: u64,
+    event_type: Option<&str>,
 ) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
         .send(RpcCommand::ListHostActivity {
             room: room.map(|value| value.to_string()),
             limit,
+            event_type: event_type.map(|value| value.to_string()),
             reply: reply_tx,
         })
         .map_err(|e| format!("Failed to request host activity: {e}"))?;
@@ -7227,6 +7994,37 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(names, vec!["a.txt", "b.txt", "c.txt"]);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_kind_detects_rust_python_mixed() {
+        let root = create_temp_workspace("project-kind");
+        fs::write(root.join("Cargo.toml"), "[package]\nname=\"x\"\n").expect("cargo file");
+        fs::write(root.join("pyproject.toml"), "[project]\nname=\"x\"\n").expect("pyproject");
+        assert_eq!(classify_project_kind(&root), "mixed");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn context_budget_selection_respects_budget() {
+        let root = create_temp_workspace("context-budget");
+        fs::write(root.join("README.md"), "# app\n").expect("readme");
+        fs::write(root.join("main.py"), "print('hello')\n".repeat(80)).expect("main py");
+        fs::write(root.join("utils.py"), "def x():\n    return 1\n".repeat(50)).expect("utils py");
+
+        let (files, used) = compute_context_budget_files(&root, 600, 12);
+        assert!(!files.is_empty());
+        assert!(used <= 600);
+        assert!(files.iter().any(|path| path.ends_with("README.md")));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn default_qa_command_prefers_python_when_pyproject_exists() {
+        let root = create_temp_workspace("qa-default");
+        fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").expect("pyproject");
+        assert_eq!(default_qa_command_for_workspace(&root), "pytest -q");
         let _ = fs::remove_dir_all(root);
     }
 }

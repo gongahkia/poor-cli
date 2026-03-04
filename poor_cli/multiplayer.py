@@ -262,12 +262,25 @@ class MultiplayerHost:
             )
         return output
 
-    def list_room_activity(self, room_name: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_room_activity(
+        self,
+        room_name: str,
+        limit: int = 50,
+        event_type: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         room = self.rooms.get(room_name)
         if room is None:
             return []
         bounded = max(1, min(limit, 200))
-        return [dict(item) for item in room.activity[-bounded:]]
+        items = room.activity
+        if event_type:
+            normalized = event_type.strip().lower()
+            items = [
+                item
+                for item in room.activity
+                if str(item.get("eventType", "")).strip().lower() == normalized
+            ]
+        return [dict(item) for item in items[-bounded:]]
 
     async def set_room_lobby(self, room_name: str, enabled: bool) -> bool:
         room = self.rooms.get(room_name)

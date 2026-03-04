@@ -1130,11 +1130,19 @@ impl RpcClient {
         self.call("poor-cli/denyHostMember", Value::Object(params))
     }
 
-    pub fn rotate_host_token(&self, role: &str, room: Option<&str>) -> Result<Value, String> {
+    pub fn rotate_host_token(
+        &self,
+        role: &str,
+        room: Option<&str>,
+        expires_in_seconds: Option<u64>,
+    ) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
         params.insert("role".into(), Value::String(role.to_string()));
         if let Some(room_name) = room {
             params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        if let Some(expires) = expires_in_seconds {
+            params.insert("expiresInSeconds".into(), Value::Number(expires.into()));
         }
         self.call("poor-cli/rotateHostToken", Value::Object(params))
     }
@@ -1173,11 +1181,19 @@ impl RpcClient {
         self.call("poor-cli/setHostPreset", Value::Object(params))
     }
 
-    pub fn list_host_activity(&self, room: Option<&str>, limit: u64) -> Result<Value, String> {
+    pub fn list_host_activity(
+        &self,
+        room: Option<&str>,
+        limit: u64,
+        event_type: Option<&str>,
+    ) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
         params.insert("limit".into(), Value::Number(limit.into()));
         if let Some(room_name) = room {
             params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        if let Some(event_name) = event_type {
+            params.insert("eventType".into(), Value::String(event_name.to_string()));
         }
         self.call("poor-cli/listHostActivity", Value::Object(params))
     }
@@ -1336,6 +1352,7 @@ pub enum RpcCommand {
     RotateHostToken {
         role: String,
         room: Option<String>,
+        expires_in_seconds: Option<u64>,
         reply: SyncSender<Result<Value, String>>,
     },
     RevokeHostToken {
@@ -1356,6 +1373,7 @@ pub enum RpcCommand {
     ListHostActivity {
         room: Option<String>,
         limit: u64,
+        event_type: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
     StartService {
@@ -1549,8 +1567,17 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }) => {
                 let _ = reply.send(client.deny_host_member(&connection_id, room.as_deref()));
             }
-            Ok(RpcCommand::RotateHostToken { role, room, reply }) => {
-                let _ = reply.send(client.rotate_host_token(&role, room.as_deref()));
+            Ok(RpcCommand::RotateHostToken {
+                role,
+                room,
+                expires_in_seconds,
+                reply,
+            }) => {
+                let _ = reply.send(client.rotate_host_token(
+                    &role,
+                    room.as_deref(),
+                    expires_in_seconds,
+                ));
             }
             Ok(RpcCommand::RevokeHostToken { value, room, reply }) => {
                 let _ = reply.send(client.revoke_host_token(&value, room.as_deref()));
@@ -1569,8 +1596,17 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }) => {
                 let _ = reply.send(client.set_host_preset(&preset, room.as_deref()));
             }
-            Ok(RpcCommand::ListHostActivity { room, limit, reply }) => {
-                let _ = reply.send(client.list_host_activity(room.as_deref(), limit));
+            Ok(RpcCommand::ListHostActivity {
+                room,
+                limit,
+                event_type,
+                reply,
+            }) => {
+                let _ = reply.send(client.list_host_activity(
+                    room.as_deref(),
+                    limit,
+                    event_type.as_deref(),
+                ));
             }
             Ok(RpcCommand::StartService {
                 name,
@@ -1731,6 +1767,64 @@ mod tests {
                 assert_eq!(input_tokens, 500);
                 assert_eq!(output_tokens, 200);
                 assert!((estimated_cost - 0.05).abs() < 1e-10);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_room_event_notification() {
+        let params = json!({
+            "room": "dev",
+            "eventType": "member_joined",
+            "actor": "c-1",
+            "requestId": "req-1",
+            "queueDepth": 2,
+            "memberCount": 3,
+            "activeConnectionId": "c-1",
+            "lobbyEnabled": true,
+            "preset": "review",
+            "members": [{"connectionId": "c-1", "role": "prompter"}]
+        });
+        let n = parse_notification("poor-cli/roomEvent", &params).unwrap();
+        match n {
+            ServerNotification::RoomEvent {
+                room,
+                event_type,
+                queue_depth,
+                member_count,
+                lobby_enabled,
+                preset,
+                ..
+            } => {
+                assert_eq!(room, "dev");
+                assert_eq!(event_type, "member_joined");
+                assert_eq!(queue_depth, 2);
+                assert_eq!(member_count, 3);
+                assert!(lobby_enabled);
+                assert_eq!(preset, "review");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_member_role_updated_notification() {
+        let params = json!({
+            "room": "dev",
+            "connectionId": "c-2",
+            "role": "viewer"
+        });
+        let n = parse_notification("poor-cli/memberRoleUpdated", &params).unwrap();
+        match n {
+            ServerNotification::MemberRoleUpdated {
+                room,
+                connection_id,
+                role,
+            } => {
+                assert_eq!(room, "dev");
+                assert_eq!(connection_id, "c-2");
+                assert_eq!(role, "viewer");
             }
             _ => panic!("wrong variant"),
         }

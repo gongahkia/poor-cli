@@ -21,7 +21,7 @@ import socket
 import sys
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -2328,12 +2328,24 @@ class PoorCLIServer:
         Params:
             role: viewer | prompter
             room: Optional room name (required if multiple rooms)
+            expiresInSeconds: Optional token expiry (seconds)
         """
         self._ensure_initialized()
         self._ensure_host_controls_available()
 
         role_name = self._normalize_member_role(params.get("role"))
         requested_room = str(params.get("room", "")).strip()
+        raw_ttl = params.get("expiresInSeconds")
+        ttl_seconds: Optional[int]
+        if raw_ttl is None:
+            ttl_seconds = None
+        else:
+            try:
+                ttl_seconds = int(raw_ttl)
+            except (TypeError, ValueError) as e:
+                raise InvalidParamsError("expiresInSeconds must be a positive integer") from e
+            if ttl_seconds <= 0:
+                raise InvalidParamsError("expiresInSeconds must be a positive integer")
 
         async with self._host_server_lock:
             if self._host_server is None:
@@ -2345,7 +2357,11 @@ class PoorCLIServer:
                 raise RuntimeError("Active host does not support token rotation")
 
             try:
-                token = await host.rotate_room_token(room_name, role_name)
+                token = await host.rotate_room_token(
+                    room_name,
+                    role_name,
+                    expires_in_seconds=ttl_seconds,
+                )
             except ValueError as error:
                 raise InvalidParamsError(str(error)) from error
 
@@ -2355,6 +2371,11 @@ class PoorCLIServer:
             join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
             join_command = ""
             invite_code = ""
+            expires_at = ""
+            if ttl_seconds is not None:
+                expires_at = (
+                    datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+                ).isoformat()
             if join_ws_url:
                 join_command = (
                     f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} --remote-token {token}"
@@ -2368,6 +2389,7 @@ class PoorCLIServer:
                 "token": token,
                 "joinCommand": join_command,
                 "inviteCode": invite_code,
+                "expiresAt": expires_at,
             }
 
     async def handle_revoke_host_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2514,11 +2536,13 @@ class PoorCLIServer:
         Params:
             room: Optional room name (required if multiple rooms)
             limit: Optional max items (default 50)
+            eventType: Optional event type filter
         """
         self._ensure_initialized()
         self._ensure_host_controls_available()
 
         requested_room = str(params.get("room", "")).strip()
+        event_type = str(params.get("eventType", "")).strip()
         raw_limit = params.get("limit", 50)
         try:
             limit = int(raw_limit)
@@ -2535,11 +2559,12 @@ class PoorCLIServer:
             if not hasattr(host, "list_room_activity"):
                 raise RuntimeError("Active host does not support activity logs")
 
-            events = host.list_room_activity(room_name, limit)
+            events = host.list_room_activity(room_name, limit, event_type or None)
             return {
                 "success": True,
                 "room": room_name,
                 "events": events,
+                "eventType": event_type,
                 "count": len(events),
             }
 

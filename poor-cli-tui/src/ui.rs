@@ -548,6 +548,18 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(theme::accent(mode)),
             ));
         }
+        if !app.execution_profile.is_empty() {
+            spans.push(Span::styled(
+                format!(" profile:{}  ", app.execution_profile),
+                Style::default().fg(theme::system_color(mode)),
+            ));
+        }
+        if app.qa_mode_enabled {
+            spans.push(Span::styled(
+                " qa:running  ",
+                Style::default().fg(theme::success(mode)),
+            ));
+        }
         spans.extend(vec![
             Span::styled("  /help", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("  /quit", Style::default().fg(theme::muted_fg(mode))),

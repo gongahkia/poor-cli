@@ -904,12 +904,14 @@ mod tests {
         app.input_buffer = "/pro".to_string();
         app.input_cursor = app.input_buffer.len();
         app.mode = AppMode::Command;
+        let matches = command_palette_matches("/pro");
+        assert!(matches.len() >= 2);
+        let expected = matches[1].command.to_string();
 
-        // `/pro` currently has: /provider, /providers, /prompts.
         handle_key_normal(&mut app, key_down());
         let action = handle_key_normal(&mut app, key_enter());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.input_buffer, "/providers");
+        assert_eq!(app.input_buffer, expected);
     }
 }
