@@ -1059,24 +1059,27 @@ class PoorCLICore:
         if provider_config and provider_config.base_url:
             extra_kwargs["base_url"] = provider_config.base_url
         
-        # Create new provider
-        self.provider = ProviderFactory.create(
+        # Create the candidate provider, but do not swap global state
+        # until initialization succeeds. This avoids ending up on a broken
+        # provider instance when initialization fails (e.g., Ollama unreachable).
+        candidate_provider = ProviderFactory.create(
             provider_name=provider_name,
             api_key=api_key or "",
             model_name=model_name,
             **extra_kwargs
         )
-        
-        # Update config
-        self.config.model.provider = provider_name
-        self.config.model.model_name = model_name
-        
-        # Re-initialize provider with tools
+
+        # Initialize provider with tools before committing the switch.
         tool_declarations = self.tool_registry.get_tool_declarations()
-        await self.provider.initialize(
+        await candidate_provider.initialize(
             tools=tool_declarations,
             system_instruction=self._system_instruction
         )
+
+        # Commit provider + config only after successful initialization.
+        self.provider = candidate_provider
+        self.config.model.provider = provider_name
+        self.config.model.model_name = model_name
         
         logger.info(f"Switched to {provider_name}/{model_name}")
 
