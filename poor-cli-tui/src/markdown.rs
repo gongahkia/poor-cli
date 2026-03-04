@@ -2,13 +2,14 @@
 ///
 /// Parses a subset of markdown (headings, bold, italic, code blocks, inline code,
 /// lists, links) and converts them into styled `ratatui` `Line`/`Span` sequences.
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::app::ThemeMode;
 use crate::theme;
 
 /// Render a markdown string into a vec of styled `Line`s for ratatui.
-pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
+pub fn render_markdown(text: &str, theme_mode: ThemeMode) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut in_code_block = false;
     let mut code_lang = String::new();
@@ -27,19 +28,17 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                             &code_lang
                         }
                     ),
-                    theme::code_block_border_style(),
+                    theme::code_block_border_style(theme_mode),
                 )));
                 for cl in &code_lines {
                     lines.push(Line::from(Span::styled(
                         format!("  {cl}"),
-                        Style::default()
-                            .fg(Color::Rgb(200, 200, 200))
-                            .bg(theme::code_block_bg()),
+                        theme::code_block_line_style(theme_mode, &code_lang),
                     )));
                 }
                 lines.push(Line::from(Span::styled(
                     "───────",
-                    theme::code_block_border_style(),
+                    theme::code_block_border_style(theme_mode),
                 )));
                 code_lines.clear();
                 code_lang.clear();
@@ -61,8 +60,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         if raw_line.starts_with("### ") {
             lines.push(Line::from(Span::styled(
                 raw_line[4..].to_string(),
-                Style::default()
-                    .fg(Color::White)
+                theme::heading_style(theme_mode)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             )));
             continue;
@@ -70,8 +68,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         if raw_line.starts_with("## ") {
             lines.push(Line::from(Span::styled(
                 raw_line[3..].to_string(),
-                Style::default()
-                    .fg(Color::White)
+                theme::heading_style(theme_mode)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             )));
             continue;
@@ -79,8 +76,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         if raw_line.starts_with("# ") {
             lines.push(Line::from(Span::styled(
                 raw_line[2..].to_string(),
-                Style::default()
-                    .fg(Color::White)
+                theme::heading_style(theme_mode)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             )));
             continue;
@@ -90,7 +86,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         if raw_line.trim() == "---" || raw_line.trim() == "***" || raw_line.trim() == "___" {
             lines.push(Line::from(Span::styled(
                 "────────────────────────────────",
-                Style::default().fg(Color::DarkGray),
+                theme::list_bullet_style(theme_mode),
             )));
             continue;
         }
@@ -105,8 +101,8 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         };
 
         if let Some(item_text) = list_match {
-            let mut spans = vec![Span::styled("  • ", theme::list_bullet_style())];
-            spans.extend(parse_inline_spans(item_text));
+            let mut spans = vec![Span::styled("  • ", theme::list_bullet_style(theme_mode))];
+            spans.extend(parse_inline_spans(item_text, theme_mode));
             lines.push(Line::from(spans));
             continue;
         }
@@ -117,9 +113,9 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
             let num_str = &raw_line[..=num_end];
             let mut spans = vec![Span::styled(
                 format!("  {num_str} "),
-                theme::list_bullet_style(),
+                theme::list_bullet_style(theme_mode),
             )];
-            spans.extend(parse_inline_spans(rest));
+            spans.extend(parse_inline_spans(rest, theme_mode));
             lines.push(Line::from(spans));
             continue;
         }
@@ -131,7 +127,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         }
 
         // Normal paragraph — parse inline formatting
-        let spans = parse_inline_spans(raw_line);
+        let spans = parse_inline_spans(raw_line, theme_mode);
         lines.push(Line::from(spans));
     }
 
@@ -146,17 +142,17 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                     &code_lang
                 }
             ),
-            theme::code_block_border_style(),
+            theme::code_block_border_style(theme_mode),
         )));
         for cl in &code_lines {
             lines.push(Line::from(Span::styled(
                 format!("  {cl}"),
-                Style::default().fg(Color::Rgb(200, 200, 200)),
+                theme::code_block_line_style(theme_mode, &code_lang),
             )));
         }
         lines.push(Line::from(Span::styled(
             "───────",
-            theme::code_block_border_style(),
+            theme::code_block_border_style(theme_mode),
         )));
     }
 
@@ -164,7 +160,7 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
 }
 
 /// Parse inline markdown spans: `**bold**`, `*italic*`, `` `code` ``, `[text](url)`.
-fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
+fn parse_inline_spans(text: &str, theme_mode: ThemeMode) -> Vec<Span<'static>> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut remaining = text;
 
@@ -209,7 +205,10 @@ fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
                     "**" => {
                         if let Some(end) = after_marker.find("**") {
                             let bold_text = &after_marker[..end];
-                            spans.push(Span::styled(bold_text.to_string(), theme::bold_style()));
+                            spans.push(Span::styled(
+                                bold_text.to_string(),
+                                theme::bold_style(theme_mode),
+                            ));
                             remaining = &after_marker[end + 2..];
                         } else {
                             spans.push(Span::raw("**".to_string()));
@@ -219,8 +218,10 @@ fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
                     "*" => {
                         if let Some(end) = after_marker.find('*') {
                             let italic_text = &after_marker[..end];
-                            spans
-                                .push(Span::styled(italic_text.to_string(), theme::italic_style()));
+                            spans.push(Span::styled(
+                                italic_text.to_string(),
+                                theme::italic_style(theme_mode),
+                            ));
                             remaining = &after_marker[end + 1..];
                         } else {
                             spans.push(Span::raw("*".to_string()));
@@ -232,7 +233,7 @@ fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
                             let code_text = &after_marker[..end];
                             spans.push(Span::styled(
                                 code_text.to_string(),
-                                theme::inline_code_style(),
+                                theme::inline_code_style(theme_mode),
                             ));
                             remaining = &after_marker[end + 1..];
                         } else {
@@ -250,7 +251,7 @@ fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
                                     let _url = &after_bracket[1..close_paren];
                                     spans.push(Span::styled(
                                         link_text.to_string(),
-                                        theme::link_style(),
+                                        theme::link_style(theme_mode),
                                     ));
                                     remaining = &after_bracket[close_paren + 1..];
                                 } else {
@@ -296,20 +297,27 @@ mod tests {
 
     #[test]
     fn test_render_heading() {
-        let lines = render_markdown("# Hello");
+        let lines = render_markdown("# Hello", ThemeMode::Dark);
         assert_eq!(lines.len(), 1);
     }
 
     #[test]
     fn test_render_code_block() {
         let md = "```python\nprint('hi')\n```";
-        let lines = render_markdown(md);
+        let lines = render_markdown(md, ThemeMode::Dark);
+        assert!(lines.len() >= 3);
+    }
+
+    #[test]
+    fn test_render_code_block_in_light_mode() {
+        let md = "```rust\nfn main() {}\n```";
+        let lines = render_markdown(md, ThemeMode::Light);
         assert!(lines.len() >= 3);
     }
 
     #[test]
     fn test_inline_bold() {
-        let spans = parse_inline_spans("Hello **world**!");
+        let spans = parse_inline_spans("Hello **world**!", ThemeMode::Dark);
         assert!(spans.len() >= 3);
     }
 }

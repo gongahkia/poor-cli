@@ -121,6 +121,37 @@ impl ResponseMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeMode {
+    Dark,
+    Light,
+}
+
+impl ThemeMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+
+    pub fn from_ui_theme(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "light" => Self::Light,
+            "dark" | "default" | "minimal" | "" => Self::Dark,
+            _ => Self::Dark,
+        }
+    }
+
+    pub fn from_user_input(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "dark" => Some(Self::Dark),
+            "light" => Some(Self::Light),
+            _ => None,
+        }
+    }
+}
+
 /// Spinner frames for the thinking indicator.
 pub const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -209,6 +240,7 @@ pub struct App {
     pub cumulative_input_tokens: u64,
     pub cumulative_output_tokens: u64,
     pub response_mode: ResponseMode,
+    pub theme_mode: ThemeMode,
 }
 
 impl Default for App {
@@ -260,6 +292,7 @@ impl Default for App {
             cumulative_input_tokens: 0,
             cumulative_output_tokens: 0,
             response_mode: ResponseMode::Rich,
+            theme_mode: ThemeMode::Dark,
         }
     }
 }

@@ -60,6 +60,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
 // ── Status bar ───────────────────────────────────────────────────────
 
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
+    let dim = theme::muted_fg(mode);
     let provider_short = if app.provider_name.len() > 4 {
         &app.provider_name[..4]
     } else {
@@ -73,43 +75,43 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(
             "  poor-cli",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme::accent(mode))
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" v{} ", app.version),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(dim),
         ),
-        Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+        Span::styled("│ ", Style::default().fg(dim)),
         Span::styled(
             format!("{provider_upper}"),
             Style::default()
-                .fg(Color::Magenta)
+                .fg(theme::system_color(mode))
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("/{model_display}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(dim),
         ),
     ];
 
     if app.streaming_enabled {
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled("streaming", Style::default().fg(Color::Green)));
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled("streaming", Style::default().fg(theme::success(mode))));
     }
 
     if app.is_local_provider {
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled("[local]", theme::local_badge_style()));
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled("[local]", theme::local_badge_style(mode)));
     }
 
     // Show real token counts if available, else estimates
     let real_total = app.cumulative_input_tokens + app.cumulative_output_tokens;
     if real_total > 0 {
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
         spans.push(Span::styled(
             format!("{}tok", real_total),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(dim),
         ));
         if app.turn_input_tokens + app.turn_output_tokens > 0 {
             spans.push(Span::styled(
@@ -117,39 +119,39 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     " (turn: {})",
                     app.turn_input_tokens + app.turn_output_tokens
                 ),
-                Style::default().fg(Color::Rgb(80, 80, 100)),
+                Style::default().fg(theme::muted_fg(mode)),
             ));
         }
     } else {
         let total_tokens = app.input_tokens_estimate + app.output_tokens_estimate;
         if total_tokens > 0 {
-            spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(" │ ", Style::default().fg(dim)));
             spans.push(Span::styled(
                 format!("~{total_tokens}tok"),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(dim),
             ));
         }
     }
 
     if app.server_connected {
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
         let dot_color = if app.is_local_provider {
-            Color::Magenta
+            theme::system_color(mode)
         } else {
-            Color::Green
+            theme::success(mode)
         };
         spans.push(Span::styled("●", Style::default().fg(dot_color)));
     } else {
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled("●", Style::default().fg(Color::Red)));
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled("●", Style::default().fg(theme::error(mode))));
     }
 
     if !app.cwd.is_empty() {
         let cwd_short = app.cwd.split('/').last().unwrap_or(&app.cwd);
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
         spans.push(Span::styled(
             format!("~/{cwd_short}"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(dim),
         ));
     }
 
@@ -171,10 +173,10 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         if remaining > 0 {
             spans.push(Span::raw(" ".repeat(remaining)));
         }
-        spans.push(Span::styled(right_text, Style::default().fg(Color::Cyan)));
+        spans.push(Span::styled(right_text, Style::default().fg(theme::accent(mode))));
     }
 
-    let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style());
+    let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style(mode));
     frame.render_widget(bar, area);
 }
 
