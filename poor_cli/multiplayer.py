@@ -12,7 +12,7 @@ import json
 import secrets
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from aiohttp import WSMsgType, web
@@ -28,6 +28,7 @@ class InviteToken:
 
     token: str
     role: str  # viewer | prompter
+    expires_at: Optional[str] = None
 
 
 @dataclass
@@ -42,6 +43,7 @@ class ConnectionState:
     client_name: str = ""
     inline_server: Any = None
     joined_at: Optional[str] = None
+    approved: bool = True
 
 
 @dataclass
@@ -66,6 +68,9 @@ class RoomState:
     initialized: bool = False
     base_capabilities: Dict[str, Any] = field(default_factory=dict)
     active_connection_id: Optional[str] = None
+    lobby_enabled: bool = False
+    preset: str = "pairing"
+    activity: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class MultiplayerHost:
@@ -151,13 +156,73 @@ class MultiplayerHost:
         )
         return room
 
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _is_token_expired(invite: InviteToken) -> bool:
+        if not invite.expires_at:
+            return False
+        try:
+            expires_at = datetime.fromisoformat(invite.expires_at)
+        except ValueError:
+            return False
+        now = datetime.now(expires_at.tzinfo or timezone.utc)
+        return now >= expires_at
+
+    def _room_member_snapshots(self, room: RoomState) -> List[Dict[str, Any]]:
+        members: List[Dict[str, Any]] = []
+        for connection_id, member in room.members.items():
+            members.append(
+                {
+                    "connectionId": connection_id,
+                    "role": member.role or "unknown",
+                    "clientName": member.client_name,
+                    "initialized": member.initialized,
+                    "connected": not member.ws.closed,
+                    "active": room.active_connection_id == connection_id,
+                    "approved": member.approved,
+                    "joinedAt": member.joined_at or "",
+                }
+            )
+        members.sort(key=lambda entry: entry["connectionId"])
+        return members
+
+    def _record_activity(
+        self,
+        room: RoomState,
+        *,
+        event_type: str,
+        actor: str = "",
+        request_id: str = "",
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        event = {
+            "timestamp": self._now_iso(),
+            "eventType": event_type,
+            "room": room.name,
+            "actor": actor,
+            "requestId": request_id,
+            "details": details or {},
+        }
+        room.activity.append(event)
+        if len(room.activity) > 300:
+            del room.activity[:-300]
+
     def get_room_tokens(self) -> Dict[str, Dict[str, str]]:
         """Return room->role->token mapping for host-local sharing."""
         output: Dict[str, Dict[str, str]] = {}
         for room_name, room in self.rooms.items():
             role_map: Dict[str, str] = {}
-            for invite in room.tokens.values():
+            expired_tokens: List[str] = []
+            for token_value, invite in room.tokens.items():
+                if self._is_token_expired(invite):
+                    expired_tokens.append(token_value)
+                    continue
                 role_map[invite.role] = invite.token
+            for token_value in expired_tokens:
+                room.tokens.pop(token_value, None)
             output[room_name] = role_map
         return output
 
@@ -175,20 +240,7 @@ class MultiplayerHost:
             if room is None:
                 continue
 
-            members: List[Dict[str, Any]] = []
-            for connection_id, member in room.members.items():
-                members.append(
-                    {
-                        "connectionId": connection_id,
-                        "role": member.role or "unknown",
-                        "clientName": member.client_name,
-                        "initialized": member.initialized,
-                        "connected": not member.ws.closed,
-                        "active": room.active_connection_id == connection_id,
-                        "joinedAt": member.joined_at or "",
-                    }
-                )
-            members.sort(key=lambda entry: entry["connectionId"])
+            members = self._room_member_snapshots(room)
             output.append(
                 {
                     "name": selected_room,
@@ -196,9 +248,194 @@ class MultiplayerHost:
                     "members": members,
                     "queueDepth": room.request_queue.qsize(),
                     "activeConnectionId": room.active_connection_id or "",
+                    "lobbyEnabled": room.lobby_enabled,
+                    "preset": room.preset,
                 }
             )
         return output
+
+    def list_room_activity(self, room_name: str, limit: int = 50) -> List[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return []
+        bounded = max(1, min(limit, 200))
+        return [dict(item) for item in room.activity[-bounded:]]
+
+    async def set_room_lobby(self, room_name: str, enabled: bool) -> bool:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+        room.lobby_enabled = enabled
+        if not enabled:
+            for member in room.members.values():
+                member.approved = True
+        await self._broadcast_room_event(
+            room,
+            "lobby_updated",
+            details={"lobbyEnabled": enabled},
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
+
+    async def approve_room_member(self, room_name: str, connection_id: str) -> bool:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        member = room.members.get(connection_id)
+        if member is None:
+            return False
+
+        member.approved = True
+        await self._broadcast_room_event(
+            room,
+            "member_approved",
+            actor=connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
+
+    async def deny_room_member(self, room_name: str, connection_id: str) -> bool:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        member = room.members.pop(connection_id, None)
+        if member is None:
+            return False
+
+        self.connections.pop(connection_id, None)
+        if room.active_connection_id == connection_id:
+            room.active_connection_id = None
+
+        try:
+            await member.ws.close(code=4003, message=b"Denied by host")
+        except Exception:
+            pass
+
+        await self._broadcast_room_event(
+            room,
+            "member_denied",
+            actor=connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
+
+    async def rotate_room_token(
+        self,
+        room_name: str,
+        role: str,
+        *,
+        expires_in_seconds: Optional[int] = None,
+    ) -> Optional[str]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        normalized_role = role.strip().lower()
+        if normalized_role not in {"viewer", "prompter"}:
+            raise ValueError("role must be viewer or prompter")
+
+        stale_tokens = [
+            token_value
+            for token_value, invite in room.tokens.items()
+            if invite.role == normalized_role
+        ]
+        for token_value in stale_tokens:
+            room.tokens.pop(token_value, None)
+
+        expires_at: Optional[str] = None
+        if expires_in_seconds is not None and expires_in_seconds > 0:
+            expires_at = (
+                datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)
+            ).isoformat()
+
+        new_token = secrets.token_urlsafe(18)
+        room.tokens[new_token] = InviteToken(
+            token=new_token,
+            role=normalized_role,
+            expires_at=expires_at,
+        )
+        await self._broadcast_room_event(
+            room,
+            "token_rotated",
+            details={"role": normalized_role},
+            queue_depth=room.request_queue.qsize(),
+        )
+        return new_token
+
+    async def revoke_room_token(self, room_name: str, token: str) -> bool:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        invite = room.tokens.pop(token, None)
+        if invite is None:
+            return False
+
+        await self._broadcast_room_event(
+            room,
+            "token_revoked",
+            details={"role": invite.role},
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
+
+    async def handoff_room_prompter(self, room_name: str, connection_id: str) -> bool:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        target = room.members.get(connection_id)
+        if target is None:
+            return False
+
+        for member in room.members.values():
+            if member.role == "prompter":
+                member.role = "viewer"
+        target.role = "prompter"
+
+        for member_id in room.members.keys():
+            notification = self.message_cls(
+                method="poor-cli/memberRoleUpdated",
+                params={
+                    "room": room.name,
+                    "connectionId": member_id,
+                    "role": member.role or "viewer",
+                },
+            )
+            await self._broadcast_rpc(room, notification)
+
+        await self._broadcast_room_event(
+            room,
+            "role_handoff",
+            actor=connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
+
+    async def set_room_preset(self, room_name: str, preset: str) -> bool:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        normalized = preset.strip().lower()
+        if normalized not in {"pairing", "mob", "review"}:
+            raise ValueError("preset must be one of: pairing, mob, review")
+
+        room.preset = normalized
+        if normalized == "pairing":
+            room.lobby_enabled = False
+        else:
+            room.lobby_enabled = True
+
+        await self._broadcast_room_event(
+            room,
+            "preset_updated",
+            details={"preset": normalized, "lobbyEnabled": room.lobby_enabled},
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
 
     async def remove_room_member(self, room_name: str, connection_id: str) -> bool:
         """Disconnect/remove a room member by connection id."""
@@ -412,6 +649,16 @@ class MultiplayerHost:
             await room.server._handle_notification(message)
             return
 
+        if not conn.approved:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Connection is pending host approval",
+                data={"error_code": "PENDING_APPROVAL", "role": conn.role},
+            )
+            return
+
         if conn.role == "viewer" and method in self._VIEWER_BLOCKED_METHODS:
             await self._send_error_response(
                 conn.ws,
@@ -492,7 +739,9 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         invite = room.tokens.get(invite_token) if room else None
 
-        if room is None or invite is None:
+        if room is None or invite is None or self._is_token_expired(invite):
+            if room is not None and invite is not None and self._is_token_expired(invite):
+                room.tokens.pop(invite_token, None)
             await self._send_error_response(
                 conn.ws,
                 request_id=message.id,
@@ -506,6 +755,7 @@ class MultiplayerHost:
         conn.room_name = room_name
         conn.client_name = client_name
         conn.joined_at = datetime.now().isoformat()
+        conn.approved = not room.lobby_enabled
 
         if not room.initialized:
             init_params = dict(params)
@@ -525,6 +775,9 @@ class MultiplayerHost:
             "room": room_name,
             "role": conn.role,
             "queueMode": "serialized",
+            "approved": conn.approved,
+            "lobbyEnabled": room.lobby_enabled,
+            "preset": room.preset,
         }
 
         response = self.message_cls(id=message.id, result={"capabilities": capabilities})
@@ -532,7 +785,7 @@ class MultiplayerHost:
 
         await self._broadcast_room_event(
             room,
-            "member_joined",
+            "member_joined" if conn.approved else "member_pending",
             actor=conn.connection_id,
             queue_depth=room.request_queue.qsize(),
         )
@@ -617,16 +870,32 @@ class MultiplayerHost:
         request_id: str = "",
         actor: str = "",
         queue_depth: int = 0,
+        details: Optional[Dict[str, Any]] = None,
     ) -> None:
+        member_snapshots = self._room_member_snapshots(room)
+        payload = {
+            "eventType": event_type,
+            "room": room.name,
+            "requestId": request_id,
+            "actor": actor,
+            "queueDepth": queue_depth,
+            "memberCount": len(member_snapshots),
+            "activeConnectionId": room.active_connection_id or "",
+            "lobbyEnabled": room.lobby_enabled,
+            "preset": room.preset,
+            "members": member_snapshots,
+            "details": details or {},
+        }
+        self._record_activity(
+            room,
+            event_type=event_type,
+            actor=actor,
+            request_id=request_id,
+            details=payload.get("details"),
+        )
         notification = self.message_cls(
             method="poor-cli/roomEvent",
-            params={
-                "eventType": event_type,
-                "room": room.name,
-                "requestId": request_id,
-                "actor": actor,
-                "queueDepth": queue_depth,
-            },
+            params=payload,
         )
         await self._broadcast_rpc(room, notification)
 
