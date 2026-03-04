@@ -978,7 +978,9 @@ Type `@path/to/file` in any message to attach file context.\n\
   /config              Show backend config snapshot\n\
   /settings            List editable config settings\n\
   /toggle <key>        Toggle a boolean config option\n\
-  /set <key> <value>   Set a config option value\n\n\
+  /set <key> <value>   Set a config option value\n\
+  /broke               Set response mode to terse, token-minimal output\n\
+  /my-treat            Set response mode to rich, comprehensive output\n\n\
 **Git Integration:**\n\
   /commit              Generate commit message from staged diff\n\
   /review [file]       Review a file or staged diff\n\n\
@@ -1039,6 +1041,24 @@ Type `@path/to/file` in any message to attach file context.\n\
                 "Started local session, backend reset failed: {e}"
             ))),
         }
+        return false;
+    }
+
+    if lowered == "/broke" {
+        app.response_mode = ResponseMode::Poor;
+        app.push_message(ChatMessage::system(
+            "Response mode set to **poor**.\nReplies will be terse and token-minimal."
+                .to_string(),
+        ));
+        return false;
+    }
+
+    if lowered == "/my-treat" {
+        app.response_mode = ResponseMode::Rich;
+        app.push_message(ChatMessage::system(
+            "Response mode set to **rich**.\nReplies will prioritize completeness and quality."
+                .to_string(),
+        ));
         return false;
     }
 
@@ -1675,12 +1695,14 @@ Version: v{}",
             "**Session Status:**\n\
 Provider: {}/{}\n\
 CWD: {}\n\
+Response mode: {}\n\
 Pinned files: {}\n\
 Queued images: {}\n\
 Watch mode: {}",
             app.provider_name,
             app.model_name,
             app.cwd,
+            app.response_mode.as_str(),
             app.pinned_context_files.len(),
             app.pending_images.len(),
             if watch_state.is_running() {
