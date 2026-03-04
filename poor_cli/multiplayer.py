@@ -1,0 +1,550 @@
+"""Multiplayer WebSocket host runtime for poor-cli.
+
+This module hosts room-scoped JSON-RPC sessions over WebSocket. Each room has
+shared chat state, serialized prompt execution, role-based access control, and
+room lifecycle notifications.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import secrets
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
+
+from aiohttp import WSMsgType, web
+
+from .exceptions import setup_logger
+
+logger = setup_logger(__name__)
+
+
+@dataclass
+class InviteToken:
+    """Room-scoped invite token."""
+
+    token: str
+    role: str  # viewer | prompter
+
+
+@dataclass
+class ConnectionState:
+    """Connected websocket client state."""
+
+    connection_id: str
+    ws: web.WebSocketResponse
+    role: Optional[str] = None
+    room_name: Optional[str] = None
+    initialized: bool = False
+    client_name: str = ""
+    inline_server: Any = None
+
+
+@dataclass
+class QueuedRequest:
+    """Queued request for room worker."""
+
+    connection_id: str
+    message: Any
+
+
+@dataclass
+class RoomState:
+    """Per-room runtime state."""
+
+    name: str
+    server: Any
+    tokens: Dict[str, InviteToken]
+    members: Dict[str, ConnectionState] = field(default_factory=dict)
+    request_queue: "asyncio.Queue[QueuedRequest]" = field(default_factory=asyncio.Queue)
+    worker_task: Optional[asyncio.Task] = None
+    dispatch_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    initialized: bool = False
+    base_capabilities: Dict[str, Any] = field(default_factory=dict)
+    active_connection_id: Optional[str] = None
+
+
+class MultiplayerHost:
+    """WebSocket host for multiplayer poor-cli sessions."""
+
+    _QUEUE_METHODS = {
+        "chat",
+        "poor-cli/chat",
+        "poor-cli/chatStreaming",
+    }
+
+    _VIEWER_BLOCKED_METHODS = {
+        "chat",
+        "poor-cli/chat",
+        "poor-cli/chatStreaming",
+        "poor-cli/inlineComplete",
+        "poor-cli/executeCommand",
+        "poor-cli/applyEdit",
+        "poor-cli/setConfig",
+        "poor-cli/toggleConfig",
+        "setConfig",
+        "switchProvider",
+        "poor-cli/switchProvider",
+        "poor-cli/cancelRequest",
+        "shutdown",
+    }
+
+    def __init__(
+        self,
+        *,
+        bind_host: str,
+        port: int,
+        room_names: List[str],
+        server_factory: Callable[[], Any],
+        message_cls: Any,
+        rpc_error_cls: Any,
+        default_permission_mode: str = "prompt",
+    ):
+        self.bind_host = bind_host
+        self.port = port
+        self.server_factory = server_factory
+        self.message_cls = message_cls
+        self.rpc_error_cls = rpc_error_cls
+        self.default_permission_mode = default_permission_mode
+
+        self.rooms: Dict[str, RoomState] = {}
+        self.connections: Dict[str, ConnectionState] = {}
+        self._runner: Optional[web.AppRunner] = None
+        self._site: Optional[web.TCPSite] = None
+        self._app: Optional[web.Application] = None
+        self._stopped = False
+
+        normalized_rooms = [name.strip() for name in room_names if name and name.strip()]
+        if not normalized_rooms:
+            normalized_rooms = ["default"]
+
+        for room_name in normalized_rooms:
+            self.rooms[room_name] = self._create_room(room_name)
+
+    def _create_room(self, room_name: str) -> RoomState:
+        server = self.server_factory()
+        server.permission_mode = self.default_permission_mode
+
+        tokens = {
+            "viewer": InviteToken(token=secrets.token_urlsafe(18), role="viewer"),
+            "prompter": InviteToken(token=secrets.token_urlsafe(18), role="prompter"),
+        }
+        token_index = {token.token: token for token in tokens.values()}
+
+        room = RoomState(name=room_name, server=server, tokens=token_index)
+
+        async def _room_notification_sink(message: Any) -> None:
+            await self._broadcast_rpc(room, message)
+
+        # Monkeypatch sink for streaming notifications from PoorCLIServer.
+        room.server.write_message_stdio = _room_notification_sink  # type: ignore[attr-defined]
+        room.worker_task = asyncio.create_task(
+            self._room_worker(room), name=f"poor-cli-room-worker-{room_name}"
+        )
+        return room
+
+    def get_room_tokens(self) -> Dict[str, Dict[str, str]]:
+        """Return room->role->token mapping for host-local sharing."""
+        output: Dict[str, Dict[str, str]] = {}
+        for room_name, room in self.rooms.items():
+            role_map: Dict[str, str] = {}
+            for invite in room.tokens.values():
+                role_map[invite.role] = invite.token
+            output[room_name] = role_map
+        return output
+
+    async def start(self) -> None:
+        """Start the HTTP/WebSocket host."""
+        app = web.Application()
+        app.router.add_get("/rpc", self._handle_ws)
+        app.router.add_get("/health", self._handle_health)
+
+        self._app = app
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        self._site = web.TCPSite(self._runner, host=self.bind_host, port=self.port)
+        await self._site.start()
+        logger.info("Multiplayer host listening on ws://%s:%s/rpc", self.bind_host, self.port)
+
+    async def stop(self) -> None:
+        """Stop host and workers."""
+        if self._stopped:
+            return
+        self._stopped = True
+
+        for room in self.rooms.values():
+            if room.worker_task:
+                room.worker_task.cancel()
+
+        for room in self.rooms.values():
+            if room.worker_task:
+                try:
+                    await room.worker_task
+                except asyncio.CancelledError:
+                    pass
+
+        for conn in list(self.connections.values()):
+            try:
+                await conn.ws.close()
+            except Exception:
+                pass
+
+        if self._runner:
+            await self._runner.cleanup()
+
+    async def run_forever(self) -> None:
+        """Run host until interrupted."""
+        await self.start()
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await self.stop()
+
+    async def _handle_health(self, request: web.Request) -> web.Response:
+        del request
+        return web.json_response(
+            {
+                "ok": True,
+                "rooms": sorted(self.rooms.keys()),
+                "connections": len(self.connections),
+            }
+        )
+
+    async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse(heartbeat=30)
+        await ws.prepare(request)
+
+        conn = ConnectionState(connection_id=uuid.uuid4().hex[:12], ws=ws)
+        self.connections[conn.connection_id] = conn
+
+        try:
+            async for incoming in ws:
+                if incoming.type != WSMsgType.TEXT:
+                    if incoming.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED}:
+                        break
+                    continue
+
+                try:
+                    payload = json.loads(incoming.data)
+                except json.JSONDecodeError:
+                    await self._send_error_response(
+                        ws,
+                        request_id=None,
+                        code=self.rpc_error_cls.PARSE_ERROR,
+                        message="Invalid JSON",
+                        data={"error_code": "PARSE_ERROR"},
+                    )
+                    continue
+
+                if not isinstance(payload, dict):
+                    await self._send_error_response(
+                        ws,
+                        request_id=None,
+                        code=self.rpc_error_cls.INVALID_REQUEST,
+                        message="JSON-RPC payload must be an object",
+                        data={"error_code": "INVALID_REQUEST"},
+                    )
+                    continue
+
+                message = self.message_cls.from_dict(payload)
+                await self._handle_message(conn, message)
+
+        finally:
+            await self._cleanup_connection(conn)
+
+        return ws
+
+    async def _handle_message(self, conn: ConnectionState, message: Any) -> None:
+        if not conn.initialized:
+            if message.method != "initialize":
+                await self._send_error_response(
+                    conn.ws,
+                    request_id=message.id,
+                    code=self.rpc_error_cls.INVALID_REQUEST,
+                    message="Connection not initialized. Call initialize with room and inviteToken.",
+                    data={"error_code": "NOT_INITIALIZED"},
+                )
+                return
+
+            await self._handle_initialize(conn, message)
+            return
+
+        if conn.room_name is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Initialized connection has no room",
+                data={"error_code": "ROOM_MISSING"},
+            )
+            return
+
+        room = self.rooms.get(conn.room_name)
+        if room is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_REQUEST,
+                message=f"Unknown room: {conn.room_name}",
+                data={"error_code": "ROOM_NOT_FOUND"},
+            )
+            return
+
+        method = message.method or ""
+
+        if method == "poor-cli/permissionRes":
+            if conn.role != "prompter":
+                await self._send_error_response(
+                    conn.ws,
+                    request_id=message.id,
+                    code=self.rpc_error_cls.INTERNAL_ERROR,
+                    message="Only prompter role can answer permission prompts",
+                    data={"error_code": "permission_denied", "role": conn.role},
+                )
+                return
+            await room.server._handle_notification(message)
+            return
+
+        if conn.role == "viewer" and method in self._VIEWER_BLOCKED_METHODS:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message=f"Method not allowed for viewer role: {method}",
+                data={"error_code": "permission_denied", "role": conn.role, "method": method},
+            )
+            return
+
+        if method == "poor-cli/cancelRequest" and room.active_connection_id not in {
+            None,
+            conn.connection_id,
+        }:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Only active requester can cancel the in-flight request",
+                data={
+                    "error_code": "permission_denied",
+                    "role": conn.role,
+                    "method": method,
+                },
+            )
+            return
+
+        if method == "poor-cli/inlineComplete":
+            response = await self._dispatch_inline_isolated(conn, room, message)
+            if message.id is not None:
+                await self._send_rpc(conn.ws, response)
+            return
+
+        if method in self._QUEUE_METHODS:
+            await room.request_queue.put(QueuedRequest(connection_id=conn.connection_id, message=message))
+            await self._broadcast_room_event(
+                room,
+                "queued",
+                request_id=self._extract_request_id(message),
+                actor=conn.connection_id,
+                queue_depth=room.request_queue.qsize(),
+            )
+            return
+
+        async with room.dispatch_lock:
+            response = await room.server.dispatch(message)
+        if message.id is not None:
+            await self._send_rpc(conn.ws, response)
+
+    async def _dispatch_inline_isolated(self, conn: ConnectionState, room: RoomState, message: Any) -> Any:
+        if conn.inline_server is None:
+            conn.inline_server = self.server_factory()
+            provider_info = {}
+            room_core = getattr(room.server, "core", None)
+            if room_core is not None and getattr(room.server, "initialized", False):
+                provider_info = room.server.core.get_provider_info()
+            init_params: Dict[str, Any] = {
+                "provider": provider_info.get("name"),
+                "model": provider_info.get("model"),
+            }
+            init_params = {k: v for k, v in init_params.items() if v}
+            await conn.inline_server.handle_initialize(init_params)
+
+            # Disable persistence for isolated inline engine.
+            inline_core = getattr(conn.inline_server, "core", None)
+            if inline_core is not None:
+                inline_core.history_adapter = None
+
+        response = await conn.inline_server.dispatch(message)
+        return response
+
+    async def _handle_initialize(self, conn: ConnectionState, message: Any) -> None:
+        params = message.params or {}
+        room_name = str(params.get("room", "")).strip()
+        invite_token = str(params.get("inviteToken", "")).strip()
+        client_name = str(params.get("clientName", "")).strip()
+
+        room = self.rooms.get(room_name)
+        invite = room.tokens.get(invite_token) if room else None
+
+        if room is None or invite is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="Invalid room or inviteToken",
+                data={"error_code": "INVALID_MULTIPLAYER_AUTH"},
+            )
+            return
+
+        conn.role = invite.role
+        conn.room_name = room_name
+        conn.client_name = client_name
+
+        if not room.initialized:
+            init_params = dict(params)
+            init_params.pop("room", None)
+            init_params.pop("inviteToken", None)
+            init_params.pop("clientName", None)
+            result = await room.server.handle_initialize(init_params)
+            room.initialized = True
+            room.base_capabilities = dict(result.get("capabilities", {}))
+
+        conn.initialized = True
+        room.members[conn.connection_id] = conn
+
+        capabilities = dict(room.base_capabilities)
+        capabilities["multiplayer"] = {
+            "enabled": True,
+            "room": room_name,
+            "role": conn.role,
+            "queueMode": "serialized",
+        }
+
+        response = self.message_cls(id=message.id, result={"capabilities": capabilities})
+        await self._send_rpc(conn.ws, response)
+
+        await self._broadcast_room_event(
+            room,
+            "member_joined",
+            actor=conn.connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
+
+    async def _room_worker(self, room: RoomState) -> None:
+        while True:
+            queued = await room.request_queue.get()
+
+            conn = room.members.get(queued.connection_id)
+            if conn is None or conn.ws.closed:
+                continue
+
+            room.active_connection_id = queued.connection_id
+            request_id = self._extract_request_id(queued.message)
+
+            await self._broadcast_room_event(
+                room,
+                "started",
+                request_id=request_id,
+                actor=queued.connection_id,
+                queue_depth=room.request_queue.qsize(),
+            )
+
+            try:
+                async with room.dispatch_lock:
+                    response = await room.server.dispatch(queued.message)
+                if queued.message.id is not None:
+                    await self._send_rpc(conn.ws, response)
+            except Exception as e:
+                logger.exception("Room worker dispatch failed for room %s", room.name)
+                if queued.message.id is not None:
+                    await self._send_error_response(
+                        conn.ws,
+                        request_id=queued.message.id,
+                        code=self.rpc_error_cls.INTERNAL_ERROR,
+                        message=str(e),
+                        data={"error_code": "INTERNAL_ERROR"},
+                    )
+            finally:
+                room.active_connection_id = None
+                await self._broadcast_room_event(
+                    room,
+                    "finished",
+                    request_id=request_id,
+                    actor=queued.connection_id,
+                    queue_depth=room.request_queue.qsize(),
+                )
+
+    async def _cleanup_connection(self, conn: ConnectionState) -> None:
+        self.connections.pop(conn.connection_id, None)
+
+        if conn.room_name:
+            room = self.rooms.get(conn.room_name)
+            if room and conn.connection_id in room.members:
+                room.members.pop(conn.connection_id, None)
+                await self._broadcast_room_event(
+                    room,
+                    "member_left",
+                    actor=conn.connection_id,
+                    queue_depth=room.request_queue.qsize(),
+                )
+
+    async def _broadcast_rpc(self, room: RoomState, message: Any) -> None:
+        dead_members: List[str] = []
+        for connection_id, member in room.members.items():
+            if member.ws.closed:
+                dead_members.append(connection_id)
+                continue
+            try:
+                await self._send_rpc(member.ws, message)
+            except Exception:
+                dead_members.append(connection_id)
+
+        for connection_id in dead_members:
+            room.members.pop(connection_id, None)
+            self.connections.pop(connection_id, None)
+
+    async def _broadcast_room_event(
+        self,
+        room: RoomState,
+        event_type: str,
+        request_id: str = "",
+        actor: str = "",
+        queue_depth: int = 0,
+    ) -> None:
+        notification = self.message_cls(
+            method="poor-cli/roomEvent",
+            params={
+                "eventType": event_type,
+                "room": room.name,
+                "requestId": request_id,
+                "actor": actor,
+                "queueDepth": queue_depth,
+            },
+        )
+        await self._broadcast_rpc(room, notification)
+
+    async def _send_rpc(self, ws: web.WebSocketResponse, message: Any) -> None:
+        await ws.send_str(message.to_json())
+
+    async def _send_error_response(
+        self,
+        ws: web.WebSocketResponse,
+        request_id: Any,
+        code: int,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        response = self.message_cls(
+            id=request_id,
+            error=self.rpc_error_cls.make_error(code, message, data),
+        )
+        await self._send_rpc(ws, response)
+
+    @staticmethod
+    def _extract_request_id(message: Any) -> str:
+        if not message.params:
+            return ""
+        value = message.params.get("requestId", "")
+        return str(value)
