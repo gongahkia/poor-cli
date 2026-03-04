@@ -629,3 +629,24 @@ Output: {} chars (~{} tokens)",
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ThemeMode;
+
+    #[test]
+    fn theme_mode_parses_user_values() {
+        assert_eq!(ThemeMode::from_user_input("dark"), Some(ThemeMode::Dark));
+        assert_eq!(ThemeMode::from_user_input("light"), Some(ThemeMode::Light));
+        assert_eq!(ThemeMode::from_user_input("default"), None);
+    }
+
+    #[test]
+    fn theme_mode_normalizes_config_values() {
+        assert_eq!(ThemeMode::from_ui_theme("light"), ThemeMode::Light);
+        assert_eq!(ThemeMode::from_ui_theme("dark"), ThemeMode::Dark);
+        assert_eq!(ThemeMode::from_ui_theme("default"), ThemeMode::Dark);
+        assert_eq!(ThemeMode::from_ui_theme("minimal"), ThemeMode::Dark);
+        assert_eq!(ThemeMode::from_ui_theme("unknown"), ThemeMode::Dark);
+    }
+}

@@ -5,6 +5,7 @@ Tests for the JSON-RPC server.
 import json
 import pytest
 from collections import deque
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from poor_cli.server import (
@@ -379,6 +380,30 @@ class TestPoorCLIServer:
         assert response.error["data"]["error_code"] == "permission_denied"
         assert response.error["data"]["tool"] == "edit_file"
         assert response.error["data"]["permission_mode"] == "prompt"
+
+    @pytest.mark.asyncio
+    async def test_handle_get_config_includes_theme(self, server):
+        """getConfig payload exposes ui.theme for TUI theming."""
+        server.initialized = True
+        server.core.get_provider_info = MagicMock(return_value={"name": "gemini", "model": "gemini-test"})
+        server.core.config = SimpleNamespace(
+            ui=SimpleNamespace(
+                theme="light",
+                enable_streaming=True,
+                show_token_count=True,
+                markdown_rendering=True,
+                show_tool_calls=True,
+                verbose_logging=False,
+            ),
+            plan_mode=SimpleNamespace(enabled=True),
+            checkpoint=SimpleNamespace(enabled=True),
+        )
+        server.core._config_manager = SimpleNamespace(config_path="/tmp/config.yaml")
+
+        result = await server.handle_get_config({})
+
+        assert result["theme"] == "light"
+        assert result["provider"] == "gemini"
 
 
 class TestServerMain:

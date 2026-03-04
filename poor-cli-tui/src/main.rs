@@ -2935,3 +2935,109 @@ fn rpc_clear_history_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<(
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for clear history response".to_string())?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_temp_workspace(prefix: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("poor-cli-{prefix}-{ts}"));
+        fs::create_dir_all(&root).expect("temp workspace should be created");
+        root
+    }
+
+    fn build_app_for_root(root: &Path) -> App {
+        let mut app = App::new();
+        app.cwd = root.to_string_lossy().to_string();
+        app
+    }
+
+    #[test]
+    fn extract_at_references_supports_quotes_and_punctuation() {
+        let refs = extract_at_references(
+            r#"check (@src/main.rs), @"docs/My File.md" and @'notes/with spaces.md' a@b.com"#,
+        )
+        .expect("refs should parse");
+
+        assert_eq!(
+            refs,
+            vec![
+                "src/main.rs".to_string(),
+                "docs/My File.md".to_string(),
+                "notes/with spaces.md".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_at_references_rejects_unterminated_quotes() {
+        let error = extract_at_references(r#"read @"docs/missing quote.md"#)
+            .expect_err("unterminated quote should error");
+        assert!(error.contains("Invalid @ reference syntax"));
+    }
+
+    #[test]
+    fn with_context_files_blocks_on_unresolved_or_ambiguous_refs() {
+        let root = create_temp_workspace("refs-error");
+        fs::create_dir_all(root.join("src")).expect("src dir");
+        fs::create_dir_all(root.join("tests")).expect("tests dir");
+        fs::write(root.join("src").join("main.rs"), "fn main() {}\n").expect("main src");
+        fs::write(root.join("tests").join("main.rs"), "#[test]\nfn ok() {}\n").expect("main tests");
+
+        let mut app = build_app_for_root(&root);
+        let ambiguous = with_context_files(&mut app, "review @main.rs");
+        assert!(ambiguous.is_err());
+
+        let unresolved = with_context_files(&mut app, "review @missing.rs");
+        assert!(unresolved.is_err());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn with_context_files_accepts_quoted_paths_with_spaces() {
+        let root = create_temp_workspace("refs-spaces");
+        fs::create_dir_all(root.join("docs")).expect("docs dir");
+        fs::write(root.join("docs").join("My File.md"), "# Title\n").expect("docs file");
+
+        let mut app = build_app_for_root(&root);
+        let merged = with_context_files(&mut app, r#"summarize @"docs/My File.md""#)
+            .expect("quoted path should resolve");
+        assert!(merged.contains("Referenced project files"));
+        assert!(merged.contains("docs/My File.md"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn collect_directory_files_is_deterministic() {
+        let root = create_temp_workspace("deterministic-dir");
+        let dir = root.join("dir");
+        fs::create_dir_all(&dir).expect("dir");
+        fs::write(dir.join("b.txt"), "b").expect("b");
+        fs::write(dir.join("a.txt"), "a").expect("a");
+        fs::write(dir.join("c.txt"), "c").expect("c");
+
+        let first = collect_directory_files(&dir, 10);
+        let second = collect_directory_files(&dir, 10);
+        assert_eq!(first, second);
+
+        let names = first
+            .iter()
+            .map(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["a.txt", "b.txt", "c.txt"]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+}

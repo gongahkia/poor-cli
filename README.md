@@ -84,6 +84,9 @@ $ docker run -it --env-file .env poor-cli
 
 ## Available Commands
 
+Type `@path/to/file` in any prompt to attach local file context.  
+Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
+
 **Session Management:**
 - `/help` - Show help message
 - `/quit` - Exit and print session summary
@@ -116,6 +119,7 @@ $ docker run -it --env-file .env poor-cli
 **Configuration:**
 - `/config` - Show current configuration
 - `/permission-mode` - Show active permission mode
+- `/theme [dark|light]` - Show or set UI/code-block theme
 - `/broke` - Set poor mode (terse, token-minimal responses; session-only)
 - `/my-treat` - Set rich mode (comprehensive responses; session-only, default)
 - `/cost` - Show token/cost estimate
