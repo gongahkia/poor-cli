@@ -21,6 +21,12 @@ describe("poor-cli.rpc", function()
             rpc.restart_timer:close()
             rpc.restart_timer = nil
         end
+        config.config.multiplayer = {
+            enabled = false,
+            url = nil,
+            room = nil,
+            token = nil,
+        }
     end)
     
     after_each(function()
@@ -41,6 +47,46 @@ describe("poor-cli.rpc", function()
         
         it("should have request_id starting at 0", function()
             assert.are.equal(0, rpc.request_id)
+        end)
+    end)
+
+    describe("command resolution", function()
+        it("should resolve default server command when multiplayer is disabled", function()
+            config.config.multiplayer = { enabled = false }
+            local cmd, err = rpc.resolve_server_command()
+            assert.is_nil(err)
+            assert.are.equal(config.get("server_cmd"), cmd)
+        end)
+
+        it("should resolve bridge command when multiplayer is enabled", function()
+            config.config.multiplayer = {
+                enabled = true,
+                url = "wss://example.test/rpc",
+                room = "dev",
+                token = "tok-123",
+            }
+            local cmd, err = rpc.resolve_server_command()
+            assert.is_nil(err)
+            assert.are.same({
+                "poor-cli-server",
+                "--bridge",
+                "--url",
+                "wss://example.test/rpc",
+                "--room",
+                "dev",
+                "--token",
+                "tok-123",
+            }, cmd)
+        end)
+
+        it("should error when multiplayer config is incomplete", function()
+            config.config.multiplayer = {
+                enabled = true,
+                url = "wss://example.test/rpc",
+            }
+            local cmd, err = rpc.resolve_server_command()
+            assert.is_nil(cmd)
+            assert.is_not_nil(err)
         end)
     end)
     
