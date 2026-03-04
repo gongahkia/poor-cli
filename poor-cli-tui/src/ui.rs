@@ -343,8 +343,8 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    // Apply scroll offset (from bottom)
-    let total_lines = all_lines.len() as u16;
+    // Apply scroll offset (from bottom), accounting for visual wrapping.
+    let total_lines = wrapped_visual_line_count(&all_lines, area.width);
     let visible_height = area.height;
     let max_scroll = total_lines.saturating_sub(visible_height);
     let effective_scroll = app.scroll_offset.min(max_scroll);
@@ -355,6 +355,27 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         .scroll((max_scroll.saturating_sub(effective_scroll), 0));
 
     frame.render_widget(para, area);
+}
+
+fn wrapped_visual_line_count(lines: &[Line<'static>], wrap_width: u16) -> u16 {
+    if lines.is_empty() || wrap_width == 0 {
+        return 0;
+    }
+
+    let wrap_width = wrap_width as usize;
+    let mut total: usize = 0;
+
+    for line in lines {
+        let width = line.width();
+        let visual_lines = if width == 0 {
+            1
+        } else {
+            (width + wrap_width - 1) / wrap_width
+        };
+        total = total.saturating_add(visual_lines);
+    }
+
+    total.min(u16::MAX as usize) as u16
 }
 
 fn wrap_text_lines(content: &str, width: usize) -> Vec<String> {
@@ -376,6 +397,26 @@ fn wrap_text_lines(content: &str, width: usize) -> Vec<String> {
     }
 
     wrapped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrapped_visual_line_count;
+    use ratatui::text::Line;
+
+    #[test]
+    fn wrapped_visual_line_count_handles_wrapping() {
+        let lines = vec![Line::from("1234567890"), Line::from("abc"), Line::from("")];
+
+        // 10 chars at width 4 => 3 visual lines, then 1, then 1.
+        assert_eq!(wrapped_visual_line_count(&lines, 4), 5);
+    }
+
+    #[test]
+    fn wrapped_visual_line_count_handles_zero_width() {
+        let lines = vec![Line::from("hello")];
+        assert_eq!(wrapped_visual_line_count(&lines, 0), 0);
+    }
 }
 
 // ── Input bar ────────────────────────────────────────────────────────
