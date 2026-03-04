@@ -1345,6 +1345,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /copy                Copy last assistant response to clipboard\n\
   /host-server [arg]   Start/share host session (arg: room|status|stop)\n\
   /join-server <code>  Join host using invite code or url/room/token\n\
+  /service ...         Manage local background services (start/stop/status/logs)\n\
+  /ollama ...          Convenience wrapper for Ollama lifecycle/model commands\n\
   /run <command>       Run shell command through backend\n\
   /read <file>         Read a file from backend\n\
   /pwd                 Show current working directory\n\
@@ -2477,6 +2479,273 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/service" || lowered.starts_with("/service ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        if subcommand.is_empty() || subcommand == "help" {
+            app.push_message(ChatMessage::system(service_usage_text().to_string()));
+            return false;
+        }
+
+        if subcommand == "status" || subcommand == "list" {
+            if args.len() > 3 {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            let service_name = args.get(2).copied();
+            match rpc_get_service_status_blocking(rpc_cmd_tx, service_name) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch service status: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if subcommand == "start" {
+            let mut split = raw.splitn(4, ' ');
+            let _ = split.next();
+            let _ = split.next();
+            let service_name = split.next().unwrap_or("").trim();
+            let command_text = split.next().map(str::trim).filter(|value| !value.is_empty());
+            if service_name.is_empty() {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            match rpc_start_service_blocking(rpc_cmd_tx, service_name, command_text, None) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to start service `{service_name}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if subcommand == "stop" {
+            if args.len() != 3 {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            let service_name = args[2];
+            match rpc_stop_service_blocking(rpc_cmd_tx, service_name) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to stop service `{service_name}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if subcommand == "logs" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            let service_name = args[2];
+            let line_count = match args.get(3) {
+                Some(raw_count) => match raw_count.parse::<u64>() {
+                    Ok(parsed) => Some(parsed),
+                    Err(_) => {
+                        app.push_message(ChatMessage::system(
+                            "lines must be an integer (e.g. `/service logs ollama 120`)"
+                                .to_string(),
+                        ));
+                        return false;
+                    }
+                },
+                None => None,
+            };
+
+            match rpc_get_service_logs_blocking(rpc_cmd_tx, service_name, line_count) {
+                Ok(payload) => {
+                    let status_block = payload
+                        .get("status")
+                        .map(format_service_status_payload)
+                        .unwrap_or_else(|| format!("**Service:** `{service_name}`"));
+                    let log_path = payload
+                        .get("logPath")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)");
+                    let content = payload
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    if content.is_empty() {
+                        app.push_message(ChatMessage::system(format!(
+                            "{status_block}\n\nNo logs available yet at `{log_path}`."
+                        )));
+                    } else {
+                        app.push_message(ChatMessage::system(format!(
+                            "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
+                            truncate_block(content, 3200)
+                        )));
+                    }
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch logs for `{service_name}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(service_usage_text().to_string()));
+        return false;
+    }
+
+    if lowered == "/ollama" || lowered.starts_with("/ollama ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        match subcommand.as_str() {
+            "" | "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
+                Ok(payload) => app.push_message(ChatMessage::system(format_service_status_payload(
+                    &payload,
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch Ollama status: {e}"
+                ))),
+            },
+            "start" => match rpc_start_service_blocking(rpc_cmd_tx, "ollama", None, None) {
+                Ok(payload) => app.push_message(ChatMessage::system(format_service_status_payload(
+                    &payload,
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to start Ollama service: {e}"
+                ))),
+            },
+            "stop" => match rpc_stop_service_blocking(rpc_cmd_tx, "ollama") {
+                Ok(payload) => app.push_message(ChatMessage::system(format_service_status_payload(
+                    &payload,
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to stop Ollama service: {e}"
+                ))),
+            },
+            "logs" => {
+                let line_count = match args.get(2) {
+                    Some(raw_count) => match raw_count.parse::<u64>() {
+                        Ok(parsed) => Some(parsed),
+                        Err(_) => {
+                            app.push_message(ChatMessage::system(
+                                "lines must be an integer (e.g. `/ollama logs 120`)".to_string(),
+                            ));
+                            return false;
+                        }
+                    },
+                    None => Some(120),
+                };
+
+                match rpc_get_service_logs_blocking(rpc_cmd_tx, "ollama", line_count) {
+                    Ok(payload) => {
+                        let status_block = payload
+                            .get("status")
+                            .map(format_service_status_payload)
+                            .unwrap_or_else(|| "**Service:** `ollama`".to_string());
+                        let log_path = payload
+                            .get("logPath")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("(unknown)");
+                        let content = payload
+                            .get("content")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if content.is_empty() {
+                            app.push_message(ChatMessage::system(format!(
+                                "{status_block}\n\nNo logs available yet at `{log_path}`."
+                            )));
+                        } else {
+                            app.push_message(ChatMessage::system(format!(
+                                "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
+                                truncate_block(content, 3200)
+                            )));
+                        }
+                    }
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to fetch Ollama logs: {e}"
+                    ))),
+                }
+            }
+            "pull" => {
+                if args.len() != 3 {
+                    app.push_message(ChatMessage::system(
+                        "Usage: /ollama pull <model>".to_string(),
+                    ));
+                    return false;
+                }
+
+                let model = args[2];
+                let command = format!("ollama pull {model}");
+                match rpc_execute_command_with_timeout_blocking(
+                    rpc_cmd_tx,
+                    &command,
+                    Some(1800),
+                    1815,
+                ) {
+                    Ok(output) => app.push_message(ChatMessage::system(format!(
+                        "**Command:** `{command}`\n\n```text\n{}\n```",
+                        truncate_block(&output, 3200)
+                    ))),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to pull Ollama model `{model}`: {e}"
+                    ))),
+                }
+            }
+            "list" | "list-models" => {
+                match rpc_execute_command_with_timeout_blocking(
+                    rpc_cmd_tx,
+                    "ollama list",
+                    Some(60),
+                    75,
+                ) {
+                    Ok(output) => app.push_message(ChatMessage::system(format!(
+                        "**Installed Ollama Models**\n```text\n{}\n```",
+                        truncate_block(&output, 3200)
+                    ))),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to list Ollama models: {e}"
+                    ))),
+                }
+            }
+            "ps" => {
+                match rpc_execute_command_with_timeout_blocking(
+                    rpc_cmd_tx,
+                    "ollama ps",
+                    Some(60),
+                    75,
+                ) {
+                    Ok(output) => app.push_message(ChatMessage::system(format!(
+                        "**Ollama Running Models**\n```text\n{}\n```",
+                        truncate_block(&output, 3200)
+                    ))),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to inspect Ollama running models: {e}"
+                    ))),
+                }
+            }
+            _ => app.push_message(ChatMessage::system(ollama_usage_text().to_string())),
+        }
+
+        return false;
+    }
+
     if lowered == "/status" {
         let status = format!(
             "**Session Status:**\n\
@@ -3605,6 +3874,160 @@ fn format_host_server_payload(payload: &Value) -> String {
     lines.join("\n")
 }
 
+fn service_usage_text() -> &'static str {
+    "Usage: /service status [name]\n\
+       /service start <name> [command...]\n\
+       /service stop <name>\n\
+       /service logs <name> [lines]"
+}
+
+fn ollama_usage_text() -> &'static str {
+    "Usage: /ollama start|stop|status\n\
+       /ollama logs [lines]\n\
+       /ollama pull <model>\n\
+       /ollama list-models"
+}
+
+fn format_single_service_payload(payload: &Value) -> String {
+    let service_name = payload
+        .get("service")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let running = payload
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let managed = payload
+        .get("managed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let external = payload
+        .get("external")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let created = payload
+        .get("created")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let stopped = payload
+        .get("stopped")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let mut lines = vec![format!("**Service:** `{service_name}`")];
+    if running {
+        if external {
+            lines.push("- Status: running (external)".to_string());
+        } else if managed {
+            lines.push("- Status: running (managed)".to_string());
+        } else {
+            lines.push("- Status: running".to_string());
+        }
+    } else {
+        lines.push("- Status: stopped".to_string());
+    }
+
+    if created {
+        lines.push("- Action: started in this command".to_string());
+    }
+    if stopped {
+        lines.push("- Action: stopped in this command".to_string());
+    }
+
+    if let Some(pid) = payload.get("pid").and_then(|v| v.as_u64()) {
+        lines.push(format!("- PID: `{pid}`"));
+    }
+    if let Some(command) = payload.get("command").and_then(|v| v.as_str()) {
+        if !command.is_empty() {
+            lines.push(format!("- Command: `{command}`"));
+        }
+    }
+    if let Some(cwd) = payload.get("cwd").and_then(|v| v.as_str()) {
+        if !cwd.is_empty() {
+            lines.push(format!("- CWD: `{cwd}`"));
+        }
+    }
+    if let Some(started_at) = payload.get("startedAt").and_then(|v| v.as_str()) {
+        if !started_at.is_empty() {
+            lines.push(format!("- Started: `{started_at}`"));
+        }
+    }
+    if let Some(exit_code) = payload.get("exitCode").and_then(|v| v.as_i64()) {
+        lines.push(format!("- Last exit code: `{exit_code}`"));
+    }
+    if let Some(log_path) = payload.get("logPath").and_then(|v| v.as_str()) {
+        if !log_path.is_empty() {
+            lines.push(format!("- Logs: `{log_path}`"));
+        }
+    }
+
+    if service_name == "ollama" {
+        if let Some(base_url) = payload.get("baseUrl").and_then(|v| v.as_str()) {
+            if !base_url.is_empty() {
+                lines.push(format!("- Base URL: `{base_url}`"));
+            }
+        }
+        if let Some(healthy) = payload.get("healthy").and_then(|v| v.as_bool()) {
+            lines.push(format!(
+                "- Health: {}",
+                if healthy { "reachable" } else { "unreachable" }
+            ));
+        }
+    }
+
+    if let Some(message) = payload.get("message").and_then(|v| v.as_str()) {
+        if !message.is_empty() {
+            lines.push(String::new());
+            lines.push(message.to_string());
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn format_service_status_payload(payload: &Value) -> String {
+    if let Some(services) = payload.get("services").and_then(|v| v.as_array()) {
+        if services.is_empty() {
+            return "No managed services found.\nUse `/service start <name> <command...>`.".to_string();
+        }
+
+        let mut lines = vec!["**Services:**".to_string(), String::new()];
+        for service in services {
+            let name = service
+                .get("service")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let running = service
+                .get("running")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let external = service
+                .get("external")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let marker = if running { "✓" } else { "✗" };
+            let state = if running { "running" } else { "stopped" };
+            let scope = if external {
+                "external"
+            } else if service
+                .get("managed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                "managed"
+            } else {
+                "unmanaged"
+            };
+            lines.push(format!("- {marker} `{name}`: {state} ({scope})"));
+        }
+        lines.push(String::new());
+        lines.push("Use `/service status <name>` for details.".to_string());
+        return lines.join("\n");
+    }
+
+    format_single_service_payload(payload)
+}
+
 fn parse_value_literal(raw: &str) -> Value {
     let lower = raw.trim().to_lowercase();
     match lower.as_str() {
@@ -3750,16 +4173,26 @@ fn rpc_execute_command_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     command: &str,
 ) -> Result<String, String> {
+    rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, command, None, 60)
+}
+
+fn rpc_execute_command_with_timeout_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    command: &str,
+    command_timeout_secs: Option<u64>,
+    response_timeout_secs: u64,
+) -> Result<String, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
         .send(RpcCommand::ExecuteCommand {
             command: command.to_string(),
+            timeout: command_timeout_secs,
             reply: reply_tx,
         })
         .map_err(|e| format!("Failed to send command to backend: {e}"))?;
 
     reply_rx
-        .recv_timeout(Duration::from_secs(60))
+        .recv_timeout(Duration::from_secs(response_timeout_secs))
         .map_err(|_| "Timed out waiting for backend command response".to_string())?
 }
 
@@ -4092,6 +4525,80 @@ fn rpc_stop_host_server_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Resul
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for host server stop response".to_string())?
+}
+
+fn rpc_start_service_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+    command: Option<&str>,
+    cwd: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StartService {
+            name: name.to_string(),
+            command: command.map(|value| value.to_string()),
+            cwd: cwd.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service start: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(90))
+        .map_err(|_| "Timed out waiting for service start response".to_string())?
+}
+
+fn rpc_stop_service_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StopService {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service stop: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for service stop response".to_string())?
+}
+
+fn rpc_get_service_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetServiceStatus {
+            name: name.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for service status response".to_string())?
+}
+
+fn rpc_get_service_logs_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+    lines: Option<u64>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetServiceLogs {
+            name: name.to_string(),
+            lines,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service logs: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for service logs response".to_string())?
 }
 
 fn copy_to_clipboard(content: &str) -> Result<(), String> {

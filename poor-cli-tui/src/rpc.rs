@@ -1000,6 +1000,7 @@ pub enum RpcCommand {
     },
     ExecuteCommand {
         command: String,
+        timeout: Option<u64>,
         reply: SyncSender<Result<String, String>>,
     },
     ReadFile {
@@ -1086,6 +1087,25 @@ pub enum RpcCommand {
     StopHostServer {
         reply: SyncSender<Result<Value, String>>,
     },
+    StartService {
+        name: String,
+        command: Option<String>,
+        cwd: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    StopService {
+        name: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetServiceStatus {
+        name: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetServiceLogs {
+        name: String,
+        lines: Option<u64>,
+        reply: SyncSender<Result<Value, String>>,
+    },
     ListProviders {
         reply: SyncSender<Result<Vec<ProviderInfo>, String>>,
     },
@@ -1123,8 +1143,12 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::SendNotification { method, params }) => {
                 let _ = client.send_notification(&method, params);
             }
-            Ok(RpcCommand::ExecuteCommand { command, reply }) => {
-                let _ = reply.send(client.execute_command(&command));
+            Ok(RpcCommand::ExecuteCommand {
+                command,
+                timeout,
+                reply,
+            }) => {
+                let _ = reply.send(client.execute_command(&command, timeout));
             }
             Ok(RpcCommand::ReadFile {
                 file_path,
@@ -1213,6 +1237,23 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::StopHostServer { reply }) => {
                 let _ = reply.send(client.stop_host_server());
+            }
+            Ok(RpcCommand::StartService {
+                name,
+                command,
+                cwd,
+                reply,
+            }) => {
+                let _ = reply.send(client.start_service(&name, command.as_deref(), cwd.as_deref()));
+            }
+            Ok(RpcCommand::StopService { name, reply }) => {
+                let _ = reply.send(client.stop_service(&name));
+            }
+            Ok(RpcCommand::GetServiceStatus { name, reply }) => {
+                let _ = reply.send(client.get_service_status(name.as_deref()));
+            }
+            Ok(RpcCommand::GetServiceLogs { name, lines, reply }) => {
+                let _ = reply.send(client.get_service_logs(&name, lines));
             }
             Ok(RpcCommand::ListProviders { reply }) => {
                 let _ = reply.send(client.list_providers());

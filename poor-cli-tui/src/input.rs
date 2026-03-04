@@ -95,6 +95,16 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/service",
+        description: "Manage local background services",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/ollama",
+        description: "Manage Ollama service and models",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/broke",
         description: "Set poor mode (terse responses)",
         recommended: false,
