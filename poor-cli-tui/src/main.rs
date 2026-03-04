@@ -46,6 +46,15 @@ struct Cli {
     /// Python binary to use (default: python3)
     #[arg(long, default_value = "python3")]
     python: String,
+    /// Remote multiplayer websocket URL (bridge mode)
+    #[arg(long)]
+    remote_url: Option<String>,
+    /// Remote multiplayer room name (requires --remote-url and --remote-token)
+    #[arg(long)]
+    remote_room: Option<String>,
+    /// Remote multiplayer invite token (requires --remote-url and --remote-room)
+    #[arg(long)]
+    remote_token: Option<String>,
 }
 
 // ── Background message from server thread ────────────────────────────
@@ -162,10 +171,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+fn build_backend_server_args(cli: &Cli) -> Result<Vec<String>, String> {
+    match (&cli.remote_url, &cli.remote_room, &cli.remote_token) {
+        (None, None, None) => Ok(vec![]),
+        (Some(url), Some(room), Some(token)) => Ok(vec![
+            "--bridge".to_string(),
+            "--url".to_string(),
+            url.clone(),
+            "--room".to_string(),
+            room.clone(),
+            "--token".to_string(),
+            token.clone(),
+        ]),
+        _ => Err(
+            "Remote mode requires all of: --remote-url, --remote-room, --remote-token".to_string(),
+        ),
+    }
+}
+
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     cli: Cli,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    let backend_server_args = build_backend_server_args(&cli)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
     let mut app = App::new();
     app.cwd = cli.cwd.clone().unwrap_or_else(|| {
         std::env::current_dir()
@@ -186,11 +216,13 @@ fn run_app(
     } else {
         cli.permission_mode.clone()
     };
+    let server_args = backend_server_args.clone();
 
     let tx_init = tx.clone();
     let tx_notif = tx.clone();
-    thread::spawn(
-        move || match RpcClient::spawn_with_notifications(&python_bin, cwd.as_deref()) {
+    thread::spawn(move || {
+        match RpcClient::spawn_with_notifications_args(&python_bin, cwd.as_deref(), &server_args)
+        {
             Ok((client, notification_rx)) => {
                 // Spawn notification reader thread → maps ServerNotification → ServerMsg
                 thread::spawn(move || loop {
@@ -316,8 +348,8 @@ fn run_app(
                     message: format!("Failed to start server: {e}"),
                 });
             }
-        },
-    );
+        }
+    });
 
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
@@ -3523,6 +3555,7 @@ fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn create_temp_workspace(prefix: &str) -> PathBuf {
@@ -3539,6 +3572,46 @@ mod tests {
         let mut app = App::new();
         app.cwd = root.to_string_lossy().to_string();
         app
+    }
+
+    #[test]
+    fn backend_server_args_empty_for_local_mode() {
+        let cli = Cli::parse_from(["poor-cli-tui"]);
+        let args = build_backend_server_args(&cli).expect("local mode args should build");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn backend_server_args_for_remote_mode() {
+        let cli = Cli::parse_from([
+            "poor-cli-tui",
+            "--remote-url",
+            "wss://example.test/rpc",
+            "--remote-room",
+            "dev",
+            "--remote-token",
+            "tok-123",
+        ]);
+        let args = build_backend_server_args(&cli).expect("remote args should build");
+        assert_eq!(
+            args,
+            vec![
+                "--bridge".to_string(),
+                "--url".to_string(),
+                "wss://example.test/rpc".to_string(),
+                "--room".to_string(),
+                "dev".to_string(),
+                "--token".to_string(),
+                "tok-123".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn backend_server_args_require_complete_remote_triplet() {
+        let cli = Cli::parse_from(["poor-cli-tui", "--remote-url", "wss://example.test/rpc"]);
+        let err = build_backend_server_args(&cli).expect_err("should fail for partial remote args");
+        assert!(err.contains("--remote-url"));
     }
 
     #[test]
