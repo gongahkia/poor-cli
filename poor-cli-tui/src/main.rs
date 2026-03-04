@@ -1102,6 +1102,7 @@ fn handle_slash_command(
         let help = "\
 **Available Commands:**\n\n\
 Type `@path/to/file` in any message to attach file context.\n\
+Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 \n\
 **Session Management:**\n\
   /help                Show this help message\n\
@@ -1124,6 +1125,7 @@ Type `@path/to/file` in any message to attach file context.\n\
   /settings            List editable config settings\n\
   /toggle <key>        Toggle a boolean config option\n\
   /set <key> <value>   Set a config option value\n\
+  /theme [dark|light]  Show or set UI + code-block theme\n\
   /broke               Set response mode to terse, token-minimal output\n\
   /my-treat            Set response mode to rich, comprehensive output\n\n\
 **Git Integration:**\n\
@@ -1302,6 +1304,7 @@ Type `@path/to/file` in any message to attach file context.\n\
                     "**Configuration:**\n\
 Provider: {}\n\
 Model: {}\n\
+Theme: {}\n\
 Streaming: {}\n\
 Show Token Count: {}\n\
 Markdown Rendering: {}\n\
@@ -1318,6 +1321,9 @@ Version: v{}",
                     cfg.get("model")
                         .and_then(|v| v.as_str())
                         .unwrap_or(app.model_name.as_str()),
+                    cfg.get("theme")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(app.theme_mode.as_str()),
                     if cfg
                         .get("streaming")
                         .and_then(|v| v.as_bool())
