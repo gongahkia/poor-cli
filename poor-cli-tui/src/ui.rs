@@ -515,6 +515,15 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             format!("  {status}"),
             Style::default().fg(theme::warning(mode)),
         )]
+    } else if app.mode == AppMode::InfoPopup {
+        vec![
+            Span::styled("  Esc/Enter", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": close  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": fast scroll", Style::default().fg(theme::muted_fg(mode))),
+        ]
     } else if app.mode == AppMode::Command {
         // Show matching commands
         let prefix = &app.input_buffer;

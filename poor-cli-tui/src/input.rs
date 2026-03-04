@@ -725,11 +725,19 @@ fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputAction {
 fn handle_mouse(app: &mut App, mouse: MouseEvent) -> InputAction {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            app.scroll_up(3);
+            if app.mode == AppMode::InfoPopup {
+                app.scroll_info_popup_up(3);
+            } else {
+                app.scroll_up(3);
+            }
             InputAction::Redraw
         }
         MouseEventKind::ScrollDown => {
-            app.scroll_down(3);
+            if app.mode == AppMode::InfoPopup {
+                app.scroll_info_popup_down(3);
+            } else {
+                app.scroll_down(3);
+            }
             InputAction::Redraw
         }
         _ => InputAction::None,

@@ -1969,9 +1969,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         let total_steps = onboarding_step_count();
 
         if total_steps == 0 {
-            app.push_message(ChatMessage::system(
-                "Onboarding is currently unavailable.".to_string(),
-            ));
+            show_command_info_popup(app, raw, "Onboarding is currently unavailable.".to_string());
             return false;
         }
 
@@ -1982,24 +1980,30 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         {
             app.onboarding_active = true;
             app.onboarding_step = 0;
-            app.push_message(ChatMessage::system(format!(
-                "**Interactive onboarding started.**\n\n{}",
-                format_onboarding_step(app.onboarding_step)
-            )));
+            show_command_info_popup(
+                app,
+                raw,
+                format!(
+                    "**Interactive onboarding started.**\n\n{}",
+                    format_onboarding_step(app.onboarding_step)
+                ),
+            );
             return false;
         }
 
         if subcommand == "help" {
-            app.push_message(ChatMessage::system(onboarding_usage_text().to_string()));
+            show_command_info_popup(app, raw, onboarding_usage_text().to_string());
             return false;
         }
 
         if subcommand == "exit" || subcommand == "done" || subcommand == "quit" {
             app.onboarding_active = false;
             app.onboarding_step = 0;
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "Onboarding ended.\nRun `/onboarding` anytime to start again.".to_string(),
-            ));
+            );
             return false;
         }
 
@@ -2008,9 +2012,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                 app.onboarding_active = true;
                 app.onboarding_step = 0;
             }
-            app.push_message(ChatMessage::system(format_onboarding_step(
-                app.onboarding_step,
-            )));
+            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
 
@@ -2018,24 +2020,28 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
             if !app.onboarding_active {
                 app.onboarding_active = true;
                 app.onboarding_step = 0;
-                app.push_message(ChatMessage::system(format!(
-                    "No active onboarding session found; started at step 1.\n\n{}",
-                    format_onboarding_step(app.onboarding_step)
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "No active onboarding session found; started at step 1.\n\n{}",
+                        format_onboarding_step(app.onboarding_step)
+                    ),
+                );
                 return false;
             }
 
             if app.onboarding_step + 1 >= total_steps {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "You are already at the last onboarding step.\nUse `/onboarding exit` to end the onboarding session.".to_string(),
-                ));
+                );
                 return false;
             }
 
             app.onboarding_step += 1;
-            app.push_message(ChatMessage::system(format_onboarding_step(
-                app.onboarding_step,
-            )));
+            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
 
@@ -2043,44 +2049,50 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
             if !app.onboarding_active {
                 app.onboarding_active = true;
                 app.onboarding_step = 0;
-                app.push_message(ChatMessage::system(format!(
-                    "No active onboarding session found; started at step 1.\n\n{}",
-                    format_onboarding_step(app.onboarding_step)
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "No active onboarding session found; started at step 1.\n\n{}",
+                        format_onboarding_step(app.onboarding_step)
+                    ),
+                );
                 return false;
             }
 
             if app.onboarding_step == 0 {
-                app.push_message(ChatMessage::system(
+                show_command_info_popup(
+                    app,
+                    raw,
                     "You are already at the first onboarding step.".to_string(),
-                ));
+                );
                 return false;
             }
 
             app.onboarding_step -= 1;
-            app.push_message(ChatMessage::system(format_onboarding_step(
-                app.onboarding_step,
-            )));
+            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
 
         if let Ok(step_number) = subcommand.parse::<usize>() {
             if step_number == 0 || step_number > total_steps {
-                app.push_message(ChatMessage::system(format!(
-                    "Step must be between 1 and {total_steps}.\n{}",
-                    onboarding_usage_text()
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "Step must be between 1 and {total_steps}.\n{}",
+                        onboarding_usage_text()
+                    ),
+                );
                 return false;
             }
             app.onboarding_active = true;
             app.onboarding_step = step_number - 1;
-            app.push_message(ChatMessage::system(format_onboarding_step(
-                app.onboarding_step,
-            )));
+            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
 
-        app.push_message(ChatMessage::system(onboarding_usage_text().to_string()));
+        show_command_info_popup(app, raw, onboarding_usage_text().to_string());
         return false;
     }
 
@@ -3548,7 +3560,11 @@ Context Window: {max_context} tokens\n\n\
 
         if subcommand == "list" {
             if tasks.is_empty() {
-                show_command_info_popup(app, raw, "No tasks.\nUse `/tasks add <title>`.".to_string());
+                show_command_info_popup(
+                    app,
+                    raw,
+                    "No tasks.\nUse `/tasks add <title>`.".to_string(),
+                );
                 return false;
             }
             let mut lines = vec![format!("**Tasks ({})**", tasks.len()), String::new()];
@@ -3741,7 +3757,10 @@ Context Window: {max_context} tokens\n\n\
                 show_command_info_popup(
                     app,
                     raw,
-                    format!("**Command:** `{command}`\n\n{}", truncate_block(&output, 1600)),
+                    format!(
+                        "**Command:** `{command}`\n\n{}",
+                        truncate_block(&output, 1600)
+                    ),
                 )
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Command failed: {e}"))),
@@ -3851,7 +3870,9 @@ Context Window: {max_context} tokens\n\n\
             }
 
             match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
-                Ok(payload) => show_command_info_popup(app, raw, format_host_server_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_host_server_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch host server status: {e}"
                 ))),
@@ -3896,7 +3917,9 @@ Context Window: {max_context} tokens\n\n\
 
             let room = args.get(2).copied();
             match rpc_list_host_members_blocking(rpc_cmd_tx, room) {
-                Ok(payload) => show_command_info_popup(app, raw, format_host_members_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_host_members_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch host members: {e}"
                 ))),
@@ -4321,7 +4344,9 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_list_host_activity_blocking(rpc_cmd_tx, room, limit, event_type) {
-                Ok(payload) => show_command_info_popup(app, raw, format_host_activity_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_host_activity_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch host activity: {e}"
                 ))),
@@ -4374,7 +4399,9 @@ Context Window: {max_context} tokens\n\n\
             }
             let service_name = args.get(2).copied();
             match rpc_get_service_status_blocking(rpc_cmd_tx, service_name) {
-                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch service status: {e}"
                 ))),
@@ -4396,7 +4423,9 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_start_service_blocking(rpc_cmd_tx, service_name, command_text, None) {
-                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to start service `{service_name}`: {e}"
                 ))),
@@ -4411,7 +4440,9 @@ Context Window: {max_context} tokens\n\n\
             }
             let service_name = args[2];
             match rpc_stop_service_blocking(rpc_cmd_tx, service_name) {
-                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to stop service `{service_name}`: {e}"
                 ))),
@@ -4494,19 +4525,25 @@ Context Window: {max_context} tokens\n\n\
 
         match subcommand.as_str() {
             "" | "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
-                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to fetch Ollama status: {e}"
                 ))),
             },
             "start" => match rpc_start_service_blocking(rpc_cmd_tx, "ollama", None, None) {
-                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to start Ollama service: {e}"
                 ))),
             },
             "stop" => match rpc_stop_service_blocking(rpc_cmd_tx, "ollama") {
-                Ok(payload) => show_command_info_popup(app, raw, format_service_status_payload(&payload)),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to stop Ollama service: {e}"
                 ))),
@@ -4597,7 +4634,10 @@ Context Window: {max_context} tokens\n\n\
                     Ok(output) => show_command_info_popup(
                         app,
                         raw,
-                        format!("**Installed Ollama Models**\n```text\n{}\n```", truncate_block(&output, 3200)),
+                        format!(
+                            "**Installed Ollama Models**\n```text\n{}\n```",
+                            truncate_block(&output, 3200)
+                        ),
                     ),
                     Err(e) => app.push_message(ChatMessage::error(format!(
                         "Failed to list Ollama models: {e}"
@@ -4614,7 +4654,10 @@ Context Window: {max_context} tokens\n\n\
                     Ok(output) => show_command_info_popup(
                         app,
                         raw,
-                        format!("**Ollama Running Models**\n```text\n{}\n```", truncate_block(&output, 3200)),
+                        format!(
+                            "**Ollama Running Models**\n```text\n{}\n```",
+                            truncate_block(&output, 3200)
+                        ),
                     ),
                     Err(e) => app.push_message(ChatMessage::error(format!(
                         "Failed to inspect Ollama running models: {e}"
