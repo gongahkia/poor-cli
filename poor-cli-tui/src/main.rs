@@ -17,7 +17,7 @@ use crossterm::{
 use ratatui::prelude::*;
 use serde_json::Value;
 
-use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry};
+use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode};
 use poor_cli_tui::input::{self, InputAction};
 use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
 use poor_cli_tui::ui;
@@ -588,6 +588,7 @@ fn handle_submit(
 
     let backend_with_files = with_context_files(app, trimmed);
     let backend_message = with_pending_images(app, &backend_with_files);
+    let backend_message = apply_response_mode_to_user_input(app.response_mode, &backend_message);
     send_chat_request(
         app,
         tx,
@@ -918,6 +919,21 @@ fn with_pending_images(app: &mut App, message: &str) -> String {
     format!(
         "{message}\n\nAttached image files (paths):\n{attachment_lines}\n\nUse these images as context when possible."
     )
+}
+
+fn apply_response_mode_to_user_input(mode: ResponseMode, user_input: &str) -> String {
+    let mode_instruction = match mode {
+        ResponseMode::Poor => {
+            "Response mode is poor. Keep the answer as short as possible while still correct. \
+Use minimal tokens and avoid extra explanation unless explicitly requested."
+        }
+        ResponseMode::Rich => {
+            "Response mode is rich. Prioritize quality, completeness, and clear structure. \
+Cover important reasoning and tradeoffs when relevant."
+        }
+    };
+
+    format!("{mode_instruction}\n\nUser request:\n{user_input}")
 }
 
 // ── Slash command handler ─────────────────────────────────────────────
