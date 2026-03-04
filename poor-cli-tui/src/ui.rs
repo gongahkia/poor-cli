@@ -16,12 +16,26 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph, Wrap},
     Frame,
 };
-use textwrap::Options;
+use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
-use crate::app::{App, AppMode, MessageRole};
+use crate::app::{App, AppMode, MessageRole, ThemeMode};
 use crate::input::{command_palette_matches, SlashCommandSpec};
 use crate::markdown;
 use crate::theme;
+
+struct ChatRenderCache {
+    fingerprint: u64,
+    theme_mode: ThemeMode,
+    lines: Vec<Line<'static>>,
+    wrapped_line_counts: HashMap<u16, u16>,
+}
+
+thread_local! {
+    static CHAT_RENDER_CACHE: RefCell<Option<ChatRenderCache>> = const { RefCell::new(None) };
+}
 
 /// Main render function called each frame.
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -188,6 +202,9 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     if app.messages.is_empty() {
+        CHAT_RENDER_CACHE.with(|cache| {
+            cache.borrow_mut().take();
+        });
         let empty = Paragraph::new("Start typing to begin a conversation...")
             .style(Style::default().fg(theme::muted_fg(mode)))
             .block(
@@ -199,7 +216,86 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // Render all messages into lines
+    let (all_lines, total_lines) = cached_chat_lines(app, mode, area.width);
+    let visible_height = area.height;
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let effective_scroll = app.scroll_offset.min(max_scroll);
+
+    let text = Text::from(all_lines);
+    let para = Paragraph::new(text)
+        .wrap(Wrap { trim: false })
+        .scroll((max_scroll.saturating_sub(effective_scroll), 0));
+
+    frame.render_widget(para, area);
+}
+
+fn cached_chat_lines(app: &App, mode: ThemeMode, wrap_width: u16) -> (Vec<Line<'static>>, u16) {
+    CHAT_RENDER_CACHE.with(|cache_cell| {
+        let mut cache_ref = cache_cell.borrow_mut();
+        let fingerprint = chat_fingerprint(app);
+
+        let needs_rebuild = match cache_ref.as_ref() {
+            Some(cache) => cache.fingerprint != fingerprint || cache.theme_mode != mode,
+            None => true,
+        };
+
+        if needs_rebuild {
+            *cache_ref = Some(ChatRenderCache {
+                fingerprint,
+                theme_mode: mode,
+                lines: build_chat_lines(app, mode),
+                wrapped_line_counts: HashMap::new(),
+            });
+        }
+
+        let cache = cache_ref.as_mut().expect("chat cache must exist");
+        let total_lines = *cache
+            .wrapped_line_counts
+            .entry(wrap_width)
+            .or_insert_with(|| wrapped_visual_line_count(&cache.lines, wrap_width));
+
+        (cache.lines.clone(), total_lines)
+    })
+}
+
+fn chat_fingerprint(app: &App) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    app.messages.len().hash(&mut hasher);
+    for msg in &app.messages {
+        role_fingerprint(&msg.role, &mut hasher);
+        msg.content.len().hash(&mut hasher);
+        if let Some(first) = msg.content.as_bytes().first() {
+            first.hash(&mut hasher);
+        }
+        if let Some(last) = msg.content.as_bytes().last() {
+            last.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+fn role_fingerprint(role: &MessageRole, hasher: &mut impl Hasher) {
+    match role {
+        MessageRole::User => 0u8.hash(hasher),
+        MessageRole::Assistant => 1u8.hash(hasher),
+        MessageRole::System => 2u8.hash(hasher),
+        MessageRole::ToolCall { name } => {
+            3u8.hash(hasher);
+            name.hash(hasher);
+        }
+        MessageRole::ToolResult { name } => {
+            4u8.hash(hasher);
+            name.hash(hasher);
+        }
+        MessageRole::DiffView { name } => {
+            5u8.hash(hasher);
+            name.hash(hasher);
+        }
+        MessageRole::Error => 6u8.hash(hasher),
+    }
+}
+
+fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
     for msg in &app.messages {
@@ -338,8 +434,7 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
                     Span::styled("  ⚠ ", Style::default().fg(theme::error(mode))),
                     Span::styled("Error", theme::error_style(mode)),
                 ]));
-                let wrap_width = area.width.saturating_sub(8).max(20) as usize;
-                for line in wrap_text_lines(&msg.content, wrap_width) {
+                for line in msg.content.lines() {
                     all_lines.push(Line::from(Span::styled(
                         format!("    {line}"),
                         Style::default().fg(theme::error(mode)),
@@ -349,18 +444,7 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    // Apply scroll offset (from bottom), accounting for visual wrapping.
-    let total_lines = wrapped_visual_line_count(&all_lines, area.width);
-    let visible_height = area.height;
-    let max_scroll = total_lines.saturating_sub(visible_height);
-    let effective_scroll = app.scroll_offset.min(max_scroll);
-
-    let text = Text::from(all_lines);
-    let para = Paragraph::new(text)
-        .wrap(Wrap { trim: false })
-        .scroll((max_scroll.saturating_sub(effective_scroll), 0));
-
-    frame.render_widget(para, area);
+    all_lines
 }
 
 fn wrapped_visual_line_count(lines: &[Line<'static>], wrap_width: u16) -> u16 {
@@ -382,27 +466,6 @@ fn wrapped_visual_line_count(lines: &[Line<'static>], wrap_width: u16) -> u16 {
     }
 
     total.min(u16::MAX as usize) as u16
-}
-
-fn wrap_text_lines(content: &str, width: usize) -> Vec<String> {
-    let options = Options::new(width).break_words(true);
-    let mut wrapped = Vec::new();
-
-    for line in content.lines() {
-        if line.trim().is_empty() {
-            wrapped.push(String::new());
-            continue;
-        }
-        for fragment in textwrap::wrap(line, &options) {
-            wrapped.push(fragment.into_owned());
-        }
-    }
-
-    if wrapped.is_empty() {
-        wrapped.push(String::new());
-    }
-
-    wrapped
 }
 
 #[cfg(test)]
