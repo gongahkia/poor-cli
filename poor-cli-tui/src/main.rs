@@ -1344,6 +1344,9 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 **Utilities:**\n\
   /copy                Copy last assistant response to clipboard\n\
   /host-server ...     Start/share/manage host session and members\n\
+  /host-server members [room]               List connected room members\n\
+  /host-server kick <connection-id> [room]  Remove a connected member\n\
+  /host-server role <id> <viewer|prompter> [room]  Change member role\n\
   /join-server <code>  Join host using invite code or url/room/token\n\
   /service ...         Manage local background services (start/stop/status/logs)\n\
   /ollama ...          Convenience wrapper for Ollama lifecycle/model commands\n\
@@ -2406,9 +2409,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "status" {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(
-                    "Usage: /host-server [room]\n       /host-server status\n       /host-server stop".to_string(),
-                ));
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
                 return false;
             }
 
@@ -2425,9 +2426,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "stop" {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(
-                    "Usage: /host-server [room]\n       /host-server status\n       /host-server stop".to_string(),
-                ));
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
                 return false;
             }
 
@@ -2454,17 +2453,138 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
-        if args.len() > 2 {
-            app.push_message(ChatMessage::system(
-                "Usage: /host-server [room]\n       /host-server status\n       /host-server stop"
-                    .to_string(),
-            ));
+        if lowered_subcommand == "members" || lowered_subcommand == "users" {
+            if args.len() > 3 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+
+            let room = args.get(2).copied();
+            match rpc_list_host_members_blocking(rpc_cmd_tx, room) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_host_members_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch host members: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "kick" || lowered_subcommand == "remove" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_remove_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let mut lines = vec![format!(
+                        "Removed connection `{connection_id}` from room `{room_name}`."
+                    )];
+                    if let Ok(updated) = rpc_list_host_members_blocking(
+                        rpc_cmd_tx,
+                        if room_name.is_empty() {
+                            None
+                        } else {
+                            Some(room_name)
+                        },
+                    ) {
+                        lines.push(String::new());
+                        lines.push(format_host_members_payload(&updated));
+                    }
+                    app.push_message(ChatMessage::system(lines.join("\n")));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to remove `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "role"
+            || lowered_subcommand == "promote"
+            || lowered_subcommand == "demote"
+        {
+            let (connection_id, role, room): (&str, &str, Option<&str>) =
+                if lowered_subcommand == "role" {
+                    if args.len() < 4 || args.len() > 5 {
+                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        return false;
+                    }
+                    (args[2], args[3], args.get(4).copied())
+                } else if lowered_subcommand == "promote" {
+                    if args.len() < 3 || args.len() > 4 {
+                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        return false;
+                    }
+                    (args[2], "prompter", args.get(3).copied())
+                } else {
+                    if args.len() < 3 || args.len() > 4 {
+                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        return false;
+                    }
+                    (args[2], "viewer", args.get(3).copied())
+                };
+
+            let normalized_role = match role.to_ascii_lowercase().as_str() {
+                "viewer" | "read" | "read-only" => "viewer",
+                "prompter" | "writer" | "editor" | "admin" => "prompter",
+                _ => {
+                    app.push_message(ChatMessage::system(
+                        "Invalid role. Use `viewer` or `prompter`.".to_string(),
+                    ));
+                    return false;
+                }
+            };
+
+            match rpc_set_host_member_role_blocking(rpc_cmd_tx, connection_id, normalized_role, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let mut lines = vec![format!(
+                        "Updated `{connection_id}` to role **{normalized_role}** in room `{room_name}`."
+                    )];
+                    if let Ok(updated) = rpc_list_host_members_blocking(
+                        rpc_cmd_tx,
+                        if room_name.is_empty() {
+                            None
+                        } else {
+                            Some(room_name)
+                        },
+                    ) {
+                        lines.push(String::new());
+                        lines.push(format_host_members_payload(&updated));
+                    }
+                    app.push_message(ChatMessage::system(lines.join("\n")));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to update role for `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "help" {
+            app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
             return false;
         }
 
         let room = if subcommand.is_empty() {
             None
         } else {
+            if args.len() > 2 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
             Some(subcommand)
         };
 
@@ -3855,9 +3975,13 @@ fn format_host_server_payload(payload: &Value) -> String {
             .get("viewerInviteCode")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let member_count = room
+            .get("memberCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
         lines.push(String::new());
-        lines.push(format!("**Room `{name}`**"));
+        lines.push(format!("**Room `{name}`** ({member_count} member(s))"));
         lines.push(format!("- Viewer token: `{viewer_token}`"));
         lines.push(format!("- Prompter token: `{prompter_token}`"));
         if !viewer_join.is_empty() {
@@ -4624,6 +4748,63 @@ fn rpc_stop_host_server_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Resul
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for host server stop response".to_string())?
+}
+
+fn rpc_list_host_members_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListHostMembers {
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host members: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host members response".to_string())?
+}
+
+fn rpc_remove_host_member_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RemoveHostMember {
+            connection_id: connection_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host member removal: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host member removal response".to_string())?
+}
+
+fn rpc_set_host_member_role_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    role: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetHostMemberRole {
+            connection_id: connection_id.to_string(),
+            role: role.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host role update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host role update response".to_string())?
 }
 
 fn rpc_start_service_blocking(

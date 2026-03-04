@@ -86,7 +86,7 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     },
     SlashCommandSpec {
         command: "/host-server",
-        description: "Start/share multiplayer host session",
+        description: "Start/share/manage multiplayer host session",
         recommended: true,
     },
     SlashCommandSpec {
