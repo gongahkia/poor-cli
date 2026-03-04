@@ -507,6 +507,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
     match app.mode {
         AppMode::Normal | AppMode::Command => handle_key_normal(app, key),
         AppMode::ProviderSelect => handle_key_provider_select(app, key),
+        AppMode::InfoPopup => handle_key_info_popup(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
         AppMode::PlanReview => handle_key_plan_review(app, key),
         AppMode::Quitting => InputAction::Quit,
@@ -655,6 +656,36 @@ fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputAction {
         }
         KeyCode::Esc => {
             app.mode = AppMode::Normal;
+            InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.close_info_popup();
+            InputAction::Redraw
+        }
+        KeyCode::Up => {
+            app.scroll_info_popup_up(1);
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            app.scroll_info_popup_down(1);
+            InputAction::Redraw
+        }
+        KeyCode::PageUp => {
+            app.scroll_info_popup_up(10);
+            InputAction::Redraw
+        }
+        KeyCode::PageDown => {
+            app.scroll_info_popup_down(10);
+            InputAction::Redraw
+        }
+        KeyCode::Home => {
+            app.info_popup_scroll = 0;
             InputAction::Redraw
         }
         _ => InputAction::None,

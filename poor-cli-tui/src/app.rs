@@ -87,6 +87,7 @@ pub enum AppMode {
     Normal,
     Command,
     ProviderSelect,
+    InfoPopup,
     PermissionPrompt,
     PlanReview,
     Quitting,
@@ -180,6 +181,9 @@ pub struct App {
     pub capabilities: Vec<String>,
     pub providers: Vec<ProviderEntry>,
     pub provider_select_idx: usize,
+    pub info_popup_title: String,
+    pub info_popup_content: String,
+    pub info_popup_scroll: u16,
 
     // ── Session info ───
     pub streaming_enabled: bool,
@@ -281,6 +285,9 @@ impl Default for App {
             capabilities: Vec::new(),
             providers: Vec::new(),
             provider_select_idx: 0,
+            info_popup_title: String::new(),
+            info_popup_content: String::new(),
+            info_popup_scroll: 0,
             streaming_enabled: true,
             version: "0.4.0".into(),
             waiting: false,
@@ -567,6 +574,28 @@ impl App {
     /// Set a temporary status message.
     pub fn set_status(&mut self, msg: impl Into<String>) {
         self.status_message = Some((msg.into(), Instant::now()));
+    }
+
+    pub fn open_info_popup(&mut self, title: impl Into<String>, content: impl Into<String>) {
+        self.info_popup_title = title.into();
+        self.info_popup_content = content.into();
+        self.info_popup_scroll = 0;
+        self.mode = AppMode::InfoPopup;
+    }
+
+    pub fn close_info_popup(&mut self) {
+        self.info_popup_title.clear();
+        self.info_popup_content.clear();
+        self.info_popup_scroll = 0;
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn scroll_info_popup_up(&mut self, amount: u16) {
+        self.info_popup_scroll = self.info_popup_scroll.saturating_sub(amount);
+    }
+
+    pub fn scroll_info_popup_down(&mut self, amount: u16) {
+        self.info_popup_scroll = self.info_popup_scroll.saturating_add(amount);
     }
 
     /// Clear status if it's older than 3 seconds.

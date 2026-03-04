@@ -1802,6 +1802,37 @@ fn format_onboarding_step(step_index: usize) -> String {
     lines.join("\n")
 }
 
+fn popup_title_from_command(raw: &str) -> String {
+    let token = raw
+        .split_whitespace()
+        .next()
+        .unwrap_or("/info")
+        .trim_start_matches('/')
+        .trim();
+    if token.is_empty() {
+        return "Info".to_string();
+    }
+    token
+        .split('-')
+        .map(|segment| {
+            let mut chars = segment.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut titled = first.to_uppercase().collect::<String>();
+                    titled.push_str(chars.as_str());
+                    titled
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn show_command_info_popup(app: &mut App, raw: &str, body: impl Into<String>) {
+    app.open_info_popup(popup_title_from_command(raw), body.into());
+}
+
 // ── Slash command handler ─────────────────────────────────────────────
 
 fn handle_slash_command(
@@ -1923,7 +1954,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /pwd                 Show current working directory\n\
   /ls [path]           List files (default: current directory)\n\
   /status              Show quick session status";
-        app.push_message(ChatMessage::system(help));
+        show_command_info_popup(app, raw, help);
         return false;
     }
 
@@ -2150,7 +2181,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   Function Calling: {function_calling}\n\
   Vision: {vision}"
                 );
-                app.push_message(ChatMessage::system(info));
+                show_command_info_popup(app, raw, info);
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to fetch provider info: {e}"
@@ -2169,9 +2200,11 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                     .unwrap_or_default();
 
                 if providers.is_empty() {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "No provider API key status available.".to_string(),
-                    ));
+                    );
                     return false;
                 }
 
@@ -2227,7 +2260,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 
                 lines.push(String::new());
                 lines.push("Set or rotate with `/api-key <provider> <api-key>`".to_string());
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to fetch API key status: {e}"
@@ -2243,9 +2276,11 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         let api_key = parts.next().unwrap_or("").trim();
 
         if provider.is_empty() || api_key.is_empty() {
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "Usage: /api-key <provider> <api-key>\nInspect status only: /api-key".to_string(),
-            ));
+            );
             return false;
         }
 
@@ -2283,7 +2318,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                 } else {
                     lines.push("Switch providers with `/switch` when needed.".to_string());
                 }
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to set API key for `{provider}`: {e}"
@@ -2295,8 +2330,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
     if lowered == "/providers" {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let _ = rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx });
-        let tx2 = tx.clone();
-        thread::spawn(move || match reply_rx.recv() {
+        match reply_rx.recv_timeout(Duration::from_secs(15)) {
             Ok(Ok(providers)) => {
                 let mut info = "**Available Providers:**\n\n".to_string();
                 for p in &providers {
@@ -2310,19 +2344,13 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                     info.push_str(&format!("  {status} **{}**{local}{models}\n", p.name));
                 }
                 info.push_str("\nUse /switch to change provider/model");
-                let _ = tx2.send(ServerMsg::SystemMessage { content: info });
+                show_command_info_popup(app, raw, info);
             }
             Ok(Err(e)) => {
-                let _ = tx2.send(ServerMsg::Error {
-                    message: format!("Failed to list providers: {e}"),
-                });
+                app.push_message(ChatMessage::error(format!("Failed to list providers: {e}")))
             }
-            Err(_) => {
-                let _ = tx2.send(ServerMsg::Error {
-                    message: "Failed to list providers".into(),
-                });
-            }
-        });
+            Err(_) => app.push_message(ChatMessage::error("Failed to list providers".to_string())),
+        }
         return false;
     }
 
@@ -2423,7 +2451,7 @@ Version: v{}",
                         .and_then(|v| v.as_str())
                         .unwrap_or(app.version.as_str())
                 );
-                app.push_message(ChatMessage::system(config));
+                show_command_info_popup(app, raw, config);
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to load config: {e}"))),
         }
@@ -2478,7 +2506,7 @@ Version: v{}",
                     ));
                 }
 
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to load settings: {e}"))),
         }
@@ -2540,10 +2568,14 @@ Version: v{}",
     }
 
     if lowered == "/theme" {
-        app.push_message(ChatMessage::system(format!(
-            "Current theme: **{}**\nUse `/theme dark` or `/theme light`.",
-            app.theme_mode.as_str()
-        )));
+        show_command_info_popup(
+            app,
+            raw,
+            format!(
+                "Current theme: **{}**\nUse `/theme dark` or `/theme light`.",
+                app.theme_mode.as_str()
+            ),
+        );
         return false;
     }
 
@@ -2654,9 +2686,13 @@ Version: v{}",
                     .get("permissionMode")
                     .and_then(|v| v.as_str())
                     .unwrap_or("prompt");
-                app.push_message(ChatMessage::system(format!(
-                    "Current permission mode: **{mode}**\nAvailable: prompt, auto-safe, danger-full-access\nSet with: `/permission-mode <mode>`"
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "Current permission mode: **{mode}**\nAvailable: prompt, auto-safe, danger-full-access\nSet with: `/permission-mode <mode>`"
+                    ),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to fetch permission mode: {e}"
@@ -2707,7 +2743,7 @@ Context Window: {max_context} tokens\n\n\
 **Notes**\n\
 {provider_notes}"
                 );
-                app.push_message(ChatMessage::system(info));
+                show_command_info_popup(app, raw, info);
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to fetch model information: {e}"
@@ -2726,9 +2762,11 @@ Context Window: {max_context} tokens\n\n\
                     .unwrap_or_default();
 
                 if tools.is_empty() {
-                    app.push_message(ChatMessage::system(
+                    show_command_info_popup(
+                        app,
+                        raw,
                         "No tool declarations returned by backend.".to_string(),
-                    ));
+                    );
                     return false;
                 }
 
@@ -2748,7 +2786,7 @@ Context Window: {max_context} tokens\n\n\
                     lines.push(format!("- **{name}**: {desc}"));
                 }
 
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch tools: {e}"))),
         }
@@ -2770,9 +2808,7 @@ Context Window: {max_context} tokens\n\n\
                     .cloned()
                     .unwrap_or_default();
                 if messages.is_empty() {
-                    app.push_message(ChatMessage::system(
-                        "No messages in this session.".to_string(),
-                    ));
+                    show_command_info_popup(app, raw, "No messages in this session.".to_string());
                     return false;
                 }
 
@@ -2791,11 +2827,15 @@ Context Window: {max_context} tokens\n\n\
                     ));
                 }
 
-                app.push_message(ChatMessage::system(format!(
-                    "**History (last {} messages):**\n\n{}",
-                    lines.len(),
-                    lines.join("\n\n")
-                )));
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "**History (last {} messages):**\n\n{}",
+                        lines.len(),
+                        lines.join("\n\n")
+                    ),
+                );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to load session history: {e}"
@@ -2813,9 +2853,7 @@ Context Window: {max_context} tokens\n\n\
                     .cloned()
                     .unwrap_or_default();
                 if sessions.is_empty() {
-                    app.push_message(ChatMessage::system(
-                        "No previous sessions found.".to_string(),
-                    ));
+                    show_command_info_popup(app, raw, "No previous sessions found.".to_string());
                     return false;
                 }
 
@@ -2842,7 +2880,7 @@ Context Window: {max_context} tokens\n\n\
                         "- `{session_id}`{marker} • {started} • {message_count} message(s)"
                     ));
                 }
-                app.push_message(ChatMessage::system(lines.join("\n")));
+                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to list sessions: {e}"))),
         }
@@ -2870,7 +2908,7 @@ Context Window: {max_context} tokens\n\n\
     if lowered.starts_with("/search") {
         let term = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if term.is_empty() {
-            app.push_message(ChatMessage::system("Usage: /search <term>".to_string()));
+            show_command_info_popup(app, raw, "Usage: /search <term>".to_string());
             return false;
         }
 
@@ -2886,7 +2924,7 @@ Context Window: {max_context} tokens\n\n\
                     .cloned()
                     .unwrap_or_default();
                 if matches.is_empty() {
-                    app.push_message(ChatMessage::system(format!("No matches for: {term}")));
+                    show_command_info_popup(app, raw, format!("No matches for: {term}"));
                     return false;
                 }
 
@@ -2915,7 +2953,7 @@ Context Window: {max_context} tokens\n\n\
                         lines.len()
                     ));
                 }
-                app.push_message(ChatMessage::system(response));
+                show_command_info_popup(app, raw, response);
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to search session history: {e}"
@@ -3006,9 +3044,11 @@ Context Window: {max_context} tokens\n\n\
 
     if lowered == "/files" {
         if app.pinned_context_files.is_empty() {
-            app.push_message(ChatMessage::system(
+            show_command_info_popup(
+                app,
+                raw,
                 "No pinned context files.\nUse /add <path> or @path in a prompt.".to_string(),
-            ));
+            );
         } else {
             let mut lines = vec![
                 format!(
@@ -3020,7 +3060,7 @@ Context Window: {max_context} tokens\n\n\
             for file in &app.pinned_context_files {
                 lines.push(format!("- {file}"));
             }
-            app.push_message(ChatMessage::system(lines.join("\n")));
+            show_command_info_popup(app, raw, lines.join("\n"));
         }
         return false;
     }
@@ -3109,7 +3149,7 @@ Context Window: {max_context} tokens\n\n\
 
         lines.push(String::new());
         lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, and `/status`.".to_string());
-        app.push_message(ChatMessage::system(lines.join("\n")));
+        show_command_info_popup(app, raw, lines.join("\n"));
         return false;
     }
 
@@ -3122,7 +3162,7 @@ Context Window: {max_context} tokens\n\n\
         let root = root_raw
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(&app.cwd));
-        app.push_message(ChatMessage::system(format_bootstrap_report(&root)));
+        show_command_info_popup(app, raw, format_bootstrap_report(&root));
         return false;
     }
 
@@ -3133,12 +3173,16 @@ Context Window: {max_context} tokens\n\n\
             .map(|value| value.trim().to_ascii_lowercase())
             .unwrap_or_else(|| "status".to_string());
         if selected == "status" {
-            app.push_message(ChatMessage::system(format!(
-                "**Execution Profile**\n- Active: `{}`\n- Response mode: `{}`\n- Context budget: {} tokens\n\nAvailable profiles:\n- `speed`: smaller context, terse output, faster loop\n- `safe`: balanced defaults, review-oriented safety\n- `deep-review`: larger context, richer analysis depth\n\nSet with `/profile <name>`",
-                app.execution_profile,
-                app.response_mode.as_str(),
-                app.context_budget_tokens
-            )));
+            show_command_info_popup(
+                app,
+                raw,
+                format!(
+                    "**Execution Profile**\n- Active: `{}`\n- Response mode: `{}`\n- Context budget: {} tokens\n\nAvailable profiles:\n- `speed`: smaller context, terse output, faster loop\n- `safe`: balanced defaults, review-oriented safety\n- `deep-review`: larger context, richer analysis depth\n\nSet with `/profile <name>`",
+                    app.execution_profile,
+                    app.response_mode.as_str(),
+                    app.context_budget_tokens
+                ),
+            );
             return false;
         }
 
@@ -3164,30 +3208,37 @@ Context Window: {max_context} tokens\n\n\
         if subcommand == "status" {
             match load_focus_state(app) {
                 Ok(Some(state)) => {
-                    app.push_message(ChatMessage::system(format!(
-                        "**Focus Status**\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}\n- Started: {}\n- Completed: {}",
-                        if state.goal.is_empty() { "(none)" } else { &state.goal },
-                        if state.constraints.is_empty() {
-                            "(none)"
-                        } else {
-                            &state.constraints
-                        },
-                        if state.definition_of_done.is_empty() {
-                            "(none)"
-                        } else {
-                            &state.definition_of_done
-                        },
-                        if state.started_at.is_empty() {
-                            "(unknown)"
-                        } else {
-                            &state.started_at
-                        },
-                        if state.completed { "yes" } else { "no" }
-                    )));
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!(
+                            "**Focus Status**\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}\n- Started: {}\n- Completed: {}",
+                            if state.goal.is_empty() { "(none)" } else { &state.goal },
+                            if state.constraints.is_empty() {
+                                "(none)"
+                            } else {
+                                &state.constraints
+                            },
+                            if state.definition_of_done.is_empty() {
+                                "(none)"
+                            } else {
+                                &state.definition_of_done
+                            },
+                            if state.started_at.is_empty() {
+                                "(unknown)"
+                            } else {
+                                &state.started_at
+                            },
+                            if state.completed { "yes" } else { "no" }
+                        ),
+                    );
                 }
-                Ok(None) => app.push_message(ChatMessage::system(
-                    "No active focus.\nUse `/focus start <goal> [|| constraints || definition-of-done]`.".to_string(),
-                )),
+                Ok(None) => show_command_info_popup(
+                    app,
+                    raw,
+                    "No active focus.\nUse `/focus start <goal> [|| constraints || definition-of-done]`."
+                        .to_string(),
+                ),
                 Err(e) => app.push_message(ChatMessage::error(e)),
             }
             return false;
@@ -3320,7 +3371,7 @@ Context Window: {max_context} tokens\n\n\
             "Suggested next steps: `/status`, `/history 10`, `/checkpoints`, `/review`."
                 .to_string(),
         );
-        app.push_message(ChatMessage::system(lines.join("\n")));
+        show_command_info_popup(app, raw, lines.join("\n"));
         return false;
     }
 
@@ -3340,7 +3391,7 @@ Context Window: {max_context} tokens\n\n\
         }
 
         refresh_context_budget_state(app);
-        app.push_message(ChatMessage::system(format_context_budget_report(app)));
+        show_command_info_popup(app, raw, format_context_budget_report(app));
         return false;
     }
 
@@ -3355,9 +3406,7 @@ Context Window: {max_context} tokens\n\n\
             .unwrap_or_else(|| PathBuf::from(&app.cwd));
         let files = collect_directory_files(&root, 4000);
         if files.is_empty() {
-            app.push_message(ChatMessage::system(
-                "No files found for workspace map.".to_string(),
-            ));
+            show_command_info_popup(app, raw, "No files found for workspace map.".to_string());
             return false;
         }
 
@@ -3400,7 +3449,7 @@ Context Window: {max_context} tokens\n\n\
                 lines.push(format!("  - `{entry}`"));
             }
         }
-        app.push_message(ChatMessage::system(lines.join("\n")));
+        show_command_info_popup(app, raw, lines.join("\n"));
         return false;
     }
 
@@ -3413,15 +3462,19 @@ Context Window: {max_context} tokens\n\n\
             .trim()
             .to_ascii_lowercase();
         if subcommand == "status" {
-            app.push_message(ChatMessage::system(format!(
-                "Autopilot: {}\nIteration cap: {}",
-                if app.autopilot_enabled {
-                    "enabled"
-                } else {
-                    "disabled"
-                },
-                app.iteration_cap
-            )));
+            show_command_info_popup(
+                app,
+                raw,
+                format!(
+                    "Autopilot: {}\nIteration cap: {}",
+                    if app.autopilot_enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                    app.iteration_cap
+                ),
+            );
             return false;
         }
         if subcommand == "start" {
@@ -3495,9 +3548,7 @@ Context Window: {max_context} tokens\n\n\
 
         if subcommand == "list" {
             if tasks.is_empty() {
-                app.push_message(ChatMessage::system(
-                    "No tasks.\nUse `/tasks add <title>`.".to_string(),
-                ));
+                show_command_info_popup(app, raw, "No tasks.\nUse `/tasks add <title>`.".to_string());
                 return false;
             }
             let mut lines = vec![format!("**Tasks ({})**", tasks.len()), String::new()];
@@ -3510,7 +3561,7 @@ Context Window: {max_context} tokens\n\n\
                     task.title
                 ));
             }
-            app.push_message(ChatMessage::system(lines.join("\n")));
+            show_command_info_popup(app, raw, lines.join("\n"));
             return false;
         }
 

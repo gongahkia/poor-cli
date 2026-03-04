@@ -49,6 +49,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::ProviderSelect {
         draw_provider_select(frame, app);
     }
+    if app.mode == AppMode::InfoPopup {
+        draw_info_popup(frame, app);
+    }
     if app.mode == AppMode::PermissionPrompt {
         draw_permission_prompt(frame, app);
     }
@@ -724,6 +727,35 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
             .padding(Padding::new(1, 1, 1, 1)),
     );
     frame.render_widget(list, area);
+}
+
+fn draw_info_popup(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(72, 72, frame.area());
+    frame.render_widget(Clear, area);
+
+    let title = if app.info_popup_title.trim().is_empty() {
+        " Info "
+    } else {
+        app.info_popup_title.as_str()
+    };
+
+    let popup = Paragraph::new(Text::from(app.info_popup_content.clone()))
+        .wrap(Wrap { trim: false })
+        .scroll((app.info_popup_scroll, 0))
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    format!(" {title} "),
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::accent(mode)))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
+    frame.render_widget(popup, area);
 }
 
 // ── Permission prompt overlay ────────────────────────────────────────
