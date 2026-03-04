@@ -368,6 +368,9 @@ class PoorCLIServer:
             "poor-cli/startHostServer": self.handle_start_host_server,
             "poor-cli/getHostServerStatus": self.handle_get_host_server_status,
             "poor-cli/stopHostServer": self.handle_stop_host_server,
+            "poor-cli/listHostMembers": self.handle_list_host_members,
+            "poor-cli/removeHostMember": self.handle_remove_host_member,
+            "poor-cli/setHostMemberRole": self.handle_set_host_member_role,
             "poor-cli/startService": self.handle_start_service,
             "poor-cli/stopService": self.handle_stop_service,
             "poor-cli/getServiceStatus": self.handle_get_service_status,
@@ -1858,6 +1861,22 @@ class PoorCLIServer:
 
         tokens: Dict[str, Dict[str, str]] = self._host_server.get_room_tokens()
         join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
+        member_count_by_room: Dict[str, int] = {}
+        if hasattr(self._host_server, "list_room_members"):
+            with contextlib.suppress(Exception):
+                member_snapshots = self._host_server.list_room_members(None)
+                if isinstance(member_snapshots, list):
+                    for room_entry in member_snapshots:
+                        if not isinstance(room_entry, dict):
+                            continue
+                        room_name = str(room_entry.get("name", "")).strip()
+                        if not room_name:
+                            continue
+                        try:
+                            member_count_by_room[room_name] = int(room_entry.get("memberCount", 0))
+                        except (TypeError, ValueError):
+                            member_count_by_room[room_name] = 0
+
         rooms: List[Dict[str, Any]] = []
         for room_name in sorted(tokens.keys()):
             role_map = tokens.get(room_name, {})
@@ -1891,6 +1910,7 @@ class PoorCLIServer:
                     "prompterJoinCommand": prompter_join_command,
                     "viewerInviteCode": viewer_invite_code,
                     "prompterInviteCode": prompter_invite_code,
+                    "memberCount": member_count_by_room.get(room_name, 0),
                 }
             )
 
@@ -2026,6 +2046,157 @@ class PoorCLIServer:
         async with self._host_server_lock:
             was_running = await self._shutdown_host_server_locked()
             return self._compose_host_server_payload(created=False, stopped=was_running)
+
+    def _host_room_names_locked(self) -> List[str]:
+        """Return active host room names (call while holding host lock)."""
+        if self._host_server is None:
+            return []
+
+        host_rooms = getattr(self._host_server, "rooms", {})
+        if isinstance(host_rooms, dict):
+            return sorted(str(name) for name in host_rooms.keys())
+        return sorted(str(name) for name in self._host_rooms)
+
+    def _resolve_host_room_name_locked(self, requested_room: str) -> str:
+        """Resolve room name for host-member controls (call while holding host lock)."""
+        room_names = self._host_room_names_locked()
+        if not room_names:
+            raise InvalidParamsError("No multiplayer host is currently running")
+
+        normalized = requested_room.strip()
+        if normalized:
+            if normalized not in room_names:
+                raise InvalidParamsError(
+                    f"Unknown room `{normalized}`. Available rooms: {', '.join(room_names)}"
+                )
+            return normalized
+
+        if len(room_names) == 1:
+            return room_names[0]
+        raise InvalidParamsError(
+            "Multiple rooms are active; specify one with `room`."
+        )
+
+    @staticmethod
+    def _normalize_member_role(raw_role: Any) -> str:
+        """Normalize role values used by host-member controls."""
+        role_name = str(raw_role or "").strip().lower()
+        if role_name in {"viewer", "read", "read-only"}:
+            return "viewer"
+        if role_name in {"prompter", "writer", "editor", "admin"}:
+            return "prompter"
+        raise InvalidParamsError("role must be one of: viewer, prompter")
+
+    async def handle_list_host_members(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        List connected members per room for the active in-process multiplayer host.
+
+        Params:
+            room: Optional room name filter.
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                return {"running": False, "rooms": []}
+
+            room_names = self._host_room_names_locked()
+            if requested_room and requested_room not in room_names:
+                raise InvalidParamsError(
+                    f"Unknown room `{requested_room}`. Available rooms: {', '.join(room_names)}"
+                )
+
+            host = self._host_server
+            if not hasattr(host, "list_room_members"):
+                raise RuntimeError("Active host does not support member listing")
+
+            rooms_payload = host.list_room_members(requested_room or None)
+            return {"running": True, "rooms": rooms_payload}
+
+    async def handle_remove_host_member(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove/disconnect a connected member from a host room.
+
+        Params:
+            connectionId: Target connection id
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "remove_room_member"):
+                raise RuntimeError("Active host does not support member removal")
+
+            removed = await host.remove_room_member(room_name, connection_id)
+            if not removed:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "removed": True,
+            }
+
+    async def handle_set_host_member_role(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update a connected member role for a host room.
+
+        Params:
+            connectionId: Target connection id
+            role: viewer | prompter
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        role_name = self._normalize_member_role(params.get("role"))
+        requested_room = str(params.get("room", "")).strip()
+
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "set_room_member_role"):
+                raise RuntimeError("Active host does not support role updates")
+
+            try:
+                updated = await host.set_room_member_role(room_name, connection_id, role_name)
+            except ValueError as error:
+                raise InvalidParamsError(str(error)) from error
+
+            if not updated:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "role": role_name,
+            }
 
     def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
         """Flatten nested dict/list/scalars into a dot-path list."""

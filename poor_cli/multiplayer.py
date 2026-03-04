@@ -12,6 +12,7 @@ import json
 import secrets
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from aiohttp import WSMsgType, web
@@ -40,6 +41,7 @@ class ConnectionState:
     initialized: bool = False
     client_name: str = ""
     inline_server: Any = None
+    joined_at: Optional[str] = None
 
 
 @dataclass
@@ -158,6 +160,104 @@ class MultiplayerHost:
                 role_map[invite.role] = invite.token
             output[room_name] = role_map
         return output
+
+    def list_room_members(self, room_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return structured room/member snapshots for host-side admin tooling."""
+        selected_rooms: List[str]
+        if room_name:
+            selected_rooms = [room_name] if room_name in self.rooms else []
+        else:
+            selected_rooms = sorted(self.rooms.keys())
+
+        output: List[Dict[str, Any]] = []
+        for selected_room in selected_rooms:
+            room = self.rooms.get(selected_room)
+            if room is None:
+                continue
+
+            members: List[Dict[str, Any]] = []
+            for connection_id, member in room.members.items():
+                members.append(
+                    {
+                        "connectionId": connection_id,
+                        "role": member.role or "unknown",
+                        "clientName": member.client_name,
+                        "initialized": member.initialized,
+                        "connected": not member.ws.closed,
+                        "active": room.active_connection_id == connection_id,
+                        "joinedAt": member.joined_at or "",
+                    }
+                )
+            members.sort(key=lambda entry: entry["connectionId"])
+            output.append(
+                {
+                    "name": selected_room,
+                    "memberCount": len(members),
+                    "members": members,
+                    "queueDepth": room.request_queue.qsize(),
+                    "activeConnectionId": room.active_connection_id or "",
+                }
+            )
+        return output
+
+    async def remove_room_member(self, room_name: str, connection_id: str) -> bool:
+        """Disconnect/remove a room member by connection id."""
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        member = room.members.pop(connection_id, None)
+        if member is None:
+            return False
+
+        self.connections.pop(connection_id, None)
+        if room.active_connection_id == connection_id:
+            room.active_connection_id = None
+
+        try:
+            await member.ws.close(code=4001, message=b"Removed by host")
+        except Exception:
+            pass
+
+        await self._broadcast_room_event(
+            room,
+            "member_removed",
+            actor=connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
+
+    async def set_room_member_role(self, room_name: str, connection_id: str, role: str) -> bool:
+        """Update a connected member role (viewer/prompter)."""
+        room = self.rooms.get(room_name)
+        if room is None:
+            return False
+
+        member = room.members.get(connection_id)
+        if member is None:
+            return False
+
+        normalized_role = role.strip().lower()
+        if normalized_role not in {"viewer", "prompter"}:
+            raise ValueError("role must be viewer or prompter")
+
+        member.role = normalized_role
+        notification = self.message_cls(
+            method="poor-cli/memberRoleUpdated",
+            params={
+                "room": room.name,
+                "connectionId": connection_id,
+                "role": normalized_role,
+            },
+        )
+        await self._broadcast_rpc(room, notification)
+        await self._broadcast_room_event(
+            room,
+            "member_role_updated",
+            actor=connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
+        return True
 
     async def start(self) -> None:
         """Start the HTTP/WebSocket host."""
@@ -405,6 +505,7 @@ class MultiplayerHost:
         conn.role = invite.role
         conn.room_name = room_name
         conn.client_name = client_name
+        conn.joined_at = datetime.now().isoformat()
 
         if not room.initialized:
             init_params = dict(params)

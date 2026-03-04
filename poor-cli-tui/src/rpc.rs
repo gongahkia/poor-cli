@@ -966,6 +966,48 @@ impl RpcClient {
         self.call("poor-cli/stopHostServer", Value::Object(Default::default()))
     }
 
+    pub fn list_host_members(&self, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/listHostMembers", Value::Object(params))
+    }
+
+    pub fn remove_host_member(
+        &self,
+        connection_id: &str,
+        room: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "connectionId".into(),
+            Value::String(connection_id.to_string()),
+        );
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/removeHostMember", Value::Object(params))
+    }
+
+    pub fn set_host_member_role(
+        &self,
+        connection_id: &str,
+        role: &str,
+        room: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "connectionId".into(),
+            Value::String(connection_id.to_string()),
+        );
+        params.insert("role".into(), Value::String(role.to_string()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/setHostMemberRole", Value::Object(params))
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {
@@ -1085,6 +1127,21 @@ pub enum RpcCommand {
         reply: SyncSender<Result<Value, String>>,
     },
     StopHostServer {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListHostMembers {
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    RemoveHostMember {
+        connection_id: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetHostMemberRole {
+        connection_id: String,
+        role: String,
+        room: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
     StartService {
@@ -1237,6 +1294,28 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::StopHostServer { reply }) => {
                 let _ = reply.send(client.stop_host_server());
+            }
+            Ok(RpcCommand::ListHostMembers { room, reply }) => {
+                let _ = reply.send(client.list_host_members(room.as_deref()));
+            }
+            Ok(RpcCommand::RemoveHostMember {
+                connection_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.remove_host_member(&connection_id, room.as_deref()));
+            }
+            Ok(RpcCommand::SetHostMemberRole {
+                connection_id,
+                role,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_host_member_role(
+                    &connection_id,
+                    &role,
+                    room.as_deref(),
+                ));
             }
             Ok(RpcCommand::StartService {
                 name,
