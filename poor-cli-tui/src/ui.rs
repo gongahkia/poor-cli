@@ -78,10 +78,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 .fg(theme::accent(mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            format!(" v{} ", app.version),
-            Style::default().fg(dim),
-        ),
+        Span::styled(format!(" v{} ", app.version), Style::default().fg(dim)),
         Span::styled("│ ", Style::default().fg(dim)),
         Span::styled(
             format!("{provider_upper}"),
@@ -89,15 +86,15 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 .fg(theme::system_color(mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            format!("/{model_display}"),
-            Style::default().fg(dim),
-        ),
+        Span::styled(format!("/{model_display}"), Style::default().fg(dim)),
     ];
 
     if app.streaming_enabled {
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled("streaming", Style::default().fg(theme::success(mode))));
+        spans.push(Span::styled(
+            "streaming",
+            Style::default().fg(theme::success(mode)),
+        ));
     }
 
     if app.is_local_provider {
@@ -173,7 +170,10 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         if remaining > 0 {
             spans.push(Span::raw(" ".repeat(remaining)));
         }
-        spans.push(Span::styled(right_text, Style::default().fg(theme::accent(mode))));
+        spans.push(Span::styled(
+            right_text,
+            Style::default().fg(theme::accent(mode)),
+        ));
     }
 
     let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style(mode));
@@ -776,9 +776,7 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
                     ("  ", Style::default().fg(theme::muted_fg(mode)))
                 }
             }
-            crate::app::PlanStepStatus::Running => {
-                ("⠋ ", Style::default().fg(theme::accent(mode)))
-            }
+            crate::app::PlanStepStatus::Running => ("⠋ ", Style::default().fg(theme::accent(mode))),
             crate::app::PlanStepStatus::Done => ("✓ ", Style::default().fg(theme::success(mode))),
             crate::app::PlanStepStatus::Skipped => {
                 ("✗ ", Style::default().fg(theme::muted_fg(mode)))

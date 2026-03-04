@@ -715,7 +715,8 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
     }
 
     if !unresolved_refs.is_empty() || !ambiguous_refs.is_empty() {
-        let mut lines = vec!["Cannot send message because one or more `@` references are invalid.".to_string()];
+        let mut lines =
+            vec!["Cannot send message because one or more `@` references are invalid.".to_string()];
         if !unresolved_refs.is_empty() {
             lines.push(format!(
                 "Unresolved: {}",
@@ -727,13 +728,14 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
             ));
         }
         if !ambiguous_refs.is_empty() {
-            lines.push(format!(
-                "Ambiguous: {}",
-                ambiguous_refs.join(" ; ")
-            ));
-            lines.push("Use a more specific path (or quote it) so each `@` maps to exactly one file.".to_string());
+            lines.push(format!("Ambiguous: {}", ambiguous_refs.join(" ; ")));
+            lines.push(
+                "Use a more specific path (or quote it) so each `@` maps to exactly one file."
+                    .to_string(),
+            );
         }
-        lines.push("Tip: paths with spaces must be quoted like `@\"docs/My File.md\"`.".to_string());
+        lines
+            .push("Tip: paths with spaces must be quoted like `@\"docs/My File.md\"`.".to_string());
         return Err(lines.join("\n"));
     }
 
@@ -905,10 +907,7 @@ fn extract_at_references(message: &str) -> Result<Vec<String>, String> {
 fn is_reference_boundary(previous: Option<char>) -> bool {
     match previous {
         None => true,
-        Some(ch) => {
-            ch.is_whitespace()
-                || matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '<')
-        }
+        Some(ch) => ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '<'),
     }
 }
 

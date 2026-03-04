@@ -2,7 +2,7 @@
 ///
 /// Parses a subset of markdown (headings, bold, italic, code blocks, inline code,
 /// lists, links) and converts them into styled `ratatui` `Line`/`Span` sequences.
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
 use crate::app::ThemeMode;

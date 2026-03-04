@@ -97,8 +97,12 @@ pub fn input_style(mode: ThemeMode) -> Style {
 
 pub fn input_cursor_style(mode: ThemeMode) -> Style {
     match mode {
-        ThemeMode::Dark => Style::default().fg(Color::Black).bg(Color::Rgb(100, 200, 255)),
-        ThemeMode::Light => Style::default().fg(Color::White).bg(Color::Rgb(0, 122, 204)),
+        ThemeMode::Dark => Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(100, 200, 255)),
+        ThemeMode::Light => Style::default()
+            .fg(Color::White)
+            .bg(Color::Rgb(0, 122, 204)),
     }
 }
 
@@ -190,10 +194,7 @@ pub fn list_bullet_style(mode: ThemeMode) -> Style {
 
 pub fn code_language_color(mode: ThemeMode, language: &str) -> Color {
     let normalized = language.trim().to_lowercase();
-    let group = if matches!(
-        normalized.as_str(),
-        "python" | "py" | "ruby" | "rb" | "lua"
-    ) {
+    let group = if matches!(normalized.as_str(), "python" | "py" | "ruby" | "rb" | "lua") {
         "python"
     } else if matches!(
         normalized.as_str(),
