@@ -771,6 +771,44 @@ fn handle_submit(
         );
     }
 
+    if let Some(bang_input) = parse_bang_command(trimmed) {
+        match rpc_execute_command_with_timeout_blocking(
+            rpc_cmd_tx,
+            &bang_input.command,
+            Some(BANG_COMMAND_TIMEOUT_SECS),
+            BANG_COMMAND_RESPONSE_TIMEOUT_SECS,
+        ) {
+            Ok(output) => {
+                let command_preview = truncate_block(&output, 1200);
+                app.push_message(ChatMessage::system(format!(
+                    "**Bash command executed:** `{}`\n```text\n{command_preview}\n```",
+                    bang_input.command
+                )));
+
+                let prompt_from_bash = build_bang_command_prompt(
+                    &bang_input.command,
+                    &output,
+                    bang_input.question.as_deref(),
+                );
+                let backend_message = with_pending_images(app, &prompt_from_bash);
+                let backend_message =
+                    apply_response_mode_to_user_input(app.response_mode, &backend_message);
+                send_chat_request(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    cancel_token,
+                    backend_message,
+                    trimmed.to_string(),
+                );
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Bash command failed: {e}\nTip: use `!<command> | <question>` to ask about command output, or `/run <command>` for raw output only."
+            ))),
+        }
+        return false;
+    }
+
     let backend_with_files = match with_context_files(app, trimmed) {
         Ok(message) => message,
         Err(error_message) => {
@@ -1260,6 +1298,65 @@ Cover important reasoning and tradeoffs when relevant."
     format!("{mode_instruction}\n\nUser request:\n{user_input}")
 }
 
+const BANG_COMMAND_MAX_OUTPUT_CHARS: usize = 16_000;
+const BANG_COMMAND_TIMEOUT_SECS: u64 = 120;
+const BANG_COMMAND_RESPONSE_TIMEOUT_SECS: u64 = 150;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BangCommandInput {
+    command: String,
+    question: Option<String>,
+}
+
+fn parse_bang_command(input: &str) -> Option<BangCommandInput> {
+    let trimmed = input.trim();
+    let payload = trimmed.strip_prefix('!')?.trim();
+    if payload.is_empty() {
+        None
+    } else {
+        let (command_raw, question_raw) = if let Some((command, question)) = payload.split_once('|')
+        {
+            (command.trim(), Some(question.trim()))
+        } else {
+            (payload, None)
+        };
+
+        if command_raw.is_empty() {
+            return None;
+        }
+
+        let question = question_raw
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string());
+
+        Some(BangCommandInput {
+            command: command_raw.to_string(),
+            question,
+        })
+    }
+}
+
+fn build_bang_command_prompt(command: &str, output: &str, question: Option<&str>) -> String {
+    let content = if output.trim().is_empty() {
+        "(command produced no output)"
+    } else {
+        output
+    };
+
+    let mut prompt = format!(
+        "I ran a local shell command and want help based on its output.\n\n\
+Command: `{command}`\n\n\
+Output:\n```text\n{}\n```",
+        truncate_block(content, BANG_COMMAND_MAX_OUTPUT_CHARS)
+    );
+
+    if let Some(user_question) = question.filter(|value| !value.trim().is_empty()) {
+        prompt.push_str(&format!("\n\nUser question: {user_question}"));
+    }
+
+    prompt
+}
+
 struct OnboardingStep {
     title: &'static str,
     objective: &'static str,
@@ -1443,6 +1540,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /use <name>                 Load and send saved prompt\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
+  !<command> [| question]  Run local bash and optionally ask about output\n\
   /copy                Copy last assistant response to clipboard\n\
   /onboarding ...      Guided walkthrough of core commands\n\
   /host-server ...     Start/share/manage host session and members\n\
@@ -5327,6 +5425,57 @@ mod tests {
         let rendered = format_onboarding_step(usize::MAX);
         assert!(rendered.contains("Onboarding"));
         assert!(rendered.contains("final step"));
+    }
+
+    #[test]
+    fn parse_bang_command_extracts_command_text() {
+        assert_eq!(
+            parse_bang_command("!cat README.md"),
+            Some(BangCommandInput {
+                command: "cat README.md".to_string(),
+                question: None,
+            })
+        );
+        assert_eq!(
+            parse_bang_command("   !ls -la   "),
+            Some(BangCommandInput {
+                command: "ls -la".to_string(),
+                question: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_bang_command_rejects_empty_or_non_bang_input() {
+        assert_eq!(parse_bang_command("!"), None);
+        assert_eq!(parse_bang_command("   !   "), None);
+        assert_eq!(parse_bang_command("!   | explain this"), None);
+        assert_eq!(parse_bang_command("/run ls"), None);
+    }
+
+    #[test]
+    fn build_bang_command_prompt_includes_command_and_output() {
+        let rendered = build_bang_command_prompt("cat file.txt", "hello\nworld", None);
+        assert!(rendered.contains("Command: `cat file.txt`"));
+        assert!(rendered.contains("hello"));
+        assert!(rendered.contains("```text"));
+    }
+
+    #[test]
+    fn parse_bang_command_extracts_optional_question() {
+        assert_eq!(
+            parse_bang_command("!cat README.md | summarize key points"),
+            Some(BangCommandInput {
+                command: "cat README.md".to_string(),
+                question: Some("summarize key points".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn build_bang_command_prompt_includes_optional_question() {
+        let rendered = build_bang_command_prompt("cat file.txt", "hello", Some("what is wrong?"));
+        assert!(rendered.contains("User question: what is wrong?"));
     }
 
     #[test]
