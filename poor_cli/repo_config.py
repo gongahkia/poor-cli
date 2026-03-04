@@ -156,6 +156,7 @@ class RepoConfig:
     HISTORY_LOCK_FILE = "history.lock"
     HISTORY_MIGRATION_MARKER_FILE = "history_migration_marker.json"
     PREFERENCES_FILE = "preferences.json"
+    PREFERENCES_LOCK_FILE = "preferences.lock"
 
     def __init__(
         self,
@@ -177,6 +178,7 @@ class RepoConfig:
         self.history_lock_file = self.config_dir / self.HISTORY_LOCK_FILE
         self.history_migration_marker_file = self.config_dir / self.HISTORY_MIGRATION_MARKER_FILE
         self.preferences_file = self.config_dir / self.PREFERENCES_FILE
+        self.preferences_lock_file = self.config_dir / self.PREFERENCES_LOCK_FILE
 
         # In-memory state
         self.preferences: RepoPreferences = RepoPreferences()
@@ -213,19 +215,21 @@ class RepoConfig:
     def _load_preferences(self) -> None:
         """Load preferences from file"""
         try:
-            if self.preferences_file.exists():
-                with open(self.preferences_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.preferences = RepoPreferences.from_dict(data)
-                logger.info(f"Loaded preferences from {self.preferences_file}")
-            else:
-                # Create default preferences
-                self.preferences = RepoPreferences(
-                    created_at=datetime.now().isoformat(),
-                    updated_at=datetime.now().isoformat()
-                )
-                self._save_preferences()
-                logger.info("Created default preferences")
+            with self._preferences_file_lock(exclusive=True):
+                if self.preferences_file.exists():
+                    with open(self.preferences_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    self.preferences = RepoPreferences.from_dict(data)
+                    logger.info(f"Loaded preferences from {self.preferences_file}")
+                else:
+                    # Create default preferences
+                    now = datetime.now().isoformat()
+                    self.preferences = RepoPreferences(
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    self._write_preferences_locked()
+                    logger.info("Created default preferences")
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in preferences file: {e}")
             raise ConfigurationError("Invalid preferences file format")
@@ -237,12 +241,34 @@ class RepoConfig:
         """Save preferences to file"""
         try:
             self.preferences.updated_at = datetime.now().isoformat()
-            with open(self.preferences_file, 'w', encoding='utf-8') as f:
-                json.dump(self.preferences.to_dict(), f, indent=2)
+            with self._preferences_file_lock(exclusive=True):
+                self._write_preferences_locked()
             logger.info(f"Saved preferences to {self.preferences_file}")
         except Exception as e:
             logger.error(f"Failed to save preferences: {e}")
             raise FileOperationError("Failed to save preferences", str(e))
+
+    def _write_preferences_locked(self) -> None:
+        """Write preferences atomically while holding preferences lock."""
+        temp_path: Optional[str] = None
+        try:
+            fd, temp_path = tempfile.mkstemp(
+                prefix=f"{self.PREFERENCES_FILE}.",
+                suffix=".tmp",
+                dir=self.config_dir,
+            )
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(self.preferences.to_dict(), f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, self.preferences_file)
+        except Exception:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+            raise
 
     def _load_history(self) -> None:
         """Load chat history from file"""
@@ -489,6 +515,23 @@ class RepoConfig:
 
         lock_mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
         with open(self.history_lock_file, 'a+', encoding='utf-8') as lock_file:
+            fcntl.flock(lock_file.fileno(), lock_mode)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _preferences_file_lock(self, exclusive: bool) -> Iterator[None]:
+        """Synchronize preferences file access across concurrent processes."""
+        self.preferences_lock_file.touch(exist_ok=True)
+
+        if fcntl is None:  # pragma: no cover - non-Unix fallback
+            yield
+            return
+
+        lock_mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        with open(self.preferences_lock_file, 'a+', encoding='utf-8') as lock_file:
             fcntl.flock(lock_file.fileno(), lock_mode)
             try:
                 yield
