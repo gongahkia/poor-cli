@@ -802,15 +802,58 @@ impl RpcClient {
         self.call("poor-cli/getApiKeyStatus", Value::Object(params))
     }
 
-    pub fn execute_command(&self, command: &str) -> Result<String, String> {
+    pub fn execute_command(&self, command: &str, timeout: Option<u64>) -> Result<String, String> {
         let mut params = serde_json::Map::new();
         params.insert("command".into(), Value::String(command.to_string()));
+        if let Some(timeout_secs) = timeout {
+            params.insert("timeout".into(), Value::Number(timeout_secs.into()));
+        }
         let val = self.call("poor-cli/executeCommand", Value::Object(params))?;
         Ok(val
             .get("output")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string())
+    }
+
+    pub fn start_service(
+        &self,
+        name: &str,
+        command: Option<&str>,
+        cwd: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        if let Some(command_text) = command {
+            params.insert("command".into(), Value::String(command_text.to_string()));
+        }
+        if let Some(cwd_text) = cwd {
+            params.insert("cwd".into(), Value::String(cwd_text.to_string()));
+        }
+        self.call("poor-cli/startService", Value::Object(params))
+    }
+
+    pub fn stop_service(&self, name: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        self.call("poor-cli/stopService", Value::Object(params))
+    }
+
+    pub fn get_service_status(&self, name: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(service_name) = name {
+            params.insert("name".into(), Value::String(service_name.to_string()));
+        }
+        self.call("poor-cli/getServiceStatus", Value::Object(params))
+    }
+
+    pub fn get_service_logs(&self, name: &str, lines: Option<u64>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        if let Some(line_count) = lines {
+            params.insert("lines".into(), Value::Number(line_count.into()));
+        }
+        self.call("poor-cli/getServiceLogs", Value::Object(params))
     }
 
     pub fn read_file(

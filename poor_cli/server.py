@@ -437,6 +437,8 @@ class PoorCLIServer:
         self.logger.info("Shutdown requested")
         async with self._host_server_lock:
             await self._shutdown_host_server_locked()
+        async with self._service_lock:
+            await self._shutdown_managed_services_locked()
         self._running = False
         return None
 
@@ -565,6 +567,7 @@ class PoorCLIServer:
 
         Params:
             command: Command to execute
+            timeout: Optional timeout in seconds (default 60, max 3600)
 
         Returns:
             output: Command output
@@ -573,7 +576,17 @@ class PoorCLIServer:
         self._ensure_initialized()
 
         command = params.get("command", "")
+        timeout = params.get("timeout")
+        if timeout is not None:
+            try:
+                timeout = int(timeout)
+            except (TypeError, ValueError) as e:
+                raise InvalidParamsError("timeout must be an integer") from e
+            timeout = max(1, min(timeout, 3600))
+
         tool_args = {"command": command}
+        if timeout is not None:
+            tool_args["timeout"] = timeout
 
         with log_context(tool_name="bash"):
             await self._enforce_server_tool_permission("bash", tool_args)
@@ -1300,6 +1313,437 @@ class PoorCLIServer:
             "format": export_format,
             "messageCount": len(messages),
             "sizeBytes": output_path.stat().st_size,
+        }
+
+    def _ensure_service_controls_available(self) -> None:
+        """Disallow service lifecycle controls from nested multiplayer room engines."""
+        if self._embedded_multiplayer_room:
+            raise InvalidParamsError(
+                "Service controls are unavailable inside multiplayer room sessions"
+            )
+
+    @staticmethod
+    def _normalize_service_name(raw_name: Any) -> str:
+        """Normalize and validate user-provided service names."""
+        service_name = str(raw_name or "").strip().lower()
+        if not service_name:
+            raise InvalidParamsError("Missing service name")
+
+        if not all(ch.isalnum() or ch in {"-", "_", "."} for ch in service_name):
+            raise InvalidParamsError(
+                "Service name must contain only letters, numbers, '-', '_' or '.'"
+            )
+        return service_name
+
+    @staticmethod
+    def _parse_service_command(raw_command: Any) -> List[str]:
+        """Parse a command (string or argv list) into argv parts."""
+        if raw_command is None:
+            return []
+
+        parts: List[str]
+        if isinstance(raw_command, str):
+            command_text = raw_command.strip()
+            if not command_text:
+                return []
+            try:
+                parts = shlex.split(command_text)
+            except ValueError as error:
+                raise InvalidParamsError(f"Invalid command syntax: {error}") from error
+        elif isinstance(raw_command, list):
+            parts = [str(item).strip() for item in raw_command if str(item).strip()]
+        else:
+            raise InvalidParamsError("command must be a string or a list of argv tokens")
+
+        if not parts:
+            raise InvalidParamsError("command cannot be empty")
+        return parts
+
+    @staticmethod
+    def _service_default_command(service_name: str) -> Optional[List[str]]:
+        """Return built-in command defaults for known local services."""
+        if service_name == "ollama":
+            return ["ollama", "serve"]
+        return None
+
+    @staticmethod
+    def _render_command_display(command_parts: List[str]) -> str:
+        """Render argv parts to a user-facing shell-safe display string."""
+        return " ".join(shlex.quote(part) for part in command_parts)
+
+    @staticmethod
+    def _resolve_service_executable(command_name: str) -> Optional[str]:
+        """Resolve a command to an executable path, if possible."""
+        if not command_name:
+            return None
+
+        command_path = Path(command_name).expanduser()
+        if "/" in command_name or command_path.is_absolute():
+            if command_path.exists():
+                return str(command_path)
+            return None
+
+        return shutil.which(command_name)
+
+    def _ollama_base_url(self) -> str:
+        """Resolve configured Ollama base URL with a safe default."""
+        default_base_url = "http://localhost:11434"
+        if self.core.config is None:
+            return default_base_url
+
+        provider_cfg = self.core.config.model.providers.get("ollama")
+        if provider_cfg is None:
+            return default_base_url
+        return str(provider_cfg.base_url or default_base_url).strip() or default_base_url
+
+    @staticmethod
+    def _is_tcp_endpoint_reachable(host: str, port: int, timeout_seconds: float = 0.8) -> bool:
+        """Cheap TCP readiness check used for local service health probes."""
+        try:
+            with socket.create_connection((host, port), timeout=timeout_seconds):
+                return True
+        except OSError:
+            return False
+
+    def _is_ollama_reachable(self, base_url: Optional[str] = None) -> bool:
+        """Check whether the configured Ollama endpoint is accepting TCP connections."""
+        target_url = (base_url or self._ollama_base_url()).strip()
+        parsed = urlparse(target_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port
+        if port is None:
+            port = 443 if parsed.scheme == "https" else 80
+        return self._is_tcp_endpoint_reachable(host, port)
+
+    async def _stop_managed_service_locked(
+        self,
+        service: ManagedServiceRuntime,
+        timeout_seconds: float = 5.0,
+    ) -> bool:
+        """Stop a managed service process and close log handles (lock must be held)."""
+        was_running = service.process.returncode is None
+
+        if was_running:
+            with contextlib.suppress(ProcessLookupError):
+                service.process.terminate()
+            try:
+                await asyncio.wait_for(service.process.wait(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    service.process.kill()
+                with contextlib.suppress(Exception):
+                    await service.process.wait()
+
+        if service.process.returncode is not None:
+            service.last_exit_code = service.process.returncode
+
+        if getattr(service, "log_handle", None) is not None:
+            with contextlib.suppress(Exception):
+                service.log_handle.flush()
+                service.log_handle.close()
+
+        return was_running
+
+    async def _shutdown_managed_services_locked(self) -> None:
+        """Stop every managed service (lock must be held)."""
+        for service in self._managed_services.values():
+            with contextlib.suppress(Exception):
+                await self._stop_managed_service_locked(service)
+        self._managed_services.clear()
+
+    def _service_payload_locked(
+        self,
+        service_name: str,
+        *,
+        created: bool = False,
+        stopped: bool = False,
+        message: str = "",
+    ) -> Dict[str, Any]:
+        """Build stable status payload for a managed/external service."""
+        managed = self._managed_services.get(service_name)
+        managed_running = False
+
+        payload: Dict[str, Any] = {
+            "service": service_name,
+            "running": False,
+            "managed": managed is not None,
+            "managedRunning": False,
+            "external": False,
+            "created": created,
+            "stopped": stopped,
+            "message": message,
+        }
+
+        default_command = self._service_default_command(service_name)
+        command_for_availability = (
+            managed.command if managed is not None else (default_command or [])
+        )
+        executable_path = (
+            self._resolve_service_executable(command_for_availability[0])
+            if command_for_availability
+            else None
+        )
+        payload["available"] = executable_path is not None
+        if executable_path is not None:
+            payload["executable"] = executable_path
+
+        if managed is not None:
+            managed_running = managed.process.returncode is None
+            if managed.process.returncode is not None and managed.last_exit_code is None:
+                managed.last_exit_code = managed.process.returncode
+
+            payload.update(
+                {
+                    "managedRunning": managed_running,
+                    "running": managed_running,
+                    "pid": managed.process.pid if managed_running else None,
+                    "command": managed.command_display,
+                    "cwd": managed.cwd,
+                    "logPath": str(managed.log_path),
+                    "startedAt": managed.started_at,
+                    "exitCode": managed.last_exit_code,
+                }
+            )
+        elif default_command is not None:
+            payload["command"] = self._render_command_display(default_command)
+            payload["logPath"] = str(self._service_logs_dir / f"{service_name}.log")
+
+        if service_name == "ollama":
+            base_url = self._ollama_base_url()
+            healthy = self._is_ollama_reachable(base_url)
+            external = healthy and not managed_running
+            payload["baseUrl"] = base_url
+            payload["healthy"] = healthy
+            payload["external"] = external
+            payload["running"] = managed_running or external
+
+        return payload
+
+    @staticmethod
+    def _tail_log_file(log_path: Path, line_count: int) -> str:
+        """Read the last N lines from a text log file."""
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            tail = deque(handle, maxlen=max(line_count, 1))
+        return "".join(tail).strip()
+
+    async def handle_start_service(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Start a managed local background service.
+
+        Params:
+            name: Service identifier (e.g. ollama)
+            command: Optional command string or argv array
+            cwd: Optional working directory
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        service_name = self._normalize_service_name(params.get("name"))
+        command_parts = self._parse_service_command(params.get("command"))
+        cwd_value: Optional[str] = None
+
+        raw_cwd = params.get("cwd")
+        if raw_cwd not in (None, ""):
+            cwd_path = self._resolve_path(str(raw_cwd))
+            if not cwd_path.is_dir():
+                raise InvalidParamsError(f"cwd is not a directory: {raw_cwd}")
+            cwd_value = str(cwd_path)
+
+        async with self._service_lock:
+            existing = self._managed_services.get(service_name)
+            if existing is not None and existing.process.returncode is None:
+                return self._service_payload_locked(
+                    service_name,
+                    created=False,
+                    stopped=False,
+                    message="Service is already running.",
+                )
+
+            if not command_parts:
+                if existing is not None and existing.command:
+                    command_parts = list(existing.command)
+                else:
+                    default_command = self._service_default_command(service_name)
+                    if default_command is not None:
+                        command_parts = list(default_command)
+
+            if not command_parts:
+                raise InvalidParamsError(
+                    "Missing command. Usage: /service start <name> <command...>"
+                )
+
+            if cwd_value is None and existing is not None and existing.cwd:
+                cwd_value = existing.cwd
+
+            executable_path = self._resolve_service_executable(command_parts[0])
+            if executable_path is None:
+                raise InvalidParamsError(
+                    f"Command not found for service '{service_name}': {command_parts[0]}"
+                )
+
+            if (
+                service_name == "ollama"
+                and self._is_ollama_reachable()
+                and (existing is None or existing.process.returncode is not None)
+            ):
+                return self._service_payload_locked(
+                    service_name,
+                    created=False,
+                    stopped=False,
+                    message="Ollama is already running (external to poor-cli).",
+                )
+
+            self._service_logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = self._service_logs_dir / f"{service_name}.log"
+
+            if existing is not None and getattr(existing, "log_handle", None) is not None:
+                with contextlib.suppress(Exception):
+                    existing.log_handle.flush()
+                    existing.log_handle.close()
+
+            log_handle = open(log_path, "ab")
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *command_parts,
+                    stdout=log_handle,
+                    stderr=asyncio.subprocess.STDOUT,
+                    cwd=cwd_value,
+                )
+            except Exception:
+                with contextlib.suppress(Exception):
+                    log_handle.close()
+                raise
+
+            runtime = ManagedServiceRuntime(
+                name=service_name,
+                command=list(command_parts),
+                command_display=self._render_command_display(command_parts),
+                cwd=cwd_value,
+                process=process,
+                log_path=log_path,
+                log_handle=log_handle,
+                started_at=datetime.now().isoformat(),
+            )
+            self._managed_services[service_name] = runtime
+
+            # Catch immediate launch failures and surface actionable output.
+            await asyncio.sleep(0.15)
+            if process.returncode is not None:
+                runtime.last_exit_code = process.returncode
+                await self._stop_managed_service_locked(runtime, timeout_seconds=0.1)
+                raise PoorCLIError(
+                    f"Service '{service_name}' exited immediately with code "
+                    f"{runtime.last_exit_code}. Check logs: {log_path}"
+                )
+
+            return self._service_payload_locked(
+                service_name,
+                created=True,
+                stopped=False,
+                message="Service started.",
+            )
+
+    async def handle_stop_service(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Stop a managed local background service.
+
+        Params:
+            name: Service identifier
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        service_name = self._normalize_service_name(params.get("name"))
+
+        async with self._service_lock:
+            service = self._managed_services.get(service_name)
+            if service is None:
+                payload = self._service_payload_locked(
+                    service_name,
+                    created=False,
+                    stopped=False,
+                    message="Service is not managed by poor-cli.",
+                )
+                if service_name == "ollama" and payload.get("external"):
+                    payload["message"] = (
+                        "Ollama is running externally and cannot be stopped by poor-cli."
+                    )
+                return payload
+
+            was_running = await self._stop_managed_service_locked(service)
+            return self._service_payload_locked(
+                service_name,
+                created=False,
+                stopped=was_running,
+                message="Service stopped." if was_running else "Service was already stopped.",
+            )
+
+    async def handle_get_service_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get service status for one service or all known services.
+
+        Params:
+            name: Optional service identifier filter
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        requested_name = str(params.get("name", "")).strip()
+        async with self._service_lock:
+            if requested_name:
+                service_name = self._normalize_service_name(requested_name)
+                return self._service_payload_locked(service_name)
+
+            names = set(self._managed_services.keys())
+            names.add("ollama")
+            return {
+                "services": [
+                    self._service_payload_locked(service_name)
+                    for service_name in sorted(names)
+                ]
+            }
+
+    async def handle_get_service_logs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return tail logs for a managed local service.
+
+        Params:
+            name: Service identifier
+            lines: Optional number of tail lines (default 80, max 500)
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        service_name = self._normalize_service_name(params.get("name"))
+        raw_lines = params.get("lines", 80)
+        try:
+            line_count = int(raw_lines)
+        except (TypeError, ValueError) as error:
+            raise InvalidParamsError("lines must be an integer") from error
+        line_count = max(1, min(line_count, 500))
+
+        async with self._service_lock:
+            payload = self._service_payload_locked(service_name)
+            service = self._managed_services.get(service_name)
+            if service is not None:
+                log_path = service.log_path
+            elif service_name == "ollama":
+                log_path = self._service_logs_dir / "ollama.log"
+            else:
+                raise InvalidParamsError(f"Unknown service: {service_name}")
+
+        exists = log_path.is_file()
+        content = ""
+        if exists:
+            content = self._tail_log_file(log_path, line_count)
+
+        return {
+            "service": service_name,
+            "lines": line_count,
+            "logPath": str(log_path),
+            "exists": exists,
+            "content": content,
+            "status": payload,
         }
 
     def _ensure_host_controls_available(self) -> None:
@@ -2114,6 +2558,9 @@ class PoorCLIServer:
         async with self._host_server_lock:
             with contextlib.suppress(Exception):
                 await self._shutdown_host_server_locked()
+        async with self._service_lock:
+            with contextlib.suppress(Exception):
+                await self._shutdown_managed_services_locked()
         self.logger.info("Stdio server stopped")
 
 
