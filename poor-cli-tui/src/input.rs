@@ -100,6 +100,46 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/doctor",
+        description: "Run environment and service health checks",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/focus",
+        description: "Manage persistent coding focus state",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/resume",
+        description: "Resume with branch/checkpoint/session summary",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/workspace-map",
+        description: "Summarize repository layout and hotspots",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/autopilot",
+        description: "Toggle bounded autonomous execution mode",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/tasks",
+        description: "Manage local task board",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/explain-diff",
+        description: "Explain behavior and risk in current diff",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/fix-failures",
+        description: "Analyze latest test/lint failure output",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/service",
         description: "Manage local background services",
         recommended: true,

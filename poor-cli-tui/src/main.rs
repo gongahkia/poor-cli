@@ -2,6 +2,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +17,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
@@ -65,6 +67,8 @@ enum ServerMsg {
         provider: String,
         model: String,
         version: String,
+        multiplayer_room: Option<String>,
+        multiplayer_role: Option<String>,
     },
     ChatResponse {
         content: String,
@@ -112,6 +116,23 @@ enum ServerMsg {
         input_tokens: u64,
         output_tokens: u64,
     },
+    RoomEvent {
+        room: String,
+        event_type: String,
+        actor: String,
+        request_id: String,
+        queue_depth: u64,
+        member_count: u64,
+        active_connection_id: String,
+        lobby_enabled: bool,
+        preset: String,
+        members: Value,
+    },
+    MemberRoleUpdated {
+        room: String,
+        connection_id: String,
+        role: String,
+    },
 }
 
 #[derive(Default)]
@@ -146,6 +167,23 @@ struct BackendLaunchContext {
     cwd: Option<String>,
     backend_log_path: Option<String>,
     session_log: Option<SessionLogWriter>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct FocusState {
+    goal: String,
+    constraints: String,
+    definition_of_done: String,
+    started_at: String,
+    completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskItem {
+    id: u64,
+    title: String,
+    done: bool,
+    created_at: String,
 }
 
 fn unix_ts_millis() -> u128 {
@@ -343,6 +381,39 @@ fn spawn_backend_worker(
                                 input_tokens,
                                 output_tokens,
                             },
+                            ServerNotification::RoomEvent {
+                                room,
+                                event_type,
+                                actor,
+                                request_id,
+                                queue_depth,
+                                member_count,
+                                active_connection_id,
+                                lobby_enabled,
+                                preset,
+                                members,
+                                ..
+                            } => ServerMsg::RoomEvent {
+                                room,
+                                event_type,
+                                actor,
+                                request_id,
+                                queue_depth,
+                                member_count,
+                                active_connection_id,
+                                lobby_enabled,
+                                preset,
+                                members,
+                            },
+                            ServerNotification::MemberRoleUpdated {
+                                room,
+                                connection_id,
+                                role,
+                            } => ServerMsg::MemberRoleUpdated {
+                                room,
+                                connection_id,
+                                role,
+                            },
                         };
                         if tx_notif.send(msg).is_err() {
                             break;
@@ -384,10 +455,24 @@ fn spawn_backend_worker(
                                     .unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
                             )
                         };
+                        let multiplayer_room = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/room"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let multiplayer_role = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/role"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         let _ = tx_init.send(ServerMsg::Initialized {
                             provider: prov,
                             model: mdl,
                             version: init.version.unwrap_or_else(|| "0.4.0".into()),
+                            multiplayer_room,
+                            multiplayer_role,
                         });
                         run_rpc_worker(client, rpc_cmd_rx);
                     }
@@ -489,12 +574,21 @@ fn run_app(
                     provider,
                     model,
                     version,
+                    multiplayer_room,
+                    multiplayer_role,
                 } => {
                     app.provider_name = provider;
                     app.model_name = model;
                     app.version = version;
                     app.server_connected = true;
                     app.is_local_provider = app.provider_name == "ollama";
+                    app.multiplayer_enabled = multiplayer_room.is_some();
+                    if let Some(room_name) = multiplayer_room {
+                        app.multiplayer_room = room_name;
+                    }
+                    if let Some(role_name) = multiplayer_role {
+                        app.multiplayer_role = role_name;
+                    }
                     app.update_welcome();
                     if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx) {
                         if let Some(raw_theme) = cfg.get("theme").and_then(|v| v.as_str()) {
@@ -624,6 +718,92 @@ fn run_app(
                     app.turn_output_tokens += output_tokens;
                     app.cumulative_input_tokens += input_tokens;
                     app.cumulative_output_tokens += output_tokens;
+                }
+                ServerMsg::RoomEvent {
+                    room,
+                    event_type,
+                    actor,
+                    request_id: _,
+                    queue_depth,
+                    member_count,
+                    active_connection_id,
+                    lobby_enabled,
+                    preset,
+                    members,
+                } => {
+                    app.multiplayer_enabled = true;
+                    app.multiplayer_room = room;
+                    app.multiplayer_queue_depth = queue_depth;
+                    app.multiplayer_member_count = member_count;
+                    app.multiplayer_active_connection_id = active_connection_id;
+                    app.multiplayer_lobby_enabled = lobby_enabled;
+                    app.multiplayer_preset = preset;
+                    if let Some(items) = members.as_array() {
+                        let mut summaries = Vec::new();
+                        for entry in items.iter().take(10) {
+                            let connection_id = entry
+                                .get("connectionId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let role = entry
+                                .get("role")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let approved = entry
+                                .get("approved")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true);
+                            let active = entry
+                                .get("active")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let mut label = format!("{connection_id}:{role}");
+                            if !approved {
+                                label.push_str(" (pending)");
+                            }
+                            if active {
+                                label.push_str(" *");
+                            }
+                            summaries.push(label);
+                        }
+                        app.multiplayer_member_roles = summaries;
+                    }
+                    let status = match event_type.as_str() {
+                        "queued" => format!("Room queue depth: {queue_depth}"),
+                        "started" => format!("Request started by `{actor}`"),
+                        "finished" => format!("Request finished by `{actor}`"),
+                        "member_joined" => format!("Member joined: `{actor}`"),
+                        "member_left" => format!("Member left: `{actor}`"),
+                        "member_pending" => format!("Pending approval: `{actor}`"),
+                        "member_approved" => format!("Member approved: `{actor}`"),
+                        "member_denied" => format!("Member denied: `{actor}`"),
+                        _ => format!("Room event: {event_type}"),
+                    };
+                    app.set_status(status);
+                }
+                ServerMsg::MemberRoleUpdated {
+                    room,
+                    connection_id,
+                    role,
+                } => {
+                    app.multiplayer_enabled = true;
+                    if !room.is_empty() {
+                        app.multiplayer_room = room;
+                    }
+                    let prefix = format!("{connection_id}:");
+                    let mut updated = false;
+                    for entry in &mut app.multiplayer_member_roles {
+                        if entry.starts_with(&prefix) {
+                            *entry = format!("{connection_id}:{role}");
+                            updated = true;
+                            break;
+                        }
+                    }
+                    if !updated {
+                        app.multiplayer_member_roles
+                            .push(format!("{connection_id}:{role}"));
+                    }
+                    app.set_status(format!("Role updated: `{connection_id}` -> {role}"));
                 }
             }
         }
@@ -4671,6 +4851,117 @@ fn truncate_block(text: &str, max_chars: usize) -> String {
         out.push(ch);
     }
     out
+}
+
+fn command_data_dir(app: &App) -> PathBuf {
+    Path::new(&app.cwd).join(".poor-cli")
+}
+
+fn focus_state_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("focus.json")
+}
+
+fn load_focus_state(app: &App) -> Result<Option<FocusState>, String> {
+    let path = focus_state_path(app);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read focus state: {e}"))?;
+    let state: FocusState =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid focus state: {e}"))?;
+    Ok(Some(state))
+}
+
+fn save_focus_state(app: &App, state: &FocusState) -> Result<(), String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
+    let path = focus_state_path(app);
+    let serialized = serde_json::to_string_pretty(state)
+        .map_err(|e| format!("Failed to serialize focus state: {e}"))?;
+    fs::write(path, serialized).map_err(|e| format!("Failed to persist focus state: {e}"))
+}
+
+fn tasks_state_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("tasks.json")
+}
+
+fn load_tasks(app: &App) -> Result<Vec<TaskItem>, String> {
+    let path = tasks_state_path(app);
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read tasks: {e}"))?;
+    let tasks: Vec<TaskItem> =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid tasks file: {e}"))?;
+    Ok(tasks)
+}
+
+fn save_tasks(app: &App, tasks: &[TaskItem]) -> Result<(), String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
+    let path = tasks_state_path(app);
+    let serialized =
+        serde_json::to_string_pretty(tasks).map_err(|e| format!("Failed to serialize tasks: {e}"))?;
+    fs::write(path, serialized).map_err(|e| format!("Failed to write tasks file: {e}"))
+}
+
+fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
+    let trimmed = url.trim();
+    let (without_scheme, default_port) = if let Some(rest) = trimmed.strip_prefix("ws://") {
+        (rest, 80u16)
+    } else if let Some(rest) = trimmed.strip_prefix("wss://") {
+        (rest, 443u16)
+    } else {
+        return Err("URL must start with ws:// or wss://".to_string());
+    };
+
+    let authority = without_scheme.split('/').next().unwrap_or("").trim();
+    if authority.is_empty() {
+        return Err("URL is missing host".to_string());
+    }
+
+    if authority.starts_with('[') {
+        if let Some(close_idx) = authority.find(']') {
+            let host = authority[1..close_idx].to_string();
+            let remainder = authority[close_idx + 1..].trim();
+            let port = if let Some(port_text) = remainder.strip_prefix(':') {
+                port_text
+                    .parse::<u16>()
+                    .map_err(|_| "Invalid URL port".to_string())?
+            } else {
+                default_port
+            };
+            return Ok((host, port));
+        }
+        return Err("Invalid IPv6 URL host".to_string());
+    }
+
+    if let Some((host, port_text)) = authority.rsplit_once(':') {
+        if host.contains(':') {
+            return Ok((authority.to_string(), default_port));
+        }
+        let port = port_text
+            .parse::<u16>()
+            .map_err(|_| "Invalid URL port".to_string())?;
+        return Ok((host.to_string(), port));
+    }
+
+    Ok((authority.to_string(), default_port))
+}
+
+fn preflight_join_endpoint(url: &str) -> Result<String, String> {
+    let (host, port) = ws_url_host_port(url)?;
+    let addr_text = format!("{host}:{port}");
+    let mut addrs = addr_text
+        .to_socket_addrs()
+        .map_err(|e| format!("Could not resolve `{host}`: {e}"))?;
+    let target = addrs
+        .next()
+        .ok_or_else(|| format!("No reachable address found for `{host}`"))?;
+    TcpStream::connect_timeout(&target, Duration::from_secs(2))
+        .map_err(|e| format!("Could not reach {addr_text}: {e}"))?;
+    Ok(format!("Preflight OK: reachable {addr_text}"))
 }
 
 fn last_assistant_message(app: &App) -> Option<String> {

@@ -214,6 +214,24 @@ pub enum ServerNotification {
         output_tokens: u64,
         estimated_cost: f64,
     },
+    RoomEvent {
+        room: String,
+        event_type: String,
+        request_id: String,
+        actor: String,
+        queue_depth: u64,
+        member_count: u64,
+        active_connection_id: String,
+        lobby_enabled: bool,
+        preset: String,
+        members: Value,
+        details: Value,
+    },
+    MemberRoleUpdated {
+        room: String,
+        connection_id: String,
+        role: String,
+    },
 }
 
 // ── RPC Client ───────────────────────────────────────────────────────
@@ -380,6 +398,69 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .get("estimatedCost")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
+        }),
+        "poor-cli/roomEvent" => Some(ServerNotification::RoomEvent {
+            room: params
+                .get("room")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            event_type: params
+                .get("eventType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            actor: params
+                .get("actor")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            queue_depth: params
+                .get("queueDepth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            member_count: params
+                .get("memberCount")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            active_connection_id: params
+                .get("activeConnectionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            lobby_enabled: params
+                .get("lobbyEnabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            preset: params
+                .get("preset")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            members: params.get("members").cloned().unwrap_or(Value::Null),
+            details: params.get("details").cloned().unwrap_or(Value::Null),
+        }),
+        "poor-cli/memberRoleUpdated" => Some(ServerNotification::MemberRoleUpdated {
+            room: params
+                .get("room")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            connection_id: params
+                .get("connectionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            role: params
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         }),
         _ => None,
     }
@@ -1008,6 +1089,99 @@ impl RpcClient {
         self.call("poor-cli/setHostMemberRole", Value::Object(params))
     }
 
+    pub fn set_host_lobby(&self, enabled: bool, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("enabled".into(), Value::Bool(enabled));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/setHostLobby", Value::Object(params))
+    }
+
+    pub fn approve_host_member(
+        &self,
+        connection_id: &str,
+        room: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "connectionId".into(),
+            Value::String(connection_id.to_string()),
+        );
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/approveHostMember", Value::Object(params))
+    }
+
+    pub fn deny_host_member(
+        &self,
+        connection_id: &str,
+        room: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "connectionId".into(),
+            Value::String(connection_id.to_string()),
+        );
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/denyHostMember", Value::Object(params))
+    }
+
+    pub fn rotate_host_token(&self, role: &str, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("role".into(), Value::String(role.to_string()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/rotateHostToken", Value::Object(params))
+    }
+
+    pub fn revoke_host_token(&self, value: &str, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("value".into(), Value::String(value.to_string()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/revokeHostToken", Value::Object(params))
+    }
+
+    pub fn handoff_host_member(
+        &self,
+        connection_id: &str,
+        room: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "connectionId".into(),
+            Value::String(connection_id.to_string()),
+        );
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/handoffHostMember", Value::Object(params))
+    }
+
+    pub fn set_host_preset(&self, preset: &str, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("preset".into(), Value::String(preset.to_string()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/setHostPreset", Value::Object(params))
+    }
+
+    pub fn list_host_activity(&self, room: Option<&str>, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("limit".into(), Value::Number(limit.into()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/listHostActivity", Value::Object(params))
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {
@@ -1142,6 +1316,46 @@ pub enum RpcCommand {
         connection_id: String,
         role: String,
         room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetHostLobby {
+        enabled: bool,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ApproveHostMember {
+        connection_id: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    DenyHostMember {
+        connection_id: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    RotateHostToken {
+        role: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    RevokeHostToken {
+        value: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    HandoffHostMember {
+        connection_id: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetHostPreset {
+        preset: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListHostActivity {
+        room: Option<String>,
+        limit: u64,
         reply: SyncSender<Result<Value, String>>,
     },
     StartService {
@@ -1313,6 +1527,50 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }) => {
                 let _ =
                     reply.send(client.set_host_member_role(&connection_id, &role, room.as_deref()));
+            }
+            Ok(RpcCommand::SetHostLobby {
+                enabled,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_host_lobby(enabled, room.as_deref()));
+            }
+            Ok(RpcCommand::ApproveHostMember {
+                connection_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.approve_host_member(&connection_id, room.as_deref()));
+            }
+            Ok(RpcCommand::DenyHostMember {
+                connection_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.deny_host_member(&connection_id, room.as_deref()));
+            }
+            Ok(RpcCommand::RotateHostToken { role, room, reply }) => {
+                let _ = reply.send(client.rotate_host_token(&role, room.as_deref()));
+            }
+            Ok(RpcCommand::RevokeHostToken { value, room, reply }) => {
+                let _ = reply.send(client.revoke_host_token(&value, room.as_deref()));
+            }
+            Ok(RpcCommand::HandoffHostMember {
+                connection_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.handoff_host_member(&connection_id, room.as_deref()));
+            }
+            Ok(RpcCommand::SetHostPreset {
+                preset,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_host_preset(&preset, room.as_deref()));
+            }
+            Ok(RpcCommand::ListHostActivity { room, limit, reply }) => {
+                let _ = reply.send(client.list_host_activity(room.as_deref(), limit));
             }
             Ok(RpcCommand::StartService {
                 name,
