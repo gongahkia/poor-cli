@@ -519,6 +519,47 @@ class TestPoorCLIServer:
         assert Path(spawn_args[0]).name == "ollama"
         assert spawn_args[1] == "serve"
 
+    def test_list_ollama_models_parses_and_deduplicates(self, server):
+        """Installed model names are extracted from /api/tags payload."""
+        payload = {
+            "models": [
+                {"name": "llama2:7b"},
+                {"name": "mistral:7b"},
+                {"name": "llama2:7b"},
+                {"name": ""},
+                {},
+            ]
+        }
+        fake_response = MagicMock()
+        fake_response.read.return_value = json.dumps(payload).encode("utf-8")
+        fake_context = MagicMock()
+        fake_context.__enter__.return_value = fake_response
+        fake_context.__exit__.return_value = False
+
+        with patch("poor_cli.server.urlopen", return_value=fake_context):
+            models = server._list_ollama_models("http://localhost:11434")
+
+        assert models == ["llama2:7b", "mistral:7b"]
+
+    @pytest.mark.asyncio
+    async def test_handle_list_providers_prefers_installed_ollama_models(self, server):
+        """Provider listing surfaces live Ollama models when endpoint is reachable."""
+        from poor_cli.providers.provider_factory import ProviderFactory
+
+        fake_providers = {"ollama": object(), "openai": object()}
+        fake_info = {"available": True}
+
+        with (
+            patch.object(ProviderFactory, "list_providers", return_value=fake_providers),
+            patch.object(ProviderFactory, "get_provider_info", return_value=fake_info),
+            patch.object(server, "_is_ollama_reachable", return_value=True),
+            patch.object(server, "_list_ollama_models", return_value=["llama2:7b"]),
+        ):
+            providers = await server.handle_list_providers({})
+
+        assert providers["ollama"]["models"] == ["llama2:7b"]
+        assert providers["openai"]["models"] == ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
+
     @pytest.mark.asyncio
     async def test_list_sessions_serializes_active_and_completed(self, server):
         """Session listing returns active marker and message counts."""

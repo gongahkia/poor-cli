@@ -26,6 +26,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from .config import PermissionMode
 from .core import PoorCLICore, CoreEvent
@@ -668,6 +669,11 @@ class PoorCLIServer:
         from .providers.provider_factory import ProviderFactory
 
         result: Dict[str, Any] = {}
+        ollama_models: List[str] = []
+        ollama_base_url = self._ollama_base_url()
+        if self._is_ollama_reachable(ollama_base_url):
+            ollama_models = self._list_ollama_models(ollama_base_url)
+
         for name, cls in ProviderFactory.list_providers().items():
             info = ProviderFactory.get_provider_info(name) or {}
             # Provide default model suggestions per provider
@@ -676,7 +682,9 @@ class PoorCLIServer:
                 "openai": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
                 "anthropic": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
                 "claude": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
-                "ollama": ["llama3", "codellama", "mistral", "phi3"],
+                "ollama": ollama_models
+                if ollama_models
+                else ["llama3", "codellama", "mistral", "phi3"],
             }
             result[name] = {
                 "available": info.get("available", True),
@@ -1462,6 +1470,36 @@ class PoorCLIServer:
         if port is None:
             port = 443 if parsed.scheme == "https" else 80
         return self._is_tcp_endpoint_reachable(host, port)
+
+    def _list_ollama_models(self, base_url: Optional[str] = None) -> List[str]:
+        """Fetch installed Ollama models from /api/tags."""
+        target_url = (base_url or self._ollama_base_url()).rstrip("/")
+        if not target_url:
+            return []
+
+        request = Request(f"{target_url}/api/tags", headers={"Accept": "application/json"})
+        try:
+            with urlopen(request, timeout=2.0) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        except Exception:
+            return []
+
+        models: List[str] = []
+        for entry in payload.get("models", []):
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if isinstance(name, str) and name.strip():
+                models.append(name.strip())
+
+        deduped: List[str] = []
+        seen = set()
+        for model in models:
+            if model in seen:
+                continue
+            seen.add(model)
+            deduped.append(model)
+        return deduped
 
     async def _stop_managed_service_locked(
         self,
