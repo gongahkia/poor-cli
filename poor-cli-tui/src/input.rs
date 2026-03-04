@@ -40,6 +40,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/onboarding",
+        description: "Start guided CLI onboarding",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/review",
         description: "Review code or staged diff",
         recommended: true,
@@ -86,12 +91,82 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     },
     SlashCommandSpec {
         command: "/host-server",
-        description: "Start/share multiplayer host session",
+        description: "Start/share/manage multiplayer host session",
         recommended: true,
     },
     SlashCommandSpec {
         command: "/join-server",
         description: "Join multiplayer host by invite code",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/doctor",
+        description: "Run environment and service health checks",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/focus",
+        description: "Manage persistent coding focus state",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/resume",
+        description: "Resume with branch/checkpoint/session summary",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/workspace-map",
+        description: "Summarize repository layout and hotspots",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/bootstrap",
+        description: "Detect project type and suggest quickstart commands",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/context-budget",
+        description: "Rank context files against a token budget",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/autopilot",
+        description: "Toggle bounded autonomous execution mode",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/qa",
+        description: "Run background QA watch for lint/tests",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/profile",
+        description: "Set execution profile (speed|safe|deep-review)",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/tasks",
+        description: "Manage local task board",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/explain-diff",
+        description: "Explain behavior and risk in current diff",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/fix-failures",
+        description: "Analyze latest test/lint failure output",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/service",
+        description: "Manage local background services",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/ollama",
+        description: "Manage Ollama service and models",
         recommended: true,
     },
     SlashCommandSpec {
@@ -829,12 +904,14 @@ mod tests {
         app.input_buffer = "/pro".to_string();
         app.input_cursor = app.input_buffer.len();
         app.mode = AppMode::Command;
+        let matches = command_palette_matches("/pro");
+        assert!(matches.len() >= 2);
+        let expected = matches[1].command.to_string();
 
-        // `/pro` currently has: /provider, /providers, /prompts.
         handle_key_normal(&mut app, key_down());
         let action = handle_key_normal(&mut app, key_enter());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.input_buffer, "/providers");
+        assert_eq!(app.input_buffer, expected);
     }
 }

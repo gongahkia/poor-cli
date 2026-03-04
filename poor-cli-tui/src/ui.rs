@@ -528,7 +528,39 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
         }
         spans
     } else {
-        vec![
+        let mut spans = Vec::new();
+        if app.multiplayer_enabled {
+            let room = if app.multiplayer_room.is_empty() {
+                "?"
+            } else {
+                &app.multiplayer_room
+            };
+            let role = if app.multiplayer_role.is_empty() {
+                "?"
+            } else {
+                &app.multiplayer_role
+            };
+            spans.push(Span::styled(
+                format!(
+                    "  mp:{room}/{role} members:{} queue:{}  ",
+                    app.multiplayer_member_count, app.multiplayer_queue_depth
+                ),
+                Style::default().fg(theme::accent(mode)),
+            ));
+        }
+        if !app.execution_profile.is_empty() {
+            spans.push(Span::styled(
+                format!(" profile:{}  ", app.execution_profile),
+                Style::default().fg(theme::system_color(mode)),
+            ));
+        }
+        if app.qa_mode_enabled {
+            spans.push(Span::styled(
+                " qa:running  ",
+                Style::default().fg(theme::success(mode)),
+            ));
+        }
+        spans.extend(vec![
             Span::styled("  /help", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("  /quit", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("  /switch", Style::default().fg(theme::muted_fg(mode))),
@@ -542,7 +574,8 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": history", Style::default().fg(theme::muted_fg(mode))),
-        ]
+        ]);
+        spans
     };
 
     let hint = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));

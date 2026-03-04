@@ -223,6 +223,29 @@ pub struct App {
     pub pending_images: Vec<String>,
     pub pinned_context_files: Vec<String>,
     pub pending_prompt_save_name: Option<String>,
+    pub onboarding_active: bool,
+    pub onboarding_step: usize,
+    pub join_wizard_active: bool,
+    pub join_wizard_step: u8,
+    pub join_wizard_url: String,
+    pub join_wizard_room: String,
+    pub autopilot_enabled: bool,
+    pub last_command_output: Option<String>,
+    pub execution_profile: String,
+    pub context_budget_tokens: usize,
+    pub context_budget_files: Vec<String>,
+    pub context_budget_estimated_tokens: usize,
+    pub qa_mode_enabled: bool,
+    pub qa_command: String,
+    pub multiplayer_enabled: bool,
+    pub multiplayer_room: String,
+    pub multiplayer_role: String,
+    pub multiplayer_queue_depth: u64,
+    pub multiplayer_member_count: u64,
+    pub multiplayer_active_connection_id: String,
+    pub multiplayer_lobby_enabled: bool,
+    pub multiplayer_preset: String,
+    pub multiplayer_member_roles: Vec<String>,
 
     // ── Streaming / agentic state ───
     pub streaming_message: Option<usize>, // index of in-progress assistant message
@@ -283,6 +306,29 @@ impl Default for App {
             pending_images: Vec::new(),
             pinned_context_files: Vec::new(),
             pending_prompt_save_name: None,
+            onboarding_active: false,
+            onboarding_step: 0,
+            join_wizard_active: false,
+            join_wizard_step: 0,
+            join_wizard_url: String::new(),
+            join_wizard_room: String::new(),
+            autopilot_enabled: false,
+            last_command_output: None,
+            execution_profile: "safe".to_string(),
+            context_budget_tokens: 6000,
+            context_budget_files: Vec::new(),
+            context_budget_estimated_tokens: 0,
+            qa_mode_enabled: false,
+            qa_command: String::new(),
+            multiplayer_enabled: false,
+            multiplayer_room: String::new(),
+            multiplayer_role: String::new(),
+            multiplayer_queue_depth: 0,
+            multiplayer_member_count: 0,
+            multiplayer_active_connection_id: String::new(),
+            multiplayer_lobby_enabled: false,
+            multiplayer_preset: String::new(),
+            multiplayer_member_roles: Vec::new(),
             streaming_message: None,
             current_iteration: 0,
             iteration_cap: 25,
@@ -318,6 +364,7 @@ impl App {
             AI-powered coding assistant in your terminal\n\n\
             Commands:\n  \
             /help         Show all commands\n  \
+            /onboarding   Interactive command walkthrough\n  \
             /switch       Switch AI provider\n  \
             /providers    List all providers\n  \
             /quit         Exit\n\n\

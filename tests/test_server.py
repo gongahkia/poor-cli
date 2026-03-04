@@ -4,6 +4,7 @@ Tests for the JSON-RPC server.
 
 import json
 import os
+import sys
 import pytest
 from collections import deque
 from pathlib import Path
@@ -15,6 +16,7 @@ from poor_cli.server import (
     PoorCLIServer,
     JsonRpcMessage,
     JsonRpcError,
+    InvalidParamsError,
     _sanitize_exception_message,
     main,
 )
@@ -73,6 +75,20 @@ class _FakeMultiplayerHost:
         self.default_permission_mode = default_permission_mode
         self.started = False
         self.stopped = False
+        self.room_members = {
+            room: [
+                {
+                    "connectionId": f"{room}-viewer",
+                    "role": "viewer",
+                    "clientName": f"{room}-client",
+                    "initialized": True,
+                    "connected": True,
+                    "active": False,
+                    "joinedAt": "now",
+                }
+            ]
+            for room in self.room_names
+        }
         _FakeMultiplayerHost.instances.append(self)
 
     async def start(self):
@@ -89,6 +105,58 @@ class _FakeMultiplayerHost:
             }
             for room in self.room_names
         }
+
+    def list_room_members(self, room_name=None):
+        names = [room_name] if room_name else list(self.room_members.keys())
+        payload = []
+        for name in names:
+            members = [dict(member) for member in self.room_members.get(name, [])]
+            payload.append(
+                {
+                    "name": name,
+                    "memberCount": len(members),
+                    "members": members,
+                    "queueDepth": 0,
+                    "activeConnectionId": "",
+                }
+            )
+        return payload
+
+    async def remove_room_member(self, room_name, connection_id):
+        members = self.room_members.get(room_name, [])
+        before = len(members)
+        self.room_members[room_name] = [
+            member for member in members if member.get("connectionId") != connection_id
+        ]
+        return len(self.room_members[room_name]) != before
+
+    async def set_room_member_role(self, room_name, connection_id, role):
+        for member in self.room_members.get(room_name, []):
+            if member.get("connectionId") == connection_id:
+                member["role"] = role
+                return True
+        return False
+
+
+class _FakeManagedProcess:
+    def __init__(self, pid: int = 4321):
+        self.pid = pid
+        self.returncode = None
+        self.terminated = False
+        self.killed = False
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = 0
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+    async def wait(self):
+        if self.returncode is None:
+            self.returncode = 0
+        return self.returncode
 
 
 class TestJsonRpcMessage:
@@ -269,6 +337,13 @@ class TestPoorCLIServer:
             "poor-cli/startHostServer",
             "poor-cli/getHostServerStatus",
             "poor-cli/stopHostServer",
+            "poor-cli/listHostMembers",
+            "poor-cli/removeHostMember",
+            "poor-cli/setHostMemberRole",
+            "poor-cli/startService",
+            "poor-cli/stopService",
+            "poor-cli/getServiceStatus",
+            "poor-cli/getServiceLogs",
         ]
 
         for method in required:
@@ -281,7 +356,10 @@ class TestPoorCLIServer:
         _FakeMultiplayerHost.instances.clear()
 
         with (
-            patch("poor_cli.multiplayer.MultiplayerHost", _FakeMultiplayerHost),
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
             patch.object(server, "_is_port_bindable", return_value=True),
             patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
         ):
@@ -308,7 +386,10 @@ class TestPoorCLIServer:
         _FakeMultiplayerHost.instances.clear()
 
         with (
-            patch("poor_cli.multiplayer.MultiplayerHost", _FakeMultiplayerHost),
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
             patch.object(server, "_is_port_bindable", return_value=True),
             patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
         ):
@@ -319,6 +400,124 @@ class TestPoorCLIServer:
         assert first["created"] is True
         assert second["created"] is False
         assert len(_FakeMultiplayerHost.instances) == 1
+
+    @pytest.mark.asyncio
+    async def test_host_member_admin_controls_list_role_remove(self, server):
+        """Host admin handlers can list members, change role, and remove users."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            await server.handle_start_host_server({"room": "dev", "port": 8765})
+            members = await server.handle_list_host_members({})
+            assert members["running"] is True
+            assert members["rooms"][0]["name"] == "dev"
+            assert members["rooms"][0]["memberCount"] == 1
+
+            target_id = members["rooms"][0]["members"][0]["connectionId"]
+            role_update = await server.handle_set_host_member_role(
+                {"connectionId": target_id, "role": "prompter"}
+            )
+            assert role_update["success"] is True
+            assert role_update["role"] == "prompter"
+
+            removed = await server.handle_remove_host_member({"connectionId": target_id})
+            assert removed["success"] is True
+            assert removed["removed"] is True
+
+            refreshed = await server.handle_list_host_members({"room": "dev"})
+            assert refreshed["rooms"][0]["memberCount"] == 0
+            await server.handle_stop_host_server({})
+
+    @pytest.mark.asyncio
+    async def test_host_member_role_requires_explicit_room_when_multiple_rooms(self, server):
+        """Role updates without room are rejected when multiple rooms are active."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            await server.handle_start_host_server({"rooms": ["dev", "docs"], "port": 8765})
+
+            with pytest.raises(InvalidParamsError):
+                await server.handle_set_host_member_role(
+                    {"connectionId": "dev-viewer", "role": "prompter"}
+                )
+
+            await server.handle_stop_host_server({})
+
+    @pytest.mark.asyncio
+    async def test_service_lifecycle_start_status_logs_stop(self, server, tmp_path):
+        """Managed service controls expose start/status/logs/stop over RPC handlers."""
+        server.initialized = True
+        fake_process = _FakeManagedProcess()
+        spawn_mock = AsyncMock(return_value=fake_process)
+
+        with (
+            patch.object(server, "_service_logs_dir", tmp_path / "services"),
+            patch.object(server, "_resolve_service_executable", return_value="/usr/bin/fake"),
+            patch("poor_cli.server.asyncio.create_subprocess_exec", spawn_mock),
+            patch.object(server, "_is_ollama_reachable", return_value=False),
+            patch("poor_cli.server.asyncio.sleep", AsyncMock(return_value=None)),
+        ):
+            started = await server.handle_start_service(
+                {"name": "demo", "command": "demo-server --port 9000"}
+            )
+            status = await server.handle_get_service_status({"name": "demo"})
+
+            log_path = Path(started["logPath"])
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text("line-1\nline-2\nline-3\n", encoding="utf-8")
+            logs = await server.handle_get_service_logs({"name": "demo", "lines": 2})
+            stopped = await server.handle_stop_service({"name": "demo"})
+
+        assert started["service"] == "demo"
+        assert started["running"] is True
+        assert started["managed"] is True
+        assert started["created"] is True
+        assert status["running"] is True
+        assert "line-2" in logs["content"]
+        assert "line-3" in logs["content"]
+        assert stopped["stopped"] is True
+        assert stopped["running"] is False
+        assert fake_process.terminated is True
+
+    @pytest.mark.asyncio
+    async def test_start_service_ollama_uses_default_command(self, server, tmp_path):
+        """Ollama service can be started without an explicit command string."""
+        server.initialized = True
+        fake_process = _FakeManagedProcess(pid=9999)
+        spawn_mock = AsyncMock(return_value=fake_process)
+
+        with (
+            patch.object(server, "_service_logs_dir", tmp_path / "services"),
+            patch.object(server, "_resolve_service_executable", return_value="/usr/bin/ollama"),
+            patch.object(server, "_is_ollama_reachable", return_value=False),
+            patch("poor_cli.server.asyncio.create_subprocess_exec", spawn_mock),
+            patch("poor_cli.server.asyncio.sleep", AsyncMock(return_value=None)),
+        ):
+            started = await server.handle_start_service({"name": "ollama"})
+            await server.handle_stop_service({"name": "ollama"})
+
+        assert started["service"] == "ollama"
+        assert started["running"] is True
+        assert started["created"] is True
+        spawn_args = spawn_mock.await_args.args
+        assert spawn_args[0] == "ollama"
+        assert spawn_args[1] == "serve"
 
     @pytest.mark.asyncio
     async def test_list_sessions_serializes_active_and_completed(self, server):

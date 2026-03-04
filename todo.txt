@@ -1,3 +1,165 @@
-test everything works if it should be working
-take screenshots
-update entire readme with new project details
+poor-cli Backlog: Multiplayer Adoption + Solo Terminal-Agent Excellence
+
+Priority rollout order:
+1) MP-01..MP-04
+2) SOLO-02, SOLO-03, SOLO-09
+3) MP-05..MP-08
+4) Remaining SOLO items
+
+Public interface additions (planned commands and notifications)
+
+Multiplayer commands
+- [x] /host-server share [viewer|prompter] [room]
+- [x] /join-server (interactive wizard when args omitted)
+- [x] /host-server lobby [on|off]
+- [x] /host-server approve <connection-id> [room]
+- [x] /host-server deny <connection-id> [room]
+- [x] /host-server rotate-token <viewer|prompter> [room]
+- [x] /host-server revoke <token|connection-id> [room]
+- [x] /host-server handoff <connection-id> [room]
+- [x] /host-server activity [room] [limit]
+- [x] /host-server preset <pairing|mob|review> [room]
+
+Multiplayer TUI notifications
+- [x] Parse and render poor-cli/roomEvent in TUI
+- [x] Parse and render poor-cli/memberRoleUpdated in TUI
+- [x] Presence HUD in TUI (members, active requester, queue depth, role badges)
+
+Solo commands
+- [x] /doctor
+- [x] /focus start|status|done
+- [x] /resume
+- [x] /workspace-map [path]
+- [x] /autopilot start|stop|status
+- [x] /tasks
+- [x] /explain-diff [file]
+- [x] /fix-failures
+
+Multiplayer adoption backlog
+
+MP-01 One-command share UX
+- [x] Add /host-server share command that prints role-specific join command(s)
+- [x] Include copy-friendly invite code and url|room|token form
+- [x] Include optional QR payload block for easy mobile/secondary device handoff
+- [x] Add tests for share payload formatting and room/role filtering
+
+MP-02 Join wizard and preflight
+- [x] Support /join-server with no args by entering guided flow
+- [x] Prompt for url, room, token in TUI and validate non-empty inputs
+- [x] Run preflight reachability check before reconnecting backend
+- [x] Add clear failure messages with suggested fixes
+- [x] Add tests for wizard parsing, validation, and reconnect behavior
+
+MP-03 Lobby approvals
+- [x] Add pending-member state in multiplayer host runtime
+- [x] Add host controls: /host-server approve and /host-server deny
+- [x] Block pending members from request queue until approved
+- [x] Emit explicit room events for pending, approved, denied transitions
+- [x] Add tests for pending/approved/denied lifecycle and enforcement
+
+MP-04 Presence HUD and queue transparency
+- [x] Surface live room state in TUI (room, members, roles, queue depth, active requester)
+- [x] Use roomEvent and memberRoleUpdated notifications as primary source
+- [x] Show compact status in normal view and detailed table in /host-server members
+- [x] Add tests for notification parsing and state rendering logic
+
+MP-05 Token lifecycle controls
+- [x] Add rotate-token for viewer/prompter per room
+- [x] Add revoke by token and by connection id
+- [x] Add optional token expiry metadata support
+- [x] Ensure revoked/expired tokens cannot initialize connections
+- [x] Add tests for rotation/revocation/expiry enforcement
+
+MP-06 Role handoff
+- [x] Add /host-server handoff <connection-id> [room]
+- [x] Promote target to prompter and demote previous prompter to viewer atomically
+- [x] Emit role update events to all clients
+- [x] Add tests for single-prompter invariant and handoff race edge cases
+
+MP-07 Presets
+- [x] Add /host-server preset pairing|mob|review [room]
+- [x] Define preset defaults for lobby behavior, token policy, and queue guidance
+- [x] Expose active preset in host status payload and TUI status
+- [x] Add tests for preset application and idempotency
+
+MP-08 Activity log
+- [x] Persist room activity events (join/leave/kick/role/request queued/start/finish)
+- [x] Add /host-server activity [room] [limit]
+- [x] Add filtering and bounded history retention
+- [x] Add tests for event ordering, truncation, and room scoping
+
+Solo experience backlog
+
+SOLO-01 Project bootstrap wizard
+- [x] Detect repo type (python/rust/js/mixed) and suggest best first commands
+- [x] Integrate with onboarding as "solo quickstart"
+- [x] Add tests for project type detection and recommendation output
+
+SOLO-02 Persistent focus mode
+- [x] Implement /focus start|status|done with persisted goal/constraints/definition-of-done
+- [x] Store focus state in .poor-cli metadata and load on session start
+- [x] Add tests for state persistence and transitions
+
+SOLO-03 Fast resume
+- [x] Implement /resume snapshot: last session summary + git branch/diff + pending checkpoints
+- [x] Include recommended next actions
+- [x] Add tests for resume report generation with/without prior state
+
+SOLO-04 Workspace map
+- [x] Implement /workspace-map [path] to build lightweight code index
+- [x] Include key modules, entrypoints, test roots, and dependency hints
+- [x] Add tests for indexing and output stability
+
+SOLO-05 Failure loop assistant
+- [x] Implement /fix-failures to parse latest lint/test output and rank likely fixes
+- [x] Integrate with /test and /run outputs as input sources
+- [x] Add tests for parser robustness and ranking output format
+
+SOLO-06 Tasks board
+- [x] Implement /tasks for local backlog CRUD in TUI
+- [x] Optional links to checkpoint ids and branch names
+- [x] Add tests for task persistence and command behavior
+
+SOLO-07 Autopilot with guardrails
+- [x] Implement /autopilot start|stop|status with step caps and approval boundaries
+- [x] Add hard stop rules on risky ops unless explicitly approved
+- [x] Add tests for guardrail enforcement and stop/resume behavior
+
+SOLO-08 Better diff cognition
+- [x] Implement /explain-diff [file] to summarize behavioral impact and test gaps
+- [x] Integrate with staged and unstaged changes
+- [x] Add tests for diff parsing and explanation sections
+
+SOLO-09 Reliability doctor
+- [x] Implement /doctor checks: provider keys, local services, permission mode, core deps
+- [x] Emit actionable remediation commands per failing check
+- [x] Add tests for healthy and degraded scenarios
+
+SOLO-10 Smart context budgeter
+- [x] Auto-select and rank context files for token-efficient prompting
+- [x] Expose selected files and budget in status output
+- [x] Add tests for selection heuristics and deterministic behavior
+
+SOLO-11 Continuous background QA mode
+- [x] Extend watch mode to optionally run incremental lint/tests in background
+- [x] Show pass/fail deltas and quick links to failures
+- [x] Add tests for watcher behavior and incremental execution triggers
+
+SOLO-12 Personalization profiles
+- [x] Add profiles (speed, safe, deep-review) with command/config defaults
+- [x] Implement profile switch and status visibility
+- [x] Add tests for profile mapping and persisted config updates
+
+Cross-cutting test scenarios and acceptance checks
+- [x] Multiplayer happy path: host start -> share -> join -> lobby approve -> prompt -> handoff -> rotate token
+- [x] Multiplayer safety: invalid/expired/revoked token, denied join, viewer permission enforcement, role propagation
+- [x] Multiplayer UX: room events render with correct queue depth and actor ids
+- [x] Solo flow: bootstrap -> focus set -> coding loop -> checkpoint -> fix failures -> resume
+- [x] Solo reliability: /doctor catches missing api keys, dead local services, permission mismatch
+- [x] Performance: presence HUD and workspace map do not degrade interactive latency
+
+Assumptions and defaults
+- [x] Keep role model as viewer/prompter only (no new role types in first pass)
+- [x] Keep serialized queue execution model for multiplayer
+- [x] Use this todo.txt as immediate backlog source of truth
+- [x] Prioritize terminal-native workflows over IDE-style abstractions

@@ -11,7 +11,7 @@ RUFF := $(VENV)/bin/ruff
 MYPY := $(VENV)/bin/mypy
 POORCLI := $(VENV)/bin/poor-cli
 
-.PHONY: help venv setup check-env run run-module run-cli test lint import-graph typecheck tui
+.PHONY: help venv setup check-env run run-module run-cli test lint import-graph typecheck tui acceptance
 
 help:
 	@echo "Available targets:"
@@ -24,6 +24,7 @@ help:
 	@echo "  make import-graph  Run import graph check"
 	@echo "  make typecheck     Run mypy poor_cli --no-error-summary"
 	@echo "  make tui           Run Rust TUI via ./run_tui.sh"
+	@echo "  make acceptance    Run acceptance prep + manual walkthrough guide"
 
 venv:
 	@if [ ! -x "$(PY)" ]; then \
@@ -68,3 +69,6 @@ typecheck: setup
 
 tui:
 	./run_tui.sh
+
+acceptance:
+	./scripts/acceptance_walkthrough.sh

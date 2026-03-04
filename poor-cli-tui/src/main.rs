@@ -2,6 +2,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +17,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
@@ -65,6 +67,8 @@ enum ServerMsg {
         provider: String,
         model: String,
         version: String,
+        multiplayer_room: Option<String>,
+        multiplayer_role: Option<String>,
     },
     ChatResponse {
         content: String,
@@ -112,6 +116,23 @@ enum ServerMsg {
         input_tokens: u64,
         output_tokens: u64,
     },
+    RoomEvent {
+        room: String,
+        event_type: String,
+        actor: String,
+        request_id: String,
+        queue_depth: u64,
+        member_count: u64,
+        active_connection_id: String,
+        lobby_enabled: bool,
+        preset: String,
+        members: Value,
+    },
+    MemberRoleUpdated {
+        room: String,
+        connection_id: String,
+        role: String,
+    },
 }
 
 #[derive(Default)]
@@ -138,6 +159,32 @@ impl WatchState {
     }
 }
 
+#[derive(Default)]
+struct QaWatchState {
+    stop_flag: Option<Arc<AtomicBool>>,
+    handle: Option<thread::JoinHandle<()>>,
+    directory: Option<String>,
+    command: Option<String>,
+}
+
+impl QaWatchState {
+    fn is_running(&self) -> bool {
+        self.handle.is_some()
+    }
+
+    fn stop(&mut self) {
+        if let Some(flag) = &self.stop_flag {
+            flag.store(true, Ordering::SeqCst);
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+        self.stop_flag = None;
+        self.directory = None;
+        self.command = None;
+    }
+}
+
 type SessionLogWriter = Arc<Mutex<fs::File>>;
 
 #[derive(Clone)]
@@ -146,6 +193,28 @@ struct BackendLaunchContext {
     cwd: Option<String>,
     backend_log_path: Option<String>,
     session_log: Option<SessionLogWriter>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct FocusState {
+    goal: String,
+    constraints: String,
+    definition_of_done: String,
+    started_at: String,
+    completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TaskItem {
+    id: u64,
+    title: String,
+    done: bool,
+    created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProfileState {
+    name: String,
 }
 
 fn unix_ts_millis() -> u128 {
@@ -250,6 +319,36 @@ fn build_bridge_server_args(url: &str, room: &str, token: &str) -> Vec<String> {
     ]
 }
 
+fn reconnect_to_remote_server(
+    app: &mut App,
+    tx: &mpsc::Sender<ServerMsg>,
+    rpc_cmd_tx: &mut mpsc::Sender<RpcCommand>,
+    launch: &BackendLaunchContext,
+    url: &str,
+    room: &str,
+    token: &str,
+) {
+    let bridge_args = build_bridge_server_args(url, room, token);
+    write_session_log(
+        launch.session_log.as_ref(),
+        &format!("join_server_request url={url} room={room}"),
+    );
+
+    let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
+    app.server_connected = false;
+    app.finalize_streaming();
+    app.stop_waiting();
+    app.multiplayer_enabled = true;
+    app.multiplayer_room = room.to_string();
+    app.multiplayer_role.clear();
+    app.push_message(ChatMessage::system(format!(
+        "Joining multiplayer server `{url}` room `{room}`..."
+    )));
+    app.set_status("Reconnecting backend in join mode");
+
+    *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
+}
+
 fn spawn_backend_worker(
     tx: &mpsc::Sender<ServerMsg>,
     launch: BackendLaunchContext,
@@ -343,6 +442,39 @@ fn spawn_backend_worker(
                                 input_tokens,
                                 output_tokens,
                             },
+                            ServerNotification::RoomEvent {
+                                room,
+                                event_type,
+                                actor,
+                                request_id,
+                                queue_depth,
+                                member_count,
+                                active_connection_id,
+                                lobby_enabled,
+                                preset,
+                                members,
+                                ..
+                            } => ServerMsg::RoomEvent {
+                                room,
+                                event_type,
+                                actor,
+                                request_id,
+                                queue_depth,
+                                member_count,
+                                active_connection_id,
+                                lobby_enabled,
+                                preset,
+                                members,
+                            },
+                            ServerNotification::MemberRoleUpdated {
+                                room,
+                                connection_id,
+                                role,
+                            } => ServerMsg::MemberRoleUpdated {
+                                room,
+                                connection_id,
+                                role,
+                            },
                         };
                         if tx_notif.send(msg).is_err() {
                             break;
@@ -384,10 +516,24 @@ fn spawn_backend_worker(
                                     .unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
                             )
                         };
+                        let multiplayer_room = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/room"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let multiplayer_role = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/role"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         let _ = tx_init.send(ServerMsg::Initialized {
                             provider: prov,
                             model: mdl,
                             version: init.version.unwrap_or_else(|| "0.4.0".into()),
+                            multiplayer_room,
+                            multiplayer_role,
                         });
                         run_rpc_worker(client, rpc_cmd_rx);
                     }
@@ -468,6 +614,10 @@ fn run_app(
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
     app.add_welcome();
+    if let Ok(Some(saved_profile)) = load_profile_state(&app) {
+        let _ = apply_execution_profile(&mut app, &rpc_cmd_tx, &saved_profile.name, false);
+    }
+    refresh_context_budget_state(&mut app);
     if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
     {
         app.push_message(ChatMessage::system(format!(
@@ -479,6 +629,7 @@ fn run_app(
 
     let cancel_token: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let mut watch_state = WatchState::default();
+    let mut qa_watch_state = QaWatchState::default();
 
     loop {
         terminal.draw(|f| ui::draw(f, &app))?;
@@ -489,12 +640,21 @@ fn run_app(
                     provider,
                     model,
                     version,
+                    multiplayer_room,
+                    multiplayer_role,
                 } => {
                     app.provider_name = provider;
                     app.model_name = model;
                     app.version = version;
                     app.server_connected = true;
                     app.is_local_provider = app.provider_name == "ollama";
+                    app.multiplayer_enabled = multiplayer_room.is_some();
+                    if let Some(room_name) = multiplayer_room {
+                        app.multiplayer_room = room_name;
+                    }
+                    if let Some(role_name) = multiplayer_role {
+                        app.multiplayer_role = role_name;
+                    }
                     app.update_welcome();
                     if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx) {
                         if let Some(raw_theme) = cfg.get("theme").and_then(|v| v.as_str()) {
@@ -625,6 +785,92 @@ fn run_app(
                     app.cumulative_input_tokens += input_tokens;
                     app.cumulative_output_tokens += output_tokens;
                 }
+                ServerMsg::RoomEvent {
+                    room,
+                    event_type,
+                    actor,
+                    request_id: _,
+                    queue_depth,
+                    member_count,
+                    active_connection_id,
+                    lobby_enabled,
+                    preset,
+                    members,
+                } => {
+                    app.multiplayer_enabled = true;
+                    app.multiplayer_room = room;
+                    app.multiplayer_queue_depth = queue_depth;
+                    app.multiplayer_member_count = member_count;
+                    app.multiplayer_active_connection_id = active_connection_id;
+                    app.multiplayer_lobby_enabled = lobby_enabled;
+                    app.multiplayer_preset = preset;
+                    if let Some(items) = members.as_array() {
+                        let mut summaries = Vec::new();
+                        for entry in items.iter().take(10) {
+                            let connection_id = entry
+                                .get("connectionId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let role = entry
+                                .get("role")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let approved = entry
+                                .get("approved")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true);
+                            let active = entry
+                                .get("active")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let mut label = format!("{connection_id}:{role}");
+                            if !approved {
+                                label.push_str(" (pending)");
+                            }
+                            if active {
+                                label.push_str(" *");
+                            }
+                            summaries.push(label);
+                        }
+                        app.multiplayer_member_roles = summaries;
+                    }
+                    let status = match event_type.as_str() {
+                        "queued" => format!("Room queue depth: {queue_depth}"),
+                        "started" => format!("Request started by `{actor}`"),
+                        "finished" => format!("Request finished by `{actor}`"),
+                        "member_joined" => format!("Member joined: `{actor}`"),
+                        "member_left" => format!("Member left: `{actor}`"),
+                        "member_pending" => format!("Pending approval: `{actor}`"),
+                        "member_approved" => format!("Member approved: `{actor}`"),
+                        "member_denied" => format!("Member denied: `{actor}`"),
+                        _ => format!("Room event: {event_type}"),
+                    };
+                    app.set_status(status);
+                }
+                ServerMsg::MemberRoleUpdated {
+                    room,
+                    connection_id,
+                    role,
+                } => {
+                    app.multiplayer_enabled = true;
+                    if !room.is_empty() {
+                        app.multiplayer_room = room;
+                    }
+                    let prefix = format!("{connection_id}:");
+                    let mut updated = false;
+                    for entry in &mut app.multiplayer_member_roles {
+                        if entry.starts_with(&prefix) {
+                            *entry = format!("{connection_id}:{role}");
+                            updated = true;
+                            break;
+                        }
+                    }
+                    if !updated {
+                        app.multiplayer_member_roles
+                            .push(format!("{connection_id}:{role}"));
+                    }
+                    app.set_status(format!("Role updated: `{connection_id}` -> {role}"));
+                }
             }
         }
 
@@ -642,6 +888,7 @@ fn run_app(
                         &launch,
                         &cancel_token,
                         &mut watch_state,
+                        &mut qa_watch_state,
                         &text,
                     ) {
                         break;
@@ -724,6 +971,7 @@ fn run_app(
     }
 
     watch_state.stop();
+    qa_watch_state.stop();
     let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
     write_session_log(session_log.as_ref(), "tui_session_end");
     Ok(app.session_summary_text())
@@ -738,11 +986,71 @@ fn handle_submit(
     launch: &BackendLaunchContext,
     cancel_token: &Arc<AtomicBool>,
     watch_state: &mut WatchState,
+    qa_watch_state: &mut QaWatchState,
     text: &str,
 ) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return false;
+    }
+
+    if app.join_wizard_active && !trimmed.starts_with('/') {
+        match app.join_wizard_step {
+            0 => {
+                match preflight_join_endpoint(trimmed) {
+                    Ok(ok_message) => {
+                        app.join_wizard_url = trimmed.to_string();
+                        app.join_wizard_step = 1;
+                        app.push_message(ChatMessage::system(format!(
+                            "{ok_message}\n\nStep 2/3: Enter room name."
+                        )));
+                    }
+                    Err(e) => {
+                        app.push_message(ChatMessage::error(format!(
+                            "Join preflight failed: {e}\nRe-enter WebSocket URL (ws:// or wss://), or run `/join-server cancel`."
+                        )));
+                    }
+                }
+                return false;
+            }
+            1 => {
+                if trimmed.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "Room name cannot be empty. Enter room name, or `/join-server cancel`."
+                            .to_string(),
+                    ));
+                    return false;
+                }
+                app.join_wizard_room = trimmed.to_string();
+                app.join_wizard_step = 2;
+                app.push_message(ChatMessage::system(
+                    "Step 3/3: Enter invite token.".to_string(),
+                ));
+                return false;
+            }
+            2 => {
+                if trimmed.is_empty() {
+                    app.push_message(ChatMessage::system(
+                        "Invite token cannot be empty. Enter token, or `/join-server cancel`."
+                            .to_string(),
+                    ));
+                    return false;
+                }
+                let url = app.join_wizard_url.clone();
+                let room = app.join_wizard_room.clone();
+                let token = trimmed.to_string();
+                app.join_wizard_active = false;
+                app.join_wizard_step = 0;
+                app.join_wizard_url.clear();
+                app.join_wizard_room.clear();
+                reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+                return false;
+            }
+            _ => {
+                app.join_wizard_active = false;
+                app.join_wizard_step = 0;
+            }
+        }
     }
 
     if let Some(prompt_name) = app.pending_prompt_save_name.clone() {
@@ -767,10 +1075,51 @@ fn handle_submit(
             launch,
             cancel_token,
             watch_state,
+            qa_watch_state,
             trimmed,
         );
     }
 
+    if let Some(bang_input) = parse_bang_command(trimmed) {
+        match rpc_execute_command_with_timeout_blocking(
+            rpc_cmd_tx,
+            &bang_input.command,
+            Some(BANG_COMMAND_TIMEOUT_SECS),
+            BANG_COMMAND_RESPONSE_TIMEOUT_SECS,
+        ) {
+            Ok(output) => {
+                app.last_command_output = Some(output.clone());
+                let command_preview = truncate_block(&output, 1200);
+                app.push_message(ChatMessage::system(format!(
+                    "**Bash command executed:** `{}`\n```text\n{command_preview}\n```",
+                    bang_input.command
+                )));
+
+                let prompt_from_bash = build_bang_command_prompt(
+                    &bang_input.command,
+                    &output,
+                    bang_input.question.as_deref(),
+                );
+                let backend_message = with_pending_images(app, &prompt_from_bash);
+                let backend_message =
+                    apply_response_mode_to_user_input(app.response_mode, &backend_message);
+                send_chat_request(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    cancel_token,
+                    backend_message,
+                    trimmed.to_string(),
+                );
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Bash command failed: {e}\nTip: use `!<command> | <question>` to ask about command output, or `/run <command>` for raw output only."
+            ))),
+        }
+        return false;
+    }
+
+    refresh_context_budget_state(app);
     let backend_with_files = match with_context_files(app, trimmed) {
         Ok(message) => message,
         Err(error_message) => {
@@ -936,6 +1285,27 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         }
     }
 
+    if resolved.is_empty()
+        && inline_specs.is_empty()
+        && app.pinned_context_files.is_empty()
+        && !app.context_budget_files.is_empty()
+    {
+        for relative in app.context_budget_files.iter().take(6) {
+            let path = if Path::new(relative).is_absolute() {
+                PathBuf::from(relative)
+            } else {
+                Path::new(&app.cwd).join(relative)
+            };
+            if !path.is_file() {
+                continue;
+            }
+            let key = path.to_string_lossy().to_string();
+            if seen_paths.insert(key) {
+                resolved.push(path);
+            }
+        }
+    }
+
     if resolved.is_empty() {
         return Ok(message.to_string());
     }
@@ -989,15 +1359,22 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         .collect::<Vec<_>>()
         .join(", ");
     let extra = attached.len().saturating_sub(3);
+    let source_label = if inline_specs.is_empty() && app.pinned_context_files.is_empty() {
+        "auto-selected context budget files"
+    } else {
+        "@ references and pinned files"
+    };
     if extra > 0 {
         app.set_status(format!(
-            "Attached {} file refs via @ and pinned files ({attached_summary}, +{extra} more)",
-            attached.len()
+            "Attached {} {} ({attached_summary}, +{extra} more)",
+            attached.len(),
+            source_label
         ));
     } else {
         app.set_status(format!(
-            "Attached {} file refs via @ and pinned files ({attached_summary})",
-            attached.len()
+            "Attached {} {} ({attached_summary})",
+            attached.len(),
+            source_label
         ));
     }
 
@@ -1260,6 +1637,171 @@ Cover important reasoning and tradeoffs when relevant."
     format!("{mode_instruction}\n\nUser request:\n{user_input}")
 }
 
+const BANG_COMMAND_MAX_OUTPUT_CHARS: usize = 16_000;
+const BANG_COMMAND_TIMEOUT_SECS: u64 = 120;
+const BANG_COMMAND_RESPONSE_TIMEOUT_SECS: u64 = 150;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BangCommandInput {
+    command: String,
+    question: Option<String>,
+}
+
+fn parse_bang_command(input: &str) -> Option<BangCommandInput> {
+    let trimmed = input.trim();
+    let payload = trimmed.strip_prefix('!')?.trim();
+    if payload.is_empty() {
+        None
+    } else {
+        let (command_raw, question_raw) = if let Some((command, question)) = payload.split_once('|')
+        {
+            (command.trim(), Some(question.trim()))
+        } else {
+            (payload, None)
+        };
+
+        if command_raw.is_empty() {
+            return None;
+        }
+
+        let question = question_raw
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string());
+
+        Some(BangCommandInput {
+            command: command_raw.to_string(),
+            question,
+        })
+    }
+}
+
+fn build_bang_command_prompt(command: &str, output: &str, question: Option<&str>) -> String {
+    let content = if output.trim().is_empty() {
+        "(command produced no output)"
+    } else {
+        output
+    };
+
+    let mut prompt = format!(
+        "I ran a local shell command and want help based on its output.\n\n\
+Command: `{command}`\n\n\
+Output:\n```text\n{}\n```",
+        truncate_block(content, BANG_COMMAND_MAX_OUTPUT_CHARS)
+    );
+
+    if let Some(user_question) = question.filter(|value| !value.trim().is_empty()) {
+        prompt.push_str(&format!("\n\nUser question: {user_question}"));
+    }
+
+    prompt
+}
+
+struct OnboardingStep {
+    title: &'static str,
+    objective: &'static str,
+    commands: &'static [&'static str],
+    try_now: &'static str,
+}
+
+const ONBOARDING_STEPS: &[OnboardingStep] = &[
+    OnboardingStep {
+        title: "Get Oriented",
+        objective:
+            "Start with visibility into your session and where to find command docs quickly.",
+        commands: &[
+            "/help",
+            "/status",
+            "/bootstrap",
+            "/profile status",
+            "/search <term>",
+        ],
+        try_now: "/bootstrap",
+    },
+    OnboardingStep {
+        title: "Choose Provider + Model",
+        objective: "Inspect your active model, switch when needed, and configure provider auth.",
+        commands: &["/provider", "/providers", "/switch", "/api-key"],
+        try_now: "/provider",
+    },
+    OnboardingStep {
+        title: "Run Local Services",
+        objective: "Control local dependencies from the TUI instead of shelling out.",
+        commands: &[
+            "/service status",
+            "/service start <name> <command...>",
+            "/service logs <name> [lines]",
+            "/ollama start",
+        ],
+        try_now: "/service status",
+    },
+    OnboardingStep {
+        title: "Host Multiplayer Sessions",
+        objective: "Start a room, invite collaborators, and manage member access from host mode.",
+        commands: &[
+            "/host-server",
+            "/host-server members [room]",
+            "/host-server kick <connection-id> [room]",
+            "/host-server role <connection-id> <viewer|prompter> [room]",
+            "/join-server <code>",
+        ],
+        try_now: "/host-server",
+    },
+    OnboardingStep {
+        title: "Daily Coding Workflow",
+        objective: "Use these commands for context, review, tests, and quick rollback checkpoints.",
+        commands: &[
+            "/add <path>",
+            "/files",
+            "/review [file]",
+            "/test <file>",
+            "/checkpoint",
+            "/rewind [id|last]",
+        ],
+        try_now: "/files",
+    },
+];
+
+fn onboarding_step_count() -> usize {
+    ONBOARDING_STEPS.len()
+}
+
+fn onboarding_navigation_hint() -> &'static str {
+    "Navigation: `/onboarding next` • `/onboarding prev` • `/onboarding <step>` • `/onboarding exit`"
+}
+
+fn format_onboarding_step(step_index: usize) -> String {
+    if ONBOARDING_STEPS.is_empty() {
+        return "Onboarding is currently unavailable.".to_string();
+    }
+
+    let total = onboarding_step_count();
+    let idx = step_index.min(total.saturating_sub(1));
+    let step = &ONBOARDING_STEPS[idx];
+
+    let mut lines = vec![
+        format!("**Onboarding {}/{}: {}**", idx + 1, total, step.title),
+        String::new(),
+        step.objective.to_string(),
+        String::new(),
+        "**Core commands**".to_string(),
+    ];
+
+    lines.extend(step.commands.iter().map(|cmd| format!("- `{cmd}`")));
+    lines.push(String::new());
+    lines.push(format!("Try now: `{}`", step.try_now));
+
+    if idx + 1 == total {
+        lines.push(
+            "You reached the final step. Run `/onboarding exit` to end this onboarding session."
+                .to_string(),
+        );
+    }
+
+    lines.push(String::new());
+    lines.push(onboarding_navigation_hint().to_string());
+    lines.join("\n")
+}
+
 // ── Slash command handler ─────────────────────────────────────────────
 
 fn handle_slash_command(
@@ -1269,6 +1811,7 @@ fn handle_slash_command(
     launch: &BackendLaunchContext,
     cancel_token: &Arc<AtomicBool>,
     watch_state: &mut WatchState,
+    qa_watch_state: &mut QaWatchState,
     cmd: &str,
 ) -> bool {
     let raw = cmd.trim();
@@ -1286,6 +1829,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 \n\
 **Session Management:**\n\
   /help                Show this help message\n\
+  /onboarding ...      Start interactive onboarding (`next`, `prev`, `<step>`, `exit`)\n\
   /quit, /exit         Exit poor-cli and print session summary\n\
   /clear               Clear conversation history\n\
   /clear-output        Clear visible output, keep backend history\n\
@@ -1326,6 +1870,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /review [file]       Review a file or staged diff\n\n\
 **Code Tools:**\n\
   /test <file>         Generate tests for a file\n\
+  /fix-failures [cmd]  Analyze latest (or fresh) test/lint failures\n\
+  /explain-diff [file] Explain behavior/risk/test gaps in git diff\n\
   /image <path>        Queue image for next prompt\n\
   /watch <dir>         Watch directory and analyze changes\n\
   /unwatch             Stop active watch mode\n\
@@ -1342,9 +1888,36 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /use <name>                 Load and send saved prompt\n\
   /prompts                    List saved prompts\n\n\
 **Utilities:**\n\
+  !<command> [| question]  Run local bash and optionally ask about output\n\
+  /doctor              Run environment/provider/service diagnostics\n\
+  /bootstrap           Detect project type and show solo quickstart\n\
+  /focus ...           Manage persistent focus goal (`start|status|done`)\n\
+  /resume              Summarize last session + branch/checkpoint state\n\
+  /workspace-map [path] Build repository file/entrypoint map\n\
+  /context-budget [tokens] Rank and preview auto-selected context files\n\
+  /autopilot ...       Toggle bounded autonomous execution mode\n\
+  /qa ...              Background incremental QA watch (`start|stop|status`)\n\
+  /profile ...         Apply execution profile (`speed|safe|deep-review`)\n\
+  /tasks ...           Manage local task board (`add|done|drop|clear`)\n\
   /copy                Copy last assistant response to clipboard\n\
-  /host-server [arg]   Start/share host session (arg: room|status|stop)\n\
+  /onboarding ...      Guided walkthrough of core commands\n\
+  /host-server ...     Start/share/manage host session and members\n\
+  /host-server share [viewer|prompter] [room]  Print role-specific join payloads\n\
+  /host-server members [room]               List connected room members\n\
+  /host-server kick <connection-id> [room]  Remove a connected member\n\
+  /host-server role <id> <viewer|prompter> [room]  Change member role\n\
+  /host-server lobby <on|off> [room]        Toggle lobby approval mode\n\
+  /host-server approve <id> [room]           Approve pending member\n\
+  /host-server deny <id> [room]              Deny pending member\n\
+  /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]  Rotate invite token\n\
+  /host-server revoke <token|id> [room]      Revoke token or disconnect member\n\
+  /host-server handoff <id> [room]           Transfer prompter role\n\
+  /host-server preset <pairing|mob|review> [room]  Apply room collaboration preset\n\
+  /host-server activity [room] [limit] [event-type]  Show room activity log\n\
   /join-server <code>  Join host using invite code or url/room/token\n\
+  /join-server         Launch interactive join wizard\n\
+  /service ...         Manage local background services (start/stop/status/logs)\n\
+  /ollama ...          Convenience wrapper for Ollama lifecycle/model commands\n\
   /run <command>       Run shell command through backend\n\
   /read <file>         Read a file from backend\n\
   /pwd                 Show current working directory\n\
@@ -1354,10 +1927,147 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         return false;
     }
 
+    if lowered == "/onboarding" || lowered.starts_with("/onboarding ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let total_steps = onboarding_step_count();
+
+        if total_steps == 0 {
+            app.push_message(ChatMessage::system(
+                "Onboarding is currently unavailable.".to_string(),
+            ));
+            return false;
+        }
+
+        if subcommand.is_empty()
+            || subcommand == "start"
+            || subcommand == "begin"
+            || subcommand == "restart"
+        {
+            app.onboarding_active = true;
+            app.onboarding_step = 0;
+            app.push_message(ChatMessage::system(format!(
+                "**Interactive onboarding started.**\n\n{}",
+                format_onboarding_step(app.onboarding_step)
+            )));
+            return false;
+        }
+
+        if subcommand == "help" {
+            app.push_message(ChatMessage::system(onboarding_usage_text().to_string()));
+            return false;
+        }
+
+        if subcommand == "exit" || subcommand == "done" || subcommand == "quit" {
+            app.onboarding_active = false;
+            app.onboarding_step = 0;
+            app.push_message(ChatMessage::system(
+                "Onboarding ended.\nRun `/onboarding` anytime to start again.".to_string(),
+            ));
+            return false;
+        }
+
+        if subcommand == "show" || subcommand == "repeat" || subcommand == "resume" {
+            if !app.onboarding_active {
+                app.onboarding_active = true;
+                app.onboarding_step = 0;
+            }
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        if subcommand == "next" {
+            if !app.onboarding_active {
+                app.onboarding_active = true;
+                app.onboarding_step = 0;
+                app.push_message(ChatMessage::system(format!(
+                    "No active onboarding session found; started at step 1.\n\n{}",
+                    format_onboarding_step(app.onboarding_step)
+                )));
+                return false;
+            }
+
+            if app.onboarding_step + 1 >= total_steps {
+                app.push_message(ChatMessage::system(
+                    "You are already at the last onboarding step.\nUse `/onboarding exit` to end the onboarding session.".to_string(),
+                ));
+                return false;
+            }
+
+            app.onboarding_step += 1;
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        if subcommand == "prev" || subcommand == "previous" || subcommand == "back" {
+            if !app.onboarding_active {
+                app.onboarding_active = true;
+                app.onboarding_step = 0;
+                app.push_message(ChatMessage::system(format!(
+                    "No active onboarding session found; started at step 1.\n\n{}",
+                    format_onboarding_step(app.onboarding_step)
+                )));
+                return false;
+            }
+
+            if app.onboarding_step == 0 {
+                app.push_message(ChatMessage::system(
+                    "You are already at the first onboarding step.".to_string(),
+                ));
+                return false;
+            }
+
+            app.onboarding_step -= 1;
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        if let Ok(step_number) = subcommand.parse::<usize>() {
+            if step_number == 0 || step_number > total_steps {
+                app.push_message(ChatMessage::system(format!(
+                    "Step must be between 1 and {total_steps}.\n{}",
+                    onboarding_usage_text()
+                )));
+                return false;
+            }
+            app.onboarding_active = true;
+            app.onboarding_step = step_number - 1;
+            app.push_message(ChatMessage::system(format_onboarding_step(
+                app.onboarding_step,
+            )));
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(onboarding_usage_text().to_string()));
+        return false;
+    }
+
     if lowered == "/clear" {
         app.messages.clear();
         app.add_welcome();
         app.last_user_message = None;
+        app.onboarding_active = false;
+        app.onboarding_step = 0;
+        app.join_wizard_active = false;
+        app.join_wizard_step = 0;
+        app.join_wizard_url.clear();
+        app.join_wizard_room.clear();
+        if qa_watch_state.is_running() {
+            qa_watch_state.stop();
+            app.qa_mode_enabled = false;
+            app.qa_command.clear();
+        }
         match rpc_clear_history_blocking(rpc_cmd_tx) {
             Ok(()) => app.set_status("Conversation history cleared"),
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -1378,6 +2088,17 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         app.messages.clear();
         app.add_welcome();
         app.last_user_message = None;
+        app.onboarding_active = false;
+        app.onboarding_step = 0;
+        app.join_wizard_active = false;
+        app.join_wizard_step = 0;
+        app.join_wizard_url.clear();
+        app.join_wizard_room.clear();
+        if qa_watch_state.is_running() {
+            qa_watch_state.stop();
+            app.qa_mode_enabled = false;
+            app.qa_command.clear();
+        }
         match rpc_clear_history_blocking(rpc_cmd_tx) {
             Ok(()) => app.set_status("Started new session"),
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -2311,6 +3032,651 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/doctor" {
+        let mut lines = vec!["**poor-cli Doctor**".to_string(), String::new()];
+
+        match rpc_get_config_blocking(rpc_cmd_tx) {
+            Ok(cfg) => {
+                let mode = cfg
+                    .get("permissionMode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                lines.push(format!("- Permission mode: `{mode}`"));
+                if mode == "danger-full-access" {
+                    lines.push("- Warning: running in `danger-full-access`.".to_string());
+                }
+            }
+            Err(e) => lines.push(format!("- Permission mode check failed: {e}")),
+        }
+
+        match rpc_get_api_key_status_blocking(rpc_cmd_tx, None) {
+            Ok(payload) => {
+                let providers = payload
+                    .get("providers")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .unwrap_or_default();
+                let configured = providers
+                    .values()
+                    .filter(|entry| {
+                        entry
+                            .get("configured")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    })
+                    .count();
+                lines.push(format!(
+                    "- API keys configured: {configured}/{} provider(s)",
+                    providers.len()
+                ));
+            }
+            Err(e) => lines.push(format!("- API key status check failed: {e}")),
+        }
+
+        match rpc_get_service_status_blocking(rpc_cmd_tx, None) {
+            Ok(payload) => {
+                let services = payload
+                    .get("services")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let running = services
+                    .iter()
+                    .filter(|entry| {
+                        entry
+                            .get("running")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    })
+                    .count();
+                lines.push(format!(
+                    "- Managed services running: {running}/{}",
+                    services.len()
+                ));
+            }
+            Err(e) => lines.push(format!("- Service check failed: {e}")),
+        }
+
+        match rpc_execute_command_with_timeout_blocking(
+            rpc_cmd_tx,
+            "git rev-parse --abbrev-ref HEAD",
+            Some(15),
+            20,
+        ) {
+            Ok(branch) => lines.push(format!("- Git branch: `{}`", first_line(&branch))),
+            Err(_) => lines.push("- Git branch: unavailable (not a git repo?)".to_string()),
+        }
+
+        lines.push(String::new());
+        lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, and `/status`.".to_string());
+        app.push_message(ChatMessage::system(lines.join("\n")));
+        return false;
+    }
+
+    if lowered == "/bootstrap" || lowered.starts_with("/bootstrap ") {
+        let root_raw = raw
+            .splitn(2, ' ')
+            .nth(1)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let root = root_raw
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(&app.cwd));
+        app.push_message(ChatMessage::system(format_bootstrap_report(&root)));
+        return false;
+    }
+
+    if lowered == "/profile" || lowered.starts_with("/profile ") {
+        let selected = raw
+            .split_whitespace()
+            .nth(1)
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_else(|| "status".to_string());
+        if selected == "status" {
+            app.push_message(ChatMessage::system(format!(
+                "**Execution Profile**\n- Active: `{}`\n- Response mode: `{}`\n- Context budget: {} tokens\n\nAvailable profiles:\n- `speed`: smaller context, terse output, faster loop\n- `safe`: balanced defaults, review-oriented safety\n- `deep-review`: larger context, richer analysis depth\n\nSet with `/profile <name>`",
+                app.execution_profile,
+                app.response_mode.as_str(),
+                app.context_budget_tokens
+            )));
+            return false;
+        }
+
+        match apply_execution_profile(app, rpc_cmd_tx, &selected, true) {
+            Ok(summary) => {
+                refresh_context_budget_state(app);
+                app.push_message(ChatMessage::system(summary));
+            }
+            Err(e) => app.push_message(ChatMessage::error(e)),
+        }
+        return false;
+    }
+
+    if lowered == "/focus" || lowered.starts_with("/focus ") {
+        let args: Vec<&str> = raw.splitn(3, ' ').collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        if subcommand == "status" {
+            match load_focus_state(app) {
+                Ok(Some(state)) => {
+                    app.push_message(ChatMessage::system(format!(
+                        "**Focus Status**\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}\n- Started: {}\n- Completed: {}",
+                        if state.goal.is_empty() { "(none)" } else { &state.goal },
+                        if state.constraints.is_empty() {
+                            "(none)"
+                        } else {
+                            &state.constraints
+                        },
+                        if state.definition_of_done.is_empty() {
+                            "(none)"
+                        } else {
+                            &state.definition_of_done
+                        },
+                        if state.started_at.is_empty() {
+                            "(unknown)"
+                        } else {
+                            &state.started_at
+                        },
+                        if state.completed { "yes" } else { "no" }
+                    )));
+                }
+                Ok(None) => app.push_message(ChatMessage::system(
+                    "No active focus.\nUse `/focus start <goal> [|| constraints || definition-of-done]`.".to_string(),
+                )),
+                Err(e) => app.push_message(ChatMessage::error(e)),
+            }
+            return false;
+        }
+
+        if subcommand == "start" {
+            let payload = raw.splitn(3, ' ').nth(2).map(str::trim).unwrap_or("");
+            if payload.is_empty() {
+                app.push_message(ChatMessage::system(
+                    "Usage: /focus start <goal> [|| constraints || definition-of-done]".to_string(),
+                ));
+                return false;
+            }
+            let parts = payload.split("||").map(str::trim).collect::<Vec<_>>();
+            let state = FocusState {
+                goal: parts.first().copied().unwrap_or("").to_string(),
+                constraints: parts.get(1).copied().unwrap_or("").to_string(),
+                definition_of_done: parts.get(2).copied().unwrap_or("").to_string(),
+                started_at: format!("{}", unix_ts_millis()),
+                completed: false,
+            };
+            match save_focus_state(app, &state) {
+                Ok(()) => app.push_message(ChatMessage::system(format!(
+                    "Focus started.\n- Goal: {}\n- Constraints: {}\n- Definition of done: {}",
+                    if state.goal.is_empty() {
+                        "(none)"
+                    } else {
+                        &state.goal
+                    },
+                    if state.constraints.is_empty() {
+                        "(none)"
+                    } else {
+                        &state.constraints
+                    },
+                    if state.definition_of_done.is_empty() {
+                        "(none)"
+                    } else {
+                        &state.definition_of_done
+                    }
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(e)),
+            }
+            return false;
+        }
+
+        if subcommand == "done" {
+            match load_focus_state(app) {
+                Ok(Some(mut state)) => {
+                    state.completed = true;
+                    match save_focus_state(app, &state) {
+                        Ok(()) => app.push_message(ChatMessage::system(
+                            "Focus marked complete.".to_string(),
+                        )),
+                        Err(e) => app.push_message(ChatMessage::error(e)),
+                    }
+                }
+                Ok(None) => app.push_message(ChatMessage::system(
+                    "No active focus to complete.".to_string(),
+                )),
+                Err(e) => app.push_message(ChatMessage::error(e)),
+            }
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(
+            "Usage: /focus start|status|done".to_string(),
+        ));
+        return false;
+    }
+
+    if lowered == "/resume" {
+        let mut lines = vec!["**Resume Snapshot**".to_string(), String::new()];
+        if let Ok(Some(state)) = load_focus_state(app) {
+            if !state.goal.is_empty() {
+                lines.push(format!("- Focus goal: {}", state.goal));
+            }
+            if !state.completed {
+                lines.push("- Focus status: active".to_string());
+            }
+        }
+
+        match rpc_list_sessions_blocking(rpc_cmd_tx, 1) {
+            Ok(payload) => {
+                let sessions = payload
+                    .get("sessions")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(first) = sessions.first() {
+                    let session_id = first
+                        .get("sessionId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)");
+                    let model = first
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)");
+                    let message_count = first
+                        .get("messageCount")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    lines.push(format!(
+                        "- Last session: `{session_id}` on `{model}` ({message_count} messages)"
+                    ));
+                }
+            }
+            Err(e) => lines.push(format!("- Session lookup failed: {e}")),
+        }
+
+        match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, "git status -sb", Some(20), 25)
+        {
+            Ok(status) => lines.push(format!("- Git status: `{}`", first_line(&status))),
+            Err(e) => lines.push(format!("- Git status unavailable: {e}")),
+        }
+
+        match rpc_list_checkpoints_blocking(rpc_cmd_tx, 5) {
+            Ok(payload) => {
+                let checkpoints = payload
+                    .get("checkpoints")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                lines.push(format!("- Recent checkpoints: {}", checkpoints.len()));
+            }
+            Err(e) => lines.push(format!("- Checkpoint lookup failed: {e}")),
+        }
+
+        lines.push(String::new());
+        lines.push(
+            "Suggested next steps: `/status`, `/history 10`, `/checkpoints`, `/review`."
+                .to_string(),
+        );
+        app.push_message(ChatMessage::system(lines.join("\n")));
+        return false;
+    }
+
+    if lowered == "/context-budget" || lowered.starts_with("/context-budget ") {
+        if let Some(raw_budget) = raw.split_whitespace().nth(1) {
+            match raw_budget.parse::<usize>() {
+                Ok(value) => {
+                    app.context_budget_tokens = value.clamp(1000, 20000);
+                }
+                Err(_) => {
+                    app.push_message(ChatMessage::system(
+                        "Usage: /context-budget [token-budget]".to_string(),
+                    ));
+                    return false;
+                }
+            }
+        }
+
+        refresh_context_budget_state(app);
+        app.push_message(ChatMessage::system(format_context_budget_report(app)));
+        return false;
+    }
+
+    if lowered == "/workspace-map" || lowered.starts_with("/workspace-map ") {
+        let root_raw = raw
+            .splitn(2, ' ')
+            .nth(1)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let root = root_raw
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(&app.cwd));
+        let files = collect_directory_files(&root, 4000);
+        if files.is_empty() {
+            app.push_message(ChatMessage::system(
+                "No files found for workspace map.".to_string(),
+            ));
+            return false;
+        }
+
+        let mut ext_counts = HashMap::<String, usize>::new();
+        let mut entrypoints = Vec::<String>::new();
+        for file in &files {
+            if let Some(ext) = file.extension().and_then(|v| v.to_str()) {
+                *ext_counts.entry(ext.to_string()).or_insert(0) += 1;
+            }
+            if let Some(name) = file.file_name().and_then(|v| v.to_str()) {
+                if matches!(
+                    name,
+                    "Cargo.toml"
+                        | "pyproject.toml"
+                        | "package.json"
+                        | "Makefile"
+                        | "main.rs"
+                        | "main.py"
+                ) {
+                    entrypoints.push(file.to_string_lossy().to_string());
+                }
+            }
+        }
+        let mut ext_pairs = ext_counts.into_iter().collect::<Vec<_>>();
+        ext_pairs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let ext_summary = ext_pairs
+            .into_iter()
+            .take(8)
+            .map(|(ext, count)| format!("{ext}:{count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut lines = vec![
+            format!("**Workspace Map:** `{}`", root.to_string_lossy()),
+            format!("- Total files indexed: {}", files.len()),
+            format!("- Top extensions: {ext_summary}"),
+        ];
+        if !entrypoints.is_empty() {
+            lines.push("- Entrypoints:".to_string());
+            for entry in entrypoints.into_iter().take(10) {
+                lines.push(format!("  - `{entry}`"));
+            }
+        }
+        app.push_message(ChatMessage::system(lines.join("\n")));
+        return false;
+    }
+
+    if lowered == "/autopilot" || lowered.starts_with("/autopilot ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+        if subcommand == "status" {
+            app.push_message(ChatMessage::system(format!(
+                "Autopilot: {}\nIteration cap: {}",
+                if app.autopilot_enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
+                app.iteration_cap
+            )));
+            return false;
+        }
+        if subcommand == "start" {
+            let allow_risky = args
+                .iter()
+                .any(|value| value.trim().eq_ignore_ascii_case("--allow-risky"));
+            if !allow_risky {
+                if let Ok(cfg) = rpc_get_config_blocking(rpc_cmd_tx) {
+                    let mode = cfg
+                        .get("permissionMode")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("prompt");
+                    if mode == "danger-full-access" {
+                        app.push_message(ChatMessage::system(
+                            "Autopilot guardrail blocked start because permission mode is `danger-full-access`.\nUse `/permission-mode prompt` or rerun with `/autopilot start <cap> --allow-risky`."
+                                .to_string(),
+                        ));
+                        return false;
+                    }
+                }
+            }
+            let cap = args
+                .get(2)
+                .and_then(|raw| raw.parse::<u32>().ok())
+                .unwrap_or_else(|| {
+                    if app.execution_profile == "speed" {
+                        30
+                    } else if app.execution_profile == "deep-review" {
+                        60
+                    } else {
+                        40
+                    }
+                })
+                .clamp(5, 120);
+            app.autopilot_enabled = true;
+            app.iteration_cap = cap;
+            app.push_message(ChatMessage::system(format!(
+                "Autopilot enabled with iteration cap {cap}."
+            )));
+            return false;
+        }
+        if subcommand == "stop" {
+            app.autopilot_enabled = false;
+            app.iteration_cap = 25;
+            app.push_message(ChatMessage::system(
+                "Autopilot disabled. Iteration cap reset to 25.".to_string(),
+            ));
+            return false;
+        }
+        app.push_message(ChatMessage::system(
+            "Usage: /autopilot start [cap] [--allow-risky]\n       /autopilot stop\n       /autopilot status".to_string(),
+        ));
+        return false;
+    }
+
+    if lowered == "/tasks" || lowered.starts_with("/tasks ") {
+        let args: Vec<&str> = raw.splitn(3, ' ').collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("list")
+            .trim()
+            .to_ascii_lowercase();
+        let mut tasks = match load_tasks(app) {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                app.push_message(ChatMessage::error(e));
+                return false;
+            }
+        };
+
+        if subcommand == "list" {
+            if tasks.is_empty() {
+                app.push_message(ChatMessage::system(
+                    "No tasks.\nUse `/tasks add <title>`.".to_string(),
+                ));
+                return false;
+            }
+            let mut lines = vec![format!("**Tasks ({})**", tasks.len()), String::new()];
+            tasks.sort_by_key(|task| task.id);
+            for task in tasks {
+                lines.push(format!(
+                    "- [{}] #{} {}",
+                    if task.done { "x" } else { " " },
+                    task.id,
+                    task.title
+                ));
+            }
+            app.push_message(ChatMessage::system(lines.join("\n")));
+            return false;
+        }
+
+        if subcommand == "add" {
+            let title = args.get(2).copied().unwrap_or("").trim();
+            if title.is_empty() {
+                app.push_message(ChatMessage::system("Usage: /tasks add <title>".to_string()));
+                return false;
+            }
+            let next_id = tasks.iter().map(|task| task.id).max().unwrap_or(0) + 1;
+            tasks.push(TaskItem {
+                id: next_id,
+                title: title.to_string(),
+                done: false,
+                created_at: format!("{}", unix_ts_millis()),
+            });
+            if let Err(e) = save_tasks(app, &tasks) {
+                app.push_message(ChatMessage::error(e));
+                return false;
+            }
+            app.set_status(format!("Task #{next_id} added"));
+            return false;
+        }
+
+        if subcommand == "done" {
+            let id = args
+                .get(2)
+                .and_then(|raw| raw.trim().parse::<u64>().ok())
+                .unwrap_or(0);
+            if id == 0 {
+                app.push_message(ChatMessage::system("Usage: /tasks done <id>".to_string()));
+                return false;
+            }
+            let mut found = false;
+            for task in &mut tasks {
+                if task.id == id {
+                    task.done = true;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                app.push_message(ChatMessage::system(format!("Task #{id} not found.")));
+                return false;
+            }
+            if let Err(e) = save_tasks(app, &tasks) {
+                app.push_message(ChatMessage::error(e));
+                return false;
+            }
+            app.set_status(format!("Task #{id} marked done"));
+            return false;
+        }
+
+        if subcommand == "drop" {
+            let id = args
+                .get(2)
+                .and_then(|raw| raw.trim().parse::<u64>().ok())
+                .unwrap_or(0);
+            if id == 0 {
+                app.push_message(ChatMessage::system("Usage: /tasks drop <id>".to_string()));
+                return false;
+            }
+            let before = tasks.len();
+            tasks.retain(|task| task.id != id);
+            if tasks.len() == before {
+                app.push_message(ChatMessage::system(format!("Task #{id} not found.")));
+                return false;
+            }
+            if let Err(e) = save_tasks(app, &tasks) {
+                app.push_message(ChatMessage::error(e));
+                return false;
+            }
+            app.set_status(format!("Task #{id} removed"));
+            return false;
+        }
+
+        if subcommand == "clear" {
+            if let Err(e) = save_tasks(app, &[]) {
+                app.push_message(ChatMessage::error(e));
+                return false;
+            }
+            app.set_status("Cleared task list");
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(
+            "Usage: /tasks [list]\n       /tasks add <title>\n       /tasks done <id>\n       /tasks drop <id>\n       /tasks clear".to_string(),
+        ));
+        return false;
+    }
+
+    if lowered == "/explain-diff" || lowered.starts_with("/explain-diff ") {
+        let target = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let command = if target.is_empty() {
+            "git diff".to_string()
+        } else {
+            format!("git diff -- {}", shell_escape_single_quotes(target))
+        };
+        match rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, &command, Some(60), 75) {
+            Ok(diff) => {
+                if diff.trim().is_empty() {
+                    app.push_message(ChatMessage::system("No diff content found.".to_string()));
+                    return false;
+                }
+                let prompt = format!(
+                    "Analyze this git diff and produce:\n1) behavior changes\n2) regression risks\n3) missing tests\n4) quick validation steps.\n\n```diff\n{}\n```",
+                    truncate_block(&diff, 12000)
+                );
+                send_chat_request(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    cancel_token,
+                    apply_response_mode_to_user_input(app.response_mode, &prompt),
+                    raw.to_string(),
+                );
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to collect diff: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/fix-failures" || lowered.starts_with("/fix-failures ") {
+        let command_hint = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let failure_output = if !command_hint.is_empty() {
+            match rpc_execute_command_with_timeout_blocking(
+                rpc_cmd_tx,
+                command_hint,
+                Some(300),
+                320,
+            ) {
+                Ok(output) => {
+                    app.last_command_output = Some(output.clone());
+                    output
+                }
+                Err(e) => {
+                    app.push_message(ChatMessage::error(format!(
+                        "Failed to run `{command_hint}`: {e}"
+                    )));
+                    return false;
+                }
+            }
+        } else if let Some(previous) = app.last_command_output.clone() {
+            previous
+        } else {
+            app.push_message(ChatMessage::system(
+                "No recent command/test output found.\nRun `/fix-failures <test-or-lint-command>` or execute a command first.".to_string(),
+            ));
+            return false;
+        };
+
+        let prompt = format!(
+            "Given this failure output, rank likely root causes and propose an efficient fix plan.\nInclude: immediate fix, verification command, and fallback options.\n\n```text\n{}\n```",
+            truncate_block(&failure_output, 12000)
+        );
+        send_chat_request(
+            app,
+            tx,
+            rpc_cmd_tx,
+            cancel_token,
+            apply_response_mode_to_user_input(app.response_mode, &prompt),
+            raw.to_string(),
+        );
+        return false;
+    }
+
     if lowered.starts_with("/run ") {
         let command = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if command.is_empty() {
@@ -2319,10 +3685,13 @@ Context Window: {max_context} tokens\n\n\
         }
 
         match rpc_execute_command_blocking(rpc_cmd_tx, command) {
-            Ok(output) => app.push_message(ChatMessage::system(format!(
-                "**Command:** `{command}`\n\n{}",
-                truncate_block(&output, 1600)
-            ))),
+            Ok(output) => {
+                app.last_command_output = Some(output.clone());
+                app.push_message(ChatMessage::system(format!(
+                    "**Command:** `{command}`\n\n{}",
+                    truncate_block(&output, 1600)
+                )))
+            }
             Err(e) => app.push_message(ChatMessage::error(format!("Command failed: {e}"))),
         }
         return false;
@@ -2370,6 +3739,33 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/join-server" || lowered.starts_with("/join-server ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        if args.len() == 1 {
+            app.join_wizard_active = true;
+            app.join_wizard_step = 0;
+            app.join_wizard_url.clear();
+            app.join_wizard_room.clear();
+            app.push_message(ChatMessage::system(
+                "**Join wizard started**\n\nStep 1/3: Enter WebSocket URL (ws://HOST:PORT/rpc or wss://...)\nUse `/join-server cancel` to abort."
+                    .to_string(),
+            ));
+            return false;
+        }
+
+        if args.len() == 2
+            && matches!(
+                args[1].to_ascii_lowercase().as_str(),
+                "cancel" | "abort" | "stop"
+            )
+        {
+            app.join_wizard_active = false;
+            app.join_wizard_step = 0;
+            app.join_wizard_url.clear();
+            app.join_wizard_room.clear();
+            app.push_message(ChatMessage::system("Join wizard cancelled.".to_string()));
+            return false;
+        }
+
         let (url, room, token) = match parse_join_server_args(raw) {
             Ok(values) => values,
             Err(error_message) => {
@@ -2378,22 +3774,14 @@ Context Window: {max_context} tokens\n\n\
             }
         };
 
-        let bridge_args = build_bridge_server_args(&url, &room, &token);
-        write_session_log(
-            launch.session_log.as_ref(),
-            &format!("join_server_request url={url} room={room}"),
-        );
+        if let Err(e) = preflight_join_endpoint(&url) {
+            app.push_message(ChatMessage::error(format!(
+                "Join preflight failed: {e}\nUse `/join-server` for wizard mode."
+            )));
+            return false;
+        }
 
-        let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
-        app.server_connected = false;
-        app.finalize_streaming();
-        app.stop_waiting();
-        app.push_message(ChatMessage::system(format!(
-            "Joining multiplayer server `{url}` room `{room}`..."
-        )));
-        app.set_status("Reconnecting backend in join mode");
-
-        *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
+        reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
         return false;
     }
 
@@ -2404,9 +3792,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "status" {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(
-                    "Usage: /host-server [room]\n       /host-server status\n       /host-server stop".to_string(),
-                ));
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
                 return false;
             }
 
@@ -2423,9 +3809,7 @@ Context Window: {max_context} tokens\n\n\
 
         if lowered_subcommand == "stop" {
             if args.len() > 2 {
-                app.push_message(ChatMessage::system(
-                    "Usage: /host-server [room]\n       /host-server status\n       /host-server stop".to_string(),
-                ));
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
                 return false;
             }
 
@@ -2452,17 +3836,461 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
-        if args.len() > 2 {
-            app.push_message(ChatMessage::system(
-                "Usage: /host-server [room]\n       /host-server status\n       /host-server stop"
-                    .to_string(),
-            ));
+        if lowered_subcommand == "members" || lowered_subcommand == "users" {
+            if args.len() > 3 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+
+            let room = args.get(2).copied();
+            match rpc_list_host_members_blocking(rpc_cmd_tx, room) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_host_members_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch host members: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "kick" || lowered_subcommand == "remove" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_remove_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let mut lines = vec![format!(
+                        "Removed connection `{connection_id}` from room `{room_name}`."
+                    )];
+                    if let Ok(updated) = rpc_list_host_members_blocking(
+                        rpc_cmd_tx,
+                        if room_name.is_empty() {
+                            None
+                        } else {
+                            Some(room_name)
+                        },
+                    ) {
+                        lines.push(String::new());
+                        lines.push(format_host_members_payload(&updated));
+                    }
+                    app.push_message(ChatMessage::system(lines.join("\n")));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to remove `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "role"
+            || lowered_subcommand == "promote"
+            || lowered_subcommand == "demote"
+        {
+            let (connection_id, role, room): (&str, &str, Option<&str>) =
+                if lowered_subcommand == "role" {
+                    if args.len() < 4 || args.len() > 5 {
+                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        return false;
+                    }
+                    (args[2], args[3], args.get(4).copied())
+                } else if lowered_subcommand == "promote" {
+                    if args.len() < 3 || args.len() > 4 {
+                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        return false;
+                    }
+                    (args[2], "prompter", args.get(3).copied())
+                } else {
+                    if args.len() < 3 || args.len() > 4 {
+                        app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                        return false;
+                    }
+                    (args[2], "viewer", args.get(3).copied())
+                };
+
+            let normalized_role = match role.to_ascii_lowercase().as_str() {
+                "viewer" | "read" | "read-only" => "viewer",
+                "prompter" | "writer" | "editor" | "admin" => "prompter",
+                _ => {
+                    app.push_message(ChatMessage::system(
+                        "Invalid role. Use `viewer` or `prompter`.".to_string(),
+                    ));
+                    return false;
+                }
+            };
+
+            match rpc_set_host_member_role_blocking(
+                rpc_cmd_tx,
+                connection_id,
+                normalized_role,
+                room,
+            ) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let mut lines = vec![format!(
+                        "Updated `{connection_id}` to role **{normalized_role}** in room `{room_name}`."
+                    )];
+                    if let Ok(updated) = rpc_list_host_members_blocking(
+                        rpc_cmd_tx,
+                        if room_name.is_empty() {
+                            None
+                        } else {
+                            Some(room_name)
+                        },
+                    ) {
+                        lines.push(String::new());
+                        lines.push(format_host_members_payload(&updated));
+                    }
+                    app.push_message(ChatMessage::system(lines.join("\n")));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to update role for `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "share" {
+            if args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let mut role_filter: Option<&str> = None;
+            let mut room_filter: Option<&str> = None;
+            if let Some(first) = args.get(2).copied() {
+                let first_lower = first.to_ascii_lowercase();
+                if first_lower == "viewer" || first_lower == "prompter" {
+                    role_filter = Some(first);
+                    room_filter = args.get(3).copied();
+                } else {
+                    room_filter = Some(first);
+                    if let Some(second) = args.get(3).copied() {
+                        let second_lower = second.to_ascii_lowercase();
+                        if second_lower == "viewer" || second_lower == "prompter" {
+                            role_filter = Some(second);
+                        }
+                    }
+                }
+            }
+
+            match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => app.push_message(ChatMessage::system(format_host_share_payload(
+                    &payload,
+                    role_filter,
+                    room_filter,
+                ))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to get host share details: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "lobby" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let enable = match args[2].to_ascii_lowercase().as_str() {
+                "on" | "enable" | "enabled" | "true" => true,
+                "off" | "disable" | "disabled" | "false" => false,
+                _ => {
+                    app.push_message(ChatMessage::system(
+                        "Usage: /host-server lobby <on|off> [room]".to_string(),
+                    ));
+                    return false;
+                }
+            };
+            let room = args.get(3).copied();
+            match rpc_set_host_lobby_blocking(rpc_cmd_tx, enable, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let state = if enable { "enabled" } else { "disabled" };
+                    app.push_message(ChatMessage::system(format!(
+                        "Lobby approvals {state} for room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to update lobby mode: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "approve" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_approve_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    app.push_message(ChatMessage::system(format!(
+                        "Approved `{connection_id}` in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to approve member `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "deny" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_deny_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    app.push_message(ChatMessage::system(format!(
+                        "Denied `{connection_id}` in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to deny member `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "rotate-token" {
+            if args.len() < 3 || args.len() > 5 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let role = args[2].to_ascii_lowercase();
+            if role != "viewer" && role != "prompter" {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]"
+                        .to_string(),
+                ));
+                return false;
+            }
+            let mut room: Option<&str> = None;
+            let mut expiry_seconds: Option<u64> = None;
+            if let Some(arg3) = args.get(3).copied() {
+                if let Ok(parsed) = arg3.parse::<u64>() {
+                    expiry_seconds = Some(parsed);
+                } else {
+                    room = Some(arg3);
+                }
+            }
+            if let Some(arg4) = args.get(4).copied() {
+                match arg4.parse::<u64>() {
+                    Ok(parsed) => expiry_seconds = Some(parsed),
+                    Err(_) => {
+                        app.push_message(ChatMessage::system(
+                            "Usage: /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]".to_string(),
+                        ));
+                        return false;
+                    }
+                }
+            }
+            match rpc_rotate_host_token_blocking(rpc_cmd_tx, &role, room, expiry_seconds) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let token = payload.get("token").and_then(|v| v.as_str()).unwrap_or("");
+                    let join_command = payload
+                        .get("joinCommand")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let invite_code = payload
+                        .get("inviteCode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let mut lines = vec![format!(
+                        "Rotated **{role}** token for room `{room_name}`: `{token}`"
+                    )];
+                    if !join_command.is_empty() {
+                        lines.push(format!("- Join command: `{join_command}`"));
+                    }
+                    if !invite_code.is_empty() {
+                        lines.push(format!("- Invite code: `{invite_code}`"));
+                    }
+                    if let Some(expires_at) = payload.get("expiresAt").and_then(|v| v.as_str()) {
+                        if !expires_at.is_empty() {
+                            lines.push(format!("- Expires at: `{expires_at}`"));
+                        }
+                    }
+                    app.push_message(ChatMessage::system(lines.join("\n")));
+                }
+                Err(e) => {
+                    app.push_message(ChatMessage::error(format!("Failed to rotate token: {e}")))
+                }
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "revoke" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let value = args[2];
+            let room = args.get(3).copied();
+            match rpc_revoke_host_token_blocking(rpc_cmd_tx, value, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let kind = payload
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("token");
+                    app.push_message(ChatMessage::system(format!(
+                        "Revoked `{value}` ({kind}) in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to revoke `{value}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "handoff" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let connection_id = args[2];
+            let room = args.get(3).copied();
+            match rpc_handoff_host_member_blocking(rpc_cmd_tx, connection_id, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    app.push_message(ChatMessage::system(format!(
+                        "Handed off prompter role to `{connection_id}` in room `{room_name}`."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to handoff to `{connection_id}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "preset" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let preset = args[2].to_ascii_lowercase();
+            if preset != "pairing" && preset != "mob" && preset != "review" {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server preset <pairing|mob|review> [room]".to_string(),
+                ));
+                return false;
+            }
+            let room = args.get(3).copied();
+            match rpc_set_host_preset_blocking(rpc_cmd_tx, &preset, room) {
+                Ok(payload) => {
+                    let room_name = payload
+                        .get("room")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(room.unwrap_or(""));
+                    let lobby_enabled = payload
+                        .get("lobbyEnabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    app.push_message(ChatMessage::system(format!(
+                        "Applied preset **{preset}** to room `{room_name}` (lobby: {}).",
+                        if lobby_enabled { "on" } else { "off" }
+                    )));
+                }
+                Err(e) => {
+                    app.push_message(ChatMessage::error(format!("Failed to set preset: {e}")))
+                }
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "activity" {
+            if args.len() > 5 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
+            let mut room: Option<&str> = None;
+            let mut limit: u64 = 30;
+            let mut event_type: Option<&str> = None;
+            let mut idx = 2usize;
+            if let Some(arg) = args.get(idx).copied() {
+                if arg.parse::<u64>().is_err() {
+                    room = Some(arg);
+                    idx += 1;
+                }
+            }
+            if let Some(arg) = args.get(idx).copied() {
+                if let Ok(parsed) = arg.parse::<u64>() {
+                    limit = parsed;
+                    idx += 1;
+                }
+            }
+            if let Some(arg) = args.get(idx).copied() {
+                event_type = Some(arg);
+                idx += 1;
+            }
+            if idx < args.len() {
+                app.push_message(ChatMessage::system(
+                    "Usage: /host-server activity [room] [limit] [event-type]".to_string(),
+                ));
+                return false;
+            }
+            match rpc_list_host_activity_blocking(rpc_cmd_tx, room, limit, event_type) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_host_activity_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch host activity: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if lowered_subcommand == "help" {
+            app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
             return false;
         }
 
         let room = if subcommand.is_empty() {
             None
         } else {
+            if args.len() > 2 {
+                app.push_message(ChatMessage::system(host_server_usage_text().to_string()));
+                return false;
+            }
             Some(subcommand)
         };
 
@@ -2477,26 +4305,364 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/service" || lowered.starts_with("/service ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        if subcommand.is_empty() || subcommand == "help" {
+            app.push_message(ChatMessage::system(service_usage_text().to_string()));
+            return false;
+        }
+
+        if subcommand == "status" || subcommand == "list" {
+            if args.len() > 3 {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            let service_name = args.get(2).copied();
+            match rpc_get_service_status_blocking(rpc_cmd_tx, service_name) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch service status: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if subcommand == "start" {
+            let mut split = raw.splitn(4, ' ');
+            let _ = split.next();
+            let _ = split.next();
+            let service_name = split.next().unwrap_or("").trim();
+            let command_text = split
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            if service_name.is_empty() {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            match rpc_start_service_blocking(rpc_cmd_tx, service_name, command_text, None) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to start service `{service_name}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if subcommand == "stop" {
+            if args.len() != 3 {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            let service_name = args[2];
+            match rpc_stop_service_blocking(rpc_cmd_tx, service_name) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to stop service `{service_name}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        if subcommand == "logs" {
+            if args.len() < 3 || args.len() > 4 {
+                app.push_message(ChatMessage::system(service_usage_text().to_string()));
+                return false;
+            }
+            let service_name = args[2];
+            let line_count = match args.get(3) {
+                Some(raw_count) => match raw_count.parse::<u64>() {
+                    Ok(parsed) => Some(parsed),
+                    Err(_) => {
+                        app.push_message(ChatMessage::system(
+                            "lines must be an integer (e.g. `/service logs ollama 120`)"
+                                .to_string(),
+                        ));
+                        return false;
+                    }
+                },
+                None => None,
+            };
+
+            match rpc_get_service_logs_blocking(rpc_cmd_tx, service_name, line_count) {
+                Ok(payload) => {
+                    let status_block = payload
+                        .get("status")
+                        .map(format_service_status_payload)
+                        .unwrap_or_else(|| format!("**Service:** `{service_name}`"));
+                    let log_path = payload
+                        .get("logPath")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(unknown)");
+                    let content = payload
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    if content.is_empty() {
+                        app.push_message(ChatMessage::system(format!(
+                            "{status_block}\n\nNo logs available yet at `{log_path}`."
+                        )));
+                    } else {
+                        app.last_command_output = Some(content.to_string());
+                        app.push_message(ChatMessage::system(format!(
+                            "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
+                            truncate_block(content, 3200)
+                        )));
+                    }
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch logs for `{service_name}`: {e}"
+                ))),
+            }
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(service_usage_text().to_string()));
+        return false;
+    }
+
+    if lowered == "/ollama" || lowered.starts_with("/ollama ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        match subcommand.as_str() {
+            "" | "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to fetch Ollama status: {e}"
+                ))),
+            },
+            "start" => match rpc_start_service_blocking(rpc_cmd_tx, "ollama", None, None) {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to start Ollama service: {e}"
+                ))),
+            },
+            "stop" => match rpc_stop_service_blocking(rpc_cmd_tx, "ollama") {
+                Ok(payload) => {
+                    app.push_message(ChatMessage::system(format_service_status_payload(&payload)))
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to stop Ollama service: {e}"
+                ))),
+            },
+            "logs" => {
+                let line_count = match args.get(2) {
+                    Some(raw_count) => match raw_count.parse::<u64>() {
+                        Ok(parsed) => Some(parsed),
+                        Err(_) => {
+                            app.push_message(ChatMessage::system(
+                                "lines must be an integer (e.g. `/ollama logs 120`)".to_string(),
+                            ));
+                            return false;
+                        }
+                    },
+                    None => Some(120),
+                };
+
+                match rpc_get_service_logs_blocking(rpc_cmd_tx, "ollama", line_count) {
+                    Ok(payload) => {
+                        let status_block = payload
+                            .get("status")
+                            .map(format_service_status_payload)
+                            .unwrap_or_else(|| "**Service:** `ollama`".to_string());
+                        let log_path = payload
+                            .get("logPath")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("(unknown)");
+                        let content = payload
+                            .get("content")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if content.is_empty() {
+                            app.push_message(ChatMessage::system(format!(
+                                "{status_block}\n\nNo logs available yet at `{log_path}`."
+                            )));
+                        } else {
+                            app.last_command_output = Some(content.to_string());
+                            app.push_message(ChatMessage::system(format!(
+                                "{status_block}\n\n**Log Tail:** `{log_path}`\n```text\n{}\n```",
+                                truncate_block(content, 3200)
+                            )));
+                        }
+                    }
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to fetch Ollama logs: {e}"
+                    ))),
+                }
+            }
+            "pull" => {
+                if args.len() != 3 {
+                    app.push_message(ChatMessage::system(
+                        "Usage: /ollama pull <model>".to_string(),
+                    ));
+                    return false;
+                }
+
+                let model = args[2];
+                let command = format!("ollama pull {model}");
+                match rpc_execute_command_with_timeout_blocking(
+                    rpc_cmd_tx,
+                    &command,
+                    Some(1800),
+                    1815,
+                ) {
+                    Ok(output) => app.push_message(ChatMessage::system(format!(
+                        "**Command:** `{command}`\n\n```text\n{}\n```",
+                        truncate_block(&output, 3200)
+                    ))),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to pull Ollama model `{model}`: {e}"
+                    ))),
+                }
+            }
+            "list" | "list-models" => {
+                match rpc_execute_command_with_timeout_blocking(
+                    rpc_cmd_tx,
+                    "ollama list",
+                    Some(60),
+                    75,
+                ) {
+                    Ok(output) => app.push_message(ChatMessage::system(format!(
+                        "**Installed Ollama Models**\n```text\n{}\n```",
+                        truncate_block(&output, 3200)
+                    ))),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to list Ollama models: {e}"
+                    ))),
+                }
+            }
+            "ps" => {
+                match rpc_execute_command_with_timeout_blocking(
+                    rpc_cmd_tx,
+                    "ollama ps",
+                    Some(60),
+                    75,
+                ) {
+                    Ok(output) => app.push_message(ChatMessage::system(format!(
+                        "**Ollama Running Models**\n```text\n{}\n```",
+                        truncate_block(&output, 3200)
+                    ))),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to inspect Ollama running models: {e}"
+                    ))),
+                }
+            }
+            _ => app.push_message(ChatMessage::system(ollama_usage_text().to_string())),
+        }
+
+        return false;
+    }
+
     if lowered == "/status" {
+        refresh_context_budget_state(app);
+        let onboarding_state = if app.onboarding_active {
+            format!(
+                "active ({}/{})",
+                app.onboarding_step.saturating_add(1),
+                onboarding_step_count()
+            )
+        } else {
+            "inactive".to_string()
+        };
+        let multiplayer_state = if app.multiplayer_enabled {
+            format!(
+                "room=`{}` role=`{}` members={} queue={} active=`{}` lobby={} preset={}",
+                if app.multiplayer_room.is_empty() {
+                    "unknown"
+                } else {
+                    &app.multiplayer_room
+                },
+                if app.multiplayer_role.is_empty() {
+                    "unknown"
+                } else {
+                    &app.multiplayer_role
+                },
+                app.multiplayer_member_count,
+                app.multiplayer_queue_depth,
+                if app.multiplayer_active_connection_id.is_empty() {
+                    "-"
+                } else {
+                    &app.multiplayer_active_connection_id
+                },
+                if app.multiplayer_lobby_enabled {
+                    "on"
+                } else {
+                    "off"
+                },
+                if app.multiplayer_preset.is_empty() {
+                    "-"
+                } else {
+                    &app.multiplayer_preset
+                },
+            )
+        } else {
+            "inactive".to_string()
+        };
         let status = format!(
             "**Session Status:**\n\
 Provider: {}/{}\n\
 CWD: {}\n\
 Response mode: {}\n\
+Profile: {}\n\
+Autopilot: {}\n\
+Context budget: {} tok ({} file(s), ~{} tok used)\n\
+QA watch: {}\n\
 Pinned files: {}\n\
 Queued images: {}\n\
-Watch mode: {}",
+Watch mode: {}\n\
+Onboarding: {}\n\
+Multiplayer: {}",
             app.provider_name,
             app.model_name,
             app.cwd,
             app.response_mode.as_str(),
+            app.execution_profile,
+            if app.autopilot_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+            app.context_budget_tokens,
+            app.context_budget_files.len(),
+            app.context_budget_estimated_tokens,
+            if qa_watch_state.is_running() {
+                "running"
+            } else {
+                "stopped"
+            },
             app.pinned_context_files.len(),
             app.pending_images.len(),
             if watch_state.is_running() {
                 "active"
             } else {
                 "inactive"
-            }
+            },
+            onboarding_state,
+            multiplayer_state
         );
         app.push_message(ChatMessage::system(status));
         return false;
@@ -3026,6 +5192,101 @@ Submitting any slash command will cancel capture."
         return false;
     }
 
+    if lowered == "/qa" || lowered.starts_with("/qa ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        if subcommand == "status" {
+            let status = if qa_watch_state.is_running() {
+                "running"
+            } else {
+                "stopped"
+            };
+            app.push_message(ChatMessage::system(format!(
+                "**QA Watch**\n- Status: {status}\n- Directory: {}\n- Command: {}",
+                qa_watch_state
+                    .directory
+                    .as_deref()
+                    .unwrap_or(app.cwd.as_str()),
+                qa_watch_state.command.as_deref().unwrap_or("(not set)")
+            )));
+            return false;
+        }
+
+        if subcommand == "stop" {
+            if qa_watch_state.is_running() {
+                qa_watch_state.stop();
+                app.qa_mode_enabled = false;
+                app.qa_command.clear();
+                app.set_status("QA watch stopped");
+            } else {
+                app.push_message(ChatMessage::system("QA watch is not running.".to_string()));
+            }
+            return false;
+        }
+
+        if subcommand == "start" {
+            if qa_watch_state.is_running() {
+                app.push_message(ChatMessage::system(
+                    "QA watch is already running. Use `/qa stop` first.".to_string(),
+                ));
+                return false;
+            }
+
+            let tail = raw
+                .split_once(' ')
+                .map(|(_, rest)| rest.trim())
+                .and_then(|rest| rest.split_once(' ').map(|(_, after)| after.trim()))
+                .unwrap_or("");
+            let mut directory = app.cwd.clone();
+            let mut command = default_qa_command_for_workspace(Path::new(&app.cwd));
+
+            if !tail.is_empty() {
+                let mut parts = tail.split_whitespace();
+                if let Some(first) = parts.next() {
+                    if Path::new(first).is_dir() {
+                        directory = first.to_string();
+                        let rest = parts.collect::<Vec<_>>().join(" ");
+                        if !rest.trim().is_empty() {
+                            command = rest.trim().to_string();
+                        }
+                    } else {
+                        command = tail.to_string();
+                    }
+                }
+            }
+
+            if !Path::new(&directory).is_dir() {
+                app.push_message(ChatMessage::error(format!(
+                    "Directory not found: {directory}"
+                )));
+                return false;
+            }
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let handle =
+                spawn_qa_watch_worker(directory.clone(), command.clone(), tx.clone(), stop.clone());
+            qa_watch_state.stop_flag = Some(stop);
+            qa_watch_state.handle = Some(handle);
+            qa_watch_state.directory = Some(directory.clone());
+            qa_watch_state.command = Some(command.clone());
+            app.qa_mode_enabled = true;
+            app.qa_command = command.clone();
+            app.set_status(format!("QA watch started: `{command}` on `{directory}`"));
+            return false;
+        }
+
+        app.push_message(ChatMessage::system(
+            "Usage: /qa start [dir] [command...]\n       /qa stop\n       /qa status".to_string(),
+        ));
+        return false;
+    }
+
     if lowered.starts_with("/watch ") {
         let directory = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if directory.is_empty() {
@@ -3259,6 +5520,120 @@ fn spawn_watch_worker(
     })
 }
 
+fn default_qa_command_for_workspace(root: &Path) -> String {
+    let traits = detect_project_traits(root);
+    if traits.contains(&"rust") && traits.contains(&"python") {
+        return "cargo test -q && pytest -q".to_string();
+    }
+    if traits.contains(&"rust") {
+        return "cargo test -q".to_string();
+    }
+    if traits.contains(&"python") {
+        return "pytest -q".to_string();
+    }
+    if traits.contains(&"javascript") {
+        return "npm test -- --watch=false".to_string();
+    }
+    "make test".to_string()
+}
+
+fn run_qa_command(directory: &str, command: &str) -> Result<(i32, String), String> {
+    let output = Command::new("sh")
+        .arg("-lc")
+        .arg(command)
+        .current_dir(directory)
+        .output()
+        .map_err(|e| format!("Failed to run QA command `{command}`: {e}"))?;
+
+    let exit_code = output.status.code().unwrap_or(1);
+    let combined = format!(
+        "{}{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        if output.stdout.is_empty() || output.stderr.is_empty() {
+            ""
+        } else {
+            "\n"
+        },
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok((exit_code, truncate_block(&combined, 2800)))
+}
+
+fn spawn_qa_watch_worker(
+    directory: String,
+    command: String,
+    tx: mpsc::Sender<ServerMsg>,
+    stop: Arc<AtomicBool>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let root = PathBuf::from(&directory);
+        let mut previous = snapshot_directory(&root);
+        let mut last_success: Option<bool> = None;
+        let mut last_signature = String::new();
+
+        while !stop.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_secs(2));
+            if stop.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let current = snapshot_directory(&root);
+            let changed = detect_changed_files(&previous, &current);
+            previous = current;
+
+            if changed.is_empty() {
+                continue;
+            }
+
+            let change_preview = changed
+                .iter()
+                .take(6)
+                .map(|path| format!("- {path}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            match run_qa_command(&directory, &command) {
+                Ok((exit_code, output)) => {
+                    let success = exit_code == 0;
+                    let signature = format!("{success}:{}", first_line(&output));
+                    let changed_state = last_success != Some(success);
+                    let changed_signature = signature != last_signature;
+                    last_success = Some(success);
+                    last_signature = signature;
+
+                    if !changed_state && !changed_signature {
+                        continue;
+                    }
+
+                    let status = if success { "PASS" } else { "FAIL" };
+                    let mut lines = vec![
+                        format!("**QA Watch** `{status}` (`{command}`)"),
+                        format!("- Directory: `{directory}`"),
+                        format!("- Changed files: {}", changed.len()),
+                        change_preview,
+                    ];
+
+                    if !output.trim().is_empty() {
+                        lines.push(String::new());
+                        lines.push("```text".to_string());
+                        lines.push(output);
+                        lines.push("```".to_string());
+                    }
+                    let _ = tx.send(ServerMsg::SystemMessage {
+                        content: lines.join("\n"),
+                    });
+                }
+                Err(error) => {
+                    let _ = tx.send(ServerMsg::Error {
+                        message: format!("QA watch failed: {error}"),
+                    });
+                    break;
+                }
+            }
+        }
+    })
+}
+
 fn snapshot_directory(root: &Path) -> HashMap<String, u64> {
     let mut snapshot = HashMap::new();
     let mut stack = vec![root.to_path_buf()];
@@ -3439,7 +5814,7 @@ fn bool_label(value: bool) -> &'static str {
 }
 
 fn parse_join_server_args(raw: &str) -> Result<(String, String, String), String> {
-    let usage = "Usage: /join-server <invite-code>\n       /join-server <ws-url> <room> <token>";
+    let usage = "Usage: /join-server\n       /join-server <invite-code>\n       /join-server <ws-url> <room> <token>\n       /join-server cancel";
     let args = raw
         .split_whitespace()
         .skip(1)
@@ -3586,9 +5961,24 @@ fn format_host_server_payload(payload: &Value) -> String {
             .get("viewerInviteCode")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let member_count = room
+            .get("memberCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let lobby_enabled = room
+            .get("lobbyEnabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let preset = room
+            .get("preset")
+            .and_then(|v| v.as_str())
+            .unwrap_or("pairing");
 
         lines.push(String::new());
-        lines.push(format!("**Room `{name}`**"));
+        lines.push(format!(
+            "**Room `{name}`** ({member_count} member(s), lobby: {}, preset: `{preset}`)",
+            if lobby_enabled { "on" } else { "off" }
+        ));
         lines.push(format!("- Viewer token: `{viewer_token}`"));
         lines.push(format!("- Prompter token: `{prompter_token}`"));
         if !viewer_join.is_empty() {
@@ -3603,6 +5993,460 @@ fn format_host_server_payload(payload: &Value) -> String {
     }
 
     lines.join("\n")
+}
+
+fn format_host_share_payload(
+    payload: &Value,
+    role_filter: Option<&str>,
+    room_filter: Option<&str>,
+) -> String {
+    let running = payload
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !running {
+        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+    }
+
+    let rooms = payload
+        .get("rooms")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if rooms.is_empty() {
+        return "No multiplayer rooms are available yet.".to_string();
+    }
+
+    let normalized_role = role_filter.map(|role| role.to_ascii_lowercase());
+    let normalized_room = room_filter.map(|room| room.trim().to_string());
+    let mut lines = vec!["**Host Share Payloads**".to_string()];
+    let mut matched = 0usize;
+
+    for room in rooms {
+        let room_name = room
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        if let Some(filter) = &normalized_room {
+            if filter != room_name {
+                continue;
+            }
+        }
+
+        let viewer_join = room
+            .get("viewerJoinCommand")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let prompter_join = room
+            .get("prompterJoinCommand")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let viewer_code = room
+            .get("viewerInviteCode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let prompter_code = room
+            .get("prompterInviteCode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        lines.push(String::new());
+        lines.push(format!("**Room `{room_name}`**"));
+
+        if normalized_role.is_none() || normalized_role.as_deref() == Some("viewer") {
+            matched += 1;
+            lines.push("- Viewer share command:".to_string());
+            if viewer_join.is_empty() {
+                lines.push("```text\n(unavailable)\n```".to_string());
+            } else {
+                lines.push(format!("```text\n{viewer_join}\n```"));
+            }
+            if !viewer_code.is_empty() {
+                lines.push(format!("- Viewer invite code: `{viewer_code}`"));
+                lines.push(format!(
+                    "- Viewer QR payload: `poor-cli://join?code={viewer_code}`"
+                ));
+            }
+        }
+
+        if normalized_role.is_none() || normalized_role.as_deref() == Some("prompter") {
+            matched += 1;
+            lines.push("- Prompter share command:".to_string());
+            if prompter_join.is_empty() {
+                lines.push("```text\n(unavailable)\n```".to_string());
+            } else {
+                lines.push(format!("```text\n{prompter_join}\n```"));
+            }
+            if !prompter_code.is_empty() {
+                lines.push(format!("- Prompter invite code: `{prompter_code}`"));
+                lines.push(format!(
+                    "- Prompter QR payload: `poor-cli://join?code={prompter_code}`"
+                ));
+            }
+        }
+    }
+
+    if matched == 0 {
+        return "No share payloads matched your filters.\nUsage: `/host-server share [viewer|prompter] [room]`".to_string();
+    }
+
+    lines.push(String::new());
+    lines.push("Tip: use `/copy` right after this to copy the latest share payload.".to_string());
+    lines.join("\n")
+}
+
+fn host_server_usage_text() -> &'static str {
+    "Usage: /host-server [room]\n\
+       /host-server status\n\
+       /host-server stop\n\
+       /host-server share [viewer|prompter] [room]\n\
+       /host-server members [room]\n\
+       /host-server kick <connection-id> [room]\n\
+       /host-server role <connection-id> <viewer|prompter> [room]\n\
+       /host-server promote <connection-id> [room]\n\
+       /host-server demote <connection-id> [room]\n\
+       /host-server lobby <on|off> [room]\n\
+       /host-server approve <connection-id> [room]\n\
+       /host-server deny <connection-id> [room]\n\
+       /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]\n\
+       /host-server revoke <token|connection-id> [room]\n\
+       /host-server handoff <connection-id> [room]\n\
+       /host-server preset <pairing|mob|review> [room]\n\
+       /host-server activity [room] [limit] [event-type]"
+}
+
+fn format_host_activity_payload(payload: &Value) -> String {
+    let room = payload
+        .get("room")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let event_filter = payload
+        .get("eventType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let events = payload
+        .get("events")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if events.is_empty() {
+        return format!("No activity events found for room `{room}`.");
+    }
+
+    let mut lines = vec![format!(
+        "**Host Activity** room `{room}` ({})",
+        events.len()
+    )];
+    if !event_filter.is_empty() {
+        lines.push(format!("Filter: `{event_filter}`"));
+    }
+    for event in events {
+        let timestamp = event
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
+        let event_type = event
+            .get("eventType")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let actor = event.get("actor").and_then(|v| v.as_str()).unwrap_or("");
+        let request_id = event
+            .get("requestId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let mut line = format!("- `{timestamp}` **{event_type}**");
+        if !actor.is_empty() {
+            line.push_str(&format!(" actor=`{actor}`"));
+        }
+        if !request_id.is_empty() {
+            line.push_str(&format!(" request=`{request_id}`"));
+        }
+        if let Some(details) = event.get("details").and_then(|v| v.as_object()) {
+            if !details.is_empty() {
+                let details_text = details
+                    .iter()
+                    .map(|(key, value)| format!("{key}={}", value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                line.push_str(&format!(" details: {details_text}"));
+            }
+        }
+        lines.push(line);
+    }
+    lines.join("\n")
+}
+
+fn format_host_members_payload(payload: &Value) -> String {
+    let running = payload
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !running {
+        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+    }
+
+    let rooms = payload
+        .get("rooms")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if rooms.is_empty() {
+        return "No active rooms found on host.".to_string();
+    }
+
+    let mut lines = vec!["**Host Members**".to_string()];
+    for room in rooms {
+        let room_name = room
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let member_count = room
+            .get("memberCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let lobby_enabled = room
+            .get("lobbyEnabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let preset = room
+            .get("preset")
+            .and_then(|v| v.as_str())
+            .unwrap_or("pairing");
+        lines.push(String::new());
+        lines.push(format!(
+            "**Room `{room_name}`** ({member_count} member(s), lobby: {}, preset: `{preset}`)",
+            if lobby_enabled { "on" } else { "off" }
+        ));
+
+        let members = room
+            .get("members")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if members.is_empty() {
+            lines.push("- No connected members".to_string());
+            continue;
+        }
+
+        for member in members {
+            let connection_id = member
+                .get("connectionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let role = member
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let client_name = member
+                .get("clientName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let active = member
+                .get("active")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let connected = member
+                .get("connected")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let joined_at = member
+                .get("joinedAt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let approved = member
+                .get("approved")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            let state = if connected {
+                "connected"
+            } else {
+                "disconnected"
+            };
+            let active_label = if active { ", active" } else { "" };
+            let approved_label = if approved { "" } else { ", pending-approval" };
+            let name_label = if client_name.is_empty() {
+                String::new()
+            } else {
+                format!(" ({client_name})")
+            };
+
+            lines.push(format!(
+                "- `{connection_id}`{name_label}: **{role}** ({state}{active_label}{approved_label})"
+            ));
+            if !joined_at.is_empty() {
+                lines.push(format!("  joined: `{joined_at}`"));
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn service_usage_text() -> &'static str {
+    "Usage: /service status [name]\n\
+       /service start <name> [command...]\n\
+       /service stop <name>\n\
+       /service logs <name> [lines]"
+}
+
+fn ollama_usage_text() -> &'static str {
+    "Usage: /ollama start|stop|status\n\
+       /ollama logs [lines]\n\
+       /ollama pull <model>\n\
+       /ollama list-models"
+}
+
+fn onboarding_usage_text() -> &'static str {
+    "Usage: /onboarding\n\
+       /onboarding start\n\
+       /onboarding next\n\
+       /onboarding prev\n\
+       /onboarding <step-number>\n\
+       /onboarding show\n\
+       /onboarding exit"
+}
+
+fn format_single_service_payload(payload: &Value) -> String {
+    let service_name = payload
+        .get("service")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let running = payload
+        .get("running")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let managed = payload
+        .get("managed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let external = payload
+        .get("external")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let created = payload
+        .get("created")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let stopped = payload
+        .get("stopped")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let mut lines = vec![format!("**Service:** `{service_name}`")];
+    if running {
+        if external {
+            lines.push("- Status: running (external)".to_string());
+        } else if managed {
+            lines.push("- Status: running (managed)".to_string());
+        } else {
+            lines.push("- Status: running".to_string());
+        }
+    } else {
+        lines.push("- Status: stopped".to_string());
+    }
+
+    if created {
+        lines.push("- Action: started in this command".to_string());
+    }
+    if stopped {
+        lines.push("- Action: stopped in this command".to_string());
+    }
+
+    if let Some(pid) = payload.get("pid").and_then(|v| v.as_u64()) {
+        lines.push(format!("- PID: `{pid}`"));
+    }
+    if let Some(command) = payload.get("command").and_then(|v| v.as_str()) {
+        if !command.is_empty() {
+            lines.push(format!("- Command: `{command}`"));
+        }
+    }
+    if let Some(cwd) = payload.get("cwd").and_then(|v| v.as_str()) {
+        if !cwd.is_empty() {
+            lines.push(format!("- CWD: `{cwd}`"));
+        }
+    }
+    if let Some(started_at) = payload.get("startedAt").and_then(|v| v.as_str()) {
+        if !started_at.is_empty() {
+            lines.push(format!("- Started: `{started_at}`"));
+        }
+    }
+    if let Some(exit_code) = payload.get("exitCode").and_then(|v| v.as_i64()) {
+        lines.push(format!("- Last exit code: `{exit_code}`"));
+    }
+    if let Some(log_path) = payload.get("logPath").and_then(|v| v.as_str()) {
+        if !log_path.is_empty() {
+            lines.push(format!("- Logs: `{log_path}`"));
+        }
+    }
+
+    if service_name == "ollama" {
+        if let Some(base_url) = payload.get("baseUrl").and_then(|v| v.as_str()) {
+            if !base_url.is_empty() {
+                lines.push(format!("- Base URL: `{base_url}`"));
+            }
+        }
+        if let Some(healthy) = payload.get("healthy").and_then(|v| v.as_bool()) {
+            lines.push(format!(
+                "- Health: {}",
+                if healthy { "reachable" } else { "unreachable" }
+            ));
+        }
+    }
+
+    if let Some(message) = payload.get("message").and_then(|v| v.as_str()) {
+        if !message.is_empty() {
+            lines.push(String::new());
+            lines.push(message.to_string());
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn format_service_status_payload(payload: &Value) -> String {
+    if let Some(services) = payload.get("services").and_then(|v| v.as_array()) {
+        if services.is_empty() {
+            return "No managed services found.\nUse `/service start <name> <command...>`."
+                .to_string();
+        }
+
+        let mut lines = vec!["**Services:**".to_string(), String::new()];
+        for service in services {
+            let name = service
+                .get("service")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let running = service
+                .get("running")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let external = service
+                .get("external")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let marker = if running { "✓" } else { "✗" };
+            let state = if running { "running" } else { "stopped" };
+            let scope = if external {
+                "external"
+            } else if service
+                .get("managed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                "managed"
+            } else {
+                "unmanaged"
+            };
+            lines.push(format!("- {marker} `{name}`: {state} ({scope})"));
+        }
+        lines.push(String::new());
+        lines.push("Use `/service status <name>` for details.".to_string());
+        return lines.join("\n");
+    }
+
+    format_single_service_payload(payload)
 }
 
 fn parse_value_literal(raw: &str) -> Value {
@@ -3661,6 +6505,451 @@ fn truncate_block(text: &str, max_chars: usize) -> String {
         out.push(ch);
     }
     out
+}
+
+fn detect_project_traits(root: &Path) -> Vec<&'static str> {
+    let mut traits = Vec::new();
+    if root.join("Cargo.toml").is_file() {
+        traits.push("rust");
+    }
+    if root.join("pyproject.toml").is_file()
+        || root.join("requirements.txt").is_file()
+        || root.join("setup.py").is_file()
+    {
+        traits.push("python");
+    }
+    if root.join("package.json").is_file() {
+        traits.push("javascript");
+    }
+    traits
+}
+
+fn classify_project_kind(root: &Path) -> String {
+    let traits = detect_project_traits(root);
+    if traits.is_empty() {
+        return "generic".to_string();
+    }
+    if traits.len() == 1 {
+        return traits[0].to_string();
+    }
+    "mixed".to_string()
+}
+
+fn recommended_bootstrap_commands(root: &Path) -> Vec<String> {
+    let traits = detect_project_traits(root);
+    let mut commands = Vec::new();
+    if traits.contains(&"rust") {
+        commands.push("cargo test -q".to_string());
+        commands.push("cargo check".to_string());
+    }
+    if traits.contains(&"python") {
+        commands.push("pytest -q".to_string());
+        commands.push("ruff check .".to_string());
+    }
+    if traits.contains(&"javascript") {
+        commands.push("npm test -- --watch=false".to_string());
+        commands.push("npm run lint".to_string());
+    }
+    if commands.is_empty() {
+        commands.push("make test".to_string());
+        commands.push("git status -sb".to_string());
+    }
+    commands
+}
+
+fn format_bootstrap_report(root: &Path) -> String {
+    let project_kind = classify_project_kind(root);
+    let commands = recommended_bootstrap_commands(root);
+    let mut lines = vec![
+        format!("**Solo Quickstart** (`{}`)", root.to_string_lossy()),
+        format!("- Project type: `{project_kind}`"),
+        String::new(),
+        "**Recommended first commands**".to_string(),
+    ];
+    for command in commands {
+        lines.push(format!("- `{command}`"));
+    }
+    lines.push(String::new());
+    lines.push(
+        "Suggested flow: `/doctor` -> `/focus start ...` -> `/workspace-map` -> `/resume`."
+            .to_string(),
+    );
+    lines.push("Onboarding shortcut: `/onboarding 1`.".to_string());
+    lines.join("\n")
+}
+
+fn estimate_token_cost(char_count: usize) -> usize {
+    (char_count / 4).max(1)
+}
+
+fn is_binary_like_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "ico"
+            | "pdf"
+            | "zip"
+            | "gz"
+            | "tar"
+            | "jar"
+            | "wasm"
+            | "exe"
+            | "dll"
+            | "so"
+            | "dylib"
+            | "ttf"
+            | "otf"
+            | "woff"
+            | "woff2"
+            | "mp3"
+            | "mp4"
+            | "mov"
+            | "avi"
+    )
+}
+
+fn context_relevance_score(path: &Path) -> i32 {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let mut score = match extension.as_str() {
+        "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "go" | "java" | "kt" => 120,
+        "toml" | "yaml" | "yml" | "json" => 80,
+        "md" => 60,
+        "sh" => 70,
+        _ => 40,
+    };
+
+    if matches!(
+        file_name.as_str(),
+        "readme.md"
+            | "cargo.toml"
+            | "pyproject.toml"
+            | "package.json"
+            | "makefile"
+            | "main.rs"
+            | "main.py"
+            | "app.py"
+            | "index.ts"
+            | "index.js"
+    ) {
+        score += 120;
+    }
+    if file_name.contains("test") {
+        score += 40;
+    }
+    if file_name.contains("config") || file_name.ends_with(".env") {
+        score += 30;
+    }
+    if file_name.contains(".lock") {
+        score -= 40;
+    }
+    score
+}
+
+fn compute_context_budget_files(
+    root: &Path,
+    budget_tokens: usize,
+    max_files: usize,
+) -> (Vec<String>, usize) {
+    let mut candidates = Vec::<(i32, String, usize)>::new();
+    for path in collect_directory_files(root, 5000) {
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if is_binary_like_extension(&extension) {
+            continue;
+        }
+        let byte_size = fs::metadata(&path)
+            .ok()
+            .map(|metadata| metadata.len() as usize)
+            .unwrap_or(0);
+        if byte_size == 0 {
+            continue;
+        }
+        let relative = path
+            .strip_prefix(root)
+            .map(|rel| rel.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
+        candidates.push((context_relevance_score(&path), relative, byte_size));
+    }
+
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+
+    let mut selected = Vec::<String>::new();
+    let mut used_tokens = 0usize;
+    for (_, relative, byte_size) in candidates {
+        if selected.len() >= max_files {
+            break;
+        }
+        let estimated = estimate_token_cost(byte_size.min(12_000));
+        if used_tokens + estimated > budget_tokens && !selected.is_empty() {
+            break;
+        }
+        selected.push(relative);
+        used_tokens += estimated;
+    }
+
+    (selected, used_tokens)
+}
+
+fn refresh_context_budget_state(app: &mut App) {
+    let root = PathBuf::from(&app.cwd);
+    if !root.is_dir() {
+        app.context_budget_files.clear();
+        app.context_budget_estimated_tokens = 0;
+        return;
+    }
+
+    let (files, used_tokens) = compute_context_budget_files(&root, app.context_budget_tokens, 12);
+    app.context_budget_files = files;
+    app.context_budget_estimated_tokens = used_tokens;
+}
+
+fn format_context_budget_report(app: &App) -> String {
+    let mut lines = vec![
+        format!(
+            "**Context Budget** (budget={} tok, used~{} tok)",
+            app.context_budget_tokens, app.context_budget_estimated_tokens
+        ),
+        String::new(),
+    ];
+    if app.context_budget_files.is_empty() {
+        lines.push("No candidate files selected.".to_string());
+        return lines.join("\n");
+    }
+
+    for file in app.context_budget_files.iter().take(12) {
+        lines.push(format!("- `{file}`"));
+    }
+    lines.push(String::new());
+    lines.push(
+        "Auto-selection is used when you send prompts without `@refs` or pinned files.".to_string(),
+    );
+    lines.join("\n")
+}
+
+fn command_data_dir(app: &App) -> PathBuf {
+    Path::new(&app.cwd).join(".poor-cli")
+}
+
+fn focus_state_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("focus.json")
+}
+
+fn load_focus_state(app: &App) -> Result<Option<FocusState>, String> {
+    let path = focus_state_path(app);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read focus state: {e}"))?;
+    let state: FocusState =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid focus state: {e}"))?;
+    Ok(Some(state))
+}
+
+fn save_focus_state(app: &App, state: &FocusState) -> Result<(), String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
+    let path = focus_state_path(app);
+    let serialized = serde_json::to_string_pretty(state)
+        .map_err(|e| format!("Failed to serialize focus state: {e}"))?;
+    fs::write(path, serialized).map_err(|e| format!("Failed to persist focus state: {e}"))
+}
+
+fn tasks_state_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("tasks.json")
+}
+
+fn load_tasks(app: &App) -> Result<Vec<TaskItem>, String> {
+    let path = tasks_state_path(app);
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read tasks: {e}"))?;
+    let tasks: Vec<TaskItem> =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid tasks file: {e}"))?;
+    Ok(tasks)
+}
+
+fn save_tasks(app: &App, tasks: &[TaskItem]) -> Result<(), String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
+    let path = tasks_state_path(app);
+    let serialized = serde_json::to_string_pretty(tasks)
+        .map_err(|e| format!("Failed to serialize tasks: {e}"))?;
+    fs::write(path, serialized).map_err(|e| format!("Failed to write tasks file: {e}"))
+}
+
+fn profile_state_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("profile.json")
+}
+
+fn load_profile_state(app: &App) -> Result<Option<ProfileState>, String> {
+    let path = profile_state_path(app);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read profile: {e}"))?;
+    let profile: ProfileState =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid profile state: {e}"))?;
+    Ok(Some(profile))
+}
+
+fn save_profile_state(app: &App, profile: &ProfileState) -> Result<(), String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
+    let path = profile_state_path(app);
+    let serialized = serde_json::to_string_pretty(profile)
+        .map_err(|e| format!("Failed to serialize profile: {e}"))?;
+    fs::write(path, serialized).map_err(|e| format!("Failed to write profile: {e}"))
+}
+
+fn apply_execution_profile(
+    app: &mut App,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    profile_name: &str,
+    persist: bool,
+) -> Result<String, String> {
+    let normalized = profile_name.trim().to_ascii_lowercase();
+    let (response_mode, context_budget, permission_mode, iteration_cap, notes) =
+        match normalized.as_str() {
+            "speed" => (
+                ResponseMode::Poor,
+                3200usize,
+                "auto-safe",
+                30u32,
+                "Optimized for fast iteration and lower token usage.",
+            ),
+            "safe" => (
+                ResponseMode::Rich,
+                6000usize,
+                "prompt",
+                40u32,
+                "Balanced defaults with safer execution prompts.",
+            ),
+            "deep-review" | "deep" => (
+                ResponseMode::Rich,
+                9000usize,
+                "prompt",
+                60u32,
+                "Expanded context and deeper analysis defaults.",
+            ),
+            _ => return Err("Unknown profile. Use one of: speed, safe, deep-review".to_string()),
+        };
+
+    app.execution_profile = if normalized == "deep" {
+        "deep-review".to_string()
+    } else {
+        normalized
+    };
+    app.response_mode = response_mode;
+    app.context_budget_tokens = context_budget;
+    app.iteration_cap = iteration_cap;
+
+    let _ = rpc_set_config_blocking(
+        rpc_cmd_tx,
+        "security.permission_mode",
+        Value::String(permission_mode.to_string()),
+    );
+    let _ = rpc_set_config_blocking(
+        rpc_cmd_tx,
+        "ui.response_mode",
+        Value::String(app.response_mode.as_str().to_string()),
+    );
+
+    if persist {
+        save_profile_state(
+            app,
+            &ProfileState {
+                name: app.execution_profile.clone(),
+            },
+        )?;
+    }
+
+    Ok(format!(
+        "Profile set to **{}**.\n- Response mode: `{}`\n- Permission mode: `{}`\n- Context budget: {} tokens\n- Iteration cap default: {}\n\n{}",
+        app.execution_profile,
+        app.response_mode.as_str(),
+        permission_mode,
+        app.context_budget_tokens,
+        app.iteration_cap,
+        notes
+    ))
+}
+
+fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
+    let trimmed = url.trim();
+    let (without_scheme, default_port) = if let Some(rest) = trimmed.strip_prefix("ws://") {
+        (rest, 80u16)
+    } else if let Some(rest) = trimmed.strip_prefix("wss://") {
+        (rest, 443u16)
+    } else {
+        return Err("URL must start with ws:// or wss://".to_string());
+    };
+
+    let authority = without_scheme.split('/').next().unwrap_or("").trim();
+    if authority.is_empty() {
+        return Err("URL is missing host".to_string());
+    }
+
+    if authority.starts_with('[') {
+        if let Some(close_idx) = authority.find(']') {
+            let host = authority[1..close_idx].to_string();
+            let remainder = authority[close_idx + 1..].trim();
+            let port = if let Some(port_text) = remainder.strip_prefix(':') {
+                port_text
+                    .parse::<u16>()
+                    .map_err(|_| "Invalid URL port".to_string())?
+            } else {
+                default_port
+            };
+            return Ok((host, port));
+        }
+        return Err("Invalid IPv6 URL host".to_string());
+    }
+
+    if let Some((host, port_text)) = authority.rsplit_once(':') {
+        if host.contains(':') {
+            return Ok((authority.to_string(), default_port));
+        }
+        let port = port_text
+            .parse::<u16>()
+            .map_err(|_| "Invalid URL port".to_string())?;
+        return Ok((host.to_string(), port));
+    }
+
+    Ok((authority.to_string(), default_port))
+}
+
+fn preflight_join_endpoint(url: &str) -> Result<String, String> {
+    let (host, port) = ws_url_host_port(url)?;
+    let addr_text = format!("{host}:{port}");
+    let mut addrs = addr_text
+        .to_socket_addrs()
+        .map_err(|e| format!("Could not resolve `{host}`: {e}"))?;
+    let target = addrs
+        .next()
+        .ok_or_else(|| format!("No reachable address found for `{host}`"))?;
+    TcpStream::connect_timeout(&target, Duration::from_secs(2))
+        .map_err(|e| format!("Could not reach {addr_text}: {e}"))?;
+    Ok(format!("Preflight OK: reachable {addr_text}"))
 }
 
 fn last_assistant_message(app: &App) -> Option<String> {
@@ -3750,16 +7039,26 @@ fn rpc_execute_command_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     command: &str,
 ) -> Result<String, String> {
+    rpc_execute_command_with_timeout_blocking(rpc_cmd_tx, command, None, 60)
+}
+
+fn rpc_execute_command_with_timeout_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    command: &str,
+    command_timeout_secs: Option<u64>,
+    response_timeout_secs: u64,
+) -> Result<String, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
         .send(RpcCommand::ExecuteCommand {
             command: command.to_string(),
+            timeout: command_timeout_secs,
             reply: reply_tx,
         })
         .map_err(|e| format!("Failed to send command to backend: {e}"))?;
 
     reply_rx
-        .recv_timeout(Duration::from_secs(60))
+        .recv_timeout(Duration::from_secs(response_timeout_secs))
         .map_err(|_| "Timed out waiting for backend command response".to_string())?
 }
 
@@ -4094,6 +7393,293 @@ fn rpc_stop_host_server_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Resul
         .map_err(|_| "Timed out waiting for host server stop response".to_string())?
 }
 
+fn rpc_list_host_members_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListHostMembers {
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host members: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host members response".to_string())?
+}
+
+fn rpc_remove_host_member_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RemoveHostMember {
+            connection_id: connection_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host member removal: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host member removal response".to_string())?
+}
+
+fn rpc_set_host_member_role_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    role: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetHostMemberRole {
+            connection_id: connection_id.to_string(),
+            role: role.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host role update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host role update response".to_string())?
+}
+
+fn rpc_set_host_lobby_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    enabled: bool,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetHostLobby {
+            enabled,
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host lobby update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host lobby update response".to_string())?
+}
+
+fn rpc_approve_host_member_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ApproveHostMember {
+            connection_id: connection_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host member approval: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host member approval response".to_string())?
+}
+
+fn rpc_deny_host_member_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::DenyHostMember {
+            connection_id: connection_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host member denial: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host member denial response".to_string())?
+}
+
+fn rpc_rotate_host_token_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    role: &str,
+    room: Option<&str>,
+    expires_in_seconds: Option<u64>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RotateHostToken {
+            role: role.to_string(),
+            room: room.map(|value| value.to_string()),
+            expires_in_seconds,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request token rotation: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for token rotation response".to_string())?
+}
+
+fn rpc_revoke_host_token_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    value: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RevokeHostToken {
+            value: value.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request token revocation: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for token revocation response".to_string())?
+}
+
+fn rpc_handoff_host_member_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::HandoffHostMember {
+            connection_id: connection_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request role handoff: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for role handoff response".to_string())?
+}
+
+fn rpc_set_host_preset_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    preset: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetHostPreset {
+            preset: preset.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request preset update: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for preset update response".to_string())?
+}
+
+fn rpc_list_host_activity_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+    limit: u64,
+    event_type: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListHostActivity {
+            room: room.map(|value| value.to_string()),
+            limit,
+            event_type: event_type.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request host activity: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for host activity response".to_string())?
+}
+
+fn rpc_start_service_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+    command: Option<&str>,
+    cwd: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StartService {
+            name: name.to_string(),
+            command: command.map(|value| value.to_string()),
+            cwd: cwd.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service start: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(90))
+        .map_err(|_| "Timed out waiting for service start response".to_string())?
+}
+
+fn rpc_stop_service_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::StopService {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service stop: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(60))
+        .map_err(|_| "Timed out waiting for service stop response".to_string())?
+}
+
+fn rpc_get_service_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetServiceStatus {
+            name: name.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for service status response".to_string())?
+}
+
+fn rpc_get_service_logs_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+    lines: Option<u64>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetServiceLogs {
+            name: name.to_string(),
+            lines,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request service logs: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for service logs response".to_string())?
+}
+
 fn copy_to_clipboard(content: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -4262,6 +7848,72 @@ mod tests {
     }
 
     #[test]
+    fn onboarding_step_renderer_includes_navigation() {
+        let rendered = format_onboarding_step(0);
+        assert!(rendered.contains("Onboarding 1/"));
+        assert!(rendered.contains("Navigation:"));
+        assert!(rendered.contains("/onboarding next"));
+    }
+
+    #[test]
+    fn onboarding_step_renderer_clamps_out_of_range_step() {
+        let rendered = format_onboarding_step(usize::MAX);
+        assert!(rendered.contains("Onboarding"));
+        assert!(rendered.contains("final step"));
+    }
+
+    #[test]
+    fn parse_bang_command_extracts_command_text() {
+        assert_eq!(
+            parse_bang_command("!cat README.md"),
+            Some(BangCommandInput {
+                command: "cat README.md".to_string(),
+                question: None,
+            })
+        );
+        assert_eq!(
+            parse_bang_command("   !ls -la   "),
+            Some(BangCommandInput {
+                command: "ls -la".to_string(),
+                question: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_bang_command_rejects_empty_or_non_bang_input() {
+        assert_eq!(parse_bang_command("!"), None);
+        assert_eq!(parse_bang_command("   !   "), None);
+        assert_eq!(parse_bang_command("!   | explain this"), None);
+        assert_eq!(parse_bang_command("/run ls"), None);
+    }
+
+    #[test]
+    fn build_bang_command_prompt_includes_command_and_output() {
+        let rendered = build_bang_command_prompt("cat file.txt", "hello\nworld", None);
+        assert!(rendered.contains("Command: `cat file.txt`"));
+        assert!(rendered.contains("hello"));
+        assert!(rendered.contains("```text"));
+    }
+
+    #[test]
+    fn parse_bang_command_extracts_optional_question() {
+        assert_eq!(
+            parse_bang_command("!cat README.md | summarize key points"),
+            Some(BangCommandInput {
+                command: "cat README.md".to_string(),
+                question: Some("summarize key points".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn build_bang_command_prompt_includes_optional_question() {
+        let rendered = build_bang_command_prompt("cat file.txt", "hello", Some("what is wrong?"));
+        assert!(rendered.contains("User question: what is wrong?"));
+    }
+
+    #[test]
     fn extract_at_references_supports_quotes_and_punctuation() {
         let refs = extract_at_references(
             r#"check (@src/main.rs), @"docs/My File.md" and @'notes/with spaces.md' a@b.com"#,
@@ -4342,6 +7994,37 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(names, vec!["a.txt", "b.txt", "c.txt"]);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_kind_detects_rust_python_mixed() {
+        let root = create_temp_workspace("project-kind");
+        fs::write(root.join("Cargo.toml"), "[package]\nname=\"x\"\n").expect("cargo file");
+        fs::write(root.join("pyproject.toml"), "[project]\nname=\"x\"\n").expect("pyproject");
+        assert_eq!(classify_project_kind(&root), "mixed");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn context_budget_selection_respects_budget() {
+        let root = create_temp_workspace("context-budget");
+        fs::write(root.join("README.md"), "# app\n").expect("readme");
+        fs::write(root.join("main.py"), "print('hello')\n".repeat(80)).expect("main py");
+        fs::write(root.join("utils.py"), "def x():\n    return 1\n".repeat(50)).expect("utils py");
+
+        let (files, used) = compute_context_budget_files(&root, 600, 12);
+        assert!(!files.is_empty());
+        assert!(used <= 600);
+        assert!(files.iter().any(|path| path.ends_with("README.md")));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn default_qa_command_prefers_python_when_pyproject_exists() {
+        let root = create_temp_workspace("qa-default");
+        fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").expect("pyproject");
+        assert_eq!(default_qa_command_for_workspace(&root), "pytest -q");
         let _ = fs::remove_dir_all(root);
     }
 }

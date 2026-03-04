@@ -385,3 +385,41 @@ async def test_inline_complete_uses_isolated_engine_not_room_server():
 
     finally:
         await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_token_expiry_and_activity_filtering():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+
+    try:
+        room = host.rooms["dev"]
+        host._record_activity(room, event_type="custom_one")
+        host._record_activity(room, event_type="custom_two")
+        host._record_activity(room, event_type="custom_one")
+
+        filtered = host.list_room_activity("dev", 10, "custom_one")
+        assert len(filtered) == 2
+        assert all(item.get("eventType") == "custom_one" for item in filtered)
+
+        rotated = await host.rotate_room_token("dev", "viewer", expires_in_seconds=1)
+        assert rotated is not None
+
+        tokens_before = host.get_room_tokens()["dev"]
+        assert tokens_before.get("viewer") == rotated
+
+        await asyncio.sleep(1.2)
+
+        tokens_after = host.get_room_tokens()["dev"]
+        assert tokens_after.get("viewer") != rotated
+    finally:
+        await host.stop()

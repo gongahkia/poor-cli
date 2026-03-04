@@ -8,21 +8,24 @@ It supports stdio transport for Neovim integration.
 import argparse
 import ast
 import asyncio
+from collections import deque
 import contextlib
 import copy
 import difflib
 import json
 import logging
 import os
+import shlex
 import shutil
 import socket
 import sys
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from .config import PermissionMode
 from .core import PoorCLICore, CoreEvent
@@ -240,6 +243,21 @@ class InvalidParamsError(Exception):
     """Raised when JSON-RPC method params fail validation."""
 
 
+@dataclass
+class ManagedServiceRuntime:
+    """Track a long-running local service process managed by the server."""
+
+    name: str
+    command: List[str]
+    command_display: str
+    cwd: Optional[str]
+    process: asyncio.subprocess.Process
+    log_path: Path
+    log_handle: Any
+    started_at: str
+    last_exit_code: Optional[int] = None
+
+
 # =============================================================================
 # PoorCLI Server
 # =============================================================================
@@ -278,6 +296,9 @@ class PoorCLIServer:
         self._host_public_ws_url: Optional[str] = None
         self._host_rooms: List[str] = []
         self._host_ngrok_enabled = False
+        self._service_lock = asyncio.Lock()
+        self._managed_services: Dict[str, ManagedServiceRuntime] = {}
+        self._service_logs_dir = Path.home() / ".poor-cli" / "services"
 
         self._register_handlers()
 
@@ -318,6 +339,10 @@ class PoorCLIServer:
             "setConfig": self.handle_set_config,
             "setApiKey": self.handle_set_api_key,
             "getApiKeyStatus": self.handle_get_api_key_status,
+            "startService": self.handle_start_service,
+            "stopService": self.handle_stop_service,
+            "getServiceStatus": self.handle_get_service_status,
+            "getServiceLogs": self.handle_get_service_logs,
             "poor-cli/chat": self.handle_chat,
             "poor-cli/inlineComplete": self.handle_inline_complete,
             "poor-cli/applyEdit": self.handle_apply_edit,
@@ -343,6 +368,21 @@ class PoorCLIServer:
             "poor-cli/startHostServer": self.handle_start_host_server,
             "poor-cli/getHostServerStatus": self.handle_get_host_server_status,
             "poor-cli/stopHostServer": self.handle_stop_host_server,
+            "poor-cli/listHostMembers": self.handle_list_host_members,
+            "poor-cli/removeHostMember": self.handle_remove_host_member,
+            "poor-cli/setHostMemberRole": self.handle_set_host_member_role,
+            "poor-cli/setHostLobby": self.handle_set_host_lobby,
+            "poor-cli/approveHostMember": self.handle_approve_host_member,
+            "poor-cli/denyHostMember": self.handle_deny_host_member,
+            "poor-cli/rotateHostToken": self.handle_rotate_host_token,
+            "poor-cli/revokeHostToken": self.handle_revoke_host_token,
+            "poor-cli/handoffHostMember": self.handle_handoff_host_member,
+            "poor-cli/setHostPreset": self.handle_set_host_preset,
+            "poor-cli/listHostActivity": self.handle_list_host_activity,
+            "poor-cli/startService": self.handle_start_service,
+            "poor-cli/stopService": self.handle_stop_service,
+            "poor-cli/getServiceStatus": self.handle_get_service_status,
+            "poor-cli/getServiceLogs": self.handle_get_service_logs,
             "poor-cli/cancelRequest": self.handle_cancel_request,
             "poor-cli/chatStreaming": self.handle_chat_streaming,
         }
@@ -408,6 +448,8 @@ class PoorCLIServer:
         self.logger.info("Shutdown requested")
         async with self._host_server_lock:
             await self._shutdown_host_server_locked()
+        async with self._service_lock:
+            await self._shutdown_managed_services_locked()
         self._running = False
         return None
 
@@ -536,6 +578,7 @@ class PoorCLIServer:
 
         Params:
             command: Command to execute
+            timeout: Optional timeout in seconds (default 60, max 3600)
 
         Returns:
             output: Command output
@@ -544,7 +587,17 @@ class PoorCLIServer:
         self._ensure_initialized()
 
         command = params.get("command", "")
+        timeout = params.get("timeout")
+        if timeout is not None:
+            try:
+                timeout = int(timeout)
+            except (TypeError, ValueError) as e:
+                raise InvalidParamsError("timeout must be an integer") from e
+            timeout = max(1, min(timeout, 3600))
+
         tool_args = {"command": command}
+        if timeout is not None:
+            tool_args["timeout"] = timeout
 
         with log_context(tool_name="bash"):
             await self._enforce_server_tool_permission("bash", tool_args)
@@ -1273,6 +1326,437 @@ class PoorCLIServer:
             "sizeBytes": output_path.stat().st_size,
         }
 
+    def _ensure_service_controls_available(self) -> None:
+        """Disallow service lifecycle controls from nested multiplayer room engines."""
+        if self._embedded_multiplayer_room:
+            raise InvalidParamsError(
+                "Service controls are unavailable inside multiplayer room sessions"
+            )
+
+    @staticmethod
+    def _normalize_service_name(raw_name: Any) -> str:
+        """Normalize and validate user-provided service names."""
+        service_name = str(raw_name or "").strip().lower()
+        if not service_name:
+            raise InvalidParamsError("Missing service name")
+
+        if not all(ch.isalnum() or ch in {"-", "_", "."} for ch in service_name):
+            raise InvalidParamsError(
+                "Service name must contain only letters, numbers, '-', '_' or '.'"
+            )
+        return service_name
+
+    @staticmethod
+    def _parse_service_command(raw_command: Any) -> List[str]:
+        """Parse a command (string or argv list) into argv parts."""
+        if raw_command is None:
+            return []
+
+        parts: List[str]
+        if isinstance(raw_command, str):
+            command_text = raw_command.strip()
+            if not command_text:
+                return []
+            try:
+                parts = shlex.split(command_text)
+            except ValueError as error:
+                raise InvalidParamsError(f"Invalid command syntax: {error}") from error
+        elif isinstance(raw_command, list):
+            parts = [str(item).strip() for item in raw_command if str(item).strip()]
+        else:
+            raise InvalidParamsError("command must be a string or a list of argv tokens")
+
+        if not parts:
+            raise InvalidParamsError("command cannot be empty")
+        return parts
+
+    @staticmethod
+    def _service_default_command(service_name: str) -> Optional[List[str]]:
+        """Return built-in command defaults for known local services."""
+        if service_name == "ollama":
+            return ["ollama", "serve"]
+        return None
+
+    @staticmethod
+    def _render_command_display(command_parts: List[str]) -> str:
+        """Render argv parts to a user-facing shell-safe display string."""
+        return " ".join(shlex.quote(part) for part in command_parts)
+
+    @staticmethod
+    def _resolve_service_executable(command_name: str) -> Optional[str]:
+        """Resolve a command to an executable path, if possible."""
+        if not command_name:
+            return None
+
+        command_path = Path(command_name).expanduser()
+        if "/" in command_name or command_path.is_absolute():
+            if command_path.exists():
+                return str(command_path)
+            return None
+
+        return shutil.which(command_name)
+
+    def _ollama_base_url(self) -> str:
+        """Resolve configured Ollama base URL with a safe default."""
+        default_base_url = "http://localhost:11434"
+        if self.core.config is None:
+            return default_base_url
+
+        provider_cfg = self.core.config.model.providers.get("ollama")
+        if provider_cfg is None:
+            return default_base_url
+        return str(provider_cfg.base_url or default_base_url).strip() or default_base_url
+
+    @staticmethod
+    def _is_tcp_endpoint_reachable(host: str, port: int, timeout_seconds: float = 0.8) -> bool:
+        """Cheap TCP readiness check used for local service health probes."""
+        try:
+            with socket.create_connection((host, port), timeout=timeout_seconds):
+                return True
+        except OSError:
+            return False
+
+    def _is_ollama_reachable(self, base_url: Optional[str] = None) -> bool:
+        """Check whether the configured Ollama endpoint is accepting TCP connections."""
+        target_url = (base_url or self._ollama_base_url()).strip()
+        parsed = urlparse(target_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port
+        if port is None:
+            port = 443 if parsed.scheme == "https" else 80
+        return self._is_tcp_endpoint_reachable(host, port)
+
+    async def _stop_managed_service_locked(
+        self,
+        service: ManagedServiceRuntime,
+        timeout_seconds: float = 5.0,
+    ) -> bool:
+        """Stop a managed service process and close log handles (lock must be held)."""
+        was_running = service.process.returncode is None
+
+        if was_running:
+            with contextlib.suppress(ProcessLookupError):
+                service.process.terminate()
+            try:
+                await asyncio.wait_for(service.process.wait(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    service.process.kill()
+                with contextlib.suppress(Exception):
+                    await service.process.wait()
+
+        if service.process.returncode is not None:
+            service.last_exit_code = service.process.returncode
+
+        if getattr(service, "log_handle", None) is not None:
+            with contextlib.suppress(Exception):
+                service.log_handle.flush()
+                service.log_handle.close()
+
+        return was_running
+
+    async def _shutdown_managed_services_locked(self) -> None:
+        """Stop every managed service (lock must be held)."""
+        for service in self._managed_services.values():
+            with contextlib.suppress(Exception):
+                await self._stop_managed_service_locked(service)
+        self._managed_services.clear()
+
+    def _service_payload_locked(
+        self,
+        service_name: str,
+        *,
+        created: bool = False,
+        stopped: bool = False,
+        message: str = "",
+    ) -> Dict[str, Any]:
+        """Build stable status payload for a managed/external service."""
+        managed = self._managed_services.get(service_name)
+        managed_running = False
+
+        payload: Dict[str, Any] = {
+            "service": service_name,
+            "running": False,
+            "managed": managed is not None,
+            "managedRunning": False,
+            "external": False,
+            "created": created,
+            "stopped": stopped,
+            "message": message,
+        }
+
+        default_command = self._service_default_command(service_name)
+        command_for_availability = (
+            managed.command if managed is not None else (default_command or [])
+        )
+        executable_path = (
+            self._resolve_service_executable(command_for_availability[0])
+            if command_for_availability
+            else None
+        )
+        payload["available"] = executable_path is not None
+        if executable_path is not None:
+            payload["executable"] = executable_path
+
+        if managed is not None:
+            managed_running = managed.process.returncode is None
+            if managed.process.returncode is not None and managed.last_exit_code is None:
+                managed.last_exit_code = managed.process.returncode
+
+            payload.update(
+                {
+                    "managedRunning": managed_running,
+                    "running": managed_running,
+                    "pid": managed.process.pid if managed_running else None,
+                    "command": managed.command_display,
+                    "cwd": managed.cwd,
+                    "logPath": str(managed.log_path),
+                    "startedAt": managed.started_at,
+                    "exitCode": managed.last_exit_code,
+                }
+            )
+        elif default_command is not None:
+            payload["command"] = self._render_command_display(default_command)
+            payload["logPath"] = str(self._service_logs_dir / f"{service_name}.log")
+
+        if service_name == "ollama":
+            base_url = self._ollama_base_url()
+            healthy = self._is_ollama_reachable(base_url)
+            external = healthy and not managed_running
+            payload["baseUrl"] = base_url
+            payload["healthy"] = healthy
+            payload["external"] = external
+            payload["running"] = managed_running or external
+
+        return payload
+
+    @staticmethod
+    def _tail_log_file(log_path: Path, line_count: int) -> str:
+        """Read the last N lines from a text log file."""
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            tail = deque(handle, maxlen=max(line_count, 1))
+        return "".join(tail).strip()
+
+    async def handle_start_service(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Start a managed local background service.
+
+        Params:
+            name: Service identifier (e.g. ollama)
+            command: Optional command string or argv array
+            cwd: Optional working directory
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        service_name = self._normalize_service_name(params.get("name"))
+        command_parts = self._parse_service_command(params.get("command"))
+        cwd_value: Optional[str] = None
+
+        raw_cwd = params.get("cwd")
+        if raw_cwd not in (None, ""):
+            cwd_path = self._resolve_path(str(raw_cwd))
+            if not cwd_path.is_dir():
+                raise InvalidParamsError(f"cwd is not a directory: {raw_cwd}")
+            cwd_value = str(cwd_path)
+
+        async with self._service_lock:
+            existing = self._managed_services.get(service_name)
+            if existing is not None and existing.process.returncode is None:
+                return self._service_payload_locked(
+                    service_name,
+                    created=False,
+                    stopped=False,
+                    message="Service is already running.",
+                )
+
+            if not command_parts:
+                if existing is not None and existing.command:
+                    command_parts = list(existing.command)
+                else:
+                    default_command = self._service_default_command(service_name)
+                    if default_command is not None:
+                        command_parts = list(default_command)
+
+            if not command_parts:
+                raise InvalidParamsError(
+                    "Missing command. Usage: /service start <name> <command...>"
+                )
+
+            if cwd_value is None and existing is not None and existing.cwd:
+                cwd_value = existing.cwd
+
+            executable_path = self._resolve_service_executable(command_parts[0])
+            if executable_path is None:
+                raise InvalidParamsError(
+                    f"Command not found for service '{service_name}': {command_parts[0]}"
+                )
+
+            if (
+                service_name == "ollama"
+                and self._is_ollama_reachable()
+                and (existing is None or existing.process.returncode is not None)
+            ):
+                return self._service_payload_locked(
+                    service_name,
+                    created=False,
+                    stopped=False,
+                    message="Ollama is already running (external to poor-cli).",
+                )
+
+            self._service_logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = self._service_logs_dir / f"{service_name}.log"
+
+            if existing is not None and getattr(existing, "log_handle", None) is not None:
+                with contextlib.suppress(Exception):
+                    existing.log_handle.flush()
+                    existing.log_handle.close()
+
+            log_handle = open(log_path, "ab")
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *command_parts,
+                    stdout=log_handle,
+                    stderr=asyncio.subprocess.STDOUT,
+                    cwd=cwd_value,
+                )
+            except Exception:
+                with contextlib.suppress(Exception):
+                    log_handle.close()
+                raise
+
+            runtime = ManagedServiceRuntime(
+                name=service_name,
+                command=list(command_parts),
+                command_display=self._render_command_display(command_parts),
+                cwd=cwd_value,
+                process=process,
+                log_path=log_path,
+                log_handle=log_handle,
+                started_at=datetime.now().isoformat(),
+            )
+            self._managed_services[service_name] = runtime
+
+            # Catch immediate launch failures and surface actionable output.
+            await asyncio.sleep(0.15)
+            if process.returncode is not None:
+                runtime.last_exit_code = process.returncode
+                await self._stop_managed_service_locked(runtime, timeout_seconds=0.1)
+                raise PoorCLIError(
+                    f"Service '{service_name}' exited immediately with code "
+                    f"{runtime.last_exit_code}. Check logs: {log_path}"
+                )
+
+            return self._service_payload_locked(
+                service_name,
+                created=True,
+                stopped=False,
+                message="Service started.",
+            )
+
+    async def handle_stop_service(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Stop a managed local background service.
+
+        Params:
+            name: Service identifier
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        service_name = self._normalize_service_name(params.get("name"))
+
+        async with self._service_lock:
+            service = self._managed_services.get(service_name)
+            if service is None:
+                payload = self._service_payload_locked(
+                    service_name,
+                    created=False,
+                    stopped=False,
+                    message="Service is not managed by poor-cli.",
+                )
+                if service_name == "ollama" and payload.get("external"):
+                    payload["message"] = (
+                        "Ollama is running externally and cannot be stopped by poor-cli."
+                    )
+                return payload
+
+            was_running = await self._stop_managed_service_locked(service)
+            return self._service_payload_locked(
+                service_name,
+                created=False,
+                stopped=was_running,
+                message="Service stopped." if was_running else "Service was already stopped.",
+            )
+
+    async def handle_get_service_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get service status for one service or all known services.
+
+        Params:
+            name: Optional service identifier filter
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        requested_name = str(params.get("name", "")).strip()
+        async with self._service_lock:
+            if requested_name:
+                service_name = self._normalize_service_name(requested_name)
+                return self._service_payload_locked(service_name)
+
+            names = set(self._managed_services.keys())
+            names.add("ollama")
+            return {
+                "services": [
+                    self._service_payload_locked(service_name)
+                    for service_name in sorted(names)
+                ]
+            }
+
+    async def handle_get_service_logs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return tail logs for a managed local service.
+
+        Params:
+            name: Service identifier
+            lines: Optional number of tail lines (default 80, max 500)
+        """
+        self._ensure_initialized()
+        self._ensure_service_controls_available()
+
+        service_name = self._normalize_service_name(params.get("name"))
+        raw_lines = params.get("lines", 80)
+        try:
+            line_count = int(raw_lines)
+        except (TypeError, ValueError) as error:
+            raise InvalidParamsError("lines must be an integer") from error
+        line_count = max(1, min(line_count, 500))
+
+        async with self._service_lock:
+            payload = self._service_payload_locked(service_name)
+            service = self._managed_services.get(service_name)
+            if service is not None:
+                log_path = service.log_path
+            elif service_name == "ollama":
+                log_path = self._service_logs_dir / "ollama.log"
+            else:
+                raise InvalidParamsError(f"Unknown service: {service_name}")
+
+        exists = log_path.is_file()
+        content = ""
+        if exists:
+            content = self._tail_log_file(log_path, line_count)
+
+        return {
+            "service": service_name,
+            "lines": line_count,
+            "logPath": str(log_path),
+            "exists": exists,
+            "content": content,
+            "status": payload,
+        }
+
     def _ensure_host_controls_available(self) -> None:
         """Disallow host lifecycle controls from nested multiplayer room engines."""
         if self._embedded_multiplayer_room:
@@ -1385,6 +1869,26 @@ class PoorCLIServer:
 
         tokens: Dict[str, Dict[str, str]] = self._host_server.get_room_tokens()
         join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
+        member_count_by_room: Dict[str, int] = {}
+        lobby_by_room: Dict[str, bool] = {}
+        preset_by_room: Dict[str, str] = {}
+        if hasattr(self._host_server, "list_room_members"):
+            with contextlib.suppress(Exception):
+                member_snapshots = self._host_server.list_room_members(None)
+                if isinstance(member_snapshots, list):
+                    for room_entry in member_snapshots:
+                        if not isinstance(room_entry, dict):
+                            continue
+                        room_name = str(room_entry.get("name", "")).strip()
+                        if not room_name:
+                            continue
+                        try:
+                            member_count_by_room[room_name] = int(room_entry.get("memberCount", 0))
+                        except (TypeError, ValueError):
+                            member_count_by_room[room_name] = 0
+                        lobby_by_room[room_name] = bool(room_entry.get("lobbyEnabled", False))
+                        preset_by_room[room_name] = str(room_entry.get("preset", "pairing"))
+
         rooms: List[Dict[str, Any]] = []
         for room_name in sorted(tokens.keys()):
             role_map = tokens.get(room_name, {})
@@ -1418,6 +1922,9 @@ class PoorCLIServer:
                     "prompterJoinCommand": prompter_join_command,
                     "viewerInviteCode": viewer_invite_code,
                     "prompterInviteCode": prompter_invite_code,
+                    "memberCount": member_count_by_room.get(room_name, 0),
+                    "lobbyEnabled": lobby_by_room.get(room_name, False),
+                    "preset": preset_by_room.get(room_name, "pairing"),
                 }
             )
 
@@ -1553,6 +2060,513 @@ class PoorCLIServer:
         async with self._host_server_lock:
             was_running = await self._shutdown_host_server_locked()
             return self._compose_host_server_payload(created=False, stopped=was_running)
+
+    def _host_room_names_locked(self) -> List[str]:
+        """Return active host room names (call while holding host lock)."""
+        if self._host_server is None:
+            return []
+
+        host_rooms = getattr(self._host_server, "rooms", None)
+        if isinstance(host_rooms, dict) and host_rooms:
+            return sorted(str(name) for name in host_rooms.keys())
+        return sorted(str(name) for name in self._host_rooms)
+
+    def _resolve_host_room_name_locked(self, requested_room: str) -> str:
+        """Resolve room name for host-member controls (call while holding host lock)."""
+        room_names = self._host_room_names_locked()
+        if not room_names:
+            raise InvalidParamsError("No multiplayer host is currently running")
+
+        normalized = requested_room.strip()
+        if normalized:
+            if normalized not in room_names:
+                raise InvalidParamsError(
+                    f"Unknown room `{normalized}`. Available rooms: {', '.join(room_names)}"
+                )
+            return normalized
+
+        if len(room_names) == 1:
+            return room_names[0]
+        raise InvalidParamsError(
+            "Multiple rooms are active; specify one with `room`."
+        )
+
+    @staticmethod
+    def _normalize_member_role(raw_role: Any) -> str:
+        """Normalize role values used by host-member controls."""
+        role_name = str(raw_role or "").strip().lower()
+        if role_name in {"viewer", "read", "read-only"}:
+            return "viewer"
+        if role_name in {"prompter", "writer", "editor", "admin"}:
+            return "prompter"
+        raise InvalidParamsError("role must be one of: viewer, prompter")
+
+    async def handle_list_host_members(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        List connected members per room for the active in-process multiplayer host.
+
+        Params:
+            room: Optional room name filter.
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                return {"running": False, "rooms": []}
+
+            room_names = self._host_room_names_locked()
+            if requested_room and requested_room not in room_names:
+                raise InvalidParamsError(
+                    f"Unknown room `{requested_room}`. Available rooms: {', '.join(room_names)}"
+                )
+
+            host = self._host_server
+            if not hasattr(host, "list_room_members"):
+                raise RuntimeError("Active host does not support member listing")
+
+            rooms_payload = host.list_room_members(requested_room or None)
+            return {"running": True, "rooms": rooms_payload}
+
+    async def handle_remove_host_member(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove/disconnect a connected member from a host room.
+
+        Params:
+            connectionId: Target connection id
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "remove_room_member"):
+                raise RuntimeError("Active host does not support member removal")
+
+            removed = await host.remove_room_member(room_name, connection_id)
+            if not removed:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "removed": True,
+            }
+
+    async def handle_set_host_member_role(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update a connected member role for a host room.
+
+        Params:
+            connectionId: Target connection id
+            role: viewer | prompter
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        role_name = self._normalize_member_role(params.get("role"))
+        requested_room = str(params.get("room", "")).strip()
+
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "set_room_member_role"):
+                raise RuntimeError("Active host does not support role updates")
+
+            try:
+                updated = await host.set_room_member_role(room_name, connection_id, role_name)
+            except ValueError as error:
+                raise InvalidParamsError(str(error)) from error
+
+            if not updated:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "role": role_name,
+            }
+
+    async def handle_set_host_lobby(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enable/disable host lobby approval mode for a room.
+
+        Params:
+            enabled: bool
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        enabled = bool(params.get("enabled", True))
+        requested_room = str(params.get("room", "")).strip()
+
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "set_room_lobby"):
+                raise RuntimeError("Active host does not support lobby controls")
+
+            updated = await host.set_room_lobby(room_name, enabled)
+            if not updated:
+                raise InvalidParamsError(f"Unknown room `{room_name}`")
+
+            return {
+                "success": True,
+                "room": room_name,
+                "lobbyEnabled": enabled,
+            }
+
+    async def handle_approve_host_member(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Approve a pending room member when lobby mode is enabled.
+
+        Params:
+            connectionId: Target connection id
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "approve_room_member"):
+                raise RuntimeError("Active host does not support member approvals")
+
+            approved = await host.approve_room_member(room_name, connection_id)
+            if not approved:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "approved": True,
+            }
+
+    async def handle_deny_host_member(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Deny/remove a pending room member when lobby mode is enabled.
+
+        Params:
+            connectionId: Target connection id
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "deny_room_member"):
+                raise RuntimeError("Active host does not support member denial")
+
+            denied = await host.deny_room_member(room_name, connection_id)
+            if not denied:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "denied": True,
+            }
+
+    async def handle_rotate_host_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Rotate room invite token for a role.
+
+        Params:
+            role: viewer | prompter
+            room: Optional room name (required if multiple rooms)
+            expiresInSeconds: Optional token expiry (seconds)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        role_name = self._normalize_member_role(params.get("role"))
+        requested_room = str(params.get("room", "")).strip()
+        raw_ttl = params.get("expiresInSeconds")
+        ttl_seconds: Optional[int]
+        if raw_ttl is None:
+            ttl_seconds = None
+        else:
+            try:
+                ttl_seconds = int(raw_ttl)
+            except (TypeError, ValueError) as e:
+                raise InvalidParamsError("expiresInSeconds must be a positive integer") from e
+            if ttl_seconds <= 0:
+                raise InvalidParamsError("expiresInSeconds must be a positive integer")
+
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "rotate_room_token"):
+                raise RuntimeError("Active host does not support token rotation")
+
+            try:
+                token = await host.rotate_room_token(
+                    room_name,
+                    role_name,
+                    expires_in_seconds=ttl_seconds,
+                )
+            except ValueError as error:
+                raise InvalidParamsError(str(error)) from error
+
+            if not token:
+                raise InvalidParamsError(f"Unable to rotate token for room `{room_name}`")
+
+            join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
+            join_command = ""
+            invite_code = ""
+            expires_at = ""
+            if ttl_seconds is not None:
+                expires_at = (
+                    datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+                ).isoformat()
+            if join_ws_url:
+                join_command = (
+                    f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} --remote-token {token}"
+                )
+                invite_code = f"{join_ws_url}|{room_name}|{token}"
+
+            return {
+                "success": True,
+                "room": room_name,
+                "role": role_name,
+                "token": token,
+                "joinCommand": join_command,
+                "inviteCode": invite_code,
+                "expiresAt": expires_at,
+            }
+
+    async def handle_revoke_host_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Revoke an invite token or remove a member by connection id.
+
+        Params:
+            value: token or connection id
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        value = str(params.get("value", "")).strip()
+        if not value:
+            raise InvalidParamsError("Missing value (token or connectionId)")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+
+            removed_member = False
+            if hasattr(host, "remove_room_member"):
+                removed_member = await host.remove_room_member(room_name, value)
+                if removed_member:
+                    return {
+                        "success": True,
+                        "room": room_name,
+                        "connectionId": value,
+                        "removed": True,
+                        "kind": "member",
+                    }
+
+            if not hasattr(host, "revoke_room_token"):
+                raise RuntimeError("Active host does not support token revocation")
+
+            revoked_token = await host.revoke_room_token(room_name, value)
+            if not revoked_token:
+                raise InvalidParamsError(
+                    f"`{value}` was not found as a connection id or token in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "token": value,
+                "revoked": True,
+                "kind": "token",
+            }
+
+    async def handle_handoff_host_member(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handoff prompter control to a specific member.
+
+        Params:
+            connectionId: Target connection id
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("Missing connectionId")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "handoff_room_prompter"):
+                raise RuntimeError("Active host does not support role handoff")
+
+            handed_off = await host.handoff_room_prompter(room_name, connection_id)
+            if not handed_off:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "role": "prompter",
+                "handoff": True,
+            }
+
+    async def handle_set_host_preset(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply a room preset for collaboration mode.
+
+        Params:
+            preset: pairing | mob | review
+            room: Optional room name (required if multiple rooms)
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        preset = str(params.get("preset", "")).strip().lower()
+        if preset not in {"pairing", "mob", "review"}:
+            raise InvalidParamsError("preset must be one of: pairing, mob, review")
+
+        requested_room = str(params.get("room", "")).strip()
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "set_room_preset"):
+                raise RuntimeError("Active host does not support presets")
+
+            try:
+                applied = await host.set_room_preset(room_name, preset)
+            except ValueError as error:
+                raise InvalidParamsError(str(error)) from error
+            if not applied:
+                raise InvalidParamsError(f"Unknown room `{room_name}`")
+
+            lobby_enabled = False
+            if hasattr(host, "list_room_members"):
+                with contextlib.suppress(Exception):
+                    room_data = host.list_room_members(room_name)
+                    if room_data and isinstance(room_data, list):
+                        lobby_enabled = bool(room_data[0].get("lobbyEnabled", False))
+
+            return {
+                "success": True,
+                "room": room_name,
+                "preset": preset,
+                "lobbyEnabled": lobby_enabled,
+            }
+
+    async def handle_list_host_activity(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        List recent multiplayer room activity entries.
+
+        Params:
+            room: Optional room name (required if multiple rooms)
+            limit: Optional max items (default 50)
+            eventType: Optional event type filter
+        """
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+
+        requested_room = str(params.get("room", "")).strip()
+        event_type = str(params.get("eventType", "")).strip()
+        raw_limit = params.get("limit", 50)
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError) as e:
+            raise InvalidParamsError("limit must be an integer") from e
+        limit = max(1, min(limit, 200))
+
+        async with self._host_server_lock:
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "list_room_activity"):
+                raise RuntimeError("Active host does not support activity logs")
+
+            events = host.list_room_activity(room_name, limit, event_type or None)
+            return {
+                "success": True,
+                "room": room_name,
+                "events": events,
+                "eventType": event_type,
+                "count": len(events),
+            }
 
     def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
         """Flatten nested dict/list/scalars into a dot-path list."""
@@ -2085,6 +3099,9 @@ class PoorCLIServer:
         async with self._host_server_lock:
             with contextlib.suppress(Exception):
                 await self._shutdown_host_server_locked()
+        async with self._service_lock:
+            with contextlib.suppress(Exception):
+                await self._shutdown_managed_services_locked()
         self.logger.info("Stdio server stopped")
 
 
