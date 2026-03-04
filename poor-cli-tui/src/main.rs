@@ -704,6 +704,13 @@ fn run_app(
                     app.finalize_streaming();
                     app.active_tool = None;
                     app.stop_waiting();
+                    if app.provider_name.eq_ignore_ascii_case("ollama") {
+                        if let Some((title, content)) =
+                            ollama_recovery_popup(&message, &app.model_name)
+                        {
+                            app.open_info_popup(title, content);
+                        }
+                    }
                     app.push_message(ChatMessage::error(message));
                 }
                 ServerMsg::StreamChunk {
@@ -914,32 +921,29 @@ fn run_app(
                             model,
                             reply: reply_tx,
                         });
-                        thread::spawn(move || {
-                            match reply_rx.recv() {
-                                Ok(Ok((prov, mdl))) => {
-                                    let _ = tx2.send(ServerMsg::ProviderSwitched {
-                                        provider: prov,
-                                        model: mdl,
-                                    });
-                                }
-                                Ok(Err(error)) => {
-                                    let mut message = format!(
-                                        "Failed to switch provider `{name}`: {error}"
-                                    );
-                                    if name.eq_ignore_ascii_case("ollama") {
-                                        message.push_str(
+                        thread::spawn(move || match reply_rx.recv() {
+                            Ok(Ok((prov, mdl))) => {
+                                let _ = tx2.send(ServerMsg::ProviderSwitched {
+                                    provider: prov,
+                                    model: mdl,
+                                });
+                            }
+                            Ok(Err(error)) => {
+                                let mut message =
+                                    format!("Failed to switch provider `{name}`: {error}");
+                                if name.eq_ignore_ascii_case("ollama") {
+                                    message.push_str(
                                             "\nTry `/ollama start`, then `/ollama pull <model>`, and switch again.",
                                         );
-                                    }
-                                    let _ = tx2.send(ServerMsg::Error { message });
                                 }
-                                Err(_) => {
-                                    let _ = tx2.send(ServerMsg::Error {
+                                let _ = tx2.send(ServerMsg::Error { message });
+                            }
+                            Err(_) => {
+                                let _ = tx2.send(ServerMsg::Error {
                                         message: format!(
                                             "Failed to switch provider `{name}`: backend response channel closed"
                                         ),
                                     });
-                                }
                             }
                         });
                     }
@@ -4607,7 +4611,32 @@ Context Window: {max_context} tokens\n\n\
             },
             "start" => match rpc_start_service_blocking(rpc_cmd_tx, "ollama", None, None) {
                 Ok(payload) => {
-                    show_command_info_popup(app, raw, format_service_status_payload(&payload))
+                    let running = payload
+                        .get("running")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let healthy = payload
+                        .get("healthy")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    let mut lines = vec![format_service_status_payload(&payload)];
+                    lines.push(String::new());
+                    if running && healthy {
+                        lines.push("Next steps:".to_string());
+                        lines.push("- `/switch` and choose `ollama`.".to_string());
+                        lines.push("- If model is missing: `/ollama pull <model>`.".to_string());
+                    } else if running {
+                        lines.push(
+                            "Ollama process started but endpoint is not ready yet. Check `/ollama status`."
+                                .to_string(),
+                        );
+                    } else {
+                        lines.push(
+                            "Ollama did not report as running. Check `/ollama logs`.".to_string(),
+                        );
+                    }
+                    show_command_info_popup(app, raw, lines.join("\n"));
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
                     "Failed to start Ollama service: {e}"
@@ -6491,6 +6520,45 @@ fn ollama_usage_text() -> &'static str {
        /ollama list-models"
 }
 
+fn ollama_recovery_popup(error_message: &str, model_name: &str) -> Option<(String, String)> {
+    let lowered = error_message.to_ascii_lowercase();
+
+    if lowered.contains("cannot connect to host")
+        || lowered.contains("ollama server not available")
+        || lowered.contains("connect call failed")
+    {
+        return Some((
+            "Ollama Not Reachable".to_string(),
+            "The Ollama server is not reachable at `http://localhost:11434`.\n\n\
+Run:\n\
+- `/ollama start`\n\
+- `/ollama status`\n\
+- `/ollama logs`\n\n\
+If startup fails, run `/service status ollama` to verify the executable path and logs."
+                .to_string(),
+        ));
+    }
+
+    if lowered.contains("model")
+        && lowered.contains("not found")
+        && (lowered.contains("ollama") || lowered.contains("/api/chat"))
+    {
+        return Some((
+            "Ollama Model Missing".to_string(),
+            format!(
+                "Your active Ollama model is missing locally.\n\n\
+Model: `{model_name}`\n\n\
+Run:\n\
+- `/ollama pull {model_name}`\n\
+- `/ollama list-models`\n\
+- `/switch` (reselect Ollama model if needed)"
+            ),
+        ));
+    }
+
+    None
+}
+
 fn onboarding_usage_text() -> &'static str {
     "Usage: /onboarding\n\
        /onboarding start\n\
@@ -6555,6 +6623,17 @@ fn format_single_service_payload(payload: &Value) -> String {
             lines.push(format!("- Command: `{command}`"));
         }
     }
+    if let Some(available) = payload.get("available").and_then(|v| v.as_bool()) {
+        lines.push(format!(
+            "- Executable: {}",
+            if available { "found" } else { "not found" }
+        ));
+    }
+    if let Some(executable) = payload.get("executable").and_then(|v| v.as_str()) {
+        if !executable.is_empty() {
+            lines.push(format!("- Executable path: `{executable}`"));
+        }
+    }
     if let Some(cwd) = payload.get("cwd").and_then(|v| v.as_str()) {
         if !cwd.is_empty() {
             lines.push(format!("- CWD: `{cwd}`"));
@@ -6575,6 +6654,10 @@ fn format_single_service_payload(payload: &Value) -> String {
     }
 
     if service_name == "ollama" {
+        let available = payload
+            .get("available")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         if let Some(base_url) = payload.get("baseUrl").and_then(|v| v.as_str()) {
             if !base_url.is_empty() {
                 lines.push(format!("- Base URL: `{base_url}`"));
@@ -6585,6 +6668,15 @@ fn format_single_service_payload(payload: &Value) -> String {
                 "- Health: {}",
                 if healthy { "reachable" } else { "unreachable" }
             ));
+        }
+        if !available {
+            lines.push(
+                "- Install Ollama or expose it in PATH. You can also set `OLLAMA_BIN=/absolute/path/to/ollama`."
+                    .to_string(),
+            );
+        }
+        if !running {
+            lines.push("- Start with `/ollama start`.".to_string());
         }
     }
 
@@ -6632,7 +6724,18 @@ fn format_service_status_payload(payload: &Value) -> String {
             } else {
                 "unmanaged"
             };
-            lines.push(format!("- {marker} `{name}`: {state} ({scope})"));
+            let available = service
+                .get("available")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let availability = if available {
+                ""
+            } else {
+                " [missing executable]"
+            };
+            lines.push(format!(
+                "- {marker} `{name}`: {state} ({scope}){availability}"
+            ));
         }
         lines.push(String::new());
         lines.push("Use `/service status <name>` for details.".to_string());
