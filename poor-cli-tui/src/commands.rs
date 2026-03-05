@@ -2090,7 +2090,7 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
-        let (url, room, token) = match parse_join_server_args(raw) {
+        let (url, room, token) = match multiplayer::parse_join_server_args(raw) {
             Ok(values) => values,
             Err(error_message) => {
                 show_command_info_popup(app, raw, error_message);
@@ -2098,14 +2098,14 @@ Context Window: {max_context} tokens\n\n\
             }
         };
 
-        if let Err(e) = preflight_join_endpoint(&url) {
+        if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
             app.push_message(ChatMessage::error(format!(
                 "Join preflight failed: {e}\nUse `/join-server` for wizard mode."
             )));
             return false;
         }
 
-        reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
         return false;
     }
 

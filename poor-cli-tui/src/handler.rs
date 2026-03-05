@@ -89,7 +89,7 @@ pub(super) fn handle_server_message(
                 && !app.multiplayer_room.is_empty();
             let mut state = remote_reconnect_state.borrow_mut();
             if remote_reconnect_configured
-                && should_attempt_remote_reconnect(&message)
+                && multiplayer::should_attempt_remote_reconnect(&message)
                 && state.1.is_none()
             {
                 if state.0 < max_remote_reconnect_attempts {

@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +30,7 @@ use poor_cli_tui::watcher::{self, WatchMsg, WatchState, QaWatchState};
 
 mod commands;
 mod handler;
+mod multiplayer;
 
 // ── CLI arguments ────────────────────────────────────────────────────
 
@@ -255,80 +255,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn build_backend_server_args(cli: &Cli) -> Result<Vec<String>, String> {
-    match (&cli.remote_url, &cli.remote_room, &cli.remote_token) {
-        (None, None, None) => Ok(vec![]),
-        (Some(url), Some(room), Some(token)) => Ok(build_bridge_server_args(url, room, token)),
-        _ => Err(
-            "Remote mode requires all of: --remote-url, --remote-room, --remote-token".to_string(),
-        ),
-    }
-}
-
-fn build_bridge_server_args(url: &str, room: &str, token: &str) -> Vec<String> {
-    vec![
-        "--bridge".to_string(),
-        "--url".to_string(),
-        url.to_string(),
-        "--room".to_string(),
-        room.to_string(),
-        "--token".to_string(),
-        token.to_string(),
-    ]
-}
-
-fn should_attempt_remote_reconnect(message: &str) -> bool {
-    let lowered = message.to_ascii_lowercase();
-    [
-        "websocket",
-        "bridge",
-        "connection closed",
-        "connection reset",
-        "connection refused",
-        "broken pipe",
-        "no route to host",
-        "network is unreachable",
-        "transport",
-        "rpc worker unavailable",
-        "backend response channel closed",
-        "timed out waiting for backend response",
-    ]
-    .iter()
-    .any(|needle| lowered.contains(needle))
-}
-
-fn reconnect_to_remote_server(
-    app: &mut App,
-    tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mut mpsc::Sender<RpcCommand>,
-    launch: &BackendLaunchContext,
-    url: &str,
-    room: &str,
-    token: &str,
-) {
-    let bridge_args = build_bridge_server_args(url, room, token);
-    write_session_log(
-        launch.session_log.as_ref(),
-        &format!("join_server_request url={url} room={room}"),
-    );
-
-    let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
-    app.server_connected = false;
-    app.finalize_streaming();
-    app.stop_waiting();
-    app.multiplayer_enabled = true;
-    app.multiplayer_remote_url = url.to_string();
-    app.multiplayer_remote_token = token.to_string();
-    app.multiplayer_room = room.to_string();
-    app.multiplayer_role.clear();
-    app.push_message(ChatMessage::system(format!(
-        "Joining multiplayer server `{url}` room `{room}`..."
-    )));
-    app.set_status("Reconnecting backend in join mode");
-
-    *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
-}
-
 fn spawn_backend_worker(
     tx: &mpsc::Sender<ServerMsg>,
     launch: BackendLaunchContext,
@@ -546,7 +472,7 @@ fn run_app(
 ) -> Result<String, Box<dyn std::error::Error>> {
     const MAX_REMOTE_RECONNECT_ATTEMPTS: u32 = 10;
 
-    let backend_server_args = build_backend_server_args(&cli)
+    let backend_server_args = multiplayer::build_backend_server_args(&cli)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
     let mut app = App::new();
@@ -642,7 +568,7 @@ fn run_app(
                     app.push_message(ChatMessage::system(format!(
                         "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{url}` room `{room}`..."
                     )));
-                    reconnect_to_remote_server(
+                    multiplayer::reconnect_to_remote_server(
                         app,
                         &tx,
                         &mut rpc_cmd_tx.borrow_mut(),
@@ -801,7 +727,7 @@ fn handle_submit(
     if app.join_wizard_active && !trimmed.starts_with('/') {
         match app.join_wizard_step {
             0 => {
-                match preflight_join_endpoint(trimmed) {
+                match multiplayer::preflight_join_endpoint(trimmed) {
                     Ok(ok_message) => {
                         app.join_wizard_url = trimmed.to_string();
                         app.join_wizard_step = 1;
@@ -847,7 +773,9 @@ fn handle_submit(
                 app.join_wizard_step = 0;
                 app.join_wizard_url.clear();
                 app.join_wizard_room.clear();
-                reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+                multiplayer::reconnect_to_remote_server(
+                    app, tx, rpc_cmd_tx, launch, &url, &room, &token,
+                );
                 return false;
             }
             _ => {
@@ -1702,49 +1630,6 @@ fn bool_label(value: bool) -> &'static str {
     } else {
         "off"
     }
-}
-
-fn parse_join_server_args(raw: &str) -> Result<(String, String, String), String> {
-    let usage = "Usage: /join-server\n       /join-server <invite-code>\n       /join-server <ws-url> <room> <token>\n       /join-server cancel";
-    let args = raw
-        .split_whitespace()
-        .skip(1)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>();
-
-    if args.is_empty() {
-        return Err(usage.to_string());
-    }
-
-    let (url, room, token) = if args.len() == 1 {
-        let parts = args[0].split('|').collect::<Vec<_>>();
-        if parts.len() != 3 {
-            return Err(usage.to_string());
-        }
-        (
-            parts[0].trim().to_string(),
-            parts[1].trim().to_string(),
-            parts[2].trim().to_string(),
-        )
-    } else if args.len() == 3 {
-        (
-            args[0].to_string(),
-            args[1].to_string(),
-            args[2].to_string(),
-        )
-    } else {
-        return Err(usage.to_string());
-    };
-
-    if url.is_empty() || room.is_empty() || token.is_empty() {
-        return Err(usage.to_string());
-    }
-    if !(url.starts_with("ws://") || url.starts_with("wss://")) {
-        return Err("Join URL must start with ws:// or wss://".to_string());
-    }
-
-    Ok((url, room, token))
 }
 
 fn format_value_for_display(value: &Value) -> String {
@@ -2847,64 +2732,6 @@ fn apply_execution_profile(
     ))
 }
 
-fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
-    let trimmed = url.trim();
-    let (without_scheme, default_port) = if let Some(rest) = trimmed.strip_prefix("ws://") {
-        (rest, 80u16)
-    } else if let Some(rest) = trimmed.strip_prefix("wss://") {
-        (rest, 443u16)
-    } else {
-        return Err("URL must start with ws:// or wss://".to_string());
-    };
-
-    let authority = without_scheme.split('/').next().unwrap_or("").trim();
-    if authority.is_empty() {
-        return Err("URL is missing host".to_string());
-    }
-
-    if authority.starts_with('[') {
-        if let Some(close_idx) = authority.find(']') {
-            let host = authority[1..close_idx].to_string();
-            let remainder = authority[close_idx + 1..].trim();
-            let port = if let Some(port_text) = remainder.strip_prefix(':') {
-                port_text
-                    .parse::<u16>()
-                    .map_err(|_| "Invalid URL port".to_string())?
-            } else {
-                default_port
-            };
-            return Ok((host, port));
-        }
-        return Err("Invalid IPv6 URL host".to_string());
-    }
-
-    if let Some((host, port_text)) = authority.rsplit_once(':') {
-        if host.contains(':') {
-            return Ok((authority.to_string(), default_port));
-        }
-        let port = port_text
-            .parse::<u16>()
-            .map_err(|_| "Invalid URL port".to_string())?;
-        return Ok((host.to_string(), port));
-    }
-
-    Ok((authority.to_string(), default_port))
-}
-
-fn preflight_join_endpoint(url: &str) -> Result<String, String> {
-    let (host, port) = ws_url_host_port(url)?;
-    let addr_text = format!("{host}:{port}");
-    let mut addrs = addr_text
-        .to_socket_addrs()
-        .map_err(|e| format!("Could not resolve `{host}`: {e}"))?;
-    let target = addrs
-        .next()
-        .ok_or_else(|| format!("No reachable address found for `{host}`"))?;
-    TcpStream::connect_timeout(&target, Duration::from_secs(2))
-        .map_err(|e| format!("Could not reach {addr_text}: {e}"))?;
-    Ok(format!("Preflight OK: reachable {addr_text}"))
-}
-
 fn last_assistant_message(app: &App) -> Option<String> {
     app.messages
         .iter()
@@ -3764,7 +3591,8 @@ mod tests {
     #[test]
     fn backend_server_args_empty_for_local_mode() {
         let cli = Cli::parse_from(["poor-cli-tui"]);
-        let args = build_backend_server_args(&cli).expect("local mode args should build");
+        let args = multiplayer::build_backend_server_args(&cli)
+            .expect("local mode args should build");
         assert!(args.is_empty());
     }
 
@@ -3779,7 +3607,8 @@ mod tests {
             "--remote-token",
             "tok-123",
         ]);
-        let args = build_backend_server_args(&cli).expect("remote args should build");
+        let args = multiplayer::build_backend_server_args(&cli)
+            .expect("remote args should build");
         assert_eq!(
             args,
             vec![
@@ -3797,14 +3626,17 @@ mod tests {
     #[test]
     fn backend_server_args_require_complete_remote_triplet() {
         let cli = Cli::parse_from(["poor-cli-tui", "--remote-url", "wss://example.test/rpc"]);
-        let err = build_backend_server_args(&cli).expect_err("should fail for partial remote args");
+        let err = multiplayer::build_backend_server_args(&cli)
+            .expect_err("should fail for partial remote args");
         assert!(err.contains("--remote-url"));
     }
 
     #[test]
     fn join_server_parser_accepts_invite_code() {
-        let parsed = parse_join_server_args("/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc")
-            .expect("invite code should parse");
+        let parsed = multiplayer::parse_join_server_args(
+            "/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc",
+        )
+        .expect("invite code should parse");
         assert_eq!(
             parsed,
             (
@@ -3817,8 +3649,9 @@ mod tests {
 
     #[test]
     fn join_server_parser_accepts_explicit_triplet() {
-        let parsed = parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")
-            .expect("triplet should parse");
+        let parsed =
+            multiplayer::parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")
+                .expect("triplet should parse");
         assert_eq!(
             parsed,
             (
@@ -3831,7 +3664,7 @@ mod tests {
 
     #[test]
     fn join_server_parser_rejects_invalid_usage() {
-        let err = parse_join_server_args("/join-server checkpoint")
+        let err = multiplayer::parse_join_server_args("/join-server checkpoint")
             .expect_err("single non-code arg should fail");
         assert!(err.contains("Usage"));
     }
