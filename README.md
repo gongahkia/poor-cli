@@ -147,22 +147,12 @@ to `--remote-url` / `multiplayer.url`.
 
 `poor-cli` supports provider/model selection via `/switch` (inside TUI) or `--provider/--model` flags. You can pass any model ID accepted by the provider SDK/API.
 
-* *Gemini* (`gemini`)
-  Default: `gemini-2.0-flash-exp`
-  Common models: `gemini-2.0-flash-exp`, `gemini-1.5-pro`
-  Capabilities in `poor-cli`: streaming, function calling, system instructions, vision, JSON mode
-* *OpenAI* (`openai`)
-  Default: `gpt-4-turbo`
-  Common models: `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`
-  Capabilities in `poor-cli`: streaming, function calling, system instructions, JSON mode, vision on GPT-4-class models
-* *Anthropic / Claude* (`anthropic` or alias `claude`)
-  Default: `claude-3-5-sonnet-20241022`
-  Common models: `claude-sonnet-4-20250514`, `claude-3-haiku-20240307`
-  Capabilities in `poor-cli`: streaming, function calling, system instructions, vision
-* *Ollama* (`ollama`)
-  Default: `llama3`
-  Common models: auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3`, `codellama`, `mistral`, `phi3`
-  Capabilities in `poor-cli`: streaming, system instructions, JSON mode, optional function calling (model-dependent), local-only execution via `http://localhost:11434`
+| Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
+|---|---|---|---|---|
+| Gemini | `gemini` | `gemini-2.0-flash-exp` | `gemini-2.0-flash-exp`, `gemini-1.5-pro` | Streaming, function calling, system instructions, vision, JSON mode |
+| OpenAI | `openai` | `gpt-4-turbo` | `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo` | Streaming, function calling, system instructions, JSON mode, vision on GPT-4-class models |
+| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-3-5-sonnet-20241022` | `claude-sonnet-4-20250514`, `claude-3-haiku-20240307` | Streaming, function calling, system instructions, vision |
+| Ollama | `ollama` | `llama3` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3`, `codellama`, `mistral`, `phi3` | Streaming, system instructions, JSON mode, optional function calling (model-dependent), local-only execution via `http://localhost:11434` |
 
 ## Architecture
 
