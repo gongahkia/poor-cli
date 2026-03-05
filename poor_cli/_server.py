@@ -1,12 +1,10 @@
 """
-PoorCLI JSON-RPC Server
+PoorCLI JSON-RPC Server (core implementation).
 
-This module provides a JSON-RPC 2.0 server for editor integrations.
-It supports stdio transport for Neovim integration.
+This module is the internal implementation. Import from `poor_cli.server` instead.
 """
 
 import argparse
-import ast
 import asyncio
 from collections import deque
 import contextlib
@@ -20,7 +18,6 @@ import shutil
 import socket
 import sys
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
@@ -39,224 +36,12 @@ from .exceptions import (
     set_log_context,
     setup_logger,
 )
+from .server.types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
+from .server.error_formatter import _sanitize_exception_message
+from .server.transport import StdioTransport
 
 logger = setup_logger(__name__)
-_MAX_ERROR_MESSAGE_LEN = 360
 
-
-def _collapse_whitespace(text: str) -> str:
-    """Normalize all whitespace runs to a single space."""
-    return " ".join(text.split())
-
-
-def _try_parse_mapping(text: str) -> Optional[Dict[str, Any]]:
-    """Try parsing a string into a dictionary via JSON or Python literal syntax."""
-    for parser in (json.loads, ast.literal_eval):
-        try:
-            parsed = parser(text)
-        except Exception:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
-
-
-def _extract_reason(details: Any) -> Optional[str]:
-    """Extract a provider reason code from nested details blocks, if present."""
-    if isinstance(details, list):
-        for item in details:
-            if isinstance(item, dict):
-                reason = item.get("reason")
-                if isinstance(reason, str) and reason.strip():
-                    return _collapse_whitespace(reason)
-                nested = _extract_reason(item.get("details"))
-                if nested:
-                    return nested
-    return None
-
-
-def _extract_structured_error_fields(
-    payload: Dict[str, Any],
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Extract normalized message, reason, and status fields from structured API payloads."""
-    message: Optional[str] = None
-    reason: Optional[str] = None
-    status: Optional[str] = None
-
-    error_obj = payload.get("error")
-    if isinstance(error_obj, dict):
-        value = error_obj.get("message")
-        if isinstance(value, str) and value.strip():
-            message = _collapse_whitespace(value)
-
-        value = error_obj.get("status")
-        if isinstance(value, str) and value.strip():
-            status = _collapse_whitespace(value)
-
-        reason = _extract_reason(error_obj.get("details"))
-
-    payload_message = payload.get("message")
-    if isinstance(payload_message, str) and payload_message.strip():
-        nested_payload = _try_parse_mapping(payload_message.strip())
-        if nested_payload is not None:
-            nested_message, nested_reason, nested_status = _extract_structured_error_fields(
-                nested_payload
-            )
-            message = message or nested_message
-            reason = reason or nested_reason
-            status = status or nested_status
-        elif message is None:
-            message = _collapse_whitespace(payload_message)
-
-    payload_status = payload.get("status")
-    if status is None and isinstance(payload_status, str) and payload_status.strip():
-        status = _collapse_whitespace(payload_status)
-
-    return message, reason, status
-
-
-def _extract_structured_payload(raw: str) -> Optional[Dict[str, Any]]:
-    """Find and parse an embedded dict/JSON payload inside a verbose exception string."""
-    index = raw.find("{")
-    while index != -1:
-        candidate = raw[index:].strip()
-        parsed = _try_parse_mapping(candidate)
-        if parsed is not None:
-            return parsed
-        index = raw.find("{", index + 1)
-    return None
-
-
-def _trim_embedded_payload(compact: str) -> str:
-    """Drop common serialized error blob suffixes from a compacted error string."""
-    for marker in (" {'message':", ' {"message":', " {'error':", ' {"error":'):
-        marker_index = compact.find(marker)
-        if marker_index != -1:
-            return compact[:marker_index].strip()
-    return compact
-
-
-def _sanitize_exception_message(error: Exception) -> str:
-    """Build a concise, user-facing exception message for JSON-RPC responses."""
-    raw = str(error).strip()
-    if not raw:
-        return error.__class__.__name__
-
-    compact = _collapse_whitespace(raw.replace("\\n", " ").replace("\\t", " "))
-    message = _trim_embedded_payload(compact)
-
-    payload = _extract_structured_payload(raw)
-    if payload is not None:
-        extracted_message, extracted_reason, extracted_status = _extract_structured_error_fields(
-            payload
-        )
-
-        detail_parts: List[str] = []
-        if extracted_message:
-            detail_parts.append(extracted_message)
-        if extracted_reason:
-            detail_parts.append(f"({extracted_reason})")
-        elif extracted_status:
-            detail_parts.append(f"({extracted_status})")
-
-        detail = " ".join(detail_parts).strip()
-        if detail and detail.lower() not in message.lower():
-            message = f"{message}: {detail}" if message else detail
-
-    if len(message) > _MAX_ERROR_MESSAGE_LEN:
-        message = f"{message[:_MAX_ERROR_MESSAGE_LEN - 3].rstrip()}..."
-    return message
-
-
-# =============================================================================
-# JSON-RPC Message Types
-# =============================================================================
-
-
-@dataclass
-class JsonRpcMessage:
-    """JSON-RPC 2.0 message."""
-
-    jsonrpc: str = "2.0"
-    id: Optional[int] = None
-    method: Optional[str] = None
-    params: Optional[Dict[str, Any]] = None
-    result: Optional[Any] = None
-    error: Optional[Dict[str, Any]] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary, excluding None values."""
-        d = {"jsonrpc": self.jsonrpc}
-        if self.id is not None:
-            d["id"] = self.id
-        if self.method is not None:
-            d["method"] = self.method
-        if self.params is not None:
-            d["params"] = self.params
-        if self.result is not None:
-            d["result"] = self.result
-        if self.error is not None:
-            d["error"] = self.error
-        return d
-
-    def to_json(self) -> str:
-        """Serialize to JSON string."""
-        return json.dumps(self.to_dict())
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "JsonRpcMessage":
-        """Create from dictionary."""
-        return cls(
-            jsonrpc=data.get("jsonrpc", "2.0"),
-            id=data.get("id"),
-            method=data.get("method"),
-            params=data.get("params"),
-            result=data.get("result"),
-            error=data.get("error"),
-        )
-
-    @classmethod
-    def from_json(cls, text: str) -> "JsonRpcMessage":
-        """Parse from JSON string."""
-        data = json.loads(text)
-        return cls.from_dict(data)
-
-
-class JsonRpcError:
-    """JSON-RPC 2.0 error codes."""
-
-    PARSE_ERROR = -32700
-    INVALID_REQUEST = -32600
-    METHOD_NOT_FOUND = -32601
-    INVALID_PARAMS = -32602
-    INTERNAL_ERROR = -32603
-
-    @classmethod
-    def make_error(cls, code: int, message: str, data: Any = None) -> Dict[str, Any]:
-        """Create an error object."""
-        error = {"code": code, "message": message}
-        if data is not None:
-            error["data"] = data
-        return error
-
-
-class InvalidParamsError(Exception):
-    """Raised when JSON-RPC method params fail validation."""
-
-
-@dataclass
-class ManagedServiceRuntime:
-    """Track a long-running local service process managed by the server."""
-
-    name: str
-    command: List[str]
-    command_display: str
-    cwd: Optional[str]
-    process: asyncio.subprocess.Process
-    log_path: Path
-    log_handle: Any
-    started_at: str
-    last_exit_code: Optional[int] = None
 
 
 # =============================================================================
@@ -282,6 +67,7 @@ class PoorCLIServer:
         self.session_id = f"server-{uuid.uuid4().hex[:8]}"
         set_log_context(session_id=self.session_id)
         self._running = False
+        self._transport = StdioTransport()
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._client_streaming = False  # set True if client opts in during initialize
@@ -3067,95 +2853,12 @@ class PoorCLIServer:
     # =========================================================================
 
     async def read_message_stdio(self) -> Optional[JsonRpcMessage]:
-        """
-        Read a JSON-RPC message from stdin.
-
-        Uses the LSP-style Content-Length header protocol.
-
-        Returns:
-            Parsed message or None on EOF.
-        """
-        try:
-            loop = asyncio.get_event_loop()
-            stdin_reader = getattr(sys.stdin, "buffer", sys.stdin)
-
-            # Read headers byte-by-byte so fragmented header chunks are handled correctly.
-            header_buffer = b""
-            header_delimiter = None
-            while header_delimiter is None:
-                chunk = await loop.run_in_executor(None, lambda: stdin_reader.read(1))
-                if not chunk:
-                    return None  # EOF
-                if isinstance(chunk, str):
-                    chunk = chunk.encode("utf-8")
-                header_buffer += chunk
-
-                if b"\r\n\r\n" in header_buffer:
-                    header_delimiter = b"\r\n\r\n"
-                elif b"\n\n" in header_buffer:
-                    header_delimiter = b"\n\n"
-
-            header_text, body_prefix = header_buffer.split(header_delimiter, 1)
-            header_text_decoded = header_text.decode("ascii", errors="replace")
-
-            content_length = 0
-            for raw_line in header_text_decoded.splitlines():
-                line = raw_line.strip()
-                if line.lower().startswith("content-length:"):
-                    content_length = int(line.split(":", 1)[1].strip())
-                    break
-
-            if content_length <= 0:
-                return None
-
-            # Read body until exact content-length is satisfied.
-            body = body_prefix
-            while len(body) < content_length:
-                remaining = content_length - len(body)
-                chunk = await loop.run_in_executor(
-                    None, lambda size=remaining: stdin_reader.read(size)
-                )
-                if not chunk:
-                    return None
-                if isinstance(chunk, str):
-                    chunk = chunk.encode("utf-8")
-                body += chunk
-
-            body = body[:content_length]
-            return JsonRpcMessage.from_json(body.decode("utf-8"))
-
-        except json.JSONDecodeError as e:
-            self.logger.error(f"JSON parse error: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Read error: {e}")
-            return None
+        """Read a JSON-RPC message from stdin (delegates to StdioTransport)."""
+        return await self._transport.read_message()
 
     async def write_message_stdio(self, message: JsonRpcMessage) -> None:
-        """
-        Write a JSON-RPC message to stdout.
-
-        Uses the LSP-style Content-Length header protocol.
-
-        Args:
-            message: The message to write.
-        """
-        try:
-            body = message.to_json().encode("utf-8")
-            header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-
-            stdout_writer = getattr(sys.stdout, "buffer", None)
-            if stdout_writer is not None:
-                stdout_writer.write(header)
-                stdout_writer.write(body)
-                stdout_writer.flush()
-            else:
-                # Fallback for tests or environments without binary stdio handles.
-                sys.stdout.write((header + body).decode("utf-8"))
-                sys.stdout.flush()
-
-        except Exception as e:
-            self.logger.error(f"Write error: {e}")
+        """Write a JSON-RPC message to stdout (delegates to StdioTransport)."""
+        await self._transport.write_message(message)
 
     async def _dispatch_and_respond(self, message: JsonRpcMessage) -> None:
         """Dispatch a request and write the response. Used for background tasks."""

@@ -469,9 +469,9 @@ class TestPoorCLIServer:
         with (
             patch.object(server, "_service_logs_dir", tmp_path / "services"),
             patch.object(server, "_resolve_service_executable", return_value="/usr/bin/fake"),
-            patch("poor_cli.server.asyncio.create_subprocess_exec", spawn_mock),
+            patch("poor_cli._server.asyncio.create_subprocess_exec", spawn_mock),
             patch.object(server, "_is_ollama_reachable", return_value=False),
-            patch("poor_cli.server.asyncio.sleep", AsyncMock(return_value=None)),
+            patch("poor_cli._server.asyncio.sleep", AsyncMock(return_value=None)),
         ):
             started = await server.handle_start_service(
                 {"name": "demo", "command": "demo-server --port 9000"}
@@ -506,8 +506,8 @@ class TestPoorCLIServer:
             patch.object(server, "_service_logs_dir", tmp_path / "services"),
             patch.object(server, "_resolve_service_executable", return_value="/usr/bin/ollama"),
             patch.object(server, "_is_ollama_reachable", return_value=False),
-            patch("poor_cli.server.asyncio.create_subprocess_exec", spawn_mock),
-            patch("poor_cli.server.asyncio.sleep", AsyncMock(return_value=None)),
+            patch("poor_cli._server.asyncio.create_subprocess_exec", spawn_mock),
+            patch("poor_cli._server.asyncio.sleep", AsyncMock(return_value=None)),
         ):
             started = await server.handle_start_service({"name": "ollama"})
             await server.handle_stop_service({"name": "ollama"})
@@ -536,7 +536,7 @@ class TestPoorCLIServer:
         fake_context.__enter__.return_value = fake_response
         fake_context.__exit__.return_value = False
 
-        with patch("poor_cli.server.urlopen", return_value=fake_context):
+        with patch("poor_cli._server.urlopen", return_value=fake_context):
             models = server._list_ollama_models("http://localhost:11434")
 
         assert models == ["llama2:7b", "mistral:7b"]
@@ -712,8 +712,8 @@ class TestPoorCLIServer:
             body[17:],
         ]
 
-        monkeypatch.setattr("poor_cli.server.sys.stdin", _FragmentedStdin(fragments))
-        monkeypatch.setattr("poor_cli.server.asyncio.get_event_loop", lambda: _InlineEventLoop())
+        monkeypatch.setattr("poor_cli._server.sys.stdin", _FragmentedStdin(fragments))
+        monkeypatch.setattr("poor_cli._server.asyncio.get_event_loop", lambda: _InlineEventLoop())
 
         message = await server.read_message_stdio()
 
@@ -730,8 +730,8 @@ class TestPoorCLIServer:
             body[:5],  # Intentionally truncated body stream
         ]
 
-        monkeypatch.setattr("poor_cli.server.sys.stdin", _FragmentedStdin(fragments))
-        monkeypatch.setattr("poor_cli.server.asyncio.get_event_loop", lambda: _InlineEventLoop())
+        monkeypatch.setattr("poor_cli._server.sys.stdin", _FragmentedStdin(fragments))
+        monkeypatch.setattr("poor_cli._server.asyncio.get_event_loop", lambda: _InlineEventLoop())
 
         message = await server.read_message_stdio()
 
@@ -887,13 +887,13 @@ class TestServerMain:
 
     def test_stdio_flag_uses_stdio_transport(self, monkeypatch):
         """Test that --stdio runs the stdio transport."""
-        monkeypatch.setattr("poor_cli.server.sys.argv", ["poor-cli-server", "--stdio"])
+        monkeypatch.setattr("poor_cli._server.sys.argv", ["poor-cli-server", "--stdio"])
         mock_server = MagicMock()
         mock_server.run_stdio.return_value = "stdio-coro"
 
         with (
-            patch("poor_cli.server.PoorCLIServer", return_value=mock_server),
-            patch("poor_cli.server.asyncio.run") as mock_asyncio_run,
+            patch("poor_cli._server.PoorCLIServer", return_value=mock_server),
+            patch("poor_cli._server.asyncio.run") as mock_asyncio_run,
         ):
             main()
 
@@ -902,13 +902,13 @@ class TestServerMain:
 
     def test_no_transport_flag_defaults_to_stdio(self, monkeypatch):
         """Test that no transport flag still runs stdio."""
-        monkeypatch.setattr("poor_cli.server.sys.argv", ["poor-cli-server"])
+        monkeypatch.setattr("poor_cli._server.sys.argv", ["poor-cli-server"])
         mock_server = MagicMock()
         mock_server.run_stdio.return_value = "stdio-coro"
 
         with (
-            patch("poor_cli.server.PoorCLIServer", return_value=mock_server),
-            patch("poor_cli.server.asyncio.run") as mock_asyncio_run,
+            patch("poor_cli._server.PoorCLIServer", return_value=mock_server),
+            patch("poor_cli._server.asyncio.run") as mock_asyncio_run,
         ):
             main()
 

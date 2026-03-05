@@ -63,7 +63,7 @@ Repository = "https://github.com/gongahkia/poor-cli"
 Issues = "https://github.com/gongahkia/poor-cli/issues"
 
 [tool.setuptools]
-packages = ["poor_cli"]
+packages = ["poor_cli", "poor_cli.server", "poor_cli.providers"]
 
 [tool.setuptools.dynamic]
 version = {attr = "poor_cli.__version__"}
