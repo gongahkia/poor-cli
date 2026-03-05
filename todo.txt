@@ -63,7 +63,6 @@
 # INFRA & CI
 # ============================================================================
 
-(B) Add a completions uninstall mechanism to completions/install.sh or a separate completions/uninstall.sh script +infra +feature
 (B) Expand the bash completion script (completions/poor-cli.bash) to include provider names, model names, and /api-key subcommands +infra +feature
 
 # ============================================================================
