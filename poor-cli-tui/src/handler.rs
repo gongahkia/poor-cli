@@ -6,6 +6,7 @@ pub(super) fn handle_server_message(
     rpc_cmd_tx: &RefCell<mpsc::Sender<RpcCommand>>,
     remote_reconnect_state: &RefCell<(u32, Option<std::time::Instant>, bool)>,
     max_remote_reconnect_attempts: u32,
+    session_log: Option<&SessionLogWriter>,
 ) -> Result<LoopControl, Box<dyn std::error::Error>> {
     match msg {
         ServerMsg::Initialized {
@@ -42,9 +43,20 @@ pub(super) fn handle_server_message(
                     app.theme_mode = ThemeMode::from_ui_theme(raw_theme);
                 }
             }
+            write_session_log(
+                session_log,
+                &format!(
+                    "server_initialized provider={} model={} version={}",
+                    app.provider_name, app.model_name, app.version
+                ),
+            );
             app.set_status("Connected to Python backend");
         }
         ServerMsg::ChatResponse { content } => {
+            write_session_log(
+                session_log,
+                &format!("chat_response_nonstream chars={}", content.chars().count()),
+            );
             app.stop_waiting();
             app.record_assistant_output(&content);
             app.push_message(ChatMessage::assistant(content));
@@ -78,9 +90,34 @@ pub(super) fn handle_server_message(
             app.provider_name = provider;
             app.model_name = model;
             app.is_local_provider = app.provider_name == "ollama";
+            write_session_log(
+                session_log,
+                &format!(
+                    "provider_switch_success provider={} model={}",
+                    app.provider_name, app.model_name
+                ),
+            );
             app.set_status("Provider switched successfully");
         }
         ServerMsg::Error { message } => {
+            let active_request_id = app.active_request_id.clone();
+            let elapsed_ms = app
+                .active_request_started_at
+                .map(|started| started.elapsed().as_millis())
+                .unwrap_or(0);
+            write_session_log(
+                session_log,
+                &format!(
+                    "server_error active_request_id={} duration_ms={} message={}",
+                    if active_request_id.is_empty() {
+                        "none"
+                    } else {
+                        active_request_id.as_str()
+                    },
+                    elapsed_ms,
+                    truncate_line(&message.replace('\n', " "), 220)
+                ),
+            );
             app.finalize_streaming();
             app.active_tool = None;
             app.stop_waiting();
@@ -115,11 +152,42 @@ pub(super) fn handle_server_message(
                 }
             }
             app.push_message(ChatMessage::error(message));
+            app.active_request_id.clear();
+            app.active_request_started_at = None;
         }
-        ServerMsg::StreamChunk { chunk, done, reason: _ } => {
+        ServerMsg::StreamChunk {
+            request_id,
+            chunk,
+            done,
+            reason,
+        } => {
+            let request_id_for_log = if request_id.is_empty() {
+                app.active_request_id.clone()
+            } else {
+                request_id
+            };
             if done {
+                let response_chars = app
+                    .streaming_message
+                    .and_then(|idx| app.messages.get(idx))
+                    .map(|msg| msg.content.chars().count())
+                    .unwrap_or(0);
+                let elapsed_ms = app
+                    .active_request_started_at
+                    .map(|started| started.elapsed().as_millis())
+                    .unwrap_or(0);
+                let done_reason = reason.as_deref().unwrap_or("complete");
+                write_session_log(
+                    session_log,
+                    &format!(
+                        "chat_request_done request_id={} reason={} response_chars={} duration_ms={}",
+                        request_id_for_log, done_reason, response_chars, elapsed_ms
+                    ),
+                );
                 app.finalize_streaming();
                 app.stop_waiting();
+                app.active_request_id.clear();
+                app.active_request_started_at = None;
                 if !app.plan_steps.is_empty() && app.plan_current_step < app.plan_steps.len() {
                     app.advance_plan_step();
                     if app.plan_current_step < app.plan_steps.len() {
@@ -130,6 +198,14 @@ pub(super) fn handle_server_message(
                     }
                 }
             } else if !chunk.is_empty() {
+                write_session_log(
+                    session_log,
+                    &format!(
+                        "chat_request_chunk request_id={} chars={}",
+                        request_id_for_log,
+                        chunk.chars().count()
+                    ),
+                );
                 if app.streaming_message.is_none() {
                     app.start_streaming_message();
                 }
@@ -137,6 +213,7 @@ pub(super) fn handle_server_message(
             }
         }
         ServerMsg::ToolEvent {
+            request_id,
             event_type,
             tool_name,
             tool_args,
@@ -145,6 +222,13 @@ pub(super) fn handle_server_message(
             iteration_index,
             iteration_cap,
         } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "chat_request_tool_event request_id={} type={} tool={} iter={}/{}",
+                    request_id, event_type, tool_name, iteration_index, iteration_cap
+                ),
+            );
             app.current_iteration = iteration_index;
             app.iteration_cap = iteration_cap;
             if event_type == "tool_call_start" {
@@ -161,28 +245,56 @@ pub(super) fn handle_server_message(
             }
         }
         ServerMsg::PermissionRequest {
+            request_id,
             tool_name,
             tool_args,
             prompt_id,
         } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "chat_request_permission request_id={} tool={} prompt_id={}",
+                    request_id, tool_name, prompt_id
+                ),
+            );
             let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
             app.permission_message = format!("{tool_name}: {args_str}");
             app.permission_prompt_id = prompt_id;
             app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
         }
         ServerMsg::Progress {
-            phase: _,
-            message: _,
+            request_id,
+            phase,
+            message,
             iteration_index,
             iteration_cap,
         } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "chat_request_progress request_id={} phase={} message={} iter={}/{}",
+                    request_id,
+                    phase,
+                    truncate_line(&message.replace('\n', " "), 120),
+                    iteration_index,
+                    iteration_cap
+                ),
+            );
             app.current_iteration = iteration_index;
             app.iteration_cap = iteration_cap;
         }
         ServerMsg::CostUpdate {
+            request_id,
             input_tokens,
             output_tokens,
         } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "chat_request_cost request_id={} input_tokens={} output_tokens={}",
+                    request_id, input_tokens, output_tokens
+                ),
+            );
             app.turn_input_tokens += input_tokens;
             app.turn_output_tokens += output_tokens;
             app.cumulative_input_tokens += input_tokens;
@@ -192,7 +304,7 @@ pub(super) fn handle_server_message(
             room,
             event_type,
             actor,
-            request_id: _,
+            request_id,
             queue_depth,
             member_count,
             active_connection_id,
@@ -200,6 +312,13 @@ pub(super) fn handle_server_message(
             preset,
             members,
         } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "room_event room={} type={} actor={} request_id={} queue_depth={} member_count={}",
+                    room, event_type, actor, request_id, queue_depth, member_count
+                ),
+            );
             app.multiplayer_enabled = true;
             app.multiplayer_room = room;
             app.multiplayer_queue_depth = queue_depth;
@@ -255,6 +374,13 @@ pub(super) fn handle_server_message(
             connection_id,
             role,
         } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "member_role_updated room={} connection_id={} role={}",
+                    room, connection_id, role
+                ),
+            );
             app.multiplayer_enabled = true;
             if !room.is_empty() {
                 app.multiplayer_room = room;

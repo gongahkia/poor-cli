@@ -1,6 +1,6 @@
+use std::cell::RefCell;
 /// Entry point for the poor-cli Rust TUI.
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -23,10 +23,13 @@ use serde_json::Value;
 use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;
-use poor_cli_tui::helpers::{classify_project_kind, detect_project_traits, first_line, should_skip_dir, truncate_block, truncate_line};
+use poor_cli_tui::helpers::{
+    classify_project_kind, detect_project_traits, first_line, should_skip_dir, truncate_block,
+    truncate_line,
+};
 use poor_cli_tui::input::{self, InputAction};
 use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
-use poor_cli_tui::watcher::{self, WatchMsg, WatchState, QaWatchState};
+use poor_cli_tui::watcher::{self, QaWatchState, WatchMsg, WatchState};
 
 mod commands;
 mod handler;
@@ -146,7 +149,6 @@ enum ServerMsg {
         role: String,
     },
 }
-
 
 type SessionLogWriter = Arc<Mutex<fs::File>>;
 
@@ -311,21 +313,46 @@ fn spawn_backend_worker(
         ) {
             Ok((client, notification_rx)) => {
                 write_session_log(log_ctx.as_ref(), "backend_spawn_ok");
+                let notification_log_ctx = log_ctx.clone();
 
                 thread::spawn(move || {
                     while let Ok(notif) = notification_rx.recv() {
                         let msg = match notif {
                             ServerNotification::StreamChunk {
+                                request_id,
                                 chunk,
                                 done,
                                 reason,
                                 ..
-                            } => ServerMsg::StreamChunk {
-                                chunk,
-                                done,
-                                reason,
-                            },
+                            } => {
+                                if done {
+                                    let reason_label = reason.as_deref().unwrap_or("complete");
+                                    write_session_log(
+                                        notification_log_ctx.as_ref(),
+                                        &format!(
+                                            "notif_stream_done request_id={} reason={reason_label}",
+                                            request_id
+                                        ),
+                                    );
+                                } else if !chunk.is_empty() {
+                                    write_session_log(
+                                        notification_log_ctx.as_ref(),
+                                        &format!(
+                                            "notif_stream_chunk request_id={} chars={}",
+                                            request_id,
+                                            chunk.chars().count()
+                                        ),
+                                    );
+                                }
+                                ServerMsg::StreamChunk {
+                                    request_id,
+                                    chunk,
+                                    done,
+                                    reason,
+                                }
+                            }
                             ServerNotification::ToolEvent {
+                                request_id,
                                 event_type,
                                 tool_name,
                                 tool_args,
@@ -334,45 +361,92 @@ fn spawn_backend_worker(
                                 iteration_index,
                                 iteration_cap,
                                 ..
-                            } => ServerMsg::ToolEvent {
-                                event_type,
-                                tool_name,
-                                tool_args,
-                                tool_result,
-                                diff,
-                                iteration_index,
-                                iteration_cap,
-                            },
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_tool_event request_id={} type={} tool={} iter={}/{}",
+                                        request_id,
+                                        event_type,
+                                        tool_name,
+                                        iteration_index,
+                                        iteration_cap
+                                    ),
+                                );
+                                ServerMsg::ToolEvent {
+                                    request_id,
+                                    event_type,
+                                    tool_name,
+                                    tool_args,
+                                    tool_result,
+                                    diff,
+                                    iteration_index,
+                                    iteration_cap,
+                                }
+                            }
                             ServerNotification::PermissionRequest {
+                                request_id,
                                 tool_name,
                                 tool_args,
                                 prompt_id,
                                 ..
-                            } => ServerMsg::PermissionRequest {
-                                tool_name,
-                                tool_args,
-                                prompt_id,
-                            },
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_permission_request request_id={} tool={} prompt_id={}",
+                                        request_id, tool_name, prompt_id
+                                    ),
+                                );
+                                ServerMsg::PermissionRequest {
+                                    request_id,
+                                    tool_name,
+                                    tool_args,
+                                    prompt_id,
+                                }
+                            }
                             ServerNotification::Progress {
+                                request_id,
                                 phase,
                                 message,
                                 iteration_index,
                                 iteration_cap,
                                 ..
-                            } => ServerMsg::Progress {
-                                phase,
-                                message,
-                                iteration_index,
-                                iteration_cap,
-                            },
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_progress request_id={} phase={} iter={}/{}",
+                                        request_id, phase, iteration_index, iteration_cap
+                                    ),
+                                );
+                                ServerMsg::Progress {
+                                    request_id,
+                                    phase,
+                                    message,
+                                    iteration_index,
+                                    iteration_cap,
+                                }
+                            }
                             ServerNotification::CostUpdate {
+                                request_id,
                                 input_tokens,
                                 output_tokens,
                                 ..
-                            } => ServerMsg::CostUpdate {
-                                input_tokens,
-                                output_tokens,
-                            },
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_cost_update request_id={} input_tokens={} output_tokens={}",
+                                        request_id, input_tokens, output_tokens
+                                    ),
+                                );
+                                ServerMsg::CostUpdate {
+                                    request_id,
+                                    input_tokens,
+                                    output_tokens,
+                                }
+                            }
                             ServerNotification::RoomEvent {
                                 room,
                                 event_type,
@@ -385,32 +459,55 @@ fn spawn_backend_worker(
                                 preset,
                                 members,
                                 ..
-                            } => ServerMsg::RoomEvent {
-                                room,
-                                event_type,
-                                actor,
-                                request_id,
-                                queue_depth,
-                                member_count,
-                                active_connection_id,
-                                lobby_enabled,
-                                preset,
-                                members,
-                            },
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_room_event room={} type={} actor={} request_id={}",
+                                        room, event_type, actor, request_id
+                                    ),
+                                );
+                                ServerMsg::RoomEvent {
+                                    room,
+                                    event_type,
+                                    actor,
+                                    request_id,
+                                    queue_depth,
+                                    member_count,
+                                    active_connection_id,
+                                    lobby_enabled,
+                                    preset,
+                                    members,
+                                }
+                            }
                             ServerNotification::MemberRoleUpdated {
                                 room,
                                 connection_id,
                                 role,
-                            } => ServerMsg::MemberRoleUpdated {
-                                room,
-                                connection_id,
-                                role,
-                            },
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_member_role_updated room={} connection_id={} role={}",
+                                        room, connection_id, role
+                                    ),
+                                );
+                                ServerMsg::MemberRoleUpdated {
+                                    room,
+                                    connection_id,
+                                    role,
+                                }
+                            }
                         };
                         if tx_notif.send(msg).is_err() {
+                            write_session_log(
+                                notification_log_ctx.as_ref(),
+                                "notification_forward_channel_closed",
+                            );
                             break;
                         }
                     }
+                    write_session_log(notification_log_ctx.as_ref(), "notification_reader_stopped");
                 });
 
                 match client.initialize(
@@ -558,8 +655,7 @@ fn run_app(
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
-        let _ =
-            apply_execution_profile(&mut app, &rpc_cmd_tx.borrow(), &saved_profile.name, false);
+        let _ = apply_execution_profile(&mut app, &rpc_cmd_tx.borrow(), &saved_profile.name, false);
     }
     refresh_context_budget_state(&mut app);
     if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
@@ -569,13 +665,20 @@ fn run_app(
             tui_path.display(),
             backend_path.display()
         )));
+        write_session_log(
+            session_log.as_ref(),
+            &format!(
+                "session_logs_ready tui_path={} backend_path={}",
+                tui_path.display(),
+                backend_path.display()
+            ),
+        );
     }
 
     let cancel_token: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let mut watch_state = WatchState::default();
     let mut qa_watch_state = QaWatchState::default();
-    let remote_reconnect_state =
-        RefCell::new((0u32, None::<std::time::Instant>, false));
+    let remote_reconnect_state = RefCell::new((0u32, None::<std::time::Instant>, false));
 
     app_event::run_event_loop(
         terminal,
@@ -613,11 +716,21 @@ fn run_app(
                 &rpc_cmd_tx,
                 &remote_reconnect_state,
                 MAX_REMOTE_RECONNECT_ATTEMPTS,
+                session_log.as_ref(),
             )
         },
         |app, input_action| {
             match input_action {
                 InputAction::Submit(text) => {
+                    write_session_log(
+                        session_log.as_ref(),
+                        &format!(
+                            "input_submit chars={} slash={} bang={}",
+                            text.len(),
+                            text.trim_start().starts_with('/'),
+                            text.trim_start().starts_with('!')
+                        ),
+                    );
                     if handle_submit(
                         app,
                         &tx,
@@ -632,17 +745,34 @@ fn run_app(
                     }
                 }
                 InputAction::Cancel => {
+                    write_session_log(
+                        session_log.as_ref(),
+                        &format!("input_cancel active_request_id={}", app.active_request_id),
+                    );
                     cancel_token.store(true, Ordering::SeqCst);
                     let _ = rpc_cmd_tx.borrow().send(RpcCommand::CancelRequest);
                     app.finalize_streaming();
+                    app.active_request_id.clear();
+                    app.active_request_started_at = None;
                     app.stop_waiting();
                     app.set_status("Request cancelled");
                 }
-                InputAction::Quit => return Ok(LoopControl::Break),
+                InputAction::Quit => {
+                    write_session_log(session_log.as_ref(), "input_quit");
+                    return Ok(LoopControl::Break);
+                }
                 InputAction::ProviderSelected(idx) => {
                     if let Some(provider) = app.providers.get(idx) {
                         let name = provider.name.clone();
                         let model = provider.models.first().cloned();
+                        write_session_log(
+                            session_log.as_ref(),
+                            &format!(
+                                "provider_switch_request provider={} model={}",
+                                name,
+                                model.clone().unwrap_or_default()
+                            ),
+                        );
                         app.set_status(format!("Switching to {name}..."));
                         let tx2 = tx.clone();
                         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
@@ -680,6 +810,13 @@ fn run_app(
                 }
                 InputAction::PermissionAnswered(allowed) => {
                     let prompt_id = std::mem::take(&mut app.permission_prompt_id);
+                    write_session_log(
+                        session_log.as_ref(),
+                        &format!(
+                            "permission_answer prompt_id={} allowed={}",
+                            prompt_id, allowed
+                        ),
+                    );
                     let _ = rpc_cmd_tx.borrow().send(RpcCommand::SendNotification {
                         method: "poor-cli/permissionRes".into(),
                         params: serde_json::json!({
@@ -693,6 +830,14 @@ fn run_app(
                     let step_desc = app.current_plan_step_description().map(|s| s.to_string());
                     let orig = app.plan_original_request.clone();
                     if let Some(desc) = step_desc {
+                        write_session_log(
+                            session_log.as_ref(),
+                            &format!(
+                                "plan_step_approved step_index={} step_desc_chars={}",
+                                step_idx,
+                                desc.len()
+                            ),
+                        );
                         let exec_msg = format!(
                             "Execute step {} of my plan: {}\n\nOriginal request: {}",
                             step_idx + 1,
@@ -711,10 +856,12 @@ fn run_app(
                             &cancel_token,
                             exec_msg,
                             display,
+                            session_log.as_ref(),
                         );
                     }
                 }
                 InputAction::PlanCancelled => {
+                    write_session_log(session_log.as_ref(), "plan_cancelled");
                     app.clear_plan();
                     app.set_status("Plan cancelled");
                 }
@@ -748,6 +895,18 @@ fn handle_submit(
     if trimmed.is_empty() {
         return false;
     }
+
+    let submit_kind = if trimmed.starts_with('/') {
+        "slash"
+    } else if trimmed.starts_with('!') {
+        "bang"
+    } else {
+        "chat"
+    };
+    write_session_log(
+        launch.session_log.as_ref(),
+        &format!("submit_dispatch kind={submit_kind} chars={}", trimmed.len()),
+    );
 
     if app.join_wizard_active && !trimmed.starts_with('/') {
         match app.join_wizard_step {
@@ -825,6 +984,15 @@ fn handle_submit(
     }
 
     if trimmed.starts_with('/') {
+        let slash_command = trimmed
+            .split_whitespace()
+            .next()
+            .unwrap_or("/unknown")
+            .trim_start_matches('/');
+        write_session_log(
+            launch.session_log.as_ref(),
+            &format!("slash_command_dispatch command={slash_command}"),
+        );
         return commands::handle_slash_command(
             app,
             tx,
@@ -867,6 +1035,7 @@ fn handle_submit(
                     cancel_token,
                     backend_message,
                     trimmed.to_string(),
+                    launch.session_log.as_ref(),
                 );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -893,6 +1062,7 @@ fn handle_submit(
         cancel_token,
         backend_message,
         trimmed.to_string(),
+        launch.session_log.as_ref(),
     );
     false
 }
@@ -904,8 +1074,13 @@ fn send_chat_request(
     cancel_token: &Arc<AtomicBool>,
     backend_message: String,
     display_message: String,
+    session_log: Option<&SessionLogWriter>,
 ) {
     const STREAM_REPLY_TIMEOUT_SECS: u64 = 130;
+
+    let display_kind = chat_display_kind(&display_message);
+    let display_char_count = display_message.chars().count();
+    let backend_char_count = backend_message.chars().count();
 
     cancel_token.store(false, Ordering::SeqCst);
     app.record_user_input(&display_message);
@@ -916,8 +1091,19 @@ fn send_chat_request(
 
     // Use streaming endpoint — notifications arrive via the notification channel
     let request_id = app.next_request_id();
+    app.active_request_id = request_id.clone();
+    app.active_request_started_at = Some(std::time::Instant::now());
+    write_session_log(
+        session_log,
+        &format!(
+            "chat_request_start request_id={} kind={} display_chars={} backend_chars={}",
+            request_id, display_kind, display_char_count, backend_char_count
+        ),
+    );
     let tx2 = tx.clone();
     let cancel = cancel_token.clone();
+    let request_id_for_thread = request_id.clone();
+    let log_ctx = session_log.cloned();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     if rpc_cmd_tx
         .send(RpcCommand::ChatStreaming {
@@ -928,6 +1114,12 @@ fn send_chat_request(
         .is_err()
     {
         app.stop_waiting();
+        app.active_request_id.clear();
+        app.active_request_started_at = None;
+        write_session_log(
+            session_log,
+            "chat_request_send_error reason=rpc_worker_unavailable",
+        );
         app.push_message(ChatMessage::error(
             "Failed to send request: RPC worker unavailable",
         ));
@@ -939,13 +1131,35 @@ fn send_chat_request(
             Ok(Ok(_content)) => {
                 // Streaming already delivered chunks via notifications.
                 // The final result is ignored since finalize_streaming handles it.
+                write_session_log(
+                    log_ctx.as_ref(),
+                    &format!(
+                        "chat_request_rpc_result request_id={} status=ok",
+                        request_id_for_thread
+                    ),
+                );
             }
             Ok(Err(e)) => {
+                write_session_log(
+                    log_ctx.as_ref(),
+                    &format!(
+                        "chat_request_rpc_result request_id={} status=error error={}",
+                        request_id_for_thread,
+                        truncate_line(&e.replace('\n', " "), 180)
+                    ),
+                );
                 if !cancel.load(Ordering::SeqCst) {
                     let _ = tx2.send(ServerMsg::Error { message: e });
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                write_session_log(
+                    log_ctx.as_ref(),
+                    &format!(
+                        "chat_request_rpc_result request_id={} status=timeout",
+                        request_id_for_thread
+                    ),
+                );
                 if !cancel.load(Ordering::SeqCst) {
                     let _ = tx2.send(ServerMsg::Error {
                         message: "Timed out waiting for backend response".into(),
@@ -953,6 +1167,13 @@ fn send_chat_request(
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
+                write_session_log(
+                    log_ctx.as_ref(),
+                    &format!(
+                        "chat_request_rpc_result request_id={} status=disconnected",
+                        request_id_for_thread
+                    ),
+                );
                 if !cancel.load(Ordering::SeqCst) {
                     let _ = tx2.send(ServerMsg::Error {
                         message: "RPC worker reply channel disconnected".into(),
@@ -2397,7 +2618,6 @@ fn parse_value_literal(raw: &str) -> Value {
     Value::String(raw.to_string())
 }
 
-
 fn recommended_bootstrap_commands(root: &Path) -> Vec<String> {
     let traits = detect_project_traits(root);
     let mut commands = Vec::new();
@@ -3616,8 +3836,8 @@ mod tests {
     #[test]
     fn backend_server_args_empty_for_local_mode() {
         let cli = Cli::parse_from(["poor-cli-tui"]);
-        let args = multiplayer::build_backend_server_args(&cli)
-            .expect("local mode args should build");
+        let args =
+            multiplayer::build_backend_server_args(&cli).expect("local mode args should build");
         assert!(args.is_empty());
     }
 
@@ -3632,8 +3852,7 @@ mod tests {
             "--remote-token",
             "tok-123",
         ]);
-        let args = multiplayer::build_backend_server_args(&cli)
-            .expect("remote args should build");
+        let args = multiplayer::build_backend_server_args(&cli).expect("remote args should build");
         assert_eq!(
             args,
             vec![
@@ -3658,10 +3877,9 @@ mod tests {
 
     #[test]
     fn join_server_parser_accepts_invite_code() {
-        let parsed = multiplayer::parse_join_server_args(
-            "/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc",
-        )
-        .expect("invite code should parse");
+        let parsed =
+            multiplayer::parse_join_server_args("/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc")
+                .expect("invite code should parse");
         assert_eq!(
             parsed,
             (
@@ -3871,7 +4089,10 @@ mod tests {
     fn default_qa_command_prefers_python_when_pyproject_exists() {
         let root = create_temp_workspace("qa-default");
         fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").expect("pyproject");
-        assert_eq!(watcher::default_qa_command_for_workspace(&root), "pytest -q");
+        assert_eq!(
+            watcher::default_qa_command_for_workspace(&root),
+            "pytest -q"
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

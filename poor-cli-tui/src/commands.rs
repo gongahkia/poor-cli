@@ -1143,6 +1143,7 @@ Context Window: {max_context} tokens\n\n\
                 cancel_token,
                 last.clone(),
                 format!("/retry {last}"),
+                launch.session_log.as_ref(),
             );
         } else {
             show_command_info_popup(app, raw, "No previous request to retry.".to_string());
@@ -1940,6 +1941,7 @@ Context Window: {max_context} tokens\n\n\
                     cancel_token,
                     apply_response_mode_to_user_input(app.response_mode, &prompt),
                     raw.to_string(),
+                    launch.session_log.as_ref(),
                 );
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to collect diff: {e}"))),
@@ -1989,6 +1991,7 @@ Context Window: {max_context} tokens\n\n\
             cancel_token,
             apply_response_mode_to_user_input(app.response_mode, &prompt),
             raw.to_string(),
+            launch.session_log.as_ref(),
         );
         return false;
     }
@@ -3515,6 +3518,7 @@ Total: **${:.4}**",
                     cancel_token,
                     prompt,
                     "/commit".to_string(),
+                    launch.session_log.as_ref(),
                 );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -3559,7 +3563,15 @@ Total: **${:.4}**",
         }
 
         let prompt = build_review_prompt(&language, &code);
-        send_chat_request(app, tx, rpc_cmd_tx, cancel_token, prompt, raw.to_string());
+        send_chat_request(
+            app,
+            tx,
+            rpc_cmd_tx,
+            cancel_token,
+            prompt,
+            raw.to_string(),
+            launch.session_log.as_ref(),
+        );
         return false;
     }
 
@@ -3586,7 +3598,15 @@ Total: **${:.4}**",
         };
 
         let prompt = build_test_prompt(detect_language_from_path(file_path), &content);
-        send_chat_request(app, tx, rpc_cmd_tx, cancel_token, prompt, raw.to_string());
+        send_chat_request(
+            app,
+            tx,
+            rpc_cmd_tx,
+            cancel_token,
+            prompt,
+            raw.to_string(),
+            launch.session_log.as_ref(),
+        );
         return false;
     }
 
@@ -3638,6 +3658,7 @@ Submitting any slash command will cancel capture."
                     cancel_token,
                     content,
                     format!("/use {name}"),
+                    launch.session_log.as_ref(),
                 );
             }
             Err(e) => app.push_message(ChatMessage::error(e)),
@@ -3780,8 +3801,12 @@ Submitting any slash command will cancel capture."
 
             let stop = Arc::new(AtomicBool::new(false));
             let watch_tx = watch_msg_sender(&tx);
-            let handle =
-                watcher::spawn_qa_watch_worker(directory.clone(), command.clone(), watch_tx, stop.clone());
+            let handle = watcher::spawn_qa_watch_worker(
+                directory.clone(),
+                command.clone(),
+                watch_tx,
+                stop.clone(),
+            );
             qa_watch_state.stop_flag = Some(stop);
             qa_watch_state.handle = Some(handle);
             qa_watch_state.directory = Some(directory.clone());
