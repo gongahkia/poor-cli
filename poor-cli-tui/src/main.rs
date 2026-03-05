@@ -272,6 +272,26 @@ fn build_bridge_server_args(url: &str, room: &str, token: &str) -> Vec<String> {
     ]
 }
 
+fn should_attempt_remote_reconnect(message: &str) -> bool {
+    let lowered = message.to_ascii_lowercase();
+    [
+        "websocket",
+        "bridge",
+        "connection closed",
+        "connection reset",
+        "connection refused",
+        "broken pipe",
+        "no route to host",
+        "network is unreachable",
+        "transport",
+        "rpc worker unavailable",
+        "backend response channel closed",
+        "timed out waiting for backend response",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
+}
+
 fn reconnect_to_remote_server(
     app: &mut App,
     tx: &mpsc::Sender<ServerMsg>,
@@ -292,6 +312,8 @@ fn reconnect_to_remote_server(
     app.finalize_streaming();
     app.stop_waiting();
     app.multiplayer_enabled = true;
+    app.multiplayer_remote_url = url.to_string();
+    app.multiplayer_remote_token = token.to_string();
     app.multiplayer_room = room.to_string();
     app.multiplayer_role.clear();
     app.push_message(ChatMessage::system(format!(
@@ -517,6 +539,8 @@ fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     cli: Cli,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    const MAX_REMOTE_RECONNECT_ATTEMPTS: u32 = 10;
+
     let backend_server_args = build_backend_server_args(&cli)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
@@ -527,6 +551,16 @@ fn run_app(
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_else(|| ".".into())
     });
+    if let Some(url) = cli.remote_url.as_ref() {
+        app.multiplayer_remote_url = url.clone();
+    }
+    if let Some(token) = cli.remote_token.as_ref() {
+        app.multiplayer_remote_token = token.clone();
+    }
+    if let Some(room) = cli.remote_room.as_ref() {
+        app.multiplayer_room = room.clone();
+        app.multiplayer_enabled = true;
+    }
     let (session_log, tui_log_path, backend_log_path) = setup_session_logs(&app.cwd);
     write_session_log(
         session_log.as_ref(),
@@ -583,6 +617,9 @@ fn run_app(
     let cancel_token: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let mut watch_state = WatchState::default();
     let mut qa_watch_state = QaWatchState::default();
+    let mut remote_reconnect_attempts: u32 = 0;
+    let mut remote_reconnect_deadline: Option<std::time::Instant> = None;
+    let mut remote_reconnect_pending = false;
 
     loop {
         terminal.draw(|f| ui::draw(f, &app))?;
@@ -596,6 +633,14 @@ fn run_app(
                     multiplayer_room,
                     multiplayer_role,
                 } => {
+                    if remote_reconnect_pending {
+                        app.push_message(ChatMessage::system(
+                            "Multiplayer bridge reconnected successfully.".to_string(),
+                        ));
+                    }
+                    remote_reconnect_attempts = 0;
+                    remote_reconnect_deadline = None;
+                    remote_reconnect_pending = false;
                     app.provider_name = provider;
                     app.model_name = model;
                     app.version = version;
@@ -657,6 +702,31 @@ fn run_app(
                     app.finalize_streaming();
                     app.active_tool = None;
                     app.stop_waiting();
+                    let remote_reconnect_configured = !app.multiplayer_remote_url.is_empty()
+                        && !app.multiplayer_remote_token.is_empty()
+                        && !app.multiplayer_room.is_empty();
+                    if remote_reconnect_configured
+                        && should_attempt_remote_reconnect(&message)
+                        && remote_reconnect_deadline.is_none()
+                    {
+                        if remote_reconnect_attempts < MAX_REMOTE_RECONNECT_ATTEMPTS {
+                            let delay_secs = (1u64 << remote_reconnect_attempts).min(30);
+                            remote_reconnect_attempts += 1;
+                            remote_reconnect_deadline =
+                                Some(std::time::Instant::now() + Duration::from_secs(delay_secs));
+                            remote_reconnect_pending = true;
+                            app.push_message(ChatMessage::system(format!(
+                                "Multiplayer connection lost. Reconnecting in {delay_secs}s (attempt {}/{MAX_REMOTE_RECONNECT_ATTEMPTS}).",
+                                remote_reconnect_attempts
+                            )));
+                            app.set_status("Scheduling multiplayer reconnect");
+                        } else if remote_reconnect_pending {
+                            remote_reconnect_pending = false;
+                            app.push_message(ChatMessage::error(format!(
+                                "Auto-reconnect exhausted after {MAX_REMOTE_RECONNECT_ATTEMPTS} attempts: {message}"
+                            )));
+                        }
+                    }
                     if app.provider_name.eq_ignore_ascii_case("ollama") {
                         if let Some((title, content)) =
                             ollama_recovery_popup(&message, &app.model_name)
@@ -831,6 +901,28 @@ fn run_app(
                     }
                     app.set_status(format!("Role updated: `{connection_id}` -> {role}"));
                 }
+            }
+        }
+
+        if let Some(deadline) = remote_reconnect_deadline {
+            if std::time::Instant::now() >= deadline {
+                remote_reconnect_deadline = None;
+                let attempt_label = remote_reconnect_attempts;
+                let url = app.multiplayer_remote_url.clone();
+                let room = app.multiplayer_room.clone();
+                let token = app.multiplayer_remote_token.clone();
+                app.push_message(ChatMessage::system(format!(
+                    "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{url}` room `{room}`..."
+                )));
+                reconnect_to_remote_server(
+                    &mut app,
+                    &tx,
+                    &mut rpc_cmd_tx,
+                    &launch,
+                    &url,
+                    &room,
+                    &token,
+                );
             }
         }
 
