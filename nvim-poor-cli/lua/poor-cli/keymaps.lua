@@ -7,6 +7,7 @@ function M.setup()
     local config = require("poor-cli.config")
     local inline = require("poor-cli.inline")
     local chat = require("poor-cli.chat")
+    local telescope = require("poor-cli.telescope")
     
     -- Trigger completion in insert mode
     vim.keymap.set("i", config.get("trigger_key"), function()
@@ -46,6 +47,13 @@ function M.setup()
     vim.keymap.set("n", config.get("chat_key"), function()
         chat.toggle()
     end, { desc = "Toggle poor-cli chat" })
+
+    local checkpoints_key = config.get("checkpoints_key")
+    if checkpoints_key and checkpoints_key ~= "" then
+        vim.keymap.set("n", checkpoints_key, function()
+            telescope.open_checkpoints_picker()
+        end, { desc = "Browse poor-cli checkpoints" })
+    end
     
     -- Send selection to chat in visual mode
     vim.keymap.set("v", config.get("chat_key"), function()

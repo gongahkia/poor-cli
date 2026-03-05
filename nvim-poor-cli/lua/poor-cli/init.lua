@@ -12,6 +12,7 @@ M.commands = nil
 M.keymaps = nil
 M.autocmds = nil
 M.diagnostics = nil
+M.telescope = nil
 
 -- Setup function - call this from your Neovim config
 function M.setup(opts)
@@ -27,6 +28,7 @@ function M.setup(opts)
     M.keymaps = require("poor-cli.keymaps")
     M.autocmds = require("poor-cli.autocmds")
     M.diagnostics = require("poor-cli.diagnostics")
+    M.telescope = require("poor-cli.telescope")
     
     -- Setup components
     M.commands.setup()

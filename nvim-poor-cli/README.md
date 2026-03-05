@@ -24,6 +24,7 @@
 - Python 3.8+
 - `poor-cli` installed: `pip install poor-cli`
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+- Optional: `telescope.nvim` for `:PoorCliCheckpoints`
 
 ### Lazy.nvim
 
@@ -82,6 +83,7 @@ require("poor-cli").setup({
     accept_key = "<Tab>",       -- Accept completion (falls back to Tab if no completion)
     dismiss_key = "<Esc>",      -- Dismiss completion (falls back to Esc if no completion)
     chat_key = "<leader>pc",    -- Toggle chat panel
+    checkpoints_key = nil,      -- Optional keymap for checkpoint picker
     
     -- Appearance
     ghost_text_hl = "Comment",  -- Highlight group for ghost text
@@ -129,6 +131,7 @@ require("poor-cli").setup({
 | `:PoorCliSend [message]` | Send message to chat |
 | `:PoorCliClear` | Clear chat history |
 | `:PoorCliDiagnostics` | Toggle assistant diagnostics integration |
+| `:PoorCliCheckpoints` | Browse and restore checkpoints (Telescope) |
 | `:PoorCliComplete` | Trigger inline completion |
 | `:PoorCliAccept` | Accept current completion |
 | `:PoorCliDismiss` | Dismiss current completion |

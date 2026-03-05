@@ -68,6 +68,11 @@ chat_key ~
     Default: "<leader>pc"
     Key to toggle chat panel.
 
+                                                        *poor-cli-config.checkpoints_key*
+checkpoints_key ~
+    Default: nil
+    Optional normal-mode keymap for checkpoint picker.
+
                                                         *poor-cli-config.provider*
 provider ~
     Default: nil (auto-detect)
@@ -110,6 +115,9 @@ COMMANDS                                                *poor-cli-commands*
 
 :PoorCliDiagnostics                                     *:PoorCliDiagnostics*
     Toggle assistant diagnostics integration.
+
+:PoorCliCheckpoints                                     *:PoorCliCheckpoints*
+    Browse and restore checkpoints via telescope.nvim.
 
 :PoorCliComplete                                        *:PoorCliComplete*
     Trigger inline completion at cursor.

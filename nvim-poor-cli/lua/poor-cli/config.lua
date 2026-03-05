@@ -23,6 +23,7 @@ M.defaults = {
     dismiss_key = "<Esc>",
     trigger_key = "<C-Space>",
     chat_key = "<leader>pc",
+    checkpoints_key = nil,
     
     -- Provider configuration (nil = auto-detect from environment)
     provider = nil,
