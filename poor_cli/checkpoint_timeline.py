@@ -44,11 +44,13 @@ class TimelineNode:
     distance_from_head: int  # How many checkpoints back
 
 
+MAX_TIMELINE_DISPLAY = 200
+
 class CheckpointTimeline:
     """Manages checkpoint relationships and timeline"""
 
     def __init__(self, checkpoints: List[Checkpoint]):
-        self.checkpoints = checkpoints
+        self.checkpoints = checkpoints[:MAX_TIMELINE_DISPLAY]
         self.nodes: Dict[str, TimelineNode] = {}
         self._build_timeline()
 

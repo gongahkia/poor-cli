@@ -22,7 +22,6 @@
 # ============================================================================
 
 (B) Reduce checkpoint_strategies.py from 6 classes to 3 by merging ProjectDetector+FileFilter into one class and SmartCompressor+PartialCheckpointStrategy into one class +checkpoint +refactor
-(B) In checkpoint_timeline.py, add a display limit (e.g., 200 checkpoints max) to prevent memory/rendering issues with large checkpoint histories +checkpoint +bugfix
 (B) In checkpoint_display.py line ~66, replace bare except: with except (ValueError, TypeError): on datetime parsing to avoid swallowing unrelated exceptions +checkpoint +bugfix
 (B) In checkpoint_integrations.py, add cleanup of orphaned temp directories on failed archive export/import operations +checkpoint +bugfix
 
