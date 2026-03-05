@@ -169,6 +169,18 @@ class MultiplayerHost:
         room = RoomState(name=room_name, server=server, tokens=token_index)
 
         async def _room_notification_sink(message: Any) -> None:
+            method = str(getattr(message, "method", "") or "")
+            params = getattr(message, "params", {}) or {}
+            if not isinstance(params, dict):
+                params = {}
+            if method == "poor-cli/streamChunk":
+                await self._broadcast_streaming_chunk(
+                    room,
+                    request_id=str(params.get("requestId", "")),
+                    content=str(params.get("chunk", "")),
+                    done=bool(params.get("done", False)),
+                )
+                return
             await self._broadcast_rpc(room, message)
 
         # Monkeypatch sink for streaming notifications from PoorCLIServer.
@@ -1106,6 +1118,40 @@ class MultiplayerHost:
                 continue
             try:
                 await self._send_rpc(member.ws, message)
+            except Exception:
+                dead_members.append(connection_id)
+
+        for connection_id in dead_members:
+            room.members.pop(connection_id, None)
+            self.connections.pop(connection_id, None)
+
+    async def _broadcast_streaming_chunk(
+        self,
+        room: RoomState,
+        *,
+        request_id: str,
+        content: str,
+        done: bool,
+    ) -> None:
+        requester_id = room.active_connection_id or ""
+        notification = self.message_cls(
+            method="poor-cli/streamingChunk",
+            params={
+                "requestId": request_id,
+                "content": content,
+                "done": done,
+            },
+        )
+        dead_members: List[str] = []
+        for connection_id, member in room.members.items():
+            if member.ws.closed:
+                dead_members.append(connection_id)
+                continue
+            should_receive = member.role == "viewer" or connection_id == requester_id
+            if not should_receive:
+                continue
+            try:
+                await self._send_rpc(member.ws, notification)
             except Exception:
                 dead_members.append(connection_id)
 

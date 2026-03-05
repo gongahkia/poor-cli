@@ -113,6 +113,16 @@ async def _wait_for_response_id(
     raise AssertionError(f"Did not receive response id={expected_id}")
 
 
+async def _drain_pending(ws: aiohttp.ClientWebSocketResponse, timeout: float = 0.05) -> None:
+    while True:
+        try:
+            msg = await asyncio.wait_for(ws.receive(), timeout=timeout)
+        except asyncio.TimeoutError:
+            break
+        if msg.type in {aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING, aiohttp.WSMsgType.CLOSED}:
+            break
+
+
 @pytest.mark.asyncio
 async def test_initialize_auth_and_viewer_denied_prompt_methods():
     factory = _FakeServerFactory()
@@ -204,7 +214,7 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as prompter_ws, session.ws_connect(
                 f"ws://127.0.0.1:{port}/rpc"
-            ) as viewer_ws:
+            ) as other_prompter_ws, session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as viewer_ws:
                 await prompter_ws.send_json(
                     {
                         "jsonrpc": "2.0",
@@ -226,7 +236,21 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
                 )
                 _ = await _ws_recv_json(viewer_ws)
                 _ = await _ws_recv_json(viewer_ws)
-                _ = await _ws_recv_json(prompter_ws)
+
+                await other_prompter_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _ws_recv_json(other_prompter_ws)
+                _ = await _ws_recv_json(other_prompter_ws)
+
+                await _drain_pending(prompter_ws)
+                await _drain_pending(viewer_ws)
+                await _drain_pending(other_prompter_ws)
 
                 await prompter_ws.send_json(
                     {
@@ -240,11 +264,12 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
                 # both receive queue/started/stream events
                 seen_stream_prompter = False
                 seen_stream_viewer = False
+                seen_stream_other_prompter = False
                 got_final_response = False
 
                 for _ in range(8):
                     payload = await _ws_recv_json(prompter_ws)
-                    if payload.get("method") == "poor-cli/streamChunk":
+                    if payload.get("method") == "poor-cli/streamingChunk":
                         seen_stream_prompter = True
                     if payload.get("id") == 99:
                         got_final_response = True
@@ -252,12 +277,22 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
 
                 for _ in range(6):
                     payload = await _ws_recv_json(viewer_ws)
-                    if payload.get("method") == "poor-cli/streamChunk":
+                    if payload.get("method") == "poor-cli/streamingChunk":
                         seen_stream_viewer = True
                         break
 
+                for _ in range(6):
+                    with contextlib.suppress(asyncio.TimeoutError):
+                        maybe = await asyncio.wait_for(other_prompter_ws.receive(), timeout=0.1)
+                        if maybe.type == aiohttp.WSMsgType.TEXT:
+                            payload = json.loads(maybe.data)
+                            if payload.get("method") == "poor-cli/streamingChunk":
+                                seen_stream_other_prompter = True
+                            assert payload.get("id") != 99
+
                 assert seen_stream_prompter
                 assert seen_stream_viewer
+                assert not seen_stream_other_prompter
                 assert got_final_response
 
                 # Viewer should not receive requester's final RPC response id=99.

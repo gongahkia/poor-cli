@@ -281,7 +281,8 @@ fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String
 /// Parse a server notification from JSON-RPC method + params.
 fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
     match method {
-        "poor-cli/streamChunk" => Some(ServerNotification::StreamChunk {
+        "poor-cli/streamChunk" | "poor-cli/streamingChunk" => Some(
+            ServerNotification::StreamChunk {
             request_id: params
                 .get("requestId")
                 .and_then(|v| v.as_str())
@@ -290,6 +291,7 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
             chunk: params
                 .get("chunk")
                 .and_then(|v| v.as_str())
+                .or_else(|| params.get("content").and_then(|v| v.as_str()))
                 .unwrap_or("")
                 .to_string(),
             done: params
@@ -1716,6 +1718,25 @@ mod tests {
                 assert_eq!(chunk, "hello");
                 assert!(!done);
                 assert!(reason.is_none());
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn parse_streaming_chunk_notification() {
+        let params = json!({"requestId": "r9", "content": "partial", "done": false});
+        let n = parse_notification("poor-cli/streamingChunk", &params).unwrap();
+        match n {
+            ServerNotification::StreamChunk {
+                request_id,
+                chunk,
+                done,
+                ..
+            } => {
+                assert_eq!(request_id, "r9");
+                assert_eq!(chunk, "partial");
+                assert!(!done);
             }
             _ => panic!("wrong variant"),
         }
