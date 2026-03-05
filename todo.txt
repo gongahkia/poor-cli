@@ -58,7 +58,6 @@
 (B) In poor_cli/tools_async.py, replace broad Exception catches with specific exception types (FileOperationError, CommandExecutionError, etc.) in at least the 10 most critical tool execution paths +bugfix +refactor
 (B) In poor_cli/context_optimizer.py, replace the rough CHARS_PER_TOKEN=4 heuristic with provider-specific token counting (tiktoken for OpenAI, vertex tokenizer for Gemini) or at minimum make the ratio configurable +refactor +feature
 (B) In poor_cli/file_cache.py, add a TTL/expiry mechanism so stale cache entries are evicted after a configurable duration +feature
-(B) In poor_cli/testing_tools.py line ~123, use a tempfile.NamedTemporaryFile instead of hardcoding /tmp/pytest_report.json, and ensure cleanup in a finally block +bugfix +cleanup
 (B) In poor_cli/testing_tools.py, make the 300-second test runner timeout configurable via config.yaml +feature
 (B) In poor_cli/error_recovery.py, consolidate the 25 except clauses by extracting a common error-to-suggestion mapping function that all handlers delegate to +refactor
 

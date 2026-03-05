@@ -11,6 +11,7 @@ Comprehensive testing and quality assurance:
 
 import subprocess
 import json
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -115,17 +116,23 @@ class TestRunner:
 
     def _run_pytest(self, test_path: Optional[str], verbose: bool) -> TestResult:
         """Run pytest"""
-        cmd = ["pytest"]
-
-        if verbose:
-            cmd.append("-v")
-
-        cmd.extend(["--json-report", "--json-report-file=/tmp/pytest_report.json"])
-
-        if test_path:
-            cmd.append(test_path)
+        report_fd = tempfile.NamedTemporaryFile(
+            suffix=".json", prefix="pytest_report_", delete=False
+        )
+        report_path = report_fd.name
+        report_fd.close()
 
         try:
+            cmd = ["pytest"]
+
+            if verbose:
+                cmd.append("-v")
+
+            cmd.extend(["--json-report", f"--json-report-file={report_path}"])
+
+            if test_path:
+                cmd.append(test_path)
+
             result = subprocess.run(
                 cmd,
                 cwd=self.workspace_root,
@@ -137,7 +144,7 @@ class TestRunner:
             output = result.stdout + result.stderr
 
             # Parse JSON report if available
-            report_file = Path("/tmp/pytest_report.json")
+            report_file = Path(report_path)
             if report_file.exists():
                 with open(report_file) as f:
                     report = json.load(f)
@@ -160,6 +167,11 @@ class TestRunner:
         except Exception as e:
             logger.error(f"Test execution failed: {e}")
             return TestResult(output=str(e))
+        finally:
+            try:
+                Path(report_path).unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _run_jest(self, test_path: Optional[str], verbose: bool) -> TestResult:
         """Run jest"""
