@@ -21,9 +21,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
+use poor_cli_tui::helpers::{classify_project_kind, detect_project_traits, first_line, should_skip_dir, truncate_block, truncate_line};
 use poor_cli_tui::input::{self, InputAction};
 use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
 use poor_cli_tui::ui;
+use poor_cli_tui::watcher::{self, WatchMsg, WatchState, QaWatchState};
 
 // ── CLI arguments ────────────────────────────────────────────────────
 
@@ -135,55 +137,6 @@ enum ServerMsg {
     },
 }
 
-#[derive(Default)]
-struct WatchState {
-    stop_flag: Option<Arc<AtomicBool>>,
-    handle: Option<thread::JoinHandle<()>>,
-    directory: Option<String>,
-}
-
-impl WatchState {
-    fn is_running(&self) -> bool {
-        self.handle.is_some()
-    }
-
-    fn stop(&mut self) {
-        if let Some(flag) = &self.stop_flag {
-            flag.store(true, Ordering::SeqCst);
-        }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-        self.stop_flag = None;
-        self.directory = None;
-    }
-}
-
-#[derive(Default)]
-struct QaWatchState {
-    stop_flag: Option<Arc<AtomicBool>>,
-    handle: Option<thread::JoinHandle<()>>,
-    directory: Option<String>,
-    command: Option<String>,
-}
-
-impl QaWatchState {
-    fn is_running(&self) -> bool {
-        self.handle.is_some()
-    }
-
-    fn stop(&mut self) {
-        if let Some(flag) = &self.stop_flag {
-            flag.store(true, Ordering::SeqCst);
-        }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-        self.stop_flag = None;
-        self.directory = None;
-        self.command = None;
-    }
-}
 
 type SessionLogWriter = Arc<Mutex<fs::File>>;
 
@@ -5509,7 +5462,7 @@ Submitting any slash command will cancel capture."
                 .and_then(|rest| rest.split_once(' ').map(|(_, after)| after.trim()))
                 .unwrap_or("");
             let mut directory = app.cwd.clone();
-            let mut command = default_qa_command_for_workspace(Path::new(&app.cwd));
+            let mut command = watcher::default_qa_command_for_workspace(Path::new(&app.cwd));
 
             if !tail.is_empty() {
                 let mut parts = tail.split_whitespace();
@@ -5534,8 +5487,9 @@ Submitting any slash command will cancel capture."
             }
 
             let stop = Arc::new(AtomicBool::new(false));
+            let watch_tx = watch_msg_sender(&tx);
             let handle =
-                spawn_qa_watch_worker(directory.clone(), command.clone(), tx.clone(), stop.clone());
+                watcher::spawn_qa_watch_worker(directory.clone(), command.clone(), watch_tx, stop.clone());
             qa_watch_state.stop_flag = Some(stop);
             qa_watch_state.handle = Some(handle);
             qa_watch_state.directory = Some(directory.clone());
@@ -5576,10 +5530,11 @@ Submitting any slash command will cancel capture."
         }
 
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = spawn_watch_worker(
+        let watch_tx = watch_msg_sender(&tx);
+        let handle = watcher::spawn_watch_worker(
             directory.to_string(),
             "Explain the changes in these files".to_string(),
-            tx.clone(),
+            watch_tx,
             rpc_cmd_tx.clone(),
             stop.clone(),
         );
@@ -5695,309 +5650,22 @@ Task: {request}"
 
 // ── Watch mode helpers ───────────────────────────────────────────────
 
-fn spawn_watch_worker(
-    directory: String,
-    prompt: String,
-    tx: mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: mpsc::Sender<RpcCommand>,
-    stop: Arc<AtomicBool>,
-) -> thread::JoinHandle<()> {
+fn watch_msg_sender(tx: &mpsc::Sender<ServerMsg>) -> mpsc::Sender<WatchMsg> {
+    let (watch_tx, watch_rx) = mpsc::channel();
+    let tx = tx.clone();
     thread::spawn(move || {
-        let root = PathBuf::from(&directory);
-        let mut previous = snapshot_directory(&root);
-
-        while !stop.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_secs(2));
-            if stop.load(Ordering::SeqCst) {
+        for msg in watch_rx {
+            let server_msg = match msg {
+                WatchMsg::System(content) => ServerMsg::SystemMessage { content },
+                WatchMsg::Chat(content) => ServerMsg::ChatResponse { content },
+                WatchMsg::Error(message) => ServerMsg::Error { message },
+            };
+            if tx.send(server_msg).is_err() {
                 break;
             }
-
-            let current = snapshot_directory(&root);
-            let changed = detect_changed_files(&previous, &current);
-            previous = current;
-
-            if changed.is_empty() {
-                continue;
-            }
-
-            let preview = changed
-                .iter()
-                .take(8)
-                .map(|p| format!("- {p}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let _ = tx.send(ServerMsg::SystemMessage {
-                content: format!(
-                    "Watch mode detected {} changed file(s) in `{directory}`:\n{preview}",
-                    changed.len()
-                ),
-            });
-
-            let chat_prompt = build_watch_prompt(&changed, &prompt);
-            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-            if rpc_cmd_tx
-                .send(RpcCommand::Chat {
-                    message: chat_prompt,
-                    reply: reply_tx,
-                })
-                .is_err()
-            {
-                let _ = tx.send(ServerMsg::Error {
-                    message: "Watch mode stopped: RPC worker unavailable".to_string(),
-                });
-                break;
-            }
-
-            let mut waited_secs = 0u64;
-            loop {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-
-                match reply_rx.recv_timeout(Duration::from_secs(1)) {
-                    Ok(Ok(content)) => {
-                        let _ = tx.send(ServerMsg::ChatResponse { content });
-                        break;
-                    }
-                    Ok(Err(e)) => {
-                        let _ = tx.send(ServerMsg::Error {
-                            message: format!("Watch mode analysis failed: {e}"),
-                        });
-                        break;
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        waited_secs += 1;
-                        if waited_secs >= 240 {
-                            let _ = tx.send(ServerMsg::Error {
-                                message: "Watch mode timed out waiting for backend response"
-                                    .to_string(),
-                            });
-                            break;
-                        }
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        let _ = tx.send(ServerMsg::Error {
-                            message: "Watch mode lost backend reply channel".to_string(),
-                        });
-                        break;
-                    }
-                }
-            }
         }
-    })
-}
-
-fn default_qa_command_for_workspace(root: &Path) -> String {
-    let traits = detect_project_traits(root);
-    if traits.contains(&"rust") && traits.contains(&"python") {
-        return "cargo test -q && pytest -q".to_string();
-    }
-    if traits.contains(&"rust") {
-        return "cargo test -q".to_string();
-    }
-    if traits.contains(&"python") {
-        return "pytest -q".to_string();
-    }
-    if traits.contains(&"javascript") {
-        return "npm test -- --watch=false".to_string();
-    }
-    "make test".to_string()
-}
-
-fn run_qa_command(directory: &str, command: &str) -> Result<(i32, String), String> {
-    let output = Command::new("sh")
-        .arg("-lc")
-        .arg(command)
-        .current_dir(directory)
-        .output()
-        .map_err(|e| format!("Failed to run QA command `{command}`: {e}"))?;
-
-    let exit_code = output.status.code().unwrap_or(1);
-    let combined = format!(
-        "{}{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        if output.stdout.is_empty() || output.stderr.is_empty() {
-            ""
-        } else {
-            "\n"
-        },
-        String::from_utf8_lossy(&output.stderr)
-    );
-    Ok((exit_code, truncate_block(&combined, 2800)))
-}
-
-fn spawn_qa_watch_worker(
-    directory: String,
-    command: String,
-    tx: mpsc::Sender<ServerMsg>,
-    stop: Arc<AtomicBool>,
-) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        let root = PathBuf::from(&directory);
-        let mut previous = snapshot_directory(&root);
-        let mut last_success: Option<bool> = None;
-        let mut last_signature = String::new();
-
-        while !stop.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_secs(2));
-            if stop.load(Ordering::SeqCst) {
-                break;
-            }
-
-            let current = snapshot_directory(&root);
-            let changed = detect_changed_files(&previous, &current);
-            previous = current;
-
-            if changed.is_empty() {
-                continue;
-            }
-
-            let change_preview = changed
-                .iter()
-                .take(6)
-                .map(|path| format!("- {path}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            match run_qa_command(&directory, &command) {
-                Ok((exit_code, output)) => {
-                    let success = exit_code == 0;
-                    let signature = format!("{success}:{}", first_line(&output));
-                    let changed_state = last_success != Some(success);
-                    let changed_signature = signature != last_signature;
-                    last_success = Some(success);
-                    last_signature = signature;
-
-                    if !changed_state && !changed_signature {
-                        continue;
-                    }
-
-                    let status = if success { "PASS" } else { "FAIL" };
-                    let mut lines = vec![
-                        format!("**QA Watch** `{status}` (`{command}`)"),
-                        format!("- Directory: `{directory}`"),
-                        format!("- Changed files: {}", changed.len()),
-                        change_preview,
-                    ];
-
-                    if !output.trim().is_empty() {
-                        lines.push(String::new());
-                        lines.push("```text".to_string());
-                        lines.push(output);
-                        lines.push("```".to_string());
-                    }
-                    let _ = tx.send(ServerMsg::SystemMessage {
-                        content: lines.join("\n"),
-                    });
-                }
-                Err(error) => {
-                    let _ = tx.send(ServerMsg::Error {
-                        message: format!("QA watch failed: {error}"),
-                    });
-                    break;
-                }
-            }
-        }
-    })
-}
-
-fn snapshot_directory(root: &Path) -> HashMap<String, u64> {
-    let mut snapshot = HashMap::new();
-    let mut stack = vec![root.to_path_buf()];
-
-    while let Some(dir) = stack.pop() {
-        let entries = match fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let file_name = entry.file_name();
-            let name = file_name.to_string_lossy();
-
-            if path.is_dir() {
-                if should_skip_dir(&name) {
-                    continue;
-                }
-                stack.push(path);
-                continue;
-            }
-
-            if !path.is_file() {
-                continue;
-            }
-
-            let modified = entry
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-
-            snapshot.insert(path.to_string_lossy().to_string(), modified);
-        }
-    }
-
-    snapshot
-}
-
-fn should_skip_dir(name: &str) -> bool {
-    matches!(
-        name,
-        ".git" | "target" | "node_modules" | ".venv" | "venv" | "__pycache__"
-    )
-}
-
-fn detect_changed_files(
-    previous: &HashMap<String, u64>,
-    current: &HashMap<String, u64>,
-) -> Vec<String> {
-    let mut changed = current
-        .iter()
-        .filter_map(|(path, mtime)| {
-            if previous.get(path).copied() != Some(*mtime) {
-                Some(path.clone())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-    changed.sort();
-    changed
-}
-
-fn build_watch_prompt(changed: &[String], user_prompt: &str) -> String {
-    let mut sections = vec![
-        "The following files changed. Analyze what changed, why it matters, and any risks."
-            .to_string(),
-    ];
-
-    for path in changed.iter().take(5) {
-        let content = match fs::read(path) {
-            Ok(bytes) => {
-                if bytes.len() > 250_000 {
-                    format!(
-                        "(file too large to include fully: {} bytes, showing first 250000 bytes)\n{}",
-                        bytes.len(),
-                        String::from_utf8_lossy(&bytes[..250_000])
-                    )
-                } else {
-                    String::from_utf8_lossy(&bytes).to_string()
-                }
-            }
-            Err(e) => format!("(unable to read file: {e})"),
-        };
-
-        sections.push(format!(
-            "File: {path}\n```\n{}\n```",
-            truncate_block(&content, 4000)
-        ));
-    }
-
-    sections.push(format!("User request: {user_prompt}"));
-    sections.join("\n\n")
+    });
+    watch_tx
 }
 
 // ── Prompt builders and parsing helpers ──────────────────────────────
@@ -6816,65 +6484,6 @@ fn parse_value_literal(raw: &str) -> Value {
     Value::String(raw.to_string())
 }
 
-fn first_line(text: &str) -> String {
-    text.lines().next().unwrap_or("").trim().to_string()
-}
-
-fn truncate_line(text: &str, max_chars: usize) -> String {
-    let mut out = String::new();
-    for (i, ch) in text.chars().enumerate() {
-        if i >= max_chars {
-            out.push('…');
-            return out;
-        }
-        out.push(ch);
-    }
-    out
-}
-
-fn truncate_block(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-
-    let mut out = String::new();
-    for (i, ch) in text.chars().enumerate() {
-        if i >= max_chars {
-            out.push_str("\n... (truncated)");
-            break;
-        }
-        out.push(ch);
-    }
-    out
-}
-
-fn detect_project_traits(root: &Path) -> Vec<&'static str> {
-    let mut traits = Vec::new();
-    if root.join("Cargo.toml").is_file() {
-        traits.push("rust");
-    }
-    if root.join("pyproject.toml").is_file()
-        || root.join("requirements.txt").is_file()
-        || root.join("setup.py").is_file()
-    {
-        traits.push("python");
-    }
-    if root.join("package.json").is_file() {
-        traits.push("javascript");
-    }
-    traits
-}
-
-fn classify_project_kind(root: &Path) -> String {
-    let traits = detect_project_traits(root);
-    if traits.is_empty() {
-        return "generic".to_string();
-    }
-    if traits.len() == 1 {
-        return traits[0].to_string();
-    }
-    "mixed".to_string()
-}
 
 fn recommended_bootstrap_commands(root: &Path) -> Vec<String> {
     let traits = detect_project_traits(root);
@@ -8365,7 +7974,7 @@ mod tests {
     fn default_qa_command_prefers_python_when_pyproject_exists() {
         let root = create_temp_workspace("qa-default");
         fs::write(root.join("pyproject.toml"), "[project]\nname='x'\n").expect("pyproject");
-        assert_eq!(default_qa_command_for_workspace(&root), "pytest -q");
+        assert_eq!(watcher::default_qa_command_for_workspace(&root), "pytest -q");
         let _ = fs::remove_dir_all(root);
     }
 }
