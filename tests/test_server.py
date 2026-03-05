@@ -592,6 +592,93 @@ class TestPoorCLIServer:
         assert result["sessions"][1]["isActive"] is False
 
     @pytest.mark.asyncio
+    async def test_handle_chat_logs_request_start_and_complete(self, server):
+        """Sync chat handler logs request metadata for easier debugging."""
+        server.initialized = True
+        server.core.send_message_sync = AsyncMock(return_value="pong")
+
+        with patch.object(server.logger, "info") as info_mock:
+            result = await server.handle_chat(
+                {
+                    "message": "ping!",
+                    "requestId": "req-sync-1",
+                    "contextFiles": ["a.py", "b.py"],
+                }
+            )
+
+        assert result == {"content": "pong", "role": "assistant"}
+        start_call = next(
+            (call for call in info_mock.call_args_list if call.args[0].startswith("chat_start mode=sync")),
+            None,
+        )
+        complete_call = next(
+            (
+                call
+                for call in info_mock.call_args_list
+                if call.args[0].startswith("chat_complete mode=sync")
+            ),
+            None,
+        )
+        assert start_call is not None
+        assert complete_call is not None
+        assert start_call.args[1] == "req-sync-1"
+        assert start_call.args[2] == len("ping!")
+        assert start_call.args[3] == 2
+        assert complete_call.args[1] == "req-sync-1"
+        assert complete_call.args[2] == len("pong")
+
+    @pytest.mark.asyncio
+    async def test_handle_chat_streaming_logs_request_start_and_complete(self, server):
+        """Streaming chat handler logs request metadata for easier debugging."""
+        from poor_cli.core import CoreEvent
+
+        server.initialized = True
+        server.write_message_stdio = AsyncMock()
+
+        async def fake_send_message_events(*, message, context_files=None, request_id=""):
+            del message, context_files
+            yield CoreEvent.text_chunk("hello ", request_id)
+            yield CoreEvent.text_chunk("world", request_id)
+            yield CoreEvent.done("complete")
+
+        with (
+            patch.object(server.core, "send_message_events", fake_send_message_events),
+            patch.object(server.logger, "info") as info_mock,
+        ):
+            result = await server.handle_chat_streaming(
+                {
+                    "message": "stream this",
+                    "requestId": "req-stream-1",
+                    "contextFiles": ["ctx.py"],
+                }
+            )
+
+        assert result == {"content": "hello world", "role": "assistant"}
+        start_call = next(
+            (
+                call
+                for call in info_mock.call_args_list
+                if call.args[0].startswith("chat_start mode=stream")
+            ),
+            None,
+        )
+        complete_call = next(
+            (
+                call
+                for call in info_mock.call_args_list
+                if call.args[0].startswith("chat_complete mode=stream")
+            ),
+            None,
+        )
+        assert start_call is not None
+        assert complete_call is not None
+        assert start_call.args[1] == "req-stream-1"
+        assert start_call.args[2] == len("stream this")
+        assert start_call.args[3] == 1
+        assert complete_call.args[1] == "req-stream-1"
+        assert complete_call.args[2] == len("hello world")
+
+    @pytest.mark.asyncio
     async def test_compare_files_returns_unified_diff(self, server, tmp_path):
         """File comparison endpoint returns unified diff output."""
         server.initialized = True

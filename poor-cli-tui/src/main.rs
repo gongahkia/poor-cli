@@ -95,11 +95,13 @@ enum ServerMsg {
     },
     // ── Streaming notifications ───
     StreamChunk {
+        request_id: String,
         chunk: String,
         done: bool,
         reason: Option<String>,
     },
     ToolEvent {
+        request_id: String,
         event_type: String,
         tool_name: String,
         tool_args: Value,
@@ -109,17 +111,20 @@ enum ServerMsg {
         iteration_cap: u32,
     },
     PermissionRequest {
+        request_id: String,
         tool_name: String,
         tool_args: Value,
         prompt_id: String,
     },
     Progress {
+        request_id: String,
         phase: String,
         message: String,
         iteration_index: u32,
         iteration_cap: u32,
     },
     CostUpdate {
+        request_id: String,
         input_tokens: u64,
         output_tokens: u64,
     },
@@ -220,6 +225,26 @@ fn write_session_log(log_writer: Option<&SessionLogWriter>, message: &str) {
     };
     let _ = writeln!(&mut *guard, "{} {}", unix_ts_millis(), message);
     let _ = guard.flush();
+}
+
+fn chat_display_kind(display_message: &str) -> String {
+    let trimmed = display_message.trim();
+    if trimmed.starts_with('/') {
+        let command = trimmed
+            .split_whitespace()
+            .next()
+            .unwrap_or("/unknown")
+            .trim_start_matches('/');
+        if command.is_empty() {
+            "slash:unknown".to_string()
+        } else {
+            format!("slash:{command}")
+        }
+    } else if trimmed.starts_with('!') {
+        "bang".to_string()
+    } else {
+        "chat".to_string()
+    }
 }
 
 // ── Main ─────────────────────────────────────────────────────────────

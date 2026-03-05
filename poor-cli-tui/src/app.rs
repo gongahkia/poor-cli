@@ -259,6 +259,8 @@ pub struct App {
     pub iteration_cap: u32,
     pub active_tool: Option<String>,
     pub request_id_counter: u64,
+    pub active_request_id: String,
+    pub active_request_started_at: Option<Instant>,
 
     // ── Plan mode state ───
     pub plan_steps: Vec<PlanStep>,
@@ -345,6 +347,8 @@ impl Default for App {
             iteration_cap: 25,
             active_tool: None,
             request_id_counter: 0,
+            active_request_id: String::new(),
+            active_request_started_at: None,
             plan_steps: Vec::new(),
             plan_current_step: 0,
             plan_original_request: String::new(),

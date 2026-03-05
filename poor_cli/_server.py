@@ -17,6 +17,7 @@ import shlex
 import shutil
 import socket
 import sys
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -88,6 +89,21 @@ class PoorCLIServer:
         self._service_logs_dir = Path.home() / ".poor-cli" / "services"
 
         self._register_handlers()
+
+    @staticmethod
+    def _chat_request_id(params: Dict[str, Any]) -> str:
+        """Return a stable request id string for chat logging."""
+        request_id = str(params.get("requestId", "")).strip()
+        if request_id:
+            return request_id
+        return f"chat-{uuid.uuid4().hex[:8]}"
+
+    @staticmethod
+    def _chat_context_count(context_files: Any) -> int:
+        """Best-effort context file count for chat logging."""
+        if isinstance(context_files, list):
+            return len(context_files)
+        return 0
 
     async def _server_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
         """Server-side permission callback for core tool execution."""
@@ -256,9 +272,38 @@ class PoorCLIServer:
 
         message = params.get("message", "")
         context_files = params.get("contextFiles")
+        request_id = self._chat_request_id(params)
+        message_text = str(message)
+        context_count = self._chat_context_count(context_files)
+        started_at = time.monotonic()
 
-        response_text = await self.core.send_message_sync(
-            message=message, context_files=context_files
+        self.logger.info(
+            "chat_start mode=sync request_id=%s message_chars=%d context_files=%d",
+            request_id,
+            len(message_text),
+            context_count,
+        )
+
+        try:
+            with log_context(request_id=request_id):
+                response_text = await self.core.send_message_sync(
+                    message=message, context_files=context_files
+                )
+        except Exception:
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            self.logger.exception(
+                "chat_error mode=sync request_id=%s duration_ms=%d",
+                request_id,
+                elapsed_ms,
+            )
+            raise
+
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        self.logger.info(
+            "chat_complete mode=sync request_id=%s response_chars=%d duration_ms=%d",
+            request_id,
+            len(response_text),
+            elapsed_ms,
         )
 
         return {"content": response_text, "role": "assistant"}
@@ -2677,7 +2722,17 @@ class PoorCLIServer:
 
         message = params.get("message", "")
         context_files = params.get("contextFiles")
-        request_id = params.get("requestId", "")
+        request_id = self._chat_request_id(params)
+        message_text = str(message)
+        context_count = self._chat_context_count(context_files)
+        started_at = time.monotonic()
+
+        self.logger.info(
+            "chat_start mode=stream request_id=%s message_chars=%d context_files=%d",
+            request_id,
+            len(message_text),
+            context_count,
+        )
 
         # Install interactive permission callback for this streaming session
         prev_callback = self.core.permission_callback
@@ -2685,76 +2740,93 @@ class PoorCLIServer:
 
         try:
             accumulated_text = ""
-            async for event in self.core.send_message_events(
-                message=message,
-                context_files=context_files,
-                request_id=request_id,
-            ):
-                if event.type == "text_chunk":
-                    notification = JsonRpcMessage(
-                        method="poor-cli/streamChunk",
-                        params={
-                            "requestId": request_id,
-                            "chunk": event.data.get("chunk", ""),
-                            "done": False,
-                        },
-                    )
-                    await self.write_message_stdio(notification)
-                    accumulated_text += event.data.get("chunk", "")
-                elif event.type in ("tool_call_start", "tool_result"):
-                    event_type = event.type
-                    notification = JsonRpcMessage(
-                        method="poor-cli/toolEvent",
-                        params={
-                            "requestId": request_id,
-                            "eventType": event_type,
-                            "toolName": event.data.get("toolName", ""),
-                            "toolArgs": event.data.get("toolArgs", {}),
-                            "toolResult": event.data.get("toolResult", ""),
-                            "diff": event.data.get("diff", ""),
-                            "iterationIndex": event.data.get("iterationIndex", 0),
-                            "iterationCap": event.data.get("iterationCap", 25),
-                        },
-                    )
-                    await self.write_message_stdio(notification)
-                elif event.type == "permission_request":
-                    pass  # handled by _streaming_permission_callback already
-                elif event.type == "cost_update":
-                    notification = JsonRpcMessage(
-                        method="poor-cli/costUpdate",
-                        params={
-                            "requestId": request_id,
-                            "inputTokens": event.data.get("inputTokens", 0),
-                            "outputTokens": event.data.get("outputTokens", 0),
-                            "estimatedCost": event.data.get("estimatedCost", 0.0),
-                        },
-                    )
-                    await self.write_message_stdio(notification)
-                elif event.type == "progress":
-                    notification = JsonRpcMessage(
-                        method="poor-cli/progress",
-                        params={
-                            "requestId": request_id,
-                            "phase": event.data.get("phase", ""),
-                            "message": event.data.get("message", ""),
-                            "iterationIndex": event.data.get("iterationIndex", 0),
-                            "iterationCap": event.data.get("iterationCap", 25),
-                        },
-                    )
-                    await self.write_message_stdio(notification)
-                elif event.type == "done":
-                    done_notification = JsonRpcMessage(
-                        method="poor-cli/streamChunk",
-                        params={
-                            "requestId": request_id,
-                            "chunk": "",
-                            "done": True,
-                            "reason": event.data.get("reason", "complete"),
-                        },
-                    )
-                    await self.write_message_stdio(done_notification)
+            with log_context(request_id=request_id):
+                async for event in self.core.send_message_events(
+                    message=message,
+                    context_files=context_files,
+                    request_id=request_id,
+                ):
+                    if event.type == "text_chunk":
+                        notification = JsonRpcMessage(
+                            method="poor-cli/streamChunk",
+                            params={
+                                "requestId": request_id,
+                                "chunk": event.data.get("chunk", ""),
+                                "done": False,
+                            },
+                        )
+                        await self.write_message_stdio(notification)
+                        accumulated_text += event.data.get("chunk", "")
+                    elif event.type in ("tool_call_start", "tool_result"):
+                        event_type = event.type
+                        notification = JsonRpcMessage(
+                            method="poor-cli/toolEvent",
+                            params={
+                                "requestId": request_id,
+                                "eventType": event_type,
+                                "toolName": event.data.get("toolName", ""),
+                                "toolArgs": event.data.get("toolArgs", {}),
+                                "toolResult": event.data.get("toolResult", ""),
+                                "diff": event.data.get("diff", ""),
+                                "iterationIndex": event.data.get("iterationIndex", 0),
+                                "iterationCap": event.data.get("iterationCap", 25),
+                            },
+                        )
+                        await self.write_message_stdio(notification)
+                    elif event.type == "permission_request":
+                        pass  # handled by _streaming_permission_callback already
+                    elif event.type == "cost_update":
+                        notification = JsonRpcMessage(
+                            method="poor-cli/costUpdate",
+                            params={
+                                "requestId": request_id,
+                                "inputTokens": event.data.get("inputTokens", 0),
+                                "outputTokens": event.data.get("outputTokens", 0),
+                                "estimatedCost": event.data.get("estimatedCost", 0.0),
+                            },
+                        )
+                        await self.write_message_stdio(notification)
+                    elif event.type == "progress":
+                        notification = JsonRpcMessage(
+                            method="poor-cli/progress",
+                            params={
+                                "requestId": request_id,
+                                "phase": event.data.get("phase", ""),
+                                "message": event.data.get("message", ""),
+                                "iterationIndex": event.data.get("iterationIndex", 0),
+                                "iterationCap": event.data.get("iterationCap", 25),
+                            },
+                        )
+                        await self.write_message_stdio(notification)
+                    elif event.type == "done":
+                        done_notification = JsonRpcMessage(
+                            method="poor-cli/streamChunk",
+                            params={
+                                "requestId": request_id,
+                                "chunk": "",
+                                "done": True,
+                                "reason": event.data.get("reason", "complete"),
+                            },
+                        )
+                        await self.write_message_stdio(done_notification)
+        except Exception:
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            self.logger.exception(
+                "chat_error mode=stream request_id=%s duration_ms=%d",
+                request_id,
+                elapsed_ms,
+            )
+            raise
         finally:
             self.core.permission_callback = prev_callback
+
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        self.logger.info(
+            "chat_complete mode=stream request_id=%s response_chars=%d duration_ms=%d",
+            request_id,
+            len(accumulated_text),
+            elapsed_ms,
+        )
 
         return {"content": accumulated_text, "role": "assistant"}
 
