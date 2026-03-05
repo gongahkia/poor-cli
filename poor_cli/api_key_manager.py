@@ -7,10 +7,13 @@ Encrypted storage and rotation management for API keys.
 import os
 import json
 import base64
+import hashlib
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
 
 from poor_cli.exceptions import setup_logger
 
@@ -38,18 +41,44 @@ class APIKeyManager:
         logger.info(f"Initialized API key manager at {self.config_dir}")
 
     def _get_or_create_encryption_key(self) -> bytes:
-        """Get existing or create new encryption key"""
+        """Get existing or derive encryption key using PBKDF2
+
+        Uses a salt file and derives the Fernet key from a machine-specific
+        passphrase via PBKDF2-HMAC-SHA256 instead of storing a raw key.
+        Falls back to reading legacy raw keyfiles for backward compatibility.
+        """
+        salt_file = self.config_dir / ".salt"
+
+        if salt_file.exists():
+            with open(salt_file, 'rb') as f:
+                salt = f.read()
+            return self._derive_key(salt)
+
+        # Check for legacy raw keyfile (backward compat)
         if self.key_file.exists():
             with open(self.key_file, 'rb') as f:
                 return f.read()
-        else:
-            key = Fernet.generate_key()
-            # Set restrictive permissions before writing
-            self.key_file.touch(mode=0o600)
-            with open(self.key_file, 'wb') as f:
-                f.write(key)
-            logger.info("Generated new encryption key")
-            return key
+
+        # Generate new salt and derive key
+        salt = os.urandom(16)
+        salt_file.touch(mode=0o600)
+        with open(salt_file, 'wb') as f:
+            f.write(salt)
+        logger.info("Generated new encryption salt (PBKDF2)")
+        return self._derive_key(salt)
+
+    def _derive_key(self, salt: bytes) -> bytes:
+        """Derive Fernet key from machine-specific passphrase using PBKDF2"""
+        # Use a machine-specific passphrase from username + home dir
+        passphrase = f"{os.getlogin()}:{str(Path.home())}:poor-cli".encode()
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(passphrase))
+        return key
 
     def store_key(
         self,
