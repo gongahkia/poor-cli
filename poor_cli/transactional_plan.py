@@ -185,6 +185,8 @@ class TransactionalPlanExecutor(PlanExecutor):
     ) -> tuple[bool, List[str], int]:
         """Execute plan with retry logic
 
+        Retries from the failed step rather than re-executing the entire plan.
+
         Args:
             user_request: User request
             function_calls: Function calls
@@ -195,40 +197,53 @@ class TransactionalPlanExecutor(PlanExecutor):
         Returns:
             Tuple of (success, results, attempts_made)
         """
+        import asyncio
         attempts = 0
+        remaining_calls = list(function_calls)
+        accumulated_results: List[str] = []
 
         for attempt in range(max_retries):
             attempts += 1
 
             try:
                 self.console.print(
-                    f"[dim]Attempt {attempt + 1}/{max_retries}...[/dim]"
+                    f"[dim]Attempt {attempt + 1}/{max_retries} "
+                    f"({len(remaining_calls)} step(s) remaining)...[/dim]"
                 )
 
                 success, results, checkpoint_id = await self.execute_with_transaction(
                     user_request,
-                    function_calls,
+                    remaining_calls,
                     tool_executor,
                     ai_summary,
                     auto_rollback=True
                 )
 
                 if success:
-                    return (True, results, attempts)
+                    accumulated_results.extend(results)
+                    return (True, accumulated_results, attempts)
 
                 # Plan rejected, don't retry
                 logger.info("Plan rejected by user, not retrying")
-                return (False, results, attempts)
+                return (False, accumulated_results + results, attempts)
 
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} failed: {e}")
 
+                # Track completed steps so we retry from where we left off
+                completed = len(accumulated_results)
+                if hasattr(e, 'step_index'):
+                    failed_idx = e.step_index
+                    accumulated_results.extend(
+                        results[:failed_idx] if 'results' in dir() else []
+                    )
+                    remaining_calls = remaining_calls[failed_idx:]
+
                 if attempt < max_retries - 1:
                     self.console.print(
-                        f"[yellow]Attempt {attempt + 1} failed, retrying...[/yellow]\n"
+                        f"[yellow]Attempt {attempt + 1} failed at step "
+                        f"{completed + 1}, retrying from there...[/yellow]\n"
                     )
-                    # Small delay before retry
-                    import asyncio
                     await asyncio.sleep(1)
                 else:
                     self.console.print(
@@ -236,7 +251,7 @@ class TransactionalPlanExecutor(PlanExecutor):
                     )
                     raise
 
-        return (False, [], attempts)
+        return (False, accumulated_results, attempts)
 
     async def execute_with_partial_rollback(
         self,
