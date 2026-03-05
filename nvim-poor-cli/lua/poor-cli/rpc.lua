@@ -261,21 +261,6 @@ function M.cancel_request(id, err)
     return callback ~= nil
 end
 
--- Send a notification (no response expected)
-function M.notify(method, params)
-    if not M.job_id then
-        return
-    end
-    
-    local message = {
-        jsonrpc = "2.0",
-        method = method,
-        params = params or {},
-    }
-    
-    M.send_message(message)
-end
-
 -- Send a JSON-RPC message
 function M.send_message(message)
     local json = vim.fn.json_encode(message)

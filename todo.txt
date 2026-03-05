@@ -44,10 +44,6 @@
 # NEOVIM PLUGIN — First-class citizen fixes and features
 # ============================================================================
 
-(B) In nvim-poor-cli/lua/poor-cli/rpc.lua, remove the duplicate notify() definition at lines ~234 and ~265; keep only one +neovim +bugfix
-(B) In nvim-poor-cli/lua/poor-cli/rpc.lua line ~313, add a nil guard after tonumber() on Content-Length header to prevent nil arithmetic errors +neovim +bugfix
-(B) In nvim-poor-cli/lua/poor-cli/rpc.lua, add cleanup of pending_timers entries on error/timeout to prevent memory leaks +neovim +bugfix
-(B) In nvim-poor-cli/lua/poor-cli/rpc.lua, make the 15-second request timeout configurable via the setup() options table +neovim +feature
 (B) In nvim-poor-cli/lua/poor-cli/commands.lua line ~262, add a nil check on treesitter.get_node() return value before accessing its properties +neovim +bugfix
 (B) In nvim-poor-cli/lua/poor-cli/commands.lua lines ~319-323, move hardcoded test file naming patterns (test_, .test., _test) to a configurable list in setup() options +neovim +feature
 (B) In nvim-poor-cli/lua/poor-cli/chat.lua line ~149, add depth and size limits to the find command used in workspace context resolution to prevent unbounded filesystem walks +neovim +bugfix
