@@ -47,10 +47,11 @@ class Message:
     pinned: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    chars_per_token: int = 4
+
     def estimate_tokens(self) -> int:
         """Estimate token count for message"""
-        # Rough estimation: ~4 characters per token
-        self.token_count = len(self.content) // 4
+        self.token_count = len(self.content) // self.chars_per_token
         return self.token_count
 
 
