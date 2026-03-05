@@ -1,6 +1,7 @@
 [![](https://img.shields.io/badge/poor_cli_1.0.0-passing-90EE90)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
 [![](https://img.shields.io/badge/poor_cli_2.0.0-passing-97CA00)](https://github.com/gongahkia/poor-cli/releases/tag/2.0.0)
 [![](https://img.shields.io/badge/poor_cli_3.0.0-passing-6BA82E)](https://github.com/gongahkia/poor-cli/releases/tag/3.0.0)
+[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-6BA82E)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 
 # `poor-cli`
@@ -13,11 +14,10 @@
 
 ## Stack
 
-* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html) 
-* *Core Dependencies*: [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
-* *Optional Provider Dependencies*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
-* *Development Tools*: [black](https://black.readthedocs.io/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy.readthedocs.io/), [pytest](https://docs.pytest.org/)
-* *Infrastructure*: [SQLite 3](https://www.sqlite.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
+* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
+* *Dependencies*: [ratatui](https://crates.io/crates/ratatui), [crossterm](https://crates.io/crates/crossterm), [tokio](https://crates.io/crates/tokio), [clap](https://crates.io/crates/clap), [serde](https://crates.io/crates/serde), [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
+* *Optional SDKs*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
+* *CI/CD*: [black](https://black.readthedocs.io/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy.readthedocs.io/), [pytest](https://docs.pytest.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
 
 ## Screenshots
 
@@ -28,46 +28,55 @@
 
 The below instructions are for locally hosting `poor-cli`. See screenshots [here](#screenshots).
 
-1. First run the below
+1. Bootstrap the project.
 
 ```console
-$ git clone && cd poor-cli
+$ git clone https://github.com/gongahkia/poor-cli.git
+$ cd poor-cli
 $ python3 -m venv .venv && source .venv/bin/activate
-$ pip install -r requirements.txt
+$ pip install -e ".[dev]"
 ```
 
-2. Copy `.env.example` to `.env` and configure your preferred LLM providers by setting your API keys in `.env`. `poor-cli` supports [Gemini](https://aistudio.google.com/) *(free tier)*, [OpenAI](https://platform.openai.com/docs/models), [Anthropic](https://docs.claude.com/en/docs/about-claude/models/overview) and [Ollama](https://ollama.com/) *(local)*.
+2. Configure providers.
 
 ```console
 $ cp .env.example .env
 ```
 
-3. Now run the below to use the `poor-cli` CLI client.
+Set at least one API key in `.env` (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) or use local [Ollama](https://ollama.com/) with `ollama serve` and `ollama pull <model>`.
+
+3. Start the CLI/TUI.
 
 ```console
-$ ./run.sh
-$ ./run_tui.sh
-$ python -m poor_cli         # wrapper that launches the Rust TUI
-$ pip install -e .
-$ poor-cli                   # wrapper that launches the Rust TUI
+$ ./run.sh                   # checks .env, then launches Rust TUI
+$ ./run_tui.sh               # direct Rust TUI launcher
+$ python -m poor_cli         # Python wrapper -> Rust TUI
+$ poor-cli                   # installed entrypoint -> Rust TUI
+```
+
+4. Optional runtime overrides.
+
+```console
+$ poor-cli --provider ollama --model llama3
+$ poor-cli --provider openai --model gpt-4o
 $ poor-cli --remote-url ws://127.0.0.1:8765/rpc --remote-room dev --remote-token <token>
-$ ./uninstall.sh
 ```
 
-4. Alternatively, install via [pip](https://pypi.org/project/pip/) for system-wide access.
+5. Run backend server directly (for editor integrations / host controls).
 
 ```console
-$ pip install poor-cli
+$ poor-cli-server --stdio
+$ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev
 ```
 
-5. You can also run `poor-cli` with [Docker](https://www.docker.com/).
+6. You can also run `poor-cli` with [Docker](https://www.docker.com/).
 
 ```console
 $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
 
-6. Finally, you can also use `poor-cli` directly through a [Neovim plugin](https://neovim.io/), where it provides inline ghost text completion and a chat panel similar to [Windsurf](https://windsurf.com/) or [Copilot](https://copilot.microsoft.com/). The easiest way to install this is through the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
+7. Finally, you can also use `poor-cli` directly through a [Neovim plugin](https://neovim.io/), where it provides inline ghost text completion and a chat panel similar to [Windsurf](https://windsurf.com/) or [Copilot](https://copilot.microsoft.com/). The easiest way to install this is through the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
 
 ```lua
 {
@@ -136,28 +145,54 @@ to `--remote-url` / `multiplayer.url`.
 
 ## Model support
 
-...
+`poor-cli` supports provider/model selection via `/switch` (inside TUI) or `--provider/--model` flags. You can pass any model ID accepted by the provider SDK/API.
+
+* *Gemini* (`gemini`)
+  Default: `gemini-2.0-flash-exp`
+  Common models: `gemini-2.0-flash-exp`, `gemini-1.5-pro`
+  Capabilities in `poor-cli`: streaming, function calling, system instructions, vision, JSON mode
+* *OpenAI* (`openai`)
+  Default: `gpt-4-turbo`
+  Common models: `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo`
+  Capabilities in `poor-cli`: streaming, function calling, system instructions, JSON mode, vision on GPT-4-class models
+* *Anthropic / Claude* (`anthropic` or alias `claude`)
+  Default: `claude-3-5-sonnet-20241022`
+  Common models: `claude-sonnet-4-20250514`, `claude-3-haiku-20240307`
+  Capabilities in `poor-cli`: streaming, function calling, system instructions, vision
+* *Ollama* (`ollama`)
+  Default: `llama3`
+  Common models: auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3`, `codellama`, `mistral`, `phi3`
+  Capabilities in `poor-cli`: streaming, system instructions, JSON mode, optional function calling (model-dependent), local-only execution via `http://localhost:11434`
+
+## Architecture
+
+![](./asset/reference/architecture.png)
 
 ## Available Commands
 
 Type `@path/to/file` in any prompt to attach local file context.  
 Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
+Run `!<shell command> [| optional question]` to execute shell output and optionally ask the model about it.
 
 **Session Management:**
 - `/help` - Show help message
-- `/quit` - Exit and print session summary
+- `/onboarding` - Guided walkthrough (`start|next|prev|<step>|show|exit`)
+- `/quit`, `/exit` - Exit and print session summary
 - `/clear` - Clear current conversation
 - `/clear-output` - Clear visible output
 - `/history [N]` - Show recent messages (default: 10)
 - `/sessions` - List recent sessions
 - `/new-session` - Start fresh session
+- `/status` - Show quick session + provider status
 - `/export [json|md|txt]` - Export active session history
 - `/retry` - Retry last request
 - `/search <term>` - Search session messages
 - `/edit-last` - Load previous message into input
+- `/copy` - Copy last assistant response
+- `/cost` - Show token/cost estimate
 
 **Checkpoints & Undo:**
-- `/checkpoints` - List checkpoints
+- `/checkpoints [N]` - List checkpoints
 - `/checkpoint` - Create manual checkpoint
 - `/save` - Quick checkpoint alias
 - `/rewind [id|last]` - Restore checkpoint by ID or latest
@@ -167,8 +202,12 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 
 **Git Integration:**
 - `/commit` - Generate commit message from staged diff
+- `/commit --apply <message>` - Commit with explicit message
+- `/commit --apply-last` - Commit with latest assistant response
 - `/review [file]` - Review a file or staged diff
 - `/test <file>` - Generate tests for a file
+- `/explain-diff [file]` - Analyze behavior/risk from diff
+- `/fix-failures [command]` - Analyze latest failure output (or run command first)
 
 **Provider Management:**
 - `/provider` - Show current provider info
@@ -176,29 +215,78 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `/switch` - Switch AI provider
 - `/api-key` - Show or set provider API keys (`/api-key <provider> <key>`)
 - `/model-info` - Show provider model notes
+- `/permission-mode [prompt|auto-safe|danger-full-access]` - Show or set permission mode
 
-**Prompt Library & Watch:**
+**Configuration & Profiles:**
+- `/config` - Show current configuration
+- `/settings` - List editable config keys
+- `/toggle <key>` - Toggle boolean config value
+- `/set <key> <value>` - Set config value
+- `/theme [dark|light]` - Show or set UI/code-block theme
+- `/broke` - Set poor mode (terse output)
+- `/my-treat` - Set rich mode (comprehensive output)
+- `/verbose` - Toggle verbose logging
+- `/plan-mode` - Toggle plan mode
+- `/profile [speed|safe|deep-review]` - Execution profile control
+
+**Prompt Library, Context & Planning:**
+- `/add <path>` - Pin file/directory as persistent context
+- `/drop <path>` - Unpin context file
+- `/files` - List pinned context files
+- `/clear-files` - Clear pinned context files
 - `/save-prompt <name> <text>` - Save reusable prompt text immediately
 - `/save-prompt <name>` - Capture next input as reusable prompt text
 - `/use <name>` - Load and run saved prompt
 - `/prompts` - List saved prompts
+- `/image <path>` - Queue image for next request
+- `/plan <task>` - Generate an explicit step plan for the task
+
+**Automation, QA & Workspace Ops:**
+- `/doctor` - Run environment/provider/service diagnostics
+- `/bootstrap [path]` - Detect project type and suggest quickstart
+- `/resume` - Snapshot of session/branch/checkpoint state
+- `/focus start|status|done` - Persistent focus goal workflow
+- `/tasks [list|add|done|drop|clear]` - Lightweight local task board
+- `/workspace-map [path]` - File/entrypoint map of workspace
+- `/context-budget [tokens]` - Rank context files by token budget
+- `/autopilot start|stop|status [cap]` - Bounded autonomous loop control
+- `/qa start|stop|status [dir] [command]` - Background incremental QA watch
 - `/watch <dir>` - Watch directory and auto-analyze changes
 - `/unwatch` - Stop watch mode
 
-**Configuration:**
-- `/config` - Show current configuration
-- `/permission-mode` - Show active permission mode
-- `/theme [dark|light]` - Show or set UI/code-block theme
-- `/broke` - Set poor mode (terse, token-minimal responses; session-only)
-- `/my-treat` - Set rich mode (comprehensive responses; session-only, default)
-- `/verbose` - Toggle verbose logging
-- `/plan-mode` - Toggle plan mode
-- `/cost` - Show token/cost estimate
+**Service & Shell Utilities:**
+- `/service status [name]` - Show managed service status
+- `/service start <name> [command...]` - Start managed service
+- `/service stop <name>` - Stop managed service
+- `/service logs <name> [lines]` - Tail managed service logs
+- `/ollama start|stop|status` - Ollama lifecycle shortcuts
+- `/ollama logs [lines]` - Tail Ollama logs
+- `/ollama pull <model>` - Pull local Ollama model
+- `/ollama list-models` - List locally installed Ollama models
+- `/ollama ps` - Show running Ollama model sessions
+- `/run <command>` - Run shell command via backend
+- `/read <file>` - Read file via backend
+- `/pwd` - Print current working directory
+- `/ls [path]` - List directory contents
 - `/tools` - List backend tool declarations
-- `/image <path>` - Queue image path for next request
-- `/copy` - Copy last assistant response to clipboard
-- `/host-server [room|status|stop]` - Start/share a multiplayer host from inside TUI
-- `/join-server <invite-code|ws-url room token>` - Join an existing multiplayer host from inside TUI
+
+**Multiplayer Commands:**
+- `/host-server [room]` - Start host (or room-scoped host context)
+- `/host-server status|stop|share [viewer|prompter] [room]` - Host lifecycle/share payloads
+- `/host-server members [room]` - List host-connected members
+- `/host-server kick <connection-id> [room]` - Remove host member
+- `/host-server role <id> <viewer|prompter> [room]` - Set role (`promote`/`demote` aliases)
+- `/host-server lobby <on|off> [room]` - Toggle lobby approvals
+- `/host-server approve|deny <id> [room]` - Resolve pending lobby requests
+- `/host-server rotate-token <viewer|prompter> [room] [expiry-seconds]` - Rotate invite tokens
+- `/host-server revoke <token|connection-id> [room]` - Revoke invite or member
+- `/host-server handoff <id> [room]` - Transfer prompter role
+- `/host-server preset <pairing|mob|review> [room]` - Apply room collaboration preset
+- `/host-server activity [room] [limit] [event-type]` - Host room activity log
+- `/join-server` - Interactive join wizard
+- `/join-server <invite-code|ws-url room token>` - Direct join
+- `/kick <connection-id> [room]` - Kick room member
+- `/who [room]`, `/members [room]` - List room members
 - Each TUI run writes session logs under `.poor-cli/logs/` (TUI + backend files)
 
 **Neovim Commands:**
@@ -206,121 +294,26 @@ Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
 - `:PoorCliStop`: Stop the AI server
 - `:PoorCliStatus`: Show server status
 - `:PoorCliChat`: Toggle chat panel
+- `:PoorCliSend [message]`: Send message to chat
+- `:PoorCliClear`: Clear chat history
+- `:PoorCliDiagnostics`: Toggle assistant diagnostics integration
+- `:PoorCliCheckpoints`: Browse + restore checkpoints (Telescope)
 - `:PoorCliComplete`: Trigger inline completion
+- `:PoorCliAccept`: Accept current completion
+- `:PoorCliDismiss`: Dismiss current completion
+- `:PoorCliSwitchProvider [provider]`: Switch provider
 - `:'<,'>PoorCliExplain`: Explain selected code
 - `:'<,'>PoorCliRefactor`: Refactor selected code
+- `:PoorCliTest`: Generate tests for current function
+- `:PoorCliDoc`: Generate docs for current function
 - `:checkhealth poor-cli`: Verify your Neovim setup
 
 ## Available Tools
 
 `poor-cli` can currently use these tools.
 
-- read_file: Read file contents with optional line ranges
-- write_file: Create or overwrite files
-- edit_file: Edit files using string replacement or line-based editing
-- glob_files: Find files matching patterns (e.g., `**/*.py`)
-- grep_files: Search for text in files using regex
-- bash: Execute bash commands with timeout support
-- run_tests: Run project tests and report structured failures
-- git_status_diff: Summarize git status, diff stats, and risk hints
-- apply_patch_unified: Validate/apply unified diff patches via `git apply`
-- format_and_lint: Run available formatters/linters (`black`, `ruff`, `mypy`)
-- dependency_inspect: Inspect declared, installed, and outdated dependencies
-- fetch_url: Fetch and summarize URL content with SSRF safeguards
-- json_yaml_edit: Edit JSON/YAML using dotted-path updates
-- process_logs: Parse logs into level counts and likely root cause
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph Clients["Client Interfaces"]
-        CLI["Rust TUI<br/>(poor-cli-tui)"]
-        NVIM["Neovim Plugin<br/>(Lua)"]
-        EXT["Other Editors<br/>(VSCode, etc.)"]
-    end
-
-    subgraph Server["JSON-RPC Server"]
-        RPC["server.py<br/>JSON-RPC 2.0"]
-    end
-
-    subgraph Core["Core Engine"]
-        ENGINE["PoorCLICore<br/>(core.py)"]
-        CTX["Context Manager<br/>(context.py)"]
-        PROMPTS["Prompt Templates<br/>(prompts.py)"]
-    end
-
-    subgraph Providers["AI Providers"]
-        FACTORY["Provider Factory<br/>(provider_factory.py)"]
-        GEMINI["Gemini Provider<br/>(free tier)"]
-        OPENAI["OpenAI Provider<br/>(GPT-4)"]
-        CLAUDE["Anthropic Provider<br/>(Claude)"]
-        OLLAMA["Ollama Provider<br/>(local)"]
-    end
-
-    subgraph Tools["Tool System"]
-        REGISTRY["Tool Registry<br/>(tools_async.py)"]
-        READ["read_file"]
-        WRITE["write_file"]
-        EDIT["edit_file"]
-        GLOB["glob_files"]
-        GREP["grep_files"]
-        BASH["bash"]
-    end
-
-    subgraph Safety["Safety & Versioning"]
-        CHECKPOINT["Checkpoint System<br/>(checkpoint.py)"]
-        PLAN["Plan Mode<br/>(plan_mode.py)"]
-        AUDIT["Audit Logger<br/>(audit_log.py)"]
-        VALIDATE["Command Validator<br/>(command_validator.py)"]
-    end
-
-    subgraph Storage["Data Storage (SQLite)"]
-        HISTORY["History DB<br/>~/.poor-cli/history.db"]
-        CACHE["File Cache<br/>~/.poor-cli/cache/"]
-        AUDITDB["Audit Log<br/>~/.poor-cli/audit/"]
-        CHECKDB["Checkpoints<br/>~/.poor-cli/checkpoints/"]
-    end
-
-    subgraph Config["Configuration"]
-        YAML["config.yaml"]
-        ENV[".env<br/>(API Keys)"]
-    end
-
-    CLI --> RPC
-    NVIM --> RPC
-    EXT --> RPC
-    RPC --> ENGINE
-
-    ENGINE --> CTX
-    ENGINE --> PROMPTS
-    ENGINE --> FACTORY
-    ENGINE --> REGISTRY
-
-    FACTORY --> GEMINI
-    FACTORY --> OPENAI
-    FACTORY --> CLAUDE
-    FACTORY --> OLLAMA
-
-    REGISTRY --> READ
-    REGISTRY --> WRITE
-    REGISTRY --> EDIT
-    REGISTRY --> GLOB
-    REGISTRY --> GREP
-    REGISTRY --> BASH
-
-    WRITE --> CHECKPOINT
-    EDIT --> CHECKPOINT
-    BASH --> VALIDATE
-
-    ENGINE --> PLAN
-    PLAN --> AUDIT
-    CHECKPOINT --> CHECKDB
-
-    ENGINE --> HISTORY
-    CTX --> CACHE
-    AUDIT --> AUDITDB
-
-    ENGINE --> YAML
-    FACTORY --> ENV
-```
+* *File & Workspace Tools*: `read_file`, `write_file`, `edit_file`, `list_directory`, `glob_files`, `grep_files`, `copy_file`, `move_file`, `delete_file`, `create_directory`, `diff_files`
+* *Execution & Quality Tools*: `bash`, `run_tests`, `format_and_lint`, `dependency_inspect`, `process_logs`
+* *Git Tools*: `git_status`, `git_diff`, `git_status_diff`, `apply_patch_unified`
+* *Network/Data Tools*: `fetch_url`, `web_search`, `json_yaml_edit`
+* *Optional GitHub Tools* *(available when `gh` CLI is installed)*: `gh_pr_list`, `gh_pr_view`, `gh_pr_create`, `gh_pr_comment`, `gh_issue_list`, `gh_issue_view`
