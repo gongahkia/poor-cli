@@ -101,7 +101,7 @@ async def test_bridge_injects_room_token_and_forwards_ws_messages(monkeypatch):
     site = web.TCPSite(runner, "127.0.0.1", port)
     await site.start()
 
-    monkeypatch.setattr("poor_cli.server.PoorCLIServer", _FakeStdioServer)
+    monkeypatch.setattr("poor_cli._server.PoorCLIServer", _FakeStdioServer)
 
     try:
         await _run_stdio_bridge(
