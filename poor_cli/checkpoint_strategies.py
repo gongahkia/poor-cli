@@ -12,7 +12,6 @@ Implements sophisticated checkpoint strategies:
 import os
 import json
 import zlib
-import lzma
 from pathlib import Path
 from typing import List, Dict, Set, Optional, Any
 from dataclasses import dataclass, field
@@ -43,7 +42,6 @@ class CompressionStrategy(Enum):
     ZLIB_FAST = "zlib_fast"  # level 1
     ZLIB_DEFAULT = "zlib_default"  # level 6
     ZLIB_MAX = "zlib_max"  # level 9
-    LZMA = "lzma"  # Best compression, slower
 
 
 @dataclass
@@ -306,9 +304,6 @@ class SmartCompressor:
         elif strategy == CompressionStrategy.ZLIB_MAX:
             compressed = zlib.compress(content, level=9)
 
-        elif strategy == CompressionStrategy.LZMA:
-            compressed = lzma.compress(content, preset=9)
-
         else:
             compressed = content
 
@@ -342,9 +337,6 @@ class SmartCompressor:
         ]:
             return zlib.decompress(content)
 
-        elif strategy == CompressionStrategy.LZMA:
-            return lzma.decompress(content)
-
         else:
             return content
 
@@ -373,12 +365,6 @@ class SmartCompressor:
         }
         if file_ext.lower() in compressed_exts:
             return CompressionStrategy.NONE
-
-        # Large text files - use maximum compression
-        if size > 1024 * 1024:  # >1MB
-            text_exts = {".txt", ".log", ".json", ".xml", ".csv", ".md"}
-            if file_ext.lower() in text_exts:
-                return CompressionStrategy.LZMA
 
         # Medium files - use default compression
         if size > 10 * 1024:  # >10KB

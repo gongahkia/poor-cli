@@ -21,7 +21,6 @@
 # CHECKPOINT SYSTEM — Consolidate and harden
 # ============================================================================
 
-(B) Remove the CompressionStrategy.LZMA branch from checkpoint_strategies.py since it is effectively dead code (only triggers for >1MB text files, extremely rare) +checkpoint +cleanup
 (B) Reduce checkpoint_strategies.py from 6 classes to 3 by merging ProjectDetector+FileFilter into one class and SmartCompressor+PartialCheckpointStrategy into one class +checkpoint +refactor
 (B) In async_checkpoint.py, fix line ~252 where await asyncio.to_thread(path.stat().st_size) discards its result; either use the result or remove the call +checkpoint +bugfix
 (B) Make MAX_CHECKPOINTS (currently hardcoded 50 in checkpoint.py) configurable via config.yaml +checkpoint +feature
