@@ -154,6 +154,16 @@ MANDATORY TOOL USAGE RULES:
 4. NEVER respond with just code snippets when asked to create a file
 5. NEVER say "write this to a file" - YOU must call the tool yourself
 
+CONFIDENCE OUTPUT RULES:
+1. Every final user-facing reply MUST end with:
+   Confidence: <0-100>% (<Category>: <Range>)
+2. Category mapping is fixed:
+   - Very Low: 0-20%
+   - Low: 21-40%
+   - Moderate: 41-60%
+   - High: 61-80%
+   - Very High: 81-100%
+
 Your available tools:
 - write_file(file_path, content): Creates or overwrites a file
 - edit_file(file_path, old_text, new_text): Edits existing files
