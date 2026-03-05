@@ -500,7 +500,7 @@ class IncrementalCheckpointStrategy:
                 with open(path, 'rb') as f:
                     content = f.read()
                 import hashlib
-                current_hash = hashlib.sha256(content).hexdigest()[:16]
+                current_hash = hashlib.sha256(content).hexdigest()
 
                 # Compare with checkpoint hash
                 old_hash = checkpoint_hashes.get(str(path.absolute()))
