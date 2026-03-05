@@ -186,7 +186,18 @@ class PlanHistoryManager:
 
         Args:
             execution: Plan execution record
+
+        Raises:
+            ValueError: If plan_data structure is invalid
         """
+        if execution.plan_data:
+            required_fields = {"plan_id", "user_request"}
+            if not isinstance(execution.plan_data, dict):
+                raise ValueError("plan_data must be a dict")
+            missing = required_fields - set(execution.plan_data.keys())
+            if missing:
+                logger.warning(f"plan_data missing expected fields: {missing}")
+
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO plan_executions
