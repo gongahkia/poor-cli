@@ -131,13 +131,15 @@ class CheckpointValidator:
     def repair_checkpoint(
         self,
         checkpoint_id: str,
-        remove_corrupted: bool = False
+        remove_corrupted: bool = False,
+        force: bool = False
     ) -> Dict[str, Any]:
         """Attempt to repair a corrupted checkpoint
 
         Args:
             checkpoint_id: ID of checkpoint to repair
             remove_corrupted: Whether to remove corrupted snapshots
+            force: Skip confirmation when removing corrupted snapshots
 
         Returns:
             Dict with repair results:
@@ -147,7 +149,15 @@ class CheckpointValidator:
                 "removed_snapshots": List[str],
                 "remaining_issues": List[str]
             }
+
+        Raises:
+            ValueError: If remove_corrupted=True without force=True and not in interactive mode
         """
+        if remove_corrupted and not force:
+            raise ValueError(
+                "Removing corrupted snapshots requires force=True to confirm deletion. "
+                "This operation permanently deletes snapshot data."
+            )
         logger.info(f"Attempting to repair checkpoint {checkpoint_id}")
 
         validation = self.validate_checkpoint(checkpoint_id)
