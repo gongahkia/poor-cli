@@ -52,7 +52,6 @@
 # STABILITY — Error handling, security, hardening
 # ============================================================================
 
-(B) Add a non-root USER directive to the Dockerfile to avoid running the container as root +security +infra
 (B) In poor_cli/api_key_manager.py, derive the Fernet encryption key using PBKDF2 from a passphrase instead of storing a raw key in a plaintext .keyfile +security +refactor
 (B) In poor_cli/exceptions.py validate_file_path(), handle TOCTOU race by catching FileNotFoundError/PermissionError at actual usage sites rather than only during validation +security +bugfix
 (B) Audit all 47 unwrap() calls in the Rust TUI codebase; replace panicking unwraps in event handling and RPC parsing paths with proper error propagation using Result/match +security +refactor

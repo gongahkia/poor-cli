@@ -27,21 +27,28 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN groupadd -r pooruser && useradd -r -g pooruser -m pooruser
+
 # Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /root/.local /home/pooruser/.local
 
 # Copy application code
-COPY . .
+COPY --chown=pooruser:pooruser . .
 
-# Install poor-cli in editable mode
+# Install poor-cli
 RUN pip install --no-cache-dir -e .
 
 # Set environment variables
-ENV PATH=/root/.local/bin:$PATH
+ENV PATH=/home/pooruser/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 
 # Create volume for persistent data
-VOLUME ["/root/.poor-cli"]
+RUN mkdir -p /home/pooruser/.poor-cli && chown pooruser:pooruser /home/pooruser/.poor-cli
+VOLUME ["/home/pooruser/.poor-cli"]
+
+# Switch to non-root user
+USER pooruser
 
 # Entry point
 ENTRYPOINT ["poor-cli"]
