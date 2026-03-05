@@ -249,7 +249,7 @@ class AsyncCheckpointManager(CheckpointManager):
         for file_path in file_paths:
             path = Path(file_path)
             if path.exists():
-                total_size += await asyncio.to_thread(path.stat().st_size)
+                total_size += path.stat().st_size
 
         total_size_mb = total_size / (1024 * 1024)
 
