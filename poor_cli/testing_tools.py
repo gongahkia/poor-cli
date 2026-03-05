@@ -83,8 +83,11 @@ class CoverageResult:
 class TestRunner:
     """Run tests with various frameworks"""
 
-    def __init__(self, workspace_root: Optional[Path] = None):
+    DEFAULT_TIMEOUT = 300
+
+    def __init__(self, workspace_root: Optional[Path] = None, test_timeout: int = DEFAULT_TIMEOUT):
         self.workspace_root = workspace_root or Path.cwd()
+        self.test_timeout = test_timeout
 
     def run_tests(
         self,
@@ -138,7 +141,7 @@ class TestRunner:
                 cwd=self.workspace_root,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self.test_timeout
             )
 
             output = result.stdout + result.stderr
@@ -189,7 +192,7 @@ class TestRunner:
                 cwd=self.workspace_root,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self.test_timeout
             )
 
             # Parse JSON output
@@ -221,7 +224,7 @@ class TestRunner:
                 cwd=self.workspace_root,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self.test_timeout
             )
 
             return self._parse_cargo_output(result.stdout + result.stderr)
@@ -248,7 +251,7 @@ class TestRunner:
                 cwd=self.workspace_root,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self.test_timeout
             )
 
             return self._parse_go_output(result.stdout + result.stderr)
@@ -315,8 +318,9 @@ class TestRunner:
 class QualityChecker:
     """Run linters and type checkers"""
 
-    def __init__(self, workspace_root: Optional[Path] = None):
+    def __init__(self, workspace_root: Optional[Path] = None, test_timeout: int = 300):
         self.workspace_root = workspace_root or Path.cwd()
+        self.test_timeout = test_timeout
 
     def run_linter(
         self,
@@ -489,8 +493,9 @@ class QualityChecker:
 class CoverageAnalyzer:
     """Analyze code coverage"""
 
-    def __init__(self, workspace_root: Optional[Path] = None):
+    def __init__(self, workspace_root: Optional[Path] = None, test_timeout: int = 300):
         self.workspace_root = workspace_root or Path.cwd()
+        self.test_timeout = test_timeout
 
     def run_coverage(self, test_path: Optional[str] = None) -> CoverageResult:
         """Run coverage analysis with pytest-cov"""
@@ -505,7 +510,7 @@ class CoverageAnalyzer:
                 cwd=self.workspace_root,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self.test_timeout
             )
 
             # Read coverage.json
