@@ -814,46 +814,57 @@ class MultiplayerHost:
     async def _room_worker(self, room: RoomState) -> None:
         while True:
             queued = await room.request_queue.get()
-
-            conn = room.members.get(queued.connection_id)
-            if conn is None or conn.ws.closed:
-                continue
-
-            room.active_connection_id = queued.connection_id
-            request_id = self._extract_request_id(queued.message)
-
-            await self._broadcast_room_event(
-                room,
-                "started",
-                request_id=request_id,
-                actor=queued.connection_id,
-                queue_depth=room.request_queue.qsize(),
-            )
-
             try:
-                async with room.dispatch_lock:
-                    response = await room.server.dispatch(queued.message)
-                if queued.message.id is not None:
-                    await self._send_rpc(conn.ws, response)
-            except Exception as e:
-                logger.exception("Room worker dispatch failed for room %s", room.name)
-                if queued.message.id is not None:
-                    await self._send_error_response(
-                        conn.ws,
-                        request_id=queued.message.id,
-                        code=self.rpc_error_cls.INTERNAL_ERROR,
-                        message=str(e),
-                        data={"error_code": "INTERNAL_ERROR"},
-                    )
-            finally:
-                room.active_connection_id = None
+                conn = room.members.get(queued.connection_id)
+                # Audit note: queued work for disconnected/stale members is dropped
+                # before dispatch to avoid cross-routing responses.
+                if conn is None or conn.ws.closed:
+                    continue
+
+                room.active_connection_id = queued.connection_id
+                request_id = self._extract_request_id(queued.message)
+
                 await self._broadcast_room_event(
                     room,
-                    "finished",
+                    "started",
                     request_id=request_id,
                     actor=queued.connection_id,
                     queue_depth=room.request_queue.qsize(),
                 )
+
+                try:
+                    async with room.dispatch_lock:
+                        response = await room.server.dispatch(queued.message)
+                    if queued.message.id is not None and not conn.ws.closed:
+                        await self._send_rpc(conn.ws, response)
+                except Exception as e:
+                    logger.exception("Room worker dispatch failed for room %s", room.name)
+                    if queued.message.id is not None and not conn.ws.closed:
+                        try:
+                            await self._send_error_response(
+                                conn.ws,
+                                request_id=queued.message.id,
+                                code=self.rpc_error_cls.INTERNAL_ERROR,
+                                message=str(e),
+                                data={"error_code": "INTERNAL_ERROR"},
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Failed to send worker error response to %s",
+                                queued.connection_id,
+                            )
+                finally:
+                    if room.active_connection_id == queued.connection_id:
+                        room.active_connection_id = None
+                    await self._broadcast_room_event(
+                        room,
+                        "finished",
+                        request_id=request_id,
+                        actor=queued.connection_id,
+                        queue_depth=room.request_queue.qsize(),
+                    )
+            finally:
+                room.request_queue.task_done()
 
     async def _cleanup_connection(self, conn: ConnectionState) -> None:
         self.connections.pop(conn.connection_id, None)

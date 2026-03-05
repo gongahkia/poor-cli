@@ -26,6 +26,7 @@ def _free_port() -> int:
 @dataclass
 class _FakeServer:
     permission_mode: str = "prompt"
+    dispatch_delay: float = 0.02
     initialized: bool = False
     dispatch_calls: List[str] = field(default_factory=list)
     dispatch_request_ids: List[str] = field(default_factory=list)
@@ -67,7 +68,7 @@ class _FakeServer:
                         params={"requestId": request_id, "chunk": "", "done": True},
                     )
                 )
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(self.dispatch_delay)
             return JsonRpcMessage(
                 id=message.id,
                 result={"content": "done", "role": "assistant"},
@@ -83,11 +84,12 @@ class _FakeServer:
 
 
 class _FakeServerFactory:
-    def __init__(self):
+    def __init__(self, dispatch_delay: float = 0.02):
         self.instances: List[_FakeServer] = []
+        self.dispatch_delay = dispatch_delay
 
     def __call__(self) -> _FakeServer:
-        instance = _FakeServer()
+        instance = _FakeServer(dispatch_delay=self.dispatch_delay)
         self.instances.append(instance)
         return instance
 
@@ -382,6 +384,88 @@ async def test_inline_complete_uses_isolated_engine_not_room_server():
                 room_server = factory.instances[0]
                 assert "poor-cli/inlineComplete" not in room_server.dispatch_calls
                 assert len(factory.instances) >= 2  # room engine + isolated inline engine
+
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_queued_request_dropped_when_connection_disconnects():
+    """Audit: queued requests from disconnected members are dropped without rerouting."""
+    factory = _FakeServerFactory(dispatch_delay=0.15)
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws1, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as ws2:
+                for ws in (ws1, ws2):
+                    await ws.send_json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "initialize",
+                            "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                        }
+                    )
+                    _ = await _ws_recv_json(ws)
+                    _ = await _ws_recv_json(ws)
+                _ = await _ws_recv_json(ws1)  # second member_joined event
+
+                await ws1.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 10,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "first", "requestId": "first"},
+                    }
+                )
+                await ws2.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 20,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "second", "requestId": "second"},
+                    }
+                )
+
+                await asyncio.sleep(0.03)
+                await ws2.close()
+
+                await ws1.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 30,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "third", "requestId": "third"},
+                    }
+                )
+
+                final_ids = set()
+                for _ in range(40):
+                    payload = await _ws_recv_json(ws1)
+                    msg_id = payload.get("id")
+                    assert msg_id != 20
+                    if msg_id in {10, 30}:
+                        final_ids.add(msg_id)
+                    if final_ids == {10, 30}:
+                        break
+
+                assert final_ids == {10, 30}
+                room_server = factory.instances[0]
+                assert room_server.dispatch_request_ids == ["first", "third"]
 
     finally:
         await host.stop()
