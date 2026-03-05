@@ -63,7 +63,6 @@
 # INFRA & CI
 # ============================================================================
 
-(B) Expand the bash completion script (completions/poor-cli.bash) to include provider names, model names, and /api-key subcommands +infra +feature
 
 # ============================================================================
 # PROVIDER SYSTEM
