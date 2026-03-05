@@ -1,7 +1,7 @@
-[![](https://img.shields.io/badge/poor_cli_1.0.0-passing-90EE90)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
-[![](https://img.shields.io/badge/poor_cli_2.0.0-passing-97CA00)](https://github.com/gongahkia/poor-cli/releases/tag/2.0.0)
-[![](https://img.shields.io/badge/poor_cli_3.0.0-passing-6BA82E)](https://github.com/gongahkia/poor-cli/releases/tag/3.0.0)
-[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-6BA82E)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
+[![](https://img.shields.io/badge/poor_cli_1.0.0-passing-A8E6A3)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
+[![](https://img.shields.io/badge/poor_cli_2.0.0-passing-7CD67A)](https://github.com/gongahkia/poor-cli/releases/tag/2.0.0)
+[![](https://img.shields.io/badge/poor_cli_3.0.0-passing-50C878)](https://github.com/gongahkia/poor-cli/releases/tag/3.0.0)
+[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-2E8B57)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 
 # `poor-cli`
