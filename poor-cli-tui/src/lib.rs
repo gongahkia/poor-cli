@@ -2,6 +2,8 @@ pub mod app;
 #[path = "commands_lib.rs"]
 pub mod commands;
 pub mod event;
+#[path = "handler_lib.rs"]
+pub mod handler;
 pub mod helpers;
 pub mod input;
 pub mod markdown;
