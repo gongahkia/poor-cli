@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -44,6 +45,7 @@ class ConnectionState:
     inline_server: Any = None
     joined_at: Optional[str] = None
     approved: bool = True
+    last_pong: float = field(default_factory=time.monotonic)
 
 
 @dataclass
@@ -119,6 +121,8 @@ class MultiplayerHost:
         message_cls: Any,
         rpc_error_cls: Any,
         default_permission_mode: str = "prompt",
+        heartbeat_interval_seconds: float = 30.0,
+        pong_timeout_seconds: float = 60.0,
     ):
         self.bind_host = bind_host
         self.port = port
@@ -126,12 +130,15 @@ class MultiplayerHost:
         self.message_cls = message_cls
         self.rpc_error_cls = rpc_error_cls
         self.default_permission_mode = default_permission_mode
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.pong_timeout_seconds = pong_timeout_seconds
 
         self.rooms: Dict[str, RoomState] = {}
         self.connections: Dict[str, ConnectionState] = {}
         self._runner: Optional[web.AppRunner] = None
         self._site: Optional[web.TCPSite] = None
         self._app: Optional[web.Application] = None
+        self._heartbeat_task: Optional[asyncio.Task] = None
         self._stopped = False
 
         normalized_rooms = [name.strip() for name in room_names if name and name.strip()]
@@ -528,6 +535,9 @@ class MultiplayerHost:
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, host=self.bind_host, port=self.port)
         await self._site.start()
+        self._heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(), name="poor-cli-multiplayer-heartbeat"
+        )
         logger.info("Multiplayer host listening on ws://%s:%s/rpc", self.bind_host, self.port)
 
     async def stop(self) -> None:
@@ -539,6 +549,8 @@ class MultiplayerHost:
         for room in self.rooms.values():
             if room.worker_task:
                 room.worker_task.cancel()
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
 
         for room in self.rooms.values():
             if room.worker_task:
@@ -546,6 +558,11 @@ class MultiplayerHost:
                     await room.worker_task
                 except asyncio.CancelledError:
                     pass
+        if self._heartbeat_task:
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         for conn in list(self.connections.values()):
             try:
@@ -584,6 +601,9 @@ class MultiplayerHost:
 
         try:
             async for incoming in ws:
+                if incoming.type == WSMsgType.PONG:
+                    conn.last_pong = time.monotonic()
+                    continue
                 if incoming.type != WSMsgType.TEXT:
                     if incoming.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED}:
                         break
@@ -620,6 +640,8 @@ class MultiplayerHost:
         return ws
 
     async def _handle_message(self, conn: ConnectionState, message: Any) -> None:
+        conn.last_pong = time.monotonic()
+
         if not conn.initialized:
             if message.method != "initialize":
                 await self._send_error_response(
@@ -879,6 +901,31 @@ class MultiplayerHost:
                     actor=conn.connection_id,
                     queue_depth=room.request_queue.qsize(),
                 )
+
+    async def _heartbeat_loop(self) -> None:
+        while not self._stopped:
+            await asyncio.sleep(self.heartbeat_interval_seconds)
+            now = time.monotonic()
+            stale_connections: List[ConnectionState] = []
+            for conn in list(self.connections.values()):
+                if conn.ws.closed:
+                    stale_connections.append(conn)
+                    continue
+                if now - conn.last_pong > self.pong_timeout_seconds:
+                    stale_connections.append(conn)
+                    continue
+                try:
+                    await conn.ws.ping()
+                except Exception:
+                    stale_connections.append(conn)
+
+            for conn in stale_connections:
+                if not conn.ws.closed:
+                    try:
+                        await conn.ws.close(code=4000, message=b"Heartbeat timeout")
+                    except Exception:
+                        pass
+                await self._cleanup_connection(conn)
 
     async def _broadcast_rpc(self, room: RoomState, message: Any) -> None:
         dead_members: List[str] = []

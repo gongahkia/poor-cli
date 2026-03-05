@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import socket
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -505,5 +506,52 @@ async def test_token_expiry_and_activity_filtering():
 
         tokens_after = host.get_room_tokens()["dev"]
         assert tokens_after.get("viewer") != rotated
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_closes_stale_connection():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+        heartbeat_interval_seconds=0.05,
+        pong_timeout_seconds=0.10,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws:
+                await ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _ws_recv_json(ws)
+                _ = await _ws_recv_json(ws)
+
+                room = host.rooms["dev"]
+                assert room.members
+                member = next(iter(room.members.values()))
+                member.last_pong = time.monotonic() - 999
+
+                for _ in range(20):
+                    if member.connection_id not in host.connections:
+                        break
+                    await asyncio.sleep(0.05)
+
+                assert member.connection_id not in host.connections
+                assert member.connection_id not in room.members
     finally:
         await host.stop()
