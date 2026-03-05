@@ -18,7 +18,6 @@ use ratatui::{
 };
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::app::{App, AppMode, MessageRole, ThemeMode};
@@ -30,7 +29,6 @@ struct ChatRenderCache {
     fingerprint: u64,
     theme_mode: ThemeMode,
     lines: Vec<Line<'static>>,
-    wrapped_line_counts: HashMap<u16, u16>,
 }
 
 thread_local! {
@@ -235,20 +233,19 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let (all_lines, total_lines) = cached_chat_lines(app, mode, area.width);
+    let all_lines = cached_chat_lines(app, mode);
+    let text = Text::from(all_lines);
+    let base_para = Paragraph::new(text).wrap(Wrap { trim: false });
+    let total_lines = base_para.line_count(area.width).min(u16::MAX as usize) as u16;
     let visible_height = area.height;
     let max_scroll = total_lines.saturating_sub(visible_height);
     let effective_scroll = app.scroll_offset.min(max_scroll);
-
-    let text = Text::from(all_lines);
-    let para = Paragraph::new(text)
-        .wrap(Wrap { trim: false })
-        .scroll((max_scroll.saturating_sub(effective_scroll), 0));
+    let para = base_para.scroll((max_scroll.saturating_sub(effective_scroll), 0));
 
     frame.render_widget(para, area);
 }
 
-fn cached_chat_lines(app: &App, mode: ThemeMode, wrap_width: u16) -> (Vec<Line<'static>>, u16) {
+fn cached_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
     CHAT_RENDER_CACHE.with(|cache_cell| {
         let mut cache_ref = cache_cell.borrow_mut();
         let fingerprint = chat_fingerprint(app);
@@ -263,17 +260,11 @@ fn cached_chat_lines(app: &App, mode: ThemeMode, wrap_width: u16) -> (Vec<Line<'
                 fingerprint,
                 theme_mode: mode,
                 lines: build_chat_lines(app, mode),
-                wrapped_line_counts: HashMap::new(),
             });
         }
 
         let cache = cache_ref.as_mut().expect("chat cache must exist");
-        let total_lines = *cache
-            .wrapped_line_counts
-            .entry(wrap_width)
-            .or_insert_with(|| wrapped_visual_line_count(&cache.lines, wrap_width));
-
-        (cache.lines.clone(), total_lines)
+        cache.lines.clone()
     })
 }
 
@@ -464,47 +455,6 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
     }
 
     all_lines
-}
-
-fn wrapped_visual_line_count(lines: &[Line<'static>], wrap_width: u16) -> u16 {
-    if lines.is_empty() || wrap_width == 0 {
-        return 0;
-    }
-
-    let wrap_width = wrap_width as usize;
-    let mut total: usize = 0;
-
-    for line in lines {
-        let width = line.width();
-        let visual_lines = if width == 0 {
-            1
-        } else {
-            (width + wrap_width - 1) / wrap_width
-        };
-        total = total.saturating_add(visual_lines);
-    }
-
-    total.min(u16::MAX as usize) as u16
-}
-
-#[cfg(test)]
-mod tests {
-    use super::wrapped_visual_line_count;
-    use ratatui::text::Line;
-
-    #[test]
-    fn wrapped_visual_line_count_handles_wrapping() {
-        let lines = vec![Line::from("1234567890"), Line::from("abc"), Line::from("")];
-
-        // 10 chars at width 4 => 3 visual lines, then 1, then 1.
-        assert_eq!(wrapped_visual_line_count(&lines, 4), 5);
-    }
-
-    #[test]
-    fn wrapped_visual_line_count_handles_zero_width() {
-        let lines = vec![Line::from("hello")];
-        assert_eq!(wrapped_visual_line_count(&lines, 0), 0);
-    }
 }
 
 // ── Input bar ────────────────────────────────────────────────────────
