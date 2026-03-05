@@ -46,7 +46,6 @@
 
 (B) Add a virtual text diagnostic integration that shows poor-cli suggestions inline as Neovim diagnostics (vim.diagnostic) rather than only in the chat panel +neovim +feature
 (B) Add a telescope.nvim picker for checkpoint browsing and restoration directly from Neovim +neovim +feature
-(B) Deduplicate the test file naming pattern logic between commands.lua and chat.lua into a shared utility function in a new nvim-poor-cli/lua/poor-cli/util.lua +neovim +refactor
 
 # ============================================================================
 # STABILITY — Error handling, security, hardening
