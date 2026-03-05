@@ -27,7 +27,6 @@
 # PLAN SYSTEM — Make it reliable
 # ============================================================================
 
-(B) In transactional_plan.py execute_with_transaction(), validate that restore_checkpoint() actually succeeded after calling it; currently the result is unchecked +plan +bugfix
 (B) In transactional_plan.py execute_with_retry(), only retry from the failed step instead of re-executing the entire plan +plan +bugfix
 (B) In transactional_plan.py execute_with_partial_rollback(), add a max checkpoint count guard to prevent storage exhaustion on large plans (e.g., cap at 20 per-step checkpoints) +plan +bugfix
 (B) Add a warning/disclaimer in transactional_plan.py that rollback cannot undo side effects like pushed git commits or sent network requests +plan +feature

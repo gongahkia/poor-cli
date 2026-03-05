@@ -129,11 +129,17 @@ class TransactionalPlanExecutor(PlanExecutor):
 
             restored = self.checkpoint_manager.restore_checkpoint(checkpoint_id)
 
-            self.console.print(
-                f"[green]✓ Rolled back {restored} file(s)[/green]\n"
-            )
+            if restored == 0:
+                logger.warning(f"Rollback restored 0 files for checkpoint {checkpoint_id}")
+                self.console.print(
+                    "[yellow]⚠️  Rollback completed but no files were restored[/yellow]\n"
+                )
+            else:
+                self.console.print(
+                    f"[green]✓ Rolled back {restored} file(s)[/green]\n"
+                )
 
-            logger.info(f"Rolled back to checkpoint {checkpoint_id}")
+            logger.info(f"Rolled back to checkpoint {checkpoint_id}, restored {restored} files")
 
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
