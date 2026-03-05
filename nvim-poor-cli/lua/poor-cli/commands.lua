@@ -314,14 +314,12 @@ function M.generate_tests()
             
             if result and result.content then
                 -- derive test file name from source
+                local config = require("poor-cli.config")
                 local base = vim.fn.fnamemodify(file_path, ":t:r")
                 local ext = vim.fn.fnamemodify(file_path, ":e")
-                local test_name = "test_" .. base .. "." .. ext
-                if language == "javascript" or language == "typescript" or language == "typescriptreact" then
-                    test_name = base .. ".test." .. ext
-                elseif language == "rust" then
-                    test_name = base .. "_test." .. ext
-                end
+                local patterns = config.get("test_file_patterns") or {}
+                local pattern = patterns[language] or patterns["default"] or "test_{base}.{ext}"
+                local test_name = pattern:gsub("{base}", base):gsub("{ext}", ext)
                 vim.cmd("below new " .. test_name)
                 vim.bo.filetype = language
                 local test_code = result.content

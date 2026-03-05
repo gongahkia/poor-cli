@@ -55,6 +55,16 @@ M.defaults = {
     -- Health check on setup
     check_health_on_setup = false,
 
+    -- Test file naming patterns per language group
+    -- Keys: language group name, Values: pattern string with {base} and {ext} placeholders
+    test_file_patterns = {
+        default = "test_{base}.{ext}",
+        javascript = "{base}.test.{ext}",
+        typescript = "{base}.test.{ext}",
+        typescriptreact = "{base}.test.{ext}",
+        rust = "{base}_test.{ext}",
+    },
+
     -- Debug mode
     debug = false,
 }

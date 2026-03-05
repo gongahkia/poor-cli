@@ -44,8 +44,6 @@
 # NEOVIM PLUGIN — First-class citizen fixes and features
 # ============================================================================
 
-(B) In nvim-poor-cli/lua/poor-cli/commands.lua line ~262, add a nil check on treesitter.get_node() return value before accessing its properties +neovim +bugfix
-(B) In nvim-poor-cli/lua/poor-cli/commands.lua lines ~319-323, move hardcoded test file naming patterns (test_, .test., _test) to a configurable list in setup() options +neovim +feature
 (B) In nvim-poor-cli/lua/poor-cli/chat.lua line ~149, add depth and size limits to the find command used in workspace context resolution to prevent unbounded filesystem walks +neovim +bugfix
 (B) In nvim-poor-cli/lua/poor-cli/chat.lua line ~245, handle CRLF line endings correctly when splitting streaming chunks +neovim +bugfix
 (B) In nvim-poor-cli/lua/poor-cli/chat.lua clear() function (lines ~508-518), also clear the internal history list to prevent stale data from leaking +neovim +bugfix
