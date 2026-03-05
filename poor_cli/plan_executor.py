@@ -177,7 +177,13 @@ class PlanExecutor:
                     logger.error(f"Step {step.step_number} failed: {e}")
                     self.console.print(f"[red]✗ Failed: {e}[/red]")
                     results.append(f"Error: {str(e)}")
-                    # Continue with other steps
+                    from rich.prompt import Confirm
+                    if not Confirm.ask(
+                        "[yellow]Continue with remaining steps?[/yellow]",
+                        default=True
+                    ):
+                        self.console.print("[yellow]Plan execution stopped by user[/yellow]")
+                        break
 
             # Display completion
             self.plan_display.display_plan_complete(plan, executed, skipped)
