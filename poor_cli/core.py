@@ -32,6 +32,7 @@ logger = setup_logger(__name__)
 
 _DEFAULT_CONFIDENCE_PERCENT = 50
 _CONFIDENCE_PERCENT_RE = re.compile(r"confidence[^\n\r]*?(\d{1,3})\s*%", re.IGNORECASE)
+_CONFIDENCE_LINE_RE = re.compile(r"^confidence\b[^\n\r]*$", re.IGNORECASE)
 _CONFIDENCE_BANDS: Tuple[Tuple[int, str], ...] = (
     (20, "Very Low"),
     (40, "Low"),
@@ -346,6 +347,14 @@ class PoorCLICore:
         category = self._confidence_bucket(percent)
         return f"Confidence: {category} ({percent}%)"
 
+    @staticmethod
+    def _has_trailing_confidence_line(response_text: str) -> bool:
+        """Check whether the final non-empty line already contains confidence output."""
+        lines = response_text.splitlines()
+        if not lines:
+            return False
+        return bool(_CONFIDENCE_LINE_RE.match(lines[-1].strip()))
+
     def _ensure_confidence_line(self, response_text: str) -> Tuple[str, str]:
         """
         Ensure every non-empty response ends with a confidence score line.
@@ -357,6 +366,9 @@ class PoorCLICore:
         trimmed = response_text.rstrip()
         if not trimmed:
             return response_text, ""
+
+        if self._has_trailing_confidence_line(trimmed):
+            return trimmed, ""
 
         percent = self._extract_confidence_percent(trimmed)
         if percent is None:

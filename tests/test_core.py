@@ -253,7 +253,7 @@ class TestConfidenceOutput:
 
         core = PoorCLICore()
         final_text, appended = core._ensure_confidence_line(
-            "Applied changes.\nConfidence: 88%"
+            "Applied changes with confidence 88% after validation."
         )
 
         assert appended == "\n\nConfidence: Very High (88%)"
@@ -264,6 +264,16 @@ class TestConfidenceOutput:
 
         core = PoorCLICore()
         response = "Done.\n\nConfidence: High (73%)"
+        final_text, appended = core._ensure_confidence_line(response)
+
+        assert appended == ""
+        assert final_text == response
+
+    def test_ensure_confidence_line_avoids_duplicate_when_trailing_confidence_exists(self):
+        from poor_cli.core import PoorCLICore
+
+        core = PoorCLICore()
+        response = "Applied updates.\n\nConfidence: Very High (81-100%)"
         final_text, appended = core._ensure_confidence_line(response)
 
         assert appended == ""
