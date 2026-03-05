@@ -8,13 +8,14 @@ room lifecycle notifications.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import json
 import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Deque, Dict, List, Optional
 
 from aiohttp import WSMsgType, web
 
@@ -46,6 +47,7 @@ class ConnectionState:
     joined_at: Optional[str] = None
     approved: bool = True
     last_pong: float = field(default_factory=time.monotonic)
+    request_timestamps: Deque[float] = field(default_factory=deque)
 
 
 @dataclass
@@ -124,6 +126,7 @@ class MultiplayerHost:
         default_permission_mode: str = "prompt",
         heartbeat_interval_seconds: float = 30.0,
         pong_timeout_seconds: float = 60.0,
+        requests_per_minute: int = 10,
     ):
         self.bind_host = bind_host
         self.port = port
@@ -133,6 +136,7 @@ class MultiplayerHost:
         self.default_permission_mode = default_permission_mode
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.pong_timeout_seconds = pong_timeout_seconds
+        self.requests_per_minute = max(1, requests_per_minute)
 
         self.rooms: Dict[str, RoomState] = {}
         self.connections: Dict[str, ConnectionState] = {}
@@ -741,6 +745,18 @@ class MultiplayerHost:
             return
 
         if method in self._QUEUE_METHODS:
+            if not self._consume_rate_limit_token(conn):
+                await self._send_error_response(
+                    conn.ws,
+                    request_id=message.id,
+                    code=-32029,
+                    message="Rate limited",
+                    data={
+                        "error_code": "RATE_LIMITED",
+                        "requestsPerMinute": self.requests_per_minute,
+                    },
+                )
+                return
             await room.request_queue.put(QueuedRequest(connection_id=conn.connection_id, message=message))
             await self._broadcast_room_event(
                 room,
@@ -755,6 +771,19 @@ class MultiplayerHost:
             response = await room.server.dispatch(message)
         if message.id is not None:
             await self._send_rpc(conn.ws, response)
+
+    def _consume_rate_limit_token(self, conn: ConnectionState) -> bool:
+        now = time.monotonic()
+        window_start = now - 60.0
+        timestamps = conn.request_timestamps
+        while timestamps and timestamps[0] < window_start:
+            timestamps.popleft()
+
+        if len(timestamps) >= self.requests_per_minute:
+            return False
+
+        timestamps.append(now)
+        return True
 
     async def _handle_kick_member(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
         params = message.params or {}

@@ -103,6 +103,16 @@ async def _ws_recv_json(ws: aiohttp.ClientWebSocketResponse) -> Dict[str, Any]:
     return payload
 
 
+async def _wait_for_response_id(
+    ws: aiohttp.ClientWebSocketResponse, expected_id: int, max_messages: int = 40
+) -> Dict[str, Any]:
+    for _ in range(max_messages):
+        payload = await _ws_recv_json(ws)
+        if payload.get("id") == expected_id:
+            return payload
+    raise AssertionError(f"Did not receive response id={expected_id}")
+
+
 @pytest.mark.asyncio
 async def test_initialize_auth_and_viewer_denied_prompt_methods():
     factory = _FakeServerFactory()
@@ -640,5 +650,87 @@ async def test_kick_member_rpc_disconnects_target():
                 assert target_connection_id not in host.connections
                 assert target_connection_id not in room.members
 
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_per_connection_blocks_flooding_not_other_members():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+        requests_per_minute=2,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws_a, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as ws_b:
+                for ws in (ws_a, ws_b):
+                    await ws.send_json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "initialize",
+                            "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                        }
+                    )
+                    _ = await _ws_recv_json(ws)
+                    _ = await _ws_recv_json(ws)
+                _ = await _ws_recv_json(ws_a)
+
+                await ws_a.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 11,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "one", "requestId": "one"},
+                    }
+                )
+                first = await _wait_for_response_id(ws_a, 11)
+                assert first.get("result", {}).get("content") == "done"
+
+                await ws_a.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 12,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "two", "requestId": "two"},
+                    }
+                )
+                second = await _wait_for_response_id(ws_a, 12)
+                assert second.get("result", {}).get("content") == "done"
+
+                await ws_a.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 13,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "three", "requestId": "three"},
+                    }
+                )
+                limited = await _wait_for_response_id(ws_a, 13)
+                assert limited.get("error", {}).get("code") == -32029
+                assert limited.get("error", {}).get("message") == "Rate limited"
+
+                await ws_b.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 21,
+                        "method": "poor-cli/chatStreaming",
+                        "params": {"message": "other", "requestId": "other"},
+                    }
+                )
+                other = await _wait_for_response_id(ws_b, 21)
+                assert other.get("result", {}).get("content") == "done"
     finally:
         await host.stop()
