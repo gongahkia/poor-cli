@@ -31,13 +31,13 @@ from .exceptions import (
 logger = setup_logger(__name__)
 
 _DEFAULT_CONFIDENCE_PERCENT = 50
-_CONFIDENCE_PERCENT_RE = re.compile(r"confidence\s*[:\-]\s*(\d{1,3})\s*%", re.IGNORECASE)
-_CONFIDENCE_BANDS: Tuple[Tuple[int, str, str], ...] = (
-    (20, "Very Low", "0-20%"),
-    (40, "Low", "21-40%"),
-    (60, "Moderate", "41-60%"),
-    (80, "High", "61-80%"),
-    (100, "Very High", "81-100%"),
+_CONFIDENCE_PERCENT_RE = re.compile(r"confidence[^\n\r]*?(\d{1,3})\s*%", re.IGNORECASE)
+_CONFIDENCE_BANDS: Tuple[Tuple[int, str], ...] = (
+    (20, "Very Low"),
+    (40, "Low"),
+    (60, "Moderate"),
+    (80, "High"),
+    (100, "Very High"),
 )
 
 
@@ -324,13 +324,13 @@ class PoorCLICore:
         return message
 
     @staticmethod
-    def _confidence_bucket(percent: int) -> Tuple[str, str]:
+    def _confidence_bucket(percent: int) -> str:
         """Map confidence percentage to one of five confidence categories."""
         bounded = max(0, min(percent, 100))
-        for upper_bound, category, band in _CONFIDENCE_BANDS:
+        for upper_bound, category in _CONFIDENCE_BANDS:
             if bounded <= upper_bound:
-                return category, band
-        return "Very High", "81-100%"
+                return category
+        return "Very High"
 
     @staticmethod
     def _extract_confidence_percent(response_text: str) -> Optional[int]:
@@ -343,8 +343,8 @@ class PoorCLICore:
 
     def _build_confidence_line(self, percent: int) -> str:
         """Build the normalized confidence line shown to users."""
-        category, band = self._confidence_bucket(percent)
-        return f"Confidence: {percent}% ({category}: {band})"
+        category = self._confidence_bucket(percent)
+        return f"Confidence: {category} ({percent}%)"
 
     def _ensure_confidence_line(self, response_text: str) -> Tuple[str, str]:
         """

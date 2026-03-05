@@ -156,7 +156,7 @@ MANDATORY TOOL USAGE RULES:
 
 CONFIDENCE OUTPUT RULES:
 1. Every final user-facing reply MUST end with:
-   Confidence: <0-100>% (<Category>: <Range>)
+   Confidence: <Category> (<0-100>%)
 2. Category mapping is fixed:
    - Very Low: 0-20%
    - Low: 21-40%

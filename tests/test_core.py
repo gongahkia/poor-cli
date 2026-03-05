@@ -245,8 +245,8 @@ class TestConfidenceOutput:
         final_text, appended = core._ensure_confidence_line("Here is the fix.")
 
         assert "Here is the fix." in final_text
-        assert appended == "\n\nConfidence: 50% (Moderate: 41-60%)"
-        assert final_text.endswith("Confidence: 50% (Moderate: 41-60%)")
+        assert appended == "\n\nConfidence: Moderate (50%)"
+        assert final_text.endswith("Confidence: Moderate (50%)")
 
     def test_ensure_confidence_line_uses_model_reported_percentage(self):
         from poor_cli.core import PoorCLICore
@@ -256,14 +256,14 @@ class TestConfidenceOutput:
             "Applied changes.\nConfidence: 88%"
         )
 
-        assert appended == "\n\nConfidence: 88% (Very High: 81-100%)"
-        assert final_text.endswith("Confidence: 88% (Very High: 81-100%)")
+        assert appended == "\n\nConfidence: Very High (88%)"
+        assert final_text.endswith("Confidence: Very High (88%)")
 
     def test_ensure_confidence_line_avoids_duplicate_when_already_normalized(self):
         from poor_cli.core import PoorCLICore
 
         core = PoorCLICore()
-        response = "Done.\n\nConfidence: 73% (High: 61-80%)"
+        response = "Done.\n\nConfidence: High (73%)"
         final_text, appended = core._ensure_confidence_line(response)
 
         assert appended == ""

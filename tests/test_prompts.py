@@ -141,6 +141,7 @@ class TestToolCallingSystemInstruction:
         instruction = build_tool_calling_system_instruction("/tmp/project")
 
         assert "CONFIDENCE OUTPUT RULES" in instruction
+        assert "Confidence: <Category> (<0-100>%)" in instruction
         assert "Very Low: 0-20%" in instruction
         assert "Very High: 81-100%" in instruction
 

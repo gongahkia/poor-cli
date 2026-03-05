@@ -37,10 +37,7 @@ thread_local! {
 
 /// Main render function called each frame.
 pub fn draw(frame: &mut Frame, app: &App) {
-    let input_height = {
-        let newlines = app.input_buffer.matches('\n').count();
-        (newlines as u16 + 3).min(8) // 3 base + extra lines, cap at 8
-    };
+    let input_height = compute_input_height(app, frame.area().width);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -70,6 +67,66 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::PlanReview {
         draw_plan_review(frame, app);
     }
+}
+
+fn provider_short_label(app: &App) -> String {
+    if app.provider_name.len() > 4 {
+        app.provider_name[..4].to_string()
+    } else {
+        app.provider_name.clone()
+    }
+}
+
+fn build_input_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
+    let provider_short = provider_short_label(app);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let parts: Vec<&str> = app.input_buffer.split('\n').collect();
+
+    for (idx, part) in parts.iter().enumerate() {
+        let is_first = idx == 0;
+        let is_last = idx + 1 == parts.len();
+        let prefix = if is_first { "  ❯ " } else { "  … " };
+        let mut spans = vec![
+            Span::styled(
+                prefix.to_string(),
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled((*part).to_string(), theme::input_style(mode)),
+        ];
+
+        if is_last {
+            spans.push(Span::styled("█", theme::input_cursor_style(mode)));
+            if app.input_buffer.is_empty() {
+                spans.push(Span::styled(
+                    format!(" Type your message ({})...", provider_short.to_uppercase()),
+                    Style::default().fg(theme::muted_fg(mode)),
+                ));
+            }
+        }
+
+        lines.push(Line::from(spans));
+    }
+
+    lines
+}
+
+fn compute_input_height(app: &App, terminal_width: u16) -> u16 {
+    if app.waiting {
+        return 3;
+    }
+
+    let mode = app.theme_mode;
+    let input_lines = build_input_lines(app, mode);
+    let input_paragraph = Paragraph::new(input_lines).wrap(Wrap { trim: false });
+    let visual_lines = input_paragraph
+        .line_count(terminal_width.max(1))
+        .max(1)
+        .min(u16::MAX as usize) as u16;
+
+    // +2 keeps prior layout rhythm: top border + breathing room.
+    visual_lines.saturating_add(2).clamp(3, 8)
 }
 
 // ── Status bar ───────────────────────────────────────────────────────
@@ -480,62 +537,16 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let provider_short = if app.provider_name.len() > 4 {
-        &app.provider_name[..4]
-    } else {
-        &app.provider_name
-    };
-
-    // Multi-line input: split by newlines
-    let line_count = app.input_buffer.matches('\n').count() + 1;
-    if line_count > 1 {
-        let mut lines: Vec<Line<'static>> = Vec::new();
-        for (i, part) in app.input_buffer.split('\n').enumerate() {
-            let prefix = if i == 0 { "  ❯ " } else { "  … " };
-            lines.push(Line::from(vec![
-                Span::styled(
-                    prefix.to_string(),
-                    Style::default()
-                        .fg(theme::accent(mode))
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(part.to_string(), theme::input_style(mode)),
-            ]));
-        }
-        let input = Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(theme::input_border_color(mode))),
-        );
-        frame.render_widget(input, area);
-    } else {
-        let prompt_spans = vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "❯ ",
-                Style::default()
-                    .fg(theme::accent(mode))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(app.input_buffer.clone(), theme::input_style(mode)),
-            Span::styled("█", theme::input_cursor_style(mode)),
-            if app.input_buffer.is_empty() {
-                Span::styled(
-                    format!(" Type your message ({})...", provider_short.to_uppercase()),
-                    Style::default().fg(theme::muted_fg(mode)),
-                )
-            } else {
-                Span::raw("")
-            },
-        ];
-        let input = Paragraph::new(Line::from(prompt_spans)).block(
+    let input_lines = build_input_lines(app, mode);
+    let input = Paragraph::new(input_lines)
+        .wrap(Wrap { trim: false })
+        .block(
             Block::default()
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(theme::input_border_color(mode)))
                 .padding(Padding::new(0, 0, 0, 0)),
         );
-        frame.render_widget(input, area);
-    }
+    frame.render_widget(input, area);
 }
 
 // ── Hint bar ─────────────────────────────────────────────────────────

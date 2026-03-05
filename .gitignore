@@ -73,3 +73,5 @@ dmypy.json
 /.poor-cli/cache/
 
 target/
+
+conversation*.json
