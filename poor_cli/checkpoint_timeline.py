@@ -29,6 +29,7 @@ from rich.live import Live
 
 from poor_cli.checkpoint import Checkpoint, CheckpointManager
 from poor_cli.exceptions import setup_logger
+from poor_cli.utils import format_size
 
 logger = setup_logger(__name__)
 
@@ -476,7 +477,7 @@ class CheckpointTimelineDisplay:
             f"[bold]Created:[/bold] {time_str}",
             f"[bold]Type:[/bold] {checkpoint.operation_type}",
             f"[bold]Files:[/bold] {checkpoint.get_file_count()}",
-            f"[bold]Size:[/bold] {self._format_size(checkpoint.get_total_size())}"
+            f"[bold]Size:[/bold] {format_size(checkpoint.get_total_size())}"
         ]
 
         if checkpoint.tags:
@@ -522,7 +523,7 @@ class CheckpointTimelineDisplay:
             "",
             f"[bold]Statistics:[/bold]",
             f"  • Files: {checkpoint.get_file_count()}",
-            f"  • Total Size: {self._format_size(checkpoint.get_total_size())}",
+            f"  • Total Size: {format_size(checkpoint.get_total_size())}",
         ]
 
         if checkpoint.tags:
@@ -537,7 +538,7 @@ class CheckpointTimelineDisplay:
         details.append("")
         details.append(f"[bold]All Files:[/bold]")
         for snapshot in checkpoint.snapshots:
-            size_str = self._format_size(snapshot.size_bytes)
+            size_str = format_size(snapshot.size_bytes)
             details.append(f"  • {snapshot.file_path} ({size_str})")
 
         self.console.print("\n".join(details))
@@ -555,17 +556,6 @@ class CheckpointTimelineDisplay:
             f"\n[bold red]Delete checkpoint {checkpoint.checkpoint_id[:16]}?[/bold red]",
             default=False
         )
-
-    def _format_size(self, size_bytes: int) -> str:
-        """Format size in human-readable format"""
-        if size_bytes < 1024:
-            return f"{size_bytes}B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f}KB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f}MB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.2f}GB"
 
     def display_timeline_stats(self, checkpoints: List[Checkpoint]):
         """Display timeline statistics"""
@@ -603,7 +593,7 @@ class CheckpointTimelineDisplay:
 [bold]Overview:[/bold]
   • Total Checkpoints: {len(checkpoints)}
   • Total Files: {total_files}
-  • Total Size: {self._format_size(total_size)}
+  • Total Size: {format_size(total_size)}
   • Time Range: {time_range}
 
 [bold]By Operation Type:[/bold]

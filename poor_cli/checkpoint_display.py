@@ -13,6 +13,7 @@ from rich import box
 from datetime import datetime
 
 from poor_cli.checkpoint import Checkpoint, CheckpointManager
+from poor_cli.utils import format_size
 from poor_cli.exceptions import setup_logger
 
 logger = setup_logger(__name__)
@@ -118,7 +119,7 @@ class CheckpointDisplay:
 
 [bold]Statistics:[/bold]
   • Files: {checkpoint.get_file_count()}
-  • Total Size: {self._format_size(checkpoint.get_total_size())}
+  • Total Size: {format_size(checkpoint.get_total_size())}
 """
 
         # Add tags if any
@@ -135,7 +136,7 @@ class CheckpointDisplay:
         if checkpoint.snapshots:
             details += "\n[bold]Files:[/bold]\n"
             for snapshot in checkpoint.snapshots[:10]:  # Show first 10
-                size_str = self._format_size(snapshot.size_bytes)
+                size_str = format_size(snapshot.size_bytes)
                 details += f"  • {snapshot.file_path} ({size_str})\n"
 
             if len(checkpoint.snapshots) > 10:
@@ -201,7 +202,7 @@ class CheckpointDisplay:
 [bold]ID:[/bold] {checkpoint.checkpoint_id}
 [bold]Description:[/bold] {checkpoint.description}
 [bold]Files:[/bold] {checkpoint.get_file_count()}
-[bold]Size:[/bold] {self._format_size(checkpoint.get_total_size())}
+[bold]Size:[/bold] {format_size(checkpoint.get_total_size())}
 
 [dim]Use /rewind {checkpoint.checkpoint_id} to restore this checkpoint[/dim]
 """
@@ -227,7 +228,7 @@ class CheckpointDisplay:
 
 [bold]Location:[/bold] {manager.checkpoints_dir}
 [bold]Checkpoints:[/bold] {checkpoint_count} / {manager.MAX_CHECKPOINTS}
-[bold]Total Size:[/bold] {self._format_size(total_size)}
+[bold]Total Size:[/bold] {format_size(total_size)}
 
 [dim]Old checkpoints are automatically cleaned up after {manager.MAX_CHECKPOINTS} checkpoints[/dim]
 """
@@ -280,16 +281,6 @@ class CheckpointDisplay:
 
         return confirmed
 
-    def _format_size(self, size_bytes: int) -> str:
-        """Format size in human-readable format"""
-        if size_bytes < 1024:
-            return f"{size_bytes}B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f}KB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f}MB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.2f}GB"
 
     def show_quick_restore_hint(self):
         """Show hint about quick restore with Esc key"""
