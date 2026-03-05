@@ -263,6 +263,7 @@ class TransactionalPlanExecutor(PlanExecutor):
         """Execute plan with partial rollback on step failures
 
         If a step fails, only that step is rolled back, not the entire plan.
+        Per-step checkpoints are capped at 20 to prevent storage exhaustion.
 
         Args:
             user_request: User request
@@ -273,6 +274,8 @@ class TransactionalPlanExecutor(PlanExecutor):
         Returns:
             Tuple of (overall_success, results, failed_step_numbers)
         """
+        MAX_STEP_CHECKPOINTS = 20
+
         # Create plan
         plan = self.plan_analyzer.create_plan_from_request(user_request, ai_summary)
 
@@ -294,13 +297,14 @@ class TransactionalPlanExecutor(PlanExecutor):
         # Execute with per-step checkpoints
         results = []
         failed_steps = []
+        step_checkpoints_created = 0
 
         for step in plan.steps:
-            # Create step checkpoint
+            # Create step checkpoint (skip if cap reached)
             step_checkpoint = None
             from pathlib import Path
 
-            if step.affected_files:
+            if step.affected_files and step_checkpoints_created < MAX_STEP_CHECKPOINTS:
                 existing = [f for f in step.affected_files if Path(f).exists()]
                 if existing:
                     try:
@@ -310,6 +314,7 @@ class TransactionalPlanExecutor(PlanExecutor):
                             operation_type="step",
                             tags=["auto", "step"]
                         )
+                        step_checkpoints_created += 1
                     except Exception as e:
                         logger.warning(f"Failed to create step checkpoint: {e}")
 
