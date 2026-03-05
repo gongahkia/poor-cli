@@ -21,7 +21,6 @@
 # CHECKPOINT SYSTEM — Consolidate and harden
 # ============================================================================
 
-(B) In checkpoint_validation.py line ~134, change remove_corrupted default from True to False so corrupted checkpoints are reported but not silently deleted +checkpoint +bugfix
 (B) Add a confirmation prompt or require explicit flag before checkpoint_validation.py repair_checkpoint() permanently deletes any snapshot +checkpoint +bugfix
 (B) In checkpoint_strategies.py line ~502, stop truncating SHA-256 hashes to 16 chars; use full hex digest to avoid collision risk in incremental checkpoint detection +checkpoint +bugfix
 (B) Remove the CompressionStrategy.LZMA branch from checkpoint_strategies.py since it is effectively dead code (only triggers for >1MB text files, extremely rare) +checkpoint +cleanup

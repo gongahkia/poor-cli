@@ -131,7 +131,7 @@ class CheckpointValidator:
     def repair_checkpoint(
         self,
         checkpoint_id: str,
-        remove_corrupted: bool = True
+        remove_corrupted: bool = False
     ) -> Dict[str, Any]:
         """Attempt to repair a corrupted checkpoint
 
