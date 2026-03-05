@@ -603,7 +603,7 @@ class CheckpointManager:
                     file_path = Path(root) / file
                     try:
                         total_size += file_path.stat().st_size
-                    except:
+                    except OSError:
                         continue
         return total_size
 

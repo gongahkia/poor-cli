@@ -101,7 +101,7 @@ class CheckpointTimeline:
 
             if time_diff > 3600:  # More than 1 hour apart
                 return False
-        except:
+        except (ValueError, TypeError):
             pass
 
         # Check file overlap
@@ -199,7 +199,7 @@ class CheckpointTimelineDisplay:
         try:
             created_dt = datetime.fromisoformat(checkpoint.created_at)
             time_str = created_dt.strftime("%Y-%m-%d %H:%M")
-        except:
+        except (ValueError, TypeError):
             time_str = checkpoint.created_at[:16]
 
         # Color based on branch
@@ -314,7 +314,7 @@ class CheckpointTimelineDisplay:
         try:
             created_dt = datetime.fromisoformat(checkpoint.created_at)
             time_str = created_dt.strftime("%m-%d %H:%M")
-        except:
+        except (ValueError, TypeError):
             time_str = checkpoint.created_at[:16]
 
         desc = checkpoint.description
@@ -446,7 +446,7 @@ class CheckpointTimelineDisplay:
             try:
                 created_dt = datetime.fromisoformat(cp.created_at)
                 time_str = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-            except:
+            except (ValueError, TypeError):
                 time_str = cp.created_at[:19]
 
             marker = "→" if i == current_index else " "
@@ -470,7 +470,7 @@ class CheckpointTimelineDisplay:
         try:
             created_dt = datetime.fromisoformat(checkpoint.created_at)
             time_str = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-        except:
+        except (ValueError, TypeError):
             time_str = checkpoint.created_at
 
         # Build summary
@@ -512,7 +512,7 @@ class CheckpointTimelineDisplay:
         try:
             created_dt = datetime.fromisoformat(checkpoint.created_at)
             time_str = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-        except:
+        except (ValueError, TypeError):
             time_str = checkpoint.created_at
 
         details = [
@@ -586,7 +586,7 @@ class CheckpointTimelineDisplay:
             oldest = min(times)
             newest = max(times)
             time_range = f"{oldest.strftime('%Y-%m-%d')} to {newest.strftime('%Y-%m-%d')}"
-        except:
+        except (ValueError, TypeError):
             time_range = "Unknown"
 
         # Display stats

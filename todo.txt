@@ -78,6 +78,5 @@
 # GENERAL CLEANUP
 # ============================================================================
 
-(B) Remove the bare except: clause in checkpoint_display.py and replace all other bare except: usages across the codebase with specific exception types +cleanup +bugfix
 (B) Run ruff check --fix across the entire Python codebase to auto-fix any remaining linting issues flagged by the existing ruff config +cleanup
 (B) Verify that the pyproject.toml entry_points for poor-cli and poor-cli-server resolve correctly after the server.py decomposition +cleanup +infra

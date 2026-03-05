@@ -204,7 +204,7 @@ class TestRunner:
                     total=data.get('numTotalTests', 0),
                     output=result.stdout + result.stderr
                 )
-            except:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 return self._parse_jest_output(result.stdout + result.stderr)
 
         except Exception as e:
@@ -393,7 +393,7 @@ class QualityChecker:
 
                 return lint_result
 
-            except:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 return LintResult(output=result.stdout + result.stderr)
 
         except Exception as e:
@@ -433,7 +433,7 @@ class QualityChecker:
 
                 return lint_result
 
-            except:
+            except (json.JSONDecodeError, KeyError, TypeError):
                 return LintResult(output=result.stdout + result.stderr)
 
         except Exception as e:

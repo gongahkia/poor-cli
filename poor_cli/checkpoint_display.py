@@ -108,7 +108,7 @@ class CheckpointDisplay:
         try:
             created_dt = datetime.fromisoformat(checkpoint.created_at)
             created_str = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-        except:
+        except (ValueError, TypeError):
             created_str = checkpoint.created_at
 
         # Build details text

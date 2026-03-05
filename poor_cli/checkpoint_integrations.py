@@ -142,7 +142,7 @@ class GitIntegration:
                         cwd=self.workspace_root,
                         capture_output=True
                     )
-            except:
+            except (subprocess.SubprocessError, OSError):
                 pass
             return None
 
