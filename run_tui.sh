@@ -38,7 +38,10 @@ fi
 # Build if binary doesn't exist or source is newer
 if [ ! -f "$BINARY" ] || [ "$(find "$TUI_DIR/src" -newer "$BINARY" -print -quit 2>/dev/null)" ]; then
     echo "Building poor-cli-tui..."
-    (cd "$TUI_DIR" && cargo build --release 2>&1)
+    if ! (cd "$TUI_DIR" && cargo build --release 2>&1); then
+        echo "Error: cargo build failed. Check the output above for details."
+        exit 1
+    fi
     echo "Build complete."
 fi
 
