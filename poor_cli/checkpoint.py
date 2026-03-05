@@ -98,7 +98,8 @@ class CheckpointManager:
         workspace_root: Optional[Path] = None,
         enable_compression: bool = True,
         enable_parallel: bool = True,
-        enable_background_cleanup: bool = True
+        enable_background_cleanup: bool = True,
+        max_checkpoints: Optional[int] = None
     ):
         """Initialize checkpoint manager
 
@@ -107,7 +108,10 @@ class CheckpointManager:
             enable_compression: Enable compression for checkpoints
             enable_parallel: Enable parallel checkpoint creation
             enable_background_cleanup: Enable background cleanup thread
+            max_checkpoints: Maximum checkpoints to retain (default: 50)
         """
+        if max_checkpoints is not None:
+            self.MAX_CHECKPOINTS = max_checkpoints
         self.workspace_root = workspace_root or Path.cwd()
         self.checkpoints_dir = self.workspace_root / self.CHECKPOINTS_DIR
         self.index_file = self.checkpoints_dir / self.INDEX_FILE

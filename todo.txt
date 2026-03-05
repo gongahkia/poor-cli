@@ -22,7 +22,6 @@
 # ============================================================================
 
 (B) Reduce checkpoint_strategies.py from 6 classes to 3 by merging ProjectDetector+FileFilter into one class and SmartCompressor+PartialCheckpointStrategy into one class +checkpoint +refactor
-(B) Make MAX_CHECKPOINTS (currently hardcoded 50 in checkpoint.py) configurable via config.yaml +checkpoint +feature
 (B) Extract the duplicated _format_size() utility function from checkpoint_display.py, checkpoint_timeline.py, and testing_tools.py into a shared poor_cli/utils.py module +refactor +cleanup
 (B) In checkpoint_timeline.py, add a display limit (e.g., 200 checkpoints max) to prevent memory/rendering issues with large checkpoint histories +checkpoint +bugfix
 (B) In checkpoint_display.py line ~66, replace bare except: with except (ValueError, TypeError): on datetime parsing to avoid swallowing unrelated exceptions +checkpoint +bugfix
