@@ -7,7 +7,7 @@ Provides LRU cache for file reads with persistence and smart pre-caching.
 from functools import lru_cache
 from typing import Optional, Tuple, List, Dict, Any
 from pathlib import Path
-from collections import defaultdict, OrderedDict
+from collections import defaultdict, deque, OrderedDict
 import sqlite3
 import hashlib
 import json
@@ -45,7 +45,7 @@ class FileCache:
 
         # Access pattern tracking
         self._access_count: Dict[str, int] = defaultdict(int)
-        self._access_sequence: List[Tuple[str, float]] = []  # (file_path, timestamp)
+        self._access_sequence: deque[Tuple[str, float]] = deque(maxlen=10000)  # (file_path, timestamp)
 
         # Persistent cache setup
         if enable_persistence:
