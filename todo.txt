@@ -22,7 +22,6 @@
 # ============================================================================
 
 (B) Reduce checkpoint_strategies.py from 6 classes to 3 by merging ProjectDetector+FileFilter into one class and SmartCompressor+PartialCheckpointStrategy into one class +checkpoint +refactor
-(B) In checkpoint_integrations.py, add cleanup of orphaned temp directories on failed archive export/import operations +checkpoint +bugfix
 
 # ============================================================================
 # PLAN SYSTEM — Make it reliable
