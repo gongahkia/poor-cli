@@ -266,14 +266,26 @@ class PlanDisplay:
         if not skip_input.strip():
             return []
 
-        # Parse input
+        # Parse input with validation
         skip_steps = []
+        invalid_parts = []
         for part in skip_input.split(","):
             part = part.strip()
-            if part.isdigit():
-                step_num = int(part)
-                if 1 <= step_num <= len(plan.steps):
-                    skip_steps.append(step_num)
+            if not part:
+                continue
+            if not part.isdigit():
+                invalid_parts.append(part)
+                continue
+            step_num = int(part)
+            if 1 <= step_num <= len(plan.steps):
+                skip_steps.append(step_num)
+            else:
+                invalid_parts.append(part)
+
+        if invalid_parts:
+            self.console.print(
+                f"[red]Invalid step numbers ignored: {', '.join(invalid_parts)}[/red]"
+            )
 
         if skip_steps:
             self.console.print(f"\n[yellow]Will skip steps: {', '.join(map(str, skip_steps))}[/yellow]")

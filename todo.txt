@@ -27,8 +27,6 @@
 # PLAN SYSTEM — Make it reliable
 # ============================================================================
 
-(B) In plan_display.py line ~245-276, add input validation when parsing comma-separated step numbers; reject non-numeric input with an error message instead of silently dropping it +plan +bugfix
-(B) In plan_display.py line ~115-116, show a truncation indicator (...) when descriptions exceed 50 chars instead of silently truncating +plan +bugfix
 (B) In plan_analyzer.py, add a maximum step count limit (e.g., 200) to prevent unbounded plan generation +plan +bugfix
 (B) In plan_history.py, validate that recorded plan_data matches the expected plan structure schema before persisting to SQLite +plan +bugfix
 (B) Cache the result of ProjectDetector.get_ignore_rules() instead of re-extending the list on every call in checkpoint_strategies.py line ~186 +plan +refactor
