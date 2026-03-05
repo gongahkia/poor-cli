@@ -28,7 +28,12 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Server stdio initialize/shutdown smoke test
-        run: |
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 2
+          max_attempts: 3
+          retry_wait_seconds: 5
+          command: |
           python - <<'PY'
           import json
           import subprocess

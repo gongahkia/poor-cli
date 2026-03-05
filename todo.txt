@@ -63,7 +63,6 @@
 # INFRA & CI
 # ============================================================================
 
-(B) In .github/workflows/tests.yml, add a retry mechanism (e.g., retry-on-error action) to the JSON-RPC stdio smoke test to handle transient startup delays +infra
 (B) Add a completions uninstall mechanism to completions/install.sh or a separate completions/uninstall.sh script +infra +feature
 (B) Expand the bash completion script (completions/poor-cli.bash) to include provider names, model names, and /api-key subcommands +infra +feature
 
