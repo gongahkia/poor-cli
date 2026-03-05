@@ -26,7 +26,8 @@ class FileCache:
         max_size: int = 128,
         enable_persistence: bool = True,
         enable_precache: bool = True,
-        cache_dir: Optional[Path] = None
+        cache_dir: Optional[Path] = None,
+        ttl_seconds: Optional[float] = None
     ):
         """Initialize file cache
 
@@ -35,8 +36,10 @@ class FileCache:
             enable_persistence: Enable persistent cache across sessions
             enable_precache: Enable smart pre-caching based on access patterns
             cache_dir: Directory for cache storage (defaults to ~/.poor-cli/cache)
+            ttl_seconds: Time-to-live for cache entries in seconds (None = no expiry)
         """
         self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
         self.enable_persistence = enable_persistence
         self.enable_precache = enable_precache
 
@@ -182,8 +185,11 @@ class FileCache:
 
         # Check in-memory cache
         if file_path_abs in self._cache:
-            cached_content, cached_mtime, _ = self._cache[file_path_abs]
-            if cached_mtime == mtime:
+            cached_content, cached_mtime, cached_access_time = self._cache[file_path_abs]
+            # Evict if TTL expired
+            if self.ttl_seconds and (current_time - cached_access_time) > self.ttl_seconds:
+                del self._cache[file_path_abs]
+            elif cached_mtime == mtime:
                 # Cache hit - move to end (most recently used)
                 self._cache.move_to_end(file_path_abs)
                 self._cache[file_path_abs] = (cached_content, cached_mtime, current_time)
