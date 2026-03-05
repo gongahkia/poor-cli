@@ -173,8 +173,13 @@ class ProjectDetector:
 
         return ProjectType.UNKNOWN
 
+    _ignore_rules_cache: Dict[ProjectType, ProjectIgnoreRules] = {}
+
     def get_ignore_rules(self, project_type: ProjectType) -> ProjectIgnoreRules:
-        """Get ignore rules for project type"""
+        """Get ignore rules for project type (cached)"""
+        if project_type in self._ignore_rules_cache:
+            return self._ignore_rules_cache[project_type]
+
         base_rules = self.IGNORE_RULES.get(
             project_type,
             ProjectIgnoreRules()
@@ -193,6 +198,7 @@ class ProjectDetector:
         ])
         base_rules.directories.update({".git", ".svn", ".hg"})
 
+        self._ignore_rules_cache[project_type] = base_rules
         return base_rules
 
 

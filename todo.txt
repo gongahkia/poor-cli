@@ -27,7 +27,6 @@
 # PLAN SYSTEM — Make it reliable
 # ============================================================================
 
-(B) Cache the result of ProjectDetector.get_ignore_rules() instead of re-extending the list on every call in checkpoint_strategies.py line ~186 +plan +refactor
 
 # ============================================================================
 # MULTIPLAYER — Refine as core differentiator
