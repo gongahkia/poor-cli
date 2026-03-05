@@ -1,4 +1,5 @@
 pub mod app;
+pub mod event;
 pub mod helpers;
 pub mod input;
 pub mod markdown;

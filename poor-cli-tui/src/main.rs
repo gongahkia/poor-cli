@@ -1,5 +1,6 @@
 /// Entry point for the poor-cli Rust TUI.
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::cell::RefCell;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -12,7 +13,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -21,10 +22,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
+use poor_cli_tui::event as app_event;
+use poor_cli_tui::event::LoopControl;
 use poor_cli_tui::helpers::{classify_project_kind, detect_project_traits, first_line, should_skip_dir, truncate_block, truncate_line};
 use poor_cli_tui::input::{self, InputAction};
 use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
-use poor_cli_tui::ui;
 use poor_cli_tui::watcher::{self, WatchMsg, WatchState, QaWatchState};
 
 // ── CLI arguments ────────────────────────────────────────────────────
@@ -589,20 +591,21 @@ fn run_app(
         backend_log_path: backend_log_path_string,
         session_log: session_log.clone(),
     };
-    let mut rpc_cmd_tx = spawn_backend_worker(
+    let rpc_cmd_tx = RefCell::new(spawn_backend_worker(
         &tx,
         launch.clone(),
         backend_server_args.clone(),
         provider.clone(),
         model.clone(),
         permission_mode.clone(),
-    );
+    ));
 
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
     app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
-        let _ = apply_execution_profile(&mut app, &rpc_cmd_tx, &saved_profile.name, false);
+        let _ =
+            apply_execution_profile(&mut app, &rpc_cmd_tx.borrow(), &saved_profile.name, false);
     }
     refresh_context_budget_state(&mut app);
     if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
@@ -617,14 +620,39 @@ fn run_app(
     let cancel_token: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     let mut watch_state = WatchState::default();
     let mut qa_watch_state = QaWatchState::default();
-    let mut remote_reconnect_attempts: u32 = 0;
-    let mut remote_reconnect_deadline: Option<std::time::Instant> = None;
-    let mut remote_reconnect_pending = false;
+    let remote_reconnect_state =
+        RefCell::new((0u32, None::<std::time::Instant>, false));
 
-    loop {
-        terminal.draw(|f| ui::draw(f, &app))?;
-
-        while let Ok(msg) = rx.try_recv() {
+    app_event::run_event_loop(
+        terminal,
+        &mut app,
+        &rx,
+        |app| {
+            let mut state = remote_reconnect_state.borrow_mut();
+            if let Some(deadline) = state.1 {
+                if std::time::Instant::now() >= deadline {
+                    state.1 = None;
+                    let attempt_label = state.0;
+                    let url = app.multiplayer_remote_url.clone();
+                    let room = app.multiplayer_room.clone();
+                    let token = app.multiplayer_remote_token.clone();
+                    app.push_message(ChatMessage::system(format!(
+                        "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{url}` room `{room}`..."
+                    )));
+                    reconnect_to_remote_server(
+                        app,
+                        &tx,
+                        &mut rpc_cmd_tx.borrow_mut(),
+                        &launch,
+                        &url,
+                        &room,
+                        &token,
+                    );
+                }
+            }
+            Ok(LoopControl::Continue)
+        },
+        |app, msg| {
             match msg {
                 ServerMsg::Initialized {
                     provider,
@@ -633,14 +661,15 @@ fn run_app(
                     multiplayer_room,
                     multiplayer_role,
                 } => {
-                    if remote_reconnect_pending {
+                    let mut state = remote_reconnect_state.borrow_mut();
+                    if state.2 {
                         app.push_message(ChatMessage::system(
                             "Multiplayer bridge reconnected successfully.".to_string(),
                         ));
                     }
-                    remote_reconnect_attempts = 0;
-                    remote_reconnect_deadline = None;
-                    remote_reconnect_pending = false;
+                    state.0 = 0;
+                    state.1 = None;
+                    state.2 = false;
                     app.provider_name = provider;
                     app.model_name = model;
                     app.version = version;
@@ -654,7 +683,7 @@ fn run_app(
                         app.multiplayer_role = role_name;
                     }
                     app.update_welcome();
-                    if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx) {
+                    if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx.borrow()) {
                         if let Some(raw_theme) = cfg.get("theme").and_then(|v| v.as_str()) {
                             app.theme_mode = ThemeMode::from_ui_theme(raw_theme);
                         }
@@ -668,7 +697,6 @@ fn run_app(
                 }
                 ServerMsg::SystemMessage { content } => {
                     if content.starts_with("__PLAN__:") {
-                        // Parse plan steps from internal format
                         let rest = &content["__PLAN__:".len()..];
                         if let Some(colon_pos) = rest.find(':') {
                             let request = rest[..colon_pos].to_string();
@@ -705,23 +733,24 @@ fn run_app(
                     let remote_reconnect_configured = !app.multiplayer_remote_url.is_empty()
                         && !app.multiplayer_remote_token.is_empty()
                         && !app.multiplayer_room.is_empty();
+                    let mut state = remote_reconnect_state.borrow_mut();
                     if remote_reconnect_configured
                         && should_attempt_remote_reconnect(&message)
-                        && remote_reconnect_deadline.is_none()
+                        && state.1.is_none()
                     {
-                        if remote_reconnect_attempts < MAX_REMOTE_RECONNECT_ATTEMPTS {
-                            let delay_secs = (1u64 << remote_reconnect_attempts).min(30);
-                            remote_reconnect_attempts += 1;
-                            remote_reconnect_deadline =
+                        if state.0 < MAX_REMOTE_RECONNECT_ATTEMPTS {
+                            let delay_secs = (1u64 << state.0).min(30);
+                            state.0 += 1;
+                            state.1 =
                                 Some(std::time::Instant::now() + Duration::from_secs(delay_secs));
-                            remote_reconnect_pending = true;
+                            state.2 = true;
                             app.push_message(ChatMessage::system(format!(
                                 "Multiplayer connection lost. Reconnecting in {delay_secs}s (attempt {}/{MAX_REMOTE_RECONNECT_ATTEMPTS}).",
-                                remote_reconnect_attempts
+                                state.0
                             )));
                             app.set_status("Scheduling multiplayer reconnect");
-                        } else if remote_reconnect_pending {
-                            remote_reconnect_pending = false;
+                        } else if state.2 {
+                            state.2 = false;
                             app.push_message(ChatMessage::error(format!(
                                 "Auto-reconnect exhausted after {MAX_REMOTE_RECONNECT_ATTEMPTS} attempts: {message}"
                             )));
@@ -736,15 +765,10 @@ fn run_app(
                     }
                     app.push_message(ChatMessage::error(message));
                 }
-                ServerMsg::StreamChunk {
-                    chunk,
-                    done,
-                    reason: _,
-                } => {
+                ServerMsg::StreamChunk { chunk, done, reason: _ } => {
                     if done {
                         app.finalize_streaming();
                         app.stop_waiting();
-                        // Advance plan if we're executing plan steps
                         if !app.plan_steps.is_empty()
                             && app.plan_current_step < app.plan_steps.len()
                         {
@@ -902,58 +926,32 @@ fn run_app(
                     app.set_status(format!("Role updated: `{connection_id}` -> {role}"));
                 }
             }
-        }
-
-        if let Some(deadline) = remote_reconnect_deadline {
-            if std::time::Instant::now() >= deadline {
-                remote_reconnect_deadline = None;
-                let attempt_label = remote_reconnect_attempts;
-                let url = app.multiplayer_remote_url.clone();
-                let room = app.multiplayer_room.clone();
-                let token = app.multiplayer_remote_token.clone();
-                app.push_message(ChatMessage::system(format!(
-                    "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{url}` room `{room}`..."
-                )));
-                reconnect_to_remote_server(
-                    &mut app,
-                    &tx,
-                    &mut rpc_cmd_tx,
-                    &launch,
-                    &url,
-                    &room,
-                    &token,
-                );
-            }
-        }
-
-        app.clear_old_status();
-        app.tick_spinner();
-
-        if event::poll(Duration::from_millis(100))? {
-            let ev = event::read()?;
-            match input::handle_event(&mut app, ev) {
+            Ok(LoopControl::Continue)
+        },
+        |app, input_action| {
+            match input_action {
                 InputAction::Submit(text) => {
                     if handle_submit(
-                        &mut app,
+                        app,
                         &tx,
-                        &mut rpc_cmd_tx,
+                        &mut rpc_cmd_tx.borrow_mut(),
                         &launch,
                         &cancel_token,
                         &mut watch_state,
                         &mut qa_watch_state,
                         &text,
                     ) {
-                        break;
+                        return Ok(LoopControl::Break);
                     }
                 }
                 InputAction::Cancel => {
                     cancel_token.store(true, Ordering::SeqCst);
-                    let _ = rpc_cmd_tx.send(RpcCommand::CancelRequest);
+                    let _ = rpc_cmd_tx.borrow().send(RpcCommand::CancelRequest);
                     app.finalize_streaming();
                     app.stop_waiting();
                     app.set_status("Request cancelled");
                 }
-                InputAction::Quit => break,
+                InputAction::Quit => return Ok(LoopControl::Break),
                 InputAction::ProviderSelected(idx) => {
                     if let Some(provider) = app.providers.get(idx) {
                         let name = provider.name.clone();
@@ -961,7 +959,7 @@ fn run_app(
                         app.set_status(format!("Switching to {name}..."));
                         let tx2 = tx.clone();
                         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-                        let _ = rpc_cmd_tx.send(RpcCommand::SwitchProvider {
+                        let _ = rpc_cmd_tx.borrow().send(RpcCommand::SwitchProvider {
                             provider: name.clone(),
                             model,
                             reply: reply_tx,
@@ -978,24 +976,24 @@ fn run_app(
                                     format!("Failed to switch provider `{name}`: {error}");
                                 if name.eq_ignore_ascii_case("ollama") {
                                     message.push_str(
-                                            "\nTry `/ollama start`, then `/ollama pull <model>`, and switch again.",
-                                        );
+                                        "\nTry `/ollama start`, then `/ollama pull <model>`, and switch again.",
+                                    );
                                 }
                                 let _ = tx2.send(ServerMsg::Error { message });
                             }
                             Err(_) => {
                                 let _ = tx2.send(ServerMsg::Error {
-                                        message: format!(
-                                            "Failed to switch provider `{name}`: backend response channel closed"
-                                        ),
-                                    });
+                                    message: format!(
+                                        "Failed to switch provider `{name}`: backend response channel closed"
+                                    ),
+                                });
                             }
                         });
                     }
                 }
                 InputAction::PermissionAnswered(allowed) => {
                     let prompt_id = std::mem::take(&mut app.permission_prompt_id);
-                    let _ = rpc_cmd_tx.send(RpcCommand::SendNotification {
+                    let _ = rpc_cmd_tx.borrow().send(RpcCommand::SendNotification {
                         method: "poor-cli/permissionRes".into(),
                         params: serde_json::json!({
                             "promptId": prompt_id,
@@ -1020,9 +1018,9 @@ fn run_app(
                                 poor_cli_tui::app::PlanStepStatus::Running;
                         }
                         send_chat_request(
-                            &mut app,
+                            app,
                             &tx,
-                            &rpc_cmd_tx,
+                            &rpc_cmd_tx.borrow(),
                             &cancel_token,
                             exec_msg,
                             display,
@@ -1036,12 +1034,13 @@ fn run_app(
                 InputAction::Redraw => {}
                 InputAction::None => {}
             }
-        }
-    }
+            Ok(LoopControl::Continue)
+        },
+    )?;
 
     watch_state.stop();
     qa_watch_state.stop();
-    let _ = rpc_cmd_tx.send(RpcCommand::Shutdown);
+    let _ = rpc_cmd_tx.borrow().send(RpcCommand::Shutdown);
     write_session_log(session_log.as_ref(), "tui_session_end");
     Ok(app.session_summary_text())
 }
