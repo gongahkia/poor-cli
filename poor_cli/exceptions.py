@@ -300,6 +300,10 @@ def validate_file_path(file_path: str, base_path: Optional[Path] = None,
     """
     Validate and sanitize file paths to prevent path traversal attacks
 
+    Note: Existence checks here are best-effort due to TOCTOU races.
+    Callers should still catch FileNotFoundError and PermissionError
+    when performing actual file operations on the returned path.
+
     Args:
         file_path: Path to validate
         base_path: Base directory to restrict access to (defaults to cwd)
