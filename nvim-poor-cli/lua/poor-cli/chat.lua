@@ -225,7 +225,8 @@ function M._append_streaming_chunk(chunk)
     local last_line_idx = line_count - 1
     local last_line = vim.api.nvim_buf_get_lines(M.buf, last_line_idx, line_count, false)[1] or ""
 
-    -- Split chunk by newlines and append
+    -- Normalize CRLF to LF before splitting
+    chunk = chunk:gsub("\r\n", "\n"):gsub("\r", "\n")
     local parts = vim.split(chunk, "\n", { plain = true })
     if #parts == 1 then
         vim.api.nvim_buf_set_lines(M.buf, last_line_idx, line_count, false, { last_line .. parts[1] })
@@ -517,7 +518,9 @@ function M.clear()
         vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, welcome)
     end
     M.history = {}
-    
+    M.streaming_buf_line = nil
+    M.streaming_request_id = nil
+
     -- Also clear server history
     if rpc.is_running() then
         rpc.request("poor-cli/clearHistory", {}, function() end)

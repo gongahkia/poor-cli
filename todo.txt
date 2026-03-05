@@ -44,9 +44,6 @@
 # NEOVIM PLUGIN — First-class citizen fixes and features
 # ============================================================================
 
-(B) In nvim-poor-cli/lua/poor-cli/chat.lua line ~149, add depth and size limits to the find command used in workspace context resolution to prevent unbounded filesystem walks +neovim +bugfix
-(B) In nvim-poor-cli/lua/poor-cli/chat.lua line ~245, handle CRLF line endings correctly when splitting streaming chunks +neovim +bugfix
-(B) In nvim-poor-cli/lua/poor-cli/chat.lua clear() function (lines ~508-518), also clear the internal history list to prevent stale data from leaking +neovim +bugfix
 (B) Add a virtual text diagnostic integration that shows poor-cli suggestions inline as Neovim diagnostics (vim.diagnostic) rather than only in the chat panel +neovim +feature
 (B) Add a telescope.nvim picker for checkpoint browsing and restoration directly from Neovim +neovim +feature
 (B) Deduplicate the test file naming pattern logic between commands.lua and chat.lua into a shared utility function in a new nvim-poor-cli/lua/poor-cli/util.lua +neovim +refactor
