@@ -1936,6 +1936,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /copy                Copy last assistant response to clipboard\n\
   /onboarding ...      Guided walkthrough of core commands\n\
   /host-server ...     Start/share/manage host session and members\n\
+  /kick <connection-id> [room]  Kick member in current/target multiplayer room\n\
   /host-server share [viewer|prompter] [room]  Print role-specific join payloads\n\
   /host-server members [room]               List connected room members\n\
   /host-server kick <connection-id> [room]  Remove a connected member\n\
@@ -3883,6 +3884,47 @@ Context Window: {max_context} tokens\n\n\
         }
 
         reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+        return false;
+    }
+
+    if lowered == "/kick" || lowered.starts_with("/kick ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        if args.len() < 2 || args.len() > 3 {
+            show_command_info_popup(
+                app,
+                raw,
+                "Usage: /kick <connection-id> [room]\nIf room is omitted, the current multiplayer room is used."
+                    .to_string(),
+            );
+            return false;
+        }
+
+        let connection_id = args[1];
+        let room = if let Some(explicit_room) = args.get(2).copied() {
+            Some(explicit_room)
+        } else if app.multiplayer_room.is_empty() {
+            None
+        } else {
+            Some(app.multiplayer_room.as_str())
+        };
+
+        match rpc_kick_member_blocking(rpc_cmd_tx, connection_id, room) {
+            Ok(payload) => {
+                let room_name = payload
+                    .get("room")
+                    .and_then(|value| value.as_str())
+                    .or(room)
+                    .unwrap_or("");
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Kicked `{connection_id}` from room `{room_name}`."),
+                );
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to kick `{connection_id}`: {e}"
+            ))),
+        }
         return false;
     }
 
@@ -7377,6 +7419,25 @@ fn rpc_remove_host_member_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for host member removal response".to_string())?
+}
+
+fn rpc_kick_member_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    connection_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::KickMember {
+            connection_id: connection_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request member kick: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for member kick response".to_string())?
 }
 
 fn rpc_set_host_member_role_blocking(

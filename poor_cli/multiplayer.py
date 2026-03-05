@@ -88,6 +88,7 @@ class MultiplayerHost:
         "chat",
         "poor-cli/chat",
         "poor-cli/chatStreaming",
+        "poor-cli/kickMember",
         "poor-cli/inlineComplete",
         "poor-cli/executeCommand",
         "poor-cli/applyEdit",
@@ -735,6 +736,10 @@ class MultiplayerHost:
                 await self._send_rpc(conn.ws, response)
             return
 
+        if method == "poor-cli/kickMember":
+            await self._handle_kick_member(conn, room, message)
+            return
+
         if method in self._QUEUE_METHODS:
             await room.request_queue.put(QueuedRequest(connection_id=conn.connection_id, message=message))
             await self._broadcast_room_event(
@@ -750,6 +755,95 @@ class MultiplayerHost:
             response = await room.server.dispatch(message)
         if message.id is not None:
             await self._send_rpc(conn.ws, response)
+
+    async def _handle_kick_member(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        params = message.params or {}
+        target_connection_id = str(
+            params.get("connectionId", params.get("connection_id", ""))
+        ).strip()
+        target_room = str(params.get("room", room.name)).strip() or room.name
+
+        if conn.role not in {"prompter", "host", "admin"}:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Only host/admin can kick room members",
+                data={"error_code": "permission_denied", "role": conn.role},
+            )
+            return
+
+        if target_room != room.name:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=f"Unknown room: {target_room}",
+                data={"error_code": "ROOM_NOT_FOUND"},
+            )
+            return
+
+        if not target_connection_id:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="connectionId is required",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        if target_connection_id == conn.connection_id:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="Cannot kick your own connection",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        member = room.members.pop(target_connection_id, None)
+        if member is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=f"Unknown connection id: {target_connection_id}",
+                data={"error_code": "MEMBER_NOT_FOUND"},
+            )
+            return
+
+        self.connections.pop(target_connection_id, None)
+        if room.active_connection_id == target_connection_id:
+            room.active_connection_id = None
+
+        try:
+            await member.ws.close(code=4001, message=b"Kicked by host")
+        except Exception:
+            pass
+
+        await self._broadcast_room_event(
+            room,
+            "member_kicked",
+            actor=conn.connection_id,
+            queue_depth=room.request_queue.qsize(),
+            details={"targetConnectionId": target_connection_id},
+        )
+
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "ok": True,
+                        "room": room.name,
+                        "connectionId": target_connection_id,
+                        "kickedBy": conn.connection_id,
+                    },
+                ),
+            )
 
     async def _dispatch_inline_isolated(self, conn: ConnectionState, room: RoomState, message: Any) -> Any:
         if conn.inline_server is None:

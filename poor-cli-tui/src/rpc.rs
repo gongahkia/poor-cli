@@ -1071,6 +1071,18 @@ impl RpcClient {
         self.call("poor-cli/removeHostMember", Value::Object(params))
     }
 
+    pub fn kick_member(&self, connection_id: &str, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "connectionId".into(),
+            Value::String(connection_id.to_string()),
+        );
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/kickMember", Value::Object(params))
+    }
+
     pub fn set_host_member_role(
         &self,
         connection_id: &str,
@@ -1328,6 +1340,11 @@ pub enum RpcCommand {
         room: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
+    KickMember {
+        connection_id: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
     SetHostMemberRole {
         connection_id: String,
         role: String,
@@ -1536,6 +1553,13 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                 reply,
             }) => {
                 let _ = reply.send(client.remove_host_member(&connection_id, room.as_deref()));
+            }
+            Ok(RpcCommand::KickMember {
+                connection_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.kick_member(&connection_id, room.as_deref()));
             }
             Ok(RpcCommand::SetHostMemberRole {
                 connection_id,

@@ -555,3 +555,90 @@ async def test_heartbeat_closes_stale_connection():
                 assert member.connection_id not in room.members
     finally:
         await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_kick_member_rpc_disconnects_target():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as host_ws, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as target_ws:
+                await host_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _ws_recv_json(host_ws)
+                _ = await _ws_recv_json(host_ws)
+
+                await target_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["viewer"]},
+                    }
+                )
+                _ = await _ws_recv_json(target_ws)
+                _ = await _ws_recv_json(target_ws)
+                _ = await _ws_recv_json(host_ws)
+
+                room = host.rooms["dev"]
+                target_connection_id = next(
+                    member.connection_id
+                    for member in room.members.values()
+                    if member.role == "viewer"
+                )
+
+                await host_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 55,
+                        "method": "poor-cli/kickMember",
+                        "params": {"room": "dev", "connectionId": target_connection_id},
+                    }
+                )
+
+                saw_response = False
+                saw_room_event = False
+                for _ in range(8):
+                    payload = await _ws_recv_json(host_ws)
+                    if payload.get("id") == 55:
+                        assert payload.get("result", {}).get("ok") is True
+                        saw_response = True
+                    if payload.get("method") == "poor-cli/roomEvent":
+                        details = payload.get("params", {}).get("details", {})
+                        if details.get("targetConnectionId") == target_connection_id:
+                            saw_room_event = True
+                    if saw_response and saw_room_event:
+                        break
+
+                assert saw_response
+                assert saw_room_event
+
+                for _ in range(20):
+                    if target_connection_id not in host.connections:
+                        break
+                    await asyncio.sleep(0.02)
+                assert target_connection_id not in host.connections
+                assert target_connection_id not in room.members
+
+    finally:
+        await host.stop()
