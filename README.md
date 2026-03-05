@@ -5,23 +5,24 @@
 
 # `poor-cli`
 
-[BYOK](https://en.wikipedia.org/wiki/Bring_your_own_encryption) Agentic Coding Helper *(for the poor man)* that lives in your Terminal *(now also available in **[Neovim](https://neovim.io/)**)*.
+[Multiplayer](#multiplayer-lan--tunnel) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface) and [Neovim](https://neovim.io/) Coding Agent *(optimised for the [poor man](#available-commands))*.
 
-```text
- ____   ___   ___  ____        ____ _     ___
-|  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
-| |_) | | | | | | | |_) |    | |   | |    | |
-|  __/| |_| | |_| |  _ <     | |___| |___ | |
-|_|    \___/ \___/|_| \_\     \____|_____|___|
-```
+<div align="center">
+    <img src="./asset/logo/1.png" width="30%">
+</div>
 
 ## Stack
 
-* *Script*: [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html) 
+* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html) 
 * *Core Dependencies*: [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
 * *Optional Provider Dependencies*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
 * *Development Tools*: [black](https://black.readthedocs.io/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy.readthedocs.io/), [pytest](https://docs.pytest.org/)
 * *Infrastructure*: [SQLite 3](https://www.sqlite.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
+
+## Screenshots
+
+![](./asset/reference/1.png)
+![](./asset/reference/2.png)
 
 ## Usage
 
@@ -132,6 +133,10 @@ require("poor-cli").setup({
 You can use cloudflared, Tailscale funnel, or any reverse tunnel/provider.
 Expose the host `/rpc` endpoint and pass the resulting `ws://` or `wss://` URL
 to `--remote-url` / `multiplayer.url`.
+
+## Model support
+
+...
 
 ## Available Commands
 
@@ -319,12 +324,3 @@ flowchart TB
     ENGINE --> YAML
     FACTORY --> ENV
 ```
-
-## Screenshots
-
-![](./asset/reference/1.png)
-![](./asset/reference/2.png)
-![](./asset/reference/3.png)
-![](./asset/reference/6.png)
-![](./asset/reference/4.png)
-![](./asset/reference/5.png)
