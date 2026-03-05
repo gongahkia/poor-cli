@@ -46,7 +46,7 @@ function M.check()
     end
     
     -- Check for required Python packages
-    local packages = { "google-generativeai", "aiohttp", "rich" }
+    local packages = { "google.genai", "aiohttp", "rich" }
     for _, pkg in ipairs(packages) do
         local result = vim.fn.system("python3 -c \"import " .. pkg:gsub("-", "_") .. "\" 2>&1")
         if vim.v.shell_error == 0 then

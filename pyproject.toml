@@ -28,7 +28,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "google-generativeai>=0.3.0",
     "google-genai>=1.0.0",
     "rich>=13.0.0",
     "PyYAML>=6.0",
@@ -157,7 +156,6 @@ ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = [
-    "google.generativeai.*",
     "google.genai.*",
     "google.ai.*",
     "openai.*",

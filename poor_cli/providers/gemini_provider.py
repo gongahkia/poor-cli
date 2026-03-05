@@ -1,9 +1,8 @@
 """
 Gemini AI Provider Implementation.
 
-Uses the supported `google-genai` SDK and keeps a compatibility bridge for
-legacy `google.generativeai.types.protos.Content` tool-result payloads until
-callers are migrated to provider-native adapters.
+Uses the `google-genai` unified SDK with a compatibility bridge for
+legacy protobuf Content tool-result payloads.
 """
 
 import asyncio
