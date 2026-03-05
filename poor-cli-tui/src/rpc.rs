@@ -1055,6 +1055,14 @@ impl RpcClient {
         self.call("poor-cli/listHostMembers", Value::Object(params))
     }
 
+    pub fn list_room_members(&self, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/listRoomMembers", Value::Object(params))
+    }
+
     pub fn remove_host_member(
         &self,
         connection_id: &str,
@@ -1335,6 +1343,10 @@ pub enum RpcCommand {
         room: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
+    ListRoomMembers {
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
     RemoveHostMember {
         connection_id: String,
         room: Option<String>,
@@ -1546,6 +1558,9 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ListHostMembers { room, reply }) => {
                 let _ = reply.send(client.list_host_members(room.as_deref()));
+            }
+            Ok(RpcCommand::ListRoomMembers { room, reply }) => {
+                let _ = reply.send(client.list_room_members(room.as_deref()));
             }
             Ok(RpcCommand::RemoveHostMember {
                 connection_id,

@@ -46,6 +46,8 @@ class ConnectionState:
     inline_server: Any = None
     joined_at: Optional[str] = None
     approved: bool = True
+    connected_at: float = field(default_factory=time.time)
+    last_active: float = field(default_factory=time.time)
     last_pong: float = field(default_factory=time.monotonic)
     request_timestamps: Deque[float] = field(default_factory=deque)
 
@@ -207,6 +209,24 @@ class MultiplayerHost:
                 }
             )
         members.sort(key=lambda entry: entry["connectionId"])
+        return members
+
+    def _list_room_member_payload(self, room: RoomState) -> List[Dict[str, Any]]:
+        members: List[Dict[str, Any]] = []
+        for connection_id, member in room.members.items():
+            members.append(
+                {
+                    "connection_id": connection_id,
+                    "role": member.role or "unknown",
+                    "connected_at": member.connected_at,
+                    "last_active": member.last_active,
+                    "is_active_prompter": (
+                        member.role == "prompter"
+                        and room.active_connection_id == connection_id
+                    ),
+                }
+            )
+        members.sort(key=lambda entry: entry["connection_id"])
         return members
 
     def _record_activity(
@@ -608,6 +628,7 @@ class MultiplayerHost:
             async for incoming in ws:
                 if incoming.type == WSMsgType.PONG:
                     conn.last_pong = time.monotonic()
+                    conn.last_active = time.time()
                     continue
                 if incoming.type != WSMsgType.TEXT:
                     if incoming.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED}:
@@ -646,6 +667,7 @@ class MultiplayerHost:
 
     async def _handle_message(self, conn: ConnectionState, message: Any) -> None:
         conn.last_pong = time.monotonic()
+        conn.last_active = time.time()
 
         if not conn.initialized:
             if message.method != "initialize":
@@ -742,6 +764,32 @@ class MultiplayerHost:
 
         if method == "poor-cli/kickMember":
             await self._handle_kick_member(conn, room, message)
+            return
+
+        if method == "poor-cli/listRoomMembers":
+            params = message.params or {}
+            room_name = str(params.get("room", room.name)).strip() or room.name
+            if room_name != room.name:
+                await self._send_error_response(
+                    conn.ws,
+                    request_id=message.id,
+                    code=self.rpc_error_cls.INVALID_PARAMS,
+                    message=f"Unknown room: {room_name}",
+                    data={"error_code": "ROOM_NOT_FOUND"},
+                )
+                return
+
+            if message.id is not None:
+                await self._send_rpc(
+                    conn.ws,
+                    self.message_cls(
+                        id=message.id,
+                        result={
+                            "room": room.name,
+                            "members": self._list_room_member_payload(room),
+                        },
+                    ),
+                )
             return
 
         if method in self._QUEUE_METHODS:

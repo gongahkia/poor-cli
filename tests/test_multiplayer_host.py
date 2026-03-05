@@ -734,3 +734,69 @@ async def test_rate_limit_per_connection_blocks_flooding_not_other_members():
                 assert other.get("result", {}).get("content") == "done"
     finally:
         await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_list_room_members_rpc_available_to_authenticated_viewer():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as prompter_ws, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as viewer_ws:
+                await prompter_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _ws_recv_json(prompter_ws)
+                _ = await _ws_recv_json(prompter_ws)
+
+                await viewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["viewer"]},
+                    }
+                )
+                _ = await _ws_recv_json(viewer_ws)
+                _ = await _ws_recv_json(viewer_ws)
+                _ = await _ws_recv_json(prompter_ws)
+
+                await viewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 99,
+                        "method": "poor-cli/listRoomMembers",
+                        "params": {"room": "dev"},
+                    }
+                )
+                payload = await _wait_for_response_id(viewer_ws, 99)
+                result = payload.get("result", {})
+                assert result.get("room") == "dev"
+                members = result.get("members")
+                assert isinstance(members, list)
+                assert len(members) == 2
+                assert all("connection_id" in member for member in members)
+                assert all("role" in member for member in members)
+                assert all("connected_at" in member for member in members)
+                assert all("last_active" in member for member in members)
+                assert all("is_active_prompter" in member for member in members)
+    finally:
+        await host.stop()

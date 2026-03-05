@@ -1937,6 +1937,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /onboarding ...      Guided walkthrough of core commands\n\
   /host-server ...     Start/share/manage host session and members\n\
   /kick <connection-id> [room]  Kick member in current/target multiplayer room\n\
+  /who [room]          List room members in multiplayer session\n\
+  /members [room]      Alias for /who\n\
   /host-server share [viewer|prompter] [room]  Print role-specific join payloads\n\
   /host-server members [room]               List connected room members\n\
   /host-server kick <connection-id> [room]  Remove a connected member\n\
@@ -3923,6 +3925,34 @@ Context Window: {max_context} tokens\n\n\
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to kick `{connection_id}`: {e}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/who"
+        || lowered.starts_with("/who ")
+        || lowered == "/members"
+        || lowered.starts_with("/members ")
+    {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        if args.len() > 2 {
+            show_command_info_popup(app, raw, "Usage: /who [room]".to_string());
+            return false;
+        }
+
+        let room = if let Some(explicit_room) = args.get(1).copied() {
+            Some(explicit_room)
+        } else if app.multiplayer_room.is_empty() {
+            None
+        } else {
+            Some(app.multiplayer_room.as_str())
+        };
+
+        match rpc_list_room_members_blocking(rpc_cmd_tx, room) {
+            Ok(payload) => show_command_info_popup(app, raw, format_room_members_payload(&payload)),
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to fetch room members: {e}"
             ))),
         }
         return false;
@@ -6261,6 +6291,53 @@ fn format_host_members_payload(payload: &Value) -> String {
     lines.join("\n")
 }
 
+fn format_room_members_payload(payload: &Value) -> String {
+    let room = payload
+        .get("room")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let members = payload
+        .get("members")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if members.is_empty() {
+        return format!("No members connected in room `{room}`.");
+    }
+
+    let mut lines = vec![format!("**Room Members** `{room}` ({})", members.len())];
+    for member in members {
+        let connection_id = member
+            .get("connection_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let role = member
+            .get("role")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let connected_at = member
+            .get("connected_at")
+            .and_then(|value| value.as_f64())
+            .map(|value| format!("{value:.0}"))
+            .unwrap_or_else(|| "-".to_string());
+        let last_active = member
+            .get("last_active")
+            .and_then(|value| value.as_f64())
+            .map(|value| format!("{value:.0}"))
+            .unwrap_or_else(|| "-".to_string());
+        let active_prompter = member
+            .get("is_active_prompter")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let active_marker = if active_prompter { " *active" } else { "" };
+        lines.push(format!(
+            "- `{connection_id}` role=`{role}`{active_marker} connected_at={connected_at} last_active={last_active}"
+        ));
+    }
+    lines.join("\n")
+}
+
 fn service_usage_text() -> &'static str {
     "Usage: /service status [name]\n\
        /service start <name> [command...]\n\
@@ -7400,6 +7477,23 @@ fn rpc_list_host_members_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for host members response".to_string())?
+}
+
+fn rpc_list_room_members_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListRoomMembers {
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request room members: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for room members response".to_string())?
 }
 
 fn rpc_remove_host_member_blocking(
