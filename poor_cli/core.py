@@ -6,6 +6,7 @@ the Neovim plugin.
 """
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
@@ -28,6 +29,16 @@ from .exceptions import (
 )
 
 logger = setup_logger(__name__)
+
+_DEFAULT_CONFIDENCE_PERCENT = 50
+_CONFIDENCE_PERCENT_RE = re.compile(r"confidence\s*[:\-]\s*(\d{1,3})\s*%", re.IGNORECASE)
+_CONFIDENCE_BANDS: Tuple[Tuple[int, str, str], ...] = (
+    (20, "Very Low", "0-20%"),
+    (40, "Low", "21-40%"),
+    (60, "Moderate", "41-60%"),
+    (80, "High", "61-80%"),
+    (100, "Very High", "81-100%"),
+)
 
 
 # ── CoreEvent: structured events yielded by the agentic loop ─────────
@@ -312,6 +323,53 @@ class PoorCLICore:
                 return "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
         return message
 
+    @staticmethod
+    def _confidence_bucket(percent: int) -> Tuple[str, str]:
+        """Map confidence percentage to one of five confidence categories."""
+        bounded = max(0, min(percent, 100))
+        for upper_bound, category, band in _CONFIDENCE_BANDS:
+            if bounded <= upper_bound:
+                return category, band
+        return "Very High", "81-100%"
+
+    @staticmethod
+    def _extract_confidence_percent(response_text: str) -> Optional[int]:
+        """Extract the model-reported confidence percentage when present."""
+        matches = list(_CONFIDENCE_PERCENT_RE.finditer(response_text))
+        if not matches:
+            return None
+        raw_percent = int(matches[-1].group(1))
+        return max(0, min(raw_percent, 100))
+
+    def _build_confidence_line(self, percent: int) -> str:
+        """Build the normalized confidence line shown to users."""
+        category, band = self._confidence_bucket(percent)
+        return f"Confidence: {percent}% ({category}: {band})"
+
+    def _ensure_confidence_line(self, response_text: str) -> Tuple[str, str]:
+        """
+        Ensure every non-empty response ends with a confidence score line.
+
+        Returns:
+            Tuple of (final_text, appended_suffix). appended_suffix is empty when
+            no new confidence text was added.
+        """
+        trimmed = response_text.rstrip()
+        if not trimmed:
+            return response_text, ""
+
+        percent = self._extract_confidence_percent(trimmed)
+        if percent is None:
+            percent = _DEFAULT_CONFIDENCE_PERCENT
+
+        confidence_line = self._build_confidence_line(percent)
+        if trimmed.endswith(confidence_line):
+            return trimmed, ""
+
+        separator = "\n\n"
+        appended_suffix = f"{separator}{confidence_line}"
+        return f"{trimmed}{appended_suffix}", appended_suffix
+
     async def send_message_events(
         self,
         message: str,
@@ -398,6 +456,10 @@ class PoorCLICore:
                 elif chunk.content:
                     accumulated_text += chunk.content
                     yield CoreEvent.text_chunk(chunk.content, request_id)
+
+            accumulated_text, confidence_suffix = self._ensure_confidence_line(accumulated_text)
+            if confidence_suffix:
+                yield CoreEvent.text_chunk(confidence_suffix, request_id)
 
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
@@ -551,6 +613,10 @@ class PoorCLICore:
                     accumulated_text += chunk.content
                     yield chunk.content
 
+            accumulated_text, confidence_suffix = self._ensure_confidence_line(accumulated_text)
+            if confidence_suffix:
+                yield confidence_suffix
+
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
 
@@ -672,6 +738,8 @@ class PoorCLICore:
                 if response.content:
                     accumulated_text += response.content
             
+            accumulated_text, _ = self._ensure_confidence_line(accumulated_text)
+
             # Save assistant response to history
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)

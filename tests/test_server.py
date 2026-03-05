@@ -256,6 +256,16 @@ class TestJsonRpcError:
         assert error["data"] == {"details": "missing field"}
 
 
+class TestServerModuleEntrypoint:
+    """Test server package module entrypoint wiring."""
+
+    def test_server_package_has_main_module_entrypoint(self):
+        """`python -m poor_cli.server` requires `poor_cli.server.__main__`."""
+        import poor_cli.server.__main__ as server_main
+
+        assert callable(server_main.main)
+
+
 class TestErrorSanitization:
     """Test server-side error message cleanup helpers."""
 
