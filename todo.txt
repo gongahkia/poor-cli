@@ -27,7 +27,6 @@
 # PLAN SYSTEM — Make it reliable
 # ============================================================================
 
-(B) In plan_analyzer.py, add a maximum step count limit (e.g., 200) to prevent unbounded plan generation +plan +bugfix
 (B) In plan_history.py, validate that recorded plan_data matches the expected plan structure schema before persisting to SQLite +plan +bugfix
 (B) Cache the result of ProjectDetector.get_ignore_rules() instead of re-extending the list on every call in checkpoint_strategies.py line ~186 +plan +refactor
 

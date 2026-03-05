@@ -91,7 +91,13 @@ class PlanAnalyzer:
         Returns:
             The created PlanStep
         """
+        MAX_PLAN_STEPS = 200
         step_number = len(plan.steps) + 1
+        if step_number > MAX_PLAN_STEPS:
+            raise ValueError(
+                f"Plan exceeds maximum of {MAX_PLAN_STEPS} steps. "
+                "Consider breaking this into smaller plans."
+            )
 
         # Determine step type
         step_type = self._map_function_to_step_type(function_name)
