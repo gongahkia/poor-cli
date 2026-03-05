@@ -38,7 +38,7 @@ class CommandValidator:
 
     # Dangerous patterns that should never be allowed
     CRITICAL_PATTERNS = [
-        r'rm\s+-rf\s+/',  # Recursive delete from root
+        r'(?:/usr)?(?:/bin/)?rm\s+-rf\s+/',  # Recursive delete from root
         r'mkfs',  # Format filesystem
         r'dd\s+if=/dev/zero',  # Disk wipe
         r'fork\s*bomb|:\(\)\{',  # Fork bomb
@@ -49,9 +49,9 @@ class CommandValidator:
 
     # High risk patterns that require approval
     HIGH_RISK_PATTERNS = [
-        r'rm\s+-rf',  # Recursive delete
-        r'rm\s+-fr',  # Recursive delete (reversed flags)
-        r'sudo\s+rm',  # Delete with elevated privileges
+        r'(?:/usr)?(?:/bin/)?rm\s+-rf',  # Recursive delete
+        r'(?:/usr)?(?:/bin/)?rm\s+-fr',  # Recursive delete (reversed flags)
+        r'sudo\s+(?:/usr)?(?:/bin/)?rm',  # Delete with elevated privileges
         r'curl.*\|\s*bash',  # Pipe to bash
         r'wget.*\|\s*sh',  # Pipe to shell
         r'eval\s+',  # Evaluate arbitrary code
