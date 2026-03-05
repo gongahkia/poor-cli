@@ -34,71 +34,71 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 5
           command: |
-          python - <<'PY'
-          import json
-          import subprocess
+            python - <<'PY'
+            import json
+            import subprocess
 
-          proc = subprocess.Popen(
-              ["python", "-m", "poor_cli.server", "--stdio"],
-              stdin=subprocess.PIPE,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-          )
+            proc = subprocess.Popen(
+                ["python", "-m", "poor_cli.server", "--stdio"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
 
-          def send(message):
-              body = json.dumps(message).encode("utf-8")
-              header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
-              proc.stdin.write(header + body)
-              proc.stdin.flush()
+            def send(message):
+                body = json.dumps(message).encode("utf-8")
+                header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
+                proc.stdin.write(header + body)
+                proc.stdin.flush()
 
-          def read_message():
-              header = b""
-              while b"\r\n\r\n" not in header:
-                  chunk = proc.stdout.read(1)
-                  if not chunk:
-                      raise RuntimeError("Unexpected EOF while reading response headers")
-                  header += chunk
+            def read_message():
+                header = b""
+                while b"\r\n\r\n" not in header:
+                    chunk = proc.stdout.read(1)
+                    if not chunk:
+                        raise RuntimeError("Unexpected EOF while reading response headers")
+                    header += chunk
 
-              header_text, _, body_prefix = header.partition(b"\r\n\r\n")
-              content_length = 0
-              for line in header_text.decode("utf-8").split("\r\n"):
-                  if line.lower().startswith("content-length:"):
-                      content_length = int(line.split(":", 1)[1].strip())
-                      break
+                header_text, _, body_prefix = header.partition(b"\r\n\r\n")
+                content_length = 0
+                for line in header_text.decode("utf-8").split("\r\n"):
+                    if line.lower().startswith("content-length:"):
+                        content_length = int(line.split(":", 1)[1].strip())
+                        break
 
-              if content_length <= 0:
-                  raise RuntimeError("Missing or invalid Content-Length in response")
+                if content_length <= 0:
+                    raise RuntimeError("Missing or invalid Content-Length in response")
 
-              body = body_prefix
-              while len(body) < content_length:
-                  chunk = proc.stdout.read(content_length - len(body))
-                  if not chunk:
-                      raise RuntimeError("Unexpected EOF while reading response body")
-                  body += chunk
+                body = body_prefix
+                while len(body) < content_length:
+                    chunk = proc.stdout.read(content_length - len(body))
+                    if not chunk:
+                        raise RuntimeError("Unexpected EOF while reading response body")
+                    body += chunk
 
-              return json.loads(body[:content_length].decode("utf-8"))
+                return json.loads(body[:content_length].decode("utf-8"))
 
-          send(
-              {
-                  "jsonrpc": "2.0",
-                  "id": 1,
-                  "method": "initialize",
-                  "params": {"permissionMode": "prompt"},
-              }
-          )
-          init_response = read_message()
-          assert init_response.get("id") == 1, f"initialize response id mismatch: {init_response}"
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {"permissionMode": "prompt"},
+                }
+            )
+            init_response = read_message()
+            assert init_response.get("id") == 1, f"initialize response id mismatch: {init_response}"
 
-          send({"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}})
-          shutdown_response = read_message()
-          assert shutdown_response.get("id") == 2, f"shutdown response id mismatch: {shutdown_response}"
-          assert "error" not in shutdown_response, f"shutdown failed: {shutdown_response}"
+            send({"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}})
+            shutdown_response = read_message()
+            assert shutdown_response.get("id") == 2, f"shutdown response id mismatch: {shutdown_response}"
+            assert "error" not in shutdown_response, f"shutdown failed: {shutdown_response}"
 
-          proc.wait(timeout=10)
-          if proc.returncode not in (0, None):
-              stderr_text = proc.stderr.read().decode("utf-8", errors="replace")
-              raise RuntimeError(f"Server exited with status {proc.returncode}: {stderr_text}")
-          PY
+            proc.wait(timeout=10)
+            if proc.returncode not in (0, None):
+                stderr_text = proc.stderr.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Server exited with status {proc.returncode}: {stderr_text}")
+            PY
 
       - name: Run linting
         run: |
