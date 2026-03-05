@@ -47,6 +47,7 @@ M.defaults = {
     trigger_delay = 500,   -- Debounce delay in ms for auto-trigger
     request_timeout = 15000, -- RPC request timeout in ms
     auto_fix_diagnostics = false, -- Auto-suggest fix for error diagnostics
+    diagnostics_enabled = false, -- Show assistant file:line suggestions as diagnostics
 
     -- Keymaps for partial acceptance
     accept_line_key = "<Tab>",   -- Accept current line of ghost text

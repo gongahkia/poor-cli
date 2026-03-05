@@ -13,6 +13,7 @@
 - 🛠️ **AI Commands** - Explain, Refactor, Generate Tests, Generate Docs
 - ⚡ **Streaming Responses** - Real-time AI output
 - 🎯 **Context-Aware** - Uses open buffers as context
+- 🩺 **Inline Diagnostics** - Optional file:line suggestions as Neovim diagnostics
 - 🔐 **BYOK** - Bring Your Own Key, no subscription needed
 
 ## 📦 Installation
@@ -94,6 +95,7 @@ require("poor-cli").setup({
     -- Auto-completion
     auto_trigger = false,   -- Auto-trigger on CursorHoldI
     trigger_delay = 500,    -- Delay in ms for auto-trigger
+    diagnostics_enabled = false, -- Show assistant file:line hints as diagnostics
     
     -- Debug
     debug = false,          -- Enable debug logging
@@ -126,6 +128,7 @@ require("poor-cli").setup({
 | `:PoorCliChat` | Toggle chat panel |
 | `:PoorCliSend [message]` | Send message to chat |
 | `:PoorCliClear` | Clear chat history |
+| `:PoorCliDiagnostics` | Toggle assistant diagnostics integration |
 | `:PoorCliComplete` | Trigger inline completion |
 | `:PoorCliAccept` | Accept current completion |
 | `:PoorCliDismiss` | Dismiss current completion |

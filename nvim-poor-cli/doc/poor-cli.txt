@@ -83,6 +83,11 @@ auto_trigger ~
     Default: false
     Automatically trigger completion on CursorHoldI.
 
+                                                        *poor-cli-config.diagnostics_enabled*
+diagnostics_enabled ~
+    Default: false
+    Enable assistant file:line suggestions as inline diagnostics.
+
 COMMANDS                                                *poor-cli-commands*
 
 :PoorCliStart                                           *:PoorCliStart*
@@ -102,6 +107,9 @@ COMMANDS                                                *poor-cli-commands*
 
 :PoorCliClear                                           *:PoorCliClear*
     Clear chat history.
+
+:PoorCliDiagnostics                                     *:PoorCliDiagnostics*
+    Toggle assistant diagnostics integration.
 
 :PoorCliComplete                                        *:PoorCliComplete*
     Trigger inline completion at cursor.

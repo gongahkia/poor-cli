@@ -7,6 +7,7 @@ function M.setup()
     local rpc = require("poor-cli.rpc")
     local chat = require("poor-cli.chat")
     local inline = require("poor-cli.inline")
+    local diagnostics = require("poor-cli.diagnostics")
     
     -- Server control
     vim.api.nvim_create_user_command("PoorCliStart", function()
@@ -47,6 +48,10 @@ function M.setup()
     vim.api.nvim_create_user_command("PoorCliClear", function()
         chat.clear()
     end, { desc = "Clear chat history" })
+
+    vim.api.nvim_create_user_command("PoorCliDiagnostics", function()
+        diagnostics.toggle()
+    end, { desc = "Toggle poor-cli inline diagnostics" })
     
     -- Completion commands
     vim.api.nvim_create_user_command("PoorCliComplete", function()

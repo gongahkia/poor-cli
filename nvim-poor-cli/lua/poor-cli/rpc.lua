@@ -351,12 +351,12 @@ end
 -- Handle notifications from server
 function M.handle_notification(message)
     local params = message.params or {}
-    if message.method == "poor-cli/streamChunk" then
+    if message.method == "poor-cli/streamChunk" or message.method == "poor-cli/streamingChunk" then
         vim.api.nvim_exec_autocmds("User", {
             pattern = "PoorCliStreamChunk",
             data = {
                 request_id = params.requestId or "",
-                chunk = params.chunk or "",
+                chunk = params.chunk or params.content or "",
                 done = params.done or false,
                 reason = params.reason,
             },

@@ -3,6 +3,7 @@
 
 local config = require("poor-cli.config")
 local rpc = require("poor-cli.rpc")
+local diagnostics = require("poor-cli.diagnostics")
 
 local M = {}
 
@@ -16,6 +17,7 @@ M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
 M.loading_marker = nil
 M.streaming_buf_line = nil -- line where current streaming response starts
 M.streaming_request_id = nil
+M.streaming_response_text = nil
 
 -- Open chat panel
 function M.open()
@@ -126,6 +128,10 @@ function M.append_message(role, content)
     
     -- Store in history
     table.insert(M.history, { role = role, content = content })
+
+    if role == "assistant" then
+        diagnostics.apply_from_text(content)
+    end
 end
 
 -- Resolve @file:path and @workspace mentions, returns expanded message + extra context files
@@ -173,6 +179,7 @@ function M.send(message)
     -- Resolve @ mentions
     local resolved_msg, mention_files = M._resolve_mentions(message)
 
+    diagnostics.clear()
     M.append_message("user", message) -- show original in chat
     local context_files = M.get_context_files()
     for _, f in ipairs(mention_files) do
@@ -206,6 +213,7 @@ function M._start_streaming_block()
     local header = { "## 🤖 Assistant", "" }
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, header)
     M.streaming_buf_line = line_count + #header -- 0-indexed line where text goes
+    M.streaming_response_text = ""
 end
 
 -- Append a streaming chunk to the current block
@@ -219,6 +227,7 @@ function M._append_streaming_chunk(chunk)
     if not chunk or chunk == "" then
         return
     end
+    M.streaming_response_text = (M.streaming_response_text or "") .. chunk
 
     -- Get current last line of the streaming block
     local line_count = vim.api.nvim_buf_line_count(M.buf)
@@ -254,8 +263,10 @@ function M._finalize_streaming_block()
         local line_count = vim.api.nvim_buf_line_count(M.buf)
         vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "", "---", "" })
     end
+    diagnostics.apply_from_text(M.streaming_response_text or "")
     M.streaming_buf_line = nil
     M.streaming_request_id = nil
+    M.streaming_response_text = nil
 end
 
 -- Setup streaming autocmds
@@ -520,6 +531,8 @@ function M.clear()
     M.history = {}
     M.streaming_buf_line = nil
     M.streaming_request_id = nil
+    M.streaming_response_text = nil
+    diagnostics.clear()
 
     -- Also clear server history
     if rpc.is_running() then
