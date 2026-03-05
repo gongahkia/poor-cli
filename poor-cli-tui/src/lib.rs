@@ -1,4 +1,6 @@
 pub mod app;
+#[path = "commands_lib.rs"]
+pub mod commands;
 pub mod event;
 pub mod helpers;
 pub mod input;
