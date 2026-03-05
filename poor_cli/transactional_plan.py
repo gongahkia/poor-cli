@@ -124,7 +124,10 @@ class TransactionalPlanExecutor(PlanExecutor):
         """
         try:
             self.console.print(
-                "\n[yellow]⚠️  Rolling back changes...[/yellow]"
+                "\n[yellow]⚠️  Rolling back changes...[/yellow]\n"
+                "[dim]Note: Rollback restores file contents only. Side effects like "
+                "pushed git commits, sent network requests, or database changes "
+                "cannot be undone.[/dim]"
             )
 
             restored = self.checkpoint_manager.restore_checkpoint(checkpoint_id)

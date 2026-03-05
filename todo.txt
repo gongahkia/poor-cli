@@ -27,7 +27,6 @@
 # PLAN SYSTEM — Make it reliable
 # ============================================================================
 
-(B) Add a warning/disclaimer in transactional_plan.py that rollback cannot undo side effects like pushed git commits or sent network requests +plan +feature
 (B) In plan_executor.py line ~180, prompt the user for confirmation before continuing after a step failure instead of silently proceeding +plan +bugfix
 (B) In plan_display.py line ~245-276, add input validation when parsing comma-separated step numbers; reject non-numeric input with an error message instead of silently dropping it +plan +bugfix
 (B) In plan_display.py line ~115-116, show a truncation indicator (...) when descriptions exceed 50 chars instead of silently truncating +plan +bugfix
