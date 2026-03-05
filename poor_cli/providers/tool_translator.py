@@ -259,20 +259,29 @@ class ToolTranslator:
         Returns:
             Tools in canonical format (Gemini format)
         """
+        if not isinstance(tools, list):
+            raise ValueError(f"Expected list of tool definitions, got {type(tools).__name__}")
+        for i, tool in enumerate(tools):
+            if not isinstance(tool, dict):
+                raise ValueError(f"Tool at index {i} must be a dict, got {type(tool).__name__}")
+
         if provider == ProviderType.GEMINI:
             return tools
 
         elif provider in [ProviderType.OPENAI, ProviderType.OLLAMA]:
             canonical_tools = []
             for tool in tools:
-                if "function" in tool:
-                    func = tool["function"]
-                    params = cls._convert_types_uppercase(func.get("parameters", {}))
-                    canonical_tools.append({
-                        "name": func["name"],
-                        "description": func["description"],
-                        "parameters": params
-                    })
+                if "function" not in tool:
+                    raise ValueError(
+                        f"OpenAI/Ollama tool missing 'function' key: {list(tool.keys())}"
+                    )
+                func = tool["function"]
+                params = cls._convert_types_uppercase(func.get("parameters", {}))
+                canonical_tools.append({
+                    "name": func["name"],
+                    "description": func["description"],
+                    "parameters": params
+                })
             return canonical_tools
 
         elif provider in [ProviderType.ANTHROPIC, ProviderType.CLAUDE]:

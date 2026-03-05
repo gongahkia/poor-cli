@@ -71,7 +71,6 @@
 # PROVIDER SYSTEM
 # ============================================================================
 
-(B) In poor_cli/providers/tool_translator.py from_provider_format(), add input structure validation to reject malformed tool definitions with a clear error message instead of silently producing broken output +provider +bugfix
 (B) In poor_cli/providers/tool_translator.py, add unit tests covering round-trip translation (canonical → provider → canonical) for all 4 provider formats +provider +infra
 (B) Abstract the manual provider-specific error parsing in server.py (Gemini/OpenAI/Anthropic error format differences) into provider-specific error_from_response() methods on each provider class +provider +refactor
 
