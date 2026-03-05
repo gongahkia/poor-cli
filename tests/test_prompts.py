@@ -137,6 +137,13 @@ class TestToolCallingSystemInstruction:
         assert "/tmp/project" in instruction
         assert "TOOL CALLING" in instruction
 
+    def test_includes_confidence_output_rules(self):
+        instruction = build_tool_calling_system_instruction("/tmp/project")
+
+        assert "CONFIDENCE OUTPUT RULES" in instruction
+        assert "Very Low: 0-20%" in instruction
+        assert "Very High: 81-100%" in instruction
+
 
 class TestFormatPrompt:
     """Test prompt formatting."""
