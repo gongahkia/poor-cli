@@ -1706,7 +1706,8 @@ mod tests {
     #[test]
     fn parse_stream_chunk_notification() {
         let params = json!({"requestId": "r1", "chunk": "hello", "done": false});
-        let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
+        let n = parse_notification("poor-cli/streamChunk", &params)
+            .expect("streamChunk notification should parse");
         match n {
             ServerNotification::StreamChunk {
                 request_id,
@@ -1726,7 +1727,8 @@ mod tests {
     #[test]
     fn parse_streaming_chunk_notification() {
         let params = json!({"requestId": "r9", "content": "partial", "done": false});
-        let n = parse_notification("poor-cli/streamingChunk", &params).unwrap();
+        let n = parse_notification("poor-cli/streamingChunk", &params)
+            .expect("streamingChunk notification should parse");
         match n {
             ServerNotification::StreamChunk {
                 request_id,
@@ -1745,7 +1747,8 @@ mod tests {
     #[test]
     fn parse_stream_chunk_done() {
         let params = json!({"requestId": "r1", "chunk": "", "done": true, "reason": "complete"});
-        let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
+        let n = parse_notification("poor-cli/streamChunk", &params)
+            .expect("streamChunk done notification should parse");
         match n {
             ServerNotification::StreamChunk { done, reason, .. } => {
                 assert!(done);
@@ -1763,7 +1766,8 @@ mod tests {
             "toolResult": "ok", "diff": "--- a\n+++ b",
             "iterationIndex": 2, "iterationCap": 10,
         });
-        let n = parse_notification("poor-cli/toolEvent", &params).unwrap();
+        let n =
+            parse_notification("poor-cli/toolEvent", &params).expect("toolEvent should parse");
         match n {
             ServerNotification::ToolEvent {
                 diff,
@@ -1782,7 +1786,8 @@ mod tests {
     #[test]
     fn parse_permission_request() {
         let params = json!({"requestId": "r1", "toolName": "bash", "toolArgs": {"cmd": "ls"}, "promptId": "p1"});
-        let n = parse_notification("poor-cli/permissionReq", &params).unwrap();
+        let n = parse_notification("poor-cli/permissionReq", &params)
+            .expect("permissionReq should parse");
         match n {
             ServerNotification::PermissionRequest {
                 prompt_id,
@@ -1799,7 +1804,7 @@ mod tests {
     #[test]
     fn parse_progress() {
         let params = json!({"requestId": "r1", "phase": "thinking", "message": "analyzing", "iterationIndex": 3, "iterationCap": 25});
-        let n = parse_notification("poor-cli/progress", &params).unwrap();
+        let n = parse_notification("poor-cli/progress", &params).expect("progress should parse");
         match n {
             ServerNotification::Progress {
                 phase,
@@ -1816,7 +1821,8 @@ mod tests {
     #[test]
     fn parse_cost_update() {
         let params = json!({"requestId": "r1", "inputTokens": 500, "outputTokens": 200, "estimatedCost": 0.05});
-        let n = parse_notification("poor-cli/costUpdate", &params).unwrap();
+        let n =
+            parse_notification("poor-cli/costUpdate", &params).expect("costUpdate should parse");
         match n {
             ServerNotification::CostUpdate {
                 input_tokens,
@@ -1846,7 +1852,8 @@ mod tests {
             "preset": "review",
             "members": [{"connectionId": "c-1", "role": "prompter"}]
         });
-        let n = parse_notification("poor-cli/roomEvent", &params).unwrap();
+        let n =
+            parse_notification("poor-cli/roomEvent", &params).expect("roomEvent should parse");
         match n {
             ServerNotification::RoomEvent {
                 room,
@@ -1875,7 +1882,8 @@ mod tests {
             "connectionId": "c-2",
             "role": "viewer"
         });
-        let n = parse_notification("poor-cli/memberRoleUpdated", &params).unwrap();
+        let n = parse_notification("poor-cli/memberRoleUpdated", &params)
+            .expect("memberRoleUpdated should parse");
         match n {
             ServerNotification::MemberRoleUpdated {
                 room,
@@ -1899,7 +1907,8 @@ mod tests {
     #[test]
     fn parse_notification_missing_fields_uses_defaults() {
         let params = json!({});
-        let n = parse_notification("poor-cli/streamChunk", &params).unwrap();
+        let n = parse_notification("poor-cli/streamChunk", &params)
+            .expect("defaulted streamChunk should parse");
         match n {
             ServerNotification::StreamChunk {
                 request_id,
@@ -1920,7 +1929,7 @@ mod tests {
         let body = r#"{"jsonrpc":"2.0","id":1,"result":"ok"}"#;
         let framed = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
         let mut reader = std::io::BufReader::new(framed.as_bytes());
-        let result = read_one_message(&mut reader).unwrap();
+        let result = read_one_message(&mut reader).expect("framed JSON-RPC payload should parse");
         assert_eq!(result, body);
     }
 
