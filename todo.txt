@@ -71,4 +71,3 @@
 # GENERAL CLEANUP
 # ============================================================================
 
-(B) Run ruff check --fix across the entire Python codebase to auto-fix any remaining linting issues flagged by the existing ruff config +cleanup
