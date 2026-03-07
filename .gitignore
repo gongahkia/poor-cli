@@ -6,5 +6,5 @@ __pycache__/
 out/
 out_cli_check/
 *.glb
-*.png
+corpus/*.png
 *.egg-info/
