@@ -41,8 +41,6 @@ async function checkStatus() {
     } else {
       statusEl.textContent = data.reason || 'Chat unavailable';
       statusEl.style.display = '';
-      inputEl.disabled = true;
-      sendBtn.disabled = true;
     }
   } catch { statusEl.textContent = 'Chat server not reachable'; statusEl.style.display = ''; }
 }
@@ -55,7 +53,8 @@ function appendMessage(role, text) {
 }
 async function send() {
   const text = inputEl.value.trim();
-  if (!text || !available) return;
+  if (!text) return;
+  if (!available) { appendMessage('error', 'No API key configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY and restart.'); return; }
   inputEl.value = '';
   appendMessage('user', text);
   inputEl.disabled = true;

@@ -182,6 +182,30 @@ kbd {
   padding: 6px 14px; cursor: pointer; font-size: 12px;
 }
 #chat-send:hover { background: #3a7a5a; }
+#chat-settings-btn {
+  background: none; border: none; color: #888; cursor: pointer;
+  font-size: 14px; padding: 0 4px; line-height: 1;
+}
+#chat-settings-btn:hover { color: #eee; }
+#chat-settings {
+  padding: 8px 12px; border-bottom: 1px solid #333;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.chat-key-row {
+  display: flex; align-items: center; gap: 6px; font-size: 11px; color: #ccc;
+}
+.chat-key-row label { min-width: 50px; }
+.chat-key-row select, .chat-key-row input[type="password"] {
+  flex: 1; background: #222; border: 1px solid #555; color: #ddd;
+  border-radius: 3px; padding: 4px 6px; font-size: 11px; outline: none;
+}
+.chat-key-row input[type="password"]:focus { border-color: #5a9; }
+#chat-key-save {
+  background: #2a6a4a; border: 1px solid #4a9; color: #fff; border-radius: 3px;
+  padding: 3px 12px; cursor: pointer; font-size: 11px;
+}
+#chat-key-save:hover { background: #3a7a5a; }
+#chat-key-status { font-size: 10px; color: #5a9; }
 /* command palette */
 #cmd-palette {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;

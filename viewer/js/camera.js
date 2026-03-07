@@ -88,8 +88,8 @@ function exitFps() {
   document.getElementById('fps-crosshair').style.display = 'none';
   document.getElementById('fps-hint').style.display = 'none';
   document.getElementById('fps-btn').classList.remove('active');
-  velocity.set(0, 0, 0);
   for (const k in moveState) moveState[k] = false;
+  running = false;
 }
 function onFpsKeyDown(e) {
   if (!S.fpsMode) return;

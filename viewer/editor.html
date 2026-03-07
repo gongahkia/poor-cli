@@ -22,7 +22,31 @@
   <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
 </div>
 <div id="chat-panel">
-  <div id="chat-header"><span>AI Chat</span><select id="chat-provider"></select></div>
+  <div id="chat-header">
+    <span>AI Chat</span>
+    <div style="display:flex;gap:4px;align-items:center;">
+      <select id="chat-provider"></select>
+      <button id="chat-settings-btn" title="API Key Settings">&#9881;</button>
+    </div>
+  </div>
+  <div id="chat-settings" style="display:none;">
+    <div class="chat-key-row">
+      <label>Provider</label>
+      <select id="chat-key-provider">
+        <option value="anthropic">Anthropic</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+      </select>
+    </div>
+    <div class="chat-key-row">
+      <label>API Key</label>
+      <input type="password" id="chat-key-input" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div class="chat-key-row">
+      <button id="chat-key-save">Save</button>
+      <span id="chat-key-status"></span>
+    </div>
+  </div>
   <div id="chat-status"></div>
   <div id="chat-messages"></div>
   <div id="chat-input-row">
