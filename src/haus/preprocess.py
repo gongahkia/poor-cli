@@ -10,7 +10,9 @@ _WALL_OPEN_LEN = 30
 _EXTERIOR_DILATE = 51
 _EXTERIOR_MAX_AREA = 5000
 _SHELTER_WALL_RATIO = 0.70 # border darkness above this → household shelter
-_PROT_MIN_AREA = 2000 # ignore protrusion CCs smaller than this
+_PROT_MIN_AREA = 2000 # primary area threshold for protrusions
+_PROT_DARK_AREA = 1000 # secondary: smaller protrusions with high dark content
+_PROT_DARK_RATIO = 0.35 # secondary: internal dark pixel ratio threshold
 
 
 def clean_floor_plan(img_rgb: np.ndarray) -> np.ndarray:
@@ -107,6 +109,12 @@ def _is_shelter(comp: np.ndarray, dark: np.ndarray) -> bool:
     return (border_dark / border_total) > _SHELTER_WALL_RATIO
 
 
+def _dark_ratio(comp: np.ndarray, dark: np.ndarray) -> float:
+    """Fraction of dark pixels inside a component mask."""
+    area = max(np.count_nonzero(comp), 1)
+    return np.count_nonzero((comp > 0) & (dark > 0)) / area
+
+
 def _erase_protrusions(img: np.ndarray) -> np.ndarray:
     """Erase AC ledges and service yards using two-pass close+open.
 
@@ -137,15 +145,25 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
         num, labels, stats, _ = cv2.connectedComponentsWithStats(prot, 8)
         for i in range(1, num):
             area = int(stats[i, cv2.CC_STAT_AREA])
-            if area < _PROT_MIN_AREA:
-                continue
             comp = (labels == i).astype(np.uint8)
+            if area < _PROT_DARK_AREA:
+                continue
             if _is_shelter(comp, dark):
                 continue
-            erase = cv2.bitwise_or(erase, comp)
+            if area >= _PROT_MIN_AREA or _dark_ratio(comp, dark) >= _PROT_DARK_RATIO:
+                erase = cv2.bitwise_or(erase, comp)
     if np.count_nonzero(erase) == 0:
         return img
-    zone = cv2.dilate(erase, np.ones((15, 15), np.uint8), iterations=2)
+    # use bounding box + margin to fully cover AC ledge rooms
+    num_e, labels_e, stats_e, _ = cv2.connectedComponentsWithStats(erase, 8)
+    zone = np.zeros_like(erase)
+    margin = max(15, short_dim // 30) # adaptive margin
+    for i in range(1, num_e):
+        x = max(0, int(stats_e[i, cv2.CC_STAT_LEFT]) - margin)
+        y = max(0, int(stats_e[i, cv2.CC_STAT_TOP]) - margin)
+        bw_e = int(stats_e[i, cv2.CC_STAT_WIDTH]) + 2 * margin
+        bh_e = int(stats_e[i, cv2.CC_STAT_HEIGHT]) + 2 * margin
+        zone[y:min(y + bh_e, h), x:min(x + bw_e, w)] = 1
     img[zone > 0] = 255
     return img
 
