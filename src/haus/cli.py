@@ -118,7 +118,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "view":
             import shutil
-            import subprocess
             import webbrowser
             project_root = Path(__file__).resolve().parent.parent.parent
             viewer_dir = project_root / "viewer"
@@ -132,21 +131,14 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"error: GLB file does not exist: {args.glb}", file=sys.stderr)
                     return 2
                 shutil.copy2(args.glb, viewer_dir / "model.glb")
-                open_url = f"http://localhost:{port}/viewer/editor.html"
             else:
                 manifest = _build_manifest(out_dir, project_root)
                 (viewer_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
-                open_url = f"http://localhost:{port}/viewer/"
+            from .chat_server import run_server as run_chat_server
+            open_url = f"http://localhost:{port}/viewer/editor.html"
             print(f"Starting server at http://localhost:{port}", file=sys.stderr)
             webbrowser.open(open_url)
-            proc = subprocess.Popen(
-                [sys.executable, "-m", "http.server", str(port)],
-                cwd=str(project_root),
-            )
-            try:
-                proc.wait()
-            except KeyboardInterrupt:
-                proc.terminate()
+            run_chat_server(str(project_root), port)
             return 0
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:

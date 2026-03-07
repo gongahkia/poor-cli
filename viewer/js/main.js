@@ -27,6 +27,8 @@ initIO();
 initShortcuts();
 initContextMenu();
 initOverlay();
+initChat();
+initCommandPalette();
 function animate() {
   requestAnimationFrame(animate);
   updateFps();
