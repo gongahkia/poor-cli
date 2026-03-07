@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import cv2
 import numpy as np
@@ -29,6 +30,12 @@ def _build_fill_mask(img_rgb: np.ndarray) -> np.ndarray:
             fill[labels == i] = 1
 
     if np.count_nonzero(fill) < _FILL_FALLBACK_THRESHOLD:
+        warnings.warn(
+            f"Fill mask has only {np.count_nonzero(fill)} saturated pixels "
+            f"(threshold: {_FILL_FALLBACK_THRESHOLD}). "
+            "Falling back to full-image search zone — wall detection may be inaccurate.",
+            stacklevel=2,
+        )
         h, w = img_rgb.shape[:2]
         fill = np.ones((h, w), dtype=np.uint8)
     return fill
