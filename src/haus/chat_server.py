@@ -269,10 +269,16 @@ _CHAT_FNS = {
 
 # --- endpoints ---
 
+_ENV_KEYS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+
+
 async def _chat_status(request: Request):
+    """Status endpoint — always available since keys can come from the client."""
     providers = _provider_available()
-    if not providers:
-        return JSONResponse({"available": False, "reason": "No API key set. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY."})
     return JSONResponse({"available": True, "providers": providers})
 
 
@@ -282,19 +288,17 @@ async def _chat(request: Request):
     history = body.get("history", [])
     preferred = body.get("provider", "")
     model_override = body.get("model", "")
+    client_key = body.get("api_key", "")
 
-    # pick provider
-    providers = _provider_available()
-    if not providers:
-        return JSONResponse({"error": "No API key set. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY."}, 400)
+    if not preferred:
+        return JSONResponse({"error": "No provider specified."}, 400)
 
-    provider = preferred if preferred in providers else providers[0]
-    api_key = os.environ.get({
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-    }[provider], "")
+    # client-provided key takes priority, then env var
+    api_key = client_key or os.environ.get(_ENV_KEYS.get(preferred, ""), "")
+    if not api_key:
+        return JSONResponse({"error": f"No API key for {preferred}. Add one in chat settings."}, 400)
 
+    provider = preferred
     model = model_override or _DEFAULT_MODELS.get(provider, "")
     chat_fn = _CHAT_FNS.get(provider)
     if not chat_fn:
