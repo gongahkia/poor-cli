@@ -1,7 +1,7 @@
 """Combined static file server + AI chat API for the haus editor.
 
 Serves the viewer files and provides a /api/chat endpoint that uses
-Claude API with tool use to manipulate the floor plan layout.
+configurable LLM providers (Anthropic, OpenAI, Gemini) with tool use.
 """
 from __future__ import annotations
 import json
@@ -19,12 +19,6 @@ from .mcp_server import (
     move_object, rotate_object, remove_object, clear_layout, get_layout_json,
 )
 
-try:
-    import anthropic
-    _HAS_ANTHROPIC = True
-except ImportError:
-    _HAS_ANTHROPIC = False
-
 mimetypes.add_type("model/gltf-binary", ".glb")
 
 _SYSTEM = (
@@ -39,40 +33,40 @@ _SYSTEM = (
     "Keep responses concise. The editor auto-syncs with your changes."
 )
 
-_TOOLS = [
+_TOOLS_SPEC = [
     {"name": "list_furniture_catalog", "description": "List all available furniture types with dimensions.",
-     "input_schema": {"type": "object", "properties": {}}},
+     "parameters": {"type": "object", "properties": {}}},
     {"name": "list_objects", "description": "List all objects in the current layout with index, type, position.",
-     "input_schema": {"type": "object", "properties": {}}},
+     "parameters": {"type": "object", "properties": {}}},
     {"name": "add_furniture", "description": "Add a furniture item at a position.",
-     "input_schema": {"type": "object", "properties": {
+     "parameters": {"type": "object", "properties": {
          "furniture_type": {"type": "string", "description": "Type from catalog (e.g. bed_queen, sofa_3, desk)"},
          "x": {"type": "number", "description": "X position in meters", "default": 0},
          "z": {"type": "number", "description": "Z position in meters", "default": 0},
          "rotation_deg": {"type": "number", "description": "Rotation in degrees", "default": 0},
      }, "required": ["furniture_type"]}},
     {"name": "add_wall", "description": "Add a wall segment between two points.",
-     "input_schema": {"type": "object", "properties": {
+     "parameters": {"type": "object", "properties": {
          "x1": {"type": "number"}, "z1": {"type": "number"},
          "x2": {"type": "number"}, "z2": {"type": "number"},
          "height": {"type": "number", "default": 2.6},
          "thickness": {"type": "number", "default": 0.15},
      }, "required": ["x1", "z1", "x2", "z2"]}},
     {"name": "move_object", "description": "Move an object to a new XZ position.",
-     "input_schema": {"type": "object", "properties": {
+     "parameters": {"type": "object", "properties": {
          "index": {"type": "integer", "description": "Object index from list_objects"},
          "x": {"type": "number"}, "z": {"type": "number"},
      }, "required": ["index", "x", "z"]}},
     {"name": "rotate_object", "description": "Set an object's rotation in degrees.",
-     "input_schema": {"type": "object", "properties": {
+     "parameters": {"type": "object", "properties": {
          "index": {"type": "integer"}, "rotation_deg": {"type": "number"},
      }, "required": ["index", "rotation_deg"]}},
     {"name": "remove_object", "description": "Remove an object by index.",
-     "input_schema": {"type": "object", "properties": {
+     "parameters": {"type": "object", "properties": {
          "index": {"type": "integer"},
      }, "required": ["index"]}},
     {"name": "clear_layout", "description": "Remove all objects.",
-     "input_schema": {"type": "object", "properties": {}}},
+     "parameters": {"type": "object", "properties": {}}},
 ]
 
 _DISPATCH = {
@@ -86,67 +80,239 @@ _DISPATCH = {
     "clear_layout": lambda a: clear_layout(),
 }
 
+# --- provider detection ---
 
-def _serialize_content(content):
-    out = []
-    for block in content:
-        if block.type == "text":
-            out.append({"type": "text", "text": block.text})
-        elif block.type == "tool_use":
-            out.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
-    return out
-
-
-async def _chat_status(request: Request):
-    if not _HAS_ANTHROPIC:
-        return JSONResponse({"available": False, "reason": "anthropic SDK not installed. Run: uv pip install anthropic"})
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return JSONResponse({"available": False, "reason": "Set ANTHROPIC_API_KEY env var to enable AI chat."})
-    return JSONResponse({"available": True})
+def _detect_provider() -> tuple[str, str]:
+    """Return (provider_name, api_key) from env vars. Checks in order: Anthropic, OpenAI, Gemini."""
+    for env, name in [
+        ("ANTHROPIC_API_KEY", "anthropic"),
+        ("OPENAI_API_KEY", "openai"),
+        ("GEMINI_API_KEY", "gemini"),
+    ]:
+        key = os.environ.get(env)
+        if key:
+            return name, key
+    return "", ""
 
 
-async def _chat(request: Request):
-    if not _HAS_ANTHROPIC:
-        return JSONResponse({"error": "anthropic SDK not installed"}, 400)
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return JSONResponse({"error": "ANTHROPIC_API_KEY not set"}, 400)
+def _provider_available() -> dict:
+    """Check which providers are available."""
+    providers = []
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        providers.append("anthropic")
+    if os.environ.get("OPENAI_API_KEY"):
+        providers.append("openai")
+    if os.environ.get("GEMINI_API_KEY"):
+        providers.append("gemini")
+    return providers
 
-    body = await request.json()
-    user_msg = body.get("message", "")
-    history = body.get("history", [])
 
+# --- Anthropic provider ---
+
+def _anthropic_tools():
+    """Convert tool specs to Anthropic format (input_schema)."""
+    return [
+        {**t, "input_schema": t["parameters"]}
+        for t in [{k: v for k, v in tool.items() if k != "parameters"} | {"parameters": tool["parameters"]} for tool in _TOOLS_SPEC]
+    ]
+
+
+def _chat_anthropic(api_key: str, messages: list, model: str) -> tuple[str, list]:
+    import anthropic
     client = anthropic.Anthropic(api_key=api_key)
-    messages = history + [{"role": "user", "content": user_msg}]
-
+    tools = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in _TOOLS_SPEC]
     for _ in range(10):
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                system=_SYSTEM,
-                tools=_TOOLS,
-                messages=messages,
-            )
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, 500)
-
-        content = _serialize_content(response.content)
+        response = client.messages.create(model=model, max_tokens=1024, system=_SYSTEM, tools=tools, messages=messages)
+        content = []
+        for block in response.content:
+            if block.type == "text":
+                content.append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
         messages.append({"role": "assistant", "content": content})
-
         tool_uses = [b for b in response.content if b.type == "tool_use"]
         if not tool_uses:
             text = "".join(b.text for b in response.content if b.type == "text")
-            return JSONResponse({"response": text, "history": messages})
-
+            return text, messages
         results = []
         for tu in tool_uses:
             fn = _DISPATCH.get(tu.name)
             result = fn(tu.input) if fn else f"Unknown tool: {tu.name}"
             results.append({"type": "tool_result", "tool_use_id": tu.id, "content": result})
         messages.append({"role": "user", "content": results})
+    raise RuntimeError("Too many tool iterations")
 
-    return JSONResponse({"error": "Too many tool iterations"}, 500)
+
+# --- OpenAI provider ---
+
+def _openai_tools():
+    """Convert tool specs to OpenAI function calling format."""
+    return [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}} for t in _TOOLS_SPEC]
+
+
+def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
+    import openai
+    client = openai.OpenAI(api_key=api_key)
+    tools = _openai_tools()
+    oai_messages = [{"role": "system", "content": _SYSTEM}]
+    for m in messages:
+        if isinstance(m.get("content"), str):
+            oai_messages.append({"role": m["role"], "content": m["content"]})
+        elif isinstance(m.get("content"), list):
+            # convert from our internal format
+            for block in m["content"]:
+                if block.get("type") == "text":
+                    oai_messages.append({"role": m["role"], "content": block["text"]})
+                elif block.get("type") == "tool_use":
+                    oai_messages.append({"role": "assistant", "content": None, "tool_calls": [
+                        {"id": block["id"], "type": "function", "function": {"name": block["name"], "arguments": json.dumps(block["input"])}}
+                    ]})
+                elif block.get("type") == "tool_result":
+                    oai_messages.append({"role": "tool", "tool_call_id": block["tool_use_id"], "content": block["content"]})
+
+    for _ in range(10):
+        response = client.chat.completions.create(model=model, messages=oai_messages, tools=tools, max_tokens=1024)
+        choice = response.choices[0]
+        msg = choice.message
+        if not msg.tool_calls:
+            text = msg.content or ""
+            messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
+            return text, messages
+        # has tool calls
+        assistant_content = []
+        oai_messages.append({"role": "assistant", "content": msg.content, "tool_calls": [
+            {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+            for tc in msg.tool_calls
+        ]})
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments)
+            fn = _DISPATCH.get(tc.function.name)
+            result = fn(args) if fn else f"Unknown tool: {tc.function.name}"
+            oai_messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            assistant_content.append({"type": "tool_use", "id": tc.id, "name": tc.function.name, "input": args})
+        if msg.content:
+            assistant_content.insert(0, {"type": "text", "text": msg.content})
+        messages.append({"role": "assistant", "content": assistant_content})
+        results = []
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments)
+            fn_call = _DISPATCH.get(tc.function.name)
+            result = fn_call(args) if fn_call else f"Unknown tool: {tc.function.name}"
+            results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
+        messages.append({"role": "user", "content": results})
+    raise RuntimeError("Too many tool iterations")
+
+
+# --- Gemini provider ---
+
+def _chat_gemini(api_key: str, messages: list, model: str) -> tuple[str, list]:
+    import google.generativeai as genai
+    genai.configure(api_key=api_key)
+    # build function declarations
+    func_decls = []
+    for t in _TOOLS_SPEC:
+        params = t["parameters"].get("properties", {})
+        required = t["parameters"].get("required", [])
+        schema_params = {}
+        for pname, pspec in params.items():
+            gtype = "STRING"
+            if pspec.get("type") == "number":
+                gtype = "NUMBER"
+            elif pspec.get("type") == "integer":
+                gtype = "INTEGER"
+            schema_params[pname] = {"type_": gtype, "description": pspec.get("description", "")}
+        func_decls.append(genai.protos.FunctionDeclaration(
+            name=t["name"], description=t["description"],
+            parameters=genai.protos.Schema(type_=genai.protos.Type.OBJECT, properties={
+                k: genai.protos.Schema(type_=getattr(genai.protos.Type, v["type_"]), description=v["description"])
+                for k, v in schema_params.items()
+            }, required=required) if schema_params else None,
+        ))
+    tool_config = genai.protos.Tool(function_declarations=func_decls)
+    gmodel = genai.GenerativeModel(model, system_instruction=_SYSTEM, tools=[tool_config])
+    # convert messages to gemini content format
+    contents = []
+    for m in messages:
+        role = "user" if m["role"] == "user" else "model"
+        if isinstance(m.get("content"), str):
+            contents.append({"role": role, "parts": [m["content"]]})
+    chat = gmodel.start_chat(history=contents[:-1] if len(contents) > 1 else [])
+    last_msg = contents[-1]["parts"][0] if contents else ""
+    for _ in range(10):
+        response = chat.send_message(last_msg)
+        candidate = response.candidates[0]
+        parts = candidate.content.parts
+        func_calls = [p for p in parts if p.function_call.name]
+        if not func_calls:
+            text = "".join(p.text for p in parts if p.text)
+            messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
+            return text, messages
+        # execute tool calls
+        func_responses = []
+        for fc in func_calls:
+            args = dict(fc.function_call.args)
+            fn = _DISPATCH.get(fc.function_call.name)
+            result = fn(args) if fn else f"Unknown tool: {fc.function_call.name}"
+            func_responses.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
+                name=fc.function_call.name, response={"result": result})))
+        last_msg = func_responses
+    raise RuntimeError("Too many tool iterations")
+
+
+# --- provider router ---
+
+_DEFAULT_MODELS = {
+    "anthropic": "claude-sonnet-4-20250514",
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.0-flash",
+}
+
+_CHAT_FNS = {
+    "anthropic": _chat_anthropic,
+    "openai": _chat_openai,
+    "gemini": _chat_gemini,
+}
+
+
+# --- endpoints ---
+
+async def _chat_status(request: Request):
+    providers = _provider_available()
+    if not providers:
+        return JSONResponse({"available": False, "reason": "No API key set. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY."})
+    return JSONResponse({"available": True, "providers": providers})
+
+
+async def _chat(request: Request):
+    body = await request.json()
+    user_msg = body.get("message", "")
+    history = body.get("history", [])
+    preferred = body.get("provider", "")
+    model_override = body.get("model", "")
+
+    # pick provider
+    providers = _provider_available()
+    if not providers:
+        return JSONResponse({"error": "No API key set. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY."}, 400)
+
+    provider = preferred if preferred in providers else providers[0]
+    api_key = os.environ.get({
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+    }[provider], "")
+
+    model = model_override or _DEFAULT_MODELS.get(provider, "")
+    chat_fn = _CHAT_FNS.get(provider)
+    if not chat_fn:
+        return JSONResponse({"error": f"Provider '{provider}' not supported"}, 400)
+
+    messages = history + [{"role": "user", "content": user_msg}]
+    try:
+        text, messages = chat_fn(api_key, messages, model)
+        return JSONResponse({"response": text, "history": messages, "provider": provider, "model": model})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, 500)
 
 
 def create_app(root_dir: str) -> Starlette:
