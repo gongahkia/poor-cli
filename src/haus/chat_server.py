@@ -92,6 +92,41 @@ _TOOLS_SPEC = [
      }, "required": ["object_type"]}},
     {"name": "clear_layout", "description": "Remove all objects.",
      "parameters": {"type": "object", "properties": {}}},
+    {"name": "get_object_details", "description": "Get full details for one object: type, position, rotation, dimensions, color, visibility.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index from list_objects"},
+     }, "required": ["index"]}},
+    {"name": "get_layout_summary", "description": "Get layout summary: object counts by type, furniture breakdown, hidden count, XZ bounding box.",
+     "parameters": {"type": "object", "properties": {}}},
+    {"name": "resize_object", "description": "Resize an object. Only provided dimensions are changed. Min 0.05m.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index"},
+         "width": {"type": "number", "description": "New width in meters (X axis)"},
+         "height": {"type": "number", "description": "New height in meters (Y axis)"},
+         "depth": {"type": "number", "description": "New depth in meters (Z axis)"},
+     }, "required": ["index"]}},
+    {"name": "set_color", "description": "Set an object's color via hex string (e.g. '#ff0000').",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index"},
+         "color": {"type": "string", "description": "Hex color string like '#ff0000'"},
+     }, "required": ["index", "color"]}},
+    {"name": "set_visibility", "description": "Show or hide an object.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index"},
+         "visible": {"type": "boolean", "description": "True to show, false to hide"},
+     }, "required": ["index", "visible"]}},
+    {"name": "duplicate_object", "description": "Duplicate an object to a new position, preserving all properties.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index to duplicate"},
+         "x": {"type": "number", "description": "X position for the copy"},
+         "z": {"type": "number", "description": "Z position for the copy"},
+     }, "required": ["index", "x", "z"]}},
+    {"name": "batch_move", "description": "Move multiple objects by a relative offset. Validates all indices before applying.",
+     "parameters": {"type": "object", "properties": {
+         "indices": {"type": "array", "items": {"type": "integer"}, "description": "List of object indices to move"},
+         "dx": {"type": "number", "description": "Relative X offset in meters"},
+         "dz": {"type": "number", "description": "Relative Z offset in meters"},
+     }, "required": ["indices", "dx", "dz"]}},
 ]
 
 _DISPATCH_RAW = {
