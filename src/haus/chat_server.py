@@ -320,6 +320,21 @@ def create_app(root_dir: str) -> Starlette:
     ])
 
 
+_root_dir: str = ""
+
+
+def _create_app() -> Starlette:
+    return create_app(_root_dir)
+
+
 def run_server(root_dir: str, port: int = 8080) -> None:
-    app = create_app(root_dir)
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    global _root_dir
+    _root_dir = root_dir
+    uvicorn.run(
+        "haus.chat_server:_create_app",
+        factory=True,
+        host="127.0.0.1",
+        port=port,
+        reload=True,
+        reload_dirs=[str(Path(__file__).resolve().parent)],
+    )
