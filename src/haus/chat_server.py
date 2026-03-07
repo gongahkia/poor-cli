@@ -339,10 +339,15 @@ async def _chat(request: Request):
         return JSONResponse({"error": f"Provider '{provider}' not supported"}, 400)
 
     messages = history + [{"role": "user", "content": user_msg}]
+    _tool_log.clear()
+    log.info("chat request: provider=%s model=%s msg=%s", provider, model, user_msg[:100])
     try:
         text, messages = chat_fn(api_key, messages, model)
-        return JSONResponse({"response": text, "history": messages, "provider": provider, "model": model})
+        actions = list(_tool_log)
+        _tool_log.clear()
+        return JSONResponse({"response": text, "history": messages, "provider": provider, "model": model, "actions": actions})
     except Exception as e:
+        log.exception("chat error")
         return JSONResponse({"error": str(e)}, 500)
 
 

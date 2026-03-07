@@ -108,6 +108,12 @@ async function send() {
     loading.remove();
     if (data.error) { appendMessage('error', data.error); }
     else {
+      if (data.actions && data.actions.length > 0) {
+        for (const a of data.actions) {
+          const argsStr = Object.keys(a.args).length > 0 ? ' ' + JSON.stringify(a.args) : '';
+          appendMessage('tool', a.tool + argsStr + ' \u2192 ' + a.result);
+        }
+      }
       appendMessage('assistant', data.response);
       history = data.history || [];
     }

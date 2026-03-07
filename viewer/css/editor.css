@@ -169,6 +169,11 @@ kbd {
 .chat-assistant { background: #2a2a3a; color: #ccf; align-self: flex-start; }
 .chat-error { background: #4a2a2a; color: #fcc; align-self: flex-start; font-size: 11px; }
 .chat-loading { color: #888; font-style: italic; align-self: flex-start; }
+.chat-tool {
+  background: #1a2a2a; color: #7ba; align-self: flex-start;
+  font-family: monospace; font-size: 10px; white-space: pre-wrap;
+  border-left: 2px solid #4a8; opacity: 0.85;
+}
 #chat-input-row {
   display: flex; padding: 8px; border-top: 1px solid #333; gap: 6px;
 }
