@@ -1,4 +1,7 @@
-# haus
+[![](https://img.shields.io/badge/haus_1.0.0-passing-green)](https://github.com/gongahkia/haus/releases/tag/1.0.0)
+![](https://github.com/gongahkia/haus/actions/workflows/ci.yml/badge.svg)
+
+# `Haus`
 
 Pipeline to vectorize Singapore BTO floor plan images and convert them into structured wall/opening data with optional 3D mesh output.
 
