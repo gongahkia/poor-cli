@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "haus"
+version = "0.1.0"
+description = "Vectorize raster floor plan images into clean wall-polygon PNGs"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Codex" }]
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.10",
+]
+
+[project.scripts]
+haus = "haus.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
