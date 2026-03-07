@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from .extraction import extract_floor_plan
+from .mesh import extrude_floor_plan, export_glb
 from .render import render_vector_clean
 from .types import FloorPlanData, MetadataDict, VectorizeConfig
 
@@ -86,11 +87,21 @@ def run_vectorize(config: VectorizeConfig) -> MetadataDict:
     vector_clean_path = config.out_dir / "vector_clean.png"
     render_vector_clean(data, vector_clean_path)
 
+    glb_path = config.out_dir / "model.glb"
+    scene = extrude_floor_plan(
+        data,
+        wall_height_m=getattr(config, "wall_height", 2.6),
+        scale_override=getattr(config, "scale_override", None),
+    )
+    export_glb(scene, glb_path)
+
     metadata = _data_to_metadata(
         data, config, vector_clean_path,
         wall_mask_px=int(np.count_nonzero(wall_mask)),
         fill_mask_px=int(np.count_nonzero(fill_mask)),
     )
+
+    metadata["output_glb"] = str(glb_path)
 
     metadata_path = config.out_dir / "vector.metadata.json"
     with metadata_path.open("w", encoding="utf-8") as f:

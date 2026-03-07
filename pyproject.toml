@@ -12,6 +12,7 @@ authors = [{ name = "Codex" }]
 dependencies = [
   "numpy>=1.26",
   "opencv-python-headless>=4.10",
+  "trimesh[easy]>=4.0",
 ]
 
 [project.scripts]
