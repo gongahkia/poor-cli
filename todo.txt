@@ -1,0 +1,6 @@
+try and get preprocessign as good as possible
+refactor the editor view into multiple files but ensure that functionality all still works
+add a view feature that allows the user to generate mock-up images of how their place would look with all the furntiure and inserts a virtual camera in spectator mode
+add a fps view for the view feature
+further buff up the editor's features both for editing, viewing and usability in general and make the editor even more fully-featured
+if possible, add an AI chat function that uses standardised tooling (/mcp?) to edit the 3d view/mesh
