@@ -92,22 +92,26 @@ function exportJSON() {
   downloadBlob(new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }), 'haus-layout.json');
 }
 let lastMcpText = '';
-let lastPushedText = '';
+let lastPushStamp = 0;
+let lastPullStamp = 0;
 function startMcpSync() {
-  // push scene state to server so MCP/chat tools see all objects
   fn.pushLayoutToServer = pushLayoutToServer;
   pushLayoutToServer();
   setInterval(pushLayoutToServer, 3000);
-  // pull changes made by MCP/chat back into editor
+  // pull changes made by MCP/chat — only if stamp differs from what we pushed
   setInterval(async () => {
     try {
       const res = await fetch('./mcp-layout.json?t=' + Date.now());
       if (!res.ok) return;
       const text = await res.text();
-      if (text === lastMcpText || text === lastPushedText) return;
+      if (text === lastMcpText) return;
       lastMcpText = text;
       const data = JSON.parse(text);
       if (!data.items) return;
+      // skip if this was written by our own push
+      if (data._stamp && data._stamp === lastPushStamp) return;
+      if (data._stamp && data._stamp === lastPullStamp) return;
+      lastPullStamp = data._stamp || 0;
       applyLayoutData(data);
     } catch {}
   }, 2000);
@@ -115,13 +119,13 @@ function startMcpSync() {
 async function pushLayoutToServer() {
   try {
     const data = serializeLayout();
-    const text = JSON.stringify(data);
-    if (text === lastPushedText) return;
-    lastPushedText = text;
+    const stamp = Date.now();
+    data._stamp = stamp;
+    lastPushStamp = stamp;
     await fetch('/api/sync-layout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: text,
+      body: JSON.stringify(data),
     });
   } catch {}
 }
