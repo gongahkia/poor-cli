@@ -22,11 +22,11 @@ import modal
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from _constants import CUBICASA_COMMIT
+
 # ---------------------------------------------------------------------------
 # Modal image — PyTorch base + dependencies + CubiCasa5k source
 # ---------------------------------------------------------------------------
-
-CUBICASA_COMMIT = "c34440266665a11f4484eb06cd2e4b7d72ad76c1"
 
 cubicasa_image = (
     modal.Image.from_registry("pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime")

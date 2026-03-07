@@ -13,7 +13,7 @@ If the Google Drive link expires, you can upload manually:
 
 import modal
 
-CUBICASA_COMMIT = "c34440266665a11f4484eb06cd2e4b7d72ad76c1"
+from _constants import CUBICASA_COMMIT
 GDRIVE_FILE_ID = "1gRB7ez1e4H7a9Y09lLqRuna0luZO5VRK"
 WEIGHTS_DEST = "/weights/model_best_val_loss_var.pkl"
 
