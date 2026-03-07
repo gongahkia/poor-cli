@@ -125,7 +125,8 @@ class FloorplanInference:
         try:
             return await self._predict(request)
         except Exception:
-            return JSONResponse({"error": traceback.format_exc()}, status_code=500)
+            traceback.print_exc()
+            return JSONResponse({"error": "Internal server error"}, status_code=500)
 
     async def _predict(self, request: Request) -> JSONResponse:
         import torch
