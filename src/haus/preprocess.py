@@ -6,24 +6,19 @@ _DARK_THRESH = 150
 _FILL_SAT_MIN = 35
 _FILL_VAL_MIN = 60
 _FILL_MIN_AREA = 500
-_WALL_OPEN_LEN = 20 # px — directional open kernel length
-_ARC_MAX_FILL_RATIO = 0.15 # arcs at radius r, width t: fill = πt/2r ≈ 0.04-0.11
-_ARC_MAX_ASPECT = 2.0 # arcs have ~square bbox
-_ARC_MIN_AREA = 80
-_ARC_MAX_AREA = 8000
-_ARC_MIN_DIM = 20 # exclude text characters (typically < 20px)
+_WALL_OPEN_LEN = 30 # px — directional open kernel length
+_EXTERIOR_DILATE = 51 # px — generous interior zone margin
+_EXTERIOR_MAX_AREA = 5000 # only erase small exterior marks
 _PROTRUSION_KERNEL_FRAC = 0.10 # fraction of unit short dim
 _PROTRUSION_KERNEL_MIN = 25
 _PROTRUSION_KERNEL_MAX = 100
-_EXTERIOR_DILATE = 51 # px — generous interior zone margin
-_EXTERIOR_MAX_AREA = 5000 # only erase small exterior marks
 
 
 def clean_floor_plan(img_rgb: np.ndarray) -> np.ndarray:
-    """Remove door arcs, AC ledges, laundry areas, and exterior annotations."""
+    """Remove door arcs, AC ledges, service yards, and exterior annotations."""
     img = img_rgb.copy()
-    img = _erase_door_arcs(img)
     img = _erase_protrusions(img)
+    img = _erase_door_arcs(img)
     img = _erase_exterior_marks(img)
     return img
 
@@ -52,36 +47,59 @@ def _build_fill_solid(img_rgb: np.ndarray) -> np.ndarray:
     return solid
 
 
-def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
-    """Erase quarter-circle door swing arcs.
-
-    Arcs are thin curved dark strokes that don't survive directional
-    morphological opening (they're not long straight segments).  We find
-    non-wall dark connected components whose bounding box is roughly square
-    with a very low fill ratio — classic quarter-circle signature.
-    """
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
+def _build_wall_mask(dark: np.ndarray) -> np.ndarray:
+    """Wall pixels: survive directional morphological opening."""
     k_h = np.ones((1, _WALL_OPEN_LEN), np.uint8)
     k_v = np.ones((_WALL_OPEN_LEN, 1), np.uint8)
-    walls = cv2.bitwise_or(
+    return cv2.bitwise_or(
         cv2.morphologyEx(dark, cv2.MORPH_OPEN, k_h),
         cv2.morphologyEx(dark, cv2.MORPH_OPEN, k_v),
     )
+
+
+def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
+    """Erase quarter-circle door swing arcs.
+
+    Hybrid approach:
+    1. HoughCircles detects large arcs (even when connected to walls)
+    2. Residual CC analysis catches smaller/isolated arcs
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
+    walls = _build_wall_mask(dark)
+    erase = np.zeros(img.shape[:2], dtype=np.uint8)
+    h, w = gray.shape
+
+    # phase 1: HoughCircles for large arcs
+    blurred = cv2.GaussianBlur(gray, (9, 9), 2)
+    min_r = max(20, min(h, w) // 20)
+    max_r = max(60, min(h, w) // 5)
+    circles = cv2.HoughCircles(
+        blurred, cv2.HOUGH_GRADIENT, dp=1.0,
+        minDist=min_r * 3, param1=100, param2=50,
+        minRadius=min_r, maxRadius=max_r,
+    )
+    if circles is not None:
+        for cx, cy, r in circles[0]:
+            cx, cy, r = int(cx), int(cy), int(r)
+            ring = np.zeros_like(erase)
+            cv2.circle(ring, (cx, cy), r, 1, max(4, int(r * 0.15)))
+            arc_dark = (ring > 0) & (dark > 0) & (walls == 0)
+            if np.count_nonzero(arc_dark) > 20:
+                erase[arc_dark] = 1
+
+    # phase 2: residual CC for smaller arcs
     residual = cv2.bitwise_and(dark, cv2.bitwise_not(walls))
     num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, 8)
-    erase = np.zeros(img.shape[:2], dtype=np.uint8)
     for i in range(1, num):
         a = int(stats[i, cv2.CC_STAT_AREA])
-        w = int(stats[i, cv2.CC_STAT_WIDTH])
-        h = int(stats[i, cv2.CC_STAT_HEIGHT])
-        fill_ratio = a / max(w * h, 1)
-        aspect = max(w, h) / max(min(w, h), 1)
-        if (aspect < _ARC_MAX_ASPECT
-                and fill_ratio < _ARC_MAX_FILL_RATIO
-                and _ARC_MIN_AREA < a < _ARC_MAX_AREA
-                and min(w, h) > _ARC_MIN_DIM):
+        bw = int(stats[i, cv2.CC_STAT_WIDTH])
+        bh = int(stats[i, cv2.CC_STAT_HEIGHT])
+        fr = a / max(bw * bh, 1)
+        aspect = max(bw, bh) / max(min(bw, bh), 1)
+        if fr < 0.20 and aspect < 2.5 and 50 < a < 15000 and min(bw, bh) > 12:
             erase[labels == i] = 1
+
     if np.count_nonzero(erase):
         erase = cv2.dilate(erase, np.ones((3, 3), np.uint8), iterations=1)
         img[erase > 0] = 255
@@ -89,12 +107,11 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
 
 
 def _erase_protrusions(img: np.ndarray) -> np.ndarray:
-    """Erase narrow exterior protrusions (AC ledges, laundry areas).
+    """Erase narrow exterior protrusions (AC ledges, service yards).
 
-    Uses morphological opening on the solidified fill mask.  The opening
-    removes thin extensions; then connected-component area filtering
-    distinguishes real AC ledge protrusions (~3000-8000 sqpx) from tiny
-    corner-rounding artifacts (~100-600 sqpx).
+    Morphological opening on the solidified fill mask removes thin
+    extensions. Aspect ratio + adaptive area thresholds distinguish
+    real protrusions from corner-rounding artifacts.
     """
     solid = _build_fill_solid(img)
     if np.count_nonzero(solid) < 1000:
@@ -106,36 +123,39 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
     short_dim = min(bw, bh)
     k_size = int(short_dim * _PROTRUSION_KERNEL_FRAC)
     k_size = max(_PROTRUSION_KERNEL_MIN, min(_PROTRUSION_KERNEL_MAX, k_size))
-    k_size = k_size | 1 # ensure odd
+    k_size = k_size | 1
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
     opened = cv2.morphologyEx(solid, cv2.MORPH_OPEN, k)
     protrusions = ((solid > 0) & (opened == 0)).astype(np.uint8)
     if np.count_nonzero(protrusions) == 0:
         return img
-    # area filter: corner artifacts < 800 sqpx, real rooms > 20000 sqpx
+    corner_area = int(0.25 * k_size * k_size)
     num, labels, stats, _ = cv2.connectedComponentsWithStats(protrusions, 8)
     erase = np.zeros_like(protrusions)
     for i in range(1, num):
         area = int(stats[i, cv2.CC_STAT_AREA])
-        if 800 < area < 20000:
-            erase[labels == i] = 1
+        bw_c = int(stats[i, cv2.CC_STAT_WIDTH])
+        bh_c = int(stats[i, cv2.CC_STAT_HEIGHT])
+        aspect = max(bw_c, bh_c) / max(min(bw_c, bh_c), 1)
+        if area > corner_area and (aspect > 1.8 or area > 4 * corner_area):
+            erase[labels == i] = 1 # large elongated protrusion
+        elif area > corner_area // 2 and aspect > 2.5:
+            erase[labels == i] = 1 # medium highly-elongated edge
     if np.count_nonzero(erase) == 0:
         return img
-    zone = cv2.dilate(erase, np.ones((5, 5), np.uint8), iterations=1)
+    zone = cv2.dilate(erase, np.ones((11, 11), np.uint8), iterations=2)
     img[zone > 0] = 255
     return img
 
 
 def _erase_exterior_marks(img: np.ndarray) -> np.ndarray:
-    """Erase dark marks (text, arrows, dimension labels) outside the unit.
-
-    Only erases small dark components that are clearly beyond a generous
-    interior margin, so exterior walls are not affected.
-    """
+    """Erase dark marks (text, arrows, dimension labels) outside the unit."""
     solid = _build_fill_solid(img)
     if np.count_nonzero(solid) < 1000:
         return img
-    interior = cv2.dilate(solid, np.ones((_EXTERIOR_DILATE, _EXTERIOR_DILATE), np.uint8), iterations=1)
+    interior = cv2.dilate(
+        solid, np.ones((_EXTERIOR_DILATE, _EXTERIOR_DILATE), np.uint8), iterations=1
+    )
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     exterior_dark = ((gray < _DARK_THRESH) & (interior == 0)).astype(np.uint8)
     if np.count_nonzero(exterior_dark) == 0:
