@@ -1,0 +1,17 @@
+# haus viewer
+
+Minimal Three.js floor plan viewer with furniture placement.
+
+## Usage
+
+```bash
+cd viewer && python -m http.server 8080
+```
+
+Then open http://localhost:8080. Drop a `.glb` file or place `model.glb` in this directory.
+
+Alternatively, use the CLI:
+
+```bash
+haus view --glb /path/to/model.glb
+```

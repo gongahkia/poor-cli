@@ -28,6 +28,9 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument("--wall-height", type=float, default=2.6, help="Wall extrusion height in meters (default: 2.6)")
     build.add_argument("--scale-override", type=float, default=None, help="Override m_per_px scale (bypass auto-detection)")
 
+    view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
+    view.add_argument("--glb", required=True, type=Path, help="Path to GLB file")
+
     return parser
 
 
@@ -51,6 +54,30 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(metadata, indent=2))
             if args.command == "build" and "output_glb" in metadata:
                 print(metadata["output_glb"], file=sys.stderr)
+            return 0
+        if args.command == "view":
+            import shutil
+            import subprocess
+            import webbrowser
+            viewer_dir = Path(__file__).resolve().parent.parent.parent / "viewer"
+            if not viewer_dir.exists():
+                print(f"error: viewer directory not found: {viewer_dir}", file=sys.stderr)
+                return 2
+            if not args.glb.exists():
+                print(f"error: GLB file does not exist: {args.glb}", file=sys.stderr)
+                return 2
+            shutil.copy2(args.glb, viewer_dir / "model.glb")
+            print(f"Copied {args.glb} -> {viewer_dir / 'model.glb'}", file=sys.stderr)
+            print("Starting server at http://localhost:8080", file=sys.stderr)
+            webbrowser.open("http://localhost:8080")
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "http.server", "8080"],
+                cwd=str(viewer_dir),
+            )
+            try:
+                proc.wait()
+            except KeyboardInterrupt:
+                proc.terminate()
             return 0
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:
