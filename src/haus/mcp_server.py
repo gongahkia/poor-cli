@@ -398,6 +398,290 @@ def batch_move(indices: list[int], dx: float, dz: float) -> str:
     return f"Moved {len(indices)} objects by dx={dx}, dz={dz}."
 
 
+@mcp.tool()
+def measure_distance(index1: int, index2: int) -> str:
+    """XZ Euclidean distance between two object centers.
+
+    Args:
+        index1: First object index.
+        index2: Second object index.
+    """
+    data = _load_layout()
+    n = len(data["items"])
+    for i in (index1, index2):
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1})."
+    p1, p2 = data["items"][index1]["pos"], data["items"][index2]["pos"]
+    dx, dz = p1[0] - p2[0], p1[2] - p2[2]
+    dist = math.sqrt(dx * dx + dz * dz)
+    return f"Distance between [{index1}] and [{index2}]: {dist:.3f}m"
+
+
+@mcp.tool()
+def find_objects_in_area(x_min: float, z_min: float, x_max: float, z_max: float) -> str:
+    """Find all objects whose center falls within an XZ bounding box.
+
+    Args:
+        x_min: Minimum X coordinate.
+        z_min: Minimum Z coordinate.
+        x_max: Maximum X coordinate.
+        z_max: Maximum Z coordinate.
+    """
+    data = _load_layout()
+    found = []
+    for i, item in enumerate(data["items"]):
+        p = item["pos"]
+        if x_min <= p[0] <= x_max and z_min <= p[2] <= z_max:
+            t = item.get("furnitureType") or item.get("type", "object")
+            found.append(f"  [{i}] {t} at ({p[0]:.2f}, {p[2]:.2f})")
+    if not found:
+        return "No objects found in the specified area."
+    return f"Found {len(found)} objects:\n" + "\n".join(found)
+
+
+@mcp.tool()
+def check_overlap(index1: int, index2: int) -> str:
+    """AABB overlap check on XZ plane between two objects. Accounts for rotation.
+
+    Args:
+        index1: First object index.
+        index2: Second object index.
+    """
+    data = _load_layout()
+    n = len(data["items"])
+    for i in (index1, index2):
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1})."
+    def _extents(item):
+        geo = item.get("geo", [1, 1, 1])
+        r = item.get("rot", 0)
+        half_x = (abs(geo[0] * math.cos(r)) + abs(geo[2] * math.sin(r))) / 2
+        half_z = (abs(geo[0] * math.sin(r)) + abs(geo[2] * math.cos(r))) / 2
+        p = item["pos"]
+        return p[0] - half_x, p[0] + half_x, p[2] - half_z, p[2] + half_z
+    ax_min, ax_max, az_min, az_max = _extents(data["items"][index1])
+    bx_min, bx_max, bz_min, bz_max = _extents(data["items"][index2])
+    overlap = ax_min < bx_max and ax_max > bx_min and az_min < bz_max and az_max > bz_min
+    if overlap:
+        return f"Objects [{index1}] and [{index2}] OVERLAP on XZ plane."
+    return f"Objects [{index1}] and [{index2}] do NOT overlap."
+
+
+@mcp.tool()
+def find_nearest(index: int, count: int = 3) -> str:
+    """Find N nearest objects by XZ distance, sorted.
+
+    Args:
+        index: Reference object index.
+        count: Number of nearest neighbors to return (default 3).
+    """
+    data = _load_layout()
+    n = len(data["items"])
+    if index < 0 or index >= n:
+        return f"Error: index {index} out of range (0-{n-1})."
+    p = data["items"][index]["pos"]
+    dists = []
+    for i, item in enumerate(data["items"]):
+        if i == index:
+            continue
+        q = item["pos"]
+        dx, dz = p[0] - q[0], p[2] - q[2]
+        dists.append((math.sqrt(dx * dx + dz * dz), i))
+    dists.sort()
+    results = dists[:count]
+    if not results:
+        return "No other objects in layout."
+    lines = []
+    for d, i in results:
+        t = data["items"][i].get("furnitureType") or data["items"][i].get("type", "object")
+        lines.append(f"  [{i}] {t} — {d:.3f}m")
+    return f"Nearest {len(results)} objects to [{index}]:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def align_objects(indices: list[int], axis: str, reference: str = "center") -> str:
+    """Align objects along an axis.
+
+    Args:
+        indices: List of object indices to align.
+        axis: Axis to align on — 'x' or 'z'.
+        reference: 'min', 'max', or 'center' (average of group). Default 'center'.
+    """
+    if axis not in ("x", "z"):
+        return "Error: axis must be 'x' or 'z'."
+    if reference not in ("min", "max", "center"):
+        return "Error: reference must be 'min', 'max', or 'center'."
+    data = _load_layout()
+    n = len(data["items"])
+    for i in indices:
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1}). No changes made."
+    comp = 0 if axis == "x" else 2
+    vals = [data["items"][i]["pos"][comp] for i in indices]
+    if reference == "min":
+        target = min(vals)
+    elif reference == "max":
+        target = max(vals)
+    else:
+        target = sum(vals) / len(vals)
+    for i in indices:
+        data["items"][i]["pos"][comp] = target
+    _save_layout(data)
+    return f"Aligned {len(indices)} objects on {axis}={target:.3f} (ref={reference})."
+
+
+@mcp.tool()
+def distribute_objects(indices: list[int], axis: str) -> str:
+    """Evenly space objects along an axis. First/last stay as anchors.
+
+    Args:
+        indices: List of object indices (>= 3).
+        axis: Axis to distribute along — 'x' or 'z'.
+    """
+    if axis not in ("x", "z"):
+        return "Error: axis must be 'x' or 'z'."
+    if len(indices) < 3:
+        return "Error: need at least 3 objects to distribute."
+    data = _load_layout()
+    n = len(data["items"])
+    for i in indices:
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1}). No changes made."
+    comp = 0 if axis == "x" else 2
+    ordered = sorted(indices, key=lambda i: data["items"][i]["pos"][comp])
+    start = data["items"][ordered[0]]["pos"][comp]
+    end = data["items"][ordered[-1]]["pos"][comp]
+    step = (end - start) / (len(ordered) - 1)
+    for k, i in enumerate(ordered):
+        data["items"][i]["pos"][comp] = start + k * step
+    _save_layout(data)
+    return f"Distributed {len(indices)} objects along {axis} from {start:.3f} to {end:.3f}."
+
+
+@mcp.tool()
+def snap_to_grid(indices: list[int], grid_size: float = 0.25) -> str:
+    """Round object positions to nearest grid multiple.
+
+    Args:
+        indices: List of object indices to snap.
+        grid_size: Grid cell size in meters (default 0.25).
+    """
+    if grid_size <= 0:
+        return "Error: grid_size must be positive."
+    data = _load_layout()
+    n = len(data["items"])
+    for i in indices:
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1}). No changes made."
+    for i in indices:
+        p = data["items"][i]["pos"]
+        p[0] = round(p[0] / grid_size) * grid_size
+        p[2] = round(p[2] / grid_size) * grid_size
+    _save_layout(data)
+    return f"Snapped {len(indices)} objects to {grid_size}m grid."
+
+
+@mcp.tool()
+def rename_object(index: int, name: str) -> str:
+    """Assign a human-readable label to an object. Empty string removes it.
+
+    Args:
+        index: Object index.
+        name: Label to assign (empty string to remove).
+    """
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range."
+    if name:
+        data["items"][index]["name"] = name
+    else:
+        data["items"][index].pop("name", None)
+    _save_layout(data)
+    return f"{'Renamed' if name else 'Cleared name for'} [{index}] → '{name}'." if name else f"Cleared name for [{index}]."
+
+
+@mcp.tool()
+def find_by_name(name: str) -> str:
+    """Case-insensitive substring search on object names.
+
+    Args:
+        name: Search string.
+    """
+    data = _load_layout()
+    found = []
+    for i, item in enumerate(data["items"]):
+        obj_name = item.get("name", "")
+        if obj_name and name.lower() in obj_name.lower():
+            t = item.get("furnitureType") or item.get("type", "object")
+            p = item["pos"]
+            found.append(f"  [{i}] \"{obj_name}\" ({t}) at ({p[0]:.2f}, {p[2]:.2f})")
+    if not found:
+        return f"No objects found matching '{name}'."
+    return f"Found {len(found)} matching objects:\n" + "\n".join(found)
+
+
+@mcp.tool()
+def tag_room(indices: list[int], room_name: str) -> str:
+    """Assign a room label to objects.
+
+    Args:
+        indices: List of object indices to tag.
+        room_name: Room name to assign.
+    """
+    data = _load_layout()
+    n = len(data["items"])
+    for i in indices:
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1}). No changes made."
+    for i in indices:
+        data["items"][i]["room"] = room_name
+    _save_layout(data)
+    return f"Tagged {len(indices)} objects as '{room_name}'."
+
+
+@mcp.tool()
+def list_rooms() -> str:
+    """List all room labels with their object indices and types."""
+    data = _load_layout()
+    rooms: dict[str, list[str]] = {}
+    for i, item in enumerate(data["items"]):
+        room = item.get("room")
+        if room:
+            t = item.get("furnitureType") or item.get("type", "object")
+            rooms.setdefault(room, []).append(f"[{i}] {t}")
+    if not rooms:
+        return "No rooms defined. Use tag_room to assign rooms."
+    lines = []
+    for room, objs in sorted(rooms.items()):
+        lines.append(f"  {room}: {', '.join(objs)}")
+    return f"{len(rooms)} rooms:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def swap_furniture(index: int, new_type: str) -> str:
+    """Replace furniture type keeping position, rotation, visibility, name, room.
+
+    Args:
+        index: Object index.
+        new_type: New furniture type from catalog.
+    """
+    if new_type not in FURNITURE_CATALOG:
+        return f"Error: unknown type '{new_type}'. Use list_furniture_catalog()."
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range."
+    item = data["items"][index]
+    spec = FURNITURE_CATALOG[new_type]
+    old_type = item.get("furnitureType") or item.get("type")
+    item["type"] = "furniture"
+    item["furnitureType"] = new_type
+    item["geo"] = [spec["w"], spec["h"], spec["d"]]
+    item["color"] = spec["color"]
+    item["pos"][1] = spec["h"] / 2  # re-ground Y
+    _save_layout(data)
+    return f"Swapped [{index}] from {old_type} to {new_type}."
+
+
 def run_server() -> None:
     """Start the MCP server on stdio."""
     mcp.run()
