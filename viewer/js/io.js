@@ -45,6 +45,7 @@ function ingestGLB(gltf) {
     S.orbit.update();
   }
   fn.refreshSceneList();
+  if (fn.pushLayoutToServer) fn.pushLayoutToServer();
 }
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -91,19 +92,38 @@ function exportJSON() {
   downloadBlob(new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }), 'haus-layout.json');
 }
 let lastMcpText = '';
+let lastPushedText = '';
 function startMcpSync() {
+  // push scene state to server so MCP/chat tools see all objects
+  fn.pushLayoutToServer = pushLayoutToServer;
+  pushLayoutToServer();
+  setInterval(pushLayoutToServer, 3000);
+  // pull changes made by MCP/chat back into editor
   setInterval(async () => {
     try {
       const res = await fetch('./mcp-layout.json?t=' + Date.now());
       if (!res.ok) return;
       const text = await res.text();
-      if (text === lastMcpText) return;
+      if (text === lastMcpText || text === lastPushedText) return;
       lastMcpText = text;
       const data = JSON.parse(text);
       if (!data.items) return;
       applyLayoutData(data);
     } catch {}
   }, 2000);
+}
+async function pushLayoutToServer() {
+  try {
+    const data = serializeLayout();
+    const text = JSON.stringify(data);
+    if (text === lastPushedText) return;
+    lastPushedText = text;
+    await fetch('/api/sync-layout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: text,
+    });
+  } catch {}
 }
 function applyLayoutData(data) {
   clearModelParts();

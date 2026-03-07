@@ -150,49 +150,70 @@ def _openai_tools():
     return [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}} for t in _TOOLS_SPEC]
 
 
+def _to_oai_messages(messages: list) -> list:
+    """Convert internal message format to OpenAI format."""
+    oai = [{"role": "system", "content": _SYSTEM}]
+    for m in messages:
+        role = m["role"]
+        content = m.get("content")
+        if isinstance(content, str):
+            oai.append({"role": role, "content": content})
+            continue
+        if not isinstance(content, list):
+            continue
+        # assistant message: group text + tool_calls into one message
+        if role == "assistant":
+            texts = [b["text"] for b in content if b.get("type") == "text"]
+            tus = [b for b in content if b.get("type") == "tool_use"]
+            entry = {"role": "assistant", "content": "\n".join(texts) if texts else None}
+            if tus:
+                entry["tool_calls"] = [
+                    {"id": tu["id"], "type": "function", "function": {"name": tu["name"], "arguments": json.dumps(tu["input"])}}
+                    for tu in tus
+                ]
+            oai.append(entry)
+        # user message with tool_results: each becomes a separate tool message
+        elif role == "user" and content and content[0].get("type") == "tool_result":
+            for b in content:
+                oai.append({"role": "tool", "tool_call_id": b["tool_use_id"], "content": b["content"]})
+        else:
+            texts = [b.get("text", "") for b in content if b.get("type") == "text"]
+            oai.append({"role": role, "content": "\n".join(texts) if texts else ""})
+    return oai
+
+
 def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
     import openai
     client = openai.OpenAI(api_key=api_key)
     tools = _openai_tools()
-    oai_messages = [{"role": "system", "content": _SYSTEM}]
-    for m in messages:
-        if isinstance(m.get("content"), str):
-            oai_messages.append({"role": m["role"], "content": m["content"]})
-        elif isinstance(m.get("content"), list):
-            # convert from our internal format
-            for block in m["content"]:
-                if block.get("type") == "text":
-                    oai_messages.append({"role": m["role"], "content": block["text"]})
-                elif block.get("type") == "tool_use":
-                    oai_messages.append({"role": "assistant", "content": None, "tool_calls": [
-                        {"id": block["id"], "type": "function", "function": {"name": block["name"], "arguments": json.dumps(block["input"])}}
-                    ]})
-                elif block.get("type") == "tool_result":
-                    oai_messages.append({"role": "tool", "tool_call_id": block["tool_use_id"], "content": block["content"]})
+    oai_messages = _to_oai_messages(messages)
 
     for _ in range(10):
         response = client.chat.completions.create(model=model, messages=oai_messages, tools=tools, max_tokens=1024)
-        choice = response.choices[0]
-        msg = choice.message
+        msg = response.choices[0].message
         if not msg.tool_calls:
             text = msg.content or ""
             messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
             return text, messages
-        # has tool calls
+        # build assistant message for both formats
         assistant_content = []
-        oai_messages.append({"role": "assistant", "content": msg.content, "tool_calls": [
+        oai_entry = {"role": "assistant", "content": msg.content, "tool_calls": [
             {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
             for tc in msg.tool_calls
-        ]})
+        ]}
+        oai_messages.append(oai_entry)
         if msg.content:
             assistant_content.append({"type": "text", "text": msg.content})
+        tool_results = []
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments)
             dispatch_fn = _DISPATCH.get(tc.function.name)
             result = dispatch_fn(args) if dispatch_fn else f"Unknown tool: {tc.function.name}"
             oai_messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
             assistant_content.append({"type": "tool_use", "id": tc.id, "name": tc.function.name, "input": args})
+            tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
         messages.append({"role": "assistant", "content": assistant_content})
+        messages.append({"role": "user", "content": tool_results})
     raise RuntimeError("Too many tool iterations")
 
 
@@ -312,10 +333,20 @@ async def _chat(request: Request):
         return JSONResponse({"error": str(e)}, 500)
 
 
+async def _sync_layout(request: Request):
+    """Receive full layout from editor so MCP tools see all objects."""
+    body = await request.json()
+    if body.get("items") is not None:
+        from .mcp_server import _save_layout
+        _save_layout(body)
+    return JSONResponse({"ok": True})
+
+
 def create_app(root_dir: str) -> Starlette:
     return Starlette(routes=[
         Route("/api/chat/status", _chat_status, methods=["GET"]),
         Route("/api/chat", _chat, methods=["POST"]),
+        Route("/api/sync-layout", _sync_layout, methods=["POST"]),
         Mount("/", StaticFiles(directory=root_dir, html=True)),
     ])
 
