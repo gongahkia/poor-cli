@@ -139,6 +139,13 @@ _DISPATCH_RAW = {
     "remove_object": lambda a: remove_object(**a),
     "remove_objects_by_type": lambda a: remove_objects_by_type(**a),
     "clear_layout": lambda a: clear_layout(),
+    "get_object_details": lambda a: get_object_details(**a),
+    "get_layout_summary": lambda a: get_layout_summary(),
+    "resize_object": lambda a: resize_object(**a),
+    "set_color": lambda a: set_color(**a),
+    "set_visibility": lambda a: set_visibility(**a),
+    "duplicate_object": lambda a: duplicate_object(**a),
+    "batch_move": lambda a: batch_move(**a),
 }
 
 _tool_log: list[dict] = []  # collects tool calls per request
