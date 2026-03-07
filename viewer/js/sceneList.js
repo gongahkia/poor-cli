@@ -34,7 +34,7 @@ function refreshSceneList() {
     name.className = 'si-name'; name.textContent = getLabel(m);
     row.appendChild(name);
     const visBtn = document.createElement('button');
-    visBtn.className = 'si-btn'; visBtn.textContent = m.visible ? '\u{1F441}' : '\u2014'; visBtn.title = m.visible ? 'Hide' : 'Show';
+    visBtn.className = 'si-btn'; visBtn.textContent = m.visible ? 'V' : '-'; visBtn.title = m.visible ? 'Hide' : 'Show';
     visBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (m.visible) { m.visible = false; if (!S.hiddenObjects.includes(m)) S.hiddenObjects.push(m); if (m === S.selectedTarget) fn.deselectFurniture(); }
@@ -43,7 +43,7 @@ function refreshSceneList() {
     });
     row.appendChild(visBtn);
     const frameBtn = document.createElement('button');
-    frameBtn.className = 'si-btn'; frameBtn.textContent = '\u2316'; frameBtn.title = 'Frame';
+    frameBtn.className = 'si-btn'; frameBtn.textContent = 'F'; frameBtn.title = 'Frame';
     frameBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       fn.selectFurniture(m);
@@ -55,7 +55,7 @@ function refreshSceneList() {
     });
     row.appendChild(frameBtn);
     const delBtn = document.createElement('button');
-    delBtn.className = 'si-btn'; delBtn.textContent = '\u2715'; delBtn.title = 'Delete';
+    delBtn.className = 'si-btn'; delBtn.textContent = 'X'; delBtn.title = 'Delete';
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (m === S.selectedTarget) { fn.deleteSelected(); }
