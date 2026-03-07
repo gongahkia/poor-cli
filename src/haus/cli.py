@@ -9,6 +9,38 @@ from .pipeline import run_vectorize
 from .types import VectorizeConfig
 
 
+def _build_manifest(out_dir: Path, project_root: Path) -> list[dict]:
+    """Scan out/ for model.glb files and build a manifest for the landing page."""
+    manifest = []
+    if not out_dir.exists():
+        return manifest
+    for glb in sorted(out_dir.rglob("model.glb")):
+        model_dir = glb.parent
+        name = model_dir.name
+        entry: dict = {
+            "name": name,
+            "glb": "/" + str(glb.relative_to(project_root)),
+        }
+        thumb = model_dir / "vector_clean.png"
+        if thumb.exists():
+            entry["thumb"] = "/" + str(thumb.relative_to(project_root))
+        meta_file = model_dir / "vector.metadata.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text())
+                entry["walls"] = meta.get("walls", {}).get("total_segments")
+                entry["columns"] = len(meta.get("columns", []))
+                entry["openings"] = meta.get("openings", {}).get("total")
+                m_per_px = meta.get("scale", {}).get("m_per_px")
+                if m_per_px is not None:
+                    entry["scale"] = f"{m_per_px:.4f}"
+                entry["source"] = meta.get("source_image", "")
+            except (json.JSONDecodeError, KeyError):
+                pass
+        manifest.append(entry)
+    return manifest
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="haus",
@@ -29,7 +61,8 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument("--scale-override", type=float, default=None, help="Override m_per_px scale (bypass auto-detection)")
 
     view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
-    view.add_argument("--glb", required=True, type=Path, help="Path to GLB file")
+    view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
+    view.add_argument("--port", type=int, default=8080, help="HTTP server port (default: 8080)")
 
     return parser
 
@@ -59,20 +92,28 @@ def main(argv: list[str] | None = None) -> int:
             import shutil
             import subprocess
             import webbrowser
-            viewer_dir = Path(__file__).resolve().parent.parent.parent / "viewer"
+            project_root = Path(__file__).resolve().parent.parent.parent
+            viewer_dir = project_root / "viewer"
+            out_dir = project_root / "out"
             if not viewer_dir.exists():
                 print(f"error: viewer directory not found: {viewer_dir}", file=sys.stderr)
                 return 2
-            if not args.glb.exists():
-                print(f"error: GLB file does not exist: {args.glb}", file=sys.stderr)
-                return 2
-            shutil.copy2(args.glb, viewer_dir / "model.glb")
-            print(f"Copied {args.glb} -> {viewer_dir / 'model.glb'}", file=sys.stderr)
-            print("Starting server at http://localhost:8080", file=sys.stderr)
-            webbrowser.open("http://localhost:8080")
+            port = args.port
+            if args.glb:
+                if not args.glb.exists():
+                    print(f"error: GLB file does not exist: {args.glb}", file=sys.stderr)
+                    return 2
+                shutil.copy2(args.glb, viewer_dir / "model.glb")
+                open_url = f"http://localhost:{port}/viewer/editor.html"
+            else:
+                manifest = _build_manifest(out_dir, project_root)
+                (viewer_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+                open_url = f"http://localhost:{port}/viewer/"
+            print(f"Starting server at http://localhost:{port}", file=sys.stderr)
+            webbrowser.open(open_url)
             proc = subprocess.Popen(
-                [sys.executable, "-m", "http.server", "8080"],
-                cwd=str(viewer_dir),
+                [sys.executable, "-m", "http.server", str(port)],
+                cwd=str(project_root),
             )
             try:
                 proc.wait()

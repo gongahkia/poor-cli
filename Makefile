@@ -32,10 +32,7 @@ build: $(wildcard $(CORPUS)/*.jpg)
 	done
 
 view:
-	@glb=$$(ls -t $(OUT)/*/model.glb 2>/dev/null | head -1); \
-	if [ -z "$$glb" ]; then echo "No GLB found. Run 'make build' first."; exit 1; fi; \
-	echo "Viewing $$glb"; \
-	$(VENV)/haus view --glb "$$glb"
+	$(VENV)/haus view
 
 clean:
 	rm -rf $(OUT)
