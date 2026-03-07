@@ -279,8 +279,7 @@ def _chat_gemini(api_key: str, messages: list, model: str) -> tuple[str, list]:
         func_responses = []
         for fc in func_calls:
             args = dict(fc.function_call.args)
-            fn = _DISPATCH.get(fc.function_call.name)
-            result = fn(args) if fn else f"Unknown tool: {fc.function_call.name}"
+            result = _dispatch(fc.function_call.name, args)
             func_responses.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
                 name=fc.function_call.name, response={"result": result})))
         last_msg = func_responses
