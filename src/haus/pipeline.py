@@ -108,4 +108,20 @@ def run_vectorize(config: VectorizeConfig) -> MetadataDict:
         blend = cv2.addWeighted(overlay, 0.65, overlay2, 0.35, 0.0)
         cv2.imwrite(str(config.debug_dir / "overlay.png"), cv2.cvtColor(blend, cv2.COLOR_RGB2BGR))
 
+        seg_img = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+        for w in data.walls:
+            color = (0, 255, 0) if w.wall_type == "structural" else (255, 0, 0)
+            cv2.line(seg_img, (w.x1, w.y1), (w.x2, w.y2), color, 2)
+        for o in data.openings:
+            if o.label == "Door":
+                color = (0, 0, 255)
+            elif o.label == "Window":
+                color = (255, 255, 0)
+            else:
+                color = (0, 255, 255)
+            cv2.rectangle(seg_img, (o.x, o.y), (o.x + o.w, o.y + o.h), color, 2)
+        for c in data.columns:
+            cv2.rectangle(seg_img, (c.x, c.y), (c.x + c.w, c.y + c.h), (255, 0, 255), -1)
+        cv2.imwrite(str(config.debug_dir / "segments_overlay.png"), seg_img)
+
     return metadata
