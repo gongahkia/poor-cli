@@ -52,6 +52,7 @@ def _build_parser() -> argparse.ArgumentParser:
     vec.add_argument("--image", required=True, type=Path, help="Path to floor plan image (PNG/JPEG)")
     vec.add_argument("--out", required=True, type=Path, help="Output directory")
     vec.add_argument("--debug-dir", type=Path, default=None, help="Optional debug artifact directory")
+    vec.add_argument("--no-clean", action="store_true", help="Skip floor plan pre-cleaning")
 
     build = subparsers.add_parser("build", help="Full pipeline: image -> vector + GLB mesh")
     build.add_argument("--image", required=True, type=Path, help="Path to floor plan image (PNG/JPEG)")
@@ -59,6 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument("--debug-dir", type=Path, default=None, help="Optional debug artifact directory")
     build.add_argument("--wall-height", type=float, default=2.6, help="Wall extrusion height in meters (default: 2.6)")
     build.add_argument("--scale-override", type=float, default=None, help="Override m_per_px scale (bypass auto-detection)")
+    build.add_argument("--no-clean", action="store_true", help="Skip floor plan pre-cleaning")
+
+    clean = subparsers.add_parser("clean", help="Pre-clean a floor plan image (remove arcs, ledges, annotations)")
+    clean.add_argument("--image", required=True, type=Path, help="Path to floor plan image")
+    clean.add_argument("--out", required=True, type=Path, help="Output cleaned image path")
 
     view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
     view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
@@ -82,11 +88,27 @@ def main(argv: list[str] | None = None) -> int:
                 debug_dir=args.debug_dir,
                 wall_height=getattr(args, "wall_height", 2.6),
                 scale_override=getattr(args, "scale_override", None),
+                clean=not getattr(args, "no_clean", False),
             )
             metadata = run_vectorize(cfg)
             print(json.dumps(metadata, indent=2))
             if args.command == "build" and "output_glb" in metadata:
                 print(metadata["output_glb"], file=sys.stderr)
+            return 0
+        if args.command == "clean":
+            import cv2 as _cv2
+            from .preprocess import clean_floor_plan
+            if not args.image.exists():
+                print(f"error: image does not exist: {args.image}", file=sys.stderr)
+                return 2
+            img_bgr = _cv2.imread(str(args.image))
+            if img_bgr is None:
+                raise ValueError(f"Could not read image: {args.image}")
+            img_rgb = _cv2.cvtColor(img_bgr, _cv2.COLOR_BGR2RGB)
+            cleaned = clean_floor_plan(img_rgb)
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            _cv2.imwrite(str(args.out), _cv2.cvtColor(cleaned, _cv2.COLOR_RGB2BGR))
+            print(f"Cleaned image saved to {args.out}", file=sys.stderr)
             return 0
         if args.command == "view":
             import shutil

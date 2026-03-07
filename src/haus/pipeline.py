@@ -9,6 +9,7 @@ import numpy as np
 
 from .extraction import extract_floor_plan
 from .mesh import extrude_floor_plan, export_glb
+from .preprocess import clean_floor_plan
 from .render import render_vector_clean
 from .types import FloorPlanData, MetadataDict, VectorizeConfig
 
@@ -81,6 +82,15 @@ def run_vectorize(config: VectorizeConfig) -> MetadataDict:
     if img_bgr is None:
         raise ValueError(f"Could not read image: {config.image_path}")
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    if config.clean:
+        img_rgb = clean_floor_plan(img_rgb)
+        if config.debug_dir is not None:
+            config.debug_dir.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(
+                str(config.debug_dir / "cleaned.png"),
+                cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR),
+            )
 
     data, wall_mask, fill_mask = extract_floor_plan(img_rgb)
 
