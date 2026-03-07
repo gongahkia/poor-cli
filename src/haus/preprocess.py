@@ -142,6 +142,9 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
         prot = ((merged > 0) & (opened == 0)).astype(np.uint8)
         if np.count_nonzero(prot) == 0:
             continue
+        # close to merge fragmented protrusion components
+        prot = cv2.morphologyEx(prot, cv2.MORPH_CLOSE,
+                                np.ones((15, 15), np.uint8), iterations=1)
         num, labels, stats, _ = cv2.connectedComponentsWithStats(prot, 8)
         for i in range(1, num):
             area = int(stats[i, cv2.CC_STAT_AREA])
