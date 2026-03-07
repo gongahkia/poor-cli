@@ -16,19 +16,19 @@ def _build_fill_mask(img_rgb: np.ndarray) -> np.ndarray:
     """Union of all saturated connected components (>= 500 px)."""
     hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
     saturated = (
-        (hsv[:, :, 1] > 35) & (hsv[:, :, 2] > 60)
+        (hsv[:, :, 1] > _FILL_SAT_MIN) & (hsv[:, :, 2] > _FILL_VAL_MIN)
     ).astype(np.uint8)
 
-    k_vbridge = np.ones((7, 1), np.uint8)
+    k_vbridge = np.ones((_FILL_VBRIDGE_HEIGHT, 1), np.uint8)
     saturated = cv2.morphologyEx(saturated, cv2.MORPH_CLOSE, k_vbridge, iterations=1)
 
     num, labels, stats, _ = cv2.connectedComponentsWithStats(saturated, 8)
     fill = np.zeros_like(saturated)
     for i in range(1, num):
-        if int(stats[i, cv2.CC_STAT_AREA]) >= 500:
+        if int(stats[i, cv2.CC_STAT_AREA]) >= _FILL_MIN_COMPONENT_AREA:
             fill[labels == i] = 1
 
-    if np.count_nonzero(fill) < 1000:
+    if np.count_nonzero(fill) < _FILL_FALLBACK_THRESHOLD:
         h, w = img_rgb.shape[:2]
         fill = np.ones((h, w), dtype=np.uint8)
     return fill
@@ -39,7 +39,7 @@ def _solidify_fill(fill_mask: np.ndarray) -> np.ndarray:
     num, labels, stats, _ = cv2.connectedComponentsWithStats(fill_mask, 8)
     solid = np.zeros_like(fill_mask)
     for i in range(1, num):
-        if int(stats[i, cv2.CC_STAT_AREA]) < 100:
+        if int(stats[i, cv2.CC_STAT_AREA]) < _SOLIDIFY_MIN_AREA:
             continue
         comp = (labels == i).astype(np.uint8)
         contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -51,6 +51,23 @@ def _solidify_fill(fill_mask: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Dark pixel extraction (search zone from fill mask)
 # ---------------------------------------------------------------------------
+
+_FILL_SAT_MIN = 35              # minimum HSV saturation for fill detection
+_FILL_VAL_MIN = 60              # minimum HSV value for fill detection
+_FILL_VBRIDGE_HEIGHT = 7        # vertical bridging kernel height
+_FILL_MIN_COMPONENT_AREA = 500  # minimum connected component area for fill
+_FILL_FALLBACK_THRESHOLD = 1000 # if total fill < this, use whole image
+_SOLIDIFY_MIN_AREA = 100        # minimum component area for solidification
+_DARK_GRAY_THRESHOLD = 150      # grayscale threshold for "dark" pixels
+_COLUMN_GRAY_THRESHOLD = 120    # grayscale threshold for column detection
+_COLUMN_MIN_AREA = 150          # minimum column component area
+_COLUMN_MIN_DIM = 6             # minimum column bounding box dimension
+_COLUMN_MAX_ASPECT = 4          # maximum column aspect ratio
+_OPENING_MIN_GAP_PX = 15        # minimum opening gap in pixels
+_OPENING_MAX_GAP_PX = 150       # maximum opening gap in pixels
+_OPENING_DOOR_THRESHOLD_M = 1.2 # width threshold: < this = window, >= = door
+_OPENING_MAX_COUNT = 20         # hard cap on detected openings
+_WALL_FRAGMENT_MIN_AREA = 150   # minimum area for wall mask fragments
 
 _WALL_HALF = 16
 _MIN_WALL_LENGTH = 20
@@ -65,7 +82,7 @@ def _extract_dark(img_rgb: np.ndarray, fill_mask: np.ndarray) -> np.ndarray:
     k_wall = np.ones((_WALL_HALF * 2 + 1, _WALL_HALF * 2 + 1), np.uint8)
     fill_dilated = cv2.dilate(fill_solid, k_wall, iterations=1)
 
-    dark = ((gray < 150) & (fill_dilated > 0)).astype(np.uint8) * 255
+    dark = ((gray < _DARK_GRAY_THRESHOLD) & (fill_dilated > 0)).astype(np.uint8) * 255
     dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
     return dark
 
@@ -231,7 +248,7 @@ def _extract_wall_segments(
     # Remove small isolated fragments
     num_w, labels_w, stats_w, _ = cv2.connectedComponentsWithStats(wall_mask, 8)
     for i in range(1, num_w):
-        if int(stats_w[i, cv2.CC_STAT_AREA]) < 150:
+        if int(stats_w[i, cv2.CC_STAT_AREA]) < _WALL_FRAGMENT_MIN_AREA:
             wall_mask[labels_w == i] = 0
 
     return segments, wall_mask
@@ -253,7 +270,7 @@ def _detect_columns(
     fill_dilated = cv2.dilate(fill_solid, k_wall, iterations=1)
 
     outer_band = ((fill_dilated > 0) & (fill_solid == 0)).astype(np.uint8)
-    residual = ((gray < 120).astype(np.uint8)) & outer_band & (wall_mask == 0)
+    residual = ((gray < _COLUMN_GRAY_THRESHOLD).astype(np.uint8)) & outer_band & (wall_mask == 0)
 
     columns: list[Column] = []
     num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, 8)
@@ -261,9 +278,9 @@ def _detect_columns(
         area = int(stats[i, cv2.CC_STAT_AREA])
         bw = int(stats[i, cv2.CC_STAT_WIDTH])
         bh = int(stats[i, cv2.CC_STAT_HEIGHT])
-        if area >= 150 and min(bw, bh) >= 6:
+        if area >= _COLUMN_MIN_AREA and min(bw, bh) >= _COLUMN_MIN_DIM:
             aspect = max(bw, bh) / max(min(bw, bh), 1)
-            if aspect < 4:
+            if aspect < _COLUMN_MAX_ASPECT:
                 columns.append(Column(
                     x=int(stats[i, cv2.CC_STAT_LEFT]),
                     y=int(stats[i, cv2.CC_STAT_TOP]),
@@ -307,7 +324,7 @@ def _detect_openings(
         bw = int(stats[i, cv2.CC_STAT_WIDTH])
         bh = int(stats[i, cv2.CC_STAT_HEIGHT])
         gap_px = float(max(bw, bh))
-        if gap_px < 15 or gap_px > 150:
+        if gap_px < _OPENING_MIN_GAP_PX or gap_px > _OPENING_MAX_GAP_PX:
             continue
 
         x = int(stats[i, cv2.CC_STAT_LEFT])
@@ -315,13 +332,13 @@ def _detect_openings(
 
         if m_per_px is not None:
             width_m: float | None = gap_px * m_per_px
-            label = "Window" if width_m < 1.2 else "Door"
+            label = "Window" if width_m < _OPENING_DOOR_THRESHOLD_M else "Door"
         else:
             width_m = None
             label = "Opening"
 
         openings.append(Opening(x=x, y=y, w=bw, h=bh, width_m=width_m, label=label))
-        if len(openings) >= 20:
+        if len(openings) >= _OPENING_MAX_COUNT:
             break
 
     return openings
