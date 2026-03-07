@@ -91,10 +91,10 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
 def _erase_protrusions(img: np.ndarray) -> np.ndarray:
     """Erase narrow exterior protrusions (AC ledges, laundry areas).
 
-    Uses morphological opening on the solidified fill mask.  Protrusions
-    narrower than ~10% of the unit's short dimension are removed.  Real
-    rooms (bathrooms >= 1.5m, corridors >= 1.2m) survive because they
-    exceed the kernel size.
+    Uses morphological opening on the solidified fill mask.  The opening
+    removes thin extensions; then connected-component area filtering
+    distinguishes real AC ledge protrusions (~3000-8000 sqpx) from tiny
+    corner-rounding artifacts (~100-600 sqpx).
     """
     solid = _build_fill_solid(img)
     if np.count_nonzero(solid) < 1000:
@@ -112,7 +112,16 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
     protrusions = ((solid > 0) & (opened == 0)).astype(np.uint8)
     if np.count_nonzero(protrusions) == 0:
         return img
-    zone = cv2.dilate(protrusions, np.ones((5, 5), np.uint8), iterations=1)
+    # area filter: corner artifacts < 800 sqpx, real rooms > 20000 sqpx
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(protrusions, 8)
+    erase = np.zeros_like(protrusions)
+    for i in range(1, num):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if 800 < area < 20000:
+            erase[labels == i] = 1
+    if np.count_nonzero(erase) == 0:
+        return img
+    zone = cv2.dilate(erase, np.ones((5, 5), np.uint8), iterations=1)
     img[zone > 0] = 255
     return img
 
