@@ -245,39 +245,55 @@ function snapToGrid(val) {
 
 // --- GLB loading ---
 const loader = new GLTFLoader();
-let currentModel = null;
+let modelParts = []; // individual meshes from GLB, selectable/deletable
 
-function loadGLB(url) {
-  if (currentModel) scene.remove(currentModel);
-  loader.load(url, (gltf) => {
-    currentModel = gltf.scene;
-    currentModel.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    scene.add(currentModel);
-    const box = new THREE.Box3().setFromObject(currentModel);
-    const center = box.getCenter(new THREE.Vector3());
+function clearModelParts() {
+  for (const m of modelParts) {
+    scene.remove(m);
+    const di = draggables.indexOf(m);
+    if (di >= 0) draggables.splice(di, 1);
+  }
+  modelParts = [];
+}
+
+function ingestGLB(gltf) {
+  clearModelParts();
+  // collect all meshes with their world transforms
+  const meshes = [];
+  gltf.scene.updateMatrixWorld(true);
+  gltf.scene.traverse((child) => {
+    if (child.isMesh) meshes.push(child);
+  });
+  const tempBox = new THREE.Box3();
+  for (const mesh of meshes) {
+    // detach from parent, apply world transform so it stands alone
+    const m = mesh.clone();
+    m.applyMatrix4(mesh.matrixWorld);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.userData.draggable = true;
+    m.userData.isModelPart = true;
+    m.userData.baseY = undefined; // computed on first drag
+    scene.add(m);
+    draggables.push(m);
+    modelParts.push(m);
+  }
+  // camera framing
+  if (modelParts.length > 0) {
+    tempBox.makeEmpty();
+    for (const m of modelParts) tempBox.expandByObject(m);
+    const center = tempBox.getCenter(new THREE.Vector3());
     orbit.target.copy(center);
     camera.position.set(center.x + 10, center.y + 8, center.z + 10);
     orbit.update();
-  });
+  }
 }
 
-loader.load('./model.glb', (gltf) => {
-  currentModel = gltf.scene;
-  currentModel.traverse((child) => {
-    if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
-  });
-  scene.add(currentModel);
-  const box = new THREE.Box3().setFromObject(currentModel);
-  const center = box.getCenter(new THREE.Vector3());
-  orbit.target.copy(center);
-  camera.position.set(center.x + 10, center.y + 8, center.z + 10);
-  orbit.update();
-}, undefined, () => {});
+function loadGLB(url) {
+  loader.load(url, (gltf) => ingestGLB(gltf));
+}
+
+loader.load('./model.glb', (gltf) => ingestGLB(gltf), undefined, () => {});
 
 document.getElementById('glb-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -434,6 +450,8 @@ function deleteSelected() {
   if (idx >= 0) draggables.splice(idx, 1);
   const widx = userWalls.indexOf(selectedTarget);
   if (widx >= 0) userWalls.splice(widx, 1);
+  const midx = modelParts.indexOf(selectedTarget);
+  if (midx >= 0) modelParts.splice(midx, 1);
   selectedTarget = null;
   document.getElementById('selected-info').style.display = 'none';
 }
@@ -563,19 +581,16 @@ updateSnapLabel();
 
 document.getElementById('wireframe-toggle').addEventListener('change', (e) => {
   const wf = e.target.checked;
-  if (currentModel) {
-    currentModel.traverse((child) => {
-      if (child.isMesh && child.material) child.material.wireframe = wf;
-    });
+  for (const m of modelParts) {
+    if (m.material) m.material.wireframe = wf;
   }
 });
 
 document.getElementById('shadows-toggle').addEventListener('change', (e) => {
   renderer.shadowMap.enabled = e.target.checked;
-  if (currentModel) {
-    currentModel.traverse((child) => {
-      if (child.isMesh) { child.castShadow = e.target.checked; child.receiveShadow = e.target.checked; }
-    });
+  for (const m of modelParts) {
+    m.castShadow = e.target.checked;
+    m.receiveShadow = e.target.checked;
   }
   dirLight.castShadow = e.target.checked;
   renderer.shadowMap.needsUpdate = true;
