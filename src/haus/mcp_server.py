@@ -230,6 +230,174 @@ def get_layout_json() -> str:
     return json.dumps(_load_layout(), indent=2)
 
 
+@mcp.tool()
+def get_object_details(index: int) -> str:
+    """Get full details for one object: type, position, rotation, dimensions, color, visibility.
+
+    Args:
+        index: Object index (from list_objects).
+    """
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range (0-{len(data['items'])-1})."
+    item = data["items"][index]
+    t = item.get("furnitureType") or item.get("type", "object")
+    p = item["pos"]
+    rot = math.degrees(item.get("rot", 0))
+    geo = item.get("geo", [1, 1, 1])
+    color = f"#{item.get('color', 0):06x}"
+    vis = item.get("visible", True)
+    return (f"[{index}] {t}\n"
+            f"  position: ({p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f})\n"
+            f"  rotation: {rot:.1f} deg\n"
+            f"  dimensions: w={geo[0]:.2f} h={geo[1]:.2f} d={geo[2]:.2f}\n"
+            f"  color: {color}\n"
+            f"  visible: {vis}")
+
+
+@mcp.tool()
+def get_layout_summary() -> str:
+    """Get a summary of the layout: object counts by type, furniture breakdown, hidden count, bounding box."""
+    data = _load_layout()
+    items = data["items"]
+    if not items:
+        return "Layout is empty."
+    type_counts: dict[str, int] = {}
+    furniture_counts: dict[str, int] = {}
+    hidden = 0
+    xs, zs = [], []
+    for item in items:
+        t = item.get("type", "object")
+        type_counts[t] = type_counts.get(t, 0) + 1
+        if t == "furniture":
+            ft = item.get("furnitureType", "unknown")
+            furniture_counts[ft] = furniture_counts.get(ft, 0) + 1
+        if not item.get("visible", True):
+            hidden += 1
+        p = item["pos"]
+        xs.append(p[0])
+        zs.append(p[2])
+    lines = [f"Total objects: {len(items)}"]
+    for t, c in sorted(type_counts.items()):
+        lines.append(f"  {t}: {c}")
+    if furniture_counts:
+        lines.append("Furniture breakdown:")
+        for ft, c in sorted(furniture_counts.items()):
+            lines.append(f"  {ft}: {c}")
+    if hidden:
+        lines.append(f"Hidden: {hidden}")
+    lines.append(f"XZ bounding box: X=[{min(xs):.2f}, {max(xs):.2f}] Z=[{min(zs):.2f}, {max(zs):.2f}]")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def resize_object(index: int, width: float | None = None, height: float | None = None, depth: float | None = None) -> str:
+    """Resize an object. Only provided dimensions are changed. Minimum 0.05m per axis.
+
+    Args:
+        index: Object index (from list_objects).
+        width: New width in meters (X axis).
+        height: New height in meters (Y axis).
+        depth: New depth in meters (Z axis).
+    """
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range."
+    item = data["items"][index]
+    geo = item.get("geo", [1, 1, 1])
+    if width is not None:
+        geo[0] = max(0.05, width)
+    if height is not None:
+        geo[1] = max(0.05, height)
+    if depth is not None:
+        geo[2] = max(0.05, depth)
+    item["geo"] = geo
+    item["pos"][1] = geo[1] / 2  # stay grounded
+    _save_layout(data)
+    return f"Resized [{index}] to w={geo[0]:.2f} h={geo[1]:.2f} d={geo[2]:.2f}."
+
+
+@mcp.tool()
+def set_color(index: int, color: str) -> str:
+    """Set an object's color.
+
+    Args:
+        index: Object index (from list_objects).
+        color: Hex color string (e.g. '#ff0000').
+    """
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range."
+    try:
+        c = int(color.lstrip("#"), 16)
+    except ValueError:
+        return f"Error: invalid color '{color}'. Use hex like '#ff0000'."
+    data["items"][index]["color"] = c
+    _save_layout(data)
+    return f"Set [{index}] color to {color}."
+
+
+@mcp.tool()
+def set_visibility(index: int, visible: bool) -> str:
+    """Show or hide an object.
+
+    Args:
+        index: Object index (from list_objects).
+        visible: True to show, False to hide.
+    """
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range."
+    data["items"][index]["visible"] = visible
+    _save_layout(data)
+    state = "visible" if visible else "hidden"
+    return f"Set [{index}] to {state}."
+
+
+@mcp.tool()
+def duplicate_object(index: int, x: float, z: float) -> str:
+    """Duplicate an object to a new position, preserving all properties.
+
+    Args:
+        index: Object index (from list_objects).
+        x: X position for the copy.
+        z: Z position for the copy.
+    """
+    data = _load_layout()
+    if index < 0 or index >= len(data["items"]):
+        return f"Error: index {index} out of range."
+    import copy
+    new_item = copy.deepcopy(data["items"][index])
+    new_item["pos"][0] = x
+    new_item["pos"][2] = z
+    data["items"].append(new_item)
+    _save_layout(data)
+    new_idx = len(data["items"]) - 1
+    t = new_item.get("furnitureType") or new_item.get("type")
+    return f"Duplicated [{index}] {t} to ({x}, {z}) as [{new_idx}]."
+
+
+@mcp.tool()
+def batch_move(indices: list[int], dx: float, dz: float) -> str:
+    """Move multiple objects by a relative offset. All indices validated before applying.
+
+    Args:
+        indices: List of object indices to move.
+        dx: Relative X offset in meters.
+        dz: Relative Z offset in meters.
+    """
+    data = _load_layout()
+    n = len(data["items"])
+    for i in indices:
+        if i < 0 or i >= n:
+            return f"Error: index {i} out of range (0-{n-1}). No objects moved."
+    for i in indices:
+        data["items"][i]["pos"][0] += dx
+        data["items"][i]["pos"][2] += dz
+    _save_layout(data)
+    return f"Moved {len(indices)} objects by dx={dx}, dz={dz}."
+
+
 def run_server() -> None:
     """Start the MCP server on stdio."""
     mcp.run()

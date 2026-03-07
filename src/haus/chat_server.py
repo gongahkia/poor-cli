@@ -21,6 +21,8 @@ from .mcp_server import (
     list_furniture_catalog, list_objects, add_furniture, add_wall,
     move_object, rotate_object, remove_object, remove_objects_by_type,
     clear_layout, get_layout_json,
+    get_object_details, get_layout_summary, resize_object,
+    set_color, set_visibility, duplicate_object, batch_move,
 )
 
 mimetypes.add_type("model/gltf-binary", ".glb")
