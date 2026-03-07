@@ -13,6 +13,7 @@ _SHELTER_WALL_RATIO = 0.70 # border darkness above this → household shelter
 _PROT_MIN_AREA = 2000 # primary area threshold for protrusions
 _PROT_DARK_AREA = 1000 # secondary: smaller protrusions with high dark content
 _PROT_DARK_RATIO = 0.35 # secondary: internal dark pixel ratio threshold
+_INPAINT_RADIUS = 5 # radius for Telea inpainting
 
 
 def clean_floor_plan(img_rgb: np.ndarray) -> np.ndarray:
@@ -21,8 +22,19 @@ def clean_floor_plan(img_rgb: np.ndarray) -> np.ndarray:
     img = _erase_hatching(img)
     img = _erase_protrusions(img)
     img = _erase_door_arcs(img)
+    img = _erase_triangles(img)
     img = _erase_exterior_marks(img)
     return img
+
+
+def _inpaint_erase(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Erase masked pixels by inpainting from surrounding colors."""
+    if np.count_nonzero(mask) == 0:
+        return img
+    mask_u8 = (mask > 0).astype(np.uint8) * 255
+    bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    result = cv2.inpaint(bgr, mask_u8, _INPAINT_RADIUS, cv2.INPAINT_TELEA)
+    return cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
 
 
 def _build_fill_solid(img_rgb: np.ndarray) -> np.ndarray:
@@ -60,9 +72,9 @@ def _build_wall_mask(dark: np.ndarray) -> np.ndarray:
 
 
 def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
-    """Erase quarter-circle door swing arcs.
+    """Erase quarter-circle door swing arcs (solid and dashed).
 
-    Phase 1: HoughCircles detects arcs (even connected to walls).
+    Phase 1: HoughCircles on original + morphologically-closed image.
     Phase 2: Residual CC analysis catches isolated arc fragments.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -70,15 +82,18 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
     walls = _build_wall_mask(dark)
     erase = np.zeros(img.shape[:2], dtype=np.uint8)
     h, w = gray.shape
-    blurred = cv2.GaussianBlur(gray, (9, 9), 2)
     min_r = max(20, min(h, w) // 20)
     max_r = max(60, min(h, w) // 5)
-    circles = cv2.HoughCircles(
-        blurred, cv2.HOUGH_GRADIENT, dp=1.0,
-        minDist=min_r * 3, param1=100, param2=40,
-        minRadius=min_r, maxRadius=max_r,
-    )
-    if circles is not None:
+
+    def _detect_hough_arcs(src_gray):
+        blurred = cv2.GaussianBlur(src_gray, (9, 9), 2)
+        circles = cv2.HoughCircles(
+            blurred, cv2.HOUGH_GRADIENT, dp=1.0,
+            minDist=min_r * 3, param1=100, param2=40,
+            minRadius=min_r, maxRadius=max_r,
+        )
+        if circles is None:
+            return
         for cx, cy, r in circles[0]:
             cx, cy, r = int(cx), int(cy), int(r)
             ring = np.zeros_like(erase)
@@ -86,6 +101,15 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
             arc_dark = (ring > 0) & (dark > 0) & (walls == 0)
             if np.count_nonzero(arc_dark) > 20:
                 erase[arc_dark] = 1
+
+    # phase 1a: detect arcs on original grayscale
+    _detect_hough_arcs(gray)
+    # phase 1b: close small gaps to detect dashed arcs
+    dark_closed = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=2)
+    gray_closed = gray.copy()
+    gray_closed[dark_closed > 0] = 0 # make closed dark pixels dark in grayscale
+    _detect_hough_arcs(gray_closed)
+
     # phase 2: residual non-wall dark CCs that look like arcs
     residual = cv2.bitwise_and(dark, cv2.bitwise_not(walls))
     num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, 8)
@@ -98,9 +122,24 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
         # arcs: low fill ratio, near-square bbox, reasonable size
         if fr < 0.18 and aspect < 2.0 and 80 < a < 15000 and min(bw, bh) > 15:
             erase[labels == i] = 1
+
+    # phase 3: detect dash segments along detected arc paths
+    # find small non-wall CCs that cluster along circular arcs
+    if np.count_nonzero(erase) > 0:
+        # dilate existing arc detections to catch nearby dash fragments
+        arc_zone = cv2.dilate(erase, np.ones((15, 15), np.uint8), iterations=2)
+        for i in range(1, num):
+            a = int(stats[i, cv2.CC_STAT_AREA])
+            if a < 10 or a > 500:
+                continue
+            comp = (labels == i).astype(np.uint8)
+            overlap = np.count_nonzero((comp > 0) & (arc_zone > 0))
+            if overlap > 0:
+                erase[labels == i] = 1
+
     if np.count_nonzero(erase):
         erase = cv2.dilate(erase, np.ones((3, 3), np.uint8), iterations=1)
-        img[erase > 0] = 255
+        img = _inpaint_erase(img, erase)
     return img
 
 
@@ -167,8 +206,9 @@ def _erase_hatching(img: np.ndarray) -> np.ndarray:
     erase = np.zeros(img.shape[:2], dtype=np.uint8)
     for i in range(1, num):
         comp = (labels == i).astype(np.uint8)
+        hatch_area = np.count_nonzero(comp)
         fill_overlap = np.count_nonzero((comp > 0) & (solid > 0))
-        fill_ratio = fill_overlap / max(np.count_nonzero(comp), 1)
+        fill_ratio = fill_overlap / max(hatch_area, 1)
         if fill_ratio < 0.35: # boundary hatching (AC ledge)
             # flood-fill from hatching centroid to find enclosing room
             ys, xs = np.where(comp > 0)
@@ -183,17 +223,20 @@ def _erase_hatching(img: np.ndarray) -> np.ndarray:
             # expand hatching region to cover nearby lines
             comp_exp = cv2.dilate(comp, np.ones((3, 15), np.uint8), iterations=2)
             barrier[(comp_exp > 0) & (vert_only > 0)] = 0
-            barrier = cv2.dilate(barrier, np.ones((3, 3), np.uint8), iterations=1)
+            # thicken barrier to close small gaps that cause flood leaks
+            barrier = cv2.dilate(barrier, np.ones((5, 5), np.uint8), iterations=1)
             flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
             fill_img = barrier.copy()
             cv2.floodFill(fill_img, flood_mask, seed, 128)
             room = (flood_mask[1:-1, 1:-1] > 0).astype(np.uint8)
             room_area = np.count_nonzero(room)
-            if 100 < room_area < h * w * 0.15: # reasonable room size
+            # max room: scale with hatching size but cap at 15% of image
+            max_room = min(hatch_area * 20, int(h * w * 0.15))
+            if 100 < room_area < max_room:
                 room_dilated = cv2.dilate(room, np.ones((7, 7), np.uint8), iterations=2)
                 erase = cv2.bitwise_or(erase, room_dilated)
     if np.count_nonzero(erase):
-        img[erase > 0] = 255
+        img = _inpaint_erase(img, erase)
     return img
 
 
@@ -251,7 +294,73 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
         bw_e = cw + 2 * margin
         bh_e = ch + 2 * margin
         zone[y:min(y + bh_e, h), x:min(x + bw_e, w)] = 1
-    img[zone > 0] = 255
+    img = _inpaint_erase(img, zone)
+    return img
+
+
+def _erase_triangles(img: np.ndarray) -> np.ndarray:
+    """Erase V-triangle door swing indicators inside rooms.
+
+    Detects small non-wall dark CCs with triangular contour (3-4 vertices)
+    that sit inside colored fill regions.
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
+    walls = _build_wall_mask(dark)
+    solid = _build_fill_solid(img)
+    if np.count_nonzero(solid) < 1000:
+        return img
+    residual = cv2.bitwise_and(dark, cv2.bitwise_not(walls))
+    num, labels, stats, centroids = cv2.connectedComponentsWithStats(residual, 8)
+    h, w = gray.shape
+    short_dim = min(h, w)
+    # scale area bounds with image size
+    min_area = max(30, int(short_dim * 0.03))
+    max_area = max(200, int(short_dim * 0.8))
+    erase = np.zeros(img.shape[:2], dtype=np.uint8)
+    for i in range(1, num):
+        a = int(stats[i, cv2.CC_STAT_AREA])
+        if a < min_area or a > max_area:
+            continue
+        bw = int(stats[i, cv2.CC_STAT_WIDTH])
+        bh = int(stats[i, cv2.CC_STAT_HEIGHT])
+        aspect = max(bw, bh) / max(min(bw, bh), 1)
+        if aspect > 3.0: # too elongated for a triangle
+            continue
+        comp = (labels == i).astype(np.uint8)
+        # must be inside a filled room
+        inside = np.count_nonzero((comp > 0) & (solid > 0)) / max(a, 1)
+        if inside < 0.3:
+            continue
+        # contour shape analysis: triangles have ~3 approxPolyDP vertices
+        contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+        c = max(contours, key=cv2.contourArea)
+        peri = cv2.arcLength(c, True)
+        if peri < 1:
+            continue
+        approx = cv2.approxPolyDP(c, 0.04 * peri, True)
+        n_verts = len(approx)
+        if n_verts < 3 or n_verts > 5: # triangles: 3-5 approx vertices
+            continue
+        # hull solidity: triangles have ~0.5 fill in bbox, high hull match
+        hull = cv2.convexHull(c)
+        hull_area = cv2.contourArea(hull)
+        cont_area = cv2.contourArea(c)
+        if hull_area < 1:
+            continue
+        solidity = cont_area / hull_area
+        if solidity < 0.3: # too hollow
+            continue
+        # bbox fill ratio: triangles typically 0.3-0.65
+        fr = a / max(bw * bh, 1)
+        if fr < 0.15 or fr > 0.7:
+            continue
+        erase[labels == i] = 1
+    if np.count_nonzero(erase):
+        erase = cv2.dilate(erase, np.ones((3, 3), np.uint8), iterations=1)
+        img = _inpaint_erase(img, erase)
     return img
 
 
@@ -274,5 +383,5 @@ def _erase_exterior_marks(img: np.ndarray) -> np.ndarray:
             erase[labels == i] = 1
     if np.count_nonzero(erase):
         mask = cv2.dilate(erase, np.ones((3, 3), np.uint8), iterations=1)
-        img[mask > 0] = 255
+        img = _inpaint_erase(img, mask)
     return img
