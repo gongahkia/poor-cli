@@ -14,6 +14,8 @@ class VectorizeConfig:
     image_path: Path
     out_dir: Path
     debug_dir: Optional[Path] = None
+    wall_height: float = 2.6
+    scale_override: Optional[float] = None
 
 
 @dataclass(frozen=True)

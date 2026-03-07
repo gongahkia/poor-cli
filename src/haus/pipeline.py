@@ -90,8 +90,8 @@ def run_vectorize(config: VectorizeConfig) -> MetadataDict:
     glb_path = config.out_dir / "model.glb"
     scene = extrude_floor_plan(
         data,
-        wall_height_m=getattr(config, "wall_height", 2.6),
-        scale_override=getattr(config, "scale_override", None),
+        wall_height_m=config.wall_height,
+        scale_override=config.scale_override,
     )
     export_glb(scene, glb_path)
 
