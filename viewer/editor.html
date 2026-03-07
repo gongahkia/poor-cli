@@ -32,6 +32,11 @@ canvas { display: block; }
 .toggle-row input[type="checkbox"] { accent-color: #5a9; width: 16px; height: 16px; cursor: pointer; }
 .toggle-row input[type="range"] { width: 80px; accent-color: #5a9; cursor: pointer; }
 .snap-val { color: #5a9; font-size: 11px; min-width: 36px; text-align: right; }
+.dim-input {
+  width: 52px; background: #222; border: 1px solid #555; color: #5a9;
+  font-size: 11px; padding: 2px 4px; border-radius: 3px; text-align: right;
+}
+.dim-input:focus { border-color: #4a9; outline: none; }
 #toolbar {
   position: fixed; top: 12px; left: 12px; z-index: 10;
   display: flex; gap: 8px; align-items: center;
@@ -53,6 +58,12 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   position: fixed; top: 50px; left: 12px; z-index: 10;
   font-size: 12px; color: #4a9; display: none;
 }
+#collision-flash {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: rgba(200,40,40,0.85); color: #fff; font-size: 13px;
+  padding: 8px 18px; border-radius: 6px; z-index: 100;
+  pointer-events: none; opacity: 0; transition: opacity 0.3s;
+}
 </style>
 </head>
 <body>
@@ -66,6 +77,7 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   <label>Load JSON <input type="file" id="json-input" accept=".json"></label>
 </div>
 <div id="wall-status">Click to place wall start point...</div>
+<div id="collision-flash">Blocked — collision</div>
 <div id="sidebar">
   <div class="section">
     <h3>Grid & Snap</h3>
@@ -76,6 +88,10 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
     <div class="toggle-row">
       <label for="snap-toggle">Snap to grid</label>
       <input type="checkbox" id="snap-toggle" checked>
+    </div>
+    <div class="toggle-row">
+      <label for="collision-toggle">Collisions</label>
+      <input type="checkbox" id="collision-toggle" checked>
     </div>
     <div class="toggle-row">
       <label for="snap-size">Grid size</label>
@@ -150,26 +166,26 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   <div class="section" id="selected-info" style="display:none;">
     <h3>Selected</h3>
     <div class="toggle-row">
-      <label for="sel-width">Width</label>
+      <label for="sel-width">W</label>
       <input type="range" id="sel-width" min="1" max="100" value="10" step="1">
-      <span class="snap-val" id="sel-width-label">1.0m</span>
+      <input type="number" class="dim-input" id="sel-width-num" min="0.05" max="20" step="0.05" value="1.0">
     </div>
     <div class="toggle-row">
-      <label for="sel-height">Height</label>
+      <label for="sel-height">H</label>
       <input type="range" id="sel-height" min="1" max="100" value="10" step="1">
-      <span class="snap-val" id="sel-height-label">1.0m</span>
+      <input type="number" class="dim-input" id="sel-height-num" min="0.05" max="20" step="0.05" value="1.0">
     </div>
     <div class="toggle-row">
-      <label for="sel-depth">Depth</label>
+      <label for="sel-depth">D</label>
       <input type="range" id="sel-depth" min="1" max="100" value="10" step="1">
-      <span class="snap-val" id="sel-depth-label">1.0m</span>
+      <input type="number" class="dim-input" id="sel-depth-num" min="0.05" max="20" step="0.05" value="1.0">
     </div>
     <div class="toggle-row" style="font-size:10px;color:#666;">
       <span><kbd>R</kbd> 90° <kbd>⇧R</kbd> 15° <kbd>X</kbd> del <kbd>⌘D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
     </div>
   </div>
 </div>
-<div id="info"><kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>W</kbd> wall <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo</div>
+<div id="info"><kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>C</kbd> collisions <kbd>W</kbd> wall <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo</div>
 
 <script type="importmap">
 {
@@ -255,6 +271,39 @@ function snapToGrid(val) {
   if (!snapEnabled) return val;
   const cellSize = 1.0 / gridDivisions;
   return Math.round(val / cellSize) * cellSize;
+}
+
+// --- collision detection ---
+let collisionEnabled = true;
+document.getElementById('collision-toggle').addEventListener('change', (e) => {
+  collisionEnabled = e.target.checked;
+});
+
+const _otherBox = new THREE.Box3();
+
+function checkCollision(mesh, exclude) {
+  // returns true if mesh overlaps any other draggable (except those in exclude set)
+  if (!collisionEnabled) return false;
+  const box = new THREE.Box3().setFromObject(mesh);
+  box.min.addScalar(0.005);
+  box.max.addScalar(-0.005);
+  for (const other of draggables) {
+    if (other === mesh || !other.visible) continue;
+    if (exclude && exclude.has(other)) continue;
+    _otherBox.setFromObject(other);
+    _otherBox.min.addScalar(0.005);
+    _otherBox.max.addScalar(-0.005);
+    if (box.intersectsBox(_otherBox)) return true;
+  }
+  return false;
+}
+
+let _flashTimer = 0;
+function showCollisionFlash() {
+  const el = document.getElementById('collision-flash');
+  el.style.opacity = '1';
+  clearTimeout(_flashTimer);
+  _flashTimer = setTimeout(() => { el.style.opacity = '0'; }, 800);
 }
 
 // --- GLB loading ---
@@ -450,6 +499,11 @@ function duplicateSelected() {
   clone.position.z += snapEnabled ? (1.0 / gridDivisions) : 0.5;
   clone.userData = { ...selectedTarget.userData };
   scene.add(clone);
+  if (checkCollision(clone)) {
+    scene.remove(clone);
+    showCollisionFlash();
+    return;
+  }
   draggables.push(clone);
   if (selectedTarget.userData.isWall) userWalls.push(clone);
   pushUndo({ type: 'add', mesh: clone, inUserWalls: !!clone.userData.isWall });
@@ -555,28 +609,40 @@ function resizeSelected(newW, newH, newD) {
   if (!selectedTarget) return;
   const mesh = selectedTarget;
   const oldGeo = mesh.geometry;
+  const oldY = mesh.position.y;
+  const oldBaseY = mesh.userData.baseY;
   mesh.geometry = new THREE.BoxGeometry(newW, newH, newD);
-  oldGeo.dispose();
   mesh.position.y = newH / 2;
   mesh.userData.baseY = newH / 2;
+  if (collisionEnabled && checkCollision(mesh)) {
+    // revert
+    mesh.geometry.dispose();
+    mesh.geometry = oldGeo;
+    mesh.position.y = oldY;
+    mesh.userData.baseY = oldBaseY;
+    populateDimSliders(mesh);
+    showCollisionFlash();
+    return;
+  }
+  oldGeo.dispose();
   if (mesh.getObjectByName('_outline')) refreshOutline(mesh);
 }
 
 const selWidthSlider = document.getElementById('sel-width');
 const selHeightSlider = document.getElementById('sel-height');
 const selDepthSlider = document.getElementById('sel-depth');
-const selWidthLabel = document.getElementById('sel-width-label');
-const selHeightLabel = document.getElementById('sel-height-label');
-const selDepthLabel = document.getElementById('sel-depth-label');
+const selWidthNum = document.getElementById('sel-width-num');
+const selHeightNum = document.getElementById('sel-height-num');
+const selDepthNum = document.getElementById('sel-depth-num');
 
 function populateDimSliders(mesh) {
   const dims = getMeshDims(mesh);
   selWidthSlider.value = Math.round(dims.w * 10);
   selHeightSlider.value = Math.round(dims.h * 10);
   selDepthSlider.value = Math.round(dims.d * 10);
-  selWidthLabel.textContent = dims.w.toFixed(1) + 'm';
-  selHeightLabel.textContent = dims.h.toFixed(1) + 'm';
-  selDepthLabel.textContent = dims.d.toFixed(1) + 'm';
+  selWidthNum.value = dims.w.toFixed(2);
+  selHeightNum.value = dims.h.toFixed(2);
+  selDepthNum.value = dims.d.toFixed(2);
 }
 
 let resizeOldDims = null;
@@ -601,22 +667,54 @@ selWidthSlider.addEventListener('input', () => {
   if (!selectedTarget) return;
   const dims = getMeshDims(selectedTarget);
   const nw = parseInt(selWidthSlider.value) / 10;
-  selWidthLabel.textContent = nw.toFixed(1) + 'm';
+  selWidthNum.value = nw.toFixed(2);
   resizeSelected(nw, dims.h, dims.d);
 });
 selHeightSlider.addEventListener('input', () => {
   if (!selectedTarget) return;
   const dims = getMeshDims(selectedTarget);
   const nh = parseInt(selHeightSlider.value) / 10;
-  selHeightLabel.textContent = nh.toFixed(1) + 'm';
+  selHeightNum.value = nh.toFixed(2);
   resizeSelected(dims.w, nh, dims.d);
 });
 selDepthSlider.addEventListener('input', () => {
   if (!selectedTarget) return;
   const dims = getMeshDims(selectedTarget);
   const nd = parseInt(selDepthSlider.value) / 10;
-  selDepthLabel.textContent = nd.toFixed(1) + 'm';
+  selDepthNum.value = nd.toFixed(2);
   resizeSelected(dims.w, dims.h, nd);
+});
+
+// number input → slider + resize (bidirectional sync)
+selWidthNum.addEventListener('change', () => {
+  if (!selectedTarget) return;
+  startResize();
+  const dims = getMeshDims(selectedTarget);
+  const nw = Math.max(0.05, Math.min(20, parseFloat(selWidthNum.value) || dims.w));
+  selWidthNum.value = nw.toFixed(2);
+  selWidthSlider.value = Math.round(nw * 10);
+  resizeSelected(nw, dims.h, dims.d);
+  endResize();
+});
+selHeightNum.addEventListener('change', () => {
+  if (!selectedTarget) return;
+  startResize();
+  const dims = getMeshDims(selectedTarget);
+  const nh = Math.max(0.05, Math.min(20, parseFloat(selHeightNum.value) || dims.h));
+  selHeightNum.value = nh.toFixed(2);
+  selHeightSlider.value = Math.round(nh * 10);
+  resizeSelected(dims.w, nh, dims.d);
+  endResize();
+});
+selDepthNum.addEventListener('change', () => {
+  if (!selectedTarget) return;
+  startResize();
+  const dims = getMeshDims(selectedTarget);
+  const nd = Math.max(0.05, Math.min(20, parseFloat(selDepthNum.value) || dims.d));
+  selDepthNum.value = nd.toFixed(2);
+  selDepthSlider.value = Math.round(nd * 10);
+  resizeSelected(dims.w, dims.h, nd);
+  endResize();
 });
 
 // --- wall drawing state ---
@@ -683,9 +781,12 @@ function updateWallPreview(endPt) {
   if (!wallStart) return;
   const mesh = buildWallMesh(wallStart, endPt, wallThickness, wallHeight);
   if (!mesh) return;
-  mesh.material = new THREE.MeshLambertMaterial({ color: 0x44ddaa, transparent: true, opacity: 0.5 });
+  scene.add(mesh);
+  const blocked = collisionEnabled && checkCollision(mesh);
+  mesh.material = new THREE.MeshLambertMaterial({
+    color: blocked ? 0xdd4444 : 0x44ddaa, transparent: true, opacity: 0.5
+  });
   wallPreview = mesh;
-  scene.add(wallPreview);
 }
 
 function placeWall(endPt) {
@@ -695,6 +796,12 @@ function placeWall(endPt) {
   mesh.userData.isWall = true;
   mesh.userData.baseY = wallHeight / 2;
   scene.add(mesh);
+  if (checkCollision(mesh)) {
+    scene.remove(mesh);
+    mesh.geometry.dispose(); mesh.material.dispose();
+    showCollisionFlash();
+    return;
+  }
   draggables.push(mesh);
   userWalls.push(mesh);
   pushUndo({ type: 'add', mesh, inUserWalls: true });
@@ -736,29 +843,70 @@ function deleteSelected() {
   deselectFurniture();
 }
 
+// --- furniture placement mode ---
+let placeMode = false;
+let placeGhost = null; // transparent preview mesh following cursor
+let placeType = null; // FURNITURE key
+let placeBlocked = false;
+
+function enterPlaceMode(type) {
+  cancelPlaceMode();
+  if (wallMode) exitWallMode();
+  deselectFurniture();
+  placeMode = true;
+  placeType = type;
+  const f = FURNITURE[type];
+  const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
+  const mat = new THREE.MeshLambertMaterial({ color: f.color, transparent: true, opacity: 0.45 });
+  placeGhost = new THREE.Mesh(geo, mat);
+  placeGhost.position.set(0, f.h / 2, 0);
+  // outline
+  const edges = new THREE.EdgesGeometry(geo);
+  const outline = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 }));
+  outline.name = '_ghost_outline';
+  placeGhost.add(outline);
+  scene.add(placeGhost);
+  renderer.domElement.style.cursor = 'crosshair';
+}
+
+function cancelPlaceMode() {
+  if (placeGhost) { scene.remove(placeGhost); placeGhost.geometry.dispose(); placeGhost.material.dispose(); placeGhost = null; }
+  placeMode = false;
+  placeType = null;
+  placeBlocked = false;
+  renderer.domElement.style.cursor = '';
+}
+
+function confirmPlacement() {
+  if (!placeGhost || placeBlocked) { if (placeBlocked) showCollisionFlash(); return; }
+  const f = FURNITURE[placeType];
+  const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
+  const mat = new THREE.MeshLambertMaterial({ color: f.color });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.position.copy(placeGhost.position);
+  mesh.userData.draggable = true;
+  mesh.userData.baseY = f.h / 2;
+  scene.add(mesh);
+  draggables.push(mesh);
+  pushUndo({ type: 'add', mesh, inUserWalls: false });
+  cancelPlaceMode();
+  selectFurniture(mesh);
+}
+
 document.querySelectorAll('.furniture-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const f = FURNITURE[btn.dataset.type];
-    const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
-    const mat = new THREE.MeshLambertMaterial({ color: f.color });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    const px = snapToGrid(orbit.target.x);
-    const pz = snapToGrid(orbit.target.z);
-    mesh.position.set(px, f.h / 2, pz);
-    mesh.userData.draggable = true;
-    mesh.userData.baseY = f.h / 2;
-    scene.add(mesh);
-    draggables.push(mesh);
-    pushUndo({ type: 'add', mesh, inUserWalls: false });
-    selectFurniture(mesh);
-  });
+  btn.addEventListener('click', () => enterPlaceMode(btn.dataset.type));
 });
 
 // --- drag handling ---
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
+  // furniture placement mode
+  if (placeMode) {
+    confirmPlacement();
+    return;
+  }
   // wall drawing mode
   if (wallMode) {
     const pt = getGroundPoint(e);
@@ -792,7 +940,21 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   }
 });
 
+let dragLastValid = null; // last non-colliding position during drag
+
 renderer.domElement.addEventListener('pointermove', (e) => {
+  // furniture placement ghost
+  if (placeMode && placeGhost) {
+    const pt = getGroundPoint(e);
+    const f = FURNITURE[placeType];
+    placeGhost.position.set(pt.x, f.h / 2, pt.z);
+    // collision check against existing items
+    placeBlocked = collisionEnabled && checkCollision(placeGhost);
+    const ol = placeGhost.getObjectByName('_ghost_outline');
+    if (ol) ol.material.color.setHex(placeBlocked ? 0xdd4444 : 0x44ddaa);
+    placeGhost.material.color.setHex(placeBlocked ? 0xdd4444 : FURNITURE[placeType].color);
+    return;
+  }
   // wall preview
   if (wallMode && wallStart) {
     updateWallPreview(getGroundPoint(e));
@@ -804,8 +966,19 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   raycaster.setFromCamera(mouse, camera);
   const intersection = new THREE.Vector3();
   raycaster.ray.intersectPlane(dragPlane, intersection);
-  dragTarget.position.x = snapToGrid(intersection.x + dragOffset.x);
-  dragTarget.position.z = snapToGrid(intersection.z + dragOffset.z);
+  const nx = snapToGrid(intersection.x + dragOffset.x);
+  const nz = snapToGrid(intersection.z + dragOffset.z);
+  const prevX = dragTarget.position.x;
+  const prevZ = dragTarget.position.z;
+  dragTarget.position.x = nx;
+  dragTarget.position.z = nz;
+  if (collisionEnabled && checkCollision(dragTarget)) {
+    // revert to last valid position
+    dragTarget.position.x = prevX;
+    dragTarget.position.z = prevZ;
+  } else {
+    dragLastValid = dragTarget.position.clone();
+  }
 });
 
 renderer.domElement.addEventListener('pointerup', () => {
@@ -814,6 +987,7 @@ renderer.domElement.addEventListener('pointerup', () => {
   }
   dragTarget = null;
   dragStartPos = null;
+  dragLastValid = null;
   orbit.enabled = true;
 });
 
@@ -826,7 +1000,8 @@ window.addEventListener('keydown', (e) => {
   if (key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); return; }
   if (key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); redo(); return; }
   if (key === 'escape') {
-    if (wallMode) exitWallMode();
+    if (placeMode) cancelPlaceMode();
+    else if (wallMode) exitWallMode();
     return;
   }
   if (key === 'w') {
@@ -842,10 +1017,19 @@ window.addEventListener('keydown', (e) => {
     const cb = document.getElementById('snap-toggle');
     cb.checked = !cb.checked;
     cb.dispatchEvent(new Event('change'));
+  } else if (key === 'c') {
+    const cb = document.getElementById('collision-toggle');
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change'));
   } else if (key === 'r' && selectedTarget) {
     const oldRot = selectedTarget.rotation.y;
     const step = e.shiftKey ? (Math.PI / 12) : (Math.PI / 2); // Shift+R = 15°
     selectedTarget.rotation.y += step;
+    if (collisionEnabled && checkCollision(selectedTarget)) {
+      selectedTarget.rotation.y = oldRot;
+      showCollisionFlash();
+      return;
+    }
     pushUndo({ type: 'rotate', mesh: selectedTarget, oldRot, newRot: selectedTarget.rotation.y });
   } else if ((key === 'x' || key === 'delete' || key === 'backspace') && selectedTarget) {
     deleteSelected();
