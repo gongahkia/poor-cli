@@ -1,27 +1,27 @@
 # haus
 
-Pipeline to extract Singapore BTO floor plans from PDF brochures and convert them into Godot-ready GLB meshes.
+Pipeline to vectorize Singapore BTO floor plan images and convert them into structured wall/opening data with optional 3D mesh output.
 
 ## Architecture
 
 ```
-PDF brochure
+Raster floor plan image (PNG/JPEG)
     |
-    v
-src/haus                 — PDF extraction -> GLB mesh (local CLI)
+    +---> src/haus/          — Local CV vectorization pipeline (CLI)
+    |         wall detection, opening detection, scale estimation
+    |         -> vector_clean.png + metadata JSON
     |
-    v
-inference/modal_app.py   — CubiCasa5k segmentation + wall vectorization (Modal GPU endpoint)
-    |
-    v
-Wall polygons + door/window openings -> 3D mesh (Phase 2)
+    +---> inference/         — CubiCasa5k segmentation (Modal GPU endpoint)
+              pretrained hourglass model, independent path
+              -> wall polygons + door/window openings
+              (will be unified with local path in future)
 ```
 
 ---
 
 ## Local CLI — `haus`
 
-Extracts a unit from a PDF and generates GLB meshes directly.
+Vectorizes a raster floor plan image into classified wall segments, openings, and columns.
 
 ### Setup
 
@@ -34,23 +34,23 @@ uv pip install -e .
 ### Usage
 
 ```bash
-haus extract \
-  --pdf mount_pleasant_crest.pdf \
-  --block 100A \
-  --unit 127 \
-  --storey-variant typical \
+haus vectorize --image <path> --out <dir> [--debug-dir <dir>]
+```
+
+**Example:**
+
+```bash
+haus vectorize \
+  --image tests/fixtures/bto_2room_orange.jpg \
   --out out
 ```
 
 **Outputs:**
-- `out/block_100A_unit_127_default.glb`
-- `out/block_100A_unit_127_white_flat.glb`
-- `out/block_100A_unit_127.metadata.json`
+- `<out>/vector_clean.png` — wall polygons rendered on white background
+- `<out>/vector.metadata.json` — structured wall/opening/column data with scale estimation
 
-**Notes:**
-- Scale is calibrated from the page text `SCALE 0 2 4 6 8 10 METERS`
-- Unit isolation is driven by the unit label (e.g. `UNIT 127`) and per-unit fill segmentation
-- Diagonal units are kept in their true drawn orientation
+**Optional:** `--debug-dir <dir>` produces debug artifacts:
+- `wall_mask.png`, `fill_mask.png`, `overlay.png`
 
 ---
 
@@ -126,5 +126,6 @@ Saves three preview images to the current directory:
 | Phase | Description | Status |
 |---|---|---|
 | 1 | CubiCasa5k baseline inference on Singapore BTO plans | Done |
+| 1b | Local CV vectorization pipeline | Done |
 | 2 | Fine-tune on annotated Singapore BTO data | Planned |
 | 3 | Wall polygon -> 3D mesh extrusion | Planned |
