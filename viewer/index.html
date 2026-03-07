@@ -149,11 +149,24 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   </div>
   <div class="section" id="selected-info" style="display:none;">
     <h3>Selected</h3>
-    <div class="toggle-row"><label>Rotate</label><span style="font-size:11px;color:#888;"><kbd>R</kbd> 90° <kbd>⇧R</kbd> 15°</span></div>
-    <div class="toggle-row"><label>Delete</label><span style="font-size:11px;color:#888;"><kbd>X</kbd> / <kbd>Del</kbd></span></div>
-    <div class="toggle-row"><label>Duplicate</label><span style="font-size:11px;color:#888;"><kbd>⌘D</kbd> / <kbd>⇧D</kbd></span></div>
-    <div class="toggle-row"><label>Hide</label><span style="font-size:11px;color:#888;"><kbd>H</kbd></span></div>
-    <div class="toggle-row"><label>Frame</label><span style="font-size:11px;color:#888;"><kbd>F</kbd></span></div>
+    <div class="toggle-row">
+      <label for="sel-width">Width</label>
+      <input type="range" id="sel-width" min="1" max="100" value="10" step="1">
+      <span class="snap-val" id="sel-width-label">1.0m</span>
+    </div>
+    <div class="toggle-row">
+      <label for="sel-height">Height</label>
+      <input type="range" id="sel-height" min="1" max="100" value="10" step="1">
+      <span class="snap-val" id="sel-height-label">1.0m</span>
+    </div>
+    <div class="toggle-row">
+      <label for="sel-depth">Depth</label>
+      <input type="range" id="sel-depth" min="1" max="100" value="10" step="1">
+      <span class="snap-val" id="sel-depth-label">1.0m</span>
+    </div>
+    <div class="toggle-row" style="font-size:10px;color:#666;">
+      <span><kbd>R</kbd> 90° <kbd>⇧R</kbd> 15° <kbd>X</kbd> del <kbd>⌘D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
+    </div>
   </div>
 </div>
 <div id="info"><kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>W</kbd> wall <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo</div>
