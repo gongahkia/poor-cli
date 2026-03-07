@@ -5,9 +5,12 @@ configurable LLM providers (Anthropic, OpenAI, Gemini) with tool use.
 """
 from __future__ import annotations
 import json
+import logging
 import mimetypes
 import os
 from pathlib import Path
+
+log = logging.getLogger("haus.chat")
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.requests import Request
