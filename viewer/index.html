@@ -62,6 +62,7 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   <button id="wall-btn" title="Draw wall (W)">Draw Wall</button>
   <button id="wall-cancel-btn" style="display:none;" title="Cancel wall (Esc)">Cancel</button>
 </div>
+<div id="wall-status">Click to place wall start point...</div>
 <div id="sidebar">
   <div class="section">
     <h3>Grid & Snap</h3>
@@ -88,6 +89,22 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
     <div class="toggle-row">
       <label for="shadows-toggle">Shadows</label>
       <input type="checkbox" id="shadows-toggle" checked>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Walls</h3>
+    <div class="toggle-row">
+      <label for="wall-height-slider">Height</label>
+      <input type="range" id="wall-height-slider" min="1" max="40" value="26" step="1">
+      <span class="snap-val" id="wall-height-label">2.6m</span>
+    </div>
+    <div class="toggle-row">
+      <label for="wall-thick-slider">Thickness</label>
+      <input type="range" id="wall-thick-slider" min="1" max="10" value="3" step="1">
+      <span class="snap-val" id="wall-thick-label">0.15m</span>
+    </div>
+    <div class="toggle-row" style="font-size:11px;color:#888;">
+      <span><kbd>W</kbd> draw | <kbd>Esc</kbd> cancel</span>
     </div>
   </div>
   <div class="section">
@@ -139,7 +156,7 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
     </div>
   </div>
 </div>
-<div id="info">Orbit: left-drag | Pan: right-drag | Zoom: scroll | <kbd>G</kbd> grid | <kbd>S</kbd> snap | <kbd>R</kbd> rotate | <kbd>X</kbd> delete</div>
+<div id="info">Orbit: left-drag | Pan: right-drag | Zoom: scroll | <kbd>G</kbd> grid | <kbd>S</kbd> snap | <kbd>R</kbd> rotate | <kbd>X</kbd> delete | <kbd>W</kbd> wall</div>
 
 <script type="importmap">
 {
@@ -301,6 +318,7 @@ const FURNITURE = {
 };
 
 const draggables = [];
+const userWalls = []; // user-added wall meshes
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -308,6 +326,86 @@ let dragTarget = null;
 let selectedTarget = null;
 let dragOffset = new THREE.Vector3();
 const outlineMat = new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 });
+
+// --- wall drawing state ---
+let wallMode = false;
+let wallStart = null; // THREE.Vector3 or null
+let wallPreview = null; // live preview mesh
+let wallHeight = 2.6;
+let wallThickness = 0.15;
+const WALL_COLOR = 0x666666;
+
+function enterWallMode() {
+  wallMode = true;
+  wallStart = null;
+  deselectFurniture();
+  document.getElementById('wall-btn').classList.add('active');
+  document.getElementById('wall-cancel-btn').style.display = '';
+  document.getElementById('wall-status').style.display = '';
+  document.getElementById('wall-status').textContent = 'Click to place wall start point...';
+  renderer.domElement.style.cursor = 'crosshair';
+}
+
+function exitWallMode() {
+  wallMode = false;
+  wallStart = null;
+  if (wallPreview) { scene.remove(wallPreview); wallPreview = null; }
+  document.getElementById('wall-btn').classList.remove('active');
+  document.getElementById('wall-cancel-btn').style.display = 'none';
+  document.getElementById('wall-status').style.display = 'none';
+  renderer.domElement.style.cursor = '';
+}
+
+function getGroundPoint(e) {
+  mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const pt = new THREE.Vector3();
+  raycaster.ray.intersectPlane(dragPlane, pt);
+  pt.x = snapToGrid(pt.x);
+  pt.z = snapToGrid(pt.z);
+  pt.y = 0;
+  return pt;
+}
+
+function buildWallMesh(p1, p2, thickness, height) {
+  const dx = p2.x - p1.x;
+  const dz = p2.z - p1.z;
+  const length = Math.sqrt(dx * dx + dz * dz);
+  if (length < 0.01) return null;
+  const cx = (p1.x + p2.x) / 2;
+  const cz = (p1.z + p2.z) / 2;
+  const angle = Math.atan2(dz, dx);
+  const geo = new THREE.BoxGeometry(length, height, thickness);
+  const mat = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(cx, height / 2, cz);
+  mesh.rotation.y = -angle;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function updateWallPreview(endPt) {
+  if (wallPreview) scene.remove(wallPreview);
+  if (!wallStart) return;
+  const mesh = buildWallMesh(wallStart, endPt, wallThickness, wallHeight);
+  if (!mesh) return;
+  mesh.material = new THREE.MeshLambertMaterial({ color: 0x44ddaa, transparent: true, opacity: 0.5 });
+  wallPreview = mesh;
+  scene.add(wallPreview);
+}
+
+function placeWall(endPt) {
+  const mesh = buildWallMesh(wallStart, endPt, wallThickness, wallHeight);
+  if (!mesh) return;
+  mesh.userData.draggable = true;
+  mesh.userData.isWall = true;
+  mesh.userData.baseY = wallHeight / 2;
+  scene.add(mesh);
+  draggables.push(mesh);
+  userWalls.push(mesh);
+}
 
 function selectFurniture(mesh) {
   deselectFurniture();
@@ -334,6 +432,8 @@ function deleteSelected() {
   scene.remove(selectedTarget);
   const idx = draggables.indexOf(selectedTarget);
   if (idx >= 0) draggables.splice(idx, 1);
+  const widx = userWalls.indexOf(selectedTarget);
+  if (widx >= 0) userWalls.splice(widx, 1);
   selectedTarget = null;
   document.getElementById('selected-info').style.display = 'none';
 }
@@ -360,6 +460,22 @@ document.querySelectorAll('.furniture-btn').forEach(btn => {
 // --- drag handling ---
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
+  // wall drawing mode
+  if (wallMode) {
+    const pt = getGroundPoint(e);
+    if (!wallStart) {
+      wallStart = pt.clone();
+      document.getElementById('wall-status').textContent = 'Click to place wall end point...';
+    } else {
+      placeWall(pt);
+      if (wallPreview) { scene.remove(wallPreview); wallPreview = null; }
+      // start a new wall from the end point (chain drawing)
+      wallStart = pt.clone();
+      document.getElementById('wall-status').textContent = 'Click next point or Esc to stop...';
+    }
+    return;
+  }
+  // normal selection/drag
   mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
@@ -377,6 +493,11 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
+  // wall preview
+  if (wallMode && wallStart) {
+    updateWallPreview(getGroundPoint(e));
+    return;
+  }
   if (!dragTarget) return;
   mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -395,7 +516,16 @@ renderer.domElement.addEventListener('pointerup', () => {
 // --- keyboard shortcuts ---
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
-  if (e.target.tagName === 'INPUT') return; // don't intercept input fields
+  if (e.target.tagName === 'INPUT') return;
+  if (key === 'escape') {
+    if (wallMode) exitWallMode();
+    return;
+  }
+  if (key === 'w') {
+    if (wallMode) exitWallMode(); else enterWallMode();
+    return;
+  }
+  if (wallMode) return; // ignore other keys in wall mode
   if (key === 'g') {
     const cb = document.getElementById('grid-toggle');
     cb.checked = !cb.checked;
@@ -452,6 +582,25 @@ document.getElementById('shadows-toggle').addEventListener('change', (e) => {
 });
 
 document.getElementById('delete-btn').addEventListener('click', deleteSelected);
+
+document.getElementById('wall-btn').addEventListener('click', () => {
+  if (wallMode) exitWallMode(); else enterWallMode();
+});
+document.getElementById('wall-cancel-btn').addEventListener('click', exitWallMode);
+
+const wallHeightSlider = document.getElementById('wall-height-slider');
+const wallHeightLabel = document.getElementById('wall-height-label');
+wallHeightSlider.addEventListener('input', () => {
+  wallHeight = parseInt(wallHeightSlider.value) / 10;
+  wallHeightLabel.textContent = wallHeight.toFixed(1) + 'm';
+});
+
+const wallThickSlider = document.getElementById('wall-thick-slider');
+const wallThickLabel = document.getElementById('wall-thick-label');
+wallThickSlider.addEventListener('input', () => {
+  wallThickness = parseInt(wallThickSlider.value) * 0.05;
+  wallThickLabel.textContent = wallThickness.toFixed(2) + 'm';
+});
 
 // --- resize ---
 window.addEventListener('resize', () => {
