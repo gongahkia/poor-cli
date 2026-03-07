@@ -2,11 +2,12 @@ import { S, fn } from './state.js';
 export function initShortcuts() {
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
-    if (e.target.tagName === 'INPUT') return;
-    // undo/redo always available
-    if (key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); fn.redo(); return; }
-    if (key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fn.undo(); return; }
-    if (key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fn.redo(); return; }
+    const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
+    // undo/redo always available (but not inside text inputs)
+    if (!inInput && key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); fn.redo(); return; }
+    if (!inInput && key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fn.undo(); return; }
+    if (!inInput && key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fn.redo(); return; }
+    if (inInput) return;
     // FPS mode: only ESC to exit
     if (S.fpsMode) { if (key === 'escape') fn.exitFps(); return; }
     if (key === 'escape') {

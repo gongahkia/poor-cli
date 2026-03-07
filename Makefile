@@ -22,6 +22,11 @@ help:
 	@echo ""
 	@echo "typical workflow:"
 	@echo "  make setup && make build && make view"
+	@echo ""
+	@echo "AI chat (set one or more):"
+	@echo "  ANTHROPIC_API_KEY=... make view"
+	@echo "  OPENAI_API_KEY=...    make view"
+	@echo "  GEMINI_API_KEY=...    make view"
 
 setup:
 	uv venv --python 3.11
