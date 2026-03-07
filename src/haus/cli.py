@@ -112,6 +112,10 @@ def main(argv: list[str] | None = None) -> int:
             _cv2.imwrite(str(args.out), _cv2.cvtColor(cleaned, _cv2.COLOR_RGB2BGR))
             print(f"Cleaned image saved to {args.out}", file=sys.stderr)
             return 0
+        if args.command == "mcp":
+            from .mcp_server import run_server
+            run_server()
+            return 0
         if args.command == "view":
             import shutil
             import subprocess
