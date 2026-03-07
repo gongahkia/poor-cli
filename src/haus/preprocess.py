@@ -62,8 +62,8 @@ def _build_wall_mask(dark: np.ndarray) -> np.ndarray:
 def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
     """Erase quarter-circle door swing arcs.
 
-    Phase 1: HoughCircles detects large arcs (even when connected to walls).
-    Phase 2: Residual CC analysis catches smaller/isolated arcs.
+    Phase 1: HoughCircles detects arcs (even connected to walls).
+    Phase 2: Residual CC analysis catches isolated arc fragments.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
@@ -75,7 +75,7 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
     max_r = max(60, min(h, w) // 5)
     circles = cv2.HoughCircles(
         blurred, cv2.HOUGH_GRADIENT, dp=1.0,
-        minDist=min_r * 3, param1=100, param2=50,
+        minDist=min_r * 3, param1=100, param2=40,
         minRadius=min_r, maxRadius=max_r,
     )
     if circles is not None:
@@ -86,6 +86,7 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
             arc_dark = (ring > 0) & (dark > 0) & (walls == 0)
             if np.count_nonzero(arc_dark) > 20:
                 erase[arc_dark] = 1
+    # phase 2: residual non-wall dark CCs that look like arcs
     residual = cv2.bitwise_and(dark, cv2.bitwise_not(walls))
     num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, 8)
     for i in range(1, num):
@@ -94,7 +95,8 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
         bh = int(stats[i, cv2.CC_STAT_HEIGHT])
         fr = a / max(bw * bh, 1)
         aspect = max(bw, bh) / max(min(bw, bh), 1)
-        if fr < 0.20 and aspect < 2.5 and 50 < a < 15000 and min(bw, bh) > 12:
+        # arcs: low fill ratio, near-square bbox, reasonable size
+        if fr < 0.18 and aspect < 2.0 and 80 < a < 15000 and min(bw, bh) > 15:
             erase[labels == i] = 1
     if np.count_nonzero(erase):
         erase = cv2.dilate(erase, np.ones((3, 3), np.uint8), iterations=1)
