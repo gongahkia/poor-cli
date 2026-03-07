@@ -61,6 +61,9 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   <button id="delete-btn" title="Delete selected (X)">Delete</button>
   <button id="wall-btn" title="Draw wall (W)">Draw Wall</button>
   <button id="wall-cancel-btn" style="display:none;" title="Cancel wall (Esc)">Cancel</button>
+  <button id="export-glb-btn" title="Export scene as GLB">Export GLB</button>
+  <button id="export-json-btn" title="Export layout as JSON">Export JSON</button>
+  <label>Load JSON <input type="file" id="json-input" accept=".json"></label>
 </div>
 <div id="wall-status">Click to place wall start point...</div>
 <div id="sidebar">
@@ -146,17 +149,14 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   </div>
   <div class="section" id="selected-info" style="display:none;">
     <h3>Selected</h3>
-    <div class="toggle-row">
-      <label>Rotate</label>
-      <span style="font-size:11px;color:#888;"><kbd>R</kbd> = 90°</span>
-    </div>
-    <div class="toggle-row">
-      <label>Delete</label>
-      <span style="font-size:11px;color:#888;"><kbd>Del</kbd> / <kbd>X</kbd></span>
-    </div>
+    <div class="toggle-row"><label>Rotate</label><span style="font-size:11px;color:#888;"><kbd>R</kbd> 90° <kbd>⇧R</kbd> 15°</span></div>
+    <div class="toggle-row"><label>Delete</label><span style="font-size:11px;color:#888;"><kbd>X</kbd> / <kbd>Del</kbd></span></div>
+    <div class="toggle-row"><label>Duplicate</label><span style="font-size:11px;color:#888;"><kbd>⌘D</kbd> / <kbd>⇧D</kbd></span></div>
+    <div class="toggle-row"><label>Hide</label><span style="font-size:11px;color:#888;"><kbd>H</kbd></span></div>
+    <div class="toggle-row"><label>Frame</label><span style="font-size:11px;color:#888;"><kbd>F</kbd></span></div>
   </div>
 </div>
-<div id="info">Orbit: left-drag | Pan: right-drag | Zoom: scroll | <kbd>G</kbd> grid | <kbd>S</kbd> snap | <kbd>R</kbd> rotate | <kbd>X</kbd> delete | <kbd>W</kbd> wall</div>
+<div id="info"><kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>W</kbd> wall <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo</div>
 
 <script type="importmap">
 {
@@ -170,6 +170,7 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 // --- scene setup ---
 const scene = new THREE.Scene();
@@ -335,13 +336,173 @@ const FURNITURE = {
 
 const draggables = [];
 const userWalls = []; // user-added wall meshes
+const hiddenObjects = []; // H to hide, Alt+H to unhide
+const undoStack = []; // {type, data} action records
+const redoStack = [];
+const MAX_UNDO = 50;
 const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let dragTarget = null;
+let dragStartPos = null; // for undo move
 let selectedTarget = null;
 let dragOffset = new THREE.Vector3();
 const outlineMat = new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 });
+
+// --- undo/redo ---
+function pushUndo(action) {
+  undoStack.push(action);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0; // clear redo on new action
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const action = undoStack.pop();
+  if (action.type === 'add') {
+    // reverse: remove the mesh
+    scene.remove(action.mesh);
+    const di = draggables.indexOf(action.mesh);
+    if (di >= 0) draggables.splice(di, 1);
+    const wi = userWalls.indexOf(action.mesh);
+    if (wi >= 0) userWalls.splice(wi, 1);
+    if (selectedTarget === action.mesh) deselectFurniture();
+  } else if (action.type === 'delete') {
+    // reverse: re-add the mesh
+    scene.add(action.mesh);
+    draggables.push(action.mesh);
+    if (action.inUserWalls) userWalls.push(action.mesh);
+    if (action.inModelParts) modelParts.push(action.mesh);
+  } else if (action.type === 'move') {
+    action.mesh.position.copy(action.oldPos);
+  } else if (action.type === 'rotate') {
+    action.mesh.rotation.y = action.oldRot;
+  }
+  redoStack.push(action);
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  const action = redoStack.pop();
+  if (action.type === 'add') {
+    scene.add(action.mesh);
+    draggables.push(action.mesh);
+    if (action.inUserWalls) userWalls.push(action.mesh);
+  } else if (action.type === 'delete') {
+    scene.remove(action.mesh);
+    const di = draggables.indexOf(action.mesh);
+    if (di >= 0) draggables.splice(di, 1);
+    const wi = userWalls.indexOf(action.mesh);
+    if (wi >= 0) userWalls.splice(wi, 1);
+    const mi = modelParts.indexOf(action.mesh);
+    if (mi >= 0) modelParts.splice(mi, 1);
+    if (selectedTarget === action.mesh) deselectFurniture();
+  } else if (action.type === 'move') {
+    action.mesh.position.copy(action.newPos);
+  } else if (action.type === 'rotate') {
+    action.mesh.rotation.y = action.newRot;
+  }
+  undoStack.push(action);
+}
+
+// --- duplicate ---
+function duplicateSelected() {
+  if (!selectedTarget) return;
+  const clone = selectedTarget.clone();
+  clone.position.x += snapEnabled ? (1.0 / gridDivisions) : 0.5;
+  clone.position.z += snapEnabled ? (1.0 / gridDivisions) : 0.5;
+  clone.userData = { ...selectedTarget.userData };
+  scene.add(clone);
+  draggables.push(clone);
+  if (selectedTarget.userData.isWall) userWalls.push(clone);
+  pushUndo({ type: 'add', mesh: clone, inUserWalls: !!clone.userData.isWall });
+  selectFurniture(clone);
+}
+
+// --- hide/unhide ---
+function hideSelected() {
+  if (!selectedTarget) return;
+  selectedTarget.visible = false;
+  hiddenObjects.push(selectedTarget);
+  deselectFurniture();
+}
+
+function unhideAll() {
+  for (const obj of hiddenObjects) obj.visible = true;
+  hiddenObjects.length = 0;
+}
+
+// --- camera presets ---
+function frameBounds(box) {
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z, 1);
+  const dist = maxDim * 1.5;
+  return { center, dist };
+}
+
+function frameSelected() {
+  const box = new THREE.Box3();
+  if (selectedTarget) {
+    box.setFromObject(selectedTarget);
+  } else if (draggables.length > 0) {
+    box.makeEmpty();
+    for (const m of draggables) if (m.visible) box.expandByObject(m);
+  } else {
+    return;
+  }
+  const { center, dist } = frameBounds(box);
+  const dir = camera.position.clone().sub(orbit.target).normalize();
+  orbit.target.copy(center);
+  camera.position.copy(center).addScaledVector(dir, dist);
+  orbit.update();
+}
+
+function setCameraView(direction) {
+  // direction: 'front' | 'right' | 'top'
+  const box = new THREE.Box3();
+  if (draggables.length > 0) {
+    box.makeEmpty();
+    for (const m of draggables) if (m.visible) box.expandByObject(m);
+  }
+  const { center, dist } = frameBounds(box);
+  orbit.target.copy(center);
+  if (direction === 'front') {
+    camera.position.set(center.x, center.y, center.z + dist);
+  } else if (direction === 'right') {
+    camera.position.set(center.x + dist, center.y, center.z);
+  } else if (direction === 'top') {
+    camera.position.set(center.x, center.y + dist, center.z + 0.001);
+  }
+  orbit.update();
+}
+
+function toggleOrtho() {
+  if (camera.isPerspectiveCamera) {
+    // store fov-based distance for restoration
+    camera.userData._wasPerspective = true;
+  }
+  // toggle by swapping near/far behavior isn't clean with PerspectiveCamera,
+  // so we just set fov to ~1 for pseudo-ortho or restore
+  if (camera.fov === 1) {
+    camera.fov = 50;
+  } else {
+    camera.fov = 1;
+    // pull camera far back to compensate for tiny fov
+    const dir = camera.position.clone().sub(orbit.target).normalize();
+    const curDist = camera.position.distanceTo(orbit.target);
+    camera.position.copy(orbit.target).addScaledVector(dir, curDist * 50);
+  }
+  camera.updateProjectionMatrix();
+}
+
+// --- select all ---
+function selectAll() {
+  // if something selected, deselect
+  if (selectedTarget) { deselectFurniture(); return; }
+  // otherwise no multi-select, just frame all
+  frameSelected();
+}
 
 // --- wall drawing state ---
 let wallMode = false;
@@ -421,6 +582,7 @@ function placeWall(endPt) {
   scene.add(mesh);
   draggables.push(mesh);
   userWalls.push(mesh);
+  pushUndo({ type: 'add', mesh, inUserWalls: true });
 }
 
 function selectFurniture(mesh) {
@@ -445,15 +607,18 @@ function deselectFurniture() {
 
 function deleteSelected() {
   if (!selectedTarget) return;
-  scene.remove(selectedTarget);
-  const idx = draggables.indexOf(selectedTarget);
+  const mesh = selectedTarget;
+  const inUW = userWalls.includes(mesh);
+  const inMP = modelParts.includes(mesh);
+  pushUndo({ type: 'delete', mesh, inUserWalls: inUW, inModelParts: inMP });
+  scene.remove(mesh);
+  const idx = draggables.indexOf(mesh);
   if (idx >= 0) draggables.splice(idx, 1);
-  const widx = userWalls.indexOf(selectedTarget);
+  const widx = userWalls.indexOf(mesh);
   if (widx >= 0) userWalls.splice(widx, 1);
-  const midx = modelParts.indexOf(selectedTarget);
+  const midx = modelParts.indexOf(mesh);
   if (midx >= 0) modelParts.splice(midx, 1);
-  selectedTarget = null;
-  document.getElementById('selected-info').style.display = 'none';
+  deselectFurniture();
 }
 
 document.querySelectorAll('.furniture-btn').forEach(btn => {
@@ -471,6 +636,7 @@ document.querySelectorAll('.furniture-btn').forEach(btn => {
     mesh.userData.baseY = f.h / 2;
     scene.add(mesh);
     draggables.push(mesh);
+    pushUndo({ type: 'add', mesh, inUserWalls: false });
     selectFurniture(mesh);
   });
 });
@@ -500,6 +666,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   const hits = raycaster.intersectObjects(draggables);
   if (hits.length > 0) {
     dragTarget = hits[0].object;
+    dragStartPos = dragTarget.position.clone();
     selectFurniture(dragTarget);
     orbit.enabled = false;
     const intersection = new THREE.Vector3();
@@ -527,7 +694,11 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 
 renderer.domElement.addEventListener('pointerup', () => {
+  if (dragTarget && dragStartPos && !dragTarget.position.equals(dragStartPos)) {
+    pushUndo({ type: 'move', mesh: dragTarget, oldPos: dragStartPos, newPos: dragTarget.position.clone() });
+  }
   dragTarget = null;
+  dragStartPos = null;
   orbit.enabled = true;
 });
 
@@ -535,6 +706,10 @@ renderer.domElement.addEventListener('pointerup', () => {
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   if (e.target.tagName === 'INPUT') return;
+  // undo/redo (works in all modes)
+  if (key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); redo(); return; }
+  if (key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); return; }
+  if (key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); redo(); return; }
   if (key === 'escape') {
     if (wallMode) exitWallMode();
     return;
@@ -543,7 +718,7 @@ window.addEventListener('keydown', (e) => {
     if (wallMode) exitWallMode(); else enterWallMode();
     return;
   }
-  if (wallMode) return; // ignore other keys in wall mode
+  if (wallMode) return;
   if (key === 'g') {
     const cb = document.getElementById('grid-toggle');
     cb.checked = !cb.checked;
@@ -553,9 +728,30 @@ window.addEventListener('keydown', (e) => {
     cb.checked = !cb.checked;
     cb.dispatchEvent(new Event('change'));
   } else if (key === 'r' && selectedTarget) {
-    selectedTarget.rotation.y += Math.PI / 2;
+    const oldRot = selectedTarget.rotation.y;
+    const step = e.shiftKey ? (Math.PI / 12) : (Math.PI / 2); // Shift+R = 15°
+    selectedTarget.rotation.y += step;
+    pushUndo({ type: 'rotate', mesh: selectedTarget, oldRot, newRot: selectedTarget.rotation.y });
   } else if ((key === 'x' || key === 'delete' || key === 'backspace') && selectedTarget) {
     deleteSelected();
+  } else if (key === 'd' && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+    e.preventDefault(); duplicateSelected();
+  } else if (key === 'h' && e.altKey) {
+    unhideAll();
+  } else if (key === 'h') {
+    hideSelected();
+  } else if (key === 'f') {
+    frameSelected();
+  } else if (key === 'a') {
+    selectAll();
+  } else if (key === '1') {
+    setCameraView('front');
+  } else if (key === '3') {
+    setCameraView('right');
+  } else if (key === '7') {
+    setCameraView('top');
+  } else if (key === '5') {
+    toggleOrtho();
   }
 });
 
@@ -597,6 +793,123 @@ document.getElementById('shadows-toggle').addEventListener('change', (e) => {
 });
 
 document.getElementById('delete-btn').addEventListener('click', deleteSelected);
+
+// --- export GLB ---
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('export-glb-btn').addEventListener('click', () => {
+  const exportScene = new THREE.Scene();
+  for (const m of draggables) {
+    if (!m.visible) continue;
+    const clone = m.clone();
+    // strip outline helpers
+    const outline = clone.getObjectByName('_outline');
+    if (outline) clone.remove(outline);
+    exportScene.add(clone);
+  }
+  const exporter = new GLTFExporter();
+  exporter.parse(exportScene, (result) => {
+    const blob = new Blob([result], { type: 'application/octet-stream' });
+    downloadBlob(blob, 'haus-export.glb');
+  }, (err) => { console.error('GLB export failed', err); }, { binary: true });
+});
+
+// --- export/import JSON layout ---
+function serializeLayout() {
+  const items = [];
+  for (const m of draggables) {
+    const entry = {
+      pos: [m.position.x, m.position.y, m.position.z],
+      rot: m.rotation.y,
+      visible: m.visible,
+    };
+    if (m.userData.isWall) {
+      entry.type = 'wall';
+      entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
+      entry.color = m.material.color.getHex();
+    } else if (m.userData.isModelPart) {
+      entry.type = 'model_part';
+      // model parts are from GLB, store geometry bbox for identification
+      const box = new THREE.Box3().setFromObject(m);
+      const size = box.getSize(new THREE.Vector3());
+      entry.geo = [size.x, size.y, size.z];
+      entry.color = m.material?.color?.getHex() ?? 0x888888;
+    } else {
+      entry.type = 'furniture';
+      entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
+      entry.color = m.material.color.getHex();
+    }
+    items.push(entry);
+  }
+  return { version: 1, items };
+}
+
+document.getElementById('export-json-btn').addEventListener('click', () => {
+  const data = serializeLayout();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  downloadBlob(blob, 'haus-layout.json');
+});
+
+document.getElementById('json-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.items) return;
+      // clear existing
+      clearModelParts();
+      while (draggables.length) { scene.remove(draggables.pop()); }
+      userWalls.length = 0;
+      undoStack.length = 0;
+      redoStack.length = 0;
+      deselectFurniture();
+      // rebuild
+      for (const item of data.items) {
+        const geo = new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]);
+        const mat = new THREE.MeshLambertMaterial({ color: item.color });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
+        mesh.rotation.y = item.rot;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData.draggable = true;
+        mesh.visible = item.visible !== false;
+        if (item.type === 'wall') {
+          mesh.userData.isWall = true;
+          mesh.userData.baseY = item.geo[1] / 2;
+          userWalls.push(mesh);
+        } else if (item.type === 'model_part') {
+          mesh.userData.isModelPart = true;
+          modelParts.push(mesh);
+        } else {
+          mesh.userData.baseY = item.geo[1] / 2;
+        }
+        scene.add(mesh);
+        draggables.push(mesh);
+      }
+      // frame all
+      if (draggables.length > 0) {
+        const box = new THREE.Box3();
+        box.makeEmpty();
+        for (const m of draggables) box.expandByObject(m);
+        const { center, dist } = frameBounds(box);
+        orbit.target.copy(center);
+        camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7);
+        orbit.update();
+      }
+    } catch (err) { console.error('JSON import failed', err); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
 
 document.getElementById('wall-btn').addEventListener('click', () => {
   if (wallMode) exitWallMode(); else enterWallMode();
