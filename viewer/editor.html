@@ -307,7 +307,8 @@ function loadGLB(url) {
   loader.load(url, (gltf) => ingestGLB(gltf));
 }
 
-loader.load('./model.glb', (gltf) => ingestGLB(gltf), undefined, () => {});
+const glbParam = new URLSearchParams(window.location.search).get('glb');
+loader.load(glbParam || './model.glb', (gltf) => ingestGLB(gltf), undefined, () => {});
 
 document.getElementById('glb-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
