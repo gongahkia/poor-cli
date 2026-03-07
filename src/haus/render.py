@@ -72,10 +72,11 @@ def render_vector_clean(
                       _BGR_COLUMN, -1)
 
     # Draw openings
-    for op in data.openings:
-        color = _BGR_WINDOW if op.label == "Window" else _BGR_DOOR
+    if data.openings:
         overlay = canvas.copy()
-        cv2.rectangle(overlay, (op.x, op.y), (op.x + op.w, op.y + op.h), color, -1)
+        for op in data.openings:
+            color = _BGR_WINDOW if op.label == "Window" else _BGR_DOOR
+            cv2.rectangle(overlay, (op.x, op.y), (op.x + op.w, op.y + op.h), color, -1)
         cv2.addWeighted(overlay, 0.8, canvas, 0.2, 0, canvas)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
