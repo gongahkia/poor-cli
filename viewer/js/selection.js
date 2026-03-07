@@ -14,6 +14,8 @@ export function initSelection() {
   fn.hideSelected = hideSelected;
   fn.unhideAll = unhideAll;
   fn.getGroundPoint = getGroundPoint;
+  fn.copySelected = copySelected;
+  fn.pasteClipboard = pasteClipboard;
   setupDimSliders();
   setupColorPicker();
   setupDragHandlers();
@@ -236,5 +238,31 @@ function setupDragHandlers() {
     S.dragTarget = null; S.dragStartPos = null; S.dragLastValid = null;
     if (!S.fpsMode) S.orbit.enabled = true;
   });
+}
+function copySelected() {
+  if (!S.selectedTarget) return;
+  const m = S.selectedTarget;
+  S.clipboard = {
+    dims: getMeshDims(m), color: m.material?.color?.getHex() ?? 0x888888,
+    furnitureType: m.userData.furnitureType || null, isWall: !!m.userData.isWall, rotation: m.rotation.y,
+  };
+}
+function pasteClipboard() {
+  if (!S.clipboard) return;
+  const c = S.clipboard;
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(c.dims.w, c.dims.h, c.dims.d),
+    new THREE.MeshLambertMaterial({ color: c.color })
+  );
+  mesh.position.set(fn.snapToGrid(S.orbit.target.x), c.dims.h / 2, fn.snapToGrid(S.orbit.target.z));
+  mesh.rotation.y = c.rotation;
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.userData = { draggable: true, baseY: c.dims.h / 2 };
+  if (c.furnitureType) mesh.userData.furnitureType = c.furnitureType;
+  if (c.isWall) { mesh.userData.isWall = true; S.userWalls.push(mesh); }
+  S.scene.add(mesh); S.draggables.push(mesh);
+  if (fn.checkCollision(mesh)) { S.scene.remove(mesh); rm(S.draggables, mesh); if (c.isWall) rm(S.userWalls, mesh); fn.showCollisionFlash(); return; }
+  fn.pushUndo({ type: 'add', mesh, inUserWalls: c.isWall });
+  selectFurniture(mesh); fn.refreshSceneList();
 }
 function rm(arr, item) { const i = arr.indexOf(item); if (i >= 0) arr.splice(i, 1); }

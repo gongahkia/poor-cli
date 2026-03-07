@@ -3,90 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>haus — Floor Plan Viewer</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { overflow: hidden; font-family: system-ui, sans-serif; background: #1a1a1a; color: #eee; }
-canvas { display: block; }
-#sidebar {
-  position: fixed; top: 0; right: 0; width: 220px; height: 100%;
-  background: rgba(30,30,30,0.95); padding: 12px; z-index: 10;
-  border-left: 1px solid #333; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 12px;
-}
-#sidebar h3 {
-  font-size: 11px; margin: 0; color: #777; text-transform: uppercase;
-  letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 4px;
-}
-.furniture-btn {
-  display: block; width: 100%; padding: 7px 10px; margin-bottom: 4px;
-  background: #2a2a2a; border: 1px solid #444; color: #ddd; cursor: pointer;
-  font-size: 12px; text-align: left; border-radius: 4px;
-}
-.furniture-btn:hover { background: #3a3a3a; border-color: #666; }
-.toggle-row {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 12px; color: #ccc; padding: 2px 0;
-}
-.toggle-row label { cursor: pointer; user-select: none; }
-.toggle-row input[type="checkbox"] { accent-color: #5a9; width: 16px; height: 16px; cursor: pointer; }
-.toggle-row input[type="range"] { width: 80px; accent-color: #5a9; cursor: pointer; }
-.snap-val { color: #5a9; font-size: 11px; min-width: 36px; text-align: right; }
-.dim-input {
-  width: 52px; background: #222; border: 1px solid #555; color: #5a9;
-  font-size: 11px; padding: 2px 4px; border-radius: 3px; text-align: right;
-}
-.dim-input:focus { border-color: #4a9; outline: none; }
-#toolbar {
-  position: fixed; top: 12px; left: 12px; z-index: 10;
-  display: flex; gap: 8px; align-items: center;
-}
-#toolbar label, #toolbar button {
-  display: inline-block; padding: 6px 14px; background: #333; border: 1px solid #555;
-  border-radius: 4px; cursor: pointer; font-size: 12px; color: #ddd;
-}
-#toolbar label:hover, #toolbar button:hover { background: #444; }
-#toolbar input[type="file"] { display: none; }
-#info {
-  position: fixed; bottom: 12px; left: 12px; z-index: 10;
-  font-size: 11px; color: #666;
-}
-kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px 5px; font-size: 10px; }
-.section { display: flex; flex-direction: column; gap: 4px; }
-#toolbar button.active { background: #2a6a4a; border-color: #4a9; color: #fff; }
-#wall-status {
-  position: fixed; top: 50px; left: 12px; z-index: 10;
-  font-size: 12px; color: #4a9; display: none;
-}
-#scene-list {
-  max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
-}
-#scene-list::-webkit-scrollbar { width: 4px; }
-#scene-list::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
-.scene-item {
-  display: flex; align-items: center; gap: 4px; padding: 3px 6px;
-  background: #2a2a2a; border: 1px solid #333; border-radius: 3px;
-  font-size: 11px; cursor: pointer; min-height: 24px;
-}
-.scene-item:hover { background: #333; }
-.scene-item.active { border-color: #4a9; background: #2a3a2e; }
-.scene-item.hidden-item { opacity: 0.45; }
-.scene-item .si-color {
-  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
-}
-.scene-item .si-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc; }
-.scene-item .si-btn {
-  background: none; border: none; color: #888; cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1;
-}
-.scene-item .si-btn:hover { color: #eee; }
-#scene-count { font-size: 10px; color: #666; }
-#collision-flash {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  background: rgba(200,40,40,0.85); color: #fff; font-size: 13px;
-  padding: 8px 18px; border-radius: 6px; z-index: 100;
-  pointer-events: none; opacity: 0; transition: opacity 0.3s;
-}
-</style>
+<title>haus — Floor Plan Editor</title>
+<link rel="stylesheet" href="css/editor.css">
 </head>
 <body>
 <div id="toolbar">
@@ -94,27 +12,35 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   <button id="delete-btn" title="Delete selected (X)">Delete</button>
   <button id="wall-btn" title="Draw wall (W)">Draw Wall</button>
   <button id="wall-cancel-btn" style="display:none;" title="Cancel wall (Esc)">Cancel</button>
+  <button id="fps-btn" title="First-person view (P)">FPS View</button>
+  <button id="screenshot-btn" title="Capture screenshot">Screenshot</button>
   <button id="export-glb-btn" title="Export scene as GLB">Export GLB</button>
   <button id="export-json-btn" title="Export layout as JSON">Export JSON</button>
   <label>Load JSON <input type="file" id="json-input" accept=".json"></label>
+  <label>Floor Plan <input type="file" id="overlay-input" accept="image/*"></label>
+  <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
+</div>
+<div id="context-menu">
+  <div data-action="copy">Copy</div>
+  <div data-action="paste">Paste</div>
+  <div data-action="duplicate">Duplicate</div>
+  <div data-action="rotate">Rotate 90°</div>
+  <div data-action="hide">Hide</div>
+  <div data-action="delete">Delete</div>
+  <div data-action="frame">Frame</div>
+  <div data-action="select-all">Deselect / Frame All</div>
 </div>
 <div id="wall-status">Click to place wall start point...</div>
 <div id="collision-flash">Blocked — collision</div>
+<div id="fps-crosshair">+</div>
+<div id="fps-hint">WASD move · Mouse look · ESC exit</div>
+<div id="screenshot-flash"></div>
 <div id="sidebar">
   <div class="section">
     <h3>Grid & Snap</h3>
-    <div class="toggle-row">
-      <label for="grid-toggle">Show grid</label>
-      <input type="checkbox" id="grid-toggle" checked>
-    </div>
-    <div class="toggle-row">
-      <label for="snap-toggle">Snap to grid</label>
-      <input type="checkbox" id="snap-toggle" checked>
-    </div>
-    <div class="toggle-row">
-      <label for="collision-toggle">Collisions</label>
-      <input type="checkbox" id="collision-toggle" checked>
-    </div>
+    <div class="toggle-row"><label for="grid-toggle">Show grid</label><input type="checkbox" id="grid-toggle" checked></div>
+    <div class="toggle-row"><label for="snap-toggle">Snap to grid</label><input type="checkbox" id="snap-toggle" checked></div>
+    <div class="toggle-row"><label for="collision-toggle">Collisions</label><input type="checkbox" id="collision-toggle" checked></div>
     <div class="toggle-row">
       <label for="snap-size">Grid size</label>
       <input type="range" id="snap-size" min="1" max="10" value="4" step="1">
@@ -123,14 +49,22 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   </div>
   <div class="section">
     <h3>View</h3>
+    <div class="toggle-row"><label for="wireframe-toggle">Wireframe</label><input type="checkbox" id="wireframe-toggle"></div>
+    <div class="toggle-row"><label for="shadows-toggle">Shadows</label><input type="checkbox" id="shadows-toggle" checked></div>
+  </div>
+  <div class="section" id="overlay-controls" style="display:none;">
+    <h3>Floor Plan Overlay</h3>
     <div class="toggle-row">
-      <label for="wireframe-toggle">Wireframe</label>
-      <input type="checkbox" id="wireframe-toggle">
+      <label for="overlay-scale">Scale</label>
+      <input type="range" id="overlay-scale" min="10" max="500" value="100" step="5">
+      <span class="snap-val" id="overlay-scale-label">1.00x</span>
     </div>
     <div class="toggle-row">
-      <label for="shadows-toggle">Shadows</label>
-      <input type="checkbox" id="shadows-toggle" checked>
+      <label for="overlay-opacity">Opacity</label>
+      <input type="range" id="overlay-opacity" min="5" max="100" value="50" step="5">
+      <span class="snap-val" id="overlay-opacity-label">50%</span>
     </div>
+    <button class="furniture-btn" id="overlay-clear">Remove Overlay</button>
   </div>
   <div class="section">
     <h3>Walls</h3>
@@ -144,9 +78,7 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
       <input type="range" id="wall-thick-slider" min="1" max="10" value="3" step="1">
       <span class="snap-val" id="wall-thick-label">0.15m</span>
     </div>
-    <div class="toggle-row" style="font-size:11px;color:#888;">
-      <span><kbd>W</kbd> draw | <kbd>Esc</kbd> cancel</span>
-    </div>
+    <div class="toggle-row" style="font-size:11px;color:#888;"><span><kbd>W</kbd> draw | <kbd>Esc</kbd> cancel</span></div>
   </div>
   <div class="section">
     <h3>Bedroom</h3>
@@ -191,6 +123,8 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   </div>
   <div class="section" id="selected-info" style="display:none;">
     <h3>Selected</h3>
+    <div class="toggle-row"><label>Color</label><input type="color" id="sel-color" value="#888888"></div>
+    <div class="toggle-row"><label>Pos</label><span id="sel-pos">0, 0, 0</span></div>
     <div class="toggle-row">
       <label for="sel-width">W</label>
       <input type="range" id="sel-width" min="1" max="100" value="10" step="1">
@@ -207,12 +141,52 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
       <input type="number" class="dim-input" id="sel-depth-num" min="0.05" max="20" step="0.05" value="1.0">
     </div>
     <div class="toggle-row" style="font-size:10px;color:#666;">
-      <span><kbd>R</kbd> 90° <kbd>⇧R</kbd> 15° <kbd>X</kbd> del <kbd>⌘D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
+      <span><kbd>R</kbd> 90° <kbd>Shift+R</kbd> 15° <kbd>X</kbd> del <kbd>Cmd+D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
     </div>
   </div>
 </div>
-<div id="info"><kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>C</kbd> collisions <kbd>W</kbd> wall <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo</div>
-
+<div id="info">
+  <kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>C</kbd> collisions <kbd>W</kbd> wall <kbd>P</kbd> FPS
+  <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide
+  <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho
+  <kbd>Ctrl+C</kbd>/<kbd>V</kbd> copy/paste <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo <kbd>?</kbd> help
+</div>
+<div id="help-modal">
+  <div id="help-content">
+    <h2>Keyboard Shortcuts</h2>
+    <table>
+      <tr><td><kbd>G</kbd></td><td>Toggle grid</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Toggle snap to grid</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Toggle collision detection</td></tr>
+      <tr><td><kbd>W</kbd></td><td>Enter/exit wall drawing mode</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Toggle first-person (FPS) view</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Rotate selected 90°</td></tr>
+      <tr><td><kbd>Shift+R</kbd></td><td>Rotate selected 15°</td></tr>
+      <tr><td><kbd>X</kbd> / <kbd>Del</kbd></td><td>Delete selected</td></tr>
+      <tr><td><kbd>Cmd/Ctrl+D</kbd></td><td>Duplicate selected</td></tr>
+      <tr><td><kbd>H</kbd></td><td>Hide selected</td></tr>
+      <tr><td><kbd>Alt+H</kbd></td><td>Unhide all</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Frame selected / all</td></tr>
+      <tr><td><kbd>A</kbd></td><td>Deselect / frame all</td></tr>
+      <tr><td><kbd>1</kbd> / <kbd>3</kbd> / <kbd>7</kbd></td><td>Front / Right / Top view</td></tr>
+      <tr><td><kbd>5</kbd></td><td>Toggle orthographic</td></tr>
+      <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
+      <tr><td><kbd>Ctrl+Y</kbd> / <kbd>Ctrl+Shift+Z</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>Ctrl+C</kbd></td><td>Copy selected</td></tr>
+      <tr><td><kbd>Ctrl+V</kbd></td><td>Paste</td></tr>
+      <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Capture screenshot</td></tr>
+      <tr><td>Right-click</td><td>Context menu</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Cancel current mode</td></tr>
+    </table>
+    <h2 style="margin-top:16px;">FPS Mode</h2>
+    <table>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Move forward/left/back/right</td></tr>
+      <tr><td>Mouse</td><td>Look around</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Exit FPS mode</td></tr>
+    </table>
+    <button id="help-close">Close</button>
+  </div>
+</div>
 <script type="importmap">
 {
   "imports": {
@@ -221,1173 +195,6 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   }
 }
 </script>
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
-
-// --- scene setup ---
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x222222);
-
-const SIDEBAR_W = 220;
-const camera = new THREE.PerspectiveCamera(50, (window.innerWidth - SIDEBAR_W) / window.innerHeight, 0.1, 500);
-camera.position.set(10, 8, 10);
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth - SIDEBAR_W, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-document.body.prepend(renderer.domElement);
-
-const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.enableDamping = true;
-
-// --- lighting ---
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-dirLight.position.set(10, 20, 10);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(2048, 2048);
-dirLight.shadow.camera.left = -20;
-dirLight.shadow.camera.right = 20;
-dirLight.shadow.camera.top = 20;
-dirLight.shadow.camera.bottom = -20;
-scene.add(dirLight);
-
-// --- ground plane (receives shadows) ---
-const groundGeo = new THREE.PlaneGeometry(100, 100);
-const groundMat = new THREE.ShadowMaterial({ opacity: 0.15 });
-const ground = new THREE.Mesh(groundGeo, groundMat);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-// --- grid system ---
-let gridDivisions = 4; // divisions per meter
-let snapEnabled = true;
-let gridGroup = new THREE.Group();
-scene.add(gridGroup);
-
-function rebuildGrid() {
-  gridGroup.clear();
-  const cellSize = 1.0 / gridDivisions;
-  const extent = 50;
-  const totalDivs = Math.floor(extent / cellSize);
-  // major grid: every 1m
-  const majorGrid = new THREE.GridHelper(extent, extent, 0x555555, 0x555555);
-  majorGrid.material.transparent = true;
-  majorGrid.material.opacity = 0.5;
-  gridGroup.add(majorGrid);
-  // minor grid: subdivisions
-  if (gridDivisions > 1) {
-    const minorGrid = new THREE.GridHelper(extent, totalDivs, 0x333333, 0x333333);
-    minorGrid.material.transparent = true;
-    minorGrid.material.opacity = 0.25;
-    minorGrid.position.y = -0.001; // avoid z-fight
-    gridGroup.add(minorGrid);
-  }
-}
-rebuildGrid();
-
-function snapToGrid(val) {
-  if (!snapEnabled) return val;
-  const cellSize = 1.0 / gridDivisions;
-  return Math.round(val / cellSize) * cellSize;
-}
-
-// --- collision detection ---
-let collisionEnabled = true;
-document.getElementById('collision-toggle').addEventListener('change', (e) => {
-  collisionEnabled = e.target.checked;
-});
-
-const _otherBox = new THREE.Box3();
-
-function checkCollision(mesh, exclude) {
-  // returns true if mesh overlaps any other draggable (except those in exclude set)
-  if (!collisionEnabled) return false;
-  const box = new THREE.Box3().setFromObject(mesh);
-  box.min.addScalar(0.005);
-  box.max.addScalar(-0.005);
-  for (const other of draggables) {
-    if (other === mesh || !other.visible) continue;
-    if (exclude && exclude.has(other)) continue;
-    _otherBox.setFromObject(other);
-    _otherBox.min.addScalar(0.005);
-    _otherBox.max.addScalar(-0.005);
-    if (box.intersectsBox(_otherBox)) return true;
-  }
-  return false;
-}
-
-let _flashTimer = 0;
-function showCollisionFlash() {
-  const el = document.getElementById('collision-flash');
-  el.style.opacity = '1';
-  clearTimeout(_flashTimer);
-  _flashTimer = setTimeout(() => { el.style.opacity = '0'; }, 800);
-}
-
-// --- GLB loading ---
-const loader = new GLTFLoader();
-let modelParts = []; // individual meshes from GLB, selectable/deletable
-
-function clearModelParts() {
-  for (const m of modelParts) {
-    scene.remove(m);
-    const di = draggables.indexOf(m);
-    if (di >= 0) draggables.splice(di, 1);
-  }
-  modelParts = [];
-}
-
-function ingestGLB(gltf) {
-  clearModelParts();
-  // collect all meshes with their world transforms
-  const meshes = [];
-  gltf.scene.updateMatrixWorld(true);
-  gltf.scene.traverse((child) => {
-    if (child.isMesh) meshes.push(child);
-  });
-  const tempBox = new THREE.Box3();
-  for (const mesh of meshes) {
-    // detach from parent, apply world transform so it stands alone
-    const m = mesh.clone();
-    m.applyMatrix4(mesh.matrixWorld);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    m.userData.draggable = true;
-    m.userData.isModelPart = true;
-    m.userData.baseY = undefined; // computed on first drag
-    scene.add(m);
-    draggables.push(m);
-    modelParts.push(m);
-  }
-  // camera framing
-  if (modelParts.length > 0) {
-    tempBox.makeEmpty();
-    for (const m of modelParts) tempBox.expandByObject(m);
-    const center = tempBox.getCenter(new THREE.Vector3());
-    orbit.target.copy(center);
-    camera.position.set(center.x + 10, center.y + 8, center.z + 10);
-    orbit.update();
-  }
-  refreshSceneList();
-}
-
-function loadGLB(url) {
-  loader.load(url, (gltf) => ingestGLB(gltf));
-}
-
-const glbParam = new URLSearchParams(window.location.search).get('glb');
-loader.load(glbParam || './model.glb', (gltf) => ingestGLB(gltf), undefined, () => {});
-
-document.getElementById('glb-input').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file) loadGLB(URL.createObjectURL(file));
-});
-
-// --- furniture ---
-const FURNITURE = {
-  // bedroom
-  bed_single:     { w: 0.9,  h: 0.5,  d: 1.9, color: 0x88bbee },
-  bed_queen:      { w: 1.5,  h: 0.55, d: 2.0, color: 0x77aadd },
-  bed_king:       { w: 1.8,  h: 0.55, d: 2.0, color: 0x6699cc },
-  wardrobe:       { w: 1.8,  h: 2.0,  d: 0.6, color: 0x4A3728 },
-  wardrobe_s:     { w: 0.9,  h: 2.0,  d: 0.6, color: 0x5A4738 },
-  bedside:        { w: 0.5,  h: 0.5,  d: 0.4, color: 0x8B7355 },
-  dresser:        { w: 1.2,  h: 0.8,  d: 0.5, color: 0x7A6245 },
-  // living / dining
-  sofa_2:         { w: 1.5,  h: 0.8,  d: 0.8, color: 0x555555 },
-  sofa_3:         { w: 2.2,  h: 0.8,  d: 0.9, color: 0x4a4a4a },
-  sofa_l:         { w: 2.2,  h: 0.8,  d: 1.6, color: 0x505050 },
-  coffee:         { w: 1.0,  h: 0.4,  d: 0.5, color: 0x6B4226 },
-  tv_console:     { w: 1.5,  h: 0.5,  d: 0.4, color: 0x3a3a3a },
-  dining_4:       { w: 1.2,  h: 0.75, d: 0.8, color: 0x8B6914 },
-  dining_6:       { w: 1.6,  h: 0.75, d: 0.9, color: 0x8B6914 },
-  shoe_rack:      { w: 0.8,  h: 1.0,  d: 0.3, color: 0x5C4033 },
-  // kitchen / bath
-  fridge:         { w: 0.7,  h: 1.7,  d: 0.7, color: 0xcccccc },
-  washer:         { w: 0.6,  h: 0.85, d: 0.6, color: 0xdddddd },
-  kitchen_counter:{ w: 1.2,  h: 0.9,  d: 0.6, color: 0x888888 },
-  sink:           { w: 0.8,  h: 0.85, d: 0.6, color: 0x999999 },
-  toilet:         { w: 0.4,  h: 0.4,  d: 0.7, color: 0xeeeeee },
-  shower:         { w: 0.9,  h: 2.0,  d: 0.9, color: 0xaaddee },
-  // study / work
-  desk:           { w: 1.2,  h: 0.75, d: 0.6, color: 0xD2B48C },
-  desk_l:         { w: 1.6,  h: 0.75, d: 1.2, color: 0xC4A882 },
-  bookshelf:      { w: 0.8,  h: 1.8,  d: 0.3, color: 0x5A4020 },
-  chair:          { w: 0.5,  h: 0.45, d: 0.5, color: 0x333333 },
-};
-
-const FURNITURE_NAMES = {
-  bed_single: 'Single Bed', bed_queen: 'Queen Bed', bed_king: 'King Bed',
-  wardrobe: 'Wardrobe', wardrobe_s: 'Wardrobe S', bedside: 'Bedside Table', dresser: 'Dresser',
-  sofa_2: '2-Seat Sofa', sofa_3: '3-Seat Sofa', sofa_l: 'L-Sofa',
-  coffee: 'Coffee Table', tv_console: 'TV Console',
-  dining_4: 'Dining 4', dining_6: 'Dining 6', shoe_rack: 'Shoe Rack',
-  fridge: 'Fridge', washer: 'Washer', kitchen_counter: 'Counter',
-  sink: 'Sink Cabinet', toilet: 'Toilet', shower: 'Shower',
-  desk: 'Desk', desk_l: 'L-Desk', bookshelf: 'Bookshelf', chair: 'Office Chair',
-};
-
-const draggables = [];
-const userWalls = []; // user-added wall meshes
-const hiddenObjects = []; // H to hide, Alt+H to unhide
-const undoStack = []; // {type, data} action records
-const redoStack = [];
-const MAX_UNDO = 50;
-const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-let dragTarget = null;
-let dragStartPos = null; // for undo move
-let selectedTarget = null;
-let dragOffset = new THREE.Vector3();
-const outlineMat = new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 });
-
-function refreshOutline(mesh) {
-  const old = mesh.getObjectByName('_outline');
-  if (old) mesh.remove(old);
-  const edges = new THREE.EdgesGeometry(mesh.geometry);
-  const o = new THREE.LineSegments(edges, outlineMat);
-  o.name = '_outline';
-  mesh.add(o);
-}
-
-// --- undo/redo ---
-function pushUndo(action) {
-  undoStack.push(action);
-  if (undoStack.length > MAX_UNDO) undoStack.shift();
-  redoStack.length = 0; // clear redo on new action
-}
-
-function undo() {
-  if (undoStack.length === 0) return;
-  const action = undoStack.pop();
-  if (action.type === 'add') {
-    // reverse: remove the mesh
-    scene.remove(action.mesh);
-    const di = draggables.indexOf(action.mesh);
-    if (di >= 0) draggables.splice(di, 1);
-    const wi = userWalls.indexOf(action.mesh);
-    if (wi >= 0) userWalls.splice(wi, 1);
-    if (selectedTarget === action.mesh) deselectFurniture();
-  } else if (action.type === 'delete') {
-    // reverse: re-add the mesh
-    scene.add(action.mesh);
-    draggables.push(action.mesh);
-    if (action.inUserWalls) userWalls.push(action.mesh);
-    if (action.inModelParts) modelParts.push(action.mesh);
-  } else if (action.type === 'move') {
-    action.mesh.position.copy(action.oldPos);
-  } else if (action.type === 'rotate') {
-    action.mesh.rotation.y = action.oldRot;
-  } else if (action.type === 'resize') {
-    const d = action.oldDims;
-    action.mesh.geometry.dispose();
-    action.mesh.geometry = new THREE.BoxGeometry(d.w, d.h, d.d);
-    action.mesh.position.y = action.oldY;
-    action.mesh.userData.baseY = action.oldY;
-    if (action.mesh === selectedTarget) { populateDimSliders(action.mesh); refreshOutline(action.mesh); }
-  }
-  redoStack.push(action);
-  refreshSceneList();
-}
-
-function redo() {
-  if (redoStack.length === 0) return;
-  const action = redoStack.pop();
-  if (action.type === 'add') {
-    scene.add(action.mesh);
-    draggables.push(action.mesh);
-    if (action.inUserWalls) userWalls.push(action.mesh);
-  } else if (action.type === 'delete') {
-    scene.remove(action.mesh);
-    const di = draggables.indexOf(action.mesh);
-    if (di >= 0) draggables.splice(di, 1);
-    const wi = userWalls.indexOf(action.mesh);
-    if (wi >= 0) userWalls.splice(wi, 1);
-    const mi = modelParts.indexOf(action.mesh);
-    if (mi >= 0) modelParts.splice(mi, 1);
-    if (selectedTarget === action.mesh) deselectFurniture();
-  } else if (action.type === 'move') {
-    action.mesh.position.copy(action.newPos);
-  } else if (action.type === 'rotate') {
-    action.mesh.rotation.y = action.newRot;
-  } else if (action.type === 'resize') {
-    const d = action.newDims;
-    action.mesh.geometry.dispose();
-    action.mesh.geometry = new THREE.BoxGeometry(d.w, d.h, d.d);
-    action.mesh.position.y = action.newY;
-    action.mesh.userData.baseY = action.newY;
-    if (action.mesh === selectedTarget) { populateDimSliders(action.mesh); refreshOutline(action.mesh); }
-  }
-  undoStack.push(action);
-  refreshSceneList();
-}
-
-// --- duplicate ---
-function duplicateSelected() {
-  if (!selectedTarget) return;
-  const clone = selectedTarget.clone();
-  clone.position.x += snapEnabled ? (1.0 / gridDivisions) : 0.5;
-  clone.position.z += snapEnabled ? (1.0 / gridDivisions) : 0.5;
-  clone.userData = { ...selectedTarget.userData };
-  scene.add(clone);
-  if (checkCollision(clone)) {
-    scene.remove(clone);
-    showCollisionFlash();
-    return;
-  }
-  draggables.push(clone);
-  if (selectedTarget.userData.isWall) userWalls.push(clone);
-  pushUndo({ type: 'add', mesh: clone, inUserWalls: !!clone.userData.isWall });
-  selectFurniture(clone);
-}
-
-// --- hide/unhide ---
-function hideSelected() {
-  if (!selectedTarget) return;
-  selectedTarget.visible = false;
-  hiddenObjects.push(selectedTarget);
-  deselectFurniture();
-}
-
-function unhideAll() {
-  for (const obj of hiddenObjects) obj.visible = true;
-  hiddenObjects.length = 0;
-  refreshSceneList();
-}
-
-// --- camera presets ---
-function frameBounds(box) {
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z, 1);
-  const dist = maxDim * 1.5;
-  return { center, dist };
-}
-
-function frameSelected() {
-  const box = new THREE.Box3();
-  if (selectedTarget) {
-    box.setFromObject(selectedTarget);
-  } else if (draggables.length > 0) {
-    box.makeEmpty();
-    for (const m of draggables) if (m.visible) box.expandByObject(m);
-  } else {
-    return;
-  }
-  const { center, dist } = frameBounds(box);
-  const dir = camera.position.clone().sub(orbit.target).normalize();
-  orbit.target.copy(center);
-  camera.position.copy(center).addScaledVector(dir, dist);
-  orbit.update();
-}
-
-function setCameraView(direction) {
-  // direction: 'front' | 'right' | 'top'
-  const box = new THREE.Box3();
-  if (draggables.length > 0) {
-    box.makeEmpty();
-    for (const m of draggables) if (m.visible) box.expandByObject(m);
-  }
-  const { center, dist } = frameBounds(box);
-  orbit.target.copy(center);
-  if (direction === 'front') {
-    camera.position.set(center.x, center.y, center.z + dist);
-  } else if (direction === 'right') {
-    camera.position.set(center.x + dist, center.y, center.z);
-  } else if (direction === 'top') {
-    camera.position.set(center.x, center.y + dist, center.z + 0.001);
-  }
-  orbit.update();
-}
-
-function toggleOrtho() {
-  if (camera.isPerspectiveCamera) {
-    // store fov-based distance for restoration
-    camera.userData._wasPerspective = true;
-  }
-  // toggle by swapping near/far behavior isn't clean with PerspectiveCamera,
-  // so we just set fov to ~1 for pseudo-ortho or restore
-  if (camera.fov === 1) {
-    camera.fov = 50;
-  } else {
-    camera.fov = 1;
-    // pull camera far back to compensate for tiny fov
-    const dir = camera.position.clone().sub(orbit.target).normalize();
-    const curDist = camera.position.distanceTo(orbit.target);
-    camera.position.copy(orbit.target).addScaledVector(dir, curDist * 50);
-  }
-  camera.updateProjectionMatrix();
-}
-
-// --- select all ---
-function selectAll() {
-  // if something selected, deselect
-  if (selectedTarget) { deselectFurniture(); return; }
-  // otherwise no multi-select, just frame all
-  frameSelected();
-}
-
-// --- per-object dimension editing ---
-function getMeshDims(mesh) {
-  const p = mesh.geometry.parameters;
-  if (p && p.width !== undefined) return { w: p.width, h: p.height, d: p.depth };
-  // fallback for non-box geometry (GLB model parts)
-  const box = new THREE.Box3().setFromBufferAttribute(mesh.geometry.attributes.position);
-  const size = box.getSize(new THREE.Vector3());
-  return { w: size.x, h: size.y, d: size.z };
-}
-
-function resizeSelected(newW, newH, newD) {
-  if (!selectedTarget) return;
-  const mesh = selectedTarget;
-  const oldGeo = mesh.geometry;
-  const oldY = mesh.position.y;
-  const oldBaseY = mesh.userData.baseY;
-  mesh.geometry = new THREE.BoxGeometry(newW, newH, newD);
-  mesh.position.y = newH / 2;
-  mesh.userData.baseY = newH / 2;
-  if (collisionEnabled && checkCollision(mesh)) {
-    // revert
-    mesh.geometry.dispose();
-    mesh.geometry = oldGeo;
-    mesh.position.y = oldY;
-    mesh.userData.baseY = oldBaseY;
-    populateDimSliders(mesh);
-    showCollisionFlash();
-    return;
-  }
-  oldGeo.dispose();
-  if (mesh.getObjectByName('_outline')) refreshOutline(mesh);
-}
-
-const selWidthSlider = document.getElementById('sel-width');
-const selHeightSlider = document.getElementById('sel-height');
-const selDepthSlider = document.getElementById('sel-depth');
-const selWidthNum = document.getElementById('sel-width-num');
-const selHeightNum = document.getElementById('sel-height-num');
-const selDepthNum = document.getElementById('sel-depth-num');
-
-function populateDimSliders(mesh) {
-  const dims = getMeshDims(mesh);
-  selWidthSlider.value = Math.round(dims.w * 10);
-  selHeightSlider.value = Math.round(dims.h * 10);
-  selDepthSlider.value = Math.round(dims.d * 10);
-  selWidthNum.value = dims.w.toFixed(2);
-  selHeightNum.value = dims.h.toFixed(2);
-  selDepthNum.value = dims.d.toFixed(2);
-}
-
-let resizeOldDims = null;
-function startResize() {
-  if (selectedTarget) resizeOldDims = getMeshDims(selectedTarget);
-}
-function endResize() {
-  if (selectedTarget && resizeOldDims) {
-    const newDims = getMeshDims(selectedTarget);
-    if (resizeOldDims.w !== newDims.w || resizeOldDims.h !== newDims.h || resizeOldDims.d !== newDims.d) {
-      pushUndo({ type: 'resize', mesh: selectedTarget, oldDims: resizeOldDims, newDims, oldY: resizeOldDims.h / 2, newY: newDims.h / 2 });
-    }
-  }
-  resizeOldDims = null;
-}
-for (const sl of [selWidthSlider, selHeightSlider, selDepthSlider]) {
-  sl.addEventListener('pointerdown', startResize);
-  sl.addEventListener('pointerup', endResize);
-}
-
-selWidthSlider.addEventListener('input', () => {
-  if (!selectedTarget) return;
-  const dims = getMeshDims(selectedTarget);
-  const nw = parseInt(selWidthSlider.value) / 10;
-  selWidthNum.value = nw.toFixed(2);
-  resizeSelected(nw, dims.h, dims.d);
-});
-selHeightSlider.addEventListener('input', () => {
-  if (!selectedTarget) return;
-  const dims = getMeshDims(selectedTarget);
-  const nh = parseInt(selHeightSlider.value) / 10;
-  selHeightNum.value = nh.toFixed(2);
-  resizeSelected(dims.w, nh, dims.d);
-});
-selDepthSlider.addEventListener('input', () => {
-  if (!selectedTarget) return;
-  const dims = getMeshDims(selectedTarget);
-  const nd = parseInt(selDepthSlider.value) / 10;
-  selDepthNum.value = nd.toFixed(2);
-  resizeSelected(dims.w, dims.h, nd);
-});
-
-// number input → slider + resize (bidirectional sync)
-selWidthNum.addEventListener('change', () => {
-  if (!selectedTarget) return;
-  startResize();
-  const dims = getMeshDims(selectedTarget);
-  const nw = Math.max(0.05, Math.min(20, parseFloat(selWidthNum.value) || dims.w));
-  selWidthNum.value = nw.toFixed(2);
-  selWidthSlider.value = Math.round(nw * 10);
-  resizeSelected(nw, dims.h, dims.d);
-  endResize();
-});
-selHeightNum.addEventListener('change', () => {
-  if (!selectedTarget) return;
-  startResize();
-  const dims = getMeshDims(selectedTarget);
-  const nh = Math.max(0.05, Math.min(20, parseFloat(selHeightNum.value) || dims.h));
-  selHeightNum.value = nh.toFixed(2);
-  selHeightSlider.value = Math.round(nh * 10);
-  resizeSelected(dims.w, nh, dims.d);
-  endResize();
-});
-selDepthNum.addEventListener('change', () => {
-  if (!selectedTarget) return;
-  startResize();
-  const dims = getMeshDims(selectedTarget);
-  const nd = Math.max(0.05, Math.min(20, parseFloat(selDepthNum.value) || dims.d));
-  selDepthNum.value = nd.toFixed(2);
-  selDepthSlider.value = Math.round(nd * 10);
-  resizeSelected(dims.w, dims.h, nd);
-  endResize();
-});
-
-// --- wall drawing state ---
-let wallMode = false;
-let wallStart = null; // THREE.Vector3 or null
-let wallPreview = null; // live preview mesh
-let wallHeight = 2.6;
-let wallThickness = 0.15;
-const WALL_COLOR = 0x666666;
-
-function enterWallMode() {
-  wallMode = true;
-  wallStart = null;
-  deselectFurniture();
-  document.getElementById('wall-btn').classList.add('active');
-  document.getElementById('wall-cancel-btn').style.display = '';
-  document.getElementById('wall-status').style.display = '';
-  document.getElementById('wall-status').textContent = 'Click to place wall start point...';
-  renderer.domElement.style.cursor = 'crosshair';
-}
-
-function exitWallMode() {
-  wallMode = false;
-  wallStart = null;
-  if (wallPreview) { scene.remove(wallPreview); wallPreview = null; }
-  document.getElementById('wall-btn').classList.remove('active');
-  document.getElementById('wall-cancel-btn').style.display = 'none';
-  document.getElementById('wall-status').style.display = 'none';
-  renderer.domElement.style.cursor = '';
-}
-
-function getGroundPoint(e) {
-  mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const pt = new THREE.Vector3();
-  raycaster.ray.intersectPlane(dragPlane, pt);
-  pt.x = snapToGrid(pt.x);
-  pt.z = snapToGrid(pt.z);
-  pt.y = 0;
-  return pt;
-}
-
-function buildWallMesh(p1, p2, thickness, height) {
-  const dx = p2.x - p1.x;
-  const dz = p2.z - p1.z;
-  const length = Math.sqrt(dx * dx + dz * dz);
-  if (length < 0.01) return null;
-  const cx = (p1.x + p2.x) / 2;
-  const cz = (p1.z + p2.z) / 2;
-  const angle = Math.atan2(dz, dx);
-  const geo = new THREE.BoxGeometry(length, height, thickness);
-  const mat = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(cx, height / 2, cz);
-  mesh.rotation.y = -angle;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-function updateWallPreview(endPt) {
-  if (wallPreview) scene.remove(wallPreview);
-  if (!wallStart) return;
-  const mesh = buildWallMesh(wallStart, endPt, wallThickness, wallHeight);
-  if (!mesh) return;
-  scene.add(mesh);
-  const blocked = collisionEnabled && checkCollision(mesh);
-  mesh.material = new THREE.MeshLambertMaterial({
-    color: blocked ? 0xdd4444 : 0x44ddaa, transparent: true, opacity: 0.5
-  });
-  wallPreview = mesh;
-}
-
-function placeWall(endPt) {
-  const mesh = buildWallMesh(wallStart, endPt, wallThickness, wallHeight);
-  if (!mesh) return;
-  mesh.userData.draggable = true;
-  mesh.userData.isWall = true;
-  mesh.userData.baseY = wallHeight / 2;
-  scene.add(mesh);
-  if (checkCollision(mesh)) {
-    scene.remove(mesh);
-    mesh.geometry.dispose(); mesh.material.dispose();
-    showCollisionFlash();
-    return;
-  }
-  draggables.push(mesh);
-  userWalls.push(mesh);
-  pushUndo({ type: 'add', mesh, inUserWalls: true });
-  refreshSceneList();
-}
-
-function selectFurniture(mesh) {
-  deselectFurniture();
-  selectedTarget = mesh;
-  const edges = new THREE.EdgesGeometry(mesh.geometry);
-  const outline = new THREE.LineSegments(edges, outlineMat);
-  outline.name = '_outline';
-  mesh.add(outline);
-  document.getElementById('selected-info').style.display = '';
-  populateDimSliders(mesh);
-  refreshSceneList();
-}
-
-function deselectFurniture() {
-  if (selectedTarget) {
-    const outline = selectedTarget.getObjectByName('_outline');
-    if (outline) selectedTarget.remove(outline);
-    selectedTarget = null;
-  }
-  document.getElementById('selected-info').style.display = 'none';
-  refreshSceneList();
-}
-
-function getItemLabel(mesh) {
-  if (mesh.userData.furnitureType) return FURNITURE_NAMES[mesh.userData.furnitureType] || mesh.userData.furnitureType;
-  if (mesh.userData.isWall) return 'Wall';
-  if (mesh.userData.isModelPart) return 'Model Part';
-  return 'Object';
-}
-
-function getItemColor(mesh) {
-  if (mesh.material && mesh.material.color) return '#' + mesh.material.color.getHexString();
-  return '#888';
-}
-
-function refreshSceneList() {
-  const list = document.getElementById('scene-list');
-  const count = document.getElementById('scene-count');
-  list.innerHTML = '';
-  count.textContent = '(' + draggables.length + ')';
-  for (let i = 0; i < draggables.length; i++) {
-    const m = draggables[i];
-    const row = document.createElement('div');
-    row.className = 'scene-item' + (m === selectedTarget ? ' active' : '') + (!m.visible ? ' hidden-item' : '');
-    // color swatch
-    const swatch = document.createElement('span');
-    swatch.className = 'si-color';
-    swatch.style.background = getItemColor(m);
-    row.appendChild(swatch);
-    // name
-    const name = document.createElement('span');
-    name.className = 'si-name';
-    name.textContent = getItemLabel(m);
-    row.appendChild(name);
-    // visibility toggle
-    const visBtn = document.createElement('button');
-    visBtn.className = 'si-btn';
-    visBtn.textContent = m.visible ? '👁' : '—';
-    visBtn.title = m.visible ? 'Hide' : 'Show';
-    visBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (m.visible) {
-        m.visible = false;
-        if (!hiddenObjects.includes(m)) hiddenObjects.push(m);
-        if (m === selectedTarget) deselectFurniture();
-      } else {
-        m.visible = true;
-        const hi = hiddenObjects.indexOf(m);
-        if (hi >= 0) hiddenObjects.splice(hi, 1);
-      }
-      refreshSceneList();
-    });
-    row.appendChild(visBtn);
-    // frame button
-    const frameBtn = document.createElement('button');
-    frameBtn.className = 'si-btn';
-    frameBtn.textContent = '⌖';
-    frameBtn.title = 'Frame';
-    frameBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      selectFurniture(m);
-      const box = new THREE.Box3().setFromObject(m);
-      const { center, dist } = frameBounds(box);
-      const dir = camera.position.clone().sub(orbit.target).normalize();
-      orbit.target.copy(center);
-      camera.position.copy(center).addScaledVector(dir, dist);
-      orbit.update();
-      refreshSceneList();
-    });
-    row.appendChild(frameBtn);
-    // delete button
-    const delBtn = document.createElement('button');
-    delBtn.className = 'si-btn';
-    delBtn.textContent = '✕';
-    delBtn.title = 'Delete';
-    delBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (m === selectedTarget) { deleteSelected(); }
-      else {
-        const inUW = userWalls.includes(m);
-        const inMP = modelParts.includes(m);
-        pushUndo({ type: 'delete', mesh: m, inUserWalls: inUW, inModelParts: inMP });
-        scene.remove(m);
-        const di = draggables.indexOf(m); if (di >= 0) draggables.splice(di, 1);
-        const wi = userWalls.indexOf(m); if (wi >= 0) userWalls.splice(wi, 1);
-        const mi = modelParts.indexOf(m); if (mi >= 0) modelParts.splice(mi, 1);
-      }
-      refreshSceneList();
-    });
-    row.appendChild(delBtn);
-    // click row to select
-    row.addEventListener('click', () => {
-      if (!m.visible) return;
-      selectFurniture(m);
-      refreshSceneList();
-    });
-    list.appendChild(row);
-  }
-}
-
-function deleteSelected() {
-  if (!selectedTarget) return;
-  const mesh = selectedTarget;
-  const inUW = userWalls.includes(mesh);
-  const inMP = modelParts.includes(mesh);
-  pushUndo({ type: 'delete', mesh, inUserWalls: inUW, inModelParts: inMP });
-  scene.remove(mesh);
-  const idx = draggables.indexOf(mesh);
-  if (idx >= 0) draggables.splice(idx, 1);
-  const widx = userWalls.indexOf(mesh);
-  if (widx >= 0) userWalls.splice(widx, 1);
-  const midx = modelParts.indexOf(mesh);
-  if (midx >= 0) modelParts.splice(midx, 1);
-  deselectFurniture();
-}
-
-// --- furniture placement mode ---
-let placeMode = false;
-let placeGhost = null; // transparent preview mesh following cursor
-let placeType = null; // FURNITURE key
-let placeBlocked = false;
-
-function enterPlaceMode(type) {
-  cancelPlaceMode();
-  if (wallMode) exitWallMode();
-  deselectFurniture();
-  placeMode = true;
-  placeType = type;
-  const f = FURNITURE[type];
-  const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
-  const mat = new THREE.MeshLambertMaterial({ color: f.color, transparent: true, opacity: 0.45 });
-  placeGhost = new THREE.Mesh(geo, mat);
-  placeGhost.position.set(0, f.h / 2, 0);
-  // outline
-  const edges = new THREE.EdgesGeometry(geo);
-  const outline = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 }));
-  outline.name = '_ghost_outline';
-  placeGhost.add(outline);
-  scene.add(placeGhost);
-  renderer.domElement.style.cursor = 'crosshair';
-}
-
-function cancelPlaceMode() {
-  if (placeGhost) { scene.remove(placeGhost); placeGhost.geometry.dispose(); placeGhost.material.dispose(); placeGhost = null; }
-  placeMode = false;
-  placeType = null;
-  placeBlocked = false;
-  renderer.domElement.style.cursor = '';
-}
-
-function confirmPlacement() {
-  if (!placeGhost || placeBlocked) { if (placeBlocked) showCollisionFlash(); return; }
-  const f = FURNITURE[placeType];
-  const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
-  const mat = new THREE.MeshLambertMaterial({ color: f.color });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.position.copy(placeGhost.position);
-  mesh.userData.draggable = true;
-  mesh.userData.baseY = f.h / 2;
-  mesh.userData.furnitureType = placeType;
-  scene.add(mesh);
-  draggables.push(mesh);
-  pushUndo({ type: 'add', mesh, inUserWalls: false });
-  cancelPlaceMode();
-  selectFurniture(mesh);
-}
-
-document.querySelectorAll('.furniture-btn').forEach(btn => {
-  btn.addEventListener('click', () => enterPlaceMode(btn.dataset.type));
-});
-
-// --- drag handling ---
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
-  // furniture placement mode
-  if (placeMode) {
-    confirmPlacement();
-    return;
-  }
-  // wall drawing mode
-  if (wallMode) {
-    const pt = getGroundPoint(e);
-    if (!wallStart) {
-      wallStart = pt.clone();
-      document.getElementById('wall-status').textContent = 'Click to place wall end point...';
-    } else {
-      placeWall(pt);
-      if (wallPreview) { scene.remove(wallPreview); wallPreview = null; }
-      // start a new wall from the end point (chain drawing)
-      wallStart = pt.clone();
-      document.getElementById('wall-status').textContent = 'Click next point or Esc to stop...';
-    }
-    return;
-  }
-  // normal selection/drag
-  mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(draggables);
-  if (hits.length > 0) {
-    dragTarget = hits[0].object;
-    dragStartPos = dragTarget.position.clone();
-    selectFurniture(dragTarget);
-    orbit.enabled = false;
-    const intersection = new THREE.Vector3();
-    raycaster.ray.intersectPlane(dragPlane, intersection);
-    dragOffset.copy(dragTarget.position).sub(intersection);
-  } else {
-    deselectFurniture();
-  }
-});
-
-let dragLastValid = null; // last non-colliding position during drag
-
-renderer.domElement.addEventListener('pointermove', (e) => {
-  // furniture placement ghost
-  if (placeMode && placeGhost) {
-    const pt = getGroundPoint(e);
-    const f = FURNITURE[placeType];
-    placeGhost.position.set(pt.x, f.h / 2, pt.z);
-    // collision check against existing items
-    placeBlocked = collisionEnabled && checkCollision(placeGhost);
-    const ol = placeGhost.getObjectByName('_ghost_outline');
-    if (ol) ol.material.color.setHex(placeBlocked ? 0xdd4444 : 0x44ddaa);
-    placeGhost.material.color.setHex(placeBlocked ? 0xdd4444 : FURNITURE[placeType].color);
-    return;
-  }
-  // wall preview
-  if (wallMode && wallStart) {
-    updateWallPreview(getGroundPoint(e));
-    return;
-  }
-  if (!dragTarget) return;
-  mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const intersection = new THREE.Vector3();
-  raycaster.ray.intersectPlane(dragPlane, intersection);
-  const nx = snapToGrid(intersection.x + dragOffset.x);
-  const nz = snapToGrid(intersection.z + dragOffset.z);
-  const prevX = dragTarget.position.x;
-  const prevZ = dragTarget.position.z;
-  dragTarget.position.x = nx;
-  dragTarget.position.z = nz;
-  if (collisionEnabled && checkCollision(dragTarget)) {
-    // revert to last valid position
-    dragTarget.position.x = prevX;
-    dragTarget.position.z = prevZ;
-  } else {
-    dragLastValid = dragTarget.position.clone();
-  }
-});
-
-renderer.domElement.addEventListener('pointerup', () => {
-  if (dragTarget && dragStartPos && !dragTarget.position.equals(dragStartPos)) {
-    pushUndo({ type: 'move', mesh: dragTarget, oldPos: dragStartPos, newPos: dragTarget.position.clone() });
-  }
-  dragTarget = null;
-  dragStartPos = null;
-  dragLastValid = null;
-  orbit.enabled = true;
-});
-
-// --- keyboard shortcuts ---
-window.addEventListener('keydown', (e) => {
-  const key = e.key.toLowerCase();
-  if (e.target.tagName === 'INPUT') return;
-  // undo/redo (works in all modes)
-  if (key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); redo(); return; }
-  if (key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); return; }
-  if (key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); redo(); return; }
-  if (key === 'escape') {
-    if (placeMode) cancelPlaceMode();
-    else if (wallMode) exitWallMode();
-    return;
-  }
-  if (key === 'w') {
-    if (wallMode) exitWallMode(); else enterWallMode();
-    return;
-  }
-  if (wallMode) return;
-  if (key === 'g') {
-    const cb = document.getElementById('grid-toggle');
-    cb.checked = !cb.checked;
-    cb.dispatchEvent(new Event('change'));
-  } else if (key === 's') {
-    const cb = document.getElementById('snap-toggle');
-    cb.checked = !cb.checked;
-    cb.dispatchEvent(new Event('change'));
-  } else if (key === 'c') {
-    const cb = document.getElementById('collision-toggle');
-    cb.checked = !cb.checked;
-    cb.dispatchEvent(new Event('change'));
-  } else if (key === 'r' && selectedTarget) {
-    const oldRot = selectedTarget.rotation.y;
-    const step = e.shiftKey ? (Math.PI / 12) : (Math.PI / 2); // Shift+R = 15°
-    selectedTarget.rotation.y += step;
-    if (collisionEnabled && checkCollision(selectedTarget)) {
-      selectedTarget.rotation.y = oldRot;
-      showCollisionFlash();
-      return;
-    }
-    pushUndo({ type: 'rotate', mesh: selectedTarget, oldRot, newRot: selectedTarget.rotation.y });
-  } else if ((key === 'x' || key === 'delete' || key === 'backspace') && selectedTarget) {
-    deleteSelected();
-  } else if (key === 'd' && (e.ctrlKey || e.metaKey || e.shiftKey)) {
-    e.preventDefault(); duplicateSelected();
-  } else if (key === 'h' && e.altKey) {
-    unhideAll();
-  } else if (key === 'h') {
-    hideSelected();
-  } else if (key === 'f') {
-    frameSelected();
-  } else if (key === 'a') {
-    selectAll();
-  } else if (key === '1') {
-    setCameraView('front');
-  } else if (key === '3') {
-    setCameraView('right');
-  } else if (key === '7') {
-    setCameraView('top');
-  } else if (key === '5') {
-    toggleOrtho();
-  }
-});
-
-// --- UI controls ---
-document.getElementById('grid-toggle').addEventListener('change', (e) => {
-  gridGroup.visible = e.target.checked;
-});
-
-document.getElementById('snap-toggle').addEventListener('change', (e) => {
-  snapEnabled = e.target.checked;
-});
-
-const snapSlider = document.getElementById('snap-size');
-const snapLabel = document.getElementById('snap-val-label');
-function updateSnapLabel() {
-  gridDivisions = parseInt(snapSlider.value);
-  const cellM = (1.0 / gridDivisions).toFixed(2);
-  snapLabel.textContent = cellM + 'm';
-  rebuildGrid();
-}
-snapSlider.addEventListener('input', updateSnapLabel);
-updateSnapLabel();
-
-document.getElementById('wireframe-toggle').addEventListener('change', (e) => {
-  const wf = e.target.checked;
-  for (const m of modelParts) {
-    if (m.material) m.material.wireframe = wf;
-  }
-});
-
-document.getElementById('shadows-toggle').addEventListener('change', (e) => {
-  renderer.shadowMap.enabled = e.target.checked;
-  for (const m of modelParts) {
-    m.castShadow = e.target.checked;
-    m.receiveShadow = e.target.checked;
-  }
-  dirLight.castShadow = e.target.checked;
-  renderer.shadowMap.needsUpdate = true;
-});
-
-document.getElementById('delete-btn').addEventListener('click', deleteSelected);
-
-// --- export GLB ---
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-document.getElementById('export-glb-btn').addEventListener('click', () => {
-  const exportScene = new THREE.Scene();
-  for (const m of draggables) {
-    if (!m.visible) continue;
-    const clone = m.clone();
-    // strip outline helpers
-    const outline = clone.getObjectByName('_outline');
-    if (outline) clone.remove(outline);
-    exportScene.add(clone);
-  }
-  const exporter = new GLTFExporter();
-  exporter.parse(exportScene, (result) => {
-    const blob = new Blob([result], { type: 'application/octet-stream' });
-    downloadBlob(blob, 'haus-export.glb');
-  }, (err) => { console.error('GLB export failed', err); }, { binary: true });
-});
-
-// --- export/import JSON layout ---
-function serializeLayout() {
-  const items = [];
-  for (const m of draggables) {
-    const entry = {
-      pos: [m.position.x, m.position.y, m.position.z],
-      rot: m.rotation.y,
-      visible: m.visible,
-    };
-    if (m.userData.isWall) {
-      entry.type = 'wall';
-      entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
-      entry.color = m.material.color.getHex();
-    } else if (m.userData.isModelPart) {
-      entry.type = 'model_part';
-      // model parts are from GLB, store geometry bbox for identification
-      const box = new THREE.Box3().setFromObject(m);
-      const size = box.getSize(new THREE.Vector3());
-      entry.geo = [size.x, size.y, size.z];
-      entry.color = m.material?.color?.getHex() ?? 0x888888;
-    } else {
-      entry.type = 'furniture';
-      entry.furnitureType = m.userData.furnitureType || null;
-      entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
-      entry.color = m.material.color.getHex();
-    }
-    items.push(entry);
-  }
-  return { version: 1, items };
-}
-
-document.getElementById('export-json-btn').addEventListener('click', () => {
-  const data = serializeLayout();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, 'haus-layout.json');
-});
-
-document.getElementById('json-input').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if (!data.items) return;
-      // clear existing
-      clearModelParts();
-      while (draggables.length) { scene.remove(draggables.pop()); }
-      userWalls.length = 0;
-      undoStack.length = 0;
-      redoStack.length = 0;
-      deselectFurniture();
-      // rebuild
-      for (const item of data.items) {
-        const geo = new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]);
-        const mat = new THREE.MeshLambertMaterial({ color: item.color });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
-        mesh.rotation.y = item.rot;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData.draggable = true;
-        mesh.visible = item.visible !== false;
-        if (item.type === 'wall') {
-          mesh.userData.isWall = true;
-          mesh.userData.baseY = item.geo[1] / 2;
-          userWalls.push(mesh);
-        } else if (item.type === 'model_part') {
-          mesh.userData.isModelPart = true;
-          modelParts.push(mesh);
-        } else {
-          mesh.userData.baseY = item.geo[1] / 2;
-          if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType;
-        }
-        scene.add(mesh);
-        draggables.push(mesh);
-      }
-      // frame all
-      if (draggables.length > 0) {
-        const box = new THREE.Box3();
-        box.makeEmpty();
-        for (const m of draggables) box.expandByObject(m);
-        const { center, dist } = frameBounds(box);
-        orbit.target.copy(center);
-        camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7);
-        orbit.update();
-      }
-      refreshSceneList();
-    } catch (err) { console.error('JSON import failed', err); }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-});
-
-document.getElementById('wall-btn').addEventListener('click', () => {
-  if (wallMode) exitWallMode(); else enterWallMode();
-});
-document.getElementById('wall-cancel-btn').addEventListener('click', exitWallMode);
-
-const wallHeightSlider = document.getElementById('wall-height-slider');
-const wallHeightLabel = document.getElementById('wall-height-label');
-wallHeightSlider.addEventListener('input', () => {
-  wallHeight = parseInt(wallHeightSlider.value) / 10;
-  wallHeightLabel.textContent = wallHeight.toFixed(1) + 'm';
-});
-
-const wallThickSlider = document.getElementById('wall-thick-slider');
-const wallThickLabel = document.getElementById('wall-thick-label');
-wallThickSlider.addEventListener('input', () => {
-  wallThickness = parseInt(wallThickSlider.value) * 0.05;
-  wallThickLabel.textContent = wallThickness.toFixed(2) + 'm';
-});
-
-// --- resize ---
-window.addEventListener('resize', () => {
-  camera.aspect = (window.innerWidth - SIDEBAR_W) / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth - SIDEBAR_W, window.innerHeight);
-});
-
-// --- render loop ---
-function animate() {
-  requestAnimationFrame(animate);
-  orbit.update();
-  renderer.render(scene, camera);
-}
-animate();
-</script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

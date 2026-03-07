@@ -1,0 +1,34 @@
+import { S } from './state.js';
+import { initScene } from './scene.js';
+import { initGrid } from './grid.js';
+import { initCollision } from './collision.js';
+import { initUndo } from './undo.js';
+import { initSelection } from './selection.js';
+import { initFurniture } from './furniture.js';
+import { initWalls } from './walls.js';
+import { initSceneList } from './sceneList.js';
+import { initCamera, updateFps } from './camera.js';
+import { initIO } from './io.js';
+import { initShortcuts } from './shortcuts.js';
+import { initContextMenu } from './contextmenu.js';
+import { initOverlay } from './overlay.js';
+initScene();
+initGrid();
+initCollision();
+initUndo();
+initSelection();
+initFurniture();
+initWalls();
+initSceneList();
+initCamera();
+initIO();
+initShortcuts();
+initContextMenu();
+initOverlay();
+function animate() {
+  requestAnimationFrame(animate);
+  updateFps();
+  S.orbit.update();
+  S.renderer.render(S.scene, S.camera);
+}
+animate();
