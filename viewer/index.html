@@ -362,6 +362,15 @@ let selectedTarget = null;
 let dragOffset = new THREE.Vector3();
 const outlineMat = new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 });
 
+function refreshOutline(mesh) {
+  const old = mesh.getObjectByName('_outline');
+  if (old) mesh.remove(old);
+  const edges = new THREE.EdgesGeometry(mesh.geometry);
+  const o = new THREE.LineSegments(edges, outlineMat);
+  o.name = '_outline';
+  mesh.add(o);
+}
+
 // --- undo/redo ---
 function pushUndo(action) {
   undoStack.push(action);
@@ -390,6 +399,13 @@ function undo() {
     action.mesh.position.copy(action.oldPos);
   } else if (action.type === 'rotate') {
     action.mesh.rotation.y = action.oldRot;
+  } else if (action.type === 'resize') {
+    const d = action.oldDims;
+    action.mesh.geometry.dispose();
+    action.mesh.geometry = new THREE.BoxGeometry(d.w, d.h, d.d);
+    action.mesh.position.y = action.oldY;
+    action.mesh.userData.baseY = action.oldY;
+    if (action.mesh === selectedTarget) { populateDimSliders(action.mesh); refreshOutline(action.mesh); }
   }
   redoStack.push(action);
 }
@@ -414,6 +430,13 @@ function redo() {
     action.mesh.position.copy(action.newPos);
   } else if (action.type === 'rotate') {
     action.mesh.rotation.y = action.newRot;
+  } else if (action.type === 'resize') {
+    const d = action.newDims;
+    action.mesh.geometry.dispose();
+    action.mesh.geometry = new THREE.BoxGeometry(d.w, d.h, d.d);
+    action.mesh.position.y = action.newY;
+    action.mesh.userData.baseY = action.newY;
+    if (action.mesh === selectedTarget) { populateDimSliders(action.mesh); refreshOutline(action.mesh); }
   }
   undoStack.push(action);
 }
@@ -517,6 +540,84 @@ function selectAll() {
   frameSelected();
 }
 
+// --- per-object dimension editing ---
+function getMeshDims(mesh) {
+  const p = mesh.geometry.parameters;
+  if (p && p.width !== undefined) return { w: p.width, h: p.height, d: p.depth };
+  // fallback for non-box geometry (GLB model parts)
+  const box = new THREE.Box3().setFromBufferAttribute(mesh.geometry.attributes.position);
+  const size = box.getSize(new THREE.Vector3());
+  return { w: size.x, h: size.y, d: size.z };
+}
+
+function resizeSelected(newW, newH, newD) {
+  if (!selectedTarget) return;
+  const mesh = selectedTarget;
+  const oldGeo = mesh.geometry;
+  mesh.geometry = new THREE.BoxGeometry(newW, newH, newD);
+  oldGeo.dispose();
+  mesh.position.y = newH / 2;
+  mesh.userData.baseY = newH / 2;
+  if (mesh.getObjectByName('_outline')) refreshOutline(mesh);
+}
+
+const selWidthSlider = document.getElementById('sel-width');
+const selHeightSlider = document.getElementById('sel-height');
+const selDepthSlider = document.getElementById('sel-depth');
+const selWidthLabel = document.getElementById('sel-width-label');
+const selHeightLabel = document.getElementById('sel-height-label');
+const selDepthLabel = document.getElementById('sel-depth-label');
+
+function populateDimSliders(mesh) {
+  const dims = getMeshDims(mesh);
+  selWidthSlider.value = Math.round(dims.w * 10);
+  selHeightSlider.value = Math.round(dims.h * 10);
+  selDepthSlider.value = Math.round(dims.d * 10);
+  selWidthLabel.textContent = dims.w.toFixed(1) + 'm';
+  selHeightLabel.textContent = dims.h.toFixed(1) + 'm';
+  selDepthLabel.textContent = dims.d.toFixed(1) + 'm';
+}
+
+let resizeOldDims = null;
+function startResize() {
+  if (selectedTarget) resizeOldDims = getMeshDims(selectedTarget);
+}
+function endResize() {
+  if (selectedTarget && resizeOldDims) {
+    const newDims = getMeshDims(selectedTarget);
+    if (resizeOldDims.w !== newDims.w || resizeOldDims.h !== newDims.h || resizeOldDims.d !== newDims.d) {
+      pushUndo({ type: 'resize', mesh: selectedTarget, oldDims: resizeOldDims, newDims, oldY: resizeOldDims.h / 2, newY: newDims.h / 2 });
+    }
+  }
+  resizeOldDims = null;
+}
+for (const sl of [selWidthSlider, selHeightSlider, selDepthSlider]) {
+  sl.addEventListener('pointerdown', startResize);
+  sl.addEventListener('pointerup', endResize);
+}
+
+selWidthSlider.addEventListener('input', () => {
+  if (!selectedTarget) return;
+  const dims = getMeshDims(selectedTarget);
+  const nw = parseInt(selWidthSlider.value) / 10;
+  selWidthLabel.textContent = nw.toFixed(1) + 'm';
+  resizeSelected(nw, dims.h, dims.d);
+});
+selHeightSlider.addEventListener('input', () => {
+  if (!selectedTarget) return;
+  const dims = getMeshDims(selectedTarget);
+  const nh = parseInt(selHeightSlider.value) / 10;
+  selHeightLabel.textContent = nh.toFixed(1) + 'm';
+  resizeSelected(dims.w, nh, dims.d);
+});
+selDepthSlider.addEventListener('input', () => {
+  if (!selectedTarget) return;
+  const dims = getMeshDims(selectedTarget);
+  const nd = parseInt(selDepthSlider.value) / 10;
+  selDepthLabel.textContent = nd.toFixed(1) + 'm';
+  resizeSelected(dims.w, dims.h, nd);
+});
+
 // --- wall drawing state ---
 let wallMode = false;
 let wallStart = null; // THREE.Vector3 or null
@@ -601,12 +702,12 @@ function placeWall(endPt) {
 function selectFurniture(mesh) {
   deselectFurniture();
   selectedTarget = mesh;
-  // add wireframe outline
   const edges = new THREE.EdgesGeometry(mesh.geometry);
   const outline = new THREE.LineSegments(edges, outlineMat);
   outline.name = '_outline';
   mesh.add(outline);
   document.getElementById('selected-info').style.display = '';
+  populateDimSliders(mesh);
 }
 
 function deselectFurniture() {
