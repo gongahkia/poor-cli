@@ -9,45 +9,130 @@
 body { overflow: hidden; font-family: system-ui, sans-serif; background: #1a1a1a; color: #eee; }
 canvas { display: block; }
 #sidebar {
-  position: fixed; top: 0; right: 0; width: 200px; height: 100%;
+  position: fixed; top: 0; right: 0; width: 220px; height: 100%;
   background: rgba(30,30,30,0.95); padding: 12px; z-index: 10;
   border-left: 1px solid #333; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
 }
-#sidebar h3 { font-size: 13px; margin-bottom: 8px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+#sidebar h3 {
+  font-size: 11px; margin: 0; color: #777; text-transform: uppercase;
+  letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 4px;
+}
 .furniture-btn {
-  display: block; width: 100%; padding: 8px 10px; margin-bottom: 6px;
+  display: block; width: 100%; padding: 7px 10px; margin-bottom: 4px;
   background: #2a2a2a; border: 1px solid #444; color: #ddd; cursor: pointer;
   font-size: 12px; text-align: left; border-radius: 4px;
 }
 .furniture-btn:hover { background: #3a3a3a; border-color: #666; }
-#file-input-wrap {
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: #ccc; padding: 2px 0;
+}
+.toggle-row label { cursor: pointer; user-select: none; }
+.toggle-row input[type="checkbox"] { accent-color: #5a9; width: 16px; height: 16px; cursor: pointer; }
+.toggle-row input[type="range"] { width: 80px; accent-color: #5a9; cursor: pointer; }
+.snap-val { color: #5a9; font-size: 11px; min-width: 36px; text-align: right; }
+#toolbar {
   position: fixed; top: 12px; left: 12px; z-index: 10;
+  display: flex; gap: 8px; align-items: center;
 }
-#file-input-wrap label {
+#toolbar label, #toolbar button {
   display: inline-block; padding: 6px 14px; background: #333; border: 1px solid #555;
-  border-radius: 4px; cursor: pointer; font-size: 12px;
+  border-radius: 4px; cursor: pointer; font-size: 12px; color: #ddd;
 }
-#file-input-wrap label:hover { background: #444; }
-#file-input-wrap input { display: none; }
+#toolbar label:hover, #toolbar button:hover { background: #444; }
+#toolbar input[type="file"] { display: none; }
 #info {
   position: fixed; bottom: 12px; left: 12px; z-index: 10;
   font-size: 11px; color: #666;
 }
+kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px 5px; font-size: 10px; }
+.section { display: flex; flex-direction: column; gap: 4px; }
 </style>
 </head>
 <body>
-<div id="file-input-wrap">
+<div id="toolbar">
   <label>Load GLB <input type="file" id="glb-input" accept=".glb"></label>
+  <button id="delete-btn" title="Delete selected furniture">Delete</button>
 </div>
 <div id="sidebar">
-  <h3>Furniture</h3>
-  <button class="furniture-btn" data-type="bed">Bed (2.0 x 1.5m)</button>
-  <button class="furniture-btn" data-type="sofa">Sofa (2.0 x 0.8m)</button>
-  <button class="furniture-btn" data-type="dining">Dining Table (1.2 x 0.8m)</button>
-  <button class="furniture-btn" data-type="desk">Desk (1.2 x 0.6m)</button>
-  <button class="furniture-btn" data-type="wardrobe">Wardrobe (1.8 x 0.6m)</button>
+  <div class="section">
+    <h3>Grid & Snap</h3>
+    <div class="toggle-row">
+      <label for="grid-toggle">Show grid</label>
+      <input type="checkbox" id="grid-toggle" checked>
+    </div>
+    <div class="toggle-row">
+      <label for="snap-toggle">Snap to grid</label>
+      <input type="checkbox" id="snap-toggle" checked>
+    </div>
+    <div class="toggle-row">
+      <label for="snap-size">Grid size</label>
+      <input type="range" id="snap-size" min="1" max="10" value="4" step="1">
+      <span class="snap-val" id="snap-val-label">0.25m</span>
+    </div>
+  </div>
+  <div class="section">
+    <h3>View</h3>
+    <div class="toggle-row">
+      <label for="wireframe-toggle">Wireframe</label>
+      <input type="checkbox" id="wireframe-toggle">
+    </div>
+    <div class="toggle-row">
+      <label for="shadows-toggle">Shadows</label>
+      <input type="checkbox" id="shadows-toggle" checked>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Bedroom</h3>
+    <button class="furniture-btn" data-type="bed_single">Single Bed (0.9 x 1.9m)</button>
+    <button class="furniture-btn" data-type="bed_queen">Queen Bed (1.5 x 2.0m)</button>
+    <button class="furniture-btn" data-type="bed_king">King Bed (1.8 x 2.0m)</button>
+    <button class="furniture-btn" data-type="wardrobe">Wardrobe (1.8 x 0.6m)</button>
+    <button class="furniture-btn" data-type="wardrobe_s">Wardrobe S (0.9 x 0.6m)</button>
+    <button class="furniture-btn" data-type="bedside">Bedside Table (0.5 x 0.4m)</button>
+    <button class="furniture-btn" data-type="dresser">Dresser (1.2 x 0.5m)</button>
+  </div>
+  <div class="section">
+    <h3>Living / Dining</h3>
+    <button class="furniture-btn" data-type="sofa_2">2-Seat Sofa (1.5 x 0.8m)</button>
+    <button class="furniture-btn" data-type="sofa_3">3-Seat Sofa (2.2 x 0.9m)</button>
+    <button class="furniture-btn" data-type="sofa_l">L-Sofa (2.2 x 1.6m)</button>
+    <button class="furniture-btn" data-type="coffee">Coffee Table (1.0 x 0.5m)</button>
+    <button class="furniture-btn" data-type="tv_console">TV Console (1.5 x 0.4m)</button>
+    <button class="furniture-btn" data-type="dining_4">Dining 4-seat (1.2 x 0.8m)</button>
+    <button class="furniture-btn" data-type="dining_6">Dining 6-seat (1.6 x 0.9m)</button>
+    <button class="furniture-btn" data-type="shoe_rack">Shoe Rack (0.8 x 0.3m)</button>
+  </div>
+  <div class="section">
+    <h3>Kitchen / Bath</h3>
+    <button class="furniture-btn" data-type="fridge">Fridge (0.7 x 0.7m)</button>
+    <button class="furniture-btn" data-type="washer">Washer (0.6 x 0.6m)</button>
+    <button class="furniture-btn" data-type="kitchen_counter">Counter (1.2 x 0.6m)</button>
+    <button class="furniture-btn" data-type="sink">Sink Cabinet (0.8 x 0.6m)</button>
+    <button class="furniture-btn" data-type="toilet">Toilet (0.4 x 0.7m)</button>
+    <button class="furniture-btn" data-type="shower">Shower (0.9 x 0.9m)</button>
+  </div>
+  <div class="section">
+    <h3>Study / Work</h3>
+    <button class="furniture-btn" data-type="desk">Desk (1.2 x 0.6m)</button>
+    <button class="furniture-btn" data-type="desk_l">L-Desk (1.6 x 1.2m)</button>
+    <button class="furniture-btn" data-type="bookshelf">Bookshelf (0.8 x 0.3m)</button>
+    <button class="furniture-btn" data-type="chair">Office Chair (0.5 x 0.5m)</button>
+  </div>
+  <div class="section" id="selected-info" style="display:none;">
+    <h3>Selected</h3>
+    <div class="toggle-row">
+      <label>Rotate</label>
+      <span style="font-size:11px;color:#888;"><kbd>R</kbd> = 90°</span>
+    </div>
+    <div class="toggle-row">
+      <label>Delete</label>
+      <span style="font-size:11px;color:#888;"><kbd>Del</kbd> / <kbd>X</kbd></span>
+    </div>
+  </div>
 </div>
-<div id="info">Orbit: left-drag | Pan: right-drag | Zoom: scroll</div>
+<div id="info">Orbit: left-drag | Pan: right-drag | Zoom: scroll | <kbd>G</kbd> grid | <kbd>S</kbd> snap | <kbd>R</kbd> rotate | <kbd>X</kbd> delete</div>
 
 <script type="importmap">
 {
@@ -61,38 +146,93 @@ canvas { display: block; }
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { DragControls } from 'three/addons/controls/DragControls.js';
 
+// --- scene setup ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222222);
 
-const camera = new THREE.PerspectiveCamera(50, (window.innerWidth - 200) / window.innerHeight, 0.1, 500);
+const SIDEBAR_W = 220;
+const camera = new THREE.PerspectiveCamera(50, (window.innerWidth - SIDEBAR_W) / window.innerHeight, 0.1, 500);
 camera.position.set(10, 8, 10);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth - 200, window.innerHeight);
+renderer.setSize(window.innerWidth - SIDEBAR_W, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(10, 15, 10);
+// --- lighting ---
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
 scene.add(dirLight);
 
-const grid = new THREE.GridHelper(50, 50, 0x444444, 0x333333);
-scene.add(grid);
+// --- ground plane (receives shadows) ---
+const groundGeo = new THREE.PlaneGeometry(100, 100);
+const groundMat = new THREE.ShadowMaterial({ opacity: 0.15 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
 
+// --- grid system ---
+let gridDivisions = 4; // divisions per meter
+let snapEnabled = true;
+let gridGroup = new THREE.Group();
+scene.add(gridGroup);
+
+function rebuildGrid() {
+  gridGroup.clear();
+  const cellSize = 1.0 / gridDivisions;
+  const extent = 50;
+  const totalDivs = Math.floor(extent / cellSize);
+  // major grid: every 1m
+  const majorGrid = new THREE.GridHelper(extent, extent, 0x555555, 0x555555);
+  majorGrid.material.transparent = true;
+  majorGrid.material.opacity = 0.5;
+  gridGroup.add(majorGrid);
+  // minor grid: subdivisions
+  if (gridDivisions > 1) {
+    const minorGrid = new THREE.GridHelper(extent, totalDivs, 0x333333, 0x333333);
+    minorGrid.material.transparent = true;
+    minorGrid.material.opacity = 0.25;
+    minorGrid.position.y = -0.001; // avoid z-fight
+    gridGroup.add(minorGrid);
+  }
+}
+rebuildGrid();
+
+function snapToGrid(val) {
+  if (!snapEnabled) return val;
+  const cellSize = 1.0 / gridDivisions;
+  return Math.round(val / cellSize) * cellSize;
+}
+
+// --- GLB loading ---
 const loader = new GLTFLoader();
 let currentModel = null;
 
 function loadGLB(url) {
-  if (currentModel) { scene.remove(currentModel); }
+  if (currentModel) scene.remove(currentModel);
   loader.load(url, (gltf) => {
     currentModel = gltf.scene;
+    currentModel.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
     scene.add(currentModel);
     const box = new THREE.Box3().setFromObject(currentModel);
     const center = box.getCenter(new THREE.Vector3());
@@ -102,78 +242,142 @@ function loadGLB(url) {
   });
 }
 
-// try loading default model.glb
 loader.load('./model.glb', (gltf) => {
   currentModel = gltf.scene;
+  currentModel.traverse((child) => {
+    if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+  });
   scene.add(currentModel);
   const box = new THREE.Box3().setFromObject(currentModel);
   const center = box.getCenter(new THREE.Vector3());
   orbit.target.copy(center);
   camera.position.set(center.x + 10, center.y + 8, center.z + 10);
   orbit.update();
-}, undefined, () => {}); // silently ignore if not found
+}, undefined, () => {});
 
 document.getElementById('glb-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  loadGLB(url);
+  if (file) loadGLB(URL.createObjectURL(file));
 });
 
-// furniture
+// --- furniture ---
 const FURNITURE = {
-  bed:      { w: 2.0, h: 0.6, d: 1.5, color: 0x88bbee, label: 'Bed' },
-  sofa:     { w: 2.0, h: 0.8, d: 0.8, color: 0x555555, label: 'Sofa' },
-  dining:   { w: 1.2, h: 0.75, d: 0.8, color: 0x8B6914, label: 'Dining' },
-  desk:     { w: 1.2, h: 0.75, d: 0.6, color: 0xD2B48C, label: 'Desk' },
-  wardrobe: { w: 1.8, h: 2.0, d: 0.6, color: 0x4A3728, label: 'Wardrobe' },
+  // bedroom
+  bed_single:     { w: 0.9,  h: 0.5,  d: 1.9, color: 0x88bbee },
+  bed_queen:      { w: 1.5,  h: 0.55, d: 2.0, color: 0x77aadd },
+  bed_king:       { w: 1.8,  h: 0.55, d: 2.0, color: 0x6699cc },
+  wardrobe:       { w: 1.8,  h: 2.0,  d: 0.6, color: 0x4A3728 },
+  wardrobe_s:     { w: 0.9,  h: 2.0,  d: 0.6, color: 0x5A4738 },
+  bedside:        { w: 0.5,  h: 0.5,  d: 0.4, color: 0x8B7355 },
+  dresser:        { w: 1.2,  h: 0.8,  d: 0.5, color: 0x7A6245 },
+  // living / dining
+  sofa_2:         { w: 1.5,  h: 0.8,  d: 0.8, color: 0x555555 },
+  sofa_3:         { w: 2.2,  h: 0.8,  d: 0.9, color: 0x4a4a4a },
+  sofa_l:         { w: 2.2,  h: 0.8,  d: 1.6, color: 0x505050 },
+  coffee:         { w: 1.0,  h: 0.4,  d: 0.5, color: 0x6B4226 },
+  tv_console:     { w: 1.5,  h: 0.5,  d: 0.4, color: 0x3a3a3a },
+  dining_4:       { w: 1.2,  h: 0.75, d: 0.8, color: 0x8B6914 },
+  dining_6:       { w: 1.6,  h: 0.75, d: 0.9, color: 0x8B6914 },
+  shoe_rack:      { w: 0.8,  h: 1.0,  d: 0.3, color: 0x5C4033 },
+  // kitchen / bath
+  fridge:         { w: 0.7,  h: 1.7,  d: 0.7, color: 0xcccccc },
+  washer:         { w: 0.6,  h: 0.85, d: 0.6, color: 0xdddddd },
+  kitchen_counter:{ w: 1.2,  h: 0.9,  d: 0.6, color: 0x888888 },
+  sink:           { w: 0.8,  h: 0.85, d: 0.6, color: 0x999999 },
+  toilet:         { w: 0.4,  h: 0.4,  d: 0.7, color: 0xeeeeee },
+  shower:         { w: 0.9,  h: 2.0,  d: 0.9, color: 0xaaddee },
+  // study / work
+  desk:           { w: 1.2,  h: 0.75, d: 0.6, color: 0xD2B48C },
+  desk_l:         { w: 1.6,  h: 0.75, d: 1.2, color: 0xC4A882 },
+  bookshelf:      { w: 0.8,  h: 1.8,  d: 0.3, color: 0x5A4020 },
+  chair:          { w: 0.5,  h: 0.45, d: 0.5, color: 0x333333 },
 };
 
 const draggables = [];
-const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let dragTarget = null;
+let selectedTarget = null;
 let dragOffset = new THREE.Vector3();
+const outlineMat = new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 });
+
+function selectFurniture(mesh) {
+  deselectFurniture();
+  selectedTarget = mesh;
+  // add wireframe outline
+  const edges = new THREE.EdgesGeometry(mesh.geometry);
+  const outline = new THREE.LineSegments(edges, outlineMat);
+  outline.name = '_outline';
+  mesh.add(outline);
+  document.getElementById('selected-info').style.display = '';
+}
+
+function deselectFurniture() {
+  if (selectedTarget) {
+    const outline = selectedTarget.getObjectByName('_outline');
+    if (outline) selectedTarget.remove(outline);
+    selectedTarget = null;
+  }
+  document.getElementById('selected-info').style.display = 'none';
+}
+
+function deleteSelected() {
+  if (!selectedTarget) return;
+  scene.remove(selectedTarget);
+  const idx = draggables.indexOf(selectedTarget);
+  if (idx >= 0) draggables.splice(idx, 1);
+  selectedTarget = null;
+  document.getElementById('selected-info').style.display = 'none';
+}
 
 document.querySelectorAll('.furniture-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    const type = btn.dataset.type;
-    const f = FURNITURE[type];
+    const f = FURNITURE[btn.dataset.type];
     const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
     const mat = new THREE.MeshLambertMaterial({ color: f.color });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, f.h / 2, 0);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const px = snapToGrid(orbit.target.x);
+    const pz = snapToGrid(orbit.target.z);
+    mesh.position.set(px, f.h / 2, pz);
     mesh.userData.draggable = true;
+    mesh.userData.baseY = f.h / 2;
     scene.add(mesh);
     draggables.push(mesh);
+    selectFurniture(mesh);
   });
 });
 
+// --- drag handling ---
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
-  mouse.x = (e.clientX / (window.innerWidth - 200)) * 2 - 1;
+  mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(draggables);
   if (hits.length > 0) {
     dragTarget = hits[0].object;
+    selectFurniture(dragTarget);
     orbit.enabled = false;
     const intersection = new THREE.Vector3();
-    raycaster.ray.intersectPlane(plane, intersection);
+    raycaster.ray.intersectPlane(dragPlane, intersection);
     dragOffset.copy(dragTarget.position).sub(intersection);
+  } else {
+    deselectFurniture();
   }
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
   if (!dragTarget) return;
-  mouse.x = (e.clientX / (window.innerWidth - 200)) * 2 - 1;
+  mouse.x = (e.clientX / (window.innerWidth - SIDEBAR_W)) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
   const intersection = new THREE.Vector3();
-  raycaster.ray.intersectPlane(plane, intersection);
-  dragTarget.position.x = intersection.x + dragOffset.x;
-  dragTarget.position.z = intersection.z + dragOffset.z;
+  raycaster.ray.intersectPlane(dragPlane, intersection);
+  dragTarget.position.x = snapToGrid(intersection.x + dragOffset.x);
+  dragTarget.position.z = snapToGrid(intersection.z + dragOffset.z);
 });
 
 renderer.domElement.addEventListener('pointerup', () => {
@@ -181,12 +385,75 @@ renderer.domElement.addEventListener('pointerup', () => {
   orbit.enabled = true;
 });
 
-window.addEventListener('resize', () => {
-  camera.aspect = (window.innerWidth - 200) / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth - 200, window.innerHeight);
+// --- keyboard shortcuts ---
+window.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if (e.target.tagName === 'INPUT') return; // don't intercept input fields
+  if (key === 'g') {
+    const cb = document.getElementById('grid-toggle');
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change'));
+  } else if (key === 's') {
+    const cb = document.getElementById('snap-toggle');
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change'));
+  } else if (key === 'r' && selectedTarget) {
+    selectedTarget.rotation.y += Math.PI / 2;
+  } else if ((key === 'x' || key === 'delete' || key === 'backspace') && selectedTarget) {
+    deleteSelected();
+  }
 });
 
+// --- UI controls ---
+document.getElementById('grid-toggle').addEventListener('change', (e) => {
+  gridGroup.visible = e.target.checked;
+});
+
+document.getElementById('snap-toggle').addEventListener('change', (e) => {
+  snapEnabled = e.target.checked;
+});
+
+const snapSlider = document.getElementById('snap-size');
+const snapLabel = document.getElementById('snap-val-label');
+function updateSnapLabel() {
+  gridDivisions = parseInt(snapSlider.value);
+  const cellM = (1.0 / gridDivisions).toFixed(2);
+  snapLabel.textContent = cellM + 'm';
+  rebuildGrid();
+}
+snapSlider.addEventListener('input', updateSnapLabel);
+updateSnapLabel();
+
+document.getElementById('wireframe-toggle').addEventListener('change', (e) => {
+  const wf = e.target.checked;
+  if (currentModel) {
+    currentModel.traverse((child) => {
+      if (child.isMesh && child.material) child.material.wireframe = wf;
+    });
+  }
+});
+
+document.getElementById('shadows-toggle').addEventListener('change', (e) => {
+  renderer.shadowMap.enabled = e.target.checked;
+  if (currentModel) {
+    currentModel.traverse((child) => {
+      if (child.isMesh) { child.castShadow = e.target.checked; child.receiveShadow = e.target.checked; }
+    });
+  }
+  dirLight.castShadow = e.target.checked;
+  renderer.shadowMap.needsUpdate = true;
+});
+
+document.getElementById('delete-btn').addEventListener('click', deleteSelected);
+
+// --- resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = (window.innerWidth - SIDEBAR_W) / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth - SIDEBAR_W, window.innerHeight);
+});
+
+// --- render loop ---
 function animate() {
   requestAnimationFrame(animate);
   orbit.update();
