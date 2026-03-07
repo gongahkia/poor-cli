@@ -18,6 +18,7 @@ _PROT_DARK_RATIO = 0.35 # secondary: internal dark pixel ratio threshold
 def clean_floor_plan(img_rgb: np.ndarray) -> np.ndarray:
     """Remove door arcs, AC ledges, service yards, and exterior annotations."""
     img = img_rgb.copy()
+    img = _erase_hatching(img)
     img = _erase_protrusions(img)
     img = _erase_door_arcs(img)
     img = _erase_exterior_marks(img)
@@ -115,6 +116,85 @@ def _dark_ratio(comp: np.ndarray, dark: np.ndarray) -> float:
     return np.count_nonzero((comp > 0) & (dark > 0)) / area
 
 
+def _detect_hatching(img_rgb: np.ndarray) -> np.ndarray:
+    """Detect vertical hatching regions (AC ledge indicator).
+
+    Uses local horizontal density of thin vertical features.
+    Hatching = cluster of parallel vertical lines with gaps between them.
+    """
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
+    vert = cv2.morphologyEx(dark, cv2.MORPH_OPEN,
+                            np.ones((_WALL_OPEN_LEN, 1), np.uint8))
+    if np.count_nonzero(vert) < 50:
+        return np.zeros(gray.shape, dtype=np.uint8)
+    # thick walls survive horizontal opening; thin hatching lines don't
+    thick = cv2.morphologyEx(vert, cv2.MORPH_OPEN, np.ones((1, 8), np.uint8))
+    thin = ((vert > 0) & (thick == 0)).astype(np.uint8)
+    if np.count_nonzero(thin) < 30:
+        return np.zeros(gray.shape, dtype=np.uint8)
+    # horizontal density: detect clusters of parallel vertical thin lines
+    density = cv2.blur(thin.astype(np.float32), (25, 5))
+    hatch_raw = (density > 0.25).astype(np.uint8)
+    hatch_raw = cv2.morphologyEx(hatch_raw, cv2.MORPH_CLOSE,
+                                 np.ones((5, 5), np.uint8))
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(hatch_raw, 8)
+    h, w = gray.shape
+    max_dim = max(100, min(h, w) // 3)
+    hatch = np.zeros(gray.shape, dtype=np.uint8)
+    for i in range(1, num):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        bw = int(stats[i, cv2.CC_STAT_WIDTH])
+        bh = int(stats[i, cv2.CC_STAT_HEIGHT])
+        if area > 200 and bw > 10 and bh > 10 and max(bw, bh) < max_dim:
+            hatch[labels == i] = 1
+    return hatch
+
+
+def _erase_hatching(img: np.ndarray) -> np.ndarray:
+    """Erase AC ledge rooms identified by hatching at the floor plan boundary."""
+    hatching = _detect_hatching(img)
+    if np.count_nonzero(hatching) == 0:
+        return img
+    solid = _build_fill_solid(img)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
+    walls = _build_wall_mask(dark)
+    h, w = img.shape[:2]
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(hatching, 8)
+    erase = np.zeros(img.shape[:2], dtype=np.uint8)
+    for i in range(1, num):
+        comp = (labels == i).astype(np.uint8)
+        fill_overlap = np.count_nonzero((comp > 0) & (solid > 0))
+        fill_ratio = fill_overlap / max(np.count_nonzero(comp), 1)
+        if fill_ratio < 0.35: # boundary hatching (AC ledge)
+            # flood-fill from hatching centroid to find enclosing room
+            ys, xs = np.where(comp > 0)
+            seed = (int(xs.mean()), int(ys.mean()))
+            # barrier: full walls minus hatching lines (vertical-only in hatch area)
+            v_walls = cv2.morphologyEx(dark, cv2.MORPH_OPEN,
+                                       np.ones((_WALL_OPEN_LEN, 1), np.uint8))
+            h_walls = cv2.morphologyEx(dark, cv2.MORPH_OPEN,
+                                       np.ones((1, _WALL_OPEN_LEN), np.uint8))
+            barrier = cv2.bitwise_or(v_walls, h_walls)
+            vert_only = ((v_walls > 0) & (h_walls == 0)).astype(np.uint8)
+            # expand hatching region to cover nearby lines
+            comp_exp = cv2.dilate(comp, np.ones((3, 15), np.uint8), iterations=2)
+            barrier[(comp_exp > 0) & (vert_only > 0)] = 0
+            barrier = cv2.dilate(barrier, np.ones((3, 3), np.uint8), iterations=1)
+            flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+            fill_img = barrier.copy()
+            cv2.floodFill(fill_img, flood_mask, seed, 128)
+            room = (flood_mask[1:-1, 1:-1] > 0).astype(np.uint8)
+            room_area = np.count_nonzero(room)
+            if 100 < room_area < h * w * 0.15: # reasonable room size
+                room_dilated = cv2.dilate(room, np.ones((7, 7), np.uint8), iterations=2)
+                erase = cv2.bitwise_or(erase, room_dilated)
+    if np.count_nonzero(erase):
+        img[erase > 0] = 255
+    return img
+
+
 def _erase_protrusions(img: np.ndarray) -> np.ndarray:
     """Erase AC ledges and service yards using two-pass close+open.
 
@@ -157,15 +237,17 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
                 erase = cv2.bitwise_or(erase, comp)
     if np.count_nonzero(erase) == 0:
         return img
-    # use bounding box + margin to fully cover AC ledge rooms
+    # use bounding box + per-component margin to fully cover rooms
     num_e, labels_e, stats_e, _ = cv2.connectedComponentsWithStats(erase, 8)
     zone = np.zeros_like(erase)
-    margin = max(15, short_dim // 30) # adaptive margin
     for i in range(1, num_e):
+        cw = int(stats_e[i, cv2.CC_STAT_WIDTH])
+        ch = int(stats_e[i, cv2.CC_STAT_HEIGHT])
+        margin = min(max(20, cw // 3, ch // 3), 45) # scale but cap to avoid over-erasure
         x = max(0, int(stats_e[i, cv2.CC_STAT_LEFT]) - margin)
         y = max(0, int(stats_e[i, cv2.CC_STAT_TOP]) - margin)
-        bw_e = int(stats_e[i, cv2.CC_STAT_WIDTH]) + 2 * margin
-        bh_e = int(stats_e[i, cv2.CC_STAT_HEIGHT]) + 2 * margin
+        bw_e = cw + 2 * margin
+        bh_e = ch + 2 * margin
         zone[y:min(y + bh_e, h), x:min(x + bw_e, w)] = 1
     img[zone > 0] = 255
     return img
