@@ -58,6 +58,28 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
   position: fixed; top: 50px; left: 12px; z-index: 10;
   font-size: 12px; color: #4a9; display: none;
 }
+#scene-list {
+  max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+}
+#scene-list::-webkit-scrollbar { width: 4px; }
+#scene-list::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
+.scene-item {
+  display: flex; align-items: center; gap: 4px; padding: 3px 6px;
+  background: #2a2a2a; border: 1px solid #333; border-radius: 3px;
+  font-size: 11px; cursor: pointer; min-height: 24px;
+}
+.scene-item:hover { background: #333; }
+.scene-item.active { border-color: #4a9; background: #2a3a2e; }
+.scene-item.hidden-item { opacity: 0.45; }
+.scene-item .si-color {
+  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+}
+.scene-item .si-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc; }
+.scene-item .si-btn {
+  background: none; border: none; color: #888; cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1;
+}
+.scene-item .si-btn:hover { color: #eee; }
+#scene-count { font-size: 10px; color: #666; }
 #collision-flash {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
   background: rgba(200,40,40,0.85); color: #fff; font-size: 13px;
@@ -162,6 +184,10 @@ kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px
     <button class="furniture-btn" data-type="desk_l">L-Desk (1.6 x 1.2m)</button>
     <button class="furniture-btn" data-type="bookshelf">Bookshelf (0.8 x 0.3m)</button>
     <button class="furniture-btn" data-type="chair">Office Chair (0.5 x 0.5m)</button>
+  </div>
+  <div class="section">
+    <h3>On Scene <span id="scene-count"></span></h3>
+    <div id="scene-list"></div>
   </div>
   <div class="section" id="selected-info" style="display:none;">
     <h3>Selected</h3>
@@ -350,6 +376,7 @@ function ingestGLB(gltf) {
     camera.position.set(center.x + 10, center.y + 8, center.z + 10);
     orbit.update();
   }
+  refreshSceneList();
 }
 
 function loadGLB(url) {
@@ -395,6 +422,17 @@ const FURNITURE = {
   desk_l:         { w: 1.6,  h: 0.75, d: 1.2, color: 0xC4A882 },
   bookshelf:      { w: 0.8,  h: 1.8,  d: 0.3, color: 0x5A4020 },
   chair:          { w: 0.5,  h: 0.45, d: 0.5, color: 0x333333 },
+};
+
+const FURNITURE_NAMES = {
+  bed_single: 'Single Bed', bed_queen: 'Queen Bed', bed_king: 'King Bed',
+  wardrobe: 'Wardrobe', wardrobe_s: 'Wardrobe S', bedside: 'Bedside Table', dresser: 'Dresser',
+  sofa_2: '2-Seat Sofa', sofa_3: '3-Seat Sofa', sofa_l: 'L-Sofa',
+  coffee: 'Coffee Table', tv_console: 'TV Console',
+  dining_4: 'Dining 4', dining_6: 'Dining 6', shoe_rack: 'Shoe Rack',
+  fridge: 'Fridge', washer: 'Washer', kitchen_counter: 'Counter',
+  sink: 'Sink Cabinet', toilet: 'Toilet', shower: 'Shower',
+  desk: 'Desk', desk_l: 'L-Desk', bookshelf: 'Bookshelf', chair: 'Office Chair',
 };
 
 const draggables = [];
@@ -458,6 +496,7 @@ function undo() {
     if (action.mesh === selectedTarget) { populateDimSliders(action.mesh); refreshOutline(action.mesh); }
   }
   redoStack.push(action);
+  refreshSceneList();
 }
 
 function redo() {
@@ -489,6 +528,7 @@ function redo() {
     if (action.mesh === selectedTarget) { populateDimSliders(action.mesh); refreshOutline(action.mesh); }
   }
   undoStack.push(action);
+  refreshSceneList();
 }
 
 // --- duplicate ---
@@ -521,6 +561,7 @@ function hideSelected() {
 function unhideAll() {
   for (const obj of hiddenObjects) obj.visible = true;
   hiddenObjects.length = 0;
+  refreshSceneList();
 }
 
 // --- camera presets ---
@@ -805,6 +846,7 @@ function placeWall(endPt) {
   draggables.push(mesh);
   userWalls.push(mesh);
   pushUndo({ type: 'add', mesh, inUserWalls: true });
+  refreshSceneList();
 }
 
 function selectFurniture(mesh) {
@@ -816,6 +858,7 @@ function selectFurniture(mesh) {
   mesh.add(outline);
   document.getElementById('selected-info').style.display = '';
   populateDimSliders(mesh);
+  refreshSceneList();
 }
 
 function deselectFurniture() {
@@ -825,6 +868,104 @@ function deselectFurniture() {
     selectedTarget = null;
   }
   document.getElementById('selected-info').style.display = 'none';
+  refreshSceneList();
+}
+
+function getItemLabel(mesh) {
+  if (mesh.userData.furnitureType) return FURNITURE_NAMES[mesh.userData.furnitureType] || mesh.userData.furnitureType;
+  if (mesh.userData.isWall) return 'Wall';
+  if (mesh.userData.isModelPart) return 'Model Part';
+  return 'Object';
+}
+
+function getItemColor(mesh) {
+  if (mesh.material && mesh.material.color) return '#' + mesh.material.color.getHexString();
+  return '#888';
+}
+
+function refreshSceneList() {
+  const list = document.getElementById('scene-list');
+  const count = document.getElementById('scene-count');
+  list.innerHTML = '';
+  count.textContent = '(' + draggables.length + ')';
+  for (let i = 0; i < draggables.length; i++) {
+    const m = draggables[i];
+    const row = document.createElement('div');
+    row.className = 'scene-item' + (m === selectedTarget ? ' active' : '') + (!m.visible ? ' hidden-item' : '');
+    // color swatch
+    const swatch = document.createElement('span');
+    swatch.className = 'si-color';
+    swatch.style.background = getItemColor(m);
+    row.appendChild(swatch);
+    // name
+    const name = document.createElement('span');
+    name.className = 'si-name';
+    name.textContent = getItemLabel(m);
+    row.appendChild(name);
+    // visibility toggle
+    const visBtn = document.createElement('button');
+    visBtn.className = 'si-btn';
+    visBtn.textContent = m.visible ? '👁' : '—';
+    visBtn.title = m.visible ? 'Hide' : 'Show';
+    visBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (m.visible) {
+        m.visible = false;
+        if (!hiddenObjects.includes(m)) hiddenObjects.push(m);
+        if (m === selectedTarget) deselectFurniture();
+      } else {
+        m.visible = true;
+        const hi = hiddenObjects.indexOf(m);
+        if (hi >= 0) hiddenObjects.splice(hi, 1);
+      }
+      refreshSceneList();
+    });
+    row.appendChild(visBtn);
+    // frame button
+    const frameBtn = document.createElement('button');
+    frameBtn.className = 'si-btn';
+    frameBtn.textContent = '⌖';
+    frameBtn.title = 'Frame';
+    frameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectFurniture(m);
+      const box = new THREE.Box3().setFromObject(m);
+      const { center, dist } = frameBounds(box);
+      const dir = camera.position.clone().sub(orbit.target).normalize();
+      orbit.target.copy(center);
+      camera.position.copy(center).addScaledVector(dir, dist);
+      orbit.update();
+      refreshSceneList();
+    });
+    row.appendChild(frameBtn);
+    // delete button
+    const delBtn = document.createElement('button');
+    delBtn.className = 'si-btn';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Delete';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (m === selectedTarget) { deleteSelected(); }
+      else {
+        const inUW = userWalls.includes(m);
+        const inMP = modelParts.includes(m);
+        pushUndo({ type: 'delete', mesh: m, inUserWalls: inUW, inModelParts: inMP });
+        scene.remove(m);
+        const di = draggables.indexOf(m); if (di >= 0) draggables.splice(di, 1);
+        const wi = userWalls.indexOf(m); if (wi >= 0) userWalls.splice(wi, 1);
+        const mi = modelParts.indexOf(m); if (mi >= 0) modelParts.splice(mi, 1);
+      }
+      refreshSceneList();
+    });
+    row.appendChild(delBtn);
+    // click row to select
+    row.addEventListener('click', () => {
+      if (!m.visible) return;
+      selectFurniture(m);
+      refreshSceneList();
+    });
+    list.appendChild(row);
+  }
 }
 
 function deleteSelected() {
@@ -888,6 +1029,7 @@ function confirmPlacement() {
   mesh.position.copy(placeGhost.position);
   mesh.userData.draggable = true;
   mesh.userData.baseY = f.h / 2;
+  mesh.userData.furnitureType = placeType;
   scene.add(mesh);
   draggables.push(mesh);
   pushUndo({ type: 'add', mesh, inUserWalls: false });
@@ -1141,6 +1283,7 @@ function serializeLayout() {
       entry.color = m.material?.color?.getHex() ?? 0x888888;
     } else {
       entry.type = 'furniture';
+      entry.furnitureType = m.userData.furnitureType || null;
       entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
       entry.color = m.material.color.getHex();
     }
@@ -1190,6 +1333,7 @@ document.getElementById('json-input').addEventListener('change', (e) => {
           modelParts.push(mesh);
         } else {
           mesh.userData.baseY = item.geo[1] / 2;
+          if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType;
         }
         scene.add(mesh);
         draggables.push(mesh);
@@ -1204,6 +1348,7 @@ document.getElementById('json-input').addEventListener('change', (e) => {
         camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7);
         orbit.update();
       }
+      refreshSceneList();
     } catch (err) { console.error('JSON import failed', err); }
   };
   reader.readAsText(file);
