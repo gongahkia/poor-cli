@@ -90,6 +90,42 @@ function serializeLayout() {
 function exportJSON() {
   downloadBlob(new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }), 'haus-layout.json');
 }
+let lastMcpText = '';
+function startMcpSync() {
+  setInterval(async () => {
+    try {
+      const res = await fetch('./mcp-layout.json?t=' + Date.now());
+      if (!res.ok) return;
+      const text = await res.text();
+      if (text === lastMcpText) return;
+      lastMcpText = text;
+      const data = JSON.parse(text);
+      if (!data.items) return;
+      applyLayoutData(data);
+    } catch {}
+  }, 2000);
+}
+function applyLayoutData(data) {
+  clearModelParts();
+  while (S.draggables.length) S.scene.remove(S.draggables.pop());
+  S.userWalls.length = 0; S.undoStack.length = 0; S.redoStack.length = 0;
+  fn.deselectFurniture();
+  for (const item of data.items) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
+      new THREE.MeshLambertMaterial({ color: item.color })
+    );
+    mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
+    mesh.rotation.y = item.rot;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.userData.draggable = true; mesh.visible = item.visible !== false;
+    if (item.type === 'wall') { mesh.userData.isWall = true; mesh.userData.baseY = item.geo[1] / 2; S.userWalls.push(mesh); }
+    else if (item.type === 'model_part') { mesh.userData.isModelPart = true; S.modelParts.push(mesh); }
+    else { mesh.userData.baseY = item.geo[1] / 2; if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType; }
+    S.scene.add(mesh); S.draggables.push(mesh);
+  }
+  fn.refreshSceneList();
+}
 function importJSON(e) {
   const file = e.target.files[0];
   if (!file) return;
