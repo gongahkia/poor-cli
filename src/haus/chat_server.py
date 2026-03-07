@@ -19,19 +19,31 @@ from starlette.staticfiles import StaticFiles
 import uvicorn
 from .mcp_server import (
     list_furniture_catalog, list_objects, add_furniture, add_wall,
-    move_object, rotate_object, remove_object, clear_layout, get_layout_json,
+    move_object, rotate_object, remove_object, remove_objects_by_type,
+    clear_layout, get_layout_json,
 )
 
 mimetypes.add_type("model/gltf-binary", ".glb")
 
 _SYSTEM = (
     "You are an AI assistant for the haus floor plan editor. "
-    "You help users arrange furniture and walls in their floor plan by calling tools.\n\n"
-    "Coordinate system: X is left-right, Z is forward-back. Positions are in meters.\n"
-    "When the user asks you to do something:\n"
+    "You ONLY help with floor plan editing — arranging furniture, walls, and layout. "
+    "If the user asks something unrelated (general knowledge, coding, etc), "
+    "politely decline and remind them you only handle floor plan tasks.\n\n"
+    "Coordinate system: X is left-right, Z is forward-back. Positions are in meters.\n\n"
+    "IMPORTANT RULES:\n"
+    "- Before any DESTRUCTIVE action (removing, clearing, or replacing objects), "
+    "FIRST describe what you plan to do and ASK for confirmation. "
+    "Only proceed after the user confirms. Examples of destructive actions: "
+    "remove_object, remove_objects_by_type, clear_layout.\n"
+    "- For adding or moving objects, proceed directly.\n"
+    "- When removing multiple objects, use remove_objects_by_type instead of "
+    "calling remove_object in a loop (indices shift after each removal).\n\n"
+    "Workflow:\n"
     "1. Call list_objects() to understand the current layout\n"
-    "2. Call list_furniture_catalog() if you need to know available furniture types\n"
-    "3. Make changes with add_furniture, add_wall, move_object, rotate_object, remove_object\n"
+    "2. Call list_furniture_catalog() if you need available furniture types\n"
+    "3. Make changes with add_furniture, add_wall, move_object, rotate_object, "
+    "remove_object, remove_objects_by_type\n"
     "4. Confirm what you did briefly\n"
     "Keep responses concise. The editor auto-syncs with your changes."
 )
@@ -68,6 +80,10 @@ _TOOLS_SPEC = [
      "parameters": {"type": "object", "properties": {
          "index": {"type": "integer"},
      }, "required": ["index"]}},
+    {"name": "remove_objects_by_type", "description": "Remove all objects of a given type (e.g. 'wall', 'model_part', or a furniture type).",
+     "parameters": {"type": "object", "properties": {
+         "object_type": {"type": "string", "description": "Type to remove: 'wall', 'model_part', or furniture type like 'bed_queen'"},
+     }, "required": ["object_type"]}},
     {"name": "clear_layout", "description": "Remove all objects.",
      "parameters": {"type": "object", "properties": {}}},
 ]
@@ -80,6 +96,7 @@ _DISPATCH_RAW = {
     "move_object": lambda a: move_object(**a),
     "rotate_object": lambda a: rotate_object(**a),
     "remove_object": lambda a: remove_object(**a),
+    "remove_objects_by_type": lambda a: remove_objects_by_type(**a),
     "clear_layout": lambda a: clear_layout(),
 }
 

@@ -200,6 +200,24 @@ def remove_object(index: int) -> str:
 
 
 @mcp.tool()
+def remove_objects_by_type(object_type: str) -> str:
+    """Remove all objects of a given type.
+
+    Args:
+        object_type: Type to remove — 'wall', 'model_part', or a furniture type like 'bed_queen'.
+    """
+    data = _load_layout()
+    before = len(data["items"])
+    data["items"] = [
+        item for item in data["items"]
+        if not (item.get("type") == object_type or item.get("furnitureType") == object_type)
+    ]
+    removed = before - len(data["items"])
+    _save_layout(data)
+    return f"Removed {removed} {object_type} item(s). {len(data['items'])} remaining."
+
+
+@mcp.tool()
 def clear_layout() -> str:
     """Remove all objects from the layout."""
     _save_layout({"version": 1, "items": []})
