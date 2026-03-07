@@ -14,6 +14,7 @@ export function initIO() {
   document.getElementById('export-glb-btn').addEventListener('click', exportGLB);
   document.getElementById('export-json-btn').addEventListener('click', exportJSON);
   document.getElementById('json-input').addEventListener('change', importJSON);
+  startMcpSync();
 }
 function clearModelParts() {
   for (const m of S.modelParts) {
