@@ -132,3 +132,11 @@ Saves three preview images to the current directory:
 | 1b | Local CV vectorization pipeline | Done |
 | 2 | Fine-tune on annotated Singapore BTO data | Planned |
 | 3 | Wall polygon -> 3D mesh extrusion | Planned |
+
+## Reference
+
+The name `Haus` roughly translates to "House" in German (*das Haus*).
+
+<div align="center">
+  <img src="./asset/logo/haus.png">
+</div>
