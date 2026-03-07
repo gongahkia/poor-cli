@@ -66,6 +66,8 @@ def _build_parser() -> argparse.ArgumentParser:
     clean.add_argument("--image", required=True, type=Path, help="Path to floor plan image")
     clean.add_argument("--out", required=True, type=Path, help="Output cleaned image path")
 
+    subparsers.add_parser("mcp", help="Start MCP server for AI-assisted editing")
+
     view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
     view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
     view.add_argument("--port", type=int, default=8080, help="HTTP server port (default: 8080)")
