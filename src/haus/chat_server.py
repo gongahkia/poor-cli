@@ -72,7 +72,7 @@ _TOOLS_SPEC = [
      "parameters": {"type": "object", "properties": {}}},
 ]
 
-_DISPATCH = {
+_DISPATCH_RAW = {
     "list_furniture_catalog": lambda a: list_furniture_catalog(),
     "list_objects": lambda a: list_objects(),
     "add_furniture": lambda a: add_furniture(**a),
@@ -82,6 +82,19 @@ _DISPATCH = {
     "remove_object": lambda a: remove_object(**a),
     "clear_layout": lambda a: clear_layout(),
 }
+
+_tool_log: list[dict] = []  # collects tool calls per request
+
+
+def _dispatch(name: str, args: dict) -> str:
+    fn = _DISPATCH_RAW.get(name)
+    if not fn:
+        return f"Unknown tool: {name}"
+    result = fn(args)
+    entry = {"tool": name, "args": args, "result": result}
+    _tool_log.append(entry)
+    log.info("tool %s(%s) -> %s", name, json.dumps(args), result[:200] if len(result) > 200 else result)
+    return result
 
 # --- provider detection ---
 
