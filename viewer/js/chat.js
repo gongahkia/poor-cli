@@ -64,7 +64,7 @@ function refreshProviders() {
     statusEl.textContent = '';
     statusEl.style.display = 'none';
   } else {
-    statusEl.textContent = 'Click \u2699 to add an API key (Anthropic, OpenAI, or Gemini)';
+    statusEl.textContent = 'Click Settings to add an API key (Anthropic, OpenAI, or Gemini)';
     statusEl.style.display = '';
   }
 }
@@ -86,7 +86,7 @@ async function send() {
   const provider = providerSel.value;
   const apiKey = keys[provider];
   if (!provider || !apiKey) {
-    appendMessage('error', 'No API key configured. Click \u2699 to add one.');
+    appendMessage('error', 'No API key configured. Click Settings to add one.');
     return;
   }
   inputEl.value = '';
@@ -111,7 +111,7 @@ async function send() {
       if (data.actions && data.actions.length > 0) {
         for (const a of data.actions) {
           const argsStr = Object.keys(a.args).length > 0 ? ' ' + JSON.stringify(a.args) : '';
-          appendMessage('tool', a.tool + argsStr + ' \u2192 ' + a.result);
+          appendMessage('tool', a.tool + argsStr + ' -> ' + a.result);
         }
       }
       appendMessage('assistant', data.response);
