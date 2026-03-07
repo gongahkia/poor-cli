@@ -152,8 +152,7 @@ def _chat_anthropic(api_key: str, messages: list, model: str) -> tuple[str, list
             return text, messages
         results = []
         for tu in tool_uses:
-            fn = _DISPATCH.get(tu.name)
-            result = fn(tu.input) if fn else f"Unknown tool: {tu.name}"
+            result = _dispatch(tu.name, tu.input)
             results.append({"type": "tool_result", "tool_use_id": tu.id, "content": result})
         messages.append({"role": "user", "content": results})
     raise RuntimeError("Too many tool iterations")
@@ -223,8 +222,7 @@ def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
         tool_results = []
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments)
-            dispatch_fn = _DISPATCH.get(tc.function.name)
-            result = dispatch_fn(args) if dispatch_fn else f"Unknown tool: {tc.function.name}"
+            result = _dispatch(tc.function.name, args)
             oai_messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
             assistant_content.append({"type": "tool_use", "id": tc.id, "name": tc.function.name, "input": args})
             tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
