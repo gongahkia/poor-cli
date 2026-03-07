@@ -7,11 +7,11 @@ _FILL_SAT_MIN = 35
 _FILL_VAL_MIN = 60
 _FILL_MIN_AREA = 500
 _WALL_OPEN_LEN = 20 # px — directional open kernel length
-_ARC_MAX_FILL_RATIO = 0.20 # arcs occupy little of their bbox
-_ARC_MAX_ASPECT = 2.5 # arcs have ~square bbox
-_ARC_MIN_AREA = 40
+_ARC_MAX_FILL_RATIO = 0.15 # arcs at radius r, width t: fill = πt/2r ≈ 0.04-0.11
+_ARC_MAX_ASPECT = 2.0 # arcs have ~square bbox
+_ARC_MIN_AREA = 80
 _ARC_MAX_AREA = 8000
-_ARC_MIN_DIM = 8
+_ARC_MIN_DIM = 20 # exclude text characters (typically < 20px)
 _PROTRUSION_KERNEL_FRAC = 0.10 # fraction of unit short dim
 _PROTRUSION_KERNEL_MIN = 25
 _PROTRUSION_KERNEL_MAX = 100
@@ -112,7 +112,7 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
     protrusions = ((solid > 0) & (opened == 0)).astype(np.uint8)
     if np.count_nonzero(protrusions) == 0:
         return img
-    zone = cv2.dilate(protrusions, np.ones((7, 7), np.uint8), iterations=2)
+    zone = cv2.dilate(protrusions, np.ones((5, 5), np.uint8), iterations=1)
     img[zone > 0] = 255
     return img
 
