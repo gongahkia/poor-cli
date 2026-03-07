@@ -3,11 +3,11 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { S, fn, SIDEBAR_W } from './state.js';
 let plControls = null;
 const moveState = { forward: false, backward: false, left: false, right: false };
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
 const EYE_HEIGHT = 1.6;
-const MOVE_SPEED = 5.0;
-let prevTime = performance.now();
+const WALK_SPEED = 4.0;
+const RUN_SPEED = 8.0;
+let prevTime = 0;
+let running = false;
 export function initCamera() {
   fn.frameSelected = frameSelected;
   fn.setCameraView = setCameraView;
@@ -73,6 +73,7 @@ function toggleFps() {
   S.camera.position.set(target.x, EYE_HEIGHT, target.z);
   S.camera.lookAt(target.x + 1, EYE_HEIGHT, target.z);
   if (S.camera.fov !== 50) { S.camera.fov = 50; S.camera.updateProjectionMatrix(); }
+  prevTime = performance.now();
   plControls.lock();
   document.getElementById('fps-btn').classList.add('active');
 }
@@ -97,6 +98,7 @@ function onFpsKeyDown(e) {
     case 'KeyA': case 'ArrowLeft': moveState.left = true; break;
     case 'KeyS': case 'ArrowDown': moveState.backward = true; break;
     case 'KeyD': case 'ArrowRight': moveState.right = true; break;
+    case 'ShiftLeft': case 'ShiftRight': running = true; break;
   }
 }
 function onFpsKeyUp(e) {
@@ -106,23 +108,22 @@ function onFpsKeyUp(e) {
     case 'KeyA': case 'ArrowLeft': moveState.left = false; break;
     case 'KeyS': case 'ArrowDown': moveState.backward = false; break;
     case 'KeyD': case 'ArrowRight': moveState.right = false; break;
+    case 'ShiftLeft': case 'ShiftRight': running = false; break;
   }
 }
 export function updateFps() {
   if (!S.fpsMode || !plControls.isLocked) return;
   const now = performance.now();
-  const delta = (now - prevTime) / 1000;
+  const delta = Math.min((now - prevTime) / 1000, 0.1); // clamp to avoid teleport on first frame
   prevTime = now;
-  velocity.x -= velocity.x * 10.0 * delta;
-  velocity.z -= velocity.z * 10.0 * delta;
-  direction.z = Number(moveState.forward) - Number(moveState.backward);
-  direction.x = Number(moveState.right) - Number(moveState.left);
-  direction.normalize();
-  if (moveState.forward || moveState.backward) velocity.z -= direction.z * MOVE_SPEED * delta;
-  if (moveState.left || moveState.right) velocity.x -= direction.x * MOVE_SPEED * delta;
-  plControls.moveRight(-velocity.x);
-  plControls.moveForward(-velocity.z);
-  S.camera.position.y = EYE_HEIGHT;
+  let fwd = Number(moveState.forward) - Number(moveState.backward);
+  let right = Number(moveState.right) - Number(moveState.left);
+  const len = Math.sqrt(fwd * fwd + right * right);
+  if (len > 0) { fwd /= len; right /= len; } // normalize diagonal
+  const speed = (running ? RUN_SPEED : WALK_SPEED) * delta;
+  if (fwd !== 0) plControls.moveForward(fwd * speed);
+  if (right !== 0) plControls.moveRight(right * speed);
+  S.camera.position.y = EYE_HEIGHT; // locked to floor
 }
 function captureScreenshot() {
   S.renderer.render(S.scene, S.camera);
