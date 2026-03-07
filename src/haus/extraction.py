@@ -345,8 +345,13 @@ def _detect_openings(
             label = "Opening"
 
         openings.append(Opening(x=x, y=y, w=bw, h=bh, width_m=width_m, label=label))
-        if len(openings) >= _OPENING_MAX_COUNT:
-            break
+
+    if len(openings) > _OPENING_MAX_COUNT:
+        warnings.warn(
+            f"Detected {len(openings)} openings (expected <= {_OPENING_MAX_COUNT}). "
+            "Results may include false positives from non-opening gaps.",
+            stacklevel=2,
+        )
 
     return openings
 
