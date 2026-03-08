@@ -197,6 +197,10 @@ _TOOLS_SPEC = [
          "index": {"type": "integer", "description": "Object index"},
          "new_type": {"type": "string", "description": "New furniture type from catalog"},
      }, "required": ["index", "new_type"]}},
+    {"name": "compute_room_area", "description": "Compute bounding-box area of a room from its tagged objects' extents.",
+     "parameters": {"type": "object", "properties": {
+         "room_name": {"type": "string", "description": "Room name from tag_room/list_rooms"},
+     }, "required": ["room_name"]}},
 ]
 
 _DISPATCH_RAW = {
@@ -228,6 +232,7 @@ _DISPATCH_RAW = {
     "tag_room": lambda a: tag_room(**a),
     "list_rooms": lambda a: list_rooms(),
     "swap_furniture": lambda a: swap_furniture(**a),
+    "compute_room_area": lambda a: compute_room_area(**a),
 }
 
 _tool_log: list[dict] = []  # collects tool calls per request
