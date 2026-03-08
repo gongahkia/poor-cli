@@ -3,7 +3,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { S, SIDEBAR_W } from './state.js';
 export function initScene() {
   S.scene = new THREE.Scene();
-  S.scene.background = new THREE.Color(0x222222);
+  const isLight = localStorage.getItem('haus-theme') === 'light';
+  if (isLight) document.body.classList.add('light');
+  S.scene.background = new THREE.Color(isLight ? 0xe8e8e8 : 0x222222);
   S.camera = new THREE.PerspectiveCamera(50, (innerWidth - SIDEBAR_W) / innerHeight, 0.1, 500);
   S.camera.position.set(10, 8, 10);
   S.camera.lookAt(0, 0, 0);
@@ -45,5 +47,13 @@ export function initScene() {
     S.camera.aspect = (innerWidth - SIDEBAR_W) / innerHeight;
     S.camera.updateProjectionMatrix();
     S.renderer.setSize(innerWidth - SIDEBAR_W, innerHeight);
+  });
+  const themeBtn = document.getElementById('theme-btn');
+  if (isLight) themeBtn.textContent = 'Dark';
+  themeBtn.addEventListener('click', () => {
+    const light = document.body.classList.toggle('light');
+    S.scene.background.set(light ? 0xe8e8e8 : 0x222222);
+    localStorage.setItem('haus-theme', light ? 'light' : 'dark');
+    themeBtn.textContent = light ? 'Dark' : 'Light';
   });
 }
