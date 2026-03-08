@@ -19,7 +19,12 @@
 
 ## Screenshots
 
-...
+![](./asset/reference/1.png)
+![](./asset/reference/2.png)
+![](./asset/reference/4.png)
+![](./asset/reference/5.png)
+![](./asset/reference/6.png)
+![](./asset/reference/3.png)
 
 ## Usage
 
