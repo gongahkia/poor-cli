@@ -8,6 +8,7 @@ configurable LLM providers (Anthropic, OpenAI, Gemini) with tool use.
 from __future__ import annotations
 
 import json
+import importlib
 import logging
 import mimetypes
 import os
@@ -301,6 +302,16 @@ def _provider_available() -> list[str]:
     return providers
 
 
+def _load_provider_module(module_name: str, provider_name: str) -> Any:
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            f"{provider_name} support requires the optional dependency '{module_name}'. "
+            f"Install the corresponding extra before using this provider."
+        ) from exc
+
+
 # --- Anthropic provider ---
 
 def _anthropic_tools():
@@ -312,7 +323,7 @@ def _anthropic_tools():
 
 
 def _chat_anthropic(api_key: str, messages: list, model: str) -> tuple[str, list]:
-    import anthropic
+    anthropic = _load_provider_module("anthropic", "Anthropic")
     client = anthropic.Anthropic(api_key=api_key)
     tools = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in _TOOLS_SPEC]
     for _ in range(10):
@@ -382,7 +393,7 @@ def _to_oai_messages(messages: list) -> list:
 
 
 def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
-    import openai
+    openai = _load_provider_module("openai", "OpenAI")
     client = openai.OpenAI(api_key=api_key)
     tools = _openai_tools()
     oai_messages = _to_oai_messages(messages)
@@ -424,7 +435,7 @@ def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
 # --- Gemini provider ---
 
 def _chat_gemini(api_key: str, messages: list, model: str) -> tuple[str, list]:
-    import google.generativeai as genai
+    genai = _load_provider_module("google.generativeai", "Google Gemini")
     genai.configure(api_key=api_key)
     # build function declarations
     func_decls = []
