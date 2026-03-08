@@ -10,7 +10,12 @@
 
 ## Stack
 
-...
+* *Frontend*:
+* *Backend*:
+* *Preprocessing:*
+* *OCR*:
+* *ML*:
+* *Tests*: 
 
 ## Screenshots
 
@@ -22,9 +27,17 @@
 
 ```
 
-## Architecture
+## MCP server
 
 ...
+
+## Providers
+
+...
+
+## Architecture
+
+![](./asset/reference/architecture.png)
 
 ## Credits
 
