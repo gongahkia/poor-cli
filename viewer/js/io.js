@@ -132,9 +132,10 @@ async function pushLayoutToServer() {
   } catch {}
 }
 function applyLayoutData(data) {
+  const prev = serializeLayout();
   clearModelParts();
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
-  S.userWalls.length = 0; S.undoStack.length = 0; S.redoStack.length = 0;
+  S.userWalls.length = 0; S.redoStack.length = 0;
   fn.deselectFurniture();
   for (const item of data.items) {
     const mesh = new THREE.Mesh(
@@ -152,6 +153,7 @@ function applyLayoutData(data) {
     if (item.room) mesh.userData.room = item.room;
     S.scene.add(mesh); S.draggables.push(mesh);
   }
+  if (prev.items.length > 0) fn.pushUndo({ type: 'mcp_sync', snapshot: prev });
   fn.refreshSceneList();
 }
 function importJSON(e) {
