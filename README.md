@@ -5,6 +5,8 @@
 
 ...
 
+Also see [credits](#credits) for attribution.
+
 ## Stack
 
 ...
@@ -22,6 +24,33 @@
 ## Architecture
 
 ...
+
+## Credits
+
+The idea for `Haus` was first conceived by [Zane](https://github.com/injaneity) and iterated on by [Wei Sin](https://github.com/weisintai) for the [OpenAI Codex Hackathon 2026](https://luma.com/fbhtrppu?tk=1rZbrF), though it was later dropped in favour of [`codex-together`](https://github.com/injaneity/codex-together). 
+
+<table>
+	<tbody>
+        <tr>
+            <td align="center">
+                <a href="https://github.com/injaneity">
+                    <img src="https://avatars.githubusercontent.com/u/44902825?v=4" width="100;" alt=""/>
+                    <br />
+                    <sub><b>Zane Chee</b></sub>
+                </a>
+                <br />
+            </td> 
+            <td align="center">
+                <a href="https://github.com/weisintai">
+                    <img src="https://avatars.githubusercontent.com/u/59339889?v=4" width="100;" alt=""/>
+                    <br />
+                    <sub><b>Tai Wei Sin</b></sub>
+                </a>
+                <br />
+            </td>
+        </tr>
+	</tbody>
+</table>
 
 ## Reference
 
