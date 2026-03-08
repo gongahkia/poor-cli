@@ -3,7 +3,7 @@
 
 # `Haus`
 
-...
+[SVG](https://en.wikipedia.org/wiki/SVG) and [GLB](https://cadexchanger.com/glb/#:~:text=GLB%20is%20a%20standardized%20file,(JavaScript%20Object%20Notation)%20encoding.) editor pipeline for [HDB BTO Flat floor plans](https://en.wikipedia.org/wiki/Build-to-Order_(Singapore)#:~:text=Under%20the%20scheme%2C%20Singaporeans%20select,flats%20in%20advance%20of%20demand.).
 
 > [!IMPORTANT]
 > See [here](#credits) for attribution!
