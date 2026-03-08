@@ -11,10 +11,12 @@ export function initShortcuts() {
     // FPS mode: only ESC to exit
     if (S.fpsMode) { if (key === 'escape') fn.exitFps(); return; }
     if (key === 'escape') {
-      if (S.placeMode) fn.cancelPlaceMode();
+      if (S.measureMode) fn.exitMeasure();
+      else if (S.placeMode) fn.cancelPlaceMode();
       else if (S.wallMode) fn.exitWallMode();
       return;
     }
+    if (key === 'm') { fn.toggleMeasure(); return; }
     if (key === 'w') { if (S.wallMode) fn.exitWallMode(); else fn.enterWallMode(); return; }
     if (S.wallMode) return;
     if (key === 'p') { fn.toggleFps(); return; }

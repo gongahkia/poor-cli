@@ -25,6 +25,7 @@ function buildCommands() {
     { name: 'Toggle Collisions', keys: 'C', run: () => toggle('collision-toggle') },
     { name: 'Toggle Wireframe', run: () => toggle('wireframe-toggle') },
     { name: 'Toggle Shadows', run: () => toggle('shadows-toggle') },
+    { name: 'Measure Distance', keys: 'M', run: () => fn.toggleMeasure() },
     { name: 'Draw Wall', keys: 'W', run: () => { if (S.wallMode) fn.exitWallMode(); else fn.enterWallMode(); } },
     { name: 'FPS View', keys: 'P', run: () => fn.toggleFps() },
     { name: 'Screenshot', keys: 'Ctrl+Shift+S', run: () => fn.captureScreenshot() },

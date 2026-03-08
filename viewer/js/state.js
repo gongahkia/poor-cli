@@ -11,7 +11,7 @@ export const S = {
   snapEnabled: true, gridDivisions: 4, collisionEnabled: true,
   wallMode: false, wallStart: null, wallPreview: null, wallHeight: 2.6, wallThickness: 0.15,
   placeMode: false, placeGhost: null, placeType: null, placeBlocked: false,
-  fpsMode: false,
+  fpsMode: false, measureMode: false, measureStart: null, measureLine: null, measureLabel: null,
   clipboard: null,
   raycaster: new THREE.Raycaster(), mouse: new THREE.Vector2(),
   dragPlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),

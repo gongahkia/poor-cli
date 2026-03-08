@@ -12,6 +12,7 @@ import { initIO } from './io.js';
 import { initShortcuts } from './shortcuts.js';
 import { initContextMenu } from './contextmenu.js';
 import { initOverlay } from './overlay.js';
+import { initMeasure } from './measure.js';
 import { initChat } from './chat.js';
 import { initCommandPalette } from './commandpalette.js';
 initScene();
@@ -27,6 +28,7 @@ initIO();
 initShortcuts();
 initContextMenu();
 initOverlay();
+initMeasure();
 initChat();
 initCommandPalette();
 function animate() {
