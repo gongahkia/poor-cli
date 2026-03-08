@@ -641,8 +641,10 @@ def tag_room(indices: list[int], room_name: str) -> str:
 
 def _room_extents(data: dict, room: str) -> tuple[float, float, float, float] | None:
     """Compute XZ bounding box of all objects tagged with room, accounting for dimensions."""
-    x_min = float("inf"); z_min = float("inf")
-    x_max = float("-inf"); z_max = float("-inf")
+    x_min = float("inf")
+    z_min = float("inf")
+    x_max = float("-inf")
+    z_max = float("-inf")
     found = False
     for item in data["items"]:
         if item.get("room") != room:
@@ -653,8 +655,10 @@ def _room_extents(data: dict, room: str) -> tuple[float, float, float, float] | 
         half_x = (abs(geo[0] * math.cos(r)) + abs(geo[2] * math.sin(r))) / 2
         half_z = (abs(geo[0] * math.sin(r)) + abs(geo[2] * math.cos(r))) / 2
         p = item["pos"]
-        x_min = min(x_min, p[0] - half_x); x_max = max(x_max, p[0] + half_x)
-        z_min = min(z_min, p[2] - half_z); z_max = max(z_max, p[2] + half_z)
+        x_min = min(x_min, p[0] - half_x)
+        x_max = max(x_max, p[0] + half_x)
+        z_min = min(z_min, p[2] - half_z)
+        z_max = max(z_max, p[2] + half_z)
     return (x_min, z_min, x_max, z_max) if found else None
 
 

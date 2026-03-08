@@ -43,13 +43,13 @@ def _build_fill_solid(img_rgb: np.ndarray) -> np.ndarray:
         (hsv[:, :, 1] > _FILL_SAT_MIN) & (hsv[:, :, 2] > _FILL_VAL_MIN)
     ).astype(np.uint8)
     sat = cv2.morphologyEx(sat, cv2.MORPH_CLOSE, np.ones((7, 1), np.uint8))
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(sat, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(sat, connectivity=8)
     fill = np.zeros_like(sat)
     for i in range(1, num):
         if int(stats[i, cv2.CC_STAT_AREA]) >= _FILL_MIN_AREA:
             fill[labels == i] = 1
     solid = np.zeros_like(fill)
-    num2, labels2, stats2, _ = cv2.connectedComponentsWithStats(fill, 8)
+    num2, labels2, stats2, _ = cv2.connectedComponentsWithStats(fill, connectivity=8)
     for i in range(1, num2):
         if int(stats2[i, cv2.CC_STAT_AREA]) < 100:
             continue
@@ -87,7 +87,7 @@ def _erase_door_arcs(img: np.ndarray) -> np.ndarray:
 
     # precompute residual CCs (non-wall dark) for per-CC ring validation
     residual = cv2.bitwise_and(dark, cv2.bitwise_not(walls))
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, connectivity=8)
     # cache CC areas
     cc_areas = np.zeros(num, dtype=np.int32)
     for i in range(1, num):
@@ -155,7 +155,7 @@ def _is_shelter(comp: np.ndarray, dark: np.ndarray) -> bool:
     border = cv2.dilate(comp, np.ones((7, 7), np.uint8), iterations=2) - comp
     border_total = max(np.count_nonzero(border), 1)
     border_dark = np.count_nonzero((border > 0) & (dark > 0))
-    return (border_dark / border_total) > _SHELTER_WALL_RATIO
+    return bool((border_dark / border_total) > _SHELTER_WALL_RATIO)
 
 
 def _dark_ratio(comp: np.ndarray, dark: np.ndarray) -> float:
@@ -180,7 +180,7 @@ def _detect_hatching(img_rgb: np.ndarray) -> np.ndarray:
     hatch_raw = (density > 0.25).astype(np.uint8)
     hatch_raw = cv2.morphologyEx(hatch_raw, cv2.MORPH_CLOSE,
                                  np.ones((5, 5), np.uint8))
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(hatch_raw, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(hatch_raw, connectivity=8)
     h, w = gray.shape
     max_dim = max(100, min(h, w) // 3)
     hatch = np.zeros(gray.shape, dtype=np.uint8)
@@ -202,7 +202,7 @@ def _erase_hatching(img: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     dark = (gray < _DARK_THRESH).astype(np.uint8) * 255
     h, w = img.shape[:2]
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(hatching, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(hatching, connectivity=8)
     erase = np.zeros(img.shape[:2], dtype=np.uint8)
     for i in range(1, num):
         comp = (labels == i).astype(np.uint8)
@@ -258,7 +258,7 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
             continue
         prot = cv2.morphologyEx(prot, cv2.MORPH_CLOSE,
                                 np.ones((15, 15), np.uint8), iterations=1)
-        num, labels, stats, _ = cv2.connectedComponentsWithStats(prot, 8)
+        num, labels, stats, _ = cv2.connectedComponentsWithStats(prot, connectivity=8)
         for i in range(1, num):
             area = int(stats[i, cv2.CC_STAT_AREA])
             comp = (labels == i).astype(np.uint8)
@@ -270,7 +270,7 @@ def _erase_protrusions(img: np.ndarray) -> np.ndarray:
                 erase = cv2.bitwise_or(erase, comp)
     if np.count_nonzero(erase) == 0:
         return img
-    num_e, labels_e, stats_e, _ = cv2.connectedComponentsWithStats(erase, 8)
+    num_e, labels_e, stats_e, _ = cv2.connectedComponentsWithStats(erase, connectivity=8)
     zone = np.zeros_like(erase)
     for i in range(1, num_e):
         cw = int(stats_e[i, cv2.CC_STAT_WIDTH])
@@ -297,7 +297,7 @@ def _erase_exterior_marks(img: np.ndarray) -> np.ndarray:
     exterior_dark = ((gray < _DARK_THRESH) & (interior == 0)).astype(np.uint8)
     if np.count_nonzero(exterior_dark) == 0:
         return img
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(exterior_dark, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(exterior_dark, connectivity=8)
     erase = np.zeros_like(exterior_dark)
     for i in range(1, num):
         if int(stats[i, cv2.CC_STAT_AREA]) < _EXTERIOR_MAX_AREA:

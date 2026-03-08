@@ -1,9 +1,14 @@
 from __future__ import annotations
+
 import warnings
 from pathlib import Path
+from typing import Any, cast
+
 import numpy as np
 import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon
+from trimesh.visual import ColorVisuals
+
 from .types import FloorPlanData
 
 _M_PER_PX_FALLBACK = 0.02
@@ -17,6 +22,11 @@ _COLOR_BY_WALL_TYPE = {
     "structural": (80, 80, 80, 255),
     "partition": (140, 140, 160, 255),
 }
+
+
+def _paint_mesh(mesh: trimesh.Trimesh, color: tuple[int, int, int, int]) -> None:
+    face_colors = np.tile(np.array(color, dtype=np.uint8), (len(mesh.faces), 1))
+    mesh.visual = ColorVisuals(mesh=mesh, face_colors=face_colors)
 
 
 def extrude_floor_plan(
@@ -48,8 +58,12 @@ def extrude_floor_plan(
         new_verts[:, 1] = verts[:, 2]  # Z -> Y (up)
         new_verts[:, 2] = verts[:, 1]  # Y -> Z (depth)
         mesh.vertices = new_verts
-        color = _COLOR_BY_HDB.get(w.hdb_type) or _COLOR_BY_WALL_TYPE.get(w.wall_type, (80, 80, 80, 255))
-        mesh.visual.face_colors = np.array([color] * len(mesh.faces), dtype=np.uint8)
+        color = (
+            _COLOR_BY_HDB.get(w.hdb_type, (80, 80, 80, 255))
+            if w.hdb_type is not None
+            else _COLOR_BY_WALL_TYPE.get(w.wall_type, (80, 80, 80, 255))
+        )
+        _paint_mesh(mesh, color)
         scene.add_geometry(mesh, node_name=f"wall_{i}")
 
     for i, c in enumerate(data.columns):
@@ -59,7 +73,7 @@ def extrude_floor_plan(
         cy = (c.y + c.h / 2) * m_per_px
         box = trimesh.creation.box(extents=[cw, wall_height_m, ch])
         box.apply_translation([cx, wall_height_m / 2, cy])
-        box.visual.face_colors = np.array([(180, 60, 180, 255)] * len(box.faces), dtype=np.uint8)
+        _paint_mesh(box, (180, 60, 180, 255))
         scene.add_geometry(box, node_name=f"column_{i}")
 
     for i, o in enumerate(data.openings):
@@ -78,7 +92,7 @@ def extrude_floor_plan(
         depth = 0.05
         box = trimesh.creation.box(extents=[ow, height, max(oh, depth)])
         box.apply_translation([ox, bottom + height / 2, oy])
-        box.visual.face_colors = np.array([color] * len(box.faces), dtype=np.uint8)
+        _paint_mesh(box, color)
         scene.add_geometry(box, node_name=f"opening_{i}")
 
     return scene
@@ -86,5 +100,7 @@ def extrude_floor_plan(
 
 def export_glb(scene: trimesh.Scene, out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    glb_data = scene.export(file_type="glb")
+    glb_data = cast(Any, scene.export(file_type="glb"))
+    if not isinstance(glb_data, (bytes, bytearray, memoryview)):
+        raise TypeError(f"Expected GLB export bytes, got {type(glb_data).__name__}")
     out_path.write_bytes(glb_data)

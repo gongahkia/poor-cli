@@ -1,33 +1,59 @@
+# pyright: reportPrivateImportUsage=false
+
 """Combined static file server + AI chat API for the haus editor.
 
 Serves the viewer files and provides a /api/chat endpoint that uses
 configurable LLM providers (Anthropic, OpenAI, Gemini) with tool use.
 """
 from __future__ import annotations
+
 import json
 import logging
 import mimetypes
 import os
 from pathlib import Path
+from typing import Any, cast
 
-log = logging.getLogger("haus.chat")
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.routing import Route, Mount
 from starlette.staticfiles import StaticFiles
 import uvicorn
+
 from .mcp_server import (
-    list_furniture_catalog, list_objects, add_furniture, add_wall,
-    move_object, rotate_object, remove_object, remove_objects_by_type,
-    clear_layout, get_layout_json,
-    get_object_details, get_layout_summary, resize_object,
-    set_color, set_visibility, duplicate_object, batch_move,
-    measure_distance, find_objects_in_area, check_overlap, find_nearest,
-    align_objects, distribute_objects, snap_to_grid,
-    rename_object, find_by_name, tag_room, list_rooms, swap_furniture,
+    add_furniture,
+    add_wall,
+    align_objects,
+    batch_move,
+    check_overlap,
+    clear_layout,
     compute_room_area,
+    distribute_objects,
+    duplicate_object,
+    find_by_name,
+    find_nearest,
+    find_objects_in_area,
+    get_layout_summary,
+    get_object_details,
+    list_furniture_catalog,
+    list_objects,
+    list_rooms,
+    measure_distance,
+    move_object,
+    remove_object,
+    remove_objects_by_type,
+    rename_object,
+    resize_object,
+    rotate_object,
+    set_color,
+    set_visibility,
+    snap_to_grid,
+    swap_furniture,
+    tag_room,
 )
+
+log = logging.getLogger("haus.chat")
 
 mimetypes.add_type("model/gltf-binary", ".glb")
 
@@ -263,7 +289,7 @@ def _detect_provider() -> tuple[str, str]:
     return "", ""
 
 
-def _provider_available() -> dict:
+def _provider_available() -> list[str]:
     """Check which providers are available."""
     providers = []
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -290,7 +316,13 @@ def _chat_anthropic(api_key: str, messages: list, model: str) -> tuple[str, list
     client = anthropic.Anthropic(api_key=api_key)
     tools = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in _TOOLS_SPEC]
     for _ in range(10):
-        response = client.messages.create(model=model, max_tokens=1024, system=_SYSTEM, tools=tools, messages=messages)
+        response = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            system=_SYSTEM,
+            tools=cast(Any, tools),
+            messages=messages,
+        )
         content = []
         for block in response.content:
             if block.type == "text":
@@ -356,9 +388,15 @@ def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
     oai_messages = _to_oai_messages(messages)
 
     for _ in range(10):
-        response = client.chat.completions.create(model=model, messages=oai_messages, tools=tools, max_tokens=1024)
+        response = client.chat.completions.create(
+            model=model,
+            messages=oai_messages,
+            tools=cast(Any, tools),
+            max_tokens=1024,
+        )
         msg = response.choices[0].message
-        if not msg.tool_calls:
+        tool_calls = cast(list[Any], msg.tool_calls or [])
+        if not tool_calls:
             text = msg.content or ""
             messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
             return text, messages
@@ -366,13 +404,13 @@ def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
         assistant_content = []
         oai_entry = {"role": "assistant", "content": msg.content, "tool_calls": [
             {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-            for tc in msg.tool_calls
+            for tc in tool_calls
         ]}
         oai_messages.append(oai_entry)
         if msg.content:
             assistant_content.append({"type": "text", "text": msg.content})
         tool_results = []
-        for tc in msg.tool_calls:
+        for tc in tool_calls:
             args = json.loads(tc.function.arguments)
             result = _dispatch(tc.function.name, args)
             oai_messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})

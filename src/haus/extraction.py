@@ -22,7 +22,7 @@ def _build_fill_mask(img_rgb: np.ndarray) -> np.ndarray:
     k_vbridge = np.ones((_FILL_VBRIDGE_HEIGHT, 1), np.uint8)
     saturated = cv2.morphologyEx(saturated, cv2.MORPH_CLOSE, k_vbridge, iterations=1)
 
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(saturated, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(saturated, connectivity=8)
     fill = np.zeros_like(saturated)
     for i in range(1, num):
         if int(stats[i, cv2.CC_STAT_AREA]) >= _FILL_MIN_COMPONENT_AREA:
@@ -42,7 +42,7 @@ def _build_fill_mask(img_rgb: np.ndarray) -> np.ndarray:
 
 def _solidify_fill(fill_mask: np.ndarray) -> np.ndarray:
     """Fill interior holes via outer contour drawing per component."""
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(fill_mask, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(fill_mask, connectivity=8)
     solid = np.zeros_like(fill_mask)
     for i in range(1, num):
         if int(stats[i, cv2.CC_STAT_AREA]) < _SOLIDIFY_MIN_AREA:
@@ -184,7 +184,7 @@ def _extract_wall_segments(
     segments: list[WallSegment] = []
 
     # Horizontal wall segments
-    num_h, labels_h, stats_h, _ = cv2.connectedComponentsWithStats(horiz, 8)
+    num_h, labels_h, stats_h, _ = cv2.connectedComponentsWithStats(horiz, connectivity=8)
     for i in range(1, num_h):
         area = int(stats_h[i, cv2.CC_STAT_AREA])
         if area < min_area:
@@ -216,7 +216,7 @@ def _extract_wall_segments(
         ))
 
     # Vertical wall segments
-    num_v, labels_v, stats_v, _ = cv2.connectedComponentsWithStats(vert, 8)
+    num_v, labels_v, stats_v, _ = cv2.connectedComponentsWithStats(vert, connectivity=8)
     for i in range(1, num_v):
         area = int(stats_v[i, cv2.CC_STAT_AREA])
         if area < min_area:
@@ -252,7 +252,7 @@ def _extract_wall_segments(
     wall_mask = ((dark > 0) & (wall_region > 0)).astype(np.uint8)
 
     # Remove small isolated fragments
-    num_w, labels_w, stats_w, _ = cv2.connectedComponentsWithStats(wall_mask, 8)
+    num_w, labels_w, stats_w, _ = cv2.connectedComponentsWithStats(wall_mask, connectivity=8)
     for i in range(1, num_w):
         if int(stats_w[i, cv2.CC_STAT_AREA]) < _WALL_FRAGMENT_MIN_AREA:
             wall_mask[labels_w == i] = 0
@@ -279,7 +279,7 @@ def _detect_columns(
     residual = ((gray < _COLUMN_GRAY_THRESHOLD).astype(np.uint8)) & outer_band & (wall_mask == 0)
 
     columns: list[Column] = []
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(residual, connectivity=8)
     for i in range(1, num):
         area = int(stats[i, cv2.CC_STAT_AREA])
         bw = int(stats[i, cv2.CC_STAT_WIDTH])
@@ -324,7 +324,7 @@ def _detect_openings(
     gap_mask = perimeter_mask & (wall_probe == 0).astype(np.uint8)
     gap_mask = cv2.morphologyEx(gap_mask, cv2.MORPH_OPEN, k3, iterations=1)
 
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(gap_mask, 8)
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(gap_mask, connectivity=8)
     openings: list[Opening] = []
     for i in range(1, num):
         bw = int(stats[i, cv2.CC_STAT_WIDTH])
