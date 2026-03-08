@@ -27,7 +27,8 @@ function refreshSceneList() {
   count.textContent = '(' + S.draggables.length + ')';
   for (const m of S.draggables) {
     const row = document.createElement('div');
-    row.className = 'scene-item' + (m === S.selectedTarget ? ' active' : '') + (!m.visible ? ' hidden-item' : '');
+    const isSel = m === S.selectedTarget || S.multiSelected.includes(m);
+    row.className = 'scene-item' + (isSel ? ' active' : '') + (!m.visible ? ' hidden-item' : '');
     const swatch = document.createElement('span');
     swatch.className = 'si-color'; swatch.style.background = getColor(m);
     row.appendChild(swatch);

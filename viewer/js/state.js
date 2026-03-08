@@ -6,7 +6,7 @@ export const S = {
   scene: null, camera: null, renderer: null, orbit: null, dirLight: null, gridGroup: null,
   draggables: [], modelParts: [], userWalls: [], hiddenObjects: [],
   undoStack: [], redoStack: [],
-  selectedTarget: null, dragTarget: null, dragStartPos: null,
+  selectedTarget: null, multiSelected: [], dragTarget: null, dragStartPos: null,
   dragOffset: new THREE.Vector3(), dragLastValid: null,
   snapEnabled: true, gridDivisions: 4, collisionEnabled: true,
   wallMode: false, wallStart: null, wallPreview: null, wallHeight: 2.6, wallThickness: 0.15,

@@ -23,13 +23,16 @@ export function initShortcuts() {
     else if (key === 's' && !(e.ctrlKey || e.metaKey)) { toggle('snap-toggle'); }
     else if (key === 'c' && !(e.ctrlKey || e.metaKey)) { toggle('collision-toggle'); }
     else if (key === 'r' && S.selectedTarget) {
-      const oldRot = S.selectedTarget.rotation.y;
       const step = e.shiftKey ? (Math.PI / 12) : (Math.PI / 2);
-      S.selectedTarget.rotation.y += step;
-      if (S.collisionEnabled && fn.checkCollision(S.selectedTarget)) {
-        S.selectedTarget.rotation.y = oldRot; fn.showCollisionFlash(); return;
+      const targets = [S.selectedTarget, ...S.multiSelected];
+      for (const mesh of targets) {
+        const oldRot = mesh.rotation.y;
+        mesh.rotation.y += step;
+        if (S.collisionEnabled && fn.checkCollision(mesh, new Set(targets))) {
+          mesh.rotation.y = oldRot; fn.showCollisionFlash(); return;
+        }
+        fn.pushUndo({ type: 'rotate', mesh, oldRot, newRot: mesh.rotation.y });
       }
-      fn.pushUndo({ type: 'rotate', mesh: S.selectedTarget, oldRot, newRot: S.selectedTarget.rotation.y });
     }
     else if ((key === 'x' || key === 'delete' || key === 'backspace') && S.selectedTarget) { fn.deleteSelected(); }
     else if (key === 'c' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); fn.copySelected(); }
