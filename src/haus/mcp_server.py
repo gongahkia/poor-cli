@@ -639,9 +639,28 @@ def tag_room(indices: list[int], room_name: str) -> str:
     return f"Tagged {len(indices)} objects as '{room_name}'."
 
 
+def _room_extents(data: dict, room: str) -> tuple[float, float, float, float] | None:
+    """Compute XZ bounding box of all objects tagged with room, accounting for dimensions."""
+    x_min = float("inf"); z_min = float("inf")
+    x_max = float("-inf"); z_max = float("-inf")
+    found = False
+    for item in data["items"]:
+        if item.get("room") != room:
+            continue
+        found = True
+        geo = item.get("geo", [1, 1, 1])
+        r = item.get("rot", 0)
+        half_x = (abs(geo[0] * math.cos(r)) + abs(geo[2] * math.sin(r))) / 2
+        half_z = (abs(geo[0] * math.sin(r)) + abs(geo[2] * math.cos(r))) / 2
+        p = item["pos"]
+        x_min = min(x_min, p[0] - half_x); x_max = max(x_max, p[0] + half_x)
+        z_min = min(z_min, p[2] - half_z); z_max = max(z_max, p[2] + half_z)
+    return (x_min, z_min, x_max, z_max) if found else None
+
+
 @mcp.tool()
 def list_rooms() -> str:
-    """List all room labels with their object indices and types."""
+    """List all room labels with their object indices, types, and bounding-box area."""
     data = _load_layout()
     rooms: dict[str, list[str]] = {}
     for i, item in enumerate(data["items"]):
@@ -653,8 +672,29 @@ def list_rooms() -> str:
         return "No rooms defined. Use tag_room to assign rooms."
     lines = []
     for room, objs in sorted(rooms.items()):
-        lines.append(f"  {room}: {', '.join(objs)}")
+        ext = _room_extents(data, room)
+        area = (ext[2] - ext[0]) * (ext[3] - ext[1]) if ext else 0
+        lines.append(f"  {room} ({area:.1f}m²): {', '.join(objs)}")
     return f"{len(rooms)} rooms:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def compute_room_area(room_name: str) -> str:
+    """Compute the bounding-box area of a room from its tagged objects' extents.
+
+    Args:
+        room_name: Room name (from tag_room / list_rooms).
+    """
+    data = _load_layout()
+    ext = _room_extents(data, room_name)
+    if not ext:
+        return f"Error: no objects tagged with room '{room_name}'."
+    w, d = ext[2] - ext[0], ext[3] - ext[1]
+    area = w * d
+    return (f"Room '{room_name}' bounding box:\n"
+            f"  X: {ext[0]:.2f} to {ext[2]:.2f} ({w:.2f}m)\n"
+            f"  Z: {ext[1]:.2f} to {ext[3]:.2f} ({d:.2f}m)\n"
+            f"  Area: {area:.2f}m²")
 
 
 @mcp.tool()

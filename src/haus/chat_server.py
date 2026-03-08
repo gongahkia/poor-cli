@@ -26,6 +26,7 @@ from .mcp_server import (
     measure_distance, find_objects_in_area, check_overlap, find_nearest,
     align_objects, distribute_objects, snap_to_grid,
     rename_object, find_by_name, tag_room, list_rooms, swap_furniture,
+    compute_room_area,
 )
 
 mimetypes.add_type("model/gltf-binary", ".glb")
