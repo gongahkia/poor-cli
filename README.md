@@ -11,7 +11,7 @@
 ## Stack
 
 * *Frontend*:
-* *Backend*:
+* *Backend*: [Python](https://www.python.org/)
 * *Preprocessing:*
 * *OCR*:
 * *ML*:
