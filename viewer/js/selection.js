@@ -237,6 +237,15 @@ function updatePosDisplay(mesh) {
   el.textContent = `${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}`;
 }
 let multiDragStarts = null;
+let dragCollisionTimer = 0;
+function flashDragCollision(meshes) {
+  const saved = meshes.map(m => m.material.color.getHex());
+  for (const m of meshes) m.material.color.setHex(0xdd4444);
+  clearTimeout(dragCollisionTimer);
+  dragCollisionTimer = setTimeout(() => {
+    meshes.forEach((m, i) => { if (m.material) m.material.color.setHex(saved[i]); });
+  }, 150);
+}
 function setupDragHandlers() {
   const canvas = S.renderer.domElement;
   canvas.addEventListener('pointerdown', (e) => {
@@ -319,6 +328,7 @@ function setupDragHandlers() {
     }
     if (blocked) {
       for (const m of toMove) { m.position.x -= dx; m.position.z -= dz; }
+      flashDragCollision(toMove);
     } else {
       S.dragLastValid = S.dragTarget.position.clone();
     }
