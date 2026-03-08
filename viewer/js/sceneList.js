@@ -5,6 +5,7 @@ export function initSceneList() {
   fn.refreshSceneList = refreshSceneList;
 }
 function getLabel(mesh) {
+  if (mesh.userData.name) return mesh.userData.name;
   if (mesh.userData.furnitureType) return FURNITURE_NAMES[mesh.userData.furnitureType] || mesh.userData.furnitureType;
   if (mesh.userData.isWall) return 'Wall';
   if (mesh.userData.isModelPart) return 'Model Part';

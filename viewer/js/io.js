@@ -178,6 +178,8 @@ function importJSON(e) {
         if (item.type === 'wall') { mesh.userData.isWall = true; mesh.userData.baseY = item.geo[1] / 2; S.userWalls.push(mesh); }
         else if (item.type === 'model_part') { mesh.userData.isModelPart = true; S.modelParts.push(mesh); }
         else { mesh.userData.baseY = item.geo[1] / 2; if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType; }
+        if (item.name) mesh.userData.name = item.name;
+        if (item.room) mesh.userData.room = item.room;
         S.scene.add(mesh); S.draggables.push(mesh);
       }
       if (S.draggables.length > 0) {
