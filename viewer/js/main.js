@@ -13,6 +13,7 @@ import { initShortcuts } from './shortcuts.js';
 import { initContextMenu } from './contextmenu.js';
 import { initOverlay } from './overlay.js';
 import { initMeasure } from './measure.js';
+import { initSvgExport } from './svgExport.js';
 import { initChat } from './chat.js';
 import { initCommandPalette } from './commandpalette.js';
 initScene();
@@ -29,6 +30,7 @@ initShortcuts();
 initContextMenu();
 initOverlay();
 initMeasure();
+initSvgExport();
 initChat();
 initCommandPalette();
 function animate() {

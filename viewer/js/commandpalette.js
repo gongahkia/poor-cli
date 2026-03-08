@@ -46,6 +46,7 @@ function buildCommands() {
     { name: 'Toggle Orthographic', keys: '5', run: () => fn.toggleOrtho() },
     { name: 'Export GLB', run: () => document.getElementById('export-glb-btn').click() },
     { name: 'Export JSON', run: () => document.getElementById('export-json-btn').click() },
+    { name: 'Export SVG (2D Floor Plan)', run: () => document.getElementById('export-svg-btn').click() },
     { name: 'Load GLB', run: () => document.getElementById('glb-input').click() },
     { name: 'Load JSON', run: () => document.getElementById('json-input').click() },
     { name: 'Load Floor Plan', run: () => document.getElementById('overlay-input').click() },
