@@ -84,6 +84,8 @@ function serializeLayout() {
       entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
       entry.color = m.material.color.getHex();
     }
+    if (m.userData.name) entry.name = m.userData.name;
+    if (m.userData.room) entry.room = m.userData.room;
     items.push(entry);
   }
   return { version: 1, items };
@@ -146,6 +148,8 @@ function applyLayoutData(data) {
     if (item.type === 'wall') { mesh.userData.isWall = true; mesh.userData.baseY = item.geo[1] / 2; S.userWalls.push(mesh); }
     else if (item.type === 'model_part') { mesh.userData.isModelPart = true; S.modelParts.push(mesh); }
     else { mesh.userData.baseY = item.geo[1] / 2; if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType; }
+    if (item.name) mesh.userData.name = item.name;
+    if (item.room) mesh.userData.room = item.room;
     S.scene.add(mesh); S.draggables.push(mesh);
   }
   fn.refreshSceneList();

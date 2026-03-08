@@ -23,6 +23,9 @@ from .mcp_server import (
     clear_layout, get_layout_json,
     get_object_details, get_layout_summary, resize_object,
     set_color, set_visibility, duplicate_object, batch_move,
+    measure_distance, find_objects_in_area, check_overlap, find_nearest,
+    align_objects, distribute_objects, snap_to_grid,
+    rename_object, find_by_name, tag_room, list_rooms, swap_furniture,
 )
 
 mimetypes.add_type("model/gltf-binary", ".glb")
@@ -43,14 +46,23 @@ _SYSTEM = (
     "- When removing multiple objects, use remove_objects_by_type instead of "
     "calling remove_object in a loop (indices shift after each removal).\n"
     "- batch_move uses RELATIVE offsets (dx, dz), not absolute positions.\n\n"
+    "- align_objects, distribute_objects, snap_to_grid, tag_room modify multiple objects "
+    "— confirm with user before applying to large groups.\n\n"
     "Workflow:\n"
     "1. Call get_layout_summary() for a quick overview of the current layout\n"
-    "2. Call list_objects() or get_object_details(index) for specifics\n"
-    "3. Call list_furniture_catalog() if you need available furniture types\n"
-    "4. Make changes with add_furniture, add_wall, move_object, rotate_object, "
+    "2. Use measure_distance, find_nearest, check_overlap, find_objects_in_area "
+    "for spatial reasoning before placing furniture\n"
+    "3. Call list_objects() or get_object_details(index) for specifics\n"
+    "4. Call list_furniture_catalog() if you need available furniture types\n"
+    "5. Make changes with add_furniture, add_wall, move_object, rotate_object, "
     "remove_object, remove_objects_by_type, resize_object, set_color, "
     "set_visibility, duplicate_object, batch_move\n"
-    "5. Confirm what you did briefly\n"
+    "6. Use align_objects and distribute_objects to tidy arrangements\n"
+    "7. Use rename_object and tag_room to label objects/rooms; "
+    "use find_by_name and list_rooms to query by label\n"
+    "8. Use swap_furniture to change types while keeping position\n"
+    "9. snap_to_grid snaps positions to nearest grid point\n"
+    "10. Confirm what you did briefly\n"
     "Keep responses concise. The editor auto-syncs with your changes."
 )
 
@@ -127,6 +139,63 @@ _TOOLS_SPEC = [
          "dx": {"type": "number", "description": "Relative X offset in meters"},
          "dz": {"type": "number", "description": "Relative Z offset in meters"},
      }, "required": ["indices", "dx", "dz"]}},
+    {"name": "measure_distance", "description": "XZ Euclidean distance between two object centers.",
+     "parameters": {"type": "object", "properties": {
+         "index1": {"type": "integer", "description": "First object index"},
+         "index2": {"type": "integer", "description": "Second object index"},
+     }, "required": ["index1", "index2"]}},
+    {"name": "find_objects_in_area", "description": "Find all objects whose center falls within an XZ bounding box.",
+     "parameters": {"type": "object", "properties": {
+         "x_min": {"type": "number"}, "z_min": {"type": "number"},
+         "x_max": {"type": "number"}, "z_max": {"type": "number"},
+     }, "required": ["x_min", "z_min", "x_max", "z_max"]}},
+    {"name": "check_overlap", "description": "AABB overlap check on XZ plane between two objects. Accounts for rotation.",
+     "parameters": {"type": "object", "properties": {
+         "index1": {"type": "integer", "description": "First object index"},
+         "index2": {"type": "integer", "description": "Second object index"},
+     }, "required": ["index1", "index2"]}},
+    {"name": "find_nearest", "description": "Find N nearest objects by XZ distance, sorted.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Reference object index"},
+         "count": {"type": "integer", "description": "Number of nearest neighbors (default 3)", "default": 3},
+     }, "required": ["index"]}},
+    {"name": "align_objects", "description": "Align objects along an axis ('x' or 'z'). Reference: 'min', 'max', or 'center'.",
+     "parameters": {"type": "object", "properties": {
+         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices to align"},
+         "axis": {"type": "string", "description": "'x' or 'z'"},
+         "reference": {"type": "string", "description": "'min', 'max', or 'center' (default 'center')", "default": "center"},
+     }, "required": ["indices", "axis"]}},
+    {"name": "distribute_objects", "description": "Evenly space objects along an axis. First/last stay as anchors. Requires >= 3 objects.",
+     "parameters": {"type": "object", "properties": {
+         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices (>= 3)"},
+         "axis": {"type": "string", "description": "'x' or 'z'"},
+     }, "required": ["indices", "axis"]}},
+    {"name": "snap_to_grid", "description": "Round object positions to nearest grid multiple.",
+     "parameters": {"type": "object", "properties": {
+         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices to snap"},
+         "grid_size": {"type": "number", "description": "Grid cell size in meters (default 0.25)", "default": 0.25},
+     }, "required": ["indices"]}},
+    {"name": "rename_object", "description": "Assign a human-readable label to an object. Empty string removes it.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index"},
+         "name": {"type": "string", "description": "Label to assign (empty to remove)"},
+     }, "required": ["index", "name"]}},
+    {"name": "find_by_name", "description": "Case-insensitive substring search on object names.",
+     "parameters": {"type": "object", "properties": {
+         "name": {"type": "string", "description": "Search string"},
+     }, "required": ["name"]}},
+    {"name": "tag_room", "description": "Assign a room label to objects.",
+     "parameters": {"type": "object", "properties": {
+         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices to tag"},
+         "room_name": {"type": "string", "description": "Room name to assign"},
+     }, "required": ["indices", "room_name"]}},
+    {"name": "list_rooms", "description": "List all room labels with their object indices and types.",
+     "parameters": {"type": "object", "properties": {}}},
+    {"name": "swap_furniture", "description": "Replace furniture type keeping position, rotation, visibility, name, room.",
+     "parameters": {"type": "object", "properties": {
+         "index": {"type": "integer", "description": "Object index"},
+         "new_type": {"type": "string", "description": "New furniture type from catalog"},
+     }, "required": ["index", "new_type"]}},
 ]
 
 _DISPATCH_RAW = {
@@ -146,6 +215,18 @@ _DISPATCH_RAW = {
     "set_visibility": lambda a: set_visibility(**a),
     "duplicate_object": lambda a: duplicate_object(**a),
     "batch_move": lambda a: batch_move(**a),
+    "measure_distance": lambda a: measure_distance(**a),
+    "find_objects_in_area": lambda a: find_objects_in_area(**a),
+    "check_overlap": lambda a: check_overlap(**a),
+    "find_nearest": lambda a: find_nearest(**a),
+    "align_objects": lambda a: align_objects(**a),
+    "distribute_objects": lambda a: distribute_objects(**a),
+    "snap_to_grid": lambda a: snap_to_grid(**a),
+    "rename_object": lambda a: rename_object(**a),
+    "find_by_name": lambda a: find_by_name(**a),
+    "tag_room": lambda a: tag_room(**a),
+    "list_rooms": lambda a: list_rooms(),
+    "swap_furniture": lambda a: swap_furniture(**a),
 }
 
 _tool_log: list[dict] = []  # collects tool calls per request
