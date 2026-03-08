@@ -5,7 +5,8 @@
 
 ...
 
-Also see [credits](#credits) for attribution.
+> [!IMPORTANT]  
+> See [here](#credits) for attribution!
 
 ## Stack
 
