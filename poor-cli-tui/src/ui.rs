@@ -223,6 +223,14 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    if !app.prompt_queue.is_empty() {
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled(
+            format!("queue:{}", app.prompt_queue.len()),
+            Style::default().fg(theme::accent(mode)),
+        ));
+    }
+
     // Waiting indicator on the right side
     if app.waiting {
         let elapsed = app.wait_elapsed();
@@ -522,13 +530,15 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     if app.waiting {
+        let wait_msg = if app.prompt_queue.is_empty() {
+            " Waiting for response... (type to queue) ".to_string()
+        } else {
+            format!(" Waiting... ({} queued, type to add more) ", app.prompt_queue.len())
+        };
         let prompt_spans = vec![
             Span::styled("  ", Style::default()),
             Span::styled(app.spinner_frame(), theme::spinner_style(mode)),
-            Span::styled(
-                " Waiting for response... ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
+            Span::styled(wait_msg, Style::default().fg(theme::muted_fg(mode))),
         ];
         let input = Paragraph::new(Line::from(prompt_spans)).block(
             Block::default()
@@ -616,6 +626,12 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::styled(
                 " qa:running  ",
                 Style::default().fg(theme::success(mode)),
+            ));
+        }
+        if !app.prompt_queue.is_empty() {
+            spans.push(Span::styled(
+                format!(" queue:{}  ", app.prompt_queue.len()),
+                Style::default().fg(theme::accent(mode)),
             ));
         }
         spans.extend(vec![
