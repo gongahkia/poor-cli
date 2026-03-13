@@ -155,6 +155,7 @@ class PoorCLIServer:
             "poor-cli/switchProvider": self.handle_switch_provider,
             "poor-cli/getProviderInfo": self.handle_get_provider_info,
             "poor-cli/clearHistory": self.handle_clear_history,
+            "poor-cli/compactContext": self.handle_compact_context,
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
@@ -489,6 +490,14 @@ class PoorCLIServer:
         self._ensure_initialized()
         await self.core.clear_history()
         return {"success": True}
+
+    async def handle_compact_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply context management strategy.
+        Params: strategy - one of 'compact', 'compress', 'handoff'
+        Returns: strategy, summary, messages_before, messages_after"""
+        self._ensure_initialized()
+        strategy = params.get("strategy", "compact")
+        return await self.core.compact_context(strategy)
 
     async def handle_list_providers(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

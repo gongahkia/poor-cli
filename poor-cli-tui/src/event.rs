@@ -44,6 +44,7 @@ where
 
         app.clear_old_status();
         app.tick_spinner();
+        app.tick_welcome_anim();
 
         if event::poll(Duration::from_millis(100))? {
             let ev = event::read()?;

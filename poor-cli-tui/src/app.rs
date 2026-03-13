@@ -90,6 +90,7 @@ pub enum AppMode {
     InfoPopup,
     PermissionPrompt,
     PlanReview,
+    CompactSelect,
     Quitting,
 }
 
@@ -155,6 +156,43 @@ impl ThemeMode {
 
 /// Spinner frames for the thinking indicator.
 pub const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+pub const COMPACT_STRATEGIES: &[(&str, &str)] = &[
+    ("compact", "Summarize conversation in-place"),
+    ("compress", "Strip tool calls, keep text only"),
+    ("handoff", "New session with context summary"),
+];
+
+pub const DOLLAR_FRAMES: &[&str] = &[
+    // front
+    r#"    ┌─┐
+   ┌┘$└┐
+   │ $ │
+   │ $ │
+   └┐$┌┘
+    └─┘ "#,
+    // tilt right
+    r#"     ╲
+    ╱ $ ╲
+   ╱  $  ╲
+   ╲  $  ╱
+    ╲ $ ╱
+     ╱   "#,
+    // edge
+    r#"      │
+      │
+      │
+      │
+      │
+      │"#,
+    // tilt left
+    r#"   ╱
+  ╲ $ ╱
+   ╲$  ╱
+   ╱  $╱
+  ╱ $ ╲
+   ╲    "#,
+];
 
 #[derive(Debug, Clone)]
 pub struct ProviderEntry {
@@ -274,6 +312,9 @@ pub struct App {
     pub cumulative_output_tokens: u64,
     pub response_mode: ResponseMode,
     pub theme_mode: ThemeMode,
+    pub compact_select_idx: usize,
+    pub welcome_anim_tick: usize,
+    pub welcome_anim_active: bool,
 }
 
 impl Default for App {
@@ -358,6 +399,9 @@ impl Default for App {
             cumulative_output_tokens: 0,
             response_mode: ResponseMode::Rich,
             theme_mode: ThemeMode::Dark,
+            compact_select_idx: 0,
+            welcome_anim_tick: 0,
+            welcome_anim_active: true,
         }
     }
 }
@@ -368,13 +412,14 @@ impl App {
     }
 
     fn welcome_text(&self) -> String {
+        let dollar = DOLLAR_FRAMES[self.welcome_anim_tick % DOLLAR_FRAMES.len()];
         let logo = r#" ____   ___   ___  ____        ____ _     ___
 |  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
 | |_) | | | | | | | |_) |    | |   | |    | |
 |  __/| |_| | |_| |  _ <     | |___| |___ | |
 |_|    \___/ \___/|_| \_\     \____|_____|___|"#;
         format!(
-            "{logo}\n\n\
+            "{dollar}\n\n{logo}\n\n\
             poor-cli v{version}  •  {provider}/{model}\n\
             AI-powered coding assistant in your terminal\n\n\
             Commands:\n  \
@@ -409,6 +454,9 @@ impl App {
 
     /// Push a message and auto-scroll to bottom.
     pub fn push_message(&mut self, msg: ChatMessage) {
+        if matches!(msg.role, MessageRole::User) {
+            self.welcome_anim_active = false;
+        }
         self.messages.push(msg);
         // Reset scroll to bottom
         self.scroll_offset = 0;
@@ -431,6 +479,13 @@ impl App {
     pub fn tick_spinner(&mut self) {
         if self.waiting {
             self.spinner_tick = (self.spinner_tick + 1) % SPINNER_FRAMES.len();
+        }
+    }
+
+    pub fn tick_welcome_anim(&mut self) {
+        if self.welcome_anim_active && self.messages.len() <= 1 {
+            self.welcome_anim_tick = (self.welcome_anim_tick + 1) % DOLLAR_FRAMES.len();
+            self.update_welcome();
         }
     }
 

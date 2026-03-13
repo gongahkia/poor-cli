@@ -90,6 +90,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /history [N]         Show recent session messages\n\
   /sessions            List recent sessions\n\
   /new-session         Start a fresh session\n\
+  /compact             Manage context window (compact/compress/handoff)\n\
   /export [format]     Export active session (json|md|txt)\n\
   /retry               Retry your last message\n\
   /search <term>       Search messages in this session\n\
@@ -319,6 +320,12 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         }
 
         show_command_info_popup(app, raw, onboarding_usage_text().to_string());
+        return false;
+    }
+
+    if lowered == "/compact" {
+        app.compact_select_idx = 0;
+        app.mode = AppMode::CompactSelect;
         return false;
     }
 

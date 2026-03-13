@@ -102,6 +102,11 @@ class BaseProvider(ABC):
         """
         pass
 
+    def set_history(self, messages: List[Dict[str, Any]]) -> None:
+        """Replace conversation history with the given messages.
+        Override in subclasses for provider-specific behavior."""
+        pass
+
     @abstractmethod
     def get_capabilities(self) -> ProviderCapabilities:
         """Get provider capabilities

@@ -1087,6 +1087,124 @@ class PoorCLICore:
         if self.history_adapter:
             self.history_adapter.clear_history()
 
+    async def compact_context(self, strategy: str) -> Dict[str, Any]:
+        """Apply a context management strategy to reduce conversation size."""
+        if not self._initialized or not self.provider:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        history = self.get_history()
+        messages_before = len(history)
+        if strategy == "compact":
+            return await self._compact_summarize(history, messages_before)
+        elif strategy == "compress":
+            return self._compact_compress(history, messages_before)
+        elif strategy == "handoff":
+            return await self._compact_handoff(history, messages_before)
+        else:
+            raise PoorCLIError(f"Unknown compaction strategy: {strategy}")
+
+    async def _compact_summarize(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
+        """Summarize conversation in-place, re-seed provider."""
+        conversation_text = self._history_to_text(history)
+        if not conversation_text.strip():
+            return {"strategy": "compact", "summary": "(empty history)", "messages_before": messages_before, "messages_after": 0}
+        prompt = (
+            "Summarize the following conversation concisely. "
+            "Preserve key decisions, file paths, code changes, and current task state. "
+            "Output only the summary, no preamble.\n\n"
+            f"{conversation_text}"
+        )
+        response = await self.provider.send_message(prompt) # one-shot call outside the chat session
+        summary = response.content.strip() if response.content else "(no summary generated)"
+        await self.provider.clear_history()
+        if self.history_adapter:
+            self.history_adapter.clear_history()
+        await self.provider.send_message(f"[Context from previous conversation]\n{summary}") # inject summary as context
+        if self.history_adapter:
+            self.history_adapter.add_message("user", f"[Context from previous conversation]\n{summary}")
+        return {"strategy": "compact", "summary": summary, "messages_before": messages_before, "messages_after": 1}
+
+    def _compact_compress(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
+        """Strip tool calls/results, keep user+assistant text only."""
+        compressed = []
+        for msg in history:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role in ("system", "tool", "function"): # skip non-conversation messages
+                continue
+            if isinstance(content, list):
+                text_parts = []
+                for part in content:
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif "text" in part:
+                            text_parts.append(str(part["text"]))
+                    elif isinstance(part, str):
+                        text_parts.append(part)
+                content = "\n".join(text_parts)
+            if not content or not content.strip():
+                continue
+            parts = msg.get("parts") # gemini uses 'parts' key
+            if parts and not content:
+                text_parts = [p for p in parts if isinstance(p, str)]
+                content = "\n".join(text_parts)
+            if role == "model":
+                role = "assistant"
+            if role in ("user", "assistant"):
+                compressed.append({"role": role, "content": content})
+        self.provider.set_history(compressed)
+        if self.history_adapter:
+            self.history_adapter.clear_history()
+            for msg in compressed:
+                self.history_adapter.add_message(msg["role"], msg["content"])
+        return {"strategy": "compress", "summary": f"Kept {len(compressed)} text messages", "messages_before": messages_before, "messages_after": len(compressed)}
+
+    async def _compact_handoff(self, history: List[Dict[str, Any]], messages_before: int) -> Dict[str, Any]:
+        """Generate summary, start completely new session."""
+        conversation_text = self._history_to_text(history)
+        if not conversation_text.strip():
+            await self.clear_history()
+            return {"strategy": "handoff", "summary": "(empty history)", "messages_before": messages_before, "messages_after": 0}
+        prompt = (
+            "Create a handoff summary for a new conversation thread. Include:\n"
+            "- Current task and goal\n"
+            "- Key decisions made\n"
+            "- Files modified or relevant\n"
+            "- Open items or next steps\n"
+            "Be concise. Output only the summary.\n\n"
+            f"{conversation_text}"
+        )
+        response = await self.provider.send_message(prompt)
+        summary = response.content.strip() if response.content else "(no summary generated)"
+        await self.clear_history()
+        handoff_msg = f"[Handoff from previous session]\n{summary}" # seed new session with handoff context
+        await self.provider.send_message(handoff_msg)
+        if self.history_adapter:
+            self.history_adapter.add_message("user", handoff_msg)
+        return {"strategy": "handoff", "summary": summary, "messages_before": messages_before, "messages_after": 1}
+
+    def _history_to_text(self, history: List[Dict[str, Any]]) -> str:
+        """Convert history to readable text for summarization."""
+        lines = []
+        for msg in history:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                text_parts = []
+                for part in content:
+                    if isinstance(part, str):
+                        text_parts.append(part)
+                    elif isinstance(part, dict) and "text" in part:
+                        text_parts.append(str(part["text"]))
+                content = "\n".join(text_parts)
+            parts = msg.get("parts")
+            if parts and not content:
+                text_parts = [p for p in parts if isinstance(p, str)]
+                content = "\n".join(text_parts)
+            if content and content.strip():
+                lines.append(f"{role}: {content[:2000]}") # cap per message
+        return "\n\n".join(lines[-50:]) # last 50 messages max
+
     def get_history(self) -> List[Dict[str, Any]]:
         """
         Get conversation history in normalized format.

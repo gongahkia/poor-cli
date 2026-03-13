@@ -22,6 +22,8 @@ pub enum InputAction {
     PlanApproved,
     /// Plan cancelled.
     PlanCancelled,
+    /// Compact context strategy selected.
+    CompactStrategySelected(String),
 }
 
 /// Metadata for slash-command completion and palette rendering.
@@ -82,6 +84,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         command: "/new-session",
         description: "Start a fresh session",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/compact",
+        description: "Manage context (compact/compress/handoff)",
         recommended: true,
     },
     SlashCommandSpec {
@@ -593,6 +600,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
     match app.mode {
         AppMode::Normal | AppMode::Command => handle_key_normal(app, key),
         AppMode::ProviderSelect => handle_key_provider_select(app, key),
+        AppMode::CompactSelect => handle_key_compact_select(app, key),
         AppMode::InfoPopup => handle_key_info_popup(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
         AppMode::PlanReview => handle_key_plan_review(app, key),
@@ -739,6 +747,33 @@ fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputAction {
             let idx = app.provider_select_idx;
             app.mode = AppMode::Normal;
             InputAction::ProviderSelected(idx)
+        }
+        KeyCode::Esc => {
+            app.mode = AppMode::Normal;
+            InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_compact_select(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Up => {
+            if app.compact_select_idx > 0 {
+                app.compact_select_idx -= 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            if app.compact_select_idx + 1 < crate::app::COMPACT_STRATEGIES.len() {
+                app.compact_select_idx += 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Enter => {
+            let strategy = crate::app::COMPACT_STRATEGIES[app.compact_select_idx].0;
+            app.mode = AppMode::Normal;
+            InputAction::CompactStrategySelected(strategy.to_string())
         }
         KeyCode::Esc => {
             app.mode = AppMode::Normal;

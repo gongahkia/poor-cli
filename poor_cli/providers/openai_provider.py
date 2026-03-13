@@ -362,6 +362,13 @@ class OpenAIProvider(BaseProvider):
         """Get OpenAI conversation history"""
         return self.messages.copy()
 
+    def set_history(self, messages: List[Dict[str, Any]]) -> None:
+        if self.system_instruction:
+            self.messages = [{"role": "system", "content": self.system_instruction}]
+            self.messages.extend(messages)
+        else:
+            self.messages = list(messages)
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get OpenAI capabilities"""
         # Determine capabilities based on model

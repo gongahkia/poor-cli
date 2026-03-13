@@ -402,6 +402,16 @@ class GeminiProvider(BaseProvider):
             logger.error(f"Failed to get history: {e}")
             return []
 
+    def set_history(self, messages: List[Dict[str, Any]]) -> None:
+        if self._chat_config is None:
+            return
+        self.chat = self.client.chats.create(
+            model=self.model_name,
+            config=self._chat_config,
+        )
+        # re-seed by sending pairs; gemini manages history internally
+        # just clear and let the summary be sent as next user message
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Gemini capabilities."""
         return ProviderCapabilities(

@@ -966,6 +966,12 @@ impl RpcClient {
         Ok(())
     }
 
+    pub fn compact_context(&self, strategy: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("strategy".into(), Value::String(strategy.to_string()));
+        self.call("poor-cli/compactContext", Value::Object(params))
+    }
+
     pub fn list_sessions(&self, limit: u64) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
         params.insert("limit".into(), Value::Number(limit.into()));
@@ -1297,6 +1303,10 @@ pub enum RpcCommand {
     ClearHistory {
         reply: SyncSender<Result<(), String>>,
     },
+    CompactContext {
+        strategy: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
     ListSessions {
         limit: u64,
         reply: SyncSender<Result<Value, String>>,
@@ -1513,6 +1523,9 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ClearHistory { reply }) => {
                 let _ = reply.send(client.clear_history());
+            }
+            Ok(RpcCommand::CompactContext { strategy, reply }) => {
+                let _ = reply.send(client.compact_context(&strategy));
             }
             Ok(RpcCommand::ListSessions { limit, reply }) => {
                 let _ = reply.send(client.list_sessions(limit));

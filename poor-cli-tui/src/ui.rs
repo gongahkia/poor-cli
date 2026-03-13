@@ -67,6 +67,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::PlanReview {
         draw_plan_review(frame, app);
     }
+    if app.mode == AppMode::CompactSelect {
+        draw_compact_select(frame, app);
+    }
 }
 
 fn provider_short_label(app: &App) -> String {
@@ -932,6 +935,50 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
             .padding(Padding::new(0, 0, 0, 0)),
     );
     frame.render_widget(para, area);
+}
+
+// ── Compact select overlay ───────────────────────────────────────────
+
+fn draw_compact_select(frame: &mut Frame, app: &App) {
+    use crate::app::COMPACT_STRATEGIES;
+    let mode = app.theme_mode;
+    let area = frame.area();
+    let popup_width = 52.min(area.width.saturating_sub(4));
+    let popup_height = (COMPACT_STRATEGIES.len() as u16 + 4).min(area.height.saturating_sub(4));
+    let x = (area.width.saturating_sub(popup_width)) / 2;
+    let y = (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    frame.render_widget(Clear, popup_area);
+
+    let items: Vec<ListItem> = COMPACT_STRATEGIES
+        .iter()
+        .enumerate()
+        .map(|(i, (key, desc))| {
+            let marker = if i == app.compact_select_idx { "▸ " } else { "  " };
+            let style = if i == app.compact_select_idx {
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::base_fg(mode))
+            };
+            ListItem::new(Line::from(Span::styled(
+                format!("{marker}{key:<10} {desc}"),
+                style,
+            )))
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .title(" Context Strategy (↑/↓ Enter) ")
+            .title_style(Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD))
+            .padding(Padding::new(1, 1, 1, 0)),
+    );
+    frame.render_widget(list, popup_area);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

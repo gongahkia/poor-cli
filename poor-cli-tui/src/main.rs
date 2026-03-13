@@ -20,7 +20,7 @@ use ratatui::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use poor_cli_tui::app::{App, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
+use poor_cli_tui::app::{App, AppMode, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;
 use poor_cli_tui::helpers::{
@@ -864,6 +864,39 @@ fn run_app(
                     write_session_log(session_log.as_ref(), "plan_cancelled");
                     app.clear_plan();
                     app.set_status("Plan cancelled");
+                }
+                InputAction::CompactStrategySelected(strategy) => {
+                    app.set_status(format!("Applying context strategy: {strategy}..."));
+                    let rpc = rpc_cmd_tx.borrow().clone();
+                    let tx_clone = tx.clone();
+                    thread::spawn(move || {
+                        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+                        let _ = rpc.send(RpcCommand::CompactContext {
+                            strategy: strategy.clone(),
+                            reply: reply_tx,
+                        });
+                        match reply_rx.recv_timeout(Duration::from_secs(60)) {
+                            Ok(Ok(val)) => {
+                                let summary = val.get("summary").and_then(|v| v.as_str()).unwrap_or("done");
+                                let before = val.get("messages_before").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let after = val.get("messages_after").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let msg = format!(
+                                    "**Context {strategy}** applied: {before} -> {after} messages\n\n{summary}"
+                                );
+                                let _ = tx_clone.send(ServerMsg::SystemMessage { content: msg });
+                            }
+                            Ok(Err(e)) => {
+                                let _ = tx_clone.send(ServerMsg::SystemMessage {
+                                    content: format!("Context strategy failed: {e}"),
+                                });
+                            }
+                            Err(_) => {
+                                let _ = tx_clone.send(ServerMsg::SystemMessage {
+                                    content: "Context strategy timed out".into(),
+                                });
+                            }
+                        }
+                    });
                 }
                 InputAction::Redraw => {}
                 InputAction::None => {}
