@@ -76,6 +76,46 @@ pub(super) fn reconnect_to_remote_server(
     *rpc_cmd_tx = spawn_backend_worker(tx, launch.clone(), bridge_args, None, None, None);
 }
 
+/// Decode a base64url-encoded invite code, or fall back to raw pipe-delimited format.
+pub fn decode_invite_code(input: &str) -> Result<(String, String, String), String> {
+    // try pipe-delimited first
+    let parts: Vec<&str> = input.split('|').collect();
+    if parts.len() == 3 && parts[0].starts_with("ws") {
+        return Ok((parts[0].trim().to_string(), parts[1].trim().to_string(), parts[2].trim().to_string()));
+    }
+    // try base64url decode
+    let mut padded = input.to_string();
+    while padded.len() % 4 != 0 { padded.push('='); }
+    let decoded = base64_url_decode(&padded)
+        .map_err(|_| "Invalid invite code: not a valid base64 or pipe-delimited format.".to_string())?;
+    let text = String::from_utf8(decoded)
+        .map_err(|_| "Invalid invite code: decoded bytes are not valid UTF-8.".to_string())?;
+    let parts: Vec<&str> = text.split('|').collect();
+    if parts.len() != 3 {
+        return Err("Invalid invite code: expected url|room|token after decoding.".to_string());
+    }
+    Ok((parts[0].trim().to_string(), parts[1].trim().to_string(), parts[2].trim().to_string()))
+}
+
+fn base64_url_decode(input: &str) -> Result<Vec<u8>, ()> {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut lookup = [255u8; 256];
+    for (i, &c) in TABLE.iter().enumerate() { lookup[c as usize] = i as u8; }
+    // also accept + and / for standard base64
+    lookup[b'+' as usize] = 62;
+    lookup[b'/' as usize] = 63;
+    let bytes: Vec<u8> = input.bytes().filter(|&b| b != b'=').collect();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    for chunk in bytes.chunks(4) {
+        let vals: Vec<u8> = chunk.iter().map(|&b| lookup[b as usize]).collect();
+        if vals.iter().any(|&v| v == 255) { return Err(()); }
+        if vals.len() >= 2 { out.push((vals[0] << 2) | (vals[1] >> 4)); }
+        if vals.len() >= 3 { out.push((vals[1] << 4) | (vals[2] >> 2)); }
+        if vals.len() >= 4 { out.push((vals[2] << 6) | vals[3]); }
+    }
+    Ok(out)
+}
+
 pub(super) fn parse_join_server_args(raw: &str) -> Result<(String, String, String), String> {
     let usage = "Usage: /join-server\n       /join-server <invite-code>\n       /join-server <ws-url> <room> <token>\n       /join-server cancel";
     let args = raw
@@ -90,15 +130,10 @@ pub(super) fn parse_join_server_args(raw: &str) -> Result<(String, String, Strin
     }
 
     let (url, room, token) = if args.len() == 1 {
-        let parts = args[0].split('|').collect::<Vec<_>>();
-        if parts.len() != 3 {
-            return Err(usage.to_string());
+        match decode_invite_code(args[0]) {
+            Ok(tuple) => tuple,
+            Err(e) => return Err(format!("{e}\n{usage}")),
         }
-        (
-            parts[0].trim().to_string(),
-            parts[1].trim().to_string(),
-            parts[2].trim().to_string(),
-        )
     } else if args.len() == 3 {
         (
             args[0].to_string(),
@@ -163,7 +198,7 @@ fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
     Ok((authority.to_string(), default_port))
 }
 
-pub(super) fn preflight_join_endpoint(url: &str) -> Result<String, String> {
+pub fn preflight_join_endpoint(url: &str) -> Result<String, String> {
     let (host, port) = ws_url_host_port(url)?;
     let addr_text = format!("{host}:{port}");
     let mut addrs = addr_text

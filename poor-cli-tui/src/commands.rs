@@ -2145,6 +2145,62 @@ Context Window: {max_context} tokens\n\n\
     // ── Pair mode commands ─────────────────────────────────────────────
     if lowered == "/pair" || lowered.starts_with("/pair ") {
         let args: Vec<&str> = raw.split_whitespace().collect();
+        // pair host subcommands: /pair status, /pair members, /pair kick, /pair share
+        if args.len() >= 2 && app.pair_mode_active && app.pair_is_host {
+            let sub = args[1].to_ascii_lowercase();
+            match sub.as_str() {
+                "status" => {
+                    match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                        Ok(payload) => show_command_info_popup(app, raw, format_host_server_payload(&payload)),
+                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch status: {e}"))),
+                    }
+                    return false;
+                }
+                "members" | "who" => {
+                    let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
+                    match rpc_list_room_members_blocking(rpc_cmd_tx, room) {
+                        Ok(payload) => show_command_info_popup(app, raw, format_room_members_payload(&payload)),
+                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch members: {e}"))),
+                    }
+                    return false;
+                }
+                "kick" => {
+                    if args.len() < 3 {
+                        show_command_info_popup(app, raw, "Usage: /pair kick <connection-id|number>".to_string());
+                        return false;
+                    }
+                    let target = args[2];
+                    let cid = if let Ok(num) = target.parse::<usize>() {
+                        if num >= 1 && num <= app.connected_users.len() {
+                            app.connected_users[num - 1].connection_id.clone()
+                        } else {
+                            show_command_info_popup(app, raw, format!("Invalid user number. Use 1-{}.", app.connected_users.len()));
+                            return false;
+                        }
+                    } else {
+                        target.to_string()
+                    };
+                    let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
+                    match rpc_kick_member_blocking(rpc_cmd_tx, &cid, room) {
+                        Ok(_) => show_command_info_popup(app, raw, format!("Kicked `{cid}` from session.")),
+                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to kick: {e}"))),
+                    }
+                    return false;
+                }
+                "share" => {
+                    match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                        Ok(payload) => {
+                            let role = args.get(2).copied();
+                            let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
+                            show_command_info_popup(app, raw, format_host_share_payload(&payload, role, room));
+                        }
+                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch share info: {e}"))),
+                    }
+                    return false;
+                }
+                _ => {} // fall through to normal /pair logic
+            }
+        }
         if args.len() == 1 {
             // host mode: start pair session
             let lobby = false;
@@ -2175,7 +2231,7 @@ Context Window: {max_context} tokens\n\n\
                     )));
                     app.set_status(format!("Pair session: {short_code}"));
                 }
-                Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}"))),
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}\nCheck that no other session is running. Try /leave first."))),
             }
             return false;
         }
@@ -2208,23 +2264,25 @@ Context Window: {max_context} tokens\n\n\
                         "Pair session started (lobby mode)! Room: {short_code}\nInvite code copied to clipboard."
                     )));
                 }
-                Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}"))),
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}\nCheck that no other session is running. Try /leave first."))),
             }
             return false;
         }
         // join mode: /pair <invite-code>
         let invite = args[1];
-        let parts: Vec<&str> = invite.split('|').collect();
-        if parts.len() != 3 {
-            show_command_info_popup(
-                app,
-                raw,
-                "Invalid invite code format.\nExpected: `ws://host:port/rpc|room|token`\nUse `/pair` to host, or paste the invite code from the host.".to_string(),
-            );
-            return false;
-        }
-        let (url, room, token) = (parts[0], parts[1], parts[2]);
-        if let Err(e) = multiplayer::preflight_join_endpoint(url) {
+        let (url, room, token) = match multiplayer::decode_invite_code(invite) {
+            Ok((u, r, t)) => (u, r, t),
+            Err(e) => {
+                show_command_info_popup(
+                    app,
+                    raw,
+                    format!("{e}\nUse `/pair` to host, or paste the invite code from the host."),
+                );
+                return false;
+            }
+        };
+        app.set_status("Connecting to endpoint...");
+        if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
             app.push_message(ChatMessage::error(format!(
                 "Join preflight failed: {e}\nCheck the invite code and try again."
             )));
@@ -2232,10 +2290,10 @@ Context Window: {max_context} tokens\n\n\
         }
         app.pair_mode_active = true;
         app.pair_is_host = false;
-        app.pair_short_code = room.to_string();
-        app.multiplayer_room = room.to_string();
+        app.pair_short_code = room.clone();
+        app.multiplayer_room = room.clone();
         app.multiplayer_role = "viewer".to_string();
-        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, url, room, token);
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
         app.push_message(ChatMessage::system(format!("Joining pair session: {room}")));
         return false;
     }
@@ -2244,7 +2302,17 @@ Context Window: {max_context} tokens\n\n\
         let args: Vec<&str> = raw.split_whitespace().collect();
         let (display_name, connection_id): (Option<String>, Option<String>) = if args.len() > 1 {
             let target = args[1..].join(" ");
-            if target.starts_with('@') {
+            if let Ok(num) = target.parse::<usize>() { // numeric index from presence bar
+                if num >= 1 && num <= app.connected_users.len() {
+                    (None, Some(app.connected_users[num - 1].connection_id.clone()))
+                } else {
+                    app.push_message(ChatMessage::error(format!(
+                        "Invalid user number {num}. Use 1-{} per the presence bar.",
+                        app.connected_users.len()
+                    )));
+                    return false;
+                }
+            } else if target.starts_with('@') {
                 (Some(target[1..].to_string()), None)
             } else {
                 (Some(target.clone()), None)
@@ -2259,7 +2327,7 @@ Context Window: {max_context} tokens\n\n\
                 app.push_message(ChatMessage::system(format!("Driver role passed to `{target_id}`.")));
                 app.set_status("Driver role handed off");
             }
-            Err(e) => app.push_message(ChatMessage::error(format!("Failed to pass driver: {e}"))),
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to pass driver: {e}\nEnsure you are the driver. Use /who to check roles."))),
         }
         return false;
     }
@@ -2272,7 +2340,7 @@ Context Window: {max_context} tokens\n\n\
         }
         match rpc_suggest_text_blocking(rpc_cmd_tx, text) {
             Ok(_) => app.set_status("Suggestion sent"),
-            Err(e) => app.push_message(ChatMessage::error(format!("Suggest failed: {e}"))),
+            Err(e) => app.push_message(ChatMessage::error(format!("Suggest failed: {e}\nEnsure you are connected to a pair session."))),
         }
         return false;
     }
@@ -2285,7 +2353,7 @@ Context Window: {max_context} tokens\n\n\
         if app.pair_is_host {
             match rpc_stop_host_server_blocking(rpc_cmd_tx) {
                 Ok(_) => app.push_message(ChatMessage::system("Pair session stopped.".to_string())),
-                Err(e) => app.push_message(ChatMessage::error(format!("Failed to stop pair session: {e}"))),
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to stop pair session: {e}\nThe session may have already ended."))),
             }
         } else {
             app.push_message(ChatMessage::system("Disconnected from pair session.".to_string()));
@@ -2304,12 +2372,9 @@ Context Window: {max_context} tokens\n\n\
             app.join_wizard_step = 0;
             app.join_wizard_url.clear();
             app.join_wizard_room.clear();
-            show_command_info_popup(
-                app,
-                raw,
-                "**Join wizard started**\n\nStep 1/3: Enter WebSocket URL (ws://HOST:PORT/rpc or wss://...)\nUse `/join-server cancel` to abort."
-                    .to_string(),
-            );
+            app.join_wizard_input.clear();
+            app.join_wizard_error.clear();
+            app.mode = AppMode::JoinWizard;
             return false;
         }
 
@@ -2335,6 +2400,7 @@ Context Window: {max_context} tokens\n\n\
             }
         };
 
+        app.set_status("Connecting to endpoint...");
         if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
             app.push_message(ChatMessage::error(format!(
                 "Join preflight failed: {e}\nUse `/join-server` for wizard mode."
@@ -2381,7 +2447,7 @@ Context Window: {max_context} tokens\n\n\
                 );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
-                "Failed to kick `{connection_id}`: {e}"
+                "Failed to kick `{connection_id}`: {e}\nUse /who to verify the connection-id."
             ))),
         }
         return false;
@@ -2409,7 +2475,7 @@ Context Window: {max_context} tokens\n\n\
         match rpc_list_room_members_blocking(rpc_cmd_tx, room) {
             Ok(payload) => show_command_info_popup(app, raw, format_room_members_payload(&payload)),
             Err(e) => app.push_message(ChatMessage::error(format!(
-                "Failed to fetch room members: {e}"
+                "Failed to fetch room members: {e}\nEnsure a multiplayer session is active."
             ))),
         }
         return false;
@@ -2431,7 +2497,7 @@ Context Window: {max_context} tokens\n\n\
                     show_command_info_popup(app, raw, format_host_server_payload(&payload))
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!(
-                    "Failed to fetch host server status: {e}"
+                    "Failed to fetch host server status: {e}\nUse /host-server to start a server first."
                 ))),
             }
             return false;

@@ -90,6 +90,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::CompactSelect {
         draw_compact_select(frame, app);
     }
+    if app.mode == AppMode::JoinWizard {
+        draw_join_wizard(frame, app);
+    }
 }
 
 fn provider_short_label(app: &App) -> String {
@@ -289,6 +292,11 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
         if i > 0 {
             spans.push(Span::styled(" · ", Style::default().fg(dim)));
         }
+        spans.push(Span::styled(
+            format!("{}", i + 1),
+            Style::default().fg(dim),
+        ));
+        spans.push(Span::styled(" ", Style::default()));
         let role_color = match user.role {
             crate::app::PairRole::Driver => theme::success(mode),
             crate::app::PairRole::Navigator => theme::accent(mode),
@@ -301,6 +309,12 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
             format!(" {}", user.name),
             Style::default().fg(theme::base_fg(mode)),
         ));
+        if user.is_active {
+            spans.push(Span::styled(
+                " ●",
+                Style::default().fg(theme::accent(mode)),
+            ));
+        }
     }
     if app.multiplayer_queue_depth > 0 {
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
@@ -634,10 +648,18 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(theme::warning(mode)),
         )]
     } else if let Some(suggestion) = app.latest_suggestion() {
+        let remaining = crate::app::SUGGESTION_HINT_TTL
+            .checked_sub(suggestion.received_at.elapsed())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         vec![
             Span::styled(
                 format!("  [{}]: {}", suggestion.sender, suggestion.text),
                 Style::default().fg(theme::accent(mode)),
+            ),
+            Span::styled(
+                format!(" ({remaining}s)"),
+                Style::default().fg(theme::muted_fg(mode)),
             ),
         ]
     } else if app.mode == AppMode::InfoPopup {
@@ -652,6 +674,13 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": fast scroll", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::JoinWizard {
+        vec![
+            Span::styled("  Enter", Style::default().fg(theme::accent(mode))),
+            Span::styled(": confirm  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
         ]
     } else if app.mode == AppMode::Command {
         // Show matching commands
@@ -1095,6 +1124,70 @@ fn draw_compact_select(frame: &mut Frame, app: &App) {
             .padding(Padding::new(1, 1, 1, 0)),
     );
     frame.render_widget(list, popup_area);
+}
+
+// ── Join wizard overlay ──────────────────────────────────────────────
+
+fn draw_join_wizard(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(55, 30, frame.area());
+    frame.render_widget(Clear, area);
+    let step = app.join_wizard_step;
+    let (step_label, prompt) = match step {
+        0 => ("1/3", "WebSocket URL (ws://host:port/rpc)"),
+        1 => ("2/3", "Room name"),
+        _ => ("3/3", "Invite token"),
+    };
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  Join Server — Step {step_label}"),
+            Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  {prompt}:"),
+            Style::default().fg(theme::base_fg(mode)),
+        )),
+        Line::from(Span::styled(
+            format!("  > {}_", app.join_wizard_input),
+            Style::default().fg(theme::accent(mode)),
+        )),
+    ];
+    if !app.join_wizard_error.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("  ⚠ {}", app.join_wizard_error),
+            Style::default().fg(theme::error(mode)),
+        )));
+    }
+    if step > 0 {
+        lines.push(Line::from(""));
+        if !app.join_wizard_url.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("  URL: {}", app.join_wizard_url),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+        if step > 1 && !app.join_wizard_room.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("  Room: {}", app.join_wizard_room),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+    }
+    lines.push(Line::from(""));
+    let popup = Paragraph::new(lines).block(
+        Block::default()
+            .title(Span::styled(
+                " Join Server ",
+                Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(popup, area);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

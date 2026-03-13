@@ -26,6 +26,8 @@ pub enum InputAction {
     CompactStrategySelected(String),
     /// Copy text to clipboard.
     CopyToClipboard(String),
+    /// Join wizard completed with (url, room, token).
+    JoinWizardComplete(String, String, String),
 }
 
 /// Metadata for slash-command completion and palette rendering.
@@ -105,7 +107,7 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     },
     SlashCommandSpec {
         command: "/pair",
-        description: "Start or join a pair session",
+        description: "Start/join pair (status|members|kick|share when host)",
         recommended: true,
     },
     SlashCommandSpec {
@@ -631,6 +633,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         AppMode::InfoPopup => handle_key_info_popup(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
         AppMode::PlanReview => handle_key_plan_review(app, key),
+        AppMode::JoinWizard => handle_key_join_wizard(app, key),
         AppMode::Quitting => InputAction::Quit,
     }
 }
@@ -870,6 +873,86 @@ fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
         KeyCode::Home => {
             app.info_popup_scroll = 0;
             InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Esc => {
+            app.join_wizard_active = false;
+            app.join_wizard_step = 0;
+            app.join_wizard_url.clear();
+            app.join_wizard_room.clear();
+            app.join_wizard_input.clear();
+            app.join_wizard_error.clear();
+            app.mode = AppMode::Normal;
+            InputAction::Redraw
+        }
+        KeyCode::Char(c) => {
+            app.join_wizard_input.push(c);
+            app.join_wizard_error.clear();
+            InputAction::Redraw
+        }
+        KeyCode::Backspace => {
+            app.join_wizard_input.pop();
+            InputAction::Redraw
+        }
+        KeyCode::Enter => {
+            let input = app.join_wizard_input.trim().to_string();
+            match app.join_wizard_step {
+                0 => { // URL step
+                    if input.is_empty() || !(input.starts_with("ws://") || input.starts_with("wss://")) {
+                        app.join_wizard_error = "URL must start with ws:// or wss://".to_string();
+                        return InputAction::Redraw;
+                    }
+                    match crate::multiplayer::preflight_join_endpoint(&input) {
+                        Ok(_) => {
+                            app.join_wizard_url = input;
+                            app.join_wizard_input.clear();
+                            app.join_wizard_error.clear();
+                            app.join_wizard_step = 1;
+                        }
+                        Err(e) => {
+                            app.join_wizard_error = format!("Preflight failed: {e}");
+                        }
+                    }
+                    InputAction::Redraw
+                }
+                1 => { // room step
+                    if input.is_empty() {
+                        app.join_wizard_error = "Room name cannot be empty.".to_string();
+                        return InputAction::Redraw;
+                    }
+                    app.join_wizard_room = input;
+                    app.join_wizard_input.clear();
+                    app.join_wizard_error.clear();
+                    app.join_wizard_step = 2;
+                    InputAction::Redraw
+                }
+                2 => { // token step
+                    if input.is_empty() {
+                        app.join_wizard_error = "Token cannot be empty.".to_string();
+                        return InputAction::Redraw;
+                    }
+                    let url = app.join_wizard_url.clone();
+                    let room = app.join_wizard_room.clone();
+                    let token = input;
+                    app.join_wizard_active = false;
+                    app.join_wizard_step = 0;
+                    app.join_wizard_url.clear();
+                    app.join_wizard_room.clear();
+                    app.join_wizard_input.clear();
+                    app.join_wizard_error.clear();
+                    app.mode = AppMode::Normal;
+                    InputAction::JoinWizardComplete(url, room, token)
+                }
+                _ => {
+                    app.mode = AppMode::Normal;
+                    InputAction::Redraw
+                }
+            }
         }
         _ => InputAction::None,
     }

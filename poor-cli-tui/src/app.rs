@@ -30,6 +30,7 @@ pub struct PairUser {
     pub name: String,
     pub connection_id: String,
     pub role: PairRole,
+    pub is_active: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +133,7 @@ pub enum AppMode {
     PermissionPrompt,
     PlanReview,
     CompactSelect,
+    JoinWizard,
     Quitting,
 }
 
@@ -399,6 +401,8 @@ pub struct App {
     pub join_wizard_step: u8,
     pub join_wizard_url: String,
     pub join_wizard_room: String,
+    pub join_wizard_input: String,
+    pub join_wizard_error: String,
     pub autopilot_enabled: bool,
     pub last_command_output: Option<String>,
     pub execution_profile: String,
@@ -443,6 +447,9 @@ pub struct App {
     pub compact_select_idx: usize,
     pub welcome_anim_tick: usize,
     pub welcome_anim_active: bool,
+
+    // ── Reconnect message tracking ───
+    pub reconnect_message_idx: Option<usize>,
 
     // ── Pair mode state ───
     pub pair_mode_active: bool,
@@ -501,6 +508,8 @@ impl Default for App {
             join_wizard_step: 0,
             join_wizard_url: String::new(),
             join_wizard_room: String::new(),
+            join_wizard_input: String::new(),
+            join_wizard_error: String::new(),
             autopilot_enabled: false,
             last_command_output: None,
             execution_profile: "safe".to_string(),
@@ -539,6 +548,7 @@ impl Default for App {
             compact_select_idx: 0,
             welcome_anim_tick: 0,
             welcome_anim_active: true,
+            reconnect_message_idx: None,
             pair_mode_active: false,
             pair_short_code: String::new(),
             pair_invite_code: String::new(),

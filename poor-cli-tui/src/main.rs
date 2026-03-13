@@ -923,6 +923,11 @@ fn run_app(
                         }
                     });
                 }
+                InputAction::JoinWizardComplete(url, room, token) => {
+                    multiplayer::reconnect_to_remote_server(
+                        app, &tx, &mut rpc_cmd_tx.borrow_mut(), &launch, &url, &room, &token,
+                    );
+                }
                 InputAction::CopyToClipboard(text) => {
                     match copy_to_clipboard(&text) {
                         Ok(()) => {
@@ -986,66 +991,7 @@ fn handle_submit(
         &format!("submit_dispatch kind={submit_kind} chars={}", trimmed.len()),
     );
 
-    if app.join_wizard_active && !trimmed.starts_with('/') {
-        match app.join_wizard_step {
-            0 => {
-                match multiplayer::preflight_join_endpoint(trimmed) {
-                    Ok(ok_message) => {
-                        app.join_wizard_url = trimmed.to_string();
-                        app.join_wizard_step = 1;
-                        app.push_message(ChatMessage::system(format!(
-                            "{ok_message}\n\nStep 2/3: Enter room name."
-                        )));
-                    }
-                    Err(e) => {
-                        app.push_message(ChatMessage::error(format!(
-                            "Join preflight failed: {e}\nRe-enter WebSocket URL (ws:// or wss://), or run `/join-server cancel`."
-                        )));
-                    }
-                }
-                return false;
-            }
-            1 => {
-                if trimmed.is_empty() {
-                    app.push_message(ChatMessage::system(
-                        "Room name cannot be empty. Enter room name, or `/join-server cancel`."
-                            .to_string(),
-                    ));
-                    return false;
-                }
-                app.join_wizard_room = trimmed.to_string();
-                app.join_wizard_step = 2;
-                app.push_message(ChatMessage::system(
-                    "Step 3/3: Enter invite token.".to_string(),
-                ));
-                return false;
-            }
-            2 => {
-                if trimmed.is_empty() {
-                    app.push_message(ChatMessage::system(
-                        "Invite token cannot be empty. Enter token, or `/join-server cancel`."
-                            .to_string(),
-                    ));
-                    return false;
-                }
-                let url = app.join_wizard_url.clone();
-                let room = app.join_wizard_room.clone();
-                let token = trimmed.to_string();
-                app.join_wizard_active = false;
-                app.join_wizard_step = 0;
-                app.join_wizard_url.clear();
-                app.join_wizard_room.clear();
-                multiplayer::reconnect_to_remote_server(
-                    app, tx, rpc_cmd_tx, launch, &url, &room, &token,
-                );
-                return false;
-            }
-            _ => {
-                app.join_wizard_active = false;
-                app.join_wizard_step = 0;
-            }
-        }
-    }
+    // join wizard is now handled via AppMode::JoinWizard popup (see input.rs)
 
     if let Some(prompt_name) = app.pending_prompt_save_name.clone() {
         if !trimmed.starts_with('/') {
@@ -2038,7 +1984,7 @@ fn format_host_server_payload(payload: &Value) -> String {
         lines.push(format!("LAN share URL: `{share_ws}`"));
         if bind_host == "0.0.0.0" && share_ws.contains("127.0.0.1") {
             lines.push(
-                "LAN IP detection fell back to localhost. Replace `127.0.0.1` with your LAN IP before sharing."
+                "**⚠ ACTION REQUIRED:** LAN IP detection fell back to localhost. Replace `127.0.0.1` with your actual LAN IP before sharing."
                     .to_string(),
             );
         }

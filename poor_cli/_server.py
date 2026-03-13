@@ -6,6 +6,7 @@ This module is the internal implementation. Import from `poor_cli.server` instea
 
 import argparse
 import asyncio
+import base64
 from collections import deque
 import contextlib
 import copy
@@ -28,6 +29,10 @@ from urllib.request import Request, urlopen
 
 from .config import PermissionMode
 from .core import PoorCLICore, CoreEvent
+
+def _encode_invite(raw: str) -> str:
+    """Base64url-encode a pipe-delimited invite code for compact sharing."""
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 from .exceptions import (
     ConfigurationError,
     PoorCLIError,
@@ -1853,13 +1858,13 @@ class PoorCLIServer:
                         f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
                         f"--remote-token {viewer_token}"
                     )
-                    viewer_invite_code = f"{join_ws_url}|{room_name}|{viewer_token}"
+                    viewer_invite_code = _encode_invite(f"{join_ws_url}|{room_name}|{viewer_token}")
                 if prompter_token:
                     prompter_join_command = (
                         f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
                         f"--remote-token {prompter_token}"
                     )
-                    prompter_invite_code = f"{join_ws_url}|{room_name}|{prompter_token}"
+                    prompter_invite_code = _encode_invite(f"{join_ws_url}|{room_name}|{prompter_token}")
 
             rooms.append(
                 {
@@ -2328,7 +2333,7 @@ class PoorCLIServer:
                 join_command = (
                     f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} --remote-token {token}"
                 )
-                invite_code = f"{join_ws_url}|{room_name}|{token}"
+                invite_code = _encode_invite(f"{join_ws_url}|{room_name}|{token}")
 
             return {
                 "success": True,
@@ -2447,7 +2452,7 @@ class PoorCLIServer:
                 viewer_token = role_tokens.get("token", "")
             elif isinstance(role_tokens, list) and role_tokens:
                 viewer_token = role_tokens[0].get("token", "") if isinstance(role_tokens[0], dict) else str(role_tokens[0])
-        invite_code = f"{ws_url}|{short_code}|{viewer_token}"
+        invite_code = _encode_invite(f"{ws_url}|{short_code}|{viewer_token}")
         if lobby:
             try:
                 await self.handle_set_host_lobby({"enabled": True, "room": short_code})

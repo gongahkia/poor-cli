@@ -25,6 +25,7 @@ pub(super) fn handle_server_message(
             state.0 = 0;
             state.1 = None;
             state.2 = false;
+            app.reconnect_message_idx = None;
             app.provider_name = provider;
             app.model_name = model;
             app.version = version;
@@ -134,15 +135,24 @@ pub(super) fn handle_server_message(
                     state.0 += 1;
                     state.1 = Some(std::time::Instant::now() + Duration::from_secs(delay_secs));
                     state.2 = true;
-                    app.push_message(ChatMessage::system(format!(
+                    let reconnect_text = format!(
                         "Multiplayer connection lost. Reconnecting in {delay_secs}s (attempt {}/{max_remote_reconnect_attempts}).",
                         state.0
-                    )));
+                    );
+                    if let Some(idx) = app.reconnect_message_idx {
+                        if let Some(msg) = app.messages.get_mut(idx) {
+                            msg.content = reconnect_text; // update in-place
+                        }
+                    } else {
+                        app.push_message(ChatMessage::system(reconnect_text));
+                        app.reconnect_message_idx = Some(app.messages.len() - 1);
+                    }
                     app.set_status("Scheduling multiplayer reconnect");
                 } else if state.2 {
                     state.2 = false;
+                    app.reconnect_message_idx = None;
                     app.push_message(ChatMessage::error(format!(
-                        "Auto-reconnect exhausted after {max_remote_reconnect_attempts} attempts: {message}"
+                        "Auto-reconnect exhausted after {max_remote_reconnect_attempts} attempts: {message}\nCheck network, then retry with `/join-server` or `/pair <code>`."
                     )));
                 }
             }
@@ -361,10 +371,12 @@ pub(super) fn handle_server_message(
                         let cid = entry.get("connectionId").and_then(|v| v.as_str()).unwrap_or("unknown");
                         let r = entry.get("role").and_then(|v| v.as_str()).unwrap_or("viewer");
                         let name = entry.get("clientName").and_then(|v| v.as_str()).unwrap_or(cid);
+                        let active = entry.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
                         pair_users.push(poor_cli_tui::app::PairUser {
                             name: name.to_string(),
                             connection_id: cid.to_string(),
                             role: poor_cli_tui::app::PairRole::from_wire(r),
+                            is_active: active,
                         });
                     }
                     app.connected_users = pair_users;
