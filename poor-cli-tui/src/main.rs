@@ -679,6 +679,8 @@ fn run_app(
     let mut watch_state = WatchState::default();
     let mut qa_watch_state = QaWatchState::default();
     let remote_reconnect_state = RefCell::new((0u32, None::<std::time::Instant>, false));
+    let tx_for_queue = tx.clone();
+    let cancel_for_queue = cancel_token.clone();
 
     app_event::run_event_loop(
         terminal,
@@ -710,14 +712,22 @@ fn run_app(
             Ok(LoopControl::Continue)
         },
         |app, msg| {
-            handler::handle_server_message(
+            let result = handler::handle_server_message(
                 app,
                 msg,
                 &rpc_cmd_tx,
                 &remote_reconnect_state,
                 MAX_REMOTE_RECONNECT_ATTEMPTS,
                 session_log.as_ref(),
-            )
+            )?;
+            // auto-dispatch next queued prompt when AI finishes
+            if !app.waiting && !app.prompt_queue.is_empty() && app.plan_steps.is_empty() {
+                dispatch_next_queued_prompt(
+                    app, &tx_for_queue, &rpc_cmd_tx.borrow(),
+                    &cancel_for_queue, session_log.as_ref(),
+                );
+            }
+            Ok(result)
         },
         |app, input_action| {
             match input_action {
@@ -926,6 +936,13 @@ fn handle_submit(
 ) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty() {
+        return false;
+    }
+
+    // auto-queue non-slash input while AI is working
+    if app.waiting && !trimmed.starts_with('/') && !trimmed.starts_with('!') {
+        app.prompt_queue.push_back(trimmed.to_string());
+        app.set_status(format!("Queued prompt ({} in queue)", app.prompt_queue.len()));
         return false;
     }
 
@@ -1215,6 +1232,29 @@ fn send_chat_request(
             }
         }
     });
+}
+
+fn dispatch_next_queued_prompt(
+    app: &mut App,
+    tx: &mpsc::Sender<ServerMsg>,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    cancel_token: &Arc<AtomicBool>,
+    session_log: Option<&SessionLogWriter>,
+) {
+    if app.waiting || app.prompt_queue.is_empty() || !app.plan_steps.is_empty() {
+        return;
+    }
+    if let Some(next_prompt) = app.prompt_queue.pop_front() {
+        let remaining = app.prompt_queue.len();
+        app.push_message(ChatMessage::system(
+            format!("[queue] auto-sending next prompt ({remaining} remaining)")
+        ));
+        let backend_msg = apply_response_mode_to_user_input(app.response_mode, &next_prompt);
+        send_chat_request(
+            app, tx, rpc_cmd_tx, cancel_token,
+            backend_msg, next_prompt, session_log,
+        );
+    }
 }
 
 const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
