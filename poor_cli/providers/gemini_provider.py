@@ -45,7 +45,7 @@ class GeminiProvider(BaseProvider):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.0-flash-exp",
+        model_name: str = "gemini-2.0-flash",
         max_retries: int = 3,
         retry_delay: float = 1.0,
         timeout: float = 60.0,

@@ -521,7 +521,7 @@ class PoorCLIServer:
             info = ProviderFactory.get_provider_info(name) or {}
             # Provide default model suggestions per provider
             model_suggestions: Dict[str, list] = {
-                "gemini": ["gemini-2.0-flash-exp", "gemini-1.5-pro"],
+                "gemini": ["gemini-2.0-flash", "gemini-1.5-pro"],
                 "openai": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
                 "anthropic": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
                 "claude": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],

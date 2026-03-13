@@ -24,6 +24,8 @@ pub enum InputAction {
     PlanCancelled,
     /// Compact context strategy selected.
     CompactStrategySelected(String),
+    /// Copy text to clipboard.
+    CopyToClipboard(String),
 }
 
 /// Metadata for slash-command completion and palette rendering.
@@ -808,11 +810,46 @@ fn handle_key_compact_select(app: &mut App, key: KeyEvent) -> InputAction {
     }
 }
 
+fn extract_copyable_items(content: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    for part in content.split('`') {
+        // backtick-delimited: odd-indexed splits are inside backticks
+        if items.len() % 2 == 0 {
+            items.push(part.to_string()); // outside backtick — placeholder
+        } else {
+            items.push(part.to_string()); // inside backtick — copyable
+        }
+    }
+    // keep only the odd-indexed (inside-backtick) entries, skip empty/trivial
+    content.split('`')
+        .enumerate()
+        .filter(|(i, s)| i % 2 == 1 && !s.trim().is_empty())
+        .map(|(_, s)| s.to_string())
+        .collect()
+}
+
 fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
             app.close_info_popup();
             InputAction::Redraw
+        }
+        KeyCode::Char('c') | KeyCode::Char('C') => {
+            let items = extract_copyable_items(&app.info_popup_content);
+            if !items.is_empty() {
+                InputAction::CopyToClipboard(items.join("\n"))
+            } else {
+                InputAction::CopyToClipboard(app.info_popup_content.clone())
+            }
+        }
+        KeyCode::Char(ch) if ch.is_ascii_digit() && ch != '0' => {
+            let idx = (ch as usize) - ('1' as usize);
+            let items = extract_copyable_items(&app.info_popup_content);
+            if let Some(item) = items.get(idx) {
+                InputAction::CopyToClipboard(item.clone())
+            } else {
+                InputAction::None
+            }
         }
         KeyCode::Up => {
             app.scroll_info_popup_up(1);

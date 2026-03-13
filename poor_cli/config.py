@@ -37,7 +37,7 @@ class ProviderConfig:
 class ModelConfig:
     """Configuration for AI model settings"""
     provider: str = "gemini"  # Active provider: gemini, openai, anthropic, ollama
-    model_name: str = "gemini-2.0-flash-exp"
+    model_name: str = "gemini-2.0-flash"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
     top_p: float = 0.95
@@ -48,7 +48,7 @@ class ModelConfig:
         "gemini": ProviderConfig(
             name="gemini",
             api_key_env_var="GEMINI_API_KEY",
-            default_model="gemini-2.0-flash-exp"
+            default_model="gemini-2.0-flash"
         ),
         "openai": ProviderConfig(
             name="openai",

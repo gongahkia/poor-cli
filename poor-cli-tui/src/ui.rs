@@ -644,6 +644,10 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
         vec![
             Span::styled("  Esc/Enter", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": close  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("c", Style::default().fg(theme::accent(mode))),
+            Span::styled(": copy all  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("1-9", Style::default().fg(theme::accent(mode))),
+            Span::styled(": copy item  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
@@ -869,6 +873,32 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
     frame.render_widget(list, area);
 }
 
+fn annotate_copyable_items(content: &str) -> String {
+    let parts: Vec<&str> = content.split('`').collect();
+    if parts.len() < 3 { return content.to_string(); } // no backtick pairs
+    let mut result = String::with_capacity(content.len() + 64);
+    let mut copy_idx = 0usize;
+    for (i, part) in parts.iter().enumerate() {
+        if i % 2 == 1 && !part.trim().is_empty() {
+            copy_idx += 1;
+            if copy_idx <= 9 {
+                result.push_str(&format!("[{copy_idx}]`{part}`"));
+            } else {
+                result.push('`');
+                result.push_str(part);
+                result.push('`');
+            }
+        } else if i % 2 == 1 {
+            result.push('`');
+            result.push_str(part);
+            result.push('`');
+        } else {
+            result.push_str(part);
+        }
+    }
+    result
+}
+
 fn draw_info_popup(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(72, 72, frame.area());
@@ -880,7 +910,8 @@ fn draw_info_popup(frame: &mut Frame, app: &App) {
         app.info_popup_title.as_str()
     };
 
-    let markdown_lines = markdown::render_markdown(&app.info_popup_content, mode);
+    let annotated = annotate_copyable_items(&app.info_popup_content);
+    let markdown_lines = markdown::render_markdown(&annotated, mode);
     let popup = Paragraph::new(Text::from(markdown_lines))
         .wrap(Wrap { trim: false })
         .scroll((app.info_popup_scroll, 0))

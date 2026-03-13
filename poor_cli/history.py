@@ -111,7 +111,7 @@ class Session:
     ended_at: Optional[str] = None
     messages: List[Message] = None
     total_tokens: int = 0
-    model: str = "gemini-2.0-flash-exp"
+    model: str = "gemini-2.0-flash"
 
     def __post_init__(self):
         if self.messages is None:
@@ -217,7 +217,7 @@ class HistoryManager:
                         started_at TEXT NOT NULL,
                         ended_at TEXT,
                         total_tokens INTEGER DEFAULT 0,
-                        model TEXT DEFAULT 'gemini-2.0-flash-exp',
+                        model TEXT DEFAULT 'gemini-2.0-flash',
                         archived INTEGER DEFAULT 0
                     )
                 """)
@@ -284,7 +284,7 @@ class HistoryManager:
         except Exception as e:
             raise FileOperationError(f"Failed to initialize history database: {e}")
 
-    def start_session(self, model: str = "gemini-2.0-flash-exp") -> Session:
+    def start_session(self, model: str = "gemini-2.0-flash") -> Session:
         """Start a new conversation session
 
         Args:

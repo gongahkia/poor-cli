@@ -222,7 +222,7 @@ class ProviderLifecycleService:
 
             info_text = (
                 "\n[bold]Available Models by Provider:[/bold]\n\n"
-                "[cyan]Gemini (Free):[/cyan] gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.5-flash\n"
+                "[cyan]Gemini (Free):[/cyan] gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash\n"
                 "[cyan]OpenAI (Paid):[/cyan] gpt-4-turbo, gpt-4, gpt-3.5-turbo\n"
                 "[cyan]Anthropic (Paid):[/cyan] claude-3-5-sonnet-20241022, claude-3-opus, claude-3-sonnet\n"
                 "[cyan]Ollama (Local):[/cyan] llama3, codellama, mistral, phi3\n\n"

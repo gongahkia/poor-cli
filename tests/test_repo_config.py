@@ -148,7 +148,7 @@ class TestRepoConfigHistoryPersistence:
                     started_at TEXT NOT NULL,
                     ended_at TEXT,
                     total_tokens INTEGER DEFAULT 0,
-                    model TEXT DEFAULT 'gemini-2.0-flash-exp',
+                    model TEXT DEFAULT 'gemini-2.0-flash',
                     archived INTEGER DEFAULT 0
                 )
                 """
@@ -217,7 +217,7 @@ class TestRepoConfigHistoryPersistence:
                     started_at TEXT NOT NULL,
                     ended_at TEXT,
                     total_tokens INTEGER DEFAULT 0,
-                    model TEXT DEFAULT 'gemini-2.0-flash-exp',
+                    model TEXT DEFAULT 'gemini-2.0-flash',
                     archived INTEGER DEFAULT 0
                 )
                 """

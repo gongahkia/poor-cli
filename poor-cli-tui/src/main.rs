@@ -548,7 +548,7 @@ fn spawn_backend_worker(
                                 .unwrap_or_else(|| {
                                     model
                                         .clone()
-                                        .unwrap_or_else(|| "gemini-2.0-flash-exp".into())
+                                        .unwrap_or_else(|| "gemini-2.0-flash".into())
                                 });
                             (prov, mdl)
                         } else {
@@ -556,7 +556,7 @@ fn spawn_backend_worker(
                                 provider.clone().unwrap_or_else(|| "gemini".into()),
                                 model
                                     .clone()
-                                    .unwrap_or_else(|| "gemini-2.0-flash-exp".into()),
+                                    .unwrap_or_else(|| "gemini-2.0-flash".into()),
                             )
                         };
                         let multiplayer_room = init
@@ -667,7 +667,7 @@ fn run_app(
     ));
 
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
-    app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash-exp".into());
+    app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash".into());
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
         let _ = apply_execution_profile(&mut app, &rpc_cmd_tx.borrow(), &saved_profile.name, false);
@@ -922,6 +922,19 @@ fn run_app(
                             }
                         }
                     });
+                }
+                InputAction::CopyToClipboard(text) => {
+                    match copy_to_clipboard(&text) {
+                        Ok(()) => {
+                            let preview = if text.len() > 40 {
+                                format!("{}...", &text[..40])
+                            } else {
+                                text.clone()
+                            };
+                            app.set_status(format!("Copied: {preview}"));
+                        }
+                        Err(e) => app.set_status(format!("Copy failed: {e}")),
+                    }
                 }
                 InputAction::Redraw => {}
                 InputAction::None => {}
