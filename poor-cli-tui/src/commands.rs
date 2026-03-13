@@ -91,6 +91,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /sessions            List recent sessions\n\
   /new-session         Start a fresh session\n\
   /compact             Manage context window (compact/compress/handoff)\n\
+  /queue ...           Manage prompt queue (`add|list|clear|drop`)\n\
   /export [format]     Export active session (json|md|txt)\n\
   /retry               Retry your last message\n\
   /search <term>       Search messages in this session\n\
@@ -320,6 +321,71 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
         }
 
         show_command_info_popup(app, raw, onboarding_usage_text().to_string());
+        return false;
+    }
+
+    if lowered == "/queue" || lowered.starts_with("/queue ") {
+        let args: Vec<&str> = raw.splitn(3, ' ').collect();
+        let sub = args.get(1).copied().unwrap_or("list");
+        match sub {
+            "add" | "a" => {
+                if let Some(text) = args.get(2) {
+                    let text = text.trim();
+                    if text.is_empty() {
+                        app.set_status("Usage: /queue add <prompt text>");
+                    } else {
+                        app.prompt_queue.push_back(text.to_string());
+                        app.set_status(format!("Queued ({} total)", app.prompt_queue.len()));
+                    }
+                } else {
+                    app.set_status("Usage: /queue add <prompt text>");
+                }
+            }
+            "list" | "ls" | "l" => {
+                if app.prompt_queue.is_empty() {
+                    show_command_info_popup(app, raw, "Prompt queue is empty.");
+                } else {
+                    let mut lines = vec![format!("**Prompt Queue** ({} items)\n", app.prompt_queue.len())];
+                    for (i, prompt) in app.prompt_queue.iter().enumerate() {
+                        let preview = if prompt.len() > 60 { &prompt[..60] } else { prompt };
+                        lines.push(format!("  {}. {}", i + 1, preview));
+                    }
+                    show_command_info_popup(app, raw, lines.join("\n"));
+                }
+            }
+            "clear" | "c" => {
+                let count = app.prompt_queue.len();
+                app.prompt_queue.clear();
+                app.set_status(format!("Cleared {count} queued prompt(s)"));
+            }
+            "drop" | "d" => {
+                if let Some(idx_str) = args.get(2) {
+                    if let Ok(idx) = idx_str.trim().parse::<usize>() {
+                        if idx >= 1 && idx <= app.prompt_queue.len() {
+                            app.prompt_queue.remove(idx - 1);
+                            app.set_status(format!("Dropped item {idx} ({} remaining)", app.prompt_queue.len()));
+                        } else {
+                            app.set_status(format!("Invalid index (1-{})", app.prompt_queue.len()));
+                        }
+                    } else {
+                        app.set_status("Usage: /queue drop <number>");
+                    }
+                } else if !app.prompt_queue.is_empty() {
+                    app.prompt_queue.pop_back();
+                    app.set_status(format!("Dropped last ({} remaining)", app.prompt_queue.len()));
+                } else {
+                    app.set_status("Queue is empty");
+                }
+            }
+            _ => {
+                show_command_info_popup(app, raw,
+                    "**Queue Commands**\n\n\
+                    /queue add <text>   Add prompt to queue\n\
+                    /queue list         Show queued prompts\n\
+                    /queue clear        Clear all queued prompts\n\
+                    /queue drop [N]     Drop item N (or last)");
+            }
+        }
         return false;
     }
 

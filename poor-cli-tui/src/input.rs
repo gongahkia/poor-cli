@@ -87,6 +87,11 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/queue",
+        description: "Manage prompt queue (add/list/clear/drop)",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/compact",
         description: "Manage context (compact/compress/handoff)",
         recommended: true,

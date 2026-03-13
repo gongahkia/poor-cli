@@ -316,6 +316,9 @@ pub struct App {
     pub spinner_tick: usize,
     pub wait_start: Option<Instant>,
 
+    // ── Prompt queue (steering harness) ───
+    pub prompt_queue: VecDeque<String>,
+
     // ── Command history ───
     pub command_history: VecDeque<String>,
     pub history_index: Option<usize>,
@@ -422,6 +425,7 @@ impl Default for App {
             waiting: false,
             spinner_tick: 0,
             wait_start: None,
+            prompt_queue: VecDeque::new(),
             command_history: VecDeque::with_capacity(100),
             history_index: None,
             command_match_index: 0,
