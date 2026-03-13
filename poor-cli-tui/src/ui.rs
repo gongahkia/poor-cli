@@ -339,6 +339,7 @@ fn cached_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 fn chat_fingerprint(app: &App) -> u64 {
     let mut hasher = DefaultHasher::new();
     app.messages.len().hash(&mut hasher);
+    app.welcome_anim_tick.hash(&mut hasher); // invalidate cache on animation frame change
     for msg in &app.messages {
         role_fingerprint(&msg.role, &mut hasher);
         msg.content.len().hash(&mut hasher);

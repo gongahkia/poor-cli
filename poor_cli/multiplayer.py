@@ -741,6 +741,10 @@ class MultiplayerHost:
             )
             return
 
+        if method == "poor-cli/suggestText":
+            await self._handle_suggest_text(conn, room, message)
+            return
+
         if conn.role == "viewer" and method in self._VIEWER_BLOCKED_METHODS:
             await self._send_error_response(
                 conn.ws,
