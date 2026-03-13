@@ -102,14 +102,34 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/pair",
+        description: "Start or join a pair session",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/pass",
+        description: "Hand driver role to next navigator",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/suggest",
+        description: "Send suggestion to driver (navigator)",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/leave",
+        description: "Disconnect from pair session",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/host-server",
         description: "Start/share/manage multiplayer host session",
-        recommended: true,
+        recommended: false,
     },
     SlashCommandSpec {
         command: "/join-server",
         description: "Join multiplayer host by invite code",
-        recommended: true,
+        recommended: false,
     },
     SlashCommandSpec {
         command: "/doctor",

@@ -189,6 +189,9 @@ class PoorCLIServer:
             "poor-cli/getServiceLogs": self.handle_get_service_logs,
             "poor-cli/cancelRequest": self.handle_cancel_request,
             "poor-cli/chatStreaming": self.handle_chat_streaming,
+            "poor-cli/pairStart": self.handle_pair_start,
+            "poor-cli/suggestText": self.handle_suggest_text,
+            "poor-cli/passDriver": self.handle_pass_driver,
         }
 
     # =========================================================================
@@ -2427,6 +2430,88 @@ class PoorCLIServer:
                 "role": "prompter",
                 "handoff": True,
             }
+
+    async def handle_pair_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start a pair session with auto-generated 6-char room code."""
+        self._ensure_initialized()
+        import secrets as _secrets
+        short_code = _secrets.token_hex(3)  # 6 hex chars
+        lobby = bool(params.get("lobby", False))
+        host_result = await self.handle_start_host_server({"room": short_code})
+        tokens = host_result.get("tokens", {})
+        ws_url = host_result.get("localWsUrl", "")
+        viewer_token = ""
+        for role_key in ("viewer",):
+            role_tokens = tokens.get(role_key, {})
+            if isinstance(role_tokens, dict):
+                viewer_token = role_tokens.get("token", "")
+            elif isinstance(role_tokens, list) and role_tokens:
+                viewer_token = role_tokens[0].get("token", "") if isinstance(role_tokens[0], dict) else str(role_tokens[0])
+        invite_code = f"{ws_url}|{short_code}|{viewer_token}"
+        if lobby:
+            try:
+                await self.handle_set_host_lobby({"enabled": True, "room": short_code})
+            except Exception:
+                pass
+        return {
+            "shortCode": short_code,
+            "inviteCode": invite_code,
+            "wsUrl": ws_url,
+            "viewerToken": viewer_token,
+            **host_result,
+        }
+
+    async def handle_suggest_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Local no-op for suggest text — bridge mode routes to host directly."""
+        del params
+        return {"success": True, "local": True}
+
+    async def handle_pass_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve display name to connection ID and hand off prompter role."""
+        self._ensure_initialized()
+        self._ensure_host_controls_available()
+        display_name = str(params.get("displayName", "")).strip()
+        connection_id = str(params.get("connectionId", "")).strip()
+        requested_room = str(params.get("room", "")).strip()
+        if not connection_id and not display_name:
+            async with self._host_server_lock:
+                if self._host_server is None:
+                    raise InvalidParamsError("No multiplayer host is currently running")
+                room_name = self._resolve_host_room_name_locked(requested_room)
+                host = self._host_server
+                if not hasattr(host, "rooms"):
+                    raise RuntimeError("Host does not expose rooms")
+                room = host.rooms.get(room_name)
+                if room is None:
+                    raise InvalidParamsError(f"Unknown room: {room_name}")
+                prompters = [m for m in room.members.values() if m.role == "prompter"]
+                if not prompters:
+                    raise InvalidParamsError("No current driver found")
+                others = [m for m in room.members.values() if m.role != "prompter"]
+                if not others:
+                    raise InvalidParamsError("No other members to pass to")
+                target = others[0]
+                connection_id = target.connection_id
+        if not connection_id and display_name:
+            async with self._host_server_lock:
+                if self._host_server is None:
+                    raise InvalidParamsError("No multiplayer host is currently running")
+                room_name = self._resolve_host_room_name_locked(requested_room)
+                host = self._host_server
+                room = host.rooms.get(room_name) if hasattr(host, "rooms") else None
+                if room is None:
+                    raise InvalidParamsError(f"Unknown room: {room_name}")
+                for member in room.members.values():
+                    name = member.client_name or member.connection_id
+                    if name.lower() == display_name.lower():
+                        connection_id = member.connection_id
+                        break
+                if not connection_id:
+                    raise InvalidParamsError(f"No member with name `{display_name}` found")
+        return await self.handle_handoff_host_member({
+            "connectionId": connection_id,
+            "room": requested_room,
+        })
 
     async def handle_set_host_preset(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

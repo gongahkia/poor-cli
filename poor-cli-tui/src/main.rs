@@ -148,6 +148,10 @@ enum ServerMsg {
         connection_id: String,
         role: String,
     },
+    Suggestion {
+        sender: String,
+        text: String,
+    },
 }
 
 type SessionLogWriter = Arc<Mutex<fs::File>>;
@@ -497,6 +501,17 @@ fn spawn_backend_worker(
                                     connection_id,
                                     role,
                                 }
+                            }
+                            ServerNotification::Suggestion {
+                                sender,
+                                text,
+                                ..
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!("notif_suggestion sender={}", sender),
+                                );
+                                ServerMsg::Suggestion { sender, text }
                             }
                         };
                         if tx_notif.send(msg).is_err() {
@@ -3812,6 +3827,58 @@ fn rpc_get_service_logs_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for service logs response".to_string())?
+}
+
+fn rpc_pair_start_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    lobby: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PairStart {
+            lobby,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request pair start: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for pair start response".to_string())?
+}
+
+fn rpc_suggest_text_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    text: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SuggestText {
+            text: text.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to send suggestion: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for suggest response".to_string())?
+}
+
+fn rpc_pass_driver_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    display_name: Option<&str>,
+    connection_id: Option<&str>,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PassDriver {
+            display_name: display_name.map(|s| s.to_string()),
+            connection_id: connection_id.map(|s| s.to_string()),
+            room: room.map(|s| s.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request pass driver: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(15))
+        .map_err(|_| "Timed out waiting for pass driver response".to_string())?
 }
 
 fn copy_to_clipboard(content: &str) -> Result<(), String> {

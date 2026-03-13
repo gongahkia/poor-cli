@@ -1075,6 +1075,31 @@ class MultiplayerHost:
             finally:
                 room.request_queue.task_done()
 
+    async def _handle_suggest_text(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        """Broadcast a suggestion from any member to all prompter-role members."""
+        params = message.params or {}
+        text = str(params.get("text", "")).strip()
+        if not text:
+            if message.id is not None:
+                await self._send_rpc(
+                    conn.ws,
+                    self.message_cls(id=message.id, result={"success": False, "reason": "empty text"}),
+                )
+            return
+        sender = conn.client_name or conn.connection_id
+        notification = self.message_cls(
+            method="poor-cli/suggestion",
+            params={"sender": sender, "text": text, "room": room.name},
+        )
+        for member in room.members.values():
+            if member.ws is not None and not member.ws.closed:
+                await self._send_rpc(member.ws, notification)
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(id=message.id, result={"success": True}),
+            )
+
     async def _cleanup_connection(self, conn: ConnectionState) -> None:
         self.connections.pop(conn.connection_id, None)
 

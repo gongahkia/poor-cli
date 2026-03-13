@@ -38,20 +38,40 @@ thread_local! {
 /// Main render function called each frame.
 pub fn draw(frame: &mut Frame, app: &App) {
     let input_height = compute_input_height(app, frame.area().width);
+    let has_presence = app.pair_mode_active && !app.connected_users.is_empty();
+    let constraints = if has_presence {
+        vec![
+            Constraint::Length(1),            // status bar
+            Constraint::Length(1),            // presence bar
+            Constraint::Min(5),              // chat area
+            Constraint::Length(input_height), // input area
+            Constraint::Length(1),            // hint bar
+        ]
+    } else {
+        vec![
+            Constraint::Length(1),            // status bar
+            Constraint::Min(5),              // chat area
+            Constraint::Length(input_height), // input area
+            Constraint::Length(1),            // hint bar
+        ]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),            // status bar
-            Constraint::Min(5),               // chat area
-            Constraint::Length(input_height), // input area (grows for multi-line)
-            Constraint::Length(1),            // hint bar
-        ])
+        .constraints(constraints)
         .split(frame.area());
 
-    draw_status_bar(frame, app, chunks[0]);
-    draw_chat_area(frame, app, chunks[1]);
-    draw_input_bar(frame, app, chunks[2]);
-    draw_hint_bar(frame, app, chunks[3]);
+    if has_presence {
+        draw_status_bar(frame, app, chunks[0]);
+        draw_presence_bar(frame, app, chunks[1]);
+        draw_chat_area(frame, app, chunks[2]);
+        draw_input_bar(frame, app, chunks[3]);
+        draw_hint_bar(frame, app, chunks[4]);
+    } else {
+        draw_status_bar(frame, app, chunks[0]);
+        draw_chat_area(frame, app, chunks[1]);
+        draw_input_bar(frame, app, chunks[2]);
+        draw_hint_bar(frame, app, chunks[3]);
+    }
     draw_command_palette(frame, app);
 
     // Overlays
@@ -256,6 +276,47 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style(mode));
+    frame.render_widget(bar, area);
+}
+
+// ── Presence bar (pair mode) ──────────────────────────────────────────
+
+fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
+    let dim = theme::muted_fg(mode);
+    let mut spans = vec![Span::styled("  ", Style::default())];
+    for (i, user) in app.connected_users.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", Style::default().fg(dim)));
+        }
+        let role_color = match user.role {
+            crate::app::PairRole::Driver => theme::success(mode),
+            crate::app::PairRole::Navigator => theme::accent(mode),
+        };
+        spans.push(Span::styled(
+            user.role.label().to_string(),
+            Style::default().fg(role_color).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(" {}", user.name),
+            Style::default().fg(theme::base_fg(mode)),
+        ));
+    }
+    if app.multiplayer_queue_depth > 0 {
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled(
+            format!("queue:{}", app.multiplayer_queue_depth),
+            Style::default().fg(theme::warning(mode)),
+        ));
+    }
+    if !app.pair_short_code.is_empty() {
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled(
+            format!("room:{}", app.pair_short_code),
+            Style::default().fg(dim),
+        ));
+    }
+    let bar = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));
     frame.render_widget(bar, area);
 }
 
@@ -572,6 +633,13 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             format!("  {status}"),
             Style::default().fg(theme::warning(mode)),
         )]
+    } else if let Some(suggestion) = app.latest_suggestion() {
+        vec![
+            Span::styled(
+                format!("  [{}]: {}", suggestion.sender, suggestion.text),
+                Style::default().fg(theme::accent(mode)),
+            ),
+        ]
     } else if app.mode == AppMode::InfoPopup {
         vec![
             Span::styled("  Esc/Enter", Style::default().fg(theme::muted_fg(mode))),

@@ -157,9 +157,15 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /tasks ...           Manage local task board (`add|done|drop|clear`)\n\
   /copy                Copy last assistant response to clipboard\n\
   /onboarding ...      Guided walkthrough of core commands\n\
-  /host-server ...     Start/share/manage host session and members\n\
+  /pair                Start pair session (host) or join with invite code\n\
+  /pair <invite-code>  Join a pair session using invite code\n\
+  /pass                Hand driver role to next navigator\n\
+  /pass @name          Hand driver role to specific person\n\
+  /suggest <text>      Send suggestion to driver (navigator)\n\
+  /leave               Disconnect from pair session\n\
+  /who [room]          Show connected users and roles\n\
+  /host-server ...     Start/share/manage host session (advanced)\n\
   /kick <connection-id> [room]  Kick member in current/target multiplayer room\n\
-  /who [room]          List room members in multiplayer session\n\
   /members [room]      Alias for /who\n\
   /host-server share [viewer|prompter] [room]  Print role-specific join payloads\n\
   /host-server members [room]               List connected room members\n\
@@ -2133,6 +2139,161 @@ Context Window: {max_context} tokens\n\n\
             ),
             Err(e) => app.push_message(ChatMessage::error(format!("ls failed: {e}"))),
         }
+        return false;
+    }
+
+    // ── Pair mode commands ─────────────────────────────────────────────
+    if lowered == "/pair" || lowered.starts_with("/pair ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        if args.len() == 1 {
+            // host mode: start pair session
+            let lobby = false;
+            match rpc_pair_start_blocking(rpc_cmd_tx, lobby) {
+                Ok(payload) => {
+                    let short_code = payload.get("shortCode").and_then(|v| v.as_str()).unwrap_or("");
+                    let invite_code = payload.get("inviteCode").and_then(|v| v.as_str()).unwrap_or("");
+                    app.pair_mode_active = true;
+                    app.pair_is_host = true;
+                    app.pair_short_code = short_code.to_string();
+                    app.pair_invite_code = invite_code.to_string();
+                    app.multiplayer_enabled = true;
+                    app.multiplayer_room = short_code.to_string();
+                    app.multiplayer_role = "prompter".to_string();
+                    // best-effort clipboard copy
+                    let _ = std::process::Command::new("pbcopy")
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                        .and_then(|mut child| {
+                            use std::io::Write;
+                            if let Some(ref mut stdin) = child.stdin {
+                                let _ = stdin.write_all(invite_code.as_bytes());
+                            }
+                            child.wait()
+                        });
+                    app.push_message(ChatMessage::system(format!(
+                        "Pair session started! Room: {short_code}\nInvite code copied to clipboard.\nShare it with: /pair <invite-code>"
+                    )));
+                    app.set_status(format!("Pair session: {short_code}"));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}"))),
+            }
+            return false;
+        }
+        // check --lobby flag
+        let has_lobby = args.iter().any(|a| *a == "--lobby");
+        if args.len() == 2 && has_lobby {
+            match rpc_pair_start_blocking(rpc_cmd_tx, true) {
+                Ok(payload) => {
+                    let short_code = payload.get("shortCode").and_then(|v| v.as_str()).unwrap_or("");
+                    let invite_code = payload.get("inviteCode").and_then(|v| v.as_str()).unwrap_or("");
+                    app.pair_mode_active = true;
+                    app.pair_is_host = true;
+                    app.pair_short_code = short_code.to_string();
+                    app.pair_invite_code = invite_code.to_string();
+                    app.multiplayer_enabled = true;
+                    app.multiplayer_room = short_code.to_string();
+                    app.multiplayer_role = "prompter".to_string();
+                    app.multiplayer_lobby_enabled = true;
+                    let _ = std::process::Command::new("pbcopy")
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                        .and_then(|mut child| {
+                            use std::io::Write;
+                            if let Some(ref mut stdin) = child.stdin {
+                                let _ = stdin.write_all(invite_code.as_bytes());
+                            }
+                            child.wait()
+                        });
+                    app.push_message(ChatMessage::system(format!(
+                        "Pair session started (lobby mode)! Room: {short_code}\nInvite code copied to clipboard."
+                    )));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}"))),
+            }
+            return false;
+        }
+        // join mode: /pair <invite-code>
+        let invite = args[1];
+        let parts: Vec<&str> = invite.split('|').collect();
+        if parts.len() != 3 {
+            show_command_info_popup(
+                app,
+                raw,
+                "Invalid invite code format.\nExpected: `ws://host:port/rpc|room|token`\nUse `/pair` to host, or paste the invite code from the host.".to_string(),
+            );
+            return false;
+        }
+        let (url, room, token) = (parts[0], parts[1], parts[2]);
+        if let Err(e) = multiplayer::preflight_join_endpoint(url) {
+            app.push_message(ChatMessage::error(format!(
+                "Join preflight failed: {e}\nCheck the invite code and try again."
+            )));
+            return false;
+        }
+        app.pair_mode_active = true;
+        app.pair_is_host = false;
+        app.pair_short_code = room.to_string();
+        app.multiplayer_room = room.to_string();
+        app.multiplayer_role = "viewer".to_string();
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, url, room, token);
+        app.push_message(ChatMessage::system(format!("Joining pair session: {room}")));
+        return false;
+    }
+
+    if lowered == "/pass" || lowered.starts_with("/pass ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let (display_name, connection_id): (Option<String>, Option<String>) = if args.len() > 1 {
+            let target = args[1..].join(" ");
+            if target.starts_with('@') {
+                (Some(target[1..].to_string()), None)
+            } else {
+                (Some(target.clone()), None)
+            }
+        } else {
+            (None, None) // pass to next navigator
+        };
+        let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
+        match rpc_pass_driver_blocking(rpc_cmd_tx, display_name.as_deref(), connection_id.as_deref(), room) {
+            Ok(payload) => {
+                let target_id = payload.get("connectionId").and_then(|v| v.as_str()).unwrap_or("someone");
+                app.push_message(ChatMessage::system(format!("Driver role passed to `{target_id}`.")));
+                app.set_status("Driver role handed off");
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to pass driver: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered.starts_with("/suggest ") {
+        let text = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        if text.is_empty() {
+            show_command_info_popup(app, raw, "Usage: /suggest <text>".to_string());
+            return false;
+        }
+        match rpc_suggest_text_blocking(rpc_cmd_tx, text) {
+            Ok(_) => app.set_status("Suggestion sent"),
+            Err(e) => app.push_message(ChatMessage::error(format!("Suggest failed: {e}"))),
+        }
+        return false;
+    }
+    if lowered == "/suggest" {
+        show_command_info_popup(app, raw, "Usage: /suggest <text>\nSend a suggestion visible to the driver.".to_string());
+        return false;
+    }
+
+    if lowered == "/leave" {
+        if app.pair_is_host {
+            match rpc_stop_host_server_blocking(rpc_cmd_tx) {
+                Ok(_) => app.push_message(ChatMessage::system("Pair session stopped.".to_string())),
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to stop pair session: {e}"))),
+            }
+        } else {
+            app.push_message(ChatMessage::system("Disconnected from pair session.".to_string()));
+        }
+        app.reset_pair_state();
+        app.multiplayer_enabled = false;
+        app.multiplayer_room.clear();
+        app.multiplayer_role.clear();
         return false;
     }
 

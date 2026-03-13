@@ -1,6 +1,47 @@
 /// Application state machine for the poor-cli TUI.
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+// ── Pair mode types ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PairRole {
+    Driver,
+    Navigator,
+}
+
+impl PairRole {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Driver => "D",
+            Self::Navigator => "N",
+        }
+    }
+    pub fn from_wire(role: &str) -> Self {
+        match role {
+            "prompter" => Self::Driver,
+            _ => Self::Navigator,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PairUser {
+    pub name: String,
+    pub connection_id: String,
+    pub role: PairRole,
+}
+
+#[derive(Debug, Clone)]
+pub struct Suggestion {
+    pub sender: String,
+    pub text: String,
+    pub received_at: Instant,
+}
+
+const SUGGESTION_TTL: Duration = Duration::from_secs(30);
+const SUGGESTION_MAX: usize = 10;
+pub const SUGGESTION_HINT_TTL: Duration = Duration::from_secs(15);
 
 // ── Message model ────────────────────────────────────────────────────
 
@@ -402,6 +443,14 @@ pub struct App {
     pub compact_select_idx: usize,
     pub welcome_anim_tick: usize,
     pub welcome_anim_active: bool,
+
+    // ── Pair mode state ───
+    pub pair_mode_active: bool,
+    pub pair_short_code: String,
+    pub pair_invite_code: String,
+    pub pair_is_host: bool,
+    pub connected_users: Vec<PairUser>,
+    pub suggestions: VecDeque<Suggestion>,
 }
 
 impl Default for App {
@@ -490,6 +539,12 @@ impl Default for App {
             compact_select_idx: 0,
             welcome_anim_tick: 0,
             welcome_anim_active: true,
+            pair_mode_active: false,
+            pair_short_code: String::new(),
+            pair_invite_code: String::new(),
+            pair_is_host: false,
+            connected_users: Vec::new(),
+            suggestions: VecDeque::new(),
         }
     }
 }
@@ -829,6 +884,37 @@ impl App {
         self.plan_steps.clear();
         self.plan_current_step = 0;
         self.plan_original_request.clear();
+    }
+
+    pub fn push_suggestion(&mut self, sender: String, text: String) {
+        self.suggestions.push_back(Suggestion {
+            sender,
+            text,
+            received_at: Instant::now(),
+        });
+        while self.suggestions.len() > SUGGESTION_MAX {
+            self.suggestions.pop_front();
+        }
+    }
+
+    pub fn clear_old_suggestions(&mut self) {
+        let now = Instant::now();
+        while self.suggestions.front().is_some_and(|s| now.duration_since(s.received_at) > SUGGESTION_TTL) {
+            self.suggestions.pop_front();
+        }
+    }
+
+    pub fn latest_suggestion(&self) -> Option<&Suggestion> {
+        self.suggestions.back().filter(|s| s.received_at.elapsed() < SUGGESTION_HINT_TTL)
+    }
+
+    pub fn reset_pair_state(&mut self) {
+        self.pair_mode_active = false;
+        self.pair_short_code.clear();
+        self.pair_invite_code.clear();
+        self.pair_is_host = false;
+        self.connected_users.clear();
+        self.suggestions.clear();
     }
 
     pub fn record_user_input(&mut self, text: &str) {

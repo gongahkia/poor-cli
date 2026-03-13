@@ -355,6 +355,20 @@ pub(super) fn handle_server_message(
                     summaries.push(label);
                 }
                 app.multiplayer_member_roles = summaries;
+                if app.pair_mode_active {
+                    let mut pair_users = Vec::new();
+                    for entry in items.iter().take(20) {
+                        let cid = entry.get("connectionId").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let r = entry.get("role").and_then(|v| v.as_str()).unwrap_or("viewer");
+                        let name = entry.get("clientName").and_then(|v| v.as_str()).unwrap_or(cid);
+                        pair_users.push(poor_cli_tui::app::PairUser {
+                            name: name.to_string(),
+                            connection_id: cid.to_string(),
+                            role: poor_cli_tui::app::PairRole::from_wire(r),
+                        });
+                    }
+                    app.connected_users = pair_users;
+                }
             }
             let status = match event_type.as_str() {
                 "queued" => format!("Room queue depth: {queue_depth}"),
@@ -368,6 +382,14 @@ pub(super) fn handle_server_message(
                 _ => format!("Room event: {event_type}"),
             };
             app.set_status(status);
+        }
+        ServerMsg::Suggestion { sender, text } => {
+            write_session_log(
+                session_log,
+                &format!("suggestion sender={} text_len={}", sender, text.len()),
+            );
+            app.push_suggestion(sender.clone(), text.clone());
+            app.push_message(ChatMessage::system(format!("[{sender} suggests]: {text}")));
         }
         ServerMsg::MemberRoleUpdated {
             room,

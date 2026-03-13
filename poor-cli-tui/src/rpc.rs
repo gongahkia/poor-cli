@@ -232,6 +232,11 @@ pub enum ServerNotification {
         connection_id: String,
         role: String,
     },
+    Suggestion {
+        sender: String,
+        text: String,
+        room: String,
+    },
 }
 
 // ── RPC Client ───────────────────────────────────────────────────────
@@ -460,6 +465,23 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .to_string(),
             role: params
                 .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        }),
+        "poor-cli/suggestion" => Some(ServerNotification::Suggestion {
+            sender: params
+                .get("sender")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            text: params
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            room: params
+                .get("room")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -1226,6 +1248,39 @@ impl RpcClient {
         self.call("poor-cli/listHostActivity", Value::Object(params))
     }
 
+    pub fn pair_start(&self, lobby: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if lobby {
+            params.insert("lobby".into(), Value::Bool(true));
+        }
+        self.call("poor-cli/pairStart", Value::Object(params))
+    }
+
+    pub fn suggest_text(&self, text: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("text".into(), Value::String(text.to_string()));
+        self.call("poor-cli/suggestText", Value::Object(params))
+    }
+
+    pub fn pass_driver(
+        &self,
+        display_name: Option<&str>,
+        connection_id: Option<&str>,
+        room: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(name) = display_name {
+            params.insert("displayName".into(), Value::String(name.to_string()));
+        }
+        if let Some(cid) = connection_id {
+            params.insert("connectionId".into(), Value::String(cid.to_string()));
+        }
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/passDriver", Value::Object(params))
+    }
+
     pub fn shutdown(&self) -> Result<(), String> {
         let _ = self.call("shutdown", Value::Object(Default::default()));
         if let Ok(mut child) = self.child.lock() {
@@ -1443,6 +1498,20 @@ pub enum RpcCommand {
         provider: String,
         model: Option<String>,
         reply: SyncSender<Result<(String, String), String>>,
+    },
+    PairStart {
+        lobby: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SuggestText {
+        text: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    PassDriver {
+        display_name: Option<String>,
+        connection_id: Option<String>,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
     },
     Shutdown,
 }
@@ -1705,6 +1774,24 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                         (prov, mdl)
                     });
                 let _ = reply.send(result);
+            }
+            Ok(RpcCommand::PairStart { lobby, reply }) => {
+                let _ = reply.send(client.pair_start(lobby));
+            }
+            Ok(RpcCommand::SuggestText { text, reply }) => {
+                let _ = reply.send(client.suggest_text(&text));
+            }
+            Ok(RpcCommand::PassDriver {
+                display_name,
+                connection_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.pass_driver(
+                    display_name.as_deref(),
+                    connection_id.as_deref(),
+                    room.as_deref(),
+                ));
             }
             Ok(RpcCommand::Shutdown) | Err(_) => break,
         }
