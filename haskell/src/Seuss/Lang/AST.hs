@@ -83,6 +83,8 @@ data FnDecl = FnDecl
 data IfDecl = IfDecl
     { ifCondition :: Expr
     , ifThenBlock :: [Stmt]
+    , ifElseIfBlocks :: [(Expr, [Stmt])]
+    , ifElseBlock :: Maybe [Stmt]
     }
     deriving (Eq, Show)
 
