@@ -64,6 +64,7 @@ statementParser =
         , StmtIf <$> ifDeclParser
         , StmtMatch <$> matchDeclParser
         , uncurry StmtAssign <$> assignStmtParser
+        , StmtExpr <$> exprStmtParser
         ]
 
 sc :: Parser ()
@@ -125,8 +126,8 @@ nonRangeExprParser = makeExprParser term operatorTable
 term :: Parser Expr
 term = do
     baseExpr <- primaryTerm
-    indexExprs <- many indexSuffixParser
-    pure (foldl ExprIndex baseExpr indexExprs)
+    suffixes <- many postfixSuffixParser
+    pure (foldl applyPostfixSuffix baseExpr suffixes)
 
 primaryTerm :: Parser Expr
 primaryTerm =
@@ -140,6 +141,35 @@ primaryTerm =
 indexSuffixParser :: Parser Expr
 indexSuffixParser =
     between (symbol "[") (symbol "]") exprParser
+
+data PostfixSuffix
+    = PostfixIndex Expr
+    | PostfixField Text
+    | PostfixCall [Expr]
+
+postfixSuffixParser :: Parser PostfixSuffix
+postfixSuffixParser =
+    choice
+        [ PostfixIndex <$> indexSuffixParser
+        , PostfixField <$> fieldSuffixParser
+        , PostfixCall <$> callSuffixParser
+        ]
+
+fieldSuffixParser :: Parser Text
+fieldSuffixParser = do
+    _ <- symbol "."
+    identifier
+
+callSuffixParser :: Parser [Expr]
+callSuffixParser =
+    between (symbol "(") (symbol ")") (exprParser `sepBy` symbol ",")
+
+applyPostfixSuffix :: Expr -> PostfixSuffix -> Expr
+applyPostfixSuffix expr suffix =
+    case suffix of
+        PostfixIndex indexExpr -> ExprIndex expr indexExpr
+        PostfixField fieldName -> ExprField expr fieldName
+        PostfixCall args -> ExprCall expr args
 
 literalValueParser :: Parser Value
 literalValueParser =
@@ -288,6 +318,12 @@ assignStmtParser = do
     _ <- optional (symbol ";")
     pure (name, value)
 
+exprStmtParser :: Parser Expr
+exprStmtParser = do
+    value <- exprParser
+    _ <- optional (symbol ";")
+    pure value
+
 forDeclParser :: Parser ForDecl
 forDeclParser = do
     _ <- symbol "for"
@@ -344,11 +380,13 @@ fnDeclParser = do
     _ <- symbol "fn"
     name <- identifier
     params <- parens (paramParser `sepBy` symbol ",")
+    returnType <- optional (symbol "->" *> identifier)
     body <- braces (many statementParser)
     pure
         FnDecl
             { fnName = name
             , fnParams = params
+            , fnReturnType = returnType
             , fnBody = body
             }
 
