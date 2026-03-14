@@ -91,6 +91,7 @@ data Stmt
     | StmtTimeline TimelineDecl
     | StmtEntity EntityDecl
     | StmtRelationship RelationshipDecl
+    | StmtImport Text
     | StmtLet LetDecl
     | StmtFunction FnDecl
     | StmtIf IfDecl
