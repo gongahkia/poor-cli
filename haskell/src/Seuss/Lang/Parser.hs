@@ -132,11 +132,20 @@ term = do
 primaryTerm :: Parser Expr
 primaryTerm =
     choice
-        [ ExprValue <$> literalValueParser
+        [ try closureExprParser
+        , ExprValue <$> literalValueParser
         , ExprList <$> between (symbol "[") (symbol "]") (exprParser `sepBy` symbol ",")
         , ExprIdent <$> identifier
         , between (symbol "(") (symbol ")") exprParser
         ]
+
+closureExprParser :: Parser Expr
+closureExprParser = do
+    _ <- symbol "|"
+    params <- paramParser `sepBy` symbol ","
+    _ <- symbol "|"
+    bodyExpr <- exprParser
+    pure (ExprClosure params bodyExpr)
 
 indexSuffixParser :: Parser Expr
 indexSuffixParser =
