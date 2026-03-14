@@ -289,3 +289,23 @@ spec = do
                             let smallerWorld = worldValue{worldEntities = Map.delete "ring" (worldEntities worldValue)}
                                 diffText = diffWorlds smallerWorld worldValue
                             diffText `shouldSatisfy` T.isInfixOf "ring"
+
+        it "reports changed entity details when shared names diverge" $ do
+            source <- TIO.readFile "../examples/lotr.seuss"
+            case parseProgram "../examples/lotr.seuss" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            let updatedRing =
+                                    fmap (\entity -> entity{entityType = "object"}) (Map.lookup "ring" (worldEntities worldValue))
+                                changedWorld =
+                                    case updatedRing of
+                                        Nothing -> worldValue
+                                        Just ringEntity ->
+                                            worldValue{worldEntities = Map.insert "ring" ringEntity (worldEntities worldValue)}
+                                diffText = diffWorlds worldValue changedWorld
+                            diffText `shouldSatisfy` T.isInfixOf "~ changed ring"
