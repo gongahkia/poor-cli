@@ -82,12 +82,16 @@ computeLayout world =
             { layoutEntityName = entityName entity
             , layoutEntityType = entityType entity
             , layoutEntityTimeline = appearanceTimeline appearance
-            , layoutEntityLane = entityLane appearance
+            , layoutEntityLane = entityLane
             , layoutEntityStart = timePointOrdinal (rangeStart (appearanceRange appearance))
             , layoutEntityEnd = timePointOrdinal (rangeEnd (appearanceRange appearance))
             }
         | (appearanceIndex, appearance) <- zip [0 ..] (entityAppearances entity)
-        , let entityLane = maybe appearanceIndex (+ appearanceIndex + 1) (Map.lookup (appearanceTimeline appearance) timelineLaneMap)
+        , let entityLane =
+                maybe
+                    appearanceIndex
+                    (\baseLane -> baseLane + appearanceIndex + 1)
+                    (Map.lookup (appearanceTimeline appearance) timelineLaneMap)
         ]
     allTimes =
         [ layoutTimelineStart timeline
