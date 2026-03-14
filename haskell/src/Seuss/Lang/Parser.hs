@@ -143,7 +143,15 @@ literalValueParser =
 operatorTable :: [[Operator Parser Expr]]
 operatorTable =
     [ [binary "+" (ExprBinary OpAdd), binary "-" (ExprBinary OpSub)]
-    , [binary ">" (ExprBinary OpGt), binary "<" (ExprBinary OpLt), binary "==" (ExprBinary OpEq)]
+    , [ binary ">=" (ExprBinary OpGte)
+      , binary "<=" (ExprBinary OpLte)
+      , binary ">" (ExprBinary OpGt)
+      , binary "<" (ExprBinary OpLt)
+      , binary "==" (ExprBinary OpEq)
+      , binary "!=" (ExprBinary OpNeq)
+      ]
+    , [binary "&&" (ExprBinary OpAnd)]
+    , [binary "||" (ExprBinary OpOr)]
     ]
 
 binary :: Text -> (Expr -> Expr -> Expr) -> Operator Parser Expr
