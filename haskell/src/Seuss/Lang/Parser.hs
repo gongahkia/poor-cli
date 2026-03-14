@@ -62,6 +62,7 @@ statementParser =
         , StmtWhile <$> whileDeclParser
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
+        , StmtMatch <$> matchDeclParser
         ]
 
 sc :: Parser ()
@@ -111,12 +112,18 @@ exprParser = makeExprParser term operatorTable
 term :: Parser Expr
 term =
     choice
-        [ ExprValue . VDate <$> try dateLiteral
-        , ExprValue . VBool <$> boolLiteral
-        , ExprValue . VInt <$> try integerLiteral
-        , ExprValue . VString <$> stringLiteral
+        [ ExprValue <$> literalValueParser
         , ExprIdent <$> identifier
         , between (symbol "(") (symbol ")") exprParser
+        ]
+
+literalValueParser :: Parser Value
+literalValueParser =
+    choice
+        [ VDate <$> try dateLiteral
+        , VBool <$> boolLiteral
+        , VInt <$> try integerLiteral
+        , VString <$> stringLiteral
         ]
 
 operatorTable :: [[Operator Parser Expr]]
@@ -325,6 +332,37 @@ ifDeclParser = do
             , ifElseIfBlocks = elseIfBlocks
             , ifElseBlock = elseBlock
             }
+
+matchDeclParser :: Parser MatchDecl
+matchDeclParser = do
+    _ <- symbol "match"
+    subjectExpr <- exprParser
+    arms <- braces (many matchArmParser)
+    pure
+        MatchDecl
+            { matchSubject = subjectExpr
+            , matchArms = arms
+            }
+
+matchArmParser :: Parser MatchArm
+matchArmParser = do
+    patternValue <- matchPatternParser
+    _ <- symbol "=>"
+    body <- braces (many statementParser)
+    _ <- optional (symbol ",")
+    pure
+        MatchArm
+            { matchArmPattern = patternValue
+            , matchArmBody = body
+            }
+
+matchPatternParser :: Parser MatchPattern
+matchPatternParser =
+    choice
+        [ symbol "_" $> MatchPatternWildcard
+        , MatchPatternValue <$> try literalValueParser
+        , MatchPatternBind <$> identifier
+        ]
 
 elseIfParser :: Parser (Expr, [Stmt])
 elseIfParser = do
