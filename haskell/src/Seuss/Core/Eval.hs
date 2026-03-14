@@ -218,7 +218,14 @@ evalBinary OpGt (VInt leftValue) (VInt rightValue) = Right (VBool (leftValue > r
 evalBinary OpGt (VDate leftValue) (VDate rightValue) = Right (VBool (leftValue > rightValue))
 evalBinary OpLt (VInt leftValue) (VInt rightValue) = Right (VBool (leftValue < rightValue))
 evalBinary OpLt (VDate leftValue) (VDate rightValue) = Right (VBool (leftValue < rightValue))
+evalBinary OpGte (VInt leftValue) (VInt rightValue) = Right (VBool (leftValue >= rightValue))
+evalBinary OpGte (VDate leftValue) (VDate rightValue) = Right (VBool (leftValue >= rightValue))
+evalBinary OpLte (VInt leftValue) (VInt rightValue) = Right (VBool (leftValue <= rightValue))
+evalBinary OpLte (VDate leftValue) (VDate rightValue) = Right (VBool (leftValue <= rightValue))
 evalBinary OpEq leftValue rightValue = Right (VBool (leftValue == rightValue))
+evalBinary OpNeq leftValue rightValue = Right (VBool (leftValue /= rightValue))
+evalBinary OpAnd (VBool leftValue) (VBool rightValue) = Right (VBool (leftValue && rightValue))
+evalBinary OpOr (VBool leftValue) (VBool rightValue) = Right (VBool (leftValue || rightValue))
 evalBinary op leftValue rightValue =
     Left $
         Diagnostic
