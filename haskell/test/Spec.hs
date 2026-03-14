@@ -5,6 +5,7 @@ module Main (main) where
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import Data.Time (fromGregorian)
 import Seuss.Config.Loader
 import Seuss.Core.Diff
 import Seuss.Core.Eval
@@ -221,6 +222,87 @@ spec = do
                             Map.member "wrong_branch" (worldEntities worldValue) `shouldBe` False
                             Map.member "bound_branch" (worldEntities worldValue) `shouldBe` True
                             Map.member "wildcard_branch" (worldEntities worldValue) `shouldBe` False
+
+    describe "list and range expression parsing and evaluation" $ do
+        it "parses list and range expressions without collapsing appearance ranges" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "entity sample : event {"
+                        , "  values: [1, 2, 3],"
+                        , "  appears_on: main @ 2000-01-01..2000-02-01,"
+                        , "}"
+                        , ""
+                        , "let days = 1..3;"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtTimeline _, StmtEntity decl, StmtLet letDecl]) -> do
+                    Map.lookup "values" (entityDeclFields decl)
+                        `shouldBe`
+                            Just
+                                ( ExprList
+                                    [ ExprValue (VInt 1)
+                                    , ExprValue (VInt 2)
+                                    , ExprValue (VInt 3)
+                                    ]
+                                )
+                    entityDeclAppearances decl
+                        `shouldBe`
+                            [ AppearanceDecl
+                                { appearanceDeclTimeline = "main"
+                                , appearanceDeclStart = ExprValue (VDate (fromGregorian 2000 1 1))
+                                , appearanceDeclEnd = ExprValue (VDate (fromGregorian 2000 2 1))
+                                }
+                            ]
+                    letValue letDecl `shouldBe` ExprRange (ExprValue (VInt 1)) (ExprValue (VInt 3))
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "evaluates bound list and range expressions as loop iterables" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "let days = 1..3;"
+                        , "let labels = [\"one\", \"two\"];"
+                        , ""
+                        , "for day in days {"
+                        , "  if day == 2 {"
+                        , "    entity range_hit : event {"
+                        , "      appears_on: main @ 2000-04-01..2000-04-02,"
+                        , "    }"
+                        , "  }"
+                        , "}"
+                        , ""
+                        , "for label in labels {"
+                        , "  if label == \"two\" {"
+                        , "    entity list_hit : event {"
+                        , "      appears_on: main @ 2000-05-01..2000-05-02,"
+                        , "    }"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            Map.member "range_hit" (worldEntities worldValue) `shouldBe` True
+                            Map.member "list_hit" (worldEntities worldValue) `shouldBe` True
 
     describe "for-loop parsing and evaluation" $ do
         it "parses list and range iterables for for-loops" $ do
