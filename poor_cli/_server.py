@@ -159,10 +159,14 @@ class PoorCLIServer:
             "poor-cli/getTools": self.handle_get_tools,
             "poor-cli/switchProvider": self.handle_switch_provider,
             "poor-cli/getProviderInfo": self.handle_get_provider_info,
+            "poor-cli/getInstructionStack": self.handle_get_instruction_stack,
+            "poor-cli/getPolicyStatus": self.handle_get_policy_status,
+            "poor-cli/getMcpStatus": self.handle_get_mcp_status,
             "poor-cli/clearHistory": self.handle_clear_history,
             "poor-cli/compactContext": self.handle_compact_context,
             "poor-cli/previewContext": self.handle_preview_context,
             "poor-cli/previewMutation": self.handle_preview_mutation,
+            "poor-cli/exec": self.handle_exec,
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
@@ -264,6 +268,7 @@ class PoorCLIServer:
             await self._shutdown_host_server_locked()
         async with self._service_lock:
             await self._shutdown_managed_services_locked()
+        await self.core.shutdown()
         self._running = False
         return None
 
@@ -517,6 +522,26 @@ class PoorCLIServer:
         self._ensure_initialized()
         return self.core.get_provider_info()
 
+    async def handle_get_instruction_stack(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the active instruction stack for the given referenced files."""
+        self._ensure_initialized()
+        referenced_files = params.get("referencedFiles")
+        if not isinstance(referenced_files, list):
+            referenced_files = []
+        return self.core.inspect_instruction_stack([str(path) for path in referenced_files])
+
+    async def handle_get_policy_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return repo-local policy hook and audit status."""
+        del params
+        self._ensure_initialized()
+        return self.core.get_policy_status()
+
+    async def handle_get_mcp_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return MCP connectivity and registered tool status."""
+        del params
+        self._ensure_initialized()
+        return self.core.get_mcp_status()
+
     async def handle_clear_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Clear conversation history.
@@ -527,6 +552,45 @@ class PoorCLIServer:
         self._ensure_initialized()
         await self.core.clear_history()
         return {"success": True}
+
+    async def handle_exec(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run a headless chat request via the shared core engine."""
+        self._ensure_initialized()
+
+        prompt = str(params.get("prompt", "") or "")
+        if not prompt.strip():
+            raise InvalidParamsError("prompt is required")
+
+        output_format = str(params.get("outputFormat", "text") or "text").strip().lower()
+        if output_format not in {"text", "json"}:
+            raise InvalidParamsError("outputFormat must be one of: text, json")
+
+        context_files = params.get("contextFiles")
+        if not isinstance(context_files, list):
+            context_files = None
+        pinned_context_files = params.get("pinnedContextFiles")
+        if not isinstance(pinned_context_files, list):
+            pinned_context_files = None
+        context_budget_tokens = params.get("contextBudgetTokens")
+        if context_budget_tokens is not None:
+            try:
+                context_budget_tokens = int(context_budget_tokens)
+            except (TypeError, ValueError) as e:
+                raise InvalidParamsError("contextBudgetTokens must be an integer") from e
+
+        response_text = await self.core.send_message_sync(
+            message=prompt,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
+        if output_format == "json":
+            return {
+                "content": response_text,
+                "provider": self.core.get_provider_info(),
+                "outputFormat": output_format,
+            }
+        return {"content": response_text, "outputFormat": output_format}
 
     async def handle_compact_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Apply context management strategy.

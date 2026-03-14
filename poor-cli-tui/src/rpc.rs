@@ -990,6 +990,21 @@ impl RpcClient {
         self.call("poor-cli/getTools", Value::Object(Default::default()))
     }
 
+    pub fn get_instruction_stack(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getInstructionStack",
+            Value::Object(Default::default()),
+        )
+    }
+
+    pub fn get_policy_status(&self) -> Result<Value, String> {
+        self.call("poor-cli/getPolicyStatus", Value::Object(Default::default()))
+    }
+
+    pub fn get_mcp_status(&self) -> Result<Value, String> {
+        self.call("poor-cli/getMcpStatus", Value::Object(Default::default()))
+    }
+
     pub fn list_config_options(&self) -> Result<Value, String> {
         self.call(
             "poor-cli/listConfigOptions",
@@ -1476,6 +1491,15 @@ pub enum RpcCommand {
     GetTools {
         reply: SyncSender<Result<Value, String>>,
     },
+    GetInstructionStack {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetPolicyStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetMcpStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
     ListConfigOptions {
         reply: SyncSender<Result<Value, String>>,
     },
@@ -1749,6 +1773,15 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::GetTools { reply }) => {
                 let _ = reply.send(client.get_tools());
+            }
+            Ok(RpcCommand::GetInstructionStack { reply }) => {
+                let _ = reply.send(client.get_instruction_stack());
+            }
+            Ok(RpcCommand::GetPolicyStatus { reply }) => {
+                let _ = reply.send(client.get_policy_status());
+            }
+            Ok(RpcCommand::GetMcpStatus { reply }) => {
+                let _ = reply.send(client.get_mcp_status());
             }
             Ok(RpcCommand::ListConfigOptions { reply }) => {
                 let _ = reply.send(client.list_config_options());

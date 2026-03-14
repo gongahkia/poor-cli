@@ -33,6 +33,9 @@ class AuditEventType(Enum):
     PERMISSION_DENIED = "permission_denied"
     CHECKPOINT_CREATE = "checkpoint_create"
     CHECKPOINT_RESTORE = "checkpoint_restore"
+    TOOL_EXECUTION = "tool_execution"
+    HOOK_ALLOW = "hook_allow"
+    HOOK_DENY = "hook_deny"
 
 
 class AuditSeverity(Enum):

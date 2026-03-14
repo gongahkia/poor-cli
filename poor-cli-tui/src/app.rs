@@ -299,7 +299,10 @@ impl Default for TranscriptSearchState {
 }
 
 fn normalize_review_chunk_path(raw_path: &str, fallback_paths: &[String]) -> String {
-    let trimmed = raw_path.trim().trim_start_matches("a/").trim_start_matches("b/");
+    let trimmed = raw_path
+        .trim()
+        .trim_start_matches("a/")
+        .trim_start_matches("b/");
     if trimmed.is_empty() || trimmed == "/dev/null" {
         return fallback_paths.first().cloned().unwrap_or_default();
     }
@@ -334,7 +337,8 @@ fn parse_mutation_review_chunks(diff: &str, fallback_paths: &[String]) -> Vec<Mu
     let mut current_path = fallback_paths.first().cloned().unwrap_or_default();
     let mut current_lines: Vec<String> = Vec::new();
     let mut current_header = String::new();
-    let mut hunk_indexes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut hunk_indexes: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for line in diff.lines() {
         if line.starts_with("diff --git ") || line.starts_with("--- ") {
