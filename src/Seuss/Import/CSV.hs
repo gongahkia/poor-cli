@@ -58,7 +58,7 @@ importEntities header rows = do
   where
     buildEntityRow (lineNumber, columns)
         | T.null rawName =
-            Left (diag lineNumber "empty name")
+            Left [diag lineNumber "empty name"]
         | otherwise =
             Right
                 EntityImportRow
@@ -167,7 +167,7 @@ importRelationships header rows =
     render blocks = T.unlines blocks
     renderRow (lineNumber, columns)
         | T.null rawSource || T.null rawTarget =
-            Left (diag lineNumber "empty source or target")
+            Left [diag lineNumber "empty source or target"]
         | otherwise =
             Right (baseRel <> temporalSuffix <> ";")
       where

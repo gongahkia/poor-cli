@@ -4,7 +4,8 @@ module Seuss.Core.Eval
     ( evalProgram
     ) where
 
-import Control.Monad (foldM, traverse_, unless)
+import Control.Monad (foldM, unless)
+import Data.Foldable (traverse_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe, isJust)

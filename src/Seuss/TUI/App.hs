@@ -7,13 +7,15 @@ module Seuss.TUI.App
 import Brick
 import qualified Brick.Main as M
 import Brick.Util (fg, on)
-import qualified Graphics.Vty as V
+import Brick.Widgets.Border (borderWithLabel)
+import Control.Monad.State.Class (get, put)
 import Data.Char (digitToInt)
 import Data.List (nub, sort)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Graphics.Vty as V
 import Seuss.Core.Validation
 import Seuss.Model.Types
 import Seuss.Render.Layout
@@ -108,7 +110,7 @@ appDefinition =
         { appDraw = drawUi
         , appChooseCursor = neverShowCursor
         , appHandleEvent = handleEvent
-        , appStartEvent = pure
+        , appStartEvent = pure ()
         , appAttrMap = const attrMapDefinition
         }
 
@@ -261,54 +263,55 @@ inspectorText state =
             [] -> ["Trail", "  (empty)"]
             entries -> "Trail" : map ("  " <>) entries
 
-handleEvent :: AppState -> BrickEvent Name e -> EventM Name (Next AppState)
-handleEvent state (VtyEvent eventValue) =
+handleEvent :: BrickEvent Name e -> EventM Name AppState ()
+handleEvent (VtyEvent eventValue) = do
+    state <- get
     case appMode state of
         ModeSearch ->
             case eventValue of
-                V.EvKey V.KEsc [] -> M.continue (exitSearch state)
-                V.EvKey V.KBS [] -> M.continue (searchBackspace state)
-                V.EvKey V.KEnter [] -> M.continue (exitSearch state)
-                V.EvKey (V.KChar charValue) [] -> M.continue (searchAppend charValue state)
-                _ -> M.continue state
+                V.EvKey V.KEsc [] -> put (exitSearch state)
+                V.EvKey V.KBS [] -> put (searchBackspace state)
+                V.EvKey V.KEnter [] -> put (exitSearch state)
+                V.EvKey (V.KChar charValue) [] -> put (searchAppend charValue state)
+                _ -> pure ()
         ModeCommand ->
             case eventValue of
-                V.EvKey V.KEsc [] -> M.continue (exitCommandPalette state)
-                V.EvKey V.KBS [] -> M.continue (commandBackspace state)
-                V.EvKey V.KEnter [] -> M.continue (runCommandPalette state)
-                V.EvKey (V.KChar charValue) [] -> M.continue (commandAppend charValue state)
-                _ -> M.continue state
+                V.EvKey V.KEsc [] -> put (exitCommandPalette state)
+                V.EvKey V.KBS [] -> put (commandBackspace state)
+                V.EvKey V.KEnter [] -> put (runCommandPalette state)
+                V.EvKey (V.KChar charValue) [] -> put (commandAppend charValue state)
+                _ -> pure ()
         ModeNormal ->
             case eventValue of
-                V.EvKey (V.KChar 'q') [] -> M.halt state
-                V.EvKey (V.KChar '\t') [] -> M.continue (advancePane state)
-                V.EvKey V.KUp [] -> M.continue (moveSelection (-1) state)
-                V.EvKey (V.KChar 'k') [] -> M.continue (moveSelection (-1) state)
-                V.EvKey V.KDown [] -> M.continue (moveSelection 1 state)
-                V.EvKey (V.KChar 'j') [] -> M.continue (moveSelection 1 state)
-                V.EvKey V.KEnter [] -> M.continue (followSelection state)
+                V.EvKey (V.KChar 'q') [] -> M.halt
+                V.EvKey (V.KChar '\t') [] -> put (advancePane state)
+                V.EvKey V.KUp [] -> put (moveSelection (-1) state)
+                V.EvKey (V.KChar 'k') [] -> put (moveSelection (-1) state)
+                V.EvKey V.KDown [] -> put (moveSelection 1 state)
+                V.EvKey (V.KChar 'j') [] -> put (moveSelection 1 state)
+                V.EvKey V.KEnter [] -> put (followSelection state)
                 V.EvKey (V.KChar '/') [] ->
-                    M.continue (recordHistory state){appMode = ModeSearch, appStatus = "Search mode"}
+                    put (recordHistory state){appMode = ModeSearch, appStatus = "Search mode"}
                 V.EvKey (V.KChar ':') [] ->
-                    M.continue (recordHistory state){appMode = ModeCommand, appCommandInput = "", appStatus = "Command palette"}
-                V.EvKey (V.KChar 't') [] -> M.continue (cycleTypeFilter state)
-                V.EvKey (V.KChar 'n') [] -> M.continue (toggleNeighborhood state)
-                V.EvKey (V.KChar 's') [] -> M.continue (jumpRelationshipEndpoint True state)
-                V.EvKey (V.KChar 'g') [] -> M.continue (jumpRelationshipEndpoint False state)
-                V.EvKey (V.KChar '?') [] -> M.continue state{appShowHelp = not (appShowHelp state)}
-                V.EvKey (V.KChar 'c') [] -> M.continue (cycleCompareTimeline state)
-                V.EvKey (V.KChar 'b') [] -> M.continue (saveBookmark state)
-                V.EvKey (V.KChar '[') [] -> M.continue (stepScrubber (-1) state)
-                V.EvKey (V.KChar ']') [] -> M.continue (stepScrubber 1 state)
-                V.EvKey (V.KChar '{') [] -> M.continue (scrubToTimelineBoundary False state)
-                V.EvKey (V.KChar '}') [] -> M.continue (scrubToTimelineBoundary True state)
-                V.EvKey (V.KChar 'u') [] -> M.continue (undoState state)
-                V.EvKey (V.KChar 'y') [] -> M.continue (redoState state)
+                    put (recordHistory state){appMode = ModeCommand, appCommandInput = "", appStatus = "Command palette"}
+                V.EvKey (V.KChar 't') [] -> put (cycleTypeFilter state)
+                V.EvKey (V.KChar 'n') [] -> put (toggleNeighborhood state)
+                V.EvKey (V.KChar 's') [] -> put (jumpRelationshipEndpoint True state)
+                V.EvKey (V.KChar 'g') [] -> put (jumpRelationshipEndpoint False state)
+                V.EvKey (V.KChar '?') [] -> put state{appShowHelp = not (appShowHelp state)}
+                V.EvKey (V.KChar 'c') [] -> put (cycleCompareTimeline state)
+                V.EvKey (V.KChar 'b') [] -> put (saveBookmark state)
+                V.EvKey (V.KChar '[') [] -> put (stepScrubber (-1) state)
+                V.EvKey (V.KChar ']') [] -> put (stepScrubber 1 state)
+                V.EvKey (V.KChar '{') [] -> put (scrubToTimelineBoundary False state)
+                V.EvKey (V.KChar '}') [] -> put (scrubToTimelineBoundary True state)
+                V.EvKey (V.KChar 'u') [] -> put (undoState state)
+                V.EvKey (V.KChar 'y') [] -> put (redoState state)
                 V.EvKey (V.KChar keyValue) []
                     | keyValue >= '1' && keyValue <= '9' ->
-                        M.continue (loadBookmark (digitToInt keyValue) state)
-                _ -> M.continue state
-handleEvent state _ = M.continue state
+                        put (loadBookmark (digitToInt keyValue) state)
+                _ -> pure ()
+handleEvent _ = pure ()
 
 advancePane :: AppState -> AppState
 advancePane state =

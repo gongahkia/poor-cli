@@ -143,7 +143,11 @@ objectType obj =
 
 lookupScalarTextWithDefault :: [Text] -> Text -> Aeson.Object -> Text
 lookupScalarTextWithDefault keys fallback obj =
-    fromMaybe fallback (foldr (\keyValue found -> found <|> lookupScalarText keyValue obj) Nothing keys)
+    fromMaybe fallback (go keys)
+  where
+    go [] = Nothing
+    go (keyValue : rest) =
+        lookupScalarText keyValue obj <|> go rest
 
 lookupScalarText :: Text -> Aeson.Object -> Maybe Text
 lookupScalarText keyName obj =

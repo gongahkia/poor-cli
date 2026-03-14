@@ -77,16 +77,16 @@ loadConfig (Just path) = do
 resolveSvgTheme :: Maybe Text -> SeussConfig -> IO SvgTheme
 resolveSvgTheme themeOverride configValue =
     case themeOverride <|> configThemeName configValue of
-        Just "light" -> pure lightTheme
-        Just "dark" -> pure darkTheme
+        Just "light" -> pure (resolvedNamedTheme lightTheme configValue)
+        Just "dark" -> pure (resolvedNamedTheme darkTheme configValue)
         Just customPath -> do
             exists <- doesFileExist (T.unpack customPath)
             if exists
                 then do
                     customConfig <- parseConfig <$> TIO.readFile (T.unpack customPath)
-                    pure (maybe darkTheme id (configTheme customConfig))
-                else pure (maybe darkTheme id (configTheme configValue))
-        Nothing -> pure (maybe darkTheme id (configTheme configValue))
+                    pure (resolvedConfiguredTheme customConfig)
+                else pure (resolvedConfiguredTheme configValue)
+        Nothing -> pure (resolvedConfiguredTheme configValue)
 
 parseConfig :: Text -> SeussConfig
 parseConfig input =
@@ -130,14 +130,39 @@ parseLine rawLine
                 | otherwise ->
                     Just (Right (T.strip keyValue, T.strip (T.drop 1 value)))
   where
-    cleaned =
-        T.strip $
-            T.takeWhile (/= '#') $
-                T.takeWhile (/= ';') rawLine
+    cleaned = T.strip (stripInlineComment rawLine)
+
+stripInlineComment :: Text -> Text
+stripInlineComment = T.pack . go False . T.unpack
+  where
+    go _ [] = []
+    go insideQuotes (charValue : rest)
+        | charValue == '"' = charValue : go (not insideQuotes) rest
+        | not insideQuotes && (charValue == '#' || charValue == ';') = []
+        | otherwise = charValue : go insideQuotes rest
 
 withTheme :: SeussConfig -> (SvgTheme -> SvgTheme) -> SvgTheme
 withTheme configValue updateTheme =
-    updateTheme (maybe darkTheme id (configTheme configValue))
+    updateTheme $
+        maybe
+            (case fmap T.toLower (configThemeName configValue) of
+                Just "light" -> lightTheme
+                Just "dark" -> darkTheme
+                _ -> darkTheme
+            )
+            id
+            (configTheme configValue)
+
+resolvedConfiguredTheme :: SeussConfig -> SvgTheme
+resolvedConfiguredTheme configValue =
+    case fmap T.toLower (configThemeName configValue) of
+        Just "light" -> resolvedNamedTheme lightTheme configValue
+        Just "dark" -> resolvedNamedTheme darkTheme configValue
+        _ -> maybe darkTheme id (configTheme configValue)
+
+resolvedNamedTheme :: SvgTheme -> SeussConfig -> SvgTheme
+resolvedNamedTheme fallbackTheme configValue =
+    maybe fallbackTheme id (configTheme configValue)
 
 stripQuotes :: Text -> Text
 stripQuotes = T.dropAround (== '"')

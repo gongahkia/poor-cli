@@ -1011,7 +1011,7 @@ spec = do
                         Right worldValue ->
                             Map.member "while_hit" (worldEntities worldValue) `shouldBe` True
 
-    describe "diffing" $
+    describe "diffing" $ do
         it "reports entity deltas between worlds" $ do
             source <- TIO.readFile "examples/lotr.seuss"
             case parseProgram "examples/lotr.seuss" source of

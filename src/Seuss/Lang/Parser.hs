@@ -5,7 +5,6 @@ module Seuss.Lang.Parser
     , parseStatement
     ) where
 
-import Control.Applicative (empty, many, optional, (<|>))
 import Data.Char (isAlphaNum)
 import Data.Functor (($>))
 import qualified Data.Map.Strict as Map
@@ -65,7 +64,7 @@ statementParser =
         , StmtIf <$> ifDeclParser
         , StmtMatch <$> matchDeclParser
         , StmtReturn <$> returnStmtParser
-        , uncurry StmtAssign <$> assignStmtParser
+        , try (uncurry StmtAssign <$> assignStmtParser)
         , StmtExpr <$> exprStmtParser
         ]
 
@@ -167,7 +166,7 @@ postfixSuffixParser =
         ]
 
 fieldSuffixParser :: Parser Text
-fieldSuffixParser = do
+fieldSuffixParser = try $ do
     _ <- symbol "."
     identifier
 
@@ -448,7 +447,7 @@ ifDeclParser = do
     _ <- symbol "if"
     condition <- exprParser
     body <- braces (many statementParser)
-    elseIfBlocks <- many elseIfParser
+    elseIfBlocks <- many (try elseIfParser)
     elseBlock <- optional elseBlockParser
     pure
         IfDecl
