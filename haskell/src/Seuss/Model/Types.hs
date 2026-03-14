@@ -39,6 +39,7 @@ data Value
     | VInt Integer
     | VBool Bool
     | VDate Day
+    | VList [Value]
     deriving (Eq, Ord, Show)
 
 data BinaryOp
