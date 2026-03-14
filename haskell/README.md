@@ -41,6 +41,8 @@ $ cabal test
 - postfix index expressions like `labels[1]` and `"abc"[1]` now parse and evaluate.
 - function declarations now accept optional return annotations like `fn add(a: int, b: int) -> int { ... }`.
 - named function calls now evaluate with scoped parameter binding, return the last expression in the body, and also work as standalone statement calls.
+- typed closures like `|x: int| x + offset` now parse and evaluate with captured outer bindings.
+- a first builtin set is now wired up in the Haskell runtime: `len`, `before`, `after`, and `type_of`.
 - dot-based field access like `frodo.age` and `main.kind` now resolves against entity and timeline values already present in the world.
 - `for` loops can now iterate over bound list and range expressions, not just inline literals.
 - `let mut name = ...;` is accepted, and existing bindings can now be reassigned with `name = ...;`.
