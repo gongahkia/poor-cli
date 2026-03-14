@@ -5,12 +5,14 @@ module Main (main) where
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import Seuss.Config.Loader
 import Seuss.Core.Diff
 import Seuss.Core.Eval
 import Seuss.Core.Validation
 import Seuss.Import.CSV
 import Seuss.Lang.Parser
 import Seuss.Model.Types
+import System.Directory (removeFile)
 import Test.Hspec
 
 main :: IO ()
@@ -56,6 +58,30 @@ spec = do
                     expectationFailure ("csv import failed: " <> show diags)
                 Right output ->
                     output `shouldSatisfy` T.isInfixOf "entity frodo"
+
+    describe "config loading" $
+        it "reads export defaults and theme settings from a TOML-like file" $ do
+            let configPath = "/tmp/seuss-hs-config.toml"
+                configSource =
+                    T.unlines
+                        [ "[export]"
+                        , "default_width = 2048"
+                        , "default_height = 1152"
+                        , "default_format = \"pdf\""
+                        , ""
+                        , "[theme]"
+                        , "name = \"light\""
+                        , "background = \"#ffffff\""
+                        ]
+            TIO.writeFile configPath configSource
+            configValue <- loadConfig (Just configPath)
+            resolvedTheme <- resolveSvgTheme Nothing configValue
+            removeFile configPath
+            configDefaultWidth configValue `shouldBe` Just 2048
+            configDefaultHeight configValue `shouldBe` Just 1152
+            configDefaultFormat configValue `shouldBe` Just "pdf"
+            configThemeName configValue `shouldBe` Just "light"
+            themeBackground resolvedTheme `shouldBe` "#ffffff"
 
     describe "diffing" $
         it "reports entity deltas between worlds" $ do
