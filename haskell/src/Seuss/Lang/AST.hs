@@ -153,6 +153,7 @@ data Stmt
     | StmtFunction FnDecl
     | StmtIf IfDecl
     | StmtMatch MatchDecl
+    | StmtAssign Text Expr
     deriving (Eq, Show)
 
 newtype Program = Program [Stmt]
