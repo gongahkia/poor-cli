@@ -1,14 +1,10 @@
-__pycache__
-/target
+__pycache__/
 *.swp
 *.swo
 
-# Added by cargo
-
 /target
-/Cargo.lock
-/haskell/dist-newstyle
-/haskell/.ghc.environment.*
-/haskell/cabal.project.local
-/haskell/cabal.project.local~
-/haskell/seuss-hs.cabal.project.local
+/dist-newstyle/
+/.ghc.environment.*
+/cabal.project.local
+/cabal.project.local~
+/seuss-hs.cabal.project.local

@@ -1,6 +1,6 @@
 # Seuss Syntax Reference
 
-Complete syntax reference for the Seuss DSL [v1.0.0](https://github.com/gongahkia/seuss/releases/tag/v0.1.0). 
+Syntax reference for the current Haskell implementation of Seuss.
 
 For more examples, see the [`examples/`](../examples/) directory.
 
@@ -12,7 +12,6 @@ For more examples, see the [`examples/`](../examples/) directory.
 - [Timelines](#timelines)
 - [Entities](#entities)
 - [Relationships](#relationships)
-- [Temporal Expressions](#temporal-expressions)
 - [Custom Types](#custom-types)
 - [Variables](#variables)
 - [Functions](#functions)
@@ -40,6 +39,8 @@ Seuss supports single-line and block comments.
 
 ## Literals
 
+The current parser accepts integers, strings, booleans, and ISO dates.
+
 ### Integers
 
 ```seuss
@@ -48,26 +49,15 @@ Seuss supports single-line and block comments.
 1000
 ```
 
-### Floats
-
-```seuss
-3.14
-0.5
-100.0
-```
-
 ### Strings
 
-Strings are double-quoted. Escape sequences are supported.
+Strings are double-quoted and use Megaparsec character escapes.
 
 ```seuss
 "hello world"
 "line one\nline two"
 "a \"quoted\" word"
-"curly \{braces\}"
 ```
-
-Supported escape sequences: `\n`, `\t`, `\r`, `\\`, `\"`, `\{`, `\}`.
 
 ### Booleans
 
@@ -83,21 +73,6 @@ Dates follow the `YYYY-MM-DD` format.
 ```seuss
 1939-09-01
 2024-12-25
-```
-
-### Durations
-
-A number followed by a time unit.
-
-```seuss
-5days
-3months
-10years
-2weeks
-1day
-1month
-1year
-1week
 ```
 
 ---
@@ -117,7 +92,7 @@ warPhase2
 
 ## Timelines
 
-A timeline defines a temporal span in which entities can appear. Every Seuss program needs at least one timeline.
+A timeline defines a named temporal span.
 
 ```seuss
 timeline main {
@@ -133,20 +108,20 @@ timeline main {
 |------|-------------|
 | `linear` | A single sequential timeline |
 | `branch` | A timeline that diverges from another |
-| `parallel` | A timeline that runs alongside others |
+| `parallel` | A concurrent timeline |
 | `loop` | A repeating timeline |
 
 ### Timeline fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `kind` | Yes | One of `linear`, `branch`, `parallel`, `loop` |
-| `start` | Yes | Start date or expression |
-| `end` | Yes | End date or expression |
-| `parent` | No | Parent timeline name (for branches) |
-| `fork_from` | No | Fork point: `timeline_name @ date` |
-| `merge_into` | No | Merge point: `timeline_name @ date` |
-| `loop_count` | No | Number of repetitions (for `loop` kind) |
+| `kind` | No | One of `linear`, `branch`, `parallel`, `loop`; defaults to `linear` |
+| `start` | No | Start date or integer time point; defaults to `0` |
+| `end` | No | End date or integer time point; defaults to `100` |
+| `parent` | No | Parent timeline name |
+| `fork_from` | No | Fork point written as `timeline_name @ expr` |
+| `merge_into` | No | Merge point written as `timeline_name @ expr` |
+| `loop_count` | No | Loop iteration count |
 
 ### Branching and merging
 
@@ -181,7 +156,7 @@ timeline cycle {
 
 ## Entities
 
-Entities are the things that exist on timelines — people, events, objects, places, or any custom type.
+Entities are attached to one or more timelines through `appears_on`.
 
 ```seuss
 entity frodo : character {
@@ -192,16 +167,16 @@ entity frodo : character {
 
 ### Syntax
 
-```
+```text
 entity <name> : <type>? {
     <field>: <value>,
     appears_on: <timeline> @ <start>..<end>,
 }
 ```
 
-- The `: <type>` is optional. If omitted, the entity defaults to the built-in `entity` type.
-- `appears_on` places the entity on a timeline for a given time range.
-- An entity can have any number of custom fields.
+- The `: <type>` clause is optional; omitted types default to `entity` at evaluation time.
+- `appears_on` can be repeated to give an entity multiple appearances.
+- Custom fields are stored as evaluated values in the entity record.
 
 ### Built-in types
 
@@ -209,55 +184,259 @@ These type labels are always available without a `type` declaration:
 
 | Type | Typical use |
 |------|-------------|
-| `entity` | Generic (default) |
-| `event` | A point or span event |
-| `person` | A human individual |
-| `place` | A location |
-| `object` | A physical thing |
-| `group` | A collection of entities |
-
-### Multiple timeline appearances
-
-An entity can appear on multiple timelines by repeating the `appears_on` field.
-
-```seuss
-entity traveler : person {
-    appears_on: timeline_a @ 2000-01-01..2005-12-31,
-    appears_on: timeline_b @ 2003-06-01..2010-12-31,
-}
-```
+| `entity` | Generic default |
+| `event` | Event entities |
+| `person` | People |
+| `place` | Places |
+| `object` | Objects |
+| `group` | Groups |
+| `character` | Narrative characters |
+| `artifact` | Named objects with story significance |
+| `location` | Places with explicit timeline appearances |
+| `faction` | Group or organization entities |
 
 ---
 
 ## Relationships
 
-Relationships connect two entities with an optional label and directionality.
+Relationships are always written as directed edges in the current parser.
 
-### Directed and labeled (most common)
-
-```seuss
-rel churchill -["allied with"]-> roosevelt;
-```
-
-### Undirected and labeled
+### Directed and labeled
 
 ```seuss
-rel alice -["siblings"]- bob;
+rel churchill -["allied_with"]-> roosevelt;
 ```
 
-### Directed, unlabeled
+### Directed and unlabeled
 
 ```seuss
 rel cause --> effect;
 ```
 
-### Undirected, unlabeled
+### Temporal scope
 
 ```seuss
-rel node_a -- node_b;
+rel traveler -["meets"]-> guide @ 2001-01-01..2001-01-31;
 ```
 
-### Temporal scope
+---
+
+## Custom Types
+
+Custom types declare fields and optional metadata.
+
+```seuss
+type leader {
+    nation: string,
+    rank: string,
+    @icon: "crown",
+}
+```
+
+### Inheritance
+
+```seuss
+type battle : event {
+    theater: string,
+    outcome: string,
+}
+```
+
+### Metadata
+
+`@` fields are stored as type metadata and can be read by the evaluator or renderers.
+
+```seuss
+type faction {
+    name: string,
+    @color: "#2f6fed",
+    @shape: "diamond",
+}
+```
+
+---
+
+## Variables
+
+`let` bindings support optional `mut` and optional type annotations.
+
+```seuss
+let war_duration = 6;
+let mut counter = 0;
+let name: string = "Frodo";
+counter = counter + 1;
+```
+
+---
+
+## Functions
+
+Functions are declared with `fn`, typed parameters, and an optional return type.
+
+```seuss
+fn summarize(count: int) -> string {
+    if count > 1 {
+        return "multiple";
+    }
+    return "single";
+}
+```
+
+Closures are also supported:
+
+```seuss
+let labeler = |name: string| name;
+```
+
+---
+
+## Control Flow
+
+### Conditionals
+
+```seuss
+if true {
+    let branch = "then";
+} else if false {
+    let branch = "else-if";
+} else {
+    let branch = "else";
+}
+```
+
+### Match
+
+Each arm body is a block.
+
+```seuss
+match status {
+    "active" => {
+        let running = true;
+    },
+    state => {
+        let seen = state;
+    },
+    _ => {
+        let running = false;
+    },
+}
+```
+
+### For loops
+
+`for` accepts ranges, list literals, or general expressions.
+
+```seuss
+for i in 1..3 {
+    let phase = i;
+}
+
+for label in ["one", "two"] {
+    let current = label;
+}
+```
+
+### Repeat loops
+
+```seuss
+repeat 3 {
+    let tick = true;
+}
+```
+
+### While loops
+
+```seuss
+let mut counter = 0;
+
+while counter < 3 {
+    counter = counter + 1;
+}
+```
+
+---
+
+## Operators
+
+The current parser supports the following operators:
+
+| Category | Operators |
+|----------|-----------|
+| Arithmetic | `+`, `-` |
+| Comparison | `>`, `<`, `>=`, `<=`, `==`, `!=` |
+| Boolean | `&&`, `||` |
+| Range | `..` |
+
+---
+
+## Imports
+
+Imports are written as file paths and are expanded by the CLI loader before parsing.
+
+```seuss
+import "shared/common.seuss";
+```
+
+---
+
+## Field Access
+
+Field access and indexing are both supported in expressions.
+
+```seuss
+entity frodo : character {
+    age: 50,
+    appears_on: main @ 2968-09-22..3019-09-29,
+}
+
+let age_value = frodo.age;
+let first_name = ["frodo", "sam"][0];
+```
+
+---
+
+## Lists
+
+List literals and ranges are first-class expressions.
+
+```seuss
+let values = [1, 2, 3];
+let days = 1..3;
+```
+
+---
+
+## Complete Example
+
+```seuss
+type leader {
+    nation: string,
+}
+
+timeline main {
+    kind: linear,
+    start: 1939-09-01,
+    end: 1945-09-02,
+}
+
+entity churchill : leader {
+    nation: "United Kingdom",
+    appears_on: main @ 1939-09-03..1945-05-08,
+}
+
+entity roosevelt : leader {
+    nation: "United States",
+    appears_on: main @ 1941-12-11..1945-04-12,
+}
+
+rel churchill -["allied_with"]-> roosevelt;
+
+let war_duration = 6;
+
+if war_duration > 5 {
+    let long_war = true;
+}
+```
 
 Relationships can be scoped to a time range.
 

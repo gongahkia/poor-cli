@@ -13,31 +13,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
+          - os: ubuntu-latest
+            artifact: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            artifact: apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: haskell-actions/setup@v2
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+          ghc-version: "9.6.6"
+          cabal-version: "3.10.3.0"
+
+      - name: Update package index
+        run: cabal update
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cabal build exe:seuss
+
+      - name: Install executable
+        run: |
+          mkdir -p dist/bin
+          cabal install exe:seuss --installdir=dist/bin --overwrite-policy=always
 
       - name: Package
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../seuss-${{ github.ref_name }}-${{ matrix.target }}.tar.gz seuss
+          tar czf seuss-${{ github.ref_name }}-${{ matrix.artifact }}.tar.gz -C dist/bin seuss
 
       - uses: actions/upload-artifact@v4
         with:
-          name: seuss-${{ matrix.target }}
+          name: seuss-${{ matrix.artifact }}
           path: seuss-*.tar.gz
 
   release:

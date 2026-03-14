@@ -13,11 +13,10 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 
 ## Stack
 
-* *Scripting*: [Haskell](), [megaparsec](), [Rust](https://rust-lang.org/), [pest](https://pest.rs/), [clap](https://docs.rs/clap), [thiserror](https://docs.rs/thiserror)
-* *TUI*: [ratatui](https://ratatui.rs/), [crossterm](https://docs.rs/crossterm) 
-* *Export Format*: [svg](https://docs.rs/svg), [resvg](https://docs.rs/resvg), [printpdf](https://docs.rs/printpdf) 
-* *Date/Time*: [chrono](https://docs.rs/chrono) 
-* *Serialization*: [serde](https://serde.rs/), [serde_json](https://docs.rs/serde_json), [toml](https://docs.rs/toml), [uuid](https://docs.rs/uuid)
+* *Language & Parsing*: [Haskell](https://www.haskell.org/), [megaparsec](https://hackage.haskell.org/package/megaparsec), [optparse-applicative](https://hackage.haskell.org/package/optparse-applicative), [text](https://hackage.haskell.org/package/text)
+* *TUI*: [brick](https://hackage.haskell.org/package/brick), [vty](https://hackage.haskell.org/package/vty)
+* *Export Format*: [SVG](https://www.w3.org/Graphics/SVG/), [aeson](https://hackage.haskell.org/package/aeson), [tomland](https://hackage.haskell.org/package/tomland)
+* *Data & Utilities*: [containers](https://hackage.haskell.org/package/containers), [bytestring](https://hackage.haskell.org/package/bytestring), [filepath](https://hackage.haskell.org/package/filepath), [time](https://hackage.haskell.org/package/time)
 * *CI/CD*: [GitHub Actions](https://github.com/features/actions)
 
 ## Screenshots
@@ -38,47 +37,48 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 
 The below instructions are for running `Seuss` locally.
 
-1. First execute the below command to clone `Seuss`' Rust port onto your local machine.
+1. First execute the below command to clone the current Haskell implementation of `Seuss` onto your local machine.
 
 ```console
 $ git clone https://github.com/gongahkia/seuss && cd seuss
-$ cargo build --release # built binary lives at ./target/release/seuss
-$ cp ./target/release/seuss /usr/local/bin/ # optionally copy the binary to your PATH
+$ cabal update
+$ cabal build all
+$ cabal run seuss -- --help
+$ cabal install exe:seuss --installdir="$HOME/.local/bin" --overwrite-policy=always
 ```
 
-2. Next, run any of the below commands *(and flags)* to interact with `Seuss` and its [TUI](#tui-commands).
+2. Next run any of the below [commands and flags](#commands-and-flags) to interact with `Seuss` and its [TUI](#tui-commands).
 
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `seuss run <file>` | Parse and visualize a `.seuss` file in the interactive terminal TUI |
-| `seuss export <file> -f svg -o out.svg` | Export timeline as SVG |
-| `seuss export <file> -f png -o out.png` | Export timeline as PNG (configurable `--dpi`, default 150) |
-| `seuss export <file> -f pdf -o out.pdf` | Export timeline as vector PDF |
-| `seuss check <file>` | Validate a `.seuss` file without rendering |
-| `seuss diff <file1> <file2>` | Colorized diff of two `.seuss` files (timelines, entities, relationships) |
-| `seuss import <file> --from csv` | Import from CSV, GEDCOM, or JSON-LD into `.seuss` format |
-| `seuss repl` | Interactive REPL with file discovery, `:load`, `:world`, `:entities`, `:rels` |
-
-### Flags
-
-| Flag | Description |
-|------|-------------|
-| `--verbose` | Enable debug logging |
-| `--config <path>` | Path to a TOML config file for default export settings |
-| `--theme <name>` | Theme: `dark` (default), `light`, or path to a custom TOML theme |
-
-3. Additionally, `Seuss` provides export options to the below file formats.
+3. `Seuss`' current implementation additionally supports SVG export via the below commands.
 
 ```console
 $ seuss export examples/ww2.seuss -f svg -o ww2.svg
-$ seuss export examples/ww2.seuss -f png -o ww2.png --dpi 300
-$ seuss export examples/ww2.seuss -f pdf -o ww2.pdf
-$ seuss export examples/ww2.seuss -f svg --width 1920 --height 1080
+$ seuss export examples/lotr.seuss -f svg -o lotr.svg --width 1920 --height 1080
+$ cabal run seuss -- export examples/ww2.seuss -f svg -o ww2.svg
+$ cabal run seuss -- --theme light export examples/lotr.seuss -f svg -o lotr.svg
 ```
 
-4. Finally, interact with `Seuss`' REPL via the below, or type raw `Seuss` declarations to interactively build a timeline.
+4. Finally, interact with `Seuss`' [REPL](#repl-commands) or type raw `Seuss` declarations to interactively build a timeline.
+
+## Commands
+
+### Commands and flags
+
+| Command | Description |
+|---------|-------------|
+| `seuss run <file>` | Parse a `.seuss` file, validate it, and open the Brick-based terminal explorer |
+| `seuss export <file> -f svg -o out.svg` | Export a `.seuss` file as SVG |
+| `seuss check <file>` | Parse and validate a `.seuss` file without opening the TUI |
+| `seuss diff <file1> <file2>` | Render a semantic diff of timelines, entities, and relationships |
+| `seuss import <file> --from csv` | Import CSV, GEDCOM, or JSON-LD data into `.seuss` source |
+| `seuss repl` | Start the interactive REPL with `:load`, `:world`, `:entities`, and `:rels` |
+| `seuss lsp` | Run the stdio language server for completions, hover, and diagnostics |
+
+| Flag | Description |
+|------|-------------|
+| `--verbose` | Print extra startup and command execution details |
+| `--config <path>` | Path to a TOML config file for export defaults and theme settings |
+| `--theme <name>` | Theme: `dark`, `light`, or a path to a custom TOML theme |
 
 ### REPL commands
 
@@ -86,76 +86,76 @@ $ seuss export examples/ww2.seuss -f svg --width 1920 --height 1080
 |---------|-------------|
 | `:load <n>` or `:load <path>` | Load a `.seuss` file by index or path |
 | `:files` / `:f` | Re-scan and list available `.seuss` files |
-| `:world` / `:w` | Show all timelines, entities, and relationships |
-| `:entities` / `:e` | Table of all entities with type, timeline, and time range |
-| `:rels` / `:r` | Table of all relationships with source, label, target, directionality |
-| `:validate` / `:v` | Run structural validation and report errors/warnings |
-| `:timeline` / `:t` | ASCII mini-timeline visualization |
+| `:world` / `:w` | Show summary counts for timelines, entities, relationships, and types |
+| `:entities` / `:e` | Print each entity with its type and appearance count |
+| `:rels` / `:r` | Print each relationship in semantic edge form |
+| `:validate` / `:v` | Run structural validation and print diagnostics |
+| `:timeline` / `:t` | Render a text timeline grouped by timeline name |
 | `:quit` / `:q` | Exit the REPL |
 
 ### TUI commands
 
-The `seuss run` command opens a full-screen interactive terminal interface for exploring timelines.
+The `seuss run` command opens a multi-pane terminal interface for exploring timelines, entities, relationships, and diagnostics.
 
 #### Navigation
 
 | Key | Action |
 |-----|--------|
-| `h` / `←` | Pan left |
-| `l` / `→` | Pan right |
-| `k` / `↑` | Pan up |
-| `j` / `↓` | Pan down |
-| `+` / `=` | Zoom in |
-| `-` | Zoom out |
+| `Tab` | Cycle the active pane (Timelines → Entities → Relationships → Inspector) |
+| `k` / `↑` | Move the selection up in the active pane |
+| `j` / `↓` | Move the selection down in the active pane |
+| `Enter` | Follow the current selection into the next relevant pane |
 | `q` | Quit |
 
 #### Entity interaction
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Cycle selection through entities |
-| `Enter` | Drill down into selected entity |
-| `Backspace` | Drill up (navigate back) |
-| `Esc` | Deselect current entity |
+| `Enter` | Follow the selected timeline, entity, or relationship |
+| `t` | Cycle the entity-type filter |
+| `n` | Toggle neighborhood-only relationship mode |
+| `s` | Jump from the selected relationship to its source entity |
+| `g` | Jump from the selected relationship to its target entity |
 
 #### Modes
 
 | Key | Action |
 |-----|--------|
-| `/` | Enter search mode — type to filter entities, `Enter` to jump, `Esc` to cancel |
-| `f` | Enter filter mode — press `t` to toggle entity type filters |
+| `/` | Enter search mode to filter visible entities |
+| `:` | Open the command palette (`help`, `compare`, `bookmark`, `clear-search`, `clear-filters`) |
 | `?` | Toggle help overlay |
-| `B` | Branch navigation — press `0`–`9` to focus on a timeline |
-| `C` | Compare mode — select two timelines to view a side-by-side diff |
-| `Ctrl+p` | Open command palette |
+| `c` | Cycle the timeline used for comparison in the inspector |
+| `Esc` | Exit search or command mode |
 
 #### Time controls
 
 | Key | Action |
 |-----|--------|
-| `[` | Step time cursor backward |
-| `]` | Step time cursor forward |
-| `Space` | Play/pause time scrubber |
+| `[` | Move the scrubber backward by one unit |
+| `]` | Move the scrubber forward by one unit |
+| `{` | Move the scrubber to the selected timeline start |
+| `}` | Move the scrubber to the selected timeline end |
 
 #### Bookmarks
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+b` | Save current viewport as a bookmark |
+| `b` | Save the current entity to the next bookmark slot |
 | `1`–`9` | Jump to a saved bookmark |
 
 #### Undo/Redo
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+z` | Undo last navigation action |
-| `Ctrl+y` | Redo |
+| `u` | Undo the last selection, filter, or scrubber change |
+| `y` | Redo |
 
 #### Layer cycling
 
 | Key | Action |
 |-----|--------|
-| `v` | Cycle through display layers (All → Entities → Relationships → Events) |
+| `t` | Cycle through entity-type filters |
+| `n` | Toggle relationship neighborhood filtering |
 
 ## Syntax
 

@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   check:
     strategy:
@@ -17,34 +14,31 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: haskell-actions/setup@v2
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+          ghc-version: "9.6.6"
+          cabal-version: "3.10.3.0"
 
-      - name: Check formatting
-        run: cargo fmt --check
+      - name: Update package index
+        run: cabal update
 
-      - name: Lint
-        run: cargo clippy -- -W warnings
+      - name: Build
+        run: cabal build all
 
       - name: Run tests
-        run: cargo test
-
-      - name: Build release
-        run: cargo build --release
+        run: cabal test all
 
       - name: Smoke test — version
-        run: ./target/release/seuss --version
+        run: cabal run seuss -- --help
 
       - name: Smoke test — check example
-        run: ./target/release/seuss check examples/lotr.seuss
+        run: cabal run seuss -- check examples/lotr.seuss
 
       - name: Smoke test — export SVG
-        run: ./target/release/seuss export examples/lotr.seuss -f svg -o /tmp/lotr.svg && test -s /tmp/lotr.svg
+        run: cabal run seuss -- export examples/lotr.seuss -f svg -o /tmp/lotr.svg && test -s /tmp/lotr.svg
 
       - name: Smoke test — reject bad format
         run: |
-          if ./target/release/seuss export examples/lotr.seuss -f json 2>/dev/null; then
+          if cabal run seuss -- export examples/lotr.seuss -f json 2>/dev/null; then
             echo "Expected failure for unsupported format" && exit 1
           fi
