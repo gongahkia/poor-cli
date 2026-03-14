@@ -7,6 +7,7 @@ module Seuss.Core.Eval
 import Control.Monad (foldM, traverse_, unless)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Seuss.Lang.AST
@@ -18,6 +19,8 @@ data EvalState = EvalState
     , evalFunctions :: Map Text FnDecl
     , evalClosures :: Map Integer ClosureDef
     , evalNextClosureId :: Integer
+    , evalFunctionDepth :: Int
+    , evalReturnValue :: Maybe Value
     }
 
 data ClosureDef = ClosureDef
@@ -31,151 +34,169 @@ maxWhileIterations = 10000
 
 evalProgram :: Program -> Either Diagnostic World
 evalProgram (Program statements) =
-    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Map.empty Map.empty 0) statements
+    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Map.empty Map.empty 0 0 Nothing) statements
 
 evalStmt :: EvalState -> Stmt -> Either Diagnostic EvalState
 evalStmt state statement =
-    case statement of
-        StmtType decl -> do
-            rejectDuplicate "type" (typeDeclName decl) (worldTypes (evalWorld state))
-            (state1, metaValues) <- evalExprMap state (typeDeclMeta decl)
-            let world' =
-                    (evalWorld state1)
-                        { worldTypes =
-                            Map.insert
-                                (typeDeclName decl)
-                                TypeDef
-                                    { typeName = typeDeclName decl
-                                    , typeParent = typeDeclParent decl
-                                    , typeFields = typeDeclFields decl
-                                    , typeMeta = metaValues
+    case evalReturnValue state of
+        Just _ -> pure state
+        Nothing ->
+            case statement of
+                StmtType decl -> do
+                    rejectDuplicate "type" (typeDeclName decl) (worldTypes (evalWorld state))
+                    (state1, metaValues) <- evalExprMap state (typeDeclMeta decl)
+                    let world' =
+                            (evalWorld state1)
+                                { worldTypes =
+                                    Map.insert
+                                        (typeDeclName decl)
+                                        TypeDef
+                                            { typeName = typeDeclName decl
+                                            , typeParent = typeDeclParent decl
+                                            , typeFields = typeDeclFields decl
+                                            , typeMeta = metaValues
+                                            }
+                                        (worldTypes (evalWorld state1))
+                                }
+                    pure state1{evalWorld = world'}
+                StmtTimeline decl -> do
+                    rejectDuplicate "timeline" (timelineDeclName decl) (worldTimelines (evalWorld state))
+                    (state1, startValue) <- exprToTimePoint state (timelineDeclStart decl)
+                    (state2, endValue) <- exprToTimePoint state1 (timelineDeclEnd decl)
+                    (state3, loopCountValue) <- evalOptionalInteger state2 (timelineDeclLoopCount decl)
+                    (state4, forkValue) <- evalOptionalTimelineRef state3 (timelineDeclForkFrom decl)
+                    (state5, mergeValue) <- evalOptionalTimelineRef state4 (timelineDeclMergeInto decl)
+                    let world' =
+                            (evalWorld state5)
+                                { worldTimelines =
+                                    Map.insert
+                                        (timelineDeclName decl)
+                                        Timeline
+                                            { timelineName = timelineDeclName decl
+                                            , timelineKind = timelineDeclKind decl
+                                            , timelineStart = startValue
+                                            , timelineEnd = endValue
+                                            , timelineParent = timelineDeclParent decl
+                                            , timelineForkFrom = forkValue
+                                            , timelineMergeInto = mergeValue
+                                            , timelineLoopCount = loopCountValue
+                                            }
+                                        (worldTimelines (evalWorld state5))
+                                }
+                    pure state5{evalWorld = world'}
+                StmtEntity decl -> do
+                    rejectDuplicate "entity" (entityDeclName decl) (worldEntities (evalWorld state))
+                    (state1, fieldValues) <- evalExprMap state (entityDeclFields decl)
+                    (state2, appearances) <- evalAppearances state1 (entityDeclAppearances decl)
+                    let world' =
+                            (evalWorld state2)
+                                { worldEntities =
+                                    Map.insert
+                                        (entityDeclName decl)
+                                        Entity
+                                            { entityName = entityDeclName decl
+                                            , entityType = maybe "entity" id (entityDeclType decl)
+                                            , entityFields = fieldValues
+                                            , entityAppearances = appearances
+                                            }
+                                        (worldEntities (evalWorld state2))
+                                }
+                    pure state2{evalWorld = world'}
+                StmtRelationship decl -> do
+                    (state1, scope) <-
+                        case relationshipDeclTemporalScope decl of
+                            Nothing -> pure (state, Nothing)
+                            Just (startExpr, endExpr) -> do
+                                (state', startValue) <- exprToTimePoint state startExpr
+                                (state'', endValue) <- exprToTimePoint state' endExpr
+                                pure (state'', Just (TimeRange startValue endValue))
+                    let world' =
+                            (evalWorld state1)
+                                { worldRelationships =
+                                    worldRelationships (evalWorld state1)
+                                        ++ [ Relationship
+                                                { relSource = relationshipDeclSource decl
+                                                , relLabel = relationshipDeclLabel decl
+                                                , relTarget = relationshipDeclTarget decl
+                                                , relDirected = relationshipDeclDirected decl
+                                                , relTemporalScope = scope
+                                                }
+                                           ]
+                                }
+                    pure state1{evalWorld = world'}
+                StmtImport _ ->
+                    pure state
+                StmtLet decl -> do
+                    (state1, value) <- evalExpr state (letValue decl)
+                    maybe (pure ()) (assertTypeMatches state1 value) (letTypeAnnotation decl)
+                    pure state1{evalEnv = Map.insert (letName decl) value (evalEnv state1)}
+                StmtAssign name expr ->
+                    if Map.member name (evalEnv state)
+                        then do
+                            (state1, value) <- evalExpr state expr
+                            pure state1{evalEnv = Map.insert name value (evalEnv state1)}
+                        else
+                            Left $
+                                Diagnostic
+                                    { diagnosticLevel = DiagnosticError
+                                    , diagnosticSource = "evaluator"
+                                    , diagnosticMessage = "cannot assign to undefined variable: " <> name
                                     }
-                                (worldTypes (evalWorld state1))
-                        }
-            pure state1{evalWorld = world'}
-        StmtTimeline decl -> do
-            rejectDuplicate "timeline" (timelineDeclName decl) (worldTimelines (evalWorld state))
-            (state1, startValue) <- exprToTimePoint state (timelineDeclStart decl)
-            (state2, endValue) <- exprToTimePoint state1 (timelineDeclEnd decl)
-            (state3, loopCountValue) <- evalOptionalInteger state2 (timelineDeclLoopCount decl)
-            (state4, forkValue) <- evalOptionalTimelineRef state3 (timelineDeclForkFrom decl)
-            (state5, mergeValue) <- evalOptionalTimelineRef state4 (timelineDeclMergeInto decl)
-            let world' =
-                    (evalWorld state5)
-                        { worldTimelines =
-                            Map.insert
-                                (timelineDeclName decl)
-                                Timeline
-                                    { timelineName = timelineDeclName decl
-                                    , timelineKind = timelineDeclKind decl
-                                    , timelineStart = startValue
-                                    , timelineEnd = endValue
-                                    , timelineParent = timelineDeclParent decl
-                                    , timelineForkFrom = forkValue
-                                    , timelineMergeInto = mergeValue
-                                    , timelineLoopCount = loopCountValue
-                                    }
-                                (worldTimelines (evalWorld state5))
-                        }
-            pure state5{evalWorld = world'}
-        StmtEntity decl -> do
-            rejectDuplicate "entity" (entityDeclName decl) (worldEntities (evalWorld state))
-            (state1, fieldValues) <- evalExprMap state (entityDeclFields decl)
-            (state2, appearances) <- evalAppearances state1 (entityDeclAppearances decl)
-            let world' =
-                    (evalWorld state2)
-                        { worldEntities =
-                            Map.insert
-                                (entityDeclName decl)
-                                Entity
-                                    { entityName = entityDeclName decl
-                                    , entityType = maybe "entity" id (entityDeclType decl)
-                                    , entityFields = fieldValues
-                                    , entityAppearances = appearances
-                                    }
-                                (worldEntities (evalWorld state2))
-                        }
-            pure state2{evalWorld = world'}
-        StmtRelationship decl -> do
-            (state1, scope) <-
-                case relationshipDeclTemporalScope decl of
-                    Nothing -> pure (state, Nothing)
-                    Just (startExpr, endExpr) -> do
-                        (state', startValue) <- exprToTimePoint state startExpr
-                        (state'', endValue) <- exprToTimePoint state' endExpr
-                        pure (state'', Just (TimeRange startValue endValue))
-            let world' =
-                    (evalWorld state1)
-                        { worldRelationships =
-                            worldRelationships (evalWorld state1)
-                                ++ [ Relationship
-                                        { relSource = relationshipDeclSource decl
-                                        , relLabel = relationshipDeclLabel decl
-                                        , relTarget = relationshipDeclTarget decl
-                                        , relDirected = relationshipDeclDirected decl
-                                        , relTemporalScope = scope
-                                        }
-                                   ]
-                        }
-            pure state1{evalWorld = world'}
-        StmtImport _ ->
-            pure state
-        StmtLet decl -> do
-            (state1, value) <- evalExpr state (letValue decl)
-            maybe (pure ()) (assertTypeMatches state1 value) (letTypeAnnotation decl)
-            pure state1{evalEnv = Map.insert (letName decl) value (evalEnv state1)}
-        StmtAssign name expr ->
-            if Map.member name (evalEnv state)
-                then do
-                    (state1, value) <- evalExpr state expr
-                    pure state1{evalEnv = Map.insert name value (evalEnv state1)}
-                else
-                    Left $
-                        Diagnostic
-                            { diagnosticLevel = DiagnosticError
-                            , diagnosticSource = "evaluator"
-                            , diagnosticMessage = "cannot assign to undefined variable: " <> name
+                StmtFor decl ->
+                    evalForLoop state decl
+                StmtRepeat decl ->
+                    evalRepeatLoop state decl
+                StmtWhile decl ->
+                    evalWhileLoop state decl
+                StmtFunction decl -> do
+                    let world' =
+                            (evalWorld state)
+                                { worldFunctions =
+                                    Map.insert
+                                        (fnName decl)
+                                        FunctionSig
+                                            { functionName = fnName decl
+                                            , functionParams = fnParams decl
+                                            , functionReturnType = fnReturnType decl
+                                            }
+                                        (worldFunctions (evalWorld state))
+                                }
+                    pure
+                        state
+                            { evalWorld = world'
+                            , evalFunctions = Map.insert (fnName decl) decl (evalFunctions state)
                             }
-        StmtFor decl ->
-            evalForLoop state decl
-        StmtRepeat decl ->
-            evalRepeatLoop state decl
-        StmtWhile decl ->
-            evalWhileLoop state decl
-        StmtFunction decl -> do
-            let world' =
-                    (evalWorld state)
-                        { worldFunctions =
-                            Map.insert
-                                (fnName decl)
-                                FunctionSig
-                                    { functionName = fnName decl
-                                    , functionParams = fnParams decl
-                                    , functionReturnType = fnReturnType decl
+                StmtIf decl -> do
+                    (state1, conditionValue) <- evalExpr state (ifCondition decl)
+                    case conditionValue of
+                        VBool True -> foldM evalStmt state1 (ifThenBlock decl)
+                        VBool False -> evalElseBranches state1 (ifElseIfBlocks decl) (ifElseBlock decl)
+                        _ ->
+                            Left $
+                                Diagnostic
+                                    { diagnosticLevel = DiagnosticError
+                                    , diagnosticSource = "evaluator"
+                                    , diagnosticMessage = "if condition must evaluate to a boolean"
                                     }
-                                (worldFunctions (evalWorld state))
-                        }
-            pure
-                state
-                    { evalWorld = world'
-                    , evalFunctions = Map.insert (fnName decl) decl (evalFunctions state)
-                    }
-        StmtIf decl -> do
-            (state1, conditionValue) <- evalExpr state (ifCondition decl)
-            case conditionValue of
-                VBool True -> foldM evalStmt state1 (ifThenBlock decl)
-                VBool False -> evalElseBranches state1 (ifElseIfBlocks decl) (ifElseBlock decl)
-                _ ->
-                    Left $
-                        Diagnostic
-                            { diagnosticLevel = DiagnosticError
-                            , diagnosticSource = "evaluator"
-                            , diagnosticMessage = "if condition must evaluate to a boolean"
-                            }
-        StmtMatch decl ->
-            evalMatch state decl
-        StmtExpr expr ->
-            fst <$> evalExpr state expr
+                StmtMatch decl ->
+                    evalMatch state decl
+                StmtReturn maybeExpr ->
+                    if evalFunctionDepth state <= 0
+                        then
+                            Left $
+                                Diagnostic
+                                    { diagnosticLevel = DiagnosticError
+                                    , diagnosticSource = "evaluator"
+                                    , diagnosticMessage = "return can only be used inside a function"
+                                    }
+                        else do
+                            (state1, returnValue) <-
+                                case maybeExpr of
+                                    Nothing -> pure (state, VNull)
+                                    Just expr -> evalExpr state expr
+                            pure state1{evalReturnValue = Just returnValue}
+                StmtExpr expr ->
+                    fst <$> evalExpr state expr
 
 evalExpr :: EvalState -> Expr -> Either Diagnostic (EvalState, Value)
 evalExpr state (ExprValue value) = Right (state, value)
@@ -362,14 +383,25 @@ callNamedFunction state name fnDecl argValues =
         else do
             traverse_ (uncurry (assertTypeMatches state)) (zip argValues (map snd (fnParams fnDecl)))
             let savedEnv = evalEnv state
+                savedReturn = evalReturnValue state
                 paramBindings = Map.fromList (zip (map fst (fnParams fnDecl)) argValues)
                 callState =
                     state
                         { evalEnv = paramBindings `Map.union` savedEnv
+                        , evalFunctionDepth = evalFunctionDepth state + 1
+                        , evalReturnValue = Nothing
                         }
             (resultState, resultValue) <- evalBlockWithResult callState (fnBody fnDecl)
-            maybe (pure ()) (assertTypeMatches resultState resultValue) (fnReturnType fnDecl)
-            pure (resultState{evalEnv = savedEnv}, resultValue)
+            let finalValue = fromMaybe resultValue (evalReturnValue resultState)
+            maybe (pure ()) (assertTypeMatches resultState finalValue) (fnReturnType fnDecl)
+            pure
+                ( resultState
+                    { evalEnv = savedEnv
+                    , evalFunctionDepth = evalFunctionDepth state
+                    , evalReturnValue = savedReturn
+                    }
+                , finalValue
+                )
 
 callClosure :: EvalState -> Integer -> [Value] -> Either Diagnostic (EvalState, Value)
 callClosure state closureId argValues =
@@ -400,9 +432,18 @@ callClosure state closureId argValues =
                         callState =
                             state
                                 { evalEnv = paramBindings `Map.union` closureCapturedEnv closureDef
+                                , evalFunctionDepth = evalFunctionDepth state + 1
+                                , evalReturnValue = Nothing
                                 }
                     (resultState, resultValue) <- evalExpr callState (closureBody closureDef)
-                    pure (resultState{evalEnv = savedEnv}, resultValue)
+                    pure
+                        ( resultState
+                            { evalEnv = savedEnv
+                            , evalFunctionDepth = evalFunctionDepth state
+                            , evalReturnValue = evalReturnValue state
+                            }
+                        , resultValue
+                        )
 
 evalBuiltin :: EvalState -> Text -> [Value] -> Maybe Value
 evalBuiltin state name args =
@@ -639,11 +680,18 @@ evalOptionalTimelineRef state (Just (name, expr)) = do
 evalBlockWithResult :: EvalState -> [Stmt] -> Either Diagnostic (EvalState, Value)
 evalBlockWithResult state statements =
     foldM
-        ( \(currentState, _) stmt -> evalStmtResult currentState stmt)
+        ( \(currentState, _) stmt ->
+            case evalReturnValue currentState of
+                Just returnValue -> pure (currentState, returnValue)
+                Nothing -> evalStmtResult currentState stmt
+        )
         (state, VNull)
         statements
 
 evalStmtResult :: EvalState -> Stmt -> Either Diagnostic (EvalState, Value)
+evalStmtResult state (StmtReturn maybeExpr) = do
+    nextState <- evalStmt state (StmtReturn maybeExpr)
+    pure (nextState, fromMaybe VNull (evalReturnValue nextState))
 evalStmtResult state (StmtExpr expr) = evalExpr state expr
 evalStmtResult state stmt = do
     nextState <- evalStmt state stmt
@@ -740,13 +788,16 @@ evalForLoop state decl = do
     let previousBinding = Map.lookup (forVar decl) (evalEnv state1)
     iteratedState <-
         foldM
-            ( \currentState value -> do
-                let scopedState =
-                        currentState
-                            { evalEnv =
-                                Map.insert (forVar decl) value (evalEnv currentState)
-                            }
-                foldM evalStmt scopedState (forBody decl)
+            ( \currentState value ->
+                case evalReturnValue currentState of
+                    Just _ -> pure currentState
+                    Nothing -> do
+                        let scopedState =
+                                currentState
+                                    { evalEnv =
+                                        Map.insert (forVar decl) value (evalEnv currentState)
+                                    }
+                        foldM evalStmt scopedState (forBody decl)
             )
             state1
             values
@@ -788,12 +839,21 @@ evalRepeatLoop state decl = do
                     , diagnosticSource = "evaluator"
                     , diagnosticMessage = "repeat count must be non-negative"
                     }
-        else foldM (\currentState _ -> foldM evalStmt currentState (repeatBody decl)) state1 [1 .. countValue]
+        else
+            foldM
+                ( \currentState _ ->
+                    case evalReturnValue currentState of
+                        Just _ -> pure currentState
+                        Nothing -> foldM evalStmt currentState (repeatBody decl)
+                )
+                state1
+                [1 .. countValue]
 
 evalWhileLoop :: EvalState -> WhileDecl -> Either Diagnostic EvalState
 evalWhileLoop = go 0
   where
     go iterations state decl
+        | isJust (evalReturnValue state) = pure state
         | iterations >= maxWhileIterations =
             Left $
                 Diagnostic
