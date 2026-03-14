@@ -61,6 +61,9 @@ $ cabal test
 - `c` cycles a comparison target timeline and shows a delta summary in the inspector.
 - `b` stores the currently selected entity into the next bookmark slot.
 - `1`-`9` jump to saved entity bookmarks.
+- `:` opens a small command palette with actions like `help`, `compare`, `bookmark`, `clear-search`, `clear-scrub`, `scrub-center`, `timeline-next`, and `timeline-prev`.
+- `[` and `]` step a time scrubber that filters visible entities and relationships to the selected point in time.
+- `{` and `}` jump the scrubber to the selected timeline’s start or end boundary.
 - `u` and `y` undo or redo view-state changes.
 
 ## Config shape
