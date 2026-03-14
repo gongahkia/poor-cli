@@ -57,6 +57,7 @@ statementParser =
         , StmtRelationship <$> relationshipDeclParser
         , StmtImport <$> importStmtParser
         , StmtLet <$> letDeclParser
+        , StmtFor <$> forDeclParser
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
         ]
@@ -236,6 +237,35 @@ letDeclParser = do
     value <- exprParser
     _ <- optional (symbol ";")
     pure (LetDecl name value)
+
+forDeclParser :: Parser ForDecl
+forDeclParser = do
+    _ <- symbol "for"
+    loopVar <- identifier
+    _ <- symbol "in"
+    iterable <- forIterableParser
+    body <- braces (many statementParser)
+    pure
+        ForDecl
+            { forVar = loopVar
+            , forIterable = iterable
+            , forBody = body
+            }
+
+forIterableParser :: Parser ForIterable
+forIterableParser =
+    try forRangeParser <|> try forListParser <|> (ForExpr <$> exprParser)
+
+forRangeParser :: Parser ForIterable
+forRangeParser = do
+    startExpr <- term
+    _ <- symbol ".."
+    endExpr <- exprParser
+    pure (ForRange startExpr endExpr)
+
+forListParser :: Parser ForIterable
+forListParser =
+    ForList <$> between (symbol "[") (symbol "]") (exprParser `sepBy` symbol ",")
 
 fnDeclParser :: Parser FnDecl
 fnDeclParser = do
