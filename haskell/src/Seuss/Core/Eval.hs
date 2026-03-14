@@ -16,6 +16,14 @@ data EvalState = EvalState
     { evalWorld :: World
     , evalEnv :: Map Text Value
     , evalFunctions :: Map Text FnDecl
+    , evalClosures :: Map Integer ClosureDef
+    , evalNextClosureId :: Integer
+    }
+
+data ClosureDef = ClosureDef
+    { closureParams :: [(Text, Text)]
+    , closureBody :: Expr
+    , closureCapturedEnv :: Map Text Value
     }
 
 maxWhileIterations :: Integer
@@ -23,7 +31,7 @@ maxWhileIterations = 10000
 
 evalProgram :: Program -> Either Diagnostic World
 evalProgram (Program statements) =
-    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Map.empty) statements
+    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Map.empty Map.empty 0) statements
 
 evalStmt :: EvalState -> Stmt -> Either Diagnostic EvalState
 evalStmt state statement =
@@ -225,6 +233,20 @@ evalExpr state (ExprField objectExpr fieldName) = do
     pure (state1, fieldValue)
 evalExpr state (ExprCall calleeExpr argExprs) =
     evalCall state calleeExpr argExprs
+evalExpr state (ExprClosure params bodyExpr) =
+    let closureId = evalNextClosureId state
+        closureDef =
+            ClosureDef
+                { closureParams = params
+                , closureBody = bodyExpr
+                , closureCapturedEnv = evalEnv state
+                }
+        nextState =
+            state
+                { evalClosures = Map.insert closureId closureDef (evalClosures state)
+                , evalNextClosureId = closureId + 1
+                }
+     in Right (nextState, VClosureRef closureId)
 evalExpr state (ExprBinary op lhs rhs) = do
     (state1, leftValue) <- evalExpr state lhs
     (state2, rightValue) <- evalExpr state1 rhs
@@ -292,45 +314,120 @@ indexOutOfBounds targetName indexValue targetLength =
         }
 
 evalCall :: EvalState -> Expr -> [Expr] -> Either Diagnostic (EvalState, Value)
-evalCall state calleeExpr argExprs =
-    case calleeExpr of
-        ExprIdent name -> do
-            fnDecl <-
-                maybe
-                    (undefinedFunction name)
-                    Right
-                    (Map.lookup name (evalFunctions state))
-            (state1, argValues) <- evalExprList state argExprs
-            if length argValues /= length (fnParams fnDecl)
+evalCall state calleeExpr argExprs = do
+    (state1, calleeValue) <- evalExpr state calleeExpr
+    (state2, argValues) <- evalExprList state1 argExprs
+    case calleeValue of
+        VClosureRef closureId ->
+            callClosure state2 closureId argValues
+        _ ->
+            case calleeExpr of
+                ExprIdent name ->
+                    case Map.lookup name (evalFunctions state2) of
+                        Just fnDecl ->
+                            callNamedFunction state2 name fnDecl argValues
+                        Nothing ->
+                            case evalBuiltin state2 name argValues of
+                                Just builtinValue ->
+                                    pure (state2, builtinValue)
+                                Nothing ->
+                                    undefinedFunction name
+                _ ->
+                    Left $
+                        Diagnostic
+                            { diagnosticLevel = DiagnosticError
+                            , diagnosticSource = "evaluator"
+                            , diagnosticMessage = "only named functions and closure values are callable in the current Haskell rewrite"
+                            }
+
+callNamedFunction :: EvalState -> Text -> FnDecl -> [Value] -> Either Diagnostic (EvalState, Value)
+callNamedFunction state name fnDecl argValues =
+    if length argValues /= length (fnParams fnDecl)
+        then
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage =
+                        "function "
+                            <> name
+                            <> " expected "
+                            <> T.pack (show (length (fnParams fnDecl)))
+                            <> " arguments but got "
+                            <> T.pack (show (length argValues))
+                    }
+        else do
+            let savedEnv = evalEnv state
+                paramBindings = Map.fromList (zip (map fst (fnParams fnDecl)) argValues)
+                callState =
+                    state
+                        { evalEnv = paramBindings `Map.union` savedEnv
+                        }
+            (resultState, resultValue) <- evalBlockWithResult callState (fnBody fnDecl)
+            pure (resultState{evalEnv = savedEnv}, resultValue)
+
+callClosure :: EvalState -> Integer -> [Value] -> Either Diagnostic (EvalState, Value)
+callClosure state closureId argValues =
+    case Map.lookup closureId (evalClosures state) of
+        Nothing ->
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage = "unknown closure reference: " <> T.pack (show closureId)
+                    }
+        Just closureDef ->
+            if length argValues /= length (closureParams closureDef)
                 then
                     Left $
                         Diagnostic
                             { diagnosticLevel = DiagnosticError
                             , diagnosticSource = "evaluator"
                             , diagnosticMessage =
-                                "function "
-                                    <> name
-                                    <> " expected "
-                                    <> T.pack (show (length (fnParams fnDecl)))
+                                "closure expected "
+                                    <> T.pack (show (length (closureParams closureDef)))
                                     <> " arguments but got "
                                     <> T.pack (show (length argValues))
                             }
                 else do
-                    let savedEnv = evalEnv state1
-                        paramBindings = Map.fromList (zip (map fst (fnParams fnDecl)) argValues)
+                    let savedEnv = evalEnv state
+                        paramBindings = Map.fromList (zip (map fst (closureParams closureDef)) argValues)
                         callState =
-                            state1
-                                { evalEnv = paramBindings `Map.union` savedEnv
+                            state
+                                { evalEnv = paramBindings `Map.union` closureCapturedEnv closureDef
                                 }
-                    (resultState, resultValue) <- evalBlockWithResult callState (fnBody fnDecl)
+                    (resultState, resultValue) <- evalExpr callState (closureBody closureDef)
                     pure (resultState{evalEnv = savedEnv}, resultValue)
-        _ ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "only named functions are callable in the current Haskell rewrite"
-                    }
+
+evalBuiltin :: EvalState -> Text -> [Value] -> Maybe Value
+evalBuiltin state name args =
+    case name of
+        "len" ->
+            case args of
+                [VList items] -> Just (VInt (toInteger (length items)))
+                [VString textValue] -> Just (VInt (toInteger (T.length textValue)))
+                _ -> Nothing
+        "before" ->
+            case args of
+                [leftValue, rightValue] -> VBool <$> ((<) <$> valueToOrdinal leftValue <*> valueToOrdinal rightValue)
+                _ -> Nothing
+        "after" ->
+            case args of
+                [leftValue, rightValue] -> VBool <$> ((>) <$> valueToOrdinal leftValue <*> valueToOrdinal rightValue)
+                _ -> Nothing
+        "type_of" ->
+            case args of
+                [VEntityRef entityName] ->
+                    VString . entityType <$> findEntity entityName (evalWorld state)
+                [VString entityName] ->
+                    VString . entityType <$> findEntity entityName (evalWorld state)
+                _ -> Nothing
+        _ -> Nothing
+
+valueToOrdinal :: Value -> Maybe Integer
+valueToOrdinal (VInt value) = Just value
+valueToOrdinal (VDate day) = Just (timePointOrdinal (TimeDate day))
+valueToOrdinal _ = Nothing
 
 undefinedFunction :: Text -> Either Diagnostic a
 undefinedFunction name =
