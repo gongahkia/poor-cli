@@ -26,7 +26,7 @@ import Seuss.Render.SVG
 import Seuss.TUI.App
 import System.Directory
 import System.Exit (exitFailure)
-import System.FilePath ((</>), replaceExtension, takeBaseName)
+import System.FilePath ((</>), normalise, replaceExtension, takeBaseName, takeDirectory)
 import System.IO (hFlush, stdout)
 
 data LoadedWorld = LoadedWorld
@@ -216,7 +216,7 @@ replLoop state = do
 
 loadSeussFile :: FilePath -> IO LoadedWorld
 loadSeussFile filePath = do
-    source <- TIO.readFile filePath
+    source <- loadSourceWithImports [] filePath
     case parseProgram filePath source of
         Left diags -> do
             reportDiagnostics diags
@@ -234,6 +234,31 @@ loadSeussFile filePath = do
                             , loadedDiagnostics = diagnostics
                             , loadedProgram = program
                             }
+
+loadSourceWithImports :: [FilePath] -> FilePath -> IO Text
+loadSourceWithImports visited filePath = do
+    let normalizedPath = normalise filePath
+    when (normalizedPath `elem` visited) $ do
+        putStrLn ("Import cycle detected at " <> normalizedPath)
+        exitFailure
+    source <- TIO.readFile normalizedPath
+    expandedLines <- traverse (expandLine (normalizedPath : visited) normalizedPath) (T.lines source)
+    pure (T.unlines (concat expandedLines))
+
+expandLine :: [FilePath] -> FilePath -> Text -> IO [Text]
+expandLine visited currentFile lineValue =
+    case parseImportLine lineValue of
+        Nothing -> pure [lineValue]
+        Just relativePath -> do
+            importedSource <- loadSourceWithImports visited (takeDirectory currentFile </> T.unpack relativePath)
+            pure (T.lines importedSource)
+
+parseImportLine :: Text -> Maybe Text
+parseImportLine rawLine =
+    let cleaned = T.strip rawLine
+     in if "import \"" `T.isPrefixOf` cleaned && "\";" `T.isSuffixOf` cleaned
+            then Just (T.dropEnd 2 (T.drop 8 cleaned))
+            else Nothing
 
 discoverSeussFiles :: FilePath -> IO [FilePath]
 discoverSeussFiles root = do
