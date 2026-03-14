@@ -29,9 +29,17 @@ $ cabal test
 - `diff <file1> <file2>` reports timeline, entity, and relationship deltas.
 - `import <file> --from csv|gedcom|jsonld` converts external sources into `.seuss`.
 - `repl` supports `:load`, `:files`, `:world`, `:entities`, `:rels`, and `:validate`.
+- `lsp` runs a minimal stdio language server with diagnostics, hover, and keyword completion.
 - `export <file> -f svg` writes an SVG using the shared layout engine.
 
 `png` and `pdf` are accepted at the CLI surface but still intentionally fail with an explicit message until those backends are ported.
+
+## Current importer additions
+
+- CSV import now accepts header aliases like `id`, `entity_type`, `lane`, `track`, `from`, and `to`.
+- CSV entity imports now synthesize timeline declarations, sanitize generated identifiers, and preserve booleans, numbers, and ISO dates as typed literals.
+- GEDCOM import now keeps family structure by emitting `spouse` and `parent_of` relationships in addition to person entities.
+- JSON-LD import now turns `@id` references inside object properties and arrays into Seuss relationships instead of flattening them into opaque fields.
 
 ## Current language coverage additions
 
