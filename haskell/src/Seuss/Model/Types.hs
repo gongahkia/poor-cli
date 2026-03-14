@@ -47,7 +47,12 @@ data BinaryOp
     | OpSub
     | OpGt
     | OpLt
+    | OpGte
+    | OpLte
     | OpEq
+    | OpNeq
+    | OpAnd
+    | OpOr
     deriving (Eq, Ord, Show)
 
 data TimelineKind
