@@ -30,6 +30,7 @@ data Expr
     | ExprIdent Text
     | ExprList [Expr]
     | ExprRange Expr Expr
+    | ExprIndex Expr Expr
     | ExprBinary BinaryOp Expr Expr
     deriving (Eq, Show)
 
