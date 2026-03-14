@@ -32,3 +32,32 @@ $ cabal test
 - `export <file> -f svg` writes an SVG using the shared layout engine.
 
 `png` and `pdf` are accepted at the CLI surface but still intentionally fail with an explicit message until those backends are ported.
+
+## Current TUI additions
+
+- `?` toggles a help panel.
+- `c` cycles a comparison target timeline and shows a delta summary in the inspector.
+- `b` stores the currently selected entity into the next bookmark slot.
+- `1`-`9` jump to saved entity bookmarks.
+- `u` and `y` undo or redo view-state changes.
+
+## Config shape
+
+The Haskell loader currently understands a minimal TOML-like config format:
+
+```toml
+[export]
+default_width = 1920
+default_height = 1080
+default_format = "svg"
+
+[theme]
+name = "light"
+background = "#ffffff"
+text = "#111827"
+timeline = "#2563eb"
+entity = "#059669"
+relationship = "#d97706"
+```
+
+`--theme dark`, `--theme light`, and `--theme path/to/theme.toml` are supported for SVG export.
