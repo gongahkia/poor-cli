@@ -46,6 +46,7 @@ $ cabal test
 - dot-based field access like `frodo.age` and `main.kind` now resolves against entity and timeline values already present in the world.
 - type declarations now parse optional fields like `age: int?` and metadata entries like `@title: "Leader"`.
 - entity field access now falls back through type metadata inheritance when the field is not set directly on the entity.
+- `let name: type = ...;` annotations now parse and are shallowly enforced for let bindings, function arguments, and function returns.
 - `for` loops can now iterate over bound list and range expressions, not just inline literals.
 - `let mut name = ...;` is accepted, and existing bindings can now be reassigned with `name = ...;`.
 - boolean logic now includes `&&` and `||`, and comparisons now include `!=`, `<=`, and `>=`.
