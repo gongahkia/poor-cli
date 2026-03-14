@@ -66,13 +66,16 @@ $ cabal test
 ## Current TUI additions
 
 - `?` toggles a help panel.
+- `Enter` follows the current selection: timelines jump into their entities, entities open neighborhood relationships, and relationships jump back to entities.
 - `c` cycles a comparison target timeline and shows a delta summary in the inspector.
 - `b` stores the currently selected entity into the next bookmark slot.
 - `1`-`9` jump to saved entity bookmarks.
-- `:` opens a small command palette with actions like `help`, `compare`, `bookmark`, `clear-search`, `clear-scrub`, `scrub-center`, `timeline-next`, and `timeline-prev`.
+- `s` and `g` jump from a selected relationship to its source or target entity.
+- `:` opens a small command palette with actions like `help`, `compare`, `bookmark`, `clear-search`, `clear-filters`, `follow`, `rel-source`, `rel-target`, `clear-scrub`, `scrub-center`, `timeline-next`, and `timeline-prev`.
 - `[` and `]` step a time scrubber that filters visible entities and relationships to the selected point in time.
 - `{` and `}` jump the scrubber to the selected timeline’s start or end boundary.
 - `u` and `y` undo or redo view-state changes.
+- The inspector now keeps a short recent-selection trail so users can see and retrace what they drilled into most recently.
 
 ## Config shape
 
