@@ -6,11 +6,13 @@ the Neovim plugin.
 """
 
 import asyncio
+import subprocess
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
 
+from .audit_log import AuditEventType, AuditLogger, AuditSeverity
 from .config import ConfigManager, Config
 from .providers.base import BaseProvider, ProviderResponse, FunctionCall
 from .providers.provider_factory import ProviderFactory
@@ -18,6 +20,9 @@ from .tools_async import ToolRegistryAsync, ToolOutcome
 from .checkpoint import CheckpointManager
 from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager
+from .instructions import InstructionManager, InstructionSnapshot
+from .mcp_client import MCPManager
+from .policy_hooks import HookExecutionResult, PolicyHookManager
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
     build_tool_calling_system_instruction,
@@ -192,7 +197,12 @@ class PoorCLICore:
         self._config_path = config_path
         self._initialized = False
         self._system_instruction: Optional[str] = None
-        
+        self._instruction_manager: Optional[InstructionManager] = None
+        self._hook_manager: Optional[PolicyHookManager] = None
+        self._audit_logger: Optional[AuditLogger] = None
+        self._mcp_manager: Optional[MCPManager] = None
+        self._pending_events: List[CoreEvent] = []
+
         # Permission callback for file operations
         # Set this to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool]
         self._permission_callback: Optional[Callable[..., Any]] = None
@@ -225,6 +235,7 @@ class PoorCLICore:
         """
         try:
             logger.info("Initializing PoorCLICore...")
+            repo_root = Path.cwd().resolve()
             
             # Load configuration
             self._config_manager = ConfigManager(self._config_path)
@@ -270,13 +281,36 @@ class PoorCLICore:
             
             # Initialize tool registry
             self.tool_registry = ToolRegistryAsync()
+            self._instruction_manager = InstructionManager(repo_root)
+            self._hook_manager = PolicyHookManager(repo_root)
+            self._audit_logger = AuditLogger(audit_dir=repo_root / ".poor-cli" / "audit")
+
+            if self.config.mcp_servers:
+                self._mcp_manager = MCPManager(self.config.mcp_servers)
+                await self._mcp_manager.initialize()
+                for declaration in self._mcp_manager.get_tool_declarations():
+                    tool_name = declaration.get("name")
+                    if not tool_name:
+                        continue
+
+                    async def _call_mcp_tool(
+                        _tool_name: str = tool_name,
+                        **kwargs: Any,
+                    ) -> str:
+                        if not self._mcp_manager:
+                            raise PoorCLIError("MCP manager not initialized")
+                        return await self._mcp_manager.execute_tool(_tool_name, kwargs)
+
+                    self.tool_registry.register_external_tool(
+                        tool_name,
+                        _call_mcp_tool,
+                        declaration,
+                    )
             tool_declarations = self.tool_registry.get_tool_declarations()
             logger.info(f"Registered {len(tool_declarations)} tools")
             
             # Build system instruction
-            import os
-            current_dir = os.getcwd()
-            self._system_instruction = build_tool_calling_system_instruction(current_dir)
+            self._system_instruction = build_tool_calling_system_instruction(str(repo_root))
             
             provider_capabilities = self.provider.get_capabilities()
             init_tools = (
@@ -316,6 +350,25 @@ class PoorCLICore:
             # Initialize context manager
             self._context_manager = get_context_manager()
             logger.info("Context manager initialized")
+
+            await self._emit_policy_hooks(
+                "session_start",
+                {
+                    "provider": self.config.model.provider,
+                    "model": self.config.model.model_name,
+                    "repoRoot": str(repo_root),
+                },
+            )
+            self._log_audit_event(
+                AuditEventType.SESSION_START,
+                operation="session_start",
+                details={
+                    "provider": self.config.model.provider,
+                    "model": self.config.model.model_name,
+                    "repoRoot": str(repo_root),
+                    "mcp": self.get_mcp_status(),
+                },
+            )
             
             self._initialized = True
             logger.info("PoorCLICore initialization complete")
@@ -329,6 +382,123 @@ class PoorCLICore:
     def cancel_request(self) -> None:
         """Signal cancellation of the current agentic loop."""
         self._cancel_event.set()
+
+    @staticmethod
+    def _stringify_tool_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {str(key): value for key, value in arguments.items()}
+
+    @staticmethod
+    def _current_git_branch(repo_root: Optional[Path] = None) -> str:
+        try:
+            output = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=str((repo_root or Path.cwd()).resolve()),
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            branch = output.strip()
+            return branch or "unknown"
+        except Exception:
+            return "unknown"
+
+    def _log_audit_event(
+        self,
+        event_type: AuditEventType,
+        *,
+        operation: str,
+        target: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        severity: AuditSeverity = AuditSeverity.INFO,
+        success: bool = True,
+        error_message: Optional[str] = None,
+    ) -> None:
+        if not self._audit_logger:
+            return
+        try:
+            self._audit_logger.log_event(
+                event_type=event_type,
+                operation=operation,
+                target=target,
+                details=details,
+                severity=severity,
+                success=success,
+                error_message=error_message,
+            )
+        except Exception as error:
+            logger.debug("Audit logging failed: %s", error)
+
+    async def _emit_policy_hooks(
+        self,
+        event: str,
+        payload: Dict[str, Any],
+    ) -> List[HookExecutionResult]:
+        if not self._hook_manager:
+            return []
+        results = await self._hook_manager.run(event, payload)
+        for result in results:
+            self._log_audit_event(
+                AuditEventType.HOOK_DENY if result.blocked else AuditEventType.HOOK_ALLOW,
+                operation=f"hook:{event}",
+                target=result.hook.source_path,
+                details=result.to_dict(),
+                severity=AuditSeverity.WARNING if result.blocked else AuditSeverity.INFO,
+                success=not result.blocked,
+                error_message=result.stderr or None,
+            )
+        return results
+
+    async def _record_user_prompt_submission(
+        self,
+        message: str,
+        *,
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
+        request_id: str = "",
+    ) -> None:
+        payload = {
+            "message": message,
+            "requestId": request_id,
+            "contextFiles": context_files or [],
+            "pinnedContextFiles": pinned_context_files or [],
+            "contextBudgetTokens": context_budget_tokens,
+        }
+        await self._emit_policy_hooks("user_prompt_submitted", payload)
+
+    def _audit_permission_decision(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        *,
+        allowed: bool,
+        source: str,
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._log_audit_event(
+            AuditEventType.PERMISSION_GRANTED if allowed else AuditEventType.PERMISSION_DENIED,
+            operation=f"permission:{tool_name}",
+            target=",".join(self.tool_registry.inspect_mutation_targets(tool_name, tool_args))
+            if self.tool_registry
+            else None,
+            details={
+                "toolName": tool_name,
+                "toolArgs": self._stringify_tool_arguments(tool_args),
+                "source": source,
+                "previewPaths": (preview or {}).get("paths", []),
+            },
+            severity=AuditSeverity.INFO if allowed else AuditSeverity.WARNING,
+            success=allowed,
+        )
+
+    def _inspect_instruction_snapshot(
+        self,
+        referenced_files: Optional[List[str]] = None,
+    ) -> InstructionSnapshot:
+        manager = self._instruction_manager or InstructionManager(Path.cwd())
+        return manager.build_snapshot(
+            referenced_files or [],
+            plan_mode_enabled=bool(self.config and self.config.plan_mode.enabled),
+        )
 
     def _build_full_message(self, message: str, context_files: Optional[List[str]] = None) -> str:
         """Legacy sync helper retained for compatibility."""
@@ -359,24 +529,38 @@ class PoorCLICore:
         context_budget_tokens: Optional[int] = None,
     ) -> str:
         """Build a backend-owned context message with excerpted files."""
-        if not self._context_manager:
-            return message
+        referenced_files: List[str] = []
+        referenced_files.extend(context_files or [])
+        referenced_files.extend(pinned_context_files or [])
 
-        context_result = await self._select_context_files(
-            message=message,
-            context_files=context_files,
-            pinned_context_files=pinned_context_files,
-            context_budget_tokens=context_budget_tokens,
-        )
-        if context_result is None or not context_result.files:
+        context_result = None
+        if self._context_manager:
+            context_result = await self._select_context_files(
+                message=message,
+                context_files=context_files,
+                pinned_context_files=pinned_context_files,
+                context_budget_tokens=context_budget_tokens,
+            )
+            if context_result is not None:
+                referenced_files.extend(file_ctx.path for file_ctx in context_result.files)
+
+        instruction_snapshot = self._inspect_instruction_snapshot(referenced_files)
+        instruction_prefix = instruction_snapshot.render_prompt_prefix()
+
+        if not self._context_manager or context_result is None or not context_result.files:
+            if instruction_prefix:
+                return f"{instruction_prefix}\n\nUser request: {message}"
             return message
 
         logger.info(context_result.message)
-        return await self._context_manager.build_context_message(
+        context_message = await self._context_manager.build_context_message(
             message,
             context_result,
             max_tokens=context_budget_tokens,
         )
+        if not instruction_prefix:
+            return context_message
+        return f"{instruction_prefix}\n\n{context_message}"
 
     async def preview_context(
         self,
@@ -597,12 +781,24 @@ class PoorCLICore:
             return None
 
         try:
+            branch = self._current_git_branch()
             checkpoint = await asyncio.to_thread(
                 self.checkpoint_manager.create_checkpoint,
                 targets,
-                f"Auto checkpoint before {tool_name}",
+                f"Auto checkpoint before {tool_name} [{branch}]",
                 f"pre_{tool_name}",
-                [tool_name],
+                [tool_name, f"branch:{branch}"],
+            )
+            self._log_audit_event(
+                AuditEventType.CHECKPOINT_CREATE,
+                operation=f"checkpoint:{tool_name}",
+                target=",".join(targets),
+                details={
+                    "checkpointId": checkpoint.checkpoint_id,
+                    "toolName": tool_name,
+                    "targets": targets,
+                    "branch": branch,
+                },
             )
             return checkpoint.checkpoint_id
         except Exception as error:
@@ -613,11 +809,48 @@ class PoorCLICore:
         if not self.tool_registry:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
+        targets = self.tool_registry.inspect_mutation_targets(tool_name, arguments)
+        pre_payload = {
+            "toolName": tool_name,
+            "toolArgs": self._stringify_tool_arguments(arguments),
+            "targets": targets,
+        }
+        hook_results = await self._emit_policy_hooks("pre_tool_use", pre_payload)
+        if any(result.blocked for result in hook_results):
+            blocker = next(result for result in hook_results if result.blocked)
+            raise PoorCLIError(
+                f"Blocked by repo policy hook `{blocker.hook.name}`: "
+                f"{blocker.stderr or blocker.stdout or 'non-zero exit'}"
+            )
+
         checkpoint_id: Optional[str] = None
         if self._should_checkpoint_tool(tool_name, arguments):
             checkpoint_id = await self._create_mutation_checkpoint(tool_name, arguments)
 
-        result = await self.tool_registry.execute_tool_raw(tool_name, arguments)
+        post_payload = {
+            "toolName": tool_name,
+            "toolArgs": self._stringify_tool_arguments(arguments),
+            "targets": targets,
+            "checkpointId": checkpoint_id,
+        }
+
+        try:
+            result = await self.tool_registry.execute_tool_raw(tool_name, arguments)
+        except Exception as error:
+            self._log_audit_event(
+                AuditEventType.TOOL_EXECUTION,
+                operation=f"tool:{tool_name}",
+                target=",".join(targets) if targets else None,
+                details=post_payload,
+                severity=AuditSeverity.WARNING,
+                success=False,
+                error_message=str(error),
+            )
+            await self._emit_policy_hooks(
+                "post_tool_use",
+                {**post_payload, "success": False, "error": str(error)},
+            )
+            raise
 
         if isinstance(result, ToolOutcome):
             if checkpoint_id and not result.checkpoint_id:
@@ -626,6 +859,27 @@ class PoorCLICore:
                 for file_path in self._tool_result_paths(tool_name, arguments, result):
                     self._context_manager.mark_file_edited(file_path)
 
+        self._log_audit_event(
+            AuditEventType.TOOL_EXECUTION,
+            operation=f"tool:{tool_name}",
+            target=",".join(self._tool_result_paths(tool_name, arguments, result)) if targets else None,
+            details={
+                **post_payload,
+                "changed": self._tool_result_changed(result),
+                "message": self._tool_result_message(result),
+                "paths": self._tool_result_paths(tool_name, arguments, result),
+            },
+        )
+        await self._emit_policy_hooks(
+            "post_tool_use",
+            {
+                **post_payload,
+                "success": True,
+                "changed": self._tool_result_changed(result),
+                "paths": self._tool_result_paths(tool_name, arguments, result),
+                "message": self._tool_result_message(result),
+            },
+        )
         return result
 
     async def send_message_events(
@@ -650,6 +904,13 @@ class PoorCLICore:
         iteration = 0
 
         logger.info(f"Sending message (events): {message[:100]}...")
+        await self._record_user_prompt_submission(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+            request_id=request_id,
+        )
         full_message = await self._build_context_message(
             message,
             context_files=context_files,
@@ -804,6 +1065,12 @@ class PoorCLICore:
             auto = self._check_auto_permission(tool_name, tool_args)
             if auto is False:
                 result = "Operation denied by safety policy"
+                self._audit_permission_decision(
+                    tool_name,
+                    tool_args,
+                    allowed=False,
+                    source="config:auto-deny",
+                )
                 self._pending_events.append(
                     CoreEvent.tool_result(
                         tool_name,
@@ -847,6 +1114,13 @@ class PoorCLICore:
                         preview_payload,
                     )
                     if not permission["allowed"]:
+                        self._audit_permission_decision(
+                            tool_name,
+                            tool_args,
+                            allowed=False,
+                            source="interactive",
+                            preview=preview_payload,
+                        )
                         result = "Operation cancelled by user"
                         self._pending_events.append(
                             CoreEvent.tool_result(
@@ -860,9 +1134,16 @@ class PoorCLICore:
                                 changed=False,
                                 message=result,
                             )
-                        )
+                            )
                         tool_results.append({"id": fc.id, "name": tool_name, "result": result})
                         continue
+                    self._audit_permission_decision(
+                        tool_name,
+                        tool_args,
+                        allowed=True,
+                        source="interactive",
+                        preview=preview_payload,
+                    )
                     if permission["approvedChunks"] or permission["approvedPaths"]:
                         try:
                             tool_args = await self._apply_permission_scope(
@@ -895,6 +1176,13 @@ class PoorCLICore:
                             continue
                 except Exception as e:
                     logger.error(f"Permission callback error: {e}")
+            elif auto is True:
+                self._audit_permission_decision(
+                    tool_name,
+                    tool_args,
+                    allowed=True,
+                    source="config:auto-approve",
+                )
 
             # 3. Execute the tool
             try:
@@ -941,6 +1229,12 @@ class PoorCLICore:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
         logger.info(f"Sending message: {message[:100]}...")
+        await self._record_user_prompt_submission(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
         full_message = await self._build_context_message(
             message,
             context_files=context_files,
@@ -1014,6 +1308,12 @@ class PoorCLICore:
                 try:
                     permission = await self._request_permission(tool_name, tool_args)
                     if not permission["allowed"]:
+                        self._audit_permission_decision(
+                            tool_name,
+                            tool_args,
+                            allowed=False,
+                            source="interactive",
+                        )
                         result = "Operation cancelled by user"
                         tool_results.append({
                             "id": fc.id,
@@ -1021,6 +1321,12 @@ class PoorCLICore:
                             "result": result
                         })
                         continue
+                    self._audit_permission_decision(
+                        tool_name,
+                        tool_args,
+                        allowed=True,
+                        source="interactive",
+                    )
                     if permission["approvedChunks"] or permission["approvedPaths"]:
                         try:
                             tool_args = await self._apply_permission_scope(
@@ -1087,6 +1393,12 @@ class PoorCLICore:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
         
         logger.info(f"Sending message (sync): {message[:100]}...")
+        await self._record_user_prompt_submission(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
         
         full_message = await self._build_context_message(
             message,
@@ -1457,6 +1769,44 @@ class PoorCLICore:
             "supported_clients": list(self.SUPPORTED_CLIENTS),
         }
 
+    def inspect_instruction_stack(
+        self,
+        referenced_files: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Return the active deterministic instruction stack."""
+        return self._inspect_instruction_snapshot(referenced_files).to_dict()
+
+    def get_policy_status(self) -> Dict[str, Any]:
+        """Return repo-local policy and audit status."""
+        hooks = self._hook_manager.status() if self._hook_manager else {
+            "hooksDir": str(Path.cwd() / ".poor-cli" / "hooks"),
+            "totalHooks": 0,
+            "events": {},
+        }
+        return {
+            "hooks": hooks,
+            "audit": {
+                "enabled": self._audit_logger is not None,
+                "path": str(self._audit_logger.audit_dir) if self._audit_logger else "",
+            },
+        }
+
+    def get_mcp_status(self) -> Dict[str, Any]:
+        """Return MCP connectivity and tool registration status."""
+        if self._mcp_manager is None:
+            return {
+                "configuredServers": 0,
+                "connectedServers": 0,
+                "toolCount": 0,
+                "servers": {},
+            }
+        return self._mcp_manager.status()
+
+    async def shutdown(self) -> None:
+        """Release external resources owned by the core."""
+        if self._mcp_manager is not None:
+            await self._mcp_manager.shutdown()
+
     async def clear_history(self) -> None:
         """
         Clear conversation history.
@@ -1754,6 +2104,16 @@ class PoorCLICore:
                 file_paths,
                 description
             )
+            self._log_audit_event(
+                AuditEventType.CHECKPOINT_CREATE,
+                operation="checkpoint:create",
+                target=",".join(file_paths),
+                details={
+                    "checkpointId": checkpoint.checkpoint_id,
+                    "description": description,
+                    "filePaths": file_paths,
+                },
+            )
             return self._checkpoint_metadata(checkpoint)
         except Exception as e:
             logger.error(f"Checkpoint creation failed: {e}")
@@ -1789,6 +2149,15 @@ class PoorCLICore:
             restored_files = await asyncio.to_thread(
                 self.checkpoint_manager.restore_checkpoint,
                 checkpoint_id,
+            )
+            self._log_audit_event(
+                AuditEventType.CHECKPOINT_RESTORE,
+                operation="checkpoint:restore",
+                target=checkpoint_id,
+                details={
+                    "checkpointId": checkpoint_id,
+                    "restoredFiles": restored_files,
+                },
             )
             return self._checkpoint_metadata(checkpoint, restored_files=restored_files)
         except Exception as e:

@@ -3639,6 +3639,43 @@ fn rpc_get_tools_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value
         .map_err(|_| "Timed out waiting for tools".to_string())?
 }
 
+fn rpc_get_instruction_stack_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetInstructionStack { reply: reply_tx })
+        .map_err(|e| format!("Failed to request instruction stack: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for instruction stack".to_string())?
+}
+
+fn rpc_get_policy_status_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetPolicyStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to request policy status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for policy status".to_string())?
+}
+
+fn rpc_get_mcp_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetMcpStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to request MCP status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for MCP status".to_string())?
+}
+
 fn rpc_preview_context_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     message: &str,

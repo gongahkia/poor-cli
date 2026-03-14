@@ -81,7 +81,7 @@ pub(super) fn handle_slash_command(
 Type `@path/to/file` in any message to attach file context.\n\
 Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 \n\
-**Session Management:**\n\
+**Core Workflow:**\n\
   /help                Show this help message\n\
   /onboarding ...      Start interactive onboarding (`next`, `prev`, `<step>`, `exit`)\n\
   /quit, /exit         Exit poor-cli and print session summary\n\
@@ -96,7 +96,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /retry               Retry your last message\n\
   /search <term>       Search messages in this session\n\
   /edit-last           Put last message back into input\n\n\
-**Checkpoints & Undo:**\n\
+**Review & Safety:**\n\
   /checkpoints         List checkpoints\n\
   /checkpoint          Create manual checkpoint\n\
   /save                Quick checkpoint alias\n\
@@ -111,7 +111,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /api-key             Show or set provider API keys\n\
   /model-info          Show provider-specific model notes\n\
   /permission-mode [mode]  Show or set backend permission mode\n\n\
-**Configuration:**\n\
+**Review & Safety Config:**\n\
   /config              Show backend config snapshot\n\
   /settings            List editable config settings\n\
   /toggle <key>        Toggle a boolean config option\n\
@@ -120,11 +120,11 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /broke               Set response mode to terse, token-minimal output\n\
   /my-treat            Set response mode to rich, comprehensive output\n\
   /verbose             Toggle verbose logging\n\
-  /plan-mode           Toggle experimental plan-mode flag (not wired)\n\n\
+  /plan-mode           Toggle plan-first execution guidance in the shared agent loop\n\n\
 **Git Integration:**\n\
   /commit              Generate commit message from staged diff\n\
   /review [file]       Review a file or staged diff\n\n\
-**Code Tools:**\n\
+**Automation:**\n\
   /test <file>         Generate tests for a file\n\
   /fix-failures [cmd]  Analyze latest (or fresh) test/lint failures\n\
   /explain-diff [file] Explain behavior/risk/test gaps in git diff\n\
@@ -157,6 +157,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /tasks ...           Manage local task board (`add|done|drop|clear`)\n\
   /copy                Copy last assistant response to clipboard\n\
   /onboarding ...      Guided walkthrough of core commands\n\
+**Collaboration:**\n\
   /pair                Start pair session (host) or join with invite code\n\
   /pair <invite-code>  Join a pair session using invite code\n\
   /pass                Hand driver role to next navigator\n\
@@ -978,9 +979,9 @@ Version: v{}",
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 let message = if enabled {
-                    "Plan-mode flag enabled. Execution preview is not wired into the main agent loop yet."
+                    "Plan mode enabled. The shared agent loop now injects plan-first guidance before execution, while mutating tools still go through preview and approval."
                 } else {
-                    "Plan-mode flag disabled. Execution preview remains inactive until the main agent loop is wired."
+                    "Plan mode disabled. Requests will use the normal execution loop without the extra plan-first guidance."
                 };
                 show_command_info_popup(app, raw, message.to_string());
             }
@@ -1476,6 +1477,56 @@ Context Window: {max_context} tokens\n\n\
             Err(e) => lines.push(format!("- Service check failed: {e}")),
         }
 
+        match rpc_get_instruction_stack_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let source_count = payload
+                    .get("sourceCount")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                lines.push(format!("- Instruction sources active: {source_count}"));
+            }
+            Err(e) => lines.push(format!("- Instruction stack check failed: {e}")),
+        }
+
+        match rpc_get_policy_status_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let total_hooks = payload
+                    .pointer("/hooks/totalHooks")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let audit_path = payload
+                    .pointer("/audit/path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                lines.push(format!("- Repo policy hooks: {total_hooks}"));
+                if !audit_path.is_empty() {
+                    lines.push(format!("- Audit log: `{audit_path}`"));
+                }
+            }
+            Err(e) => lines.push(format!("- Policy hook check failed: {e}")),
+        }
+
+        match rpc_get_mcp_status_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let configured = payload
+                    .get("configuredServers")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let connected = payload
+                    .get("connectedServers")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let tool_count = payload
+                    .get("toolCount")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                lines.push(format!(
+                    "- MCP servers connected: {connected}/{configured} ({tool_count} tool(s))"
+                ));
+            }
+            Err(e) => lines.push(format!("- MCP check failed: {e}")),
+        }
+
         match rpc_execute_command_with_timeout_blocking(
             rpc_cmd_tx,
             "git rev-parse --abbrev-ref HEAD",
@@ -1487,7 +1538,7 @@ Context Window: {max_context} tokens\n\n\
         }
 
         lines.push(String::new());
-        lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, and `/status`.".to_string());
+        lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, `/status`, and the repo-local `.poor-cli` policy files.".to_string());
         show_command_info_popup(app, raw, lines.join("\n"));
         return false;
     }

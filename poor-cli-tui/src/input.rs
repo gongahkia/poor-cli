@@ -301,7 +301,7 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     },
     SlashCommandSpec {
         command: "/plan-mode",
-        description: "Toggle experimental plan-mode flag",
+        description: "Toggle plan-first execution guidance",
         recommended: false,
     },
     SlashCommandSpec {

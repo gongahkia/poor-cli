@@ -161,12 +161,23 @@ class MCPManager:
         self.clients: Dict[str, MCPClient] = {}
         self._declarations: List[Dict[str, Any]] = []
         self._tool_to_client: Dict[str, MCPClient] = {}
+        self._server_status: Dict[str, Dict[str, Any]] = {}
 
     async def initialize(self) -> None:
         for server_name, cfg in self.servers_config.items():
+            self._server_status[server_name] = {
+                "configured": True,
+                "connected": False,
+                "toolCount": 0,
+                "tools": [],
+                "error": None,
+                "command": cfg.get("command", ""),
+                "args": cfg.get("args", []),
+            }
             command = cfg.get("command")
             if not command:
                 logger.warning(f"MCP server '{server_name}' missing command, skipping")
+                self._server_status[server_name]["error"] = "missing command"
                 continue
             client = MCPClient(
                 name=server_name,
@@ -178,6 +189,11 @@ class MCPManager:
                 await client.connect()
                 declarations = await client.list_tools()
                 self.clients[server_name] = client
+                self._server_status[server_name]["connected"] = True
+                self._server_status[server_name]["toolCount"] = len(declarations)
+                self._server_status[server_name]["tools"] = [
+                    decl.get("name", "") for decl in declarations if decl.get("name")
+                ]
                 for decl in declarations:
                     tool_name = decl.get("name")
                     if not tool_name:
@@ -186,9 +202,18 @@ class MCPManager:
                     self._declarations.append(decl)
             except Exception as e:
                 logger.warning(f"Failed to initialize MCP server '{server_name}': {e}")
+                self._server_status[server_name]["error"] = str(e)
 
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         return list(self._declarations)
+
+    def status(self) -> Dict[str, Any]:
+        return {
+            "configuredServers": len(self.servers_config),
+            "connectedServers": len(self.clients),
+            "toolCount": len(self._declarations),
+            "servers": self._server_status,
+        }
 
     async def execute_tool(self, name: str, arguments: Dict[str, Any]) -> str:
         client = self._tool_to_client.get(name)
@@ -202,6 +227,8 @@ class MCPManager:
                 await client.disconnect()
             except Exception as e:
                 logger.debug(f"MCP disconnect failed: {e}")
+        for server_name in self._server_status:
+            self._server_status[server_name]["connected"] = False
         self.clients.clear()
         self._tool_to_client.clear()
         self._declarations.clear()
