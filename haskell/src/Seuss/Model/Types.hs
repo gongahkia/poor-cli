@@ -88,6 +88,7 @@ data TypeDef = TypeDef
     { typeName :: Text
     , typeParent :: Maybe Text
     , typeFields :: [TypeField]
+    , typeMeta :: Map Text Value
     }
     deriving (Eq, Show)
 
