@@ -36,6 +36,7 @@ $ cabal test
 ## Current language coverage additions
 
 - `if`, `else if`, and `else` conditional chains now parse and evaluate.
+- `match <expr> { ... }` statements now parse and evaluate with literal, identifier-bind, and `_` wildcard arms.
 - `for` loops support explicit list iterables like `[1, 2, 3]` and integer ranges like `1..3`.
 - `repeat <count> { ... }` loops now parse and evaluate.
 - `while <condition> { ... }` loops now parse and evaluate with a hard safety limit.
