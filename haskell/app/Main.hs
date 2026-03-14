@@ -25,7 +25,7 @@ import Seuss.Render.SVG
 import Seuss.TUI.App
 import System.Directory
 import System.Exit (exitFailure)
-import System.FilePath ((</>), takeBaseName, takeDirectory, takeExtension, takeFileName, replaceExtension)
+import System.FilePath ((</>), replaceExtension, takeBaseName)
 import System.IO (hFlush, stdout)
 
 data LoadedWorld = LoadedWorld
