@@ -16,20 +16,36 @@ diffWorlds :: World -> World -> Text
 diffWorlds leftWorld rightWorld =
     T.unlines $
         concat
-            [ renderSection "Timelines" leftTimelines rightTimelines
-            , renderSection "Entities" leftEntities rightEntities
-            , renderSection "Relationships" leftRelationships rightRelationships
+            [ renderNamedSection "Timelines" (worldTimelines leftWorld) (worldTimelines rightWorld) renderTimeline
+            , renderNamedSection "Entities" (worldEntities leftWorld) (worldEntities rightWorld) renderEntity
+            , renderSetSection "Relationships" leftRelationships rightRelationships
             ]
   where
-    leftTimelines = Set.fromList (Map.keys (worldTimelines leftWorld))
-    rightTimelines = Set.fromList (Map.keys (worldTimelines rightWorld))
-    leftEntities = Set.fromList (Map.keys (worldEntities leftWorld))
-    rightEntities = Set.fromList (Map.keys (worldEntities rightWorld))
-    leftRelationships = Set.fromList (map renderRelationship (worldRelationships leftWorld))
-    rightRelationships = Set.fromList (map renderRelationship (worldRelationships rightWorld))
+    leftRelationships = Set.fromList (map renderRelationshipSummary (worldRelationships leftWorld))
+    rightRelationships = Set.fromList (map renderRelationshipSummary (worldRelationships rightWorld))
 
-renderSection :: Text -> Set Text -> Set Text -> [Text]
-renderSection title leftSet rightSet =
+renderNamedSection :: Text -> Map.Map Text a -> Map.Map Text a -> (a -> Text) -> [Text]
+renderNamedSection title leftMap rightMap renderValue =
+    [ title <> ":"
+    ]
+        ++ renderDelta "+ only in right" addedNames
+        ++ renderDelta "- only in left" removedNames
+        ++ renderChanged changedEntries
+  where
+    leftNames = Set.fromList (Map.keys leftMap)
+    rightNames = Set.fromList (Map.keys rightMap)
+    addedNames = Set.toList (rightNames `Set.difference` leftNames)
+    removedNames = Set.toList (leftNames `Set.difference` rightNames)
+    changedEntries =
+        [ (name, leftSummary, rightSummary)
+        | name <- sort (Set.toList (leftNames `Set.intersection` rightNames))
+        , let leftSummary = renderValue (leftMap Map.! name)
+        , let rightSummary = renderValue (rightMap Map.! name)
+        , leftSummary /= rightSummary
+        ]
+
+renderSetSection :: Text -> Set Text -> Set Text -> [Text]
+renderSetSection title leftSet rightSet =
     [ title <> ":"
     ]
         ++ renderDelta "+ only in right" (Set.toList (rightSet `Set.difference` leftSet))
@@ -40,8 +56,58 @@ renderDelta _ [] = ["  (no differences)"]
 renderDelta label values =
     map (\value -> "  " <> label <> " " <> value) (sort values)
 
-renderRelationship :: Relationship -> Text
-renderRelationship relationship =
+renderChanged :: [(Text, Text, Text)] -> [Text]
+renderChanged [] = []
+renderChanged entries =
+    concatMap
+        (\(name, leftSummary, rightSummary) -> ["  ~ changed " <> name, "    left: " <> leftSummary, "    right: " <> rightSummary])
+        entries
+
+renderTimeline :: Timeline -> Text
+renderTimeline timeline =
+    T.intercalate
+        " | "
+        [ "kind=" <> T.pack (show (timelineKind timeline))
+        , "start=" <> T.pack (show (timePointOrdinal (timelineStart timeline)))
+        , "end=" <> T.pack (show (timePointOrdinal (timelineEnd timeline)))
+        , "parent=" <> maybe "-" id (timelineParent timeline)
+        , "loop=" <> maybe "-" (T.pack . show) (timelineLoopCount timeline)
+        ]
+
+renderEntity :: Entity -> Text
+renderEntity entity =
+    T.intercalate
+        " | "
+        [ "type=" <> entityType entity
+        , "fields=" <> renderFields (entityFields entity)
+        , "appears=" <> renderAppearances (entityAppearances entity)
+        ]
+
+renderFields :: Map.Map Text Value -> Text
+renderFields fields
+    | Map.null fields = "-"
+    | otherwise =
+        T.intercalate
+            ", "
+            [ key <> "=" <> T.pack (show value)
+            | (key, value) <- Map.toAscList fields
+            ]
+
+renderAppearances :: [Appearance] -> Text
+renderAppearances [] = "-"
+renderAppearances appearances =
+    T.intercalate
+        ", "
+        [ appearanceTimeline appearance
+            <> "@"
+            <> T.pack (show (timePointOrdinal (rangeStart (appearanceRange appearance))))
+            <> ".."
+            <> T.pack (show (timePointOrdinal (rangeEnd (appearanceRange appearance))))
+        | appearance <- appearances
+        ]
+
+renderRelationshipSummary :: Relationship -> Text
+renderRelationshipSummary relationship =
     relSource relationship
         <> " "
         <> maybe "--" (\label -> "-[" <> label <> "]->") (relLabel relationship)
