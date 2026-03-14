@@ -12,6 +12,7 @@ import Seuss.Core.Eval
 import Seuss.Core.Validation
 import Seuss.Import.CSV
 import Seuss.Import.GEDCOM
+import Seuss.Import.JSONLD
 import Seuss.Lang.AST
 import Seuss.Lang.Parser
 import Seuss.Model.Types
@@ -103,6 +104,34 @@ spec = do
                     output `shouldSatisfy` T.isInfixOf "rel John_Doe -[\"spouse\"]-> Jane_Doe;"
                     output `shouldSatisfy` T.isInfixOf "rel John_Doe -[\"parent_of\"]-> Sam_Doe;"
                     output `shouldSatisfy` T.isInfixOf "rel Jane_Doe -[\"parent_of\"]-> Sam_Doe;"
+
+    describe "json-ld import enrichment" $
+        it "turns @id references into Seuss relationships" $ do
+            let jsonldInput =
+                    T.unlines
+                        [ "{"
+                        , "  \"@graph\": ["
+                        , "    {"
+                        , "      \"@id\": \"https://example.com/people/alice\","
+                        , "      \"@type\": \"person\","
+                        , "      \"name\": \"Alice\","
+                        , "      \"knows\": { \"@id\": \"https://example.com/people/bob\" }"
+                        , "    },"
+                        , "    {"
+                        , "      \"@id\": \"https://example.com/people/bob\","
+                        , "      \"@type\": \"person\","
+                        , "      \"name\": \"Bob\""
+                        , "    }"
+                        , "  ]"
+                        , "}"
+                        ]
+            case importJsonLdToSeuss jsonldInput of
+                Left diags ->
+                    expectationFailure ("json-ld import failed: " <> show diags)
+                Right output -> do
+                    output `shouldSatisfy` T.isInfixOf "entity Alice : person {"
+                    output `shouldSatisfy` T.isInfixOf "entity Bob : person {"
+                    output `shouldSatisfy` T.isInfixOf "rel Alice -[\"knows\"]-> Bob;"
 
     describe "config loading" $
         it "reads export defaults and theme settings from a TOML-like file" $ do
