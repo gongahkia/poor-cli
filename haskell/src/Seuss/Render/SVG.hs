@@ -8,7 +8,6 @@ module Seuss.Render.SVG
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Seuss.Render.Layout
 
 data SvgOptions = SvgOptions
