@@ -530,6 +530,74 @@ spec = do
                         Right worldValue ->
                             Map.member "closure_builtin_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "type metadata parsing and inherited field access" $ do
+        it "parses optional type fields and @meta entries into the AST" $ do
+            let source =
+                    T.unlines
+                        [ "type leader {"
+                        , "  @title: \"Leader\","
+                        , "  name: string,"
+                        , "  age: int?,"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtType decl]) -> do
+                    typeDeclMeta decl `shouldBe` Map.fromList [("title", ExprValue (VString "Leader"))]
+                    typeDeclFields decl
+                        `shouldBe`
+                            [ TypeField
+                                { typeFieldName = "name"
+                                , typeFieldType = "string"
+                                , typeFieldOptional = False
+                                }
+                            , TypeField
+                                { typeFieldName = "age"
+                                , typeFieldType = "int"
+                                , typeFieldOptional = True
+                                }
+                            ]
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "inherits type metadata during entity field access fallback" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "type leader {"
+                        , "  @banner: \"statecraft\","
+                        , "}"
+                        , ""
+                        , "type prime_minister : leader {"
+                        , "  @title: \"Prime Minister\","
+                        , "}"
+                        , ""
+                        , "entity churchill : prime_minister {"
+                        , "  appears_on: main @ 2000-01-01..2000-12-31,"
+                        , "}"
+                        , ""
+                        , "if churchill.title == \"Prime Minister\" && churchill.banner == \"statecraft\" {"
+                        , "  entity inherited_meta_hit : event {"
+                        , "    appears_on: main @ 2000-12-09..2000-12-10,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "inherited_meta_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "boolean and comparison operator evaluation" $
         it "evaluates precedence-sensitive boolean logic with extended comparison operators" $ do
             let source =
