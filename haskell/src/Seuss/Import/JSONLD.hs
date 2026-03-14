@@ -5,7 +5,7 @@ module Seuss.Import.JSONLD
     ) where
 
 import Control.Applicative ((<|>))
-import Data.Aeson
+import qualified Data.Aeson as Aeson
 import Data.Aeson.Key (Key, fromText, toText)
 import qualified Data.Aeson.KeyMap as KeyMap
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -13,11 +13,11 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Vector as Vector
-import Seuss.Model.Types
+import Seuss.Model.Types (Diagnostic(..), DiagnosticLevel(..))
 
 importJsonLdToSeuss :: Text -> Either [Diagnostic] Text
 importJsonLdToSeuss input =
-    case eitherDecodeStrict' (TE.encodeUtf8 input) of
+    case Aeson.eitherDecodeStrict' (TE.encodeUtf8 input) of
         Left err ->
             Left [Diagnostic DiagnosticError "import:jsonld" (T.pack err)]
         Right value ->
@@ -36,19 +36,19 @@ importJsonLdToSeuss input =
                             ]
                                 ++ concatMap renderObject objects
 
-extractObjects :: Value -> [Object]
-extractObjects (Array values) = mapMaybe unwrapObject (Vector.toList values)
-extractObjects (Object obj) =
+extractObjects :: Aeson.Value -> [Aeson.Object]
+extractObjects (Aeson.Array values) = mapMaybe unwrapObject (Vector.toList values)
+extractObjects (Aeson.Object obj) =
     case KeyMap.lookup "@graph" obj of
-        Just (Array values) -> mapMaybe unwrapObject (Vector.toList values)
-        _ -> maybe [] pure (unwrapObject (Object obj))
+        Just (Aeson.Array values) -> mapMaybe unwrapObject (Vector.toList values)
+        _ -> maybe [] pure (unwrapObject (Aeson.Object obj))
 extractObjects _ = []
 
-unwrapObject :: Value -> Maybe Object
-unwrapObject (Object obj) = Just obj
+unwrapObject :: Aeson.Value -> Maybe Aeson.Object
+unwrapObject (Aeson.Object obj) = Just obj
 unwrapObject _ = Nothing
 
-renderObject :: Object -> [Text]
+renderObject :: Aeson.Object -> [Text]
 renderObject obj =
     [ "entity " <> sanitize nameValue <> " : " <> sanitize typeValue <> " {"
     ]
@@ -71,13 +71,13 @@ renderObject obj =
         , renderedKey `notElem` ignored
         ]
 
-objectText :: [Text] -> Text -> Object -> Text
+objectText :: [Text] -> Text -> Aeson.Object -> Text
 objectText keys fallback obj =
     fromMaybe fallback $
         foldr
             ( \key acc ->
                 acc <|> case KeyMap.lookup (fromStringKey key) obj of
-                    Just (String textValue) -> Just textValue
+                    Just (Aeson.String textValue) -> Just textValue
                     Just value -> Just (T.pack (show value))
                     Nothing -> Nothing
             )
@@ -87,11 +87,11 @@ objectText keys fallback obj =
 fromStringKey :: Text -> Key
 fromStringKey = fromText
 
-renderJsonValue :: Value -> Text
-renderJsonValue (String textValue) = "\"" <> textValue <> "\""
-renderJsonValue (Number numberValue) = T.pack (show numberValue)
-renderJsonValue (Bool boolValue) = if boolValue then "true" else "false"
-renderJsonValue Null = "null"
+renderJsonValue :: Aeson.Value -> Text
+renderJsonValue (Aeson.String textValue) = "\"" <> textValue <> "\""
+renderJsonValue (Aeson.Number numberValue) = T.pack (show numberValue)
+renderJsonValue (Aeson.Bool boolValue) = if boolValue then "true" else "false"
+renderJsonValue Aeson.Null = "null"
 renderJsonValue value = "\"" <> T.pack (show value) <> "\""
 
 sanitize :: Text -> Text
