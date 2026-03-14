@@ -22,6 +22,7 @@ syntaxKeywords =
     , "in"
     , "repeat"
     , "while"
+    , "return"
     , "true"
     , "false"
     , "linear"
