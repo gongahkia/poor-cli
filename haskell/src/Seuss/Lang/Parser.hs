@@ -9,6 +9,7 @@ import Control.Applicative (empty, many, optional, (<|>))
 import Data.Char (isAlphaNum)
 import Data.Functor (($>))
 import qualified Data.Map.Strict as Map
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time (Day, defaultTimeLocale, parseTimeM)
@@ -211,26 +212,55 @@ typeDeclParser = do
     _ <- symbol "type"
     name <- identifier
     parent <- optional (symbol ":" *> identifier)
-    fields <- braces (many typeFieldParser)
+    entries <- braces (many typeDeclEntryParser)
+    let fields =
+            [ field
+            | TypeDeclField field <- entries
+            ]
+        metaFields =
+            Map.fromList
+                [ (metaName, metaValue)
+                | TypeDeclMeta metaName metaValue <- entries
+                ]
     pure
         TypeDecl
             { typeDeclName = name
             , typeDeclParent = parent
             , typeDeclFields = fields
+            , typeDeclMeta = metaFields
             }
 
-typeFieldParser :: Parser TypeField
+data TypeDeclEntry
+    = TypeDeclField TypeField
+    | TypeDeclMeta Text Expr
+
+typeDeclEntryParser :: Parser TypeDeclEntry
+typeDeclEntryParser =
+    try typeMetaParser <|> typeFieldParser
+
+typeFieldParser :: Parser TypeDeclEntry
 typeFieldParser = do
     fieldName <- identifier
     _ <- symbol ":"
     fieldType <- identifier
+    optionalFlag <- isJust <$> optional (symbol "?")
     _ <- optional (symbol ",")
-    pure
-        TypeField
-            { typeFieldName = fieldName
-            , typeFieldType = fieldType
-            , typeFieldOptional = False
-            }
+    pure $
+        TypeDeclField
+            TypeField
+                { typeFieldName = fieldName
+                , typeFieldType = fieldType
+                , typeFieldOptional = optionalFlag
+                }
+
+typeMetaParser :: Parser TypeDeclEntry
+typeMetaParser = do
+    _ <- symbol "@"
+    metaName <- identifier
+    _ <- symbol ":"
+    metaValue <- exprParser
+    _ <- optional (symbol ",")
+    pure (TypeDeclMeta metaName metaValue)
 
 timelineDeclParser :: Parser TimelineDecl
 timelineDeclParser = do
