@@ -39,6 +39,9 @@ $ cabal test
 - `match <expr> { ... }` statements now parse and evaluate with literal, identifier-bind, and `_` wildcard arms.
 - list literals like `["one", "two"]` and integer range expressions like `1..3` now parse and evaluate.
 - postfix index expressions like `labels[1]` and `"abc"[1]` now parse and evaluate.
+- function declarations now accept optional return annotations like `fn add(a: int, b: int) -> int { ... }`.
+- named function calls now evaluate with scoped parameter binding, return the last expression in the body, and also work as standalone statement calls.
+- dot-based field access like `frodo.age` and `main.kind` now resolves against entity and timeline values already present in the world.
 - `for` loops can now iterate over bound list and range expressions, not just inline literals.
 - `let mut name = ...;` is accepted, and existing bindings can now be reassigned with `name = ...;`.
 - boolean logic now includes `&&` and `||`, and comparisons now include `!=`, `<=`, and `>=`.
