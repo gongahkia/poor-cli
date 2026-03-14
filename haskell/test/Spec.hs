@@ -148,6 +148,54 @@ spec = do
                             Map.member "beta" (worldEntities worldValue) `shouldBe` True
                             Map.member "gamma" (worldEntities worldValue) `shouldBe` False
 
+    describe "for-loop parsing and evaluation" $ do
+        it "parses list and range iterables for for-loops" $ do
+            let source =
+                    T.unlines
+                        [ "for item in [1, 2, 3] {"
+                        , "  let seen = item;"
+                        , "}"
+                        , ""
+                        , "for day in 1..3 {"
+                        , "  let seen = day;"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtFor listLoop, StmtFor rangeLoop]) -> do
+                    forIterable listLoop `shouldBe` ForList [ExprValue (VInt 1), ExprValue (VInt 2), ExprValue (VInt 3)]
+                    forIterable rangeLoop `shouldBe` ForRange (ExprValue (VInt 1)) (ExprValue (VInt 3))
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "iterates integer ranges and exposes the loop variable to the body" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "for i in 1..3 {"
+                        , "  if i == 2 {"
+                        , "    entity middle : event {"
+                        , "      appears_on: main @ 2000-02-01..2000-02-02,"
+                        , "    }"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "middle" (worldEntities worldValue) `shouldBe` True
+
     describe "diffing" $
         it "reports entity deltas between worlds" $ do
             source <- TIO.readFile "../examples/lotr.seuss"
