@@ -179,6 +179,21 @@ evalExpr state (ExprIdent name) =
         Nothing ->
             Right $
                 VString name
+evalExpr state (ExprList exprs) =
+    VList <$> traverse (evalExpr state) exprs
+evalExpr state (ExprRange startExpr endExpr) = do
+    startValue <- evalExpr state startExpr
+    endValue <- evalExpr state endExpr
+    case (startValue, endValue) of
+        (VInt startInt, VInt endInt) ->
+            pure $
+                VList $
+                    map VInt $
+                        if startInt <= endInt
+                            then [startInt .. endInt]
+                            else reverse [endInt .. startInt]
+        _ ->
+            pure (VList [startValue, endValue])
 evalExpr state (ExprBinary op lhs rhs) = do
     leftValue <- evalExpr state lhs
     rightValue <- evalExpr state rhs
@@ -322,8 +337,11 @@ evalForIterable state iterable =
                         else reverse [endValue .. startValue]
         ForList exprs ->
             traverse (evalExpr state) exprs
-        ForExpr expr ->
-            pure . pure =<< evalExpr state expr
+        ForExpr expr -> do
+            value <- evalExpr state expr
+            case value of
+                VList values -> pure values
+                _ -> pure [value]
 
 restoreBinding :: Maybe Value -> Text -> Map Text Value -> Map Text Value
 restoreBinding Nothing name env = Map.delete name env
