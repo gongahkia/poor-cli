@@ -355,6 +355,118 @@ spec = do
                         Right worldValue ->
                             Map.member "assigned_while_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "function and field access parsing and evaluation" $ do
+        it "parses function return types, expression bodies, calls, and field access" $ do
+            let source =
+                    T.unlines
+                        [ "fn add(a: int, b: int) -> int {"
+                        , "  a + b"
+                        , "}"
+                        , ""
+                        , "let sum = add(1, 2);"
+                        , "let age = frodo.age;"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtFunction decl, StmtLet sumDecl, StmtLet ageDecl]) -> do
+                    fnReturnType decl `shouldBe` Just "int"
+                    fnBody decl
+                        `shouldBe`
+                            [ StmtExpr
+                                ( ExprBinary
+                                    OpAdd
+                                    (ExprIdent "a")
+                                    (ExprIdent "b")
+                                )
+                            ]
+                    letValue sumDecl
+                        `shouldBe`
+                            ExprCall
+                                (ExprIdent "add")
+                                [ExprValue (VInt 1), ExprValue (VInt 2)]
+                    letValue ageDecl
+                        `shouldBe`
+                            ExprField
+                                (ExprIdent "frodo")
+                                "age"
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "evaluates function return values and statement-form function calls" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "fn add(a: int, b: int) -> int {"
+                        , "  a + b"
+                        , "}"
+                        , ""
+                        , "fn spawn(label: string) {"
+                        , "  entity scripted : event {"
+                        , "    note: label,"
+                        , "    appears_on: main @ 2000-06-01..2000-06-02,"
+                        , "  }"
+                        , "}"
+                        , ""
+                        , "let sum = add(1, 2);"
+                        , "spawn(\"alpha\");"
+                        , ""
+                        , "if sum == 3 {"
+                        , "  entity return_hit : event {"
+                        , "    appears_on: main @ 2000-06-03..2000-06-04,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            Map.member "return_hit" (worldEntities worldValue) `shouldBe` True
+                            case Map.lookup "scripted" (worldEntities worldValue) of
+                                Nothing ->
+                                    expectationFailure "expected scripted entity from function call"
+                                Just entityValue ->
+                                    Map.lookup "note" (entityFields entityValue) `shouldBe` Just (VString "alpha")
+
+        it "resolves entity and timeline field access against world values" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "entity frodo : character {"
+                        , "  age: 50,"
+                        , "  appears_on: main @ 2000-01-01..2000-12-31,"
+                        , "}"
+                        , ""
+                        , "if frodo.name == \"frodo\" && frodo.type == \"character\" && frodo.age == 50 && main.kind == \"linear\" && main.start == 2000-01-01 {"
+                        , "  entity field_access_hit : event {"
+                        , "    appears_on: main @ 2000-12-05..2000-12-06,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "field_access_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "boolean and comparison operator evaluation" $
         it "evaluates precedence-sensitive boolean logic with extended comparison operators" $ do
             let source =
