@@ -61,6 +61,22 @@ spec = do
                 Right output ->
                     output `shouldSatisfy` T.isInfixOf "entity frodo"
 
+    describe "csv import enrichment" $
+        it "synthesizes timelines and sanitizes identifiers for entity-style CSV inputs" $ do
+            let csvInput =
+                    T.unlines
+                        [ "Name,Type,Timeline,Timeline_Kind,Start,End,Is Active"
+                        , "\"Frodo Baggins\",character,\"Shire Story\",branch,2968-09-22,3019-09-29,true"
+                        ]
+            case importCsvToSeuss csvInput of
+                Left diags ->
+                    expectationFailure ("csv import failed: " <> show diags)
+                Right output -> do
+                    output `shouldSatisfy` T.isInfixOf "timeline Shire_Story {"
+                    output `shouldSatisfy` T.isInfixOf "kind: branch,"
+                    output `shouldSatisfy` T.isInfixOf "entity Frodo_Baggins : character {"
+                    output `shouldSatisfy` T.isInfixOf "is_active: true,"
+
     describe "config loading" $
         it "reads export defaults and theme settings from a TOML-like file" $ do
             let configPath = "/tmp/seuss-hs-config.toml"
