@@ -9,6 +9,9 @@ module Seuss.Lang.AST
     , ForIterable(..)
     , IfDecl(..)
     , LetDecl(..)
+    , MatchArm(..)
+    , MatchDecl(..)
+    , MatchPattern(..)
     , Program(..)
     , RepeatDecl(..)
     , RelationshipDecl(..)
@@ -117,6 +120,24 @@ data IfDecl = IfDecl
     }
     deriving (Eq, Show)
 
+data MatchPattern
+    = MatchPatternValue Value
+    | MatchPatternBind Text
+    | MatchPatternWildcard
+    deriving (Eq, Show)
+
+data MatchArm = MatchArm
+    { matchArmPattern :: MatchPattern
+    , matchArmBody :: [Stmt]
+    }
+    deriving (Eq, Show)
+
+data MatchDecl = MatchDecl
+    { matchSubject :: Expr
+    , matchArms :: [MatchArm]
+    }
+    deriving (Eq, Show)
+
 data Stmt
     = StmtType TypeDecl
     | StmtTimeline TimelineDecl
@@ -129,6 +150,7 @@ data Stmt
     | StmtWhile WhileDecl
     | StmtFunction FnDecl
     | StmtIf IfDecl
+    | StmtMatch MatchDecl
     deriving (Eq, Show)
 
 newtype Program = Program [Stmt]
