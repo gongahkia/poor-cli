@@ -1,4 +1,5 @@
-[![](https://img.shields.io/badge/seuss_1.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/v1.0.0)
+[![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/v1.0.0)
+[![](https://img.shields.io/badge/seuss_2.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/v2.0.0)
 ![](https://github.com/gongahkia/seuss/actions/workflows/ci.yml/badge.svg)
 ![](https://github.com/gongahkia/seuss/actions/workflows/release.yml/badge.svg)
 
@@ -12,22 +13,12 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 
 ## Stack
 
-* *Scripting*: [Rust](https://rust-lang.org/), [pest](https://pest.rs/), [clap](https://docs.rs/clap), [thiserror](https://docs.rs/thiserror)
+* *Scripting*: [Haskell](), [megaparsec](), [Rust](https://rust-lang.org/), [pest](https://pest.rs/), [clap](https://docs.rs/clap), [thiserror](https://docs.rs/thiserror)
 * *TUI*: [ratatui](https://ratatui.rs/), [crossterm](https://docs.rs/crossterm) 
 * *Export Format*: [svg](https://docs.rs/svg), [resvg](https://docs.rs/resvg), [printpdf](https://docs.rs/printpdf) 
 * *Date/Time*: [chrono](https://docs.rs/chrono) 
 * *Serialization*: [serde](https://serde.rs/), [serde_json](https://docs.rs/serde_json), [toml](https://docs.rs/toml), [uuid](https://docs.rs/uuid)
 * *CI/CD*: [GitHub Actions](https://github.com/features/actions)
-
-## Haskell Rewrite
-
-A parallel Haskell implementation now lives under [`./haskell`](./haskell). It currently includes:
-
-* a `megaparsec` parser and pure evaluator
-* semantic validation and diffing
-* SVG export
-* a `brick`-based analytical TUI shell
-* importer scaffolding for CSV, GEDCOM, and JSON-LD
 
 ## Screenshots
 
@@ -47,7 +38,7 @@ A parallel Haskell implementation now lives under [`./haskell`](./haskell). It c
 
 The below instructions are for running `Seuss` locally.
 
-1. First execute the below command to clone `Seuss` on your local machine.
+1. First execute the below command to clone `Seuss`' Rust port onto your local machine.
 
 ```console
 $ git clone https://github.com/gongahkia/seuss && cd seuss
