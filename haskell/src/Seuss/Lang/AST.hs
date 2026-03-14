@@ -160,6 +160,7 @@ data Stmt
     | StmtFunction FnDecl
     | StmtIf IfDecl
     | StmtMatch MatchDecl
+    | StmtReturn (Maybe Expr)
     | StmtAssign Text Expr
     | StmtExpr Expr
     deriving (Eq, Show)
