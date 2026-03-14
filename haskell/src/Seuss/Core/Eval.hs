@@ -38,8 +38,9 @@ evalStmt state statement =
     case statement of
         StmtType decl -> do
             rejectDuplicate "type" (typeDeclName decl) (worldTypes (evalWorld state))
+            (state1, metaValues) <- evalExprMap state (typeDeclMeta decl)
             let world' =
-                    (evalWorld state)
+                    (evalWorld state1)
                         { worldTypes =
                             Map.insert
                                 (typeDeclName decl)
@@ -47,10 +48,11 @@ evalStmt state statement =
                                     { typeName = typeDeclName decl
                                     , typeParent = typeDeclParent decl
                                     , typeFields = typeDeclFields decl
+                                    , typeMeta = metaValues
                                     }
-                                (worldTypes (evalWorld state))
+                                (worldTypes (evalWorld state1))
                         }
-            pure state{evalWorld = world'}
+            pure state1{evalWorld = world'}
         StmtTimeline decl -> do
             rejectDuplicate "timeline" (timelineDeclName decl) (worldTimelines (evalWorld state))
             (state1, startValue) <- exprToTimePoint state (timelineDeclStart decl)
@@ -449,7 +451,11 @@ evalFieldAccess state objectValue fieldName =
                         "type" -> Right (VString (entityType entity))
                         _ ->
                             maybe
-                                (unknownField "entity" fieldName)
+                                ( maybe
+                                    (unknownField "entity" fieldName)
+                                    Right
+                                    (lookupTypeMetaValue (evalWorld state) (entityType entity) fieldName)
+                                )
                                 Right
                                 (Map.lookup fieldName (entityFields entity))
                 Nothing ->
@@ -507,6 +513,18 @@ unknownField targetKind fieldName =
             , diagnosticSource = "evaluator"
             , diagnosticMessage = "unknown " <> targetKind <> " field: " <> fieldName
             }
+
+lookupTypeMetaValue :: World -> Text -> Text -> Maybe Value
+lookupTypeMetaValue worldValue typeNameValue fieldName =
+    case Map.lookup typeNameValue (worldTypes worldValue) of
+        Nothing -> Nothing
+        Just typeDef ->
+            case Map.lookup fieldName (typeMeta typeDef) of
+                Just metaValue -> Just metaValue
+                Nothing ->
+                    case typeParent typeDef of
+                        Nothing -> Nothing
+                        Just parentName -> lookupTypeMetaValue worldValue parentName fieldName
 
 evalExprList :: EvalState -> [Expr] -> Either Diagnostic (EvalState, [Value])
 evalExprList state exprs =
