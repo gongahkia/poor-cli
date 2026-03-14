@@ -35,6 +35,7 @@ library
     import: common-settings
     exposed-modules:
         Seuss.CLI.Options
+        Seuss.Config.Loader
         Seuss.Core.Diff
         Seuss.Core.Eval
         Seuss.Core.Validation
