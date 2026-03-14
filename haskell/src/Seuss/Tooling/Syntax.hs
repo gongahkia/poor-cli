@@ -16,6 +16,7 @@ syntaxKeywords =
     , "fn"
     , "if"
     , "else"
+    , "match"
     , "for"
     , "in"
     , "repeat"
