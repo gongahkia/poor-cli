@@ -15,6 +15,7 @@ module Seuss.Lang.AST
     , Stmt(..)
     , TimelineDecl(..)
     , TypeDecl(..)
+    , WhileDecl(..)
     ) where
 
 import Data.Map.Strict (Map)
@@ -95,6 +96,12 @@ data RepeatDecl = RepeatDecl
     }
     deriving (Eq, Show)
 
+data WhileDecl = WhileDecl
+    { whileCondition :: Expr
+    , whileBody :: [Stmt]
+    }
+    deriving (Eq, Show)
+
 data FnDecl = FnDecl
     { fnName :: Text
     , fnParams :: [(Text, Text)]
@@ -119,6 +126,7 @@ data Stmt
     | StmtLet LetDecl
     | StmtFor ForDecl
     | StmtRepeat RepeatDecl
+    | StmtWhile WhileDecl
     | StmtFunction FnDecl
     | StmtIf IfDecl
     deriving (Eq, Show)
