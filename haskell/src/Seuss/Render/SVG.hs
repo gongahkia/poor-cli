@@ -8,12 +8,14 @@ module Seuss.Render.SVG
 
 import Data.Text (Text)
 import qualified Data.Text as T
+import Seuss.Config.Loader (SvgTheme(..), darkTheme)
 import Seuss.Render.Layout
 
 data SvgOptions = SvgOptions
     { svgWidth :: Int
     , svgHeight :: Int
     , svgTitle :: Text
+    , svgTheme :: SvgTheme
     }
     deriving (Eq, Show)
 
@@ -23,6 +25,7 @@ defaultSvgOptions =
         { svgWidth = 1600
         , svgHeight = 900
         , svgTitle = "Seuss"
+        , svgTheme = darkTheme
         }
 
 renderSvg :: SvgOptions -> Layout -> Text
@@ -30,8 +33,8 @@ renderSvg options layout =
     T.unlines $
         [ "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         , "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" <> showText (svgWidth options) <> "\" height=\"" <> showText (svgHeight options) <> "\" viewBox=\"0 0 " <> showText (svgWidth options) <> " " <> showText (svgHeight options) <> "\">"
-        , "<rect width=\"100%\" height=\"100%\" fill=\"#111827\"/>"
-        , "<text x=\"32\" y=\"48\" fill=\"#f9fafb\" font-size=\"28\" font-family=\"monospace\">" <> escapeXml (svgTitle options) <> "</text>"
+        , "<rect width=\"100%\" height=\"100%\" fill=\"" <> themeBackground (svgTheme options) <> "\"/>"
+        , "<text x=\"32\" y=\"48\" fill=\"" <> themeText (svgTheme options) <> "\" font-size=\"28\" font-family=\"monospace\">" <> escapeXml (svgTitle options) <> "</text>"
         ]
             ++ map renderTimeline (layoutTimelines layout)
             ++ map renderEntity (layoutEntities layout)
@@ -60,10 +63,14 @@ renderSvg options layout =
             , showDouble (scaleX (layoutTimelineEnd timeline))
             , "\" y2=\""
             , showDouble (laneY (layoutTimelineLane timeline))
-            , "\" stroke=\"#374151\" stroke-width=\"6\"/>"
+            , "\" stroke=\""
+            , themeText (svgTheme options)
+            , "\" stroke-width=\"3\" opacity=\"0.35\"/>"
             , "<text x=\"20\" y=\""
             , showDouble (laneY (layoutTimelineLane timeline) + 6)
-            , "\" fill=\"#93c5fd\" font-family=\"monospace\" font-size=\"16\">"
+            , "\" fill=\""
+            , themeTimeline (svgTheme options)
+            , "\" font-family=\"monospace\" font-size=\"16\">"
             , escapeXml (layoutTimelineName timeline)
             , "</text>"
             , "</g>"
@@ -80,12 +87,16 @@ renderSvg options layout =
                 , showDouble y
                 , "\" width=\""
                 , showDouble width
-                , "\" height=\"28\" rx=\"6\" fill=\"#10b981\" opacity=\"0.85\"/>"
+                , "\" height=\"28\" rx=\"6\" fill=\""
+                , themeEntity (svgTheme options)
+                , "\" opacity=\"0.85\"/>"
                 , "<text x=\""
                 , showDouble (x + 8)
                 , "\" y=\""
                 , showDouble (y + 19)
-                , "\" fill=\"#f9fafb\" font-family=\"monospace\" font-size=\"14\">"
+                , "\" fill=\""
+                , themeText (svgTheme options)
+                , "\" font-family=\"monospace\" font-size=\"14\">"
                 , escapeXml (layoutEntityName entity <> " [" <> layoutEntityType entity <> "]")
                 , "</text>"
                 , "</g>"
@@ -107,12 +118,16 @@ renderSvg options layout =
                             , showDouble targetX
                             , "\" y2=\""
                             , showDouble targetY
-                            , "\" stroke=\"#f59e0b\" stroke-width=\"1.5\" stroke-dasharray=\"5,5\"/>"
+                            , "\" stroke=\""
+                            , themeRelationship (svgTheme options)
+                            , "\" stroke-width=\"1.5\" stroke-dasharray=\"5,5\"/>"
                             , "<text x=\""
                             , showDouble ((sourceX + targetX) / 2)
                             , "\" y=\""
                             , showDouble ((sourceY + targetY) / 2 - 4)
-                            , "\" fill=\"#fcd34d\" font-family=\"monospace\" font-size=\"12\">"
+                            , "\" fill=\""
+                            , themeRelationship (svgTheme options)
+                            , "\" font-family=\"monospace\" font-size=\"12\">"
                             , escapeXml (maybe "rel" id (layoutRelLabel relationship))
                             , "</text>"
                             , "</g>"
