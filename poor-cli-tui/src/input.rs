@@ -1074,7 +1074,11 @@ fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputAction {
                     chunk.selected = !chunk.selected;
                     status_message = Some(format!(
                         "{} chunk {} for {}",
-                        if chunk.selected { "Selected" } else { "Cleared" },
+                        if chunk.selected {
+                            "Selected"
+                        } else {
+                            "Cleared"
+                        },
                         chunk.hunk_index + 1,
                         chunk.path
                     ));
@@ -1170,16 +1174,12 @@ fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputAction {
             InputAction::PermissionAnswered(true)
         }
         KeyCode::Char('f') | KeyCode::Char('F') => {
-            if let Some(path) = app
-                .mutation_review
-                .as_ref()
-                .and_then(|review| {
-                    review
-                        .selected_chunk()
-                        .map(|chunk| chunk.path.clone())
-                        .or_else(|| review.paths.get(review.selected_path_index).cloned())
-                })
-            {
+            if let Some(path) = app.mutation_review.as_ref().and_then(|review| {
+                review
+                    .selected_chunk()
+                    .map(|chunk| chunk.path.clone())
+                    .or_else(|| review.paths.get(review.selected_path_index).cloned())
+            }) {
                 app.permission_approved_paths = vec![path];
                 app.permission_approved_chunks.clear();
                 app.set_status("Approved selected file from the pending mutation");
@@ -1856,13 +1856,12 @@ mod tests {
             KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
         );
         assert!(matches!(toggle, InputAction::Redraw));
-        assert!(
-            app.mutation_review
-                .as_ref()
-                .and_then(|review| review.chunks.first())
-                .map(|chunk| chunk.selected)
-                .unwrap_or(false)
-        );
+        assert!(app
+            .mutation_review
+            .as_ref()
+            .and_then(|review| review.chunks.first())
+            .map(|chunk| chunk.selected)
+            .unwrap_or(false));
 
         let action = handle_key(
             &mut app,

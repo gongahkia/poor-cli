@@ -1354,7 +1354,10 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
         Span::styled(" Space ", Style::default().fg(theme::accent(mode))),
         Span::styled("toggle hunk  ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(" h ", Style::default().fg(theme::accent(mode))),
-        Span::styled("approve hunks  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(
+            "approve hunks  ",
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
         Span::styled(" f ", Style::default().fg(theme::accent(mode))),
         Span::styled(
             if review.paths.len() > 1 {
