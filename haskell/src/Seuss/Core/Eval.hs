@@ -136,6 +136,8 @@ evalStmt state statement =
             pure state{evalEnv = Map.insert (letName decl) value (evalEnv state)}
         StmtFor decl ->
             evalForLoop state decl
+        StmtRepeat decl ->
+            evalRepeatLoop state decl
         StmtFunction decl -> do
             let world' =
                     (evalWorld state)
@@ -286,3 +288,16 @@ evalForIterable state iterable =
 restoreBinding :: Maybe Value -> Text -> Map Text Value -> Map Text Value
 restoreBinding Nothing name env = Map.delete name env
 restoreBinding (Just value) name env = Map.insert name value env
+
+evalRepeatLoop :: EvalState -> RepeatDecl -> Either Diagnostic EvalState
+evalRepeatLoop state decl = do
+    countValue <- exprToInteger state (repeatCount decl)
+    if countValue < 0
+        then
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage = "repeat count must be non-negative"
+                    }
+        else foldM (\currentState _ -> foldM evalStmt currentState (repeatBody decl)) state [1 .. countValue]
