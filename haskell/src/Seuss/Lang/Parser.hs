@@ -64,6 +64,7 @@ statementParser =
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
         , StmtMatch <$> matchDeclParser
+        , StmtReturn <$> returnStmtParser
         , uncurry StmtAssign <$> assignStmtParser
         , StmtExpr <$> exprStmtParser
         ]
@@ -467,6 +468,13 @@ matchDeclParser = do
             { matchSubject = subjectExpr
             , matchArms = arms
             }
+
+returnStmtParser :: Parser (Maybe Expr)
+returnStmtParser = do
+    _ <- symbol "return"
+    valueExpr <- optional exprParser
+    _ <- optional (symbol ";")
+    pure valueExpr
 
 matchArmParser :: Parser MatchArm
 matchArmParser = do
