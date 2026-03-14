@@ -8,6 +8,7 @@ module Seuss.Lang.Parser
 import Control.Applicative (empty, many, optional, (<|>))
 import Data.Char (isAlphaNum)
 import Data.Functor (($>))
+import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time (Day, defaultTimeLocale, parseTimeM)
@@ -261,11 +262,28 @@ ifDeclParser = do
     _ <- symbol "if"
     condition <- exprParser
     body <- braces (many statementParser)
+    elseIfBlocks <- many elseIfParser
+    elseBlock <- optional elseBlockParser
     pure
         IfDecl
             { ifCondition = condition
             , ifThenBlock = body
+            , ifElseIfBlocks = elseIfBlocks
+            , ifElseBlock = elseBlock
             }
+
+elseIfParser :: Parser (Expr, [Stmt])
+elseIfParser = do
+    _ <- symbol "else"
+    _ <- symbol "if"
+    condition <- exprParser
+    body <- braces (many statementParser)
+    pure (condition, body)
+
+elseBlockParser :: Parser [Stmt]
+elseBlockParser = do
+    _ <- symbol "else"
+    braces (many statementParser)
 
 data EntityFieldEntry
     = EntityField Text Expr
