@@ -13,6 +13,7 @@ syntaxKeywords =
     , "rel"
     , "type"
     , "let"
+    , "mut"
     , "fn"
     , "if"
     , "else"
