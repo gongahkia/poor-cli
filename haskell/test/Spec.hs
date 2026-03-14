@@ -92,6 +92,62 @@ spec = do
                 Right (Program statements) ->
                     statements `shouldBe` [StmtImport "shared.seuss"]
 
+    describe "conditional parsing and evaluation" $ do
+        it "parses else-if and else branches into the AST" $ do
+            let source =
+                    T.unlines
+                        [ "if false {"
+                        , "  let branch = 0;"
+                        , "} else if true {"
+                        , "  let branch = 1;"
+                        , "} else {"
+                        , "  let branch = 2;"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtIf decl]) -> do
+                    length (ifElseIfBlocks decl) `shouldBe` 1
+                    ifElseBlock decl `shouldSatisfy` (/= Nothing)
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "evaluates the first matching branch in a conditional chain" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2001-01-01,"
+                        , "}"
+                        , ""
+                        , "if false {"
+                        , "  entity alpha : event {"
+                        , "    appears_on: main @ 2000-01-01..2000-02-01,"
+                        , "  }"
+                        , "} else if true {"
+                        , "  entity beta : event {"
+                        , "    appears_on: main @ 2000-03-01..2000-04-01,"
+                        , "  }"
+                        , "} else {"
+                        , "  entity gamma : event {"
+                        , "    appears_on: main @ 2000-05-01..2000-06-01,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            Map.member "alpha" (worldEntities worldValue) `shouldBe` False
+                            Map.member "beta" (worldEntities worldValue) `shouldBe` True
+                            Map.member "gamma" (worldEntities worldValue) `shouldBe` False
+
     describe "diffing" $
         it "reports entity deltas between worlds" $ do
             source <- TIO.readFile "../examples/lotr.seuss"
