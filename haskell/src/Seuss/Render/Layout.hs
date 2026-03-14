@@ -10,7 +10,6 @@ module Seuss.Render.Layout
 
 import Data.List (sortOn)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Seuss.Model.Types
 
