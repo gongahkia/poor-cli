@@ -168,6 +168,8 @@ evalStmt state statement =
                             , diagnosticSource = "evaluator"
                             , diagnosticMessage = "if condition must evaluate to a boolean"
                             }
+        StmtMatch decl ->
+            evalMatch state decl
 
 evalExpr :: EvalState -> Expr -> Either Diagnostic Value
 evalExpr _ (ExprValue value) = Right value
@@ -255,6 +257,39 @@ evalElseBranches state ((conditionExpr, branchBody) : rest) elseBlock = do
                     , diagnosticSource = "evaluator"
                     , diagnosticMessage = "else-if condition must evaluate to a boolean"
                     }
+
+evalMatch :: EvalState -> MatchDecl -> Either Diagnostic EvalState
+evalMatch state decl = do
+    subjectValue <- evalExpr state (matchSubject decl)
+    evalMatchArms state subjectValue (matchArms decl)
+
+evalMatchArms :: EvalState -> Value -> [MatchArm] -> Either Diagnostic EvalState
+evalMatchArms state _ [] = pure state
+evalMatchArms state subjectValue (arm : remainingArms)
+    | matchPatternMatches (matchArmPattern arm) subjectValue =
+        evalMatchArm state subjectValue arm
+    | otherwise =
+        evalMatchArms state subjectValue remainingArms
+
+evalMatchArm :: EvalState -> Value -> MatchArm -> Either Diagnostic EvalState
+evalMatchArm state subjectValue arm =
+    case matchArmPattern arm of
+        MatchPatternBind name -> do
+            let previousBinding = Map.lookup name (evalEnv state)
+                scopedState =
+                    state
+                        { evalEnv =
+                            Map.insert name subjectValue (evalEnv state)
+                        }
+            matchedState <- foldM evalStmt scopedState (matchArmBody arm)
+            pure matchedState{evalEnv = restoreBinding previousBinding name (evalEnv matchedState)}
+        _ ->
+            foldM evalStmt state (matchArmBody arm)
+
+matchPatternMatches :: MatchPattern -> Value -> Bool
+matchPatternMatches MatchPatternWildcard _ = True
+matchPatternMatches (MatchPatternValue patternValue) subjectValue = patternValue == subjectValue
+matchPatternMatches (MatchPatternBind _) _ = True
 
 evalForLoop :: EvalState -> ForDecl -> Either Diagnostic EvalState
 evalForLoop state decl = do
