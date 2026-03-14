@@ -10,8 +10,9 @@ import Seuss.Config.Loader
 import Seuss.Core.Diff
 import Seuss.Core.Eval
 import Seuss.Core.Validation
-import Seuss.Lang.AST
 import Seuss.Import.CSV
+import Seuss.Import.GEDCOM
+import Seuss.Lang.AST
 import Seuss.Lang.Parser
 import Seuss.Model.Types
 import System.Directory (removeFile)
@@ -76,6 +77,32 @@ spec = do
                     output `shouldSatisfy` T.isInfixOf "kind: branch,"
                     output `shouldSatisfy` T.isInfixOf "entity Frodo_Baggins : character {"
                     output `shouldSatisfy` T.isInfixOf "is_active: true,"
+
+    describe "gedcom import enrichment" $
+        it "preserves family relationships as spouse and parent_of edges" $ do
+            let gedcomInput =
+                    T.unlines
+                        [ "0 @I1@ INDI"
+                        , "1 NAME John /Doe/"
+                        , "1 SEX M"
+                        , "0 @I2@ INDI"
+                        , "1 NAME Jane /Doe/"
+                        , "1 SEX F"
+                        , "0 @I3@ INDI"
+                        , "1 NAME Sam /Doe/"
+                        , "0 @F1@ FAM"
+                        , "1 HUSB @I1@"
+                        , "1 WIFE @I2@"
+                        , "1 CHIL @I3@"
+                        ]
+            case importGedcomToSeuss gedcomInput of
+                Left diags ->
+                    expectationFailure ("gedcom import failed: " <> show diags)
+                Right output -> do
+                    output `shouldSatisfy` T.isInfixOf "entity John_Doe : person {"
+                    output `shouldSatisfy` T.isInfixOf "rel John_Doe -[\"spouse\"]-> Jane_Doe;"
+                    output `shouldSatisfy` T.isInfixOf "rel John_Doe -[\"parent_of\"]-> Sam_Doe;"
+                    output `shouldSatisfy` T.isInfixOf "rel Jane_Doe -[\"parent_of\"]-> Sam_Doe;"
 
     describe "config loading" $
         it "reads export defaults and theme settings from a TOML-like file" $ do
