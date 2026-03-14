@@ -19,6 +19,16 @@ Seuss is a [domain-specific language](https://en.wikipedia.org/wiki/Domain-speci
 * *Serialization*: [serde](https://serde.rs/), [serde_json](https://docs.rs/serde_json), [toml](https://docs.rs/toml), [uuid](https://docs.rs/uuid)
 * *CI/CD*: [GitHub Actions](https://github.com/features/actions)
 
+## Haskell Rewrite
+
+A parallel Haskell implementation now lives under [`./haskell`](./haskell). It currently includes:
+
+* a `megaparsec` parser and pure evaluator
+* semantic validation and diffing
+* SVG export
+* a `brick`-based analytical TUI shell
+* importer scaffolding for CSV, GEDCOM, and JSON-LD
+
 ## Screenshots
 
 <div align="center">
