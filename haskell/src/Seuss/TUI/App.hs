@@ -31,6 +31,7 @@ data Pane
 data Mode
     = ModeNormal
     | ModeSearch
+    | ModeCommand
     deriving (Eq, Show)
 
 data AppSnapshot = AppSnapshot
@@ -43,6 +44,7 @@ data AppSnapshot = AppSnapshot
     , snapshotTypeFilter :: Maybe Text
     , snapshotNeighborhoodOnly :: Bool
     , snapshotCompareTimeline :: Maybe Text
+    , snapshotScrubPoint :: Maybe Integer
     }
 
 data AppState = AppState
@@ -64,6 +66,8 @@ data AppState = AppState
     , appUndoStack :: [AppSnapshot]
     , appRedoStack :: [AppSnapshot]
     , appShowHelp :: Bool
+    , appCommandInput :: Text
+    , appScrubPoint :: Maybe Integer
     , appStatus :: Text
     }
 
@@ -89,7 +93,9 @@ runSeussTui filePath world = do
                 , appUndoStack = []
                 , appRedoStack = []
                 , appShowHelp = False
-                , appStatus = "Tab switches panes, / searches, t filters types, n toggles neighborhood mode, q quits"
+                , appCommandInput = ""
+                , appScrubPoint = Nothing
+                , appStatus = "Tab switches panes, / searches, : opens commands, [ and ] scrub time, q quits"
                 }
     _ <- M.defaultMain appDefinition initialState
     pure ()
@@ -175,6 +181,8 @@ drawStatus state =
                     <> appSearch state
                     <> " | type: "
                     <> fromMaybe "all" (appTypeFilter state)
+                    <> " | scrub: "
+                    <> maybe "off" (T.pack . show) (appScrubPoint state)
                     <> " | "
                     <> appStatus state
 
@@ -207,6 +215,7 @@ inspectorText state =
                 , "  kind: " <> T.pack (show (layoutTimelineKind timeline))
                 , "  start: " <> T.pack (show (layoutTimelineStart timeline))
                 , "  end: " <> T.pack (show (layoutTimelineEnd timeline))
+                , "  scrub visible: " <> if timelineVisibleAtScrub state timeline then "yes" else "no"
                 ]
     entityDetails =
         case safeIndex (appEntityIndex state) (visibleEntities state) of
@@ -254,6 +263,13 @@ handleEvent state (VtyEvent eventValue) =
                 V.EvKey V.KEnter [] -> M.continue (exitSearch state)
                 V.EvKey (V.KChar charValue) [] -> M.continue (searchAppend charValue state)
                 _ -> M.continue state
+        ModeCommand ->
+            case eventValue of
+                V.EvKey V.KEsc [] -> M.continue (exitCommandPalette state)
+                V.EvKey V.KBS [] -> M.continue (commandBackspace state)
+                V.EvKey V.KEnter [] -> M.continue (runCommandPalette state)
+                V.EvKey (V.KChar charValue) [] -> M.continue (commandAppend charValue state)
+                _ -> M.continue state
         ModeNormal ->
             case eventValue of
                 V.EvKey (V.KChar 'q') [] -> M.halt state
@@ -264,11 +280,17 @@ handleEvent state (VtyEvent eventValue) =
                 V.EvKey (V.KChar 'j') [] -> M.continue (moveSelection 1 state)
                 V.EvKey (V.KChar '/') [] ->
                     M.continue (recordHistory state){appMode = ModeSearch, appStatus = "Search mode"}
+                V.EvKey (V.KChar ':') [] ->
+                    M.continue (recordHistory state){appMode = ModeCommand, appCommandInput = "", appStatus = "Command palette"}
                 V.EvKey (V.KChar 't') [] -> M.continue (cycleTypeFilter state)
                 V.EvKey (V.KChar 'n') [] -> M.continue (toggleNeighborhood state)
                 V.EvKey (V.KChar '?') [] -> M.continue state{appShowHelp = not (appShowHelp state)}
                 V.EvKey (V.KChar 'c') [] -> M.continue (cycleCompareTimeline state)
                 V.EvKey (V.KChar 'b') [] -> M.continue (saveBookmark state)
+                V.EvKey (V.KChar '[') [] -> M.continue (stepScrubber (-1) state)
+                V.EvKey (V.KChar ']') [] -> M.continue (stepScrubber 1 state)
+                V.EvKey (V.KChar '{') [] -> M.continue (scrubToTimelineBoundary False state)
+                V.EvKey (V.KChar '}') [] -> M.continue (scrubToTimelineBoundary True state)
                 V.EvKey (V.KChar 'u') [] -> M.continue (undoState state)
                 V.EvKey (V.KChar 'y') [] -> M.continue (redoState state)
                 V.EvKey (V.KChar keyValue) []
@@ -325,13 +347,17 @@ visibleEntities state =
   where
     searchValue = T.toLower (appSearch state)
     entityVisible entity =
-        searchMatches entity && typeMatches entity
+        searchMatches entity && typeMatches entity && scrubMatches entity
     searchMatches entity =
         T.null searchValue
             || searchValue `T.isInfixOf` T.toLower (layoutEntityName entity)
             || searchValue `T.isInfixOf` T.toLower (layoutEntityType entity)
     typeMatches entity =
         maybe True (== layoutEntityType entity) (appTypeFilter state)
+    scrubMatches entity =
+        maybe True
+            (\scrubPoint -> layoutEntityStart entity <= scrubPoint && scrubPoint <= layoutEntityEnd entity)
+            (appScrubPoint state)
 
 visibleRelationships :: AppState -> [LayoutRelationship]
 visibleRelationships state
@@ -344,7 +370,17 @@ visibleRelationships state
                     allRelationships
     | otherwise = allRelationships
   where
-    allRelationships = layoutRelationships (appLayout state)
+    allRelationships = filter relationshipVisibleAtScrub (layoutRelationships (appLayout state))
+    relationshipVisibleAtScrub relationship =
+        maybe True
+            (\scrubPoint -> any (entityVisibleAt scrubPoint) relatedEntities)
+            (appScrubPoint state)
+      where
+        relatedEntities =
+            filter
+                (\entity -> layoutEntityName entity == layoutRelSource relationship || layoutEntityName entity == layoutRelTarget relationship)
+                (layoutEntities (appLayout state))
+        entityVisibleAt scrubPoint entity = layoutEntityStart entity <= scrubPoint && scrubPoint <= layoutEntityEnd entity
 
 renderRelationship :: LayoutRelationship -> Text
 renderRelationship relationship =
@@ -381,6 +417,14 @@ exitSearch state =
         , appStatus = "Exited search mode"
         }
 
+exitCommandPalette :: AppState -> AppState
+exitCommandPalette state =
+    state
+        { appMode = ModeNormal
+        , appCommandInput = ""
+        , appStatus = "Exited command palette"
+        }
+
 searchBackspace :: AppState -> AppState
 searchBackspace state =
     case appMode state of
@@ -405,6 +449,47 @@ searchAppend charValue state =
                 , appStatus = "Filtering entities"
                 }
 
+commandBackspace :: AppState -> AppState
+commandBackspace state =
+    case appMode state of
+        ModeCommand ->
+            state
+                { appCommandInput =
+                    if T.null (appCommandInput state)
+                        then ""
+                        else T.init (appCommandInput state)
+                }
+        _ -> state
+
+commandAppend :: Char -> AppState -> AppState
+commandAppend charValue state =
+    case appMode state of
+        ModeCommand ->
+            state
+                { appCommandInput = appCommandInput state <> T.singleton charValue
+                , appStatus = "Command palette"
+                }
+        _ -> state
+
+runCommandPalette :: AppState -> AppState
+runCommandPalette state =
+    let commandName = T.toLower (T.strip (appCommandInput state))
+        baseState = (recordHistory state){appMode = ModeNormal, appCommandInput = ""}
+     in case commandName of
+            "help" -> baseState{appShowHelp = not (appShowHelp state), appStatus = "Toggled help panel"}
+            "compare" -> cycleCompareTimeline baseState
+            "bookmark" -> saveBookmark baseState
+            "clear-search" -> baseState{appSearch = "", appStatus = "Cleared search"}
+            "clear-scrub" -> baseState{appScrubPoint = Nothing, appStatus = "Cleared scrubber"}
+            "scrub-center" ->
+                baseState
+                    { appScrubPoint = Just ((layoutMinTime (appLayout state) + layoutMaxTime (appLayout state)) `div` 2)
+                    , appStatus = "Moved scrubber to timeline center"
+                    }
+            "timeline-next" -> moveTimelineSelection 1 baseState
+            "timeline-prev" -> moveTimelineSelection (-1) baseState
+            _ -> baseState{appStatus = "Unknown command: " <> commandName}
+
 recordHistory :: AppState -> AppState
 recordHistory state =
     state
@@ -424,6 +509,7 @@ snapshotState state =
         , snapshotTypeFilter = appTypeFilter state
         , snapshotNeighborhoodOnly = appNeighborhoodOnly state
         , snapshotCompareTimeline = appCompareTimeline state
+        , snapshotScrubPoint = appScrubPoint state
         }
 
 restoreSnapshot :: AppSnapshot -> AppState -> AppState
@@ -438,6 +524,7 @@ restoreSnapshot snapshot state =
         , appTypeFilter = snapshotTypeFilter snapshot
         , appNeighborhoodOnly = snapshotNeighborhoodOnly snapshot
         , appCompareTimeline = snapshotCompareTimeline snapshot
+        , appScrubPoint = snapshotScrubPoint snapshot
         }
 
 undoState :: AppState -> AppState
@@ -503,6 +590,51 @@ cycleCompareTimeline state =
                     , appStatus = "Updated timeline comparison target"
                     }
 
+moveTimelineSelection :: Int -> AppState -> AppState
+moveTimelineSelection delta state =
+    (recordHistory state)
+        { appPane = PaneTimelines
+        , appTimelineIndex = boundedMove delta (appTimelineIndex state) (layoutTimelines (appLayout state))
+        , appStatus = "Moved timeline selection"
+        }
+
+stepScrubber :: Integer -> AppState -> AppState
+stepScrubber delta state =
+    let nextPoint =
+            case appScrubPoint state of
+                Nothing -> Just (layoutMinTime (appLayout state))
+                Just current ->
+                    Just (max (layoutMinTime (appLayout state)) (min (layoutMaxTime (appLayout state)) (current + delta)))
+     in (recordHistory state)
+            { appScrubPoint = nextPoint
+            , appRelationshipIndex = 0
+            , appEntityIndex = 0
+            , appStatus = "Moved scrubber"
+            }
+
+scrubToTimelineBoundary :: Bool -> AppState -> AppState
+scrubToTimelineBoundary useEnd state =
+    case safeIndex (appTimelineIndex state) (layoutTimelines (appLayout state)) of
+        Nothing -> state{appStatus = "No timeline selected for scrubber jump"}
+        Just timeline ->
+            (recordHistory state)
+                { appScrubPoint =
+                    Just $
+                        if useEnd
+                            then layoutTimelineEnd timeline
+                            else layoutTimelineStart timeline
+                , appStatus =
+                    if useEnd
+                        then "Scrubber moved to selected timeline end"
+                        else "Scrubber moved to selected timeline start"
+                }
+
+timelineVisibleAtScrub :: AppState -> LayoutTimeline -> Bool
+timelineVisibleAtScrub state timeline =
+    maybe True
+        (\scrubPoint -> layoutTimelineStart timeline <= scrubPoint && scrubPoint <= layoutTimelineEnd timeline)
+        (appScrubPoint state)
+
 compareSummary :: AppState -> [Text]
 compareSummary state =
     case (safeIndex (appTimelineIndex state) (layoutTimelines (appLayout state)), appCompareTimeline state) of
@@ -548,9 +680,12 @@ drawHelp =
                 [ txt "Tab: cycle panes"
                 , txt "j/k or arrows: move selection"
                 , txt "/: search entities"
+                , txt ":: command palette"
                 , txt "t: cycle type filter"
                 , txt "n: toggle neighborhood relationships"
                 , txt "c: cycle comparison timeline"
+                , txt "[ ]: step scrubber"
+                , txt "{ }: jump scrubber to selected timeline bounds"
                 , txt "b: save current entity bookmark"
                 , txt "1-9: jump to bookmark"
                 , txt "u/y: undo or redo"
