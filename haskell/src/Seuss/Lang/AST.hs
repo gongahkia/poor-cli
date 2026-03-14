@@ -5,6 +5,8 @@ module Seuss.Lang.AST
     , EntityDecl(..)
     , Expr(..)
     , FnDecl(..)
+    , ForDecl(..)
+    , ForIterable(..)
     , IfDecl(..)
     , LetDecl(..)
     , Program(..)
@@ -73,6 +75,19 @@ data LetDecl = LetDecl
     }
     deriving (Eq, Show)
 
+data ForIterable
+    = ForRange Expr Expr
+    | ForList [Expr]
+    | ForExpr Expr
+    deriving (Eq, Show)
+
+data ForDecl = ForDecl
+    { forVar :: Text
+    , forIterable :: ForIterable
+    , forBody :: [Stmt]
+    }
+    deriving (Eq, Show)
+
 data FnDecl = FnDecl
     { fnName :: Text
     , fnParams :: [(Text, Text)]
@@ -95,6 +110,7 @@ data Stmt
     | StmtRelationship RelationshipDecl
     | StmtImport Text
     | StmtLet LetDecl
+    | StmtFor ForDecl
     | StmtFunction FnDecl
     | StmtIf IfDecl
     deriving (Eq, Show)
