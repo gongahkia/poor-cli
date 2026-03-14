@@ -467,6 +467,69 @@ spec = do
                         Right worldValue ->
                             Map.member "field_access_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "closure and builtin parsing and evaluation" $ do
+        it "parses typed closure expressions and closure-backed calls" $ do
+            let source =
+                    T.unlines
+                        [ "let offset = 1;"
+                        , "let add_offset = |x: int| x + offset;"
+                        , "let sum = add_offset(2);"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtLet _, StmtLet closureDecl, StmtLet callDecl]) -> do
+                    letValue closureDecl
+                        `shouldBe`
+                            ExprClosure
+                                [("x", "int")]
+                                ( ExprBinary
+                                    OpAdd
+                                    (ExprIdent "x")
+                                    (ExprIdent "offset")
+                                )
+                    letValue callDecl
+                        `shouldBe`
+                            ExprCall
+                                (ExprIdent "add_offset")
+                                [ExprValue (VInt 2)]
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "evaluates captured closures and core builtins against runtime values" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "entity frodo : character {"
+                        , "  appears_on: main @ 2000-01-01..2000-12-31,"
+                        , "}"
+                        , ""
+                        , "let offset = 1;"
+                        , "let add_offset = |x: int| x + offset;"
+                        , "let names = [\"frodo\", \"sam\", \"merry\"];"
+                        , "let sum = add_offset(2);"
+                        , ""
+                        , "if sum == 3 && len(names) == 3 && before(1, 2) && after(3, 2) && type_of(frodo) == \"character\" {"
+                        , "  entity closure_builtin_hit : event {"
+                        , "    appears_on: main @ 2000-12-07..2000-12-08,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "closure_builtin_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "boolean and comparison operator evaluation" $
         it "evaluates precedence-sensitive boolean logic with extended comparison operators" $ do
             let source =
