@@ -95,8 +95,6 @@ $ cabal run seuss -- --theme light export examples/lotr.seuss -f svg -o lotr.svg
 
 ### TUI commands
 
-The `seuss run` command opens a multi-pane terminal interface for exploring timelines, entities, relationships, and diagnostics.
-
 #### Navigation
 
 | Key | Action |
