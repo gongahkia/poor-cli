@@ -129,6 +129,8 @@ evalStmt state statement =
                                    ]
                         }
             pure state{evalWorld = world'}
+        StmtImport _ ->
+            pure state
         StmtLet decl -> do
             value <- evalExpr state (letValue decl)
             pure state{evalEnv = Map.insert (letName decl) value (evalEnv state)}
