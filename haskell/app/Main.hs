@@ -23,6 +23,7 @@ import Seuss.Lang.Parser
 import Seuss.Model.Types
 import Seuss.Render.Layout
 import Seuss.Render.SVG
+import Seuss.Tooling.LSP
 import Seuss.TUI.App
 import System.Directory
 import System.Exit (exitFailure)
@@ -61,6 +62,7 @@ runCommand configValue options =
         CommandDiff leftPath rightPath -> runDiff leftPath rightPath
         CommandImport importOpts -> runImport importOpts
         CommandRepl -> runRepl
+        CommandLsp -> runLspServer
 
 runExport :: SeussConfig -> Maybe Text -> ExportOptions -> IO ()
 runExport configValue themeOverride exportOptions = do
