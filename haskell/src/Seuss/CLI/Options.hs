@@ -51,6 +51,7 @@ data Command
     | CommandDiff FilePath FilePath
     | CommandImport ImportOptions
     | CommandRepl
+    | CommandLsp
     deriving (Eq, Show)
 
 data Options = Options
@@ -80,6 +81,7 @@ optionsParser =
                 <> command "diff" (info diffParser (progDesc "Semantic diff of two .seuss files"))
                 <> command "import" (info importParser (progDesc "Import external data into .seuss"))
                 <> command "repl" (info replParser (progDesc "Interactive REPL"))
+                <> command "lsp" (info lspParser (progDesc "Run the stdio language server"))
             )
 
 runParser :: Parser Command
@@ -125,6 +127,9 @@ importParser =
 
 replParser :: Parser Command
 replParser = pure CommandRepl
+
+lspParser :: Parser Command
+lspParser = pure CommandLsp
 
 parseExportFormat :: String -> Either String ExportFormat
 parseExportFormat raw =
