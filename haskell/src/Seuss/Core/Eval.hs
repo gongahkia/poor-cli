@@ -137,6 +137,18 @@ evalStmt state statement =
         StmtLet decl -> do
             value <- evalExpr state (letValue decl)
             pure state{evalEnv = Map.insert (letName decl) value (evalEnv state)}
+        StmtAssign name expr ->
+            if Map.member name (evalEnv state)
+                then do
+                    value <- evalExpr state expr
+                    pure state{evalEnv = Map.insert name value (evalEnv state)}
+                else
+                    Left $
+                        Diagnostic
+                            { diagnosticLevel = DiagnosticError
+                            , diagnosticSource = "evaluator"
+                            , diagnosticMessage = "cannot assign to undefined variable: " <> name
+                            }
         StmtFor decl ->
             evalForLoop state decl
         StmtRepeat decl ->
