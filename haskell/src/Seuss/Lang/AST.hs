@@ -83,6 +83,7 @@ data RelationshipDecl = RelationshipDecl
 
 data LetDecl = LetDecl
     { letName :: Text
+    , letTypeAnnotation :: Maybe Text
     , letValue :: Expr
     }
     deriving (Eq, Show)
