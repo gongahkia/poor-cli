@@ -43,6 +43,7 @@ data Value
     | VList [Value]
     | VEntityRef Text
     | VTimelineRef Text
+    | VClosureRef Integer
     deriving (Eq, Ord, Show)
 
 data BinaryOp
