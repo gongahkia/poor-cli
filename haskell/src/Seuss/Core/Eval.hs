@@ -17,6 +17,9 @@ data EvalState = EvalState
     , evalEnv :: Map Text Value
     }
 
+maxWhileIterations :: Integer
+maxWhileIterations = 10000
+
 evalProgram :: Program -> Either Diagnostic World
 evalProgram (Program statements) =
     evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty) statements
@@ -138,6 +141,8 @@ evalStmt state statement =
             evalForLoop state decl
         StmtRepeat decl ->
             evalRepeatLoop state decl
+        StmtWhile decl ->
+            evalWhileLoop state decl
         StmtFunction decl -> do
             let world' =
                     (evalWorld state)
@@ -301,3 +306,29 @@ evalRepeatLoop state decl = do
                     , diagnosticMessage = "repeat count must be non-negative"
                     }
         else foldM (\currentState _ -> foldM evalStmt currentState (repeatBody decl)) state [1 .. countValue]
+
+evalWhileLoop :: EvalState -> WhileDecl -> Either Diagnostic EvalState
+evalWhileLoop = go 0
+  where
+    go iterations state decl
+        | iterations >= maxWhileIterations =
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage = "while loop exceeded the maximum iteration limit"
+                    }
+        | otherwise = do
+            conditionValue <- evalExpr state (whileCondition decl)
+            case conditionValue of
+                VBool True -> do
+                    steppedState <- foldM evalStmt state (whileBody decl)
+                    go (iterations + 1) steppedState decl
+                VBool False -> pure state
+                _ ->
+                    Left $
+                        Diagnostic
+                            { diagnosticLevel = DiagnosticError
+                            , diagnosticSource = "evaluator"
+                            , diagnosticMessage = "while condition must evaluate to a boolean"
+                            }
