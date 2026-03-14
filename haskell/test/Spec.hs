@@ -167,15 +167,36 @@ spec = do
                         `shouldBe`
                             [ MatchArm
                                 { matchArmPattern = MatchPatternValue (VString "active")
-                                , matchArmBody = [StmtLet (LetDecl "running" (ExprValue (VBool True)))]
+                                , matchArmBody =
+                                    [ StmtLet
+                                        LetDecl
+                                            { letName = "running"
+                                            , letTypeAnnotation = Nothing
+                                            , letValue = ExprValue (VBool True)
+                                            }
+                                    ]
                                 }
                             , MatchArm
                                 { matchArmPattern = MatchPatternBind "state"
-                                , matchArmBody = [StmtLet (LetDecl "seen" (ExprIdent "state"))]
+                                , matchArmBody =
+                                    [ StmtLet
+                                        LetDecl
+                                            { letName = "seen"
+                                            , letTypeAnnotation = Nothing
+                                            , letValue = ExprIdent "state"
+                                            }
+                                    ]
                                 }
                             , MatchArm
                                 { matchArmPattern = MatchPatternWildcard
-                                , matchArmBody = [StmtLet (LetDecl "running" (ExprValue (VBool False)))]
+                                , matchArmBody =
+                                    [ StmtLet
+                                        LetDecl
+                                            { letName = "running"
+                                            , letTypeAnnotation = Nothing
+                                            , letValue = ExprValue (VBool False)
+                                            }
+                                    ]
                                 }
                             ]
                 Right other ->
@@ -315,7 +336,13 @@ spec = do
                 Left diags ->
                     expectationFailure ("parse failed: " <> show diags)
                 Right (Program [StmtLet decl, StmtAssign name expr]) -> do
-                    decl `shouldBe` LetDecl "counter" (ExprValue (VInt 0))
+                    decl
+                        `shouldBe`
+                            LetDecl
+                                { letName = "counter"
+                                , letTypeAnnotation = Nothing
+                                , letValue = ExprValue (VInt 0)
+                                }
                     name `shouldBe` "counter"
                     expr
                         `shouldBe`
@@ -355,6 +382,53 @@ spec = do
                         Right worldValue ->
                             Map.member "assigned_while_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "typed let parsing and shallow type enforcement" $ do
+        it "parses optional type annotations on let bindings" $ do
+            let source =
+                    T.unlines
+                        [ "let count: int = 42;"
+                        , "let label: string = \"test\";"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtLet countDecl, StmtLet labelDecl]) -> do
+                    letTypeAnnotation countDecl `shouldBe` Just "int"
+                    letTypeAnnotation labelDecl `shouldBe` Just "string"
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "accepts matching let, parameter, and return annotations" $ do
+            let source =
+                    T.unlines
+                        [ "fn add(a: int, b: int) -> int {"
+                        , "  a + b"
+                        , "}"
+                        , ""
+                        , "let count: int = 42;"
+                        , "let sum: int = add(count, 1);"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right _ ->
+                            pure ()
+
+        it "rejects obvious let annotation mismatches" $ do
+            case parseProgram "<inline>" "let count: int = \"wrong\";\n" of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            diagnosticMessage diag `shouldSatisfy` T.isInfixOf "type mismatch"
+                        Right _ ->
+                            expectationFailure "expected type mismatch but evaluation succeeded"
+
     describe "function and field access parsing and evaluation" $ do
         it "parses function return types, expression bodies, calls, and field access" $ do
             let source =
@@ -376,8 +450,8 @@ spec = do
                             [ StmtExpr
                                 ( ExprBinary
                                     OpAdd
-                                    (ExprIdent "a")
-                                    (ExprIdent "b")
+                                (ExprIdent "a")
+                                (ExprIdent "b")
                                 )
                             ]
                     letValue sumDecl
@@ -385,6 +459,7 @@ spec = do
                             ExprCall
                                 (ExprIdent "add")
                                 [ExprValue (VInt 1), ExprValue (VInt 2)]
+                    letTypeAnnotation sumDecl `shouldBe` Nothing
                     letValue ageDecl
                         `shouldBe`
                             ExprField
