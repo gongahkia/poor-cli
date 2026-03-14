@@ -68,6 +68,7 @@ data AppState = AppState
     , appShowHelp :: Bool
     , appCommandInput :: Text
     , appScrubPoint :: Maybe Integer
+    , appSelectionTrail :: [Text]
     , appStatus :: Text
     }
 
@@ -95,6 +96,7 @@ runSeussTui filePath world = do
                 , appShowHelp = False
                 , appCommandInput = ""
                 , appScrubPoint = Nothing
+                , appSelectionTrail = []
                 , appStatus = "Tab switches panes, / searches, : opens commands, [ and ] scrub time, q quits"
                 }
     _ <- M.defaultMain appDefinition initialState
@@ -205,6 +207,8 @@ inspectorText state =
         ++ compareDetails
         ++ [""]
         ++ diagnosticDetails
+        ++ [""]
+        ++ trailDetails
   where
     timelineDetails =
         case safeIndex (appTimelineIndex state) (layoutTimelines (appLayout state)) of
@@ -252,6 +256,10 @@ inspectorText state =
                 [ "Diagnostic"
                 , "  " <> renderDiagnostic diagnostic
                 ]
+    trailDetails =
+        case appSelectionTrail state of
+            [] -> ["Trail", "  (empty)"]
+            entries -> "Trail" : map ("  " <>) entries
 
 handleEvent :: AppState -> BrickEvent Name e -> EventM Name (Next AppState)
 handleEvent state (VtyEvent eventValue) =
@@ -278,12 +286,15 @@ handleEvent state (VtyEvent eventValue) =
                 V.EvKey (V.KChar 'k') [] -> M.continue (moveSelection (-1) state)
                 V.EvKey V.KDown [] -> M.continue (moveSelection 1 state)
                 V.EvKey (V.KChar 'j') [] -> M.continue (moveSelection 1 state)
+                V.EvKey V.KEnter [] -> M.continue (followSelection state)
                 V.EvKey (V.KChar '/') [] ->
                     M.continue (recordHistory state){appMode = ModeSearch, appStatus = "Search mode"}
                 V.EvKey (V.KChar ':') [] ->
                     M.continue (recordHistory state){appMode = ModeCommand, appCommandInput = "", appStatus = "Command palette"}
                 V.EvKey (V.KChar 't') [] -> M.continue (cycleTypeFilter state)
                 V.EvKey (V.KChar 'n') [] -> M.continue (toggleNeighborhood state)
+                V.EvKey (V.KChar 's') [] -> M.continue (jumpRelationshipEndpoint True state)
+                V.EvKey (V.KChar 'g') [] -> M.continue (jumpRelationshipEndpoint False state)
                 V.EvKey (V.KChar '?') [] -> M.continue state{appShowHelp = not (appShowHelp state)}
                 V.EvKey (V.KChar 'c') [] -> M.continue (cycleCompareTimeline state)
                 V.EvKey (V.KChar 'b') [] -> M.continue (saveBookmark state)
@@ -301,7 +312,8 @@ handleEvent state _ = M.continue state
 
 advancePane :: AppState -> AppState
 advancePane state =
-    (recordHistory state)
+    noteCurrentSelection $
+        (recordHistory state)
         { appPane =
             case appPane state of
                 PaneTimelines -> PaneEntities
@@ -314,27 +326,28 @@ advancePane state =
 moveSelection :: Int -> AppState -> AppState
 moveSelection delta state =
     let state' = recordHistory state
-     in case appPane state of
-        PaneTimelines ->
-            state'
-                { appTimelineIndex =
-                    boundedMove delta (appTimelineIndex state) (layoutTimelines (appLayout state))
-                }
-        PaneEntities ->
-            state'
-                { appEntityIndex =
-                    boundedMove delta (appEntityIndex state) (visibleEntities state)
-                }
-        PaneRelationships ->
-            state'
-                { appRelationshipIndex =
-                    boundedMove delta (appRelationshipIndex state) (visibleRelationships state)
-                }
-        PaneDiagnostics ->
-            state'
-                { appDiagnosticIndex =
-                    boundedMove delta (appDiagnosticIndex state) (appDiagnostics state)
-                }
+     in noteCurrentSelection $
+            case appPane state of
+                PaneTimelines ->
+                    state'
+                        { appTimelineIndex =
+                            boundedMove delta (appTimelineIndex state) (layoutTimelines (appLayout state))
+                        }
+                PaneEntities ->
+                    state'
+                        { appEntityIndex =
+                            boundedMove delta (appEntityIndex state) (visibleEntities state)
+                        }
+                PaneRelationships ->
+                    state'
+                        { appRelationshipIndex =
+                            boundedMove delta (appRelationshipIndex state) (visibleRelationships state)
+                        }
+                PaneDiagnostics ->
+                    state'
+                        { appDiagnosticIndex =
+                            boundedMove delta (appDiagnosticIndex state) (appDiagnostics state)
+                        }
 
 boundedMove :: Int -> Int -> [a] -> Int
 boundedMove delta currentIndex values
@@ -480,7 +493,18 @@ runCommandPalette state =
             "compare" -> cycleCompareTimeline baseState
             "bookmark" -> saveBookmark baseState
             "clear-search" -> baseState{appSearch = "", appStatus = "Cleared search"}
+            "clear-filters" ->
+                baseState
+                    { appSearch = ""
+                    , appTypeFilter = Nothing
+                    , appNeighborhoodOnly = False
+                    , appScrubPoint = Nothing
+                    , appStatus = "Cleared active filters"
+                    }
             "clear-scrub" -> baseState{appScrubPoint = Nothing, appStatus = "Cleared scrubber"}
+            "follow" -> followSelection baseState
+            "rel-source" -> jumpRelationshipEndpoint True baseState
+            "rel-target" -> jumpRelationshipEndpoint False baseState
             "scrub-center" ->
                 baseState
                     { appScrubPoint = Just ((layoutMinTime (appLayout state) + layoutMaxTime (appLayout state)) `div` 2)
@@ -568,11 +592,12 @@ loadBookmark slot state =
             case lookupIndexBy (\entity -> layoutEntityName entity == entityNameValue) (visibleEntities state) of
                 Nothing -> state{appStatus = "Bookmarked entity is not visible under current filters"}
                 Just indexValue ->
-                    (recordHistory state)
-                        { appPane = PaneEntities
-                        , appEntityIndex = indexValue
-                        , appStatus = "Loaded bookmark " <> T.pack (show slot)
-                        }
+                    noteCurrentSelection $
+                        (recordHistory state)
+                            { appPane = PaneEntities
+                            , appEntityIndex = indexValue
+                            , appStatus = "Loaded bookmark " <> T.pack (show slot)
+                            }
 
 cycleCompareTimeline :: AppState -> AppState
 cycleCompareTimeline state =
@@ -592,11 +617,12 @@ cycleCompareTimeline state =
 
 moveTimelineSelection :: Int -> AppState -> AppState
 moveTimelineSelection delta state =
-    (recordHistory state)
-        { appPane = PaneTimelines
-        , appTimelineIndex = boundedMove delta (appTimelineIndex state) (layoutTimelines (appLayout state))
-        , appStatus = "Moved timeline selection"
-        }
+    noteCurrentSelection $
+        (recordHistory state)
+            { appPane = PaneTimelines
+            , appTimelineIndex = boundedMove delta (appTimelineIndex state) (layoutTimelines (appLayout state))
+            , appStatus = "Moved timeline selection"
+            }
 
 stepScrubber :: Integer -> AppState -> AppState
 stepScrubber delta state =
@@ -660,6 +686,86 @@ compareSummary state =
                 ]
         _ -> []
 
+followSelection :: AppState -> AppState
+followSelection state =
+    case appPane state of
+        PaneTimelines ->
+            case safeIndex (appTimelineIndex state) (layoutTimelines (appLayout state)) of
+                Nothing -> state{appStatus = "No timeline selected to follow"}
+                Just timeline ->
+                    case [layoutEntityName entity | entity <- layoutEntities (appLayout state), layoutEntityTimeline entity == layoutTimelineName timeline] of
+                        entityNameValue : _ ->
+                            focusEntityByName entityNameValue state
+                        [] ->
+                            state{appStatus = "Selected timeline has no entities to follow"}
+        PaneEntities ->
+            case safeIndex (appEntityIndex state) (visibleEntities state) of
+                Nothing -> state{appStatus = "No entity selected to explore"}
+                Just entity ->
+                    noteCurrentSelection $
+                        (recordHistory state)
+                            { appPane = PaneRelationships
+                            , appNeighborhoodOnly = True
+                            , appRelationshipIndex = 0
+                            , appStatus = "Showing neighborhood relationships for " <> layoutEntityName entity
+                            }
+        PaneRelationships ->
+            jumpRelationshipEndpoint True state
+        PaneDiagnostics ->
+            state{appStatus = "Diagnostic source jumps are not implemented yet"}
+
+jumpRelationshipEndpoint :: Bool -> AppState -> AppState
+jumpRelationshipEndpoint useSource state =
+    case safeIndex (appRelationshipIndex state) (visibleRelationships state) of
+        Nothing -> state{appStatus = "No relationship selected"}
+        Just relationship ->
+            focusEntityByName
+                (if useSource then layoutRelSource relationship else layoutRelTarget relationship)
+                state
+
+focusEntityByName :: Text -> AppState -> AppState
+focusEntityByName entityNameValue state =
+    case lookupIndexBy (\entity -> layoutEntityName entity == entityNameValue) (visibleEntities baseState) of
+        Nothing ->
+            baseState{appStatus = "Unable to focus entity " <> entityNameValue}
+        Just indexValue ->
+            noteCurrentSelection $
+                baseState
+                    { appPane = PaneEntities
+                    , appEntityIndex = indexValue
+                    , appStatus = "Focused entity " <> entityNameValue
+                    }
+  where
+    baseState =
+        (recordHistory state)
+            { appSearch = ""
+            , appTypeFilter = Nothing
+            , appNeighborhoodOnly = False
+            , appScrubPoint = Nothing
+            }
+
+noteCurrentSelection :: AppState -> AppState
+noteCurrentSelection state =
+    case selectionLabel state of
+        Nothing -> state
+        Just labelValue ->
+            state
+                { appSelectionTrail =
+                    take 8 (labelValue : filter (/= labelValue) (appSelectionTrail state))
+                }
+
+selectionLabel :: AppState -> Maybe Text
+selectionLabel state =
+    case appPane state of
+        PaneTimelines ->
+            ("timeline " <>) . layoutTimelineName <$> safeIndex (appTimelineIndex state) (layoutTimelines (appLayout state))
+        PaneEntities ->
+            ("entity " <>) . layoutEntityName <$> safeIndex (appEntityIndex state) (visibleEntities state)
+        PaneRelationships ->
+            ("relationship " <>) . renderRelationship <$> safeIndex (appRelationshipIndex state) (visibleRelationships state)
+        PaneDiagnostics ->
+            ("diagnostic " <>) . renderDiagnostic <$> safeIndex (appDiagnosticIndex state) (appDiagnostics state)
+
 renderList :: [Text] -> Text
 renderList [] = "(none)"
 renderList values = T.intercalate ", " values
@@ -679,10 +785,12 @@ drawHelp =
             vBox
                 [ txt "Tab: cycle panes"
                 , txt "j/k or arrows: move selection"
+                , txt "Enter: follow the current selection"
                 , txt "/: search entities"
                 , txt ":: command palette"
                 , txt "t: cycle type filter"
                 , txt "n: toggle neighborhood relationships"
+                , txt "s/g: jump from a selected relationship to its source or target entity"
                 , txt "c: cycle comparison timeline"
                 , txt "[ ]: step scrubber"
                 , txt "{ }: jump scrubber to selected timeline bounds"
