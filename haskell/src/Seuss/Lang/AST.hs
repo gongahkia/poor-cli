@@ -31,6 +31,8 @@ data Expr
     | ExprList [Expr]
     | ExprRange Expr Expr
     | ExprIndex Expr Expr
+    | ExprField Expr Text
+    | ExprCall Expr [Expr]
     | ExprBinary BinaryOp Expr Expr
     deriving (Eq, Show)
 
@@ -111,6 +113,7 @@ data WhileDecl = WhileDecl
 data FnDecl = FnDecl
     { fnName :: Text
     , fnParams :: [(Text, Text)]
+    , fnReturnType :: Maybe Text
     , fnBody :: [Stmt]
     }
     deriving (Eq, Show)
@@ -155,6 +158,7 @@ data Stmt
     | StmtIf IfDecl
     | StmtMatch MatchDecl
     | StmtAssign Text Expr
+    | StmtExpr Expr
     deriving (Eq, Show)
 
 newtype Program = Program [Stmt]
