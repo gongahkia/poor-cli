@@ -196,6 +196,46 @@ spec = do
                         Right worldValue ->
                             Map.member "middle" (worldEntities worldValue) `shouldBe` True
 
+    describe "repeat-loop parsing and evaluation" $ do
+        it "parses repeat-loops into the AST" $ do
+            case parseProgram "<inline>" "repeat 3 { let seen = 1; }\n" of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtRepeat decl]) ->
+                    repeatCount decl `shouldBe` ExprValue (VInt 3)
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "replays the repeat body the requested number of times" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "let target = 2;"
+                        , "for i in 1..3 {"
+                        , "  repeat 1 {"
+                        , "    if i == target {"
+                        , "      entity repeated_hit : event {"
+                        , "        appears_on: main @ 2000-07-01..2000-07-02,"
+                        , "      }"
+                        , "    }"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "repeated_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "diffing" $
         it "reports entity deltas between worlds" $ do
             source <- TIO.readFile "../examples/lotr.seuss"
