@@ -304,6 +304,57 @@ spec = do
                             Map.member "range_hit" (worldEntities worldValue) `shouldBe` True
                             Map.member "list_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "assignment parsing and evaluation" $ do
+        it "parses mutable lets and reassignment statements" $ do
+            let source =
+                    T.unlines
+                        [ "let mut counter = 0;"
+                        , "counter = counter + 1;"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtLet decl, StmtAssign name expr]) -> do
+                    decl `shouldBe` LetDecl "counter" (ExprValue (VInt 0))
+                    name `shouldBe` "counter"
+                    expr
+                        `shouldBe`
+                            ExprBinary
+                                OpAdd
+                                (ExprIdent "counter")
+                                (ExprValue (VInt 1))
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "reassigns loop state inside while-blocks so the condition can change" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "let mut counter = 0;"
+                        , "while counter < 3 {"
+                        , "  counter = counter + 1;"
+                        , "  if counter == 2 {"
+                        , "    entity assigned_while_hit : event {"
+                        , "      appears_on: main @ 2000-09-01..2000-09-02,"
+                        , "    }"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "assigned_while_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "for-loop parsing and evaluation" $ do
         it "parses list and range iterables for for-loops" $ do
             let source =
