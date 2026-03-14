@@ -33,6 +33,7 @@ data Expr
     | ExprIndex Expr Expr
     | ExprField Expr Text
     | ExprCall Expr [Expr]
+    | ExprClosure [(Text, Text)] Expr
     | ExprBinary BinaryOp Expr Expr
     deriving (Eq, Show)
 
