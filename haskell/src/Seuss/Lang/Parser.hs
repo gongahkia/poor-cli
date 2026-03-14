@@ -59,6 +59,7 @@ statementParser =
         , StmtLet <$> letDeclParser
         , StmtFor <$> forDeclParser
         , StmtRepeat <$> repeatDeclParser
+        , StmtWhile <$> whileDeclParser
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
         ]
@@ -277,6 +278,17 @@ repeatDeclParser = do
         RepeatDecl
             { repeatCount = countExpr
             , repeatBody = body
+            }
+
+whileDeclParser :: Parser WhileDecl
+whileDeclParser = do
+    _ <- symbol "while"
+    conditionExpr <- exprParser
+    body <- braces (many statementParser)
+    pure
+        WhileDecl
+            { whileCondition = conditionExpr
+            , whileBody = body
             }
 
 fnDeclParser :: Parser FnDecl
