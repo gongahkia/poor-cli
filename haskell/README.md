@@ -48,6 +48,7 @@ $ cabal test
 - list literals like `["one", "two"]` and integer range expressions like `1..3` now parse and evaluate.
 - postfix index expressions like `labels[1]` and `"abc"[1]` now parse and evaluate.
 - function declarations now accept optional return annotations like `fn add(a: int, b: int) -> int { ... }`.
+- explicit `return` statements now parse and short-circuit function bodies, including returns from inside loop bodies.
 - named function calls now evaluate with scoped parameter binding, return the last expression in the body, and also work as standalone statement calls.
 - typed closures like `|x: int| x + offset` now parse and evaluate with captured outer bindings.
 - a first builtin set is now wired up in the Haskell runtime: `len`, `before`, `after`, and `type_of`.
