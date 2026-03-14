@@ -21,7 +21,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::app::{
-    App, AppMode, MessageRole, ThemeMode, TimelineEntryKind, TranscriptSearchItemKind,
+    App, AppMode, MessageRole, ReviewDecisionState, ThemeMode, TimelineEntryKind,
+    TranscriptSearchItemKind,
 };
 use crate::input::{command_palette_matches, SlashCommandSpec};
 use crate::markdown;
@@ -1179,11 +1180,13 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),
+            Constraint::Length(8),
             Constraint::Min(10),
-            Constraint::Length(2),
+            Constraint::Length(4),
         ])
         .split(area);
+
+    let file_groups = review.file_groups();
 
     let mut header_lines = vec![
         Line::from(vec![
@@ -1217,7 +1220,8 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
         let selected_count = review.chunks.iter().filter(|chunk| chunk.selected).count();
         header_lines.push(Line::from(Span::styled(
             format!(
-                "hunks: {} selected / {} total",
+                "files: {}    hunks: {} selected / {} total",
+                file_groups.len(),
                 selected_count,
                 review.chunks.len()
             ),
@@ -1289,18 +1293,24 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
             Line::from(Span::styled(line.to_string(), style))
         }));
     } else {
-        for (index, chunk) in review.chunks.iter().enumerate() {
-            let selected = index == review.selected_chunk_index;
-            let marker = if chunk.selected { "[x]" } else { "[ ]" };
+        let selected_file_group = review.selected_file_group_index();
+        for (group_index, group) in file_groups.iter().enumerate() {
+            let active_group = selected_file_group == Some(group_index);
+            let (state_label, state_style) = match group.decision_state() {
+                ReviewDecisionState::Accepted => {
+                    ("accepted", Style::default().fg(theme::success(mode)))
+                }
+                ReviewDecisionState::Partial => {
+                    ("partial", Style::default().fg(theme::warning(mode)))
+                }
+                ReviewDecisionState::Rejected => {
+                    ("rejected", Style::default().fg(theme::error(mode)))
+                }
+            };
             diff_lines.push(Line::from(vec![
                 Span::styled(
-                    format!(
-                        "{} {} hunk {}",
-                        if selected { "▸" } else { " " },
-                        marker,
-                        chunk.hunk_index + 1
-                    ),
-                    if selected {
+                    if active_group { "▾ " } else { "▸ " },
+                    if active_group {
                         Style::default()
                             .fg(theme::accent(mode))
                             .add_modifier(Modifier::BOLD)
@@ -1309,22 +1319,66 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
                     },
                 ),
                 Span::styled(
-                    format!("  {}  {}", chunk.path, chunk.header),
-                    Style::default().fg(theme::base_fg(mode)),
+                    group.path.clone(),
+                    if active_group {
+                        Style::default()
+                            .fg(theme::base_fg(mode))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme::base_fg(mode))
+                    },
+                ),
+                Span::styled(
+                    format!(
+                        "  {}  {}/{} hunks selected",
+                        state_label,
+                        group.selected_chunks,
+                        group.total_chunks()
+                    ),
+                    state_style,
                 ),
             ]));
-            if selected {
-                for line in chunk.diff.lines().take(12) {
-                    let style = if line.starts_with('+') && !line.starts_with("+++") {
-                        Style::default().fg(theme::success(mode))
-                    } else if line.starts_with('-') && !line.starts_with("---") {
-                        Style::default().fg(theme::error(mode))
-                    } else if line.starts_with("@@") {
-                        Style::default().fg(theme::accent(mode))
-                    } else {
-                        Style::default().fg(theme::muted_fg(mode))
-                    };
-                    diff_lines.push(Line::from(Span::styled(format!("    {line}"), style)));
+
+            for chunk_index in &group.chunk_indexes {
+                let Some(chunk) = review.chunks.get(*chunk_index) else {
+                    continue;
+                };
+                let selected = *chunk_index == review.selected_chunk_index;
+                let marker = if chunk.selected { "[x]" } else { "[ ]" };
+                diff_lines.push(Line::from(vec![
+                    Span::styled(
+                        format!(
+                            "  {} {} hunk {}",
+                            if selected { "▸" } else { " " },
+                            marker,
+                            chunk.hunk_index + 1
+                        ),
+                        if selected {
+                            Style::default()
+                                .fg(theme::accent(mode))
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(theme::muted_fg(mode))
+                        },
+                    ),
+                    Span::styled(
+                        format!("  {}", chunk.header),
+                        Style::default().fg(theme::base_fg(mode)),
+                    ),
+                ]));
+                if selected {
+                    for line in chunk.diff.lines().take(12) {
+                        let style = if line.starts_with('+') && !line.starts_with("+++") {
+                            Style::default().fg(theme::success(mode))
+                        } else if line.starts_with('-') && !line.starts_with("---") {
+                            Style::default().fg(theme::error(mode))
+                        } else if line.starts_with("@@") {
+                            Style::default().fg(theme::accent(mode))
+                        } else {
+                            Style::default().fg(theme::muted_fg(mode))
+                        };
+                        diff_lines.push(Line::from(Span::styled(format!("      {line}"), style)));
+                    }
                 }
             }
             diff_lines.push(Line::from(""));
@@ -1353,6 +1407,35 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
         Span::styled("reject  ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(" Space ", Style::default().fg(theme::accent(mode))),
         Span::styled("toggle hunk  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" Tab ", Style::default().fg(theme::accent(mode))),
+        Span::styled("next file  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" Shift+Tab ", Style::default().fg(theme::accent(mode))),
+        Span::styled("prev file", Style::default().fg(theme::muted_fg(mode))),
+    ]))
+    .wrap(Wrap { trim: false });
+
+    let footer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme::input_border_color(mode)));
+    frame.render_widget(footer_block, chunks[2]);
+    frame.render_widget(
+        footer,
+        Rect {
+            x: chunks[2].x + 1,
+            y: chunks[2].y + 1,
+            width: chunks[2].width.saturating_sub(2),
+            height: 1,
+        },
+    );
+
+    let footer_extra = Paragraph::new(Line::from(vec![
+        Span::styled(" s/r ", Style::default().fg(theme::accent(mode))),
+        Span::styled(
+            "select or clear file  ",
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
+        Span::styled(" a/x ", Style::default().fg(theme::accent(mode))),
+        Span::styled("all or none  ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(" h ", Style::default().fg(theme::accent(mode))),
         Span::styled(
             "approve hunks  ",
@@ -1361,23 +1444,29 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
         Span::styled(" f ", Style::default().fg(theme::accent(mode))),
         Span::styled(
             if review.paths.len() > 1 {
-                "approve selected file  "
-            } else {
                 "approve file  "
+            } else {
+                "approve current file  "
             },
             Style::default().fg(theme::muted_fg(mode)),
         ),
-        Span::styled(" u ", Style::default().fg(theme::accent(mode))),
-        Span::styled("undo  ", Style::default().fg(theme::muted_fg(mode))),
-        Span::styled(" o ", Style::default().fg(theme::accent(mode))),
-        Span::styled("open file", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" u/o ", Style::default().fg(theme::accent(mode))),
+        Span::styled(
+            "undo or open file",
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
     ]))
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme::input_border_color(mode))),
+    .wrap(Wrap { trim: false })
+    .block(Block::default());
+    frame.render_widget(
+        footer_extra,
+        Rect {
+            x: chunks[2].x + 1,
+            y: chunks[2].y + 2,
+            width: chunks[2].width.saturating_sub(2),
+            height: 1,
+        },
     );
-    frame.render_widget(footer, chunks[2]);
 }
 
 fn draw_context_inspector(frame: &mut Frame, app: &App) {
@@ -1578,6 +1667,29 @@ fn draw_timeline(frame: &mut Frame, app: &App) {
                 format!("  checkpoint: {checkpoint_id}"),
                 Style::default().fg(theme::muted_fg(mode)),
             )));
+        }
+        if let Some(summary) = &entry.review_summary {
+            let max_files = 8usize;
+            for file_summary in summary.files.iter().take(max_files) {
+                let style = match file_summary.state {
+                    ReviewDecisionState::Accepted => Style::default().fg(theme::success(mode)),
+                    ReviewDecisionState::Partial => Style::default().fg(theme::warning(mode)),
+                    ReviewDecisionState::Rejected => Style::default().fg(theme::error(mode)),
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", file_summary.summary_line()),
+                    style,
+                )));
+            }
+            if summary.files.len() > max_files {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "  … {} more reviewed files",
+                        summary.files.len() - max_files
+                    ),
+                    Style::default().fg(theme::muted_fg(mode)),
+                )));
+            }
         }
         if !entry.diff.is_empty() {
             for diff_line in entry.diff.lines().take(8) {
@@ -1791,6 +1903,25 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
         Line::from(""),
     ];
 
+    if !app.plan_summary.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", app.plan_summary),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    if !app.plan_original_request.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("  Request: ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                app.plan_original_request.clone(),
+                Style::default().fg(theme::base_fg(mode)),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     for (i, step) in app.plan_steps.iter().enumerate() {
         let (marker, style) = match step.status {
             crate::app::PlanStepStatus::Pending => {
@@ -1826,14 +1957,28 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
                 .fg(theme::success(mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" to execute, ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(
+            if app.plan_is_execution_gate {
+                " to approve, "
+            } else {
+                " to execute, "
+            },
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
         Span::styled(
             "Esc",
             Style::default()
                 .fg(theme::error(mode))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" to cancel", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(
+            if app.plan_is_execution_gate {
+                " to reject"
+            } else {
+                " to cancel"
+            },
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
     ]));
     lines.push(Line::from(""));
 

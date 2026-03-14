@@ -119,7 +119,7 @@ class UIConfig:
 @dataclass
 class PlanModeConfig:
     """Configuration for plan mode"""
-    enabled: bool = True  # Experimental flag; preview execution is not wired into the main agent loop yet
+    enabled: bool = True
     auto_plan_threshold: int = 2  # Auto-enable plan for operations affecting N+ files
     require_approval_for_high_risk: bool = True
     show_diff_in_plan: bool = True

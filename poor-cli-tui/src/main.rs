@@ -22,7 +22,8 @@ use serde_json::Value;
 
 use poor_cli_tui::app::{
     App, AppMode, ChatMessage, ContextInspectorFile, ContextInspectorState, MessageRole,
-    ProviderEntry, QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode,
+    ProviderEntry, QueuedPrompt, QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode,
+    TimelineEntry, TimelineEntryKind,
 };
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;
@@ -89,6 +90,10 @@ enum ServerMsg {
     SystemMessage {
         content: String,
     },
+    AutomationPrompt {
+        display: String,
+        prompt: String,
+    },
     Providers {
         providers: Vec<ProviderEntry>,
     },
@@ -131,6 +136,13 @@ enum ServerMsg {
         checkpoint_id: Option<String>,
         changed: Option<bool>,
         message: String,
+    },
+    PlanRequest {
+        request_id: String,
+        prompt_id: String,
+        summary: String,
+        original_request: String,
+        steps: Vec<String>,
     },
     Progress {
         request_id: String,
@@ -447,6 +459,30 @@ fn spawn_backend_worker(
                                     checkpoint_id,
                                     changed,
                                     message,
+                                }
+                            }
+                            ServerNotification::PlanRequest {
+                                request_id,
+                                prompt_id,
+                                summary,
+                                original_request,
+                                steps,
+                            } => {
+                                write_session_log(
+                                    notification_log_ctx.as_ref(),
+                                    &format!(
+                                        "notif_plan_request request_id={} prompt_id={} steps={}",
+                                        request_id,
+                                        prompt_id,
+                                        steps.len()
+                                    ),
+                                );
+                                ServerMsg::PlanRequest {
+                                    request_id,
+                                    prompt_id,
+                                    summary,
+                                    original_request,
+                                    steps,
                                 }
                             }
                             ServerNotification::Progress {
@@ -872,6 +908,7 @@ fn run_app(
                     }
                 }
                 InputAction::PermissionAnswered(allowed) => {
+                    let review_state = app.mutation_review.clone();
                     let prompt_id = std::mem::take(&mut app.permission_prompt_id);
                     let approved_paths = if allowed {
                         std::mem::take(&mut app.permission_approved_paths)
@@ -885,6 +922,36 @@ fn run_app(
                         app.permission_approved_chunks.clear();
                         Vec::new()
                     };
+                    if let Some(review) = review_state.as_ref() {
+                        let review_summary = review.build_decision_summary(
+                            allowed,
+                            &approved_paths,
+                            &approved_chunks,
+                        );
+                        app.push_timeline_entry(TimelineEntry {
+                            kind: TimelineEntryKind::Permission,
+                            request_id: review.request_id.clone(),
+                            title: if allowed {
+                                "Review accepted".to_string()
+                            } else {
+                                "Review rejected".to_string()
+                            },
+                            detail: review_summary.headline(),
+                            diff: String::new(),
+                            paths: review
+                                .paths
+                                .iter()
+                                .cloned()
+                                .chain(review_summary.files.iter().map(|file| file.path.clone()))
+                                .collect::<std::collections::BTreeSet<_>>()
+                                .into_iter()
+                                .collect(),
+                            checkpoint_id: review.checkpoint_id.clone(),
+                            changed: review.changed,
+                            review_summary: Some(review_summary),
+                            timestamp: std::time::Instant::now(),
+                        });
+                    }
                     app.close_mutation_review();
                     write_session_log(
                         session_log.as_ref(),
@@ -910,44 +977,72 @@ fn run_app(
                     });
                 }
                 InputAction::PlanApproved => {
-                    let step_idx = app.plan_current_step;
-                    let step_desc = app.current_plan_step_description().map(|s| s.to_string());
-                    let orig = app.plan_original_request.clone();
-                    if let Some(desc) = step_desc {
-                        write_session_log(
-                            session_log.as_ref(),
-                            &format!(
-                                "plan_step_approved step_index={} step_desc_chars={}",
-                                step_idx,
-                                desc.len()
-                            ),
-                        );
-                        let exec_msg = format!(
-                            "Execute step {} of my plan: {}\n\nOriginal request: {}",
-                            step_idx + 1,
-                            desc,
-                            orig,
-                        );
-                        let display = format!("[plan step {}] {}", step_idx + 1, desc);
-                        if step_idx < app.plan_steps.len() {
-                            app.plan_steps[step_idx].status =
-                                poor_cli_tui::app::PlanStepStatus::Running;
+                    if !app.plan_prompt_id.is_empty() && app.plan_is_execution_gate {
+                        let prompt_id = app.plan_prompt_id.clone();
+                        let _ = rpc_cmd_tx.borrow().send(RpcCommand::SendNotification {
+                            method: "poor-cli/planRes".into(),
+                            params: serde_json::json!({
+                                "promptId": prompt_id,
+                                "allowed": true,
+                            }),
+                        });
+                        write_session_log(session_log.as_ref(), "plan_gate_approved");
+                        app.clear_plan();
+                        app.set_status("Plan approved");
+                    } else {
+                        let step_idx = app.plan_current_step;
+                        let step_desc = app.current_plan_step_description().map(|s| s.to_string());
+                        let orig = app.plan_original_request.clone();
+                        if let Some(desc) = step_desc {
+                            write_session_log(
+                                session_log.as_ref(),
+                                &format!(
+                                    "plan_step_approved step_index={} step_desc_chars={}",
+                                    step_idx,
+                                    desc.len()
+                                ),
+                            );
+                            let exec_msg = format!(
+                                "Execute step {} of my plan: {}\n\nOriginal request: {}",
+                                step_idx + 1,
+                                desc,
+                                orig,
+                            );
+                            let display = format!("[plan step {}] {}", step_idx + 1, desc);
+                            if step_idx < app.plan_steps.len() {
+                                app.plan_steps[step_idx].status =
+                                    poor_cli_tui::app::PlanStepStatus::Running;
+                            }
+                            send_chat_request(
+                                app,
+                                &tx,
+                                &rpc_cmd_tx.borrow(),
+                                &cancel_token,
+                                exec_msg,
+                                display,
+                                session_log.as_ref(),
+                            );
                         }
-                        send_chat_request(
-                            app,
-                            &tx,
-                            &rpc_cmd_tx.borrow(),
-                            &cancel_token,
-                            exec_msg,
-                            display,
-                            session_log.as_ref(),
-                        );
                     }
                 }
                 InputAction::PlanCancelled => {
-                    write_session_log(session_log.as_ref(), "plan_cancelled");
-                    app.clear_plan();
-                    app.set_status("Plan cancelled");
+                    if !app.plan_prompt_id.is_empty() && app.plan_is_execution_gate {
+                        let prompt_id = app.plan_prompt_id.clone();
+                        let _ = rpc_cmd_tx.borrow().send(RpcCommand::SendNotification {
+                            method: "poor-cli/planRes".into(),
+                            params: serde_json::json!({
+                                "promptId": prompt_id,
+                                "allowed": false,
+                            }),
+                        });
+                        write_session_log(session_log.as_ref(), "plan_gate_rejected");
+                        app.clear_plan();
+                        app.set_status("Plan rejected");
+                    } else {
+                        write_session_log(session_log.as_ref(), "plan_cancelled");
+                        app.clear_plan();
+                        app.set_status("Plan cancelled");
+                    }
                 }
                 InputAction::CompactStrategySelected(strategy) => {
                     app.set_status(format!("Applying context strategy: {strategy}..."));
@@ -1146,7 +1241,7 @@ fn handle_submit(
 
     // auto-queue non-slash input while AI is working
     if app.waiting && !trimmed.starts_with('/') && !trimmed.starts_with('!') {
-        app.prompt_queue.push_back(trimmed.to_string());
+        app.prompt_queue.push_back(QueuedPrompt::user(trimmed));
         app.set_status(format!(
             "Queued prompt ({} in queue)",
             app.prompt_queue.len()
@@ -1426,16 +1521,16 @@ fn dispatch_next_queued_prompt(
     if let Some(next_prompt) = app.prompt_queue.pop_front() {
         let remaining = app.prompt_queue.len();
         app.push_message(ChatMessage::system(format!(
-            "[queue] auto-sending next prompt ({remaining} remaining)"
+            "[queue] auto-sending next {} prompt ({remaining} remaining)",
+            next_prompt.source
         )));
-        let backend_msg = apply_response_mode_to_user_input(app.response_mode, &next_prompt);
         send_chat_request(
             app,
             tx,
             rpc_cmd_tx,
             cancel_token,
-            backend_msg,
-            next_prompt,
+            next_prompt.backend,
+            next_prompt.display,
             session_log,
         );
     }
@@ -1995,7 +2090,9 @@ fn watch_msg_sender(tx: &mpsc::Sender<ServerMsg>) -> mpsc::Sender<WatchMsg> {
         for msg in watch_rx {
             let server_msg = match msg {
                 WatchMsg::System(content) => ServerMsg::SystemMessage { content },
-                WatchMsg::Chat(content) => ServerMsg::ChatResponse { content },
+                WatchMsg::AutomationPrompt { display, prompt } => {
+                    ServerMsg::AutomationPrompt { display, prompt }
+                }
                 WatchMsg::Error(message) => ServerMsg::Error { message },
             };
             if tx.send(server_msg).is_err() {
@@ -3335,6 +3432,29 @@ fn focus_state_path(app: &App) -> PathBuf {
     command_data_dir(app).join("focus.json")
 }
 
+fn repo_memory_path(app: &App) -> PathBuf {
+    command_data_dir(app).join("memory.md")
+}
+
+fn load_repo_memory(app: &App) -> Result<Option<String>, String> {
+    let path = repo_memory_path(app);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read repo memory: {error}"))?;
+    Ok(Some(content))
+}
+
+fn save_repo_memory(app: &App, content: &str) -> Result<PathBuf, String> {
+    let root = command_data_dir(app);
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("Failed to create data directory: {error}"))?;
+    let path = repo_memory_path(app);
+    fs::write(&path, content).map_err(|error| format!("Failed to write repo memory: {error}"))?;
+    Ok(path)
+}
+
 fn load_focus_state(app: &App) -> Result<Option<FocusState>, String> {
     let path = focus_state_path(app);
     if !path.exists() {
@@ -3455,6 +3575,11 @@ fn apply_execution_profile(
         rpc_cmd_tx,
         "ui.response_mode",
         Value::String(app.response_mode.as_str().to_string()),
+    );
+    let _ = rpc_set_config_blocking(
+        rpc_cmd_tx,
+        "agentic.max_iterations",
+        Value::Number(serde_json::Number::from(iteration_cap)),
     );
 
     if persist {
@@ -3641,10 +3766,14 @@ fn rpc_get_tools_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value
 
 fn rpc_get_instruction_stack_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    referenced_files: &[String],
 ) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
-        .send(RpcCommand::GetInstructionStack { reply: reply_tx })
+        .send(RpcCommand::GetInstructionStack {
+            referenced_files: referenced_files.to_vec(),
+            reply: reply_tx,
+        })
         .map_err(|e| format!("Failed to request instruction stack: {e}"))?;
 
     reply_rx
@@ -3652,9 +3781,7 @@ fn rpc_get_instruction_stack_blocking(
         .map_err(|_| "Timed out waiting for instruction stack".to_string())?
 }
 
-fn rpc_get_policy_status_blocking(
-    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
-) -> Result<Value, String> {
+fn rpc_get_policy_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
         .send(RpcCommand::GetPolicyStatus { reply: reply_tx })

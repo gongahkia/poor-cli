@@ -8,6 +8,7 @@ the Neovim plugin.
 import asyncio
 import subprocess
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
@@ -22,6 +23,7 @@ from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager
 from .instructions import InstructionManager, InstructionSnapshot
 from .mcp_client import MCPManager
+from .plan_analyzer import PlanAnalyzer
 from .policy_hooks import HookExecutionResult, PolicyHookManager
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
@@ -117,6 +119,25 @@ class CoreEvent:
         })
 
     @staticmethod
+    def plan_request(
+        summary: str,
+        steps: List[str],
+        original_request: str,
+        prompt_id: str = "",
+        request_id: str = "",
+    ) -> "CoreEvent":
+        return CoreEvent(
+            type="plan_request",
+            data={
+                "summary": summary,
+                "steps": steps,
+                "originalRequest": original_request,
+                "promptId": prompt_id,
+                "requestId": request_id,
+            },
+        )
+
+    @staticmethod
     def cost_update(input_tokens: int = 0, output_tokens: int = 0, estimated_cost: float = 0.0) -> "CoreEvent":
         return CoreEvent(type="cost_update", data={
             "inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost,
@@ -201,7 +222,9 @@ class PoorCLICore:
         self._hook_manager: Optional[PolicyHookManager] = None
         self._audit_logger: Optional[AuditLogger] = None
         self._mcp_manager: Optional[MCPManager] = None
+        self._plan_analyzer: PlanAnalyzer = PlanAnalyzer()
         self._pending_events: List[CoreEvent] = []
+        self._plan_callback: Optional[Callable[..., Any]] = None
 
         # Permission callback for file operations
         # Set this to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool]
@@ -211,7 +234,7 @@ class PoorCLICore:
         self._context_manager: Optional[ContextManager] = None
 
         # Cancel event for mid-loop cancellation
-        self._cancel_event: asyncio.Event = asyncio.Event()
+        self._cancel_event: threading.Event = threading.Event()
 
         logger.info("PoorCLICore instance created")
     
@@ -447,6 +470,71 @@ class PoorCLICore:
             )
         return results
 
+    def _should_request_plan_review(self, function_calls: List[FunctionCall]) -> bool:
+        if not self.config or not self.config.plan_mode.enabled:
+            return False
+
+        high_risk_tools = {"delete_file", "bash", "move_file"}
+        if any(call.name in high_risk_tools for call in function_calls):
+            return True
+
+        if len(function_calls) >= self.config.plan_mode.auto_plan_threshold:
+            return True
+
+        affected_files: set[str] = set()
+        for call in function_calls:
+            affected_files.update(self._inspect_tool_targets(call.name, call.arguments))
+        return len(affected_files) >= self.config.plan_mode.auto_plan_threshold
+
+    def _build_plan_payload(
+        self,
+        user_request: str,
+        function_calls: List[FunctionCall],
+    ) -> Dict[str, Any]:
+        plan = self._plan_analyzer.create_plan_from_request(user_request)
+        for call in function_calls:
+            self._plan_analyzer.add_function_call_to_plan(
+                plan,
+                call.name,
+                call.arguments,
+            )
+
+        steps = [step.description for step in plan.steps]
+        summary = (
+            f"{len(plan.steps)} step(s), risk={plan.overall_risk_level.value}, "
+            f"files={len(plan.get_affected_files())}"
+        )
+        return {
+            "planId": plan.plan_id,
+            "summary": summary,
+            "steps": steps,
+            "originalRequest": user_request,
+            "riskLevel": plan.overall_risk_level.value,
+            "affectedFiles": plan.get_affected_files(),
+        }
+
+    async def _request_plan_review(
+        self,
+        user_request: str,
+        function_calls: List[FunctionCall],
+        request_id: str,
+    ) -> bool:
+        if not self._plan_callback or not self._should_request_plan_review(function_calls):
+            return True
+
+        payload = self._build_plan_payload(user_request, function_calls)
+        payload["requestId"] = request_id
+        self._pending_events.append(
+            CoreEvent.plan_request(
+                payload["summary"],
+                payload["steps"],
+                payload["originalRequest"],
+                request_id=request_id,
+            )
+        )
+        decision = await self._plan_callback(payload)
+        return bool(decision)
+
     async def _record_user_prompt_submission(
         self,
         message: str,
@@ -465,6 +553,15 @@ class PoorCLICore:
         }
         await self._emit_policy_hooks("user_prompt_submitted", payload)
 
+    def _inspect_tool_targets(self, tool_name: str, tool_args: Dict[str, Any]) -> List[str]:
+        if not self.tool_registry:
+            return []
+        try:
+            return self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
+        except Exception as error:
+            logger.debug("Failed to inspect mutation targets for %s: %s", tool_name, error)
+            return []
+
     def _audit_permission_decision(
         self,
         tool_name: str,
@@ -477,9 +574,7 @@ class PoorCLICore:
         self._log_audit_event(
             AuditEventType.PERMISSION_GRANTED if allowed else AuditEventType.PERMISSION_DENIED,
             operation=f"permission:{tool_name}",
-            target=",".join(self.tool_registry.inspect_mutation_targets(tool_name, tool_args))
-            if self.tool_registry
-            else None,
+            target=",".join(self._inspect_tool_targets(tool_name, tool_args)) or None,
             details={
                 "toolName": tool_name,
                 "toolArgs": self._stringify_tool_arguments(tool_args),
@@ -679,9 +774,7 @@ class PoorCLICore:
                 return [str(path) for path in paths]
             if result.path:
                 return [result.path]
-        if self.tool_registry:
-            return self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
-        return []
+        return self._inspect_tool_targets(tool_name, tool_args)
 
     @staticmethod
     def _tool_result_checkpoint_id(result: Any) -> Optional[str]:
@@ -776,7 +869,7 @@ class PoorCLICore:
         if not self.checkpoint_manager or not self.tool_registry:
             return None
 
-        targets = self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
+        targets = self._inspect_tool_targets(tool_name, tool_args)
         if not targets:
             return None
 
@@ -809,7 +902,7 @@ class PoorCLICore:
         if not self.tool_registry:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
-        targets = self.tool_registry.inspect_mutation_targets(tool_name, arguments)
+        targets = self._inspect_tool_targets(tool_name, arguments)
         pre_payload = {
             "toolName": tool_name,
             "toolArgs": self._stringify_tool_arguments(arguments),
@@ -938,7 +1031,13 @@ class PoorCLICore:
                                 output_tokens=usage.get("output_tokens", 0),
                             )
 
-                    tool_results = await self._handle_function_calls_events(chunk, iteration, max_iterations, request_id)
+                    tool_results = await self._handle_function_calls_events(
+                        chunk,
+                        iteration,
+                        max_iterations,
+                        request_id,
+                        message,
+                    )
                     for ev in self._pending_events:
                         yield ev
                     self._pending_events = []
@@ -959,7 +1058,13 @@ class PoorCLICore:
 
                         yield CoreEvent.progress("tool_loop", f"Iteration {iteration}/{max_iterations}", iteration, max_iterations)
 
-                        tool_results = await self._handle_function_calls_events(response, iteration, max_iterations, request_id)
+                        tool_results = await self._handle_function_calls_events(
+                            response,
+                            iteration,
+                            max_iterations,
+                            request_id,
+                            message,
+                        )
                         for ev in self._pending_events:
                             yield ev
                         self._pending_events = []
@@ -1035,6 +1140,7 @@ class PoorCLICore:
         iteration: int,
         max_iterations: int,
         request_id: str,
+        user_request: str = "",
     ) -> Any:
         """Handle function calls with auto-approve/deny guardrails and diff capture."""
         if not response.function_calls:
@@ -1043,11 +1149,35 @@ class PoorCLICore:
         self._pending_events: List[CoreEvent] = []
         tool_results = []
 
+        plan_allowed = await self._request_plan_review(
+            user_request,
+            list(response.function_calls),
+            request_id,
+        )
+        if not plan_allowed:
+            rejection = "Execution plan rejected by user"
+            for fc in response.function_calls:
+                self._pending_events.append(
+                    CoreEvent.tool_result(
+                        fc.name,
+                        rejection,
+                        fc.id,
+                        iteration,
+                        max_iterations,
+                        changed=False,
+                        message=rejection,
+                    )
+                )
+                tool_results.append({"id": fc.id, "name": fc.name, "result": rejection})
+            if not self.provider:
+                return tool_results
+            return self.provider.format_tool_results(tool_results)
+
         for fc in response.function_calls:
             tool_name = fc.name
             tool_args = fc.arguments
             preview_payload: Optional[Dict[str, Any]] = None
-            tool_paths = self.tool_registry.inspect_mutation_targets(tool_name, tool_args) if self.tool_registry else []
+            tool_paths = self._inspect_tool_targets(tool_name, tool_args)
 
             self._pending_events.append(
                 CoreEvent.tool_call_start(
@@ -1152,11 +1282,7 @@ class PoorCLICore:
                                 permission["approvedPaths"],
                                 permission["approvedChunks"],
                             )
-                            tool_paths = (
-                                self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
-                                if self.tool_registry
-                                else tool_paths
-                            )
+                            tool_paths = self._inspect_tool_targets(tool_name, tool_args) or tool_paths
                         except Exception as scope_error:
                             result = f"Operation cancelled: {scope_error}"
                             self._pending_events.append(
@@ -1212,6 +1338,69 @@ class PoorCLICore:
             return tool_results
         return self.provider.format_tool_results(tool_results)
 
+    async def reload_mcp_servers(self) -> Dict[str, Any]:
+        """Rebuild MCP tool registration from current config."""
+        if not self._initialized or not self.config:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        previous_history: List[Dict[str, Any]] = []
+        if self.provider:
+            try:
+                previous_history = self.provider.get_history()
+            except Exception as error:
+                logger.debug("Failed to capture provider history before MCP reload: %s", error)
+
+        if self._mcp_manager is not None:
+            await self._mcp_manager.shutdown()
+            self._mcp_manager = None
+
+        self.tool_registry = ToolRegistryAsync()
+        if self.config.mcp_servers:
+            self._mcp_manager = MCPManager(self.config.mcp_servers)
+            await self._mcp_manager.initialize()
+            for declaration in self._mcp_manager.get_tool_declarations():
+                tool_name = declaration.get("name")
+                if not tool_name:
+                    continue
+
+                async def _call_mcp_tool(
+                    _tool_name: str = tool_name,
+                    **kwargs: Any,
+                ) -> str:
+                    if not self._mcp_manager:
+                        raise PoorCLIError("MCP manager not initialized")
+                    return await self._mcp_manager.execute_tool(_tool_name, kwargs)
+
+                self.tool_registry.register_external_tool(
+                    tool_name,
+                    _call_mcp_tool,
+                    declaration,
+                )
+
+        if self.provider and self._system_instruction:
+            capabilities = self.provider.get_capabilities()
+            tools = (
+                self.tool_registry.get_tool_declarations()
+                if capabilities.supports_function_calling
+                else []
+            )
+            await self.provider.initialize(
+                tools=tools,
+                system_instruction=self._system_instruction,
+            )
+            if previous_history:
+                history_to_restore = [
+                    message
+                    for message in previous_history
+                    if message.get("role") != "system"
+                ]
+                try:
+                    self.provider.set_history(history_to_restore)
+                except Exception as error:
+                    logger.debug("Failed to restore provider history after MCP reload: %s", error)
+
+        return self.get_mcp_status()
+
     async def send_message(
         self,
         message: str,
@@ -1247,16 +1436,33 @@ class PoorCLICore:
 
         try:
             accumulated_text = ""
+            max_iterations = self.config.agentic.max_iterations if self.config else 25
+            iteration = 0
 
             async for chunk in self.provider.send_message_stream(full_message):
                 if chunk.function_calls:
-                    tool_results = await self._handle_function_calls(chunk)
+                    tool_results = await self._handle_function_calls_events(
+                        chunk,
+                        iteration,
+                        max_iterations,
+                        request_id="",
+                        user_request=message,
+                    )
                     response = await self.provider.send_message(tool_results)
                     if response.content:
                         accumulated_text += response.content
                         yield response.content
                     while response.function_calls:
-                        tool_results = await self._handle_function_calls(response)
+                        iteration += 1
+                        if iteration >= max_iterations:
+                            break
+                        tool_results = await self._handle_function_calls_events(
+                            response,
+                            iteration,
+                            max_iterations,
+                            request_id="",
+                            user_request=message,
+                        )
                         response = await self.provider.send_message(tool_results)
                         if response.content:
                             accumulated_text += response.content
@@ -1414,13 +1620,24 @@ class PoorCLICore:
         try:
             response = await self.provider.send_message(full_message)
             accumulated_text = response.content or ""
+            max_iterations = self.config.agentic.max_iterations if self.config else 25
+            iteration = 0
             
             # Handle function calls
             while response.function_calls:
-                tool_results = await self._handle_function_calls(response)
+                if iteration >= max_iterations:
+                    break
+                tool_results = await self._handle_function_calls_events(
+                    response,
+                    iteration,
+                    max_iterations,
+                    request_id="",
+                    user_request=message,
+                )
                 response = await self.provider.send_message(tool_results)
                 if response.content:
                     accumulated_text += response.content
+                iteration += 1
             
             accumulated_text, _ = self._ensure_confidence_line(accumulated_text)
 
@@ -1598,6 +1815,17 @@ class PoorCLICore:
         """
         self._permission_callback = callback
         logger.info("Permission callback updated")
+
+    @property
+    def plan_callback(self) -> Optional[Callable[..., Any]]:
+        """Get the plan review callback for execution gating."""
+        return self._plan_callback
+
+    @plan_callback.setter
+    def plan_callback(self, callback: Optional[Callable[..., Any]]) -> None:
+        """Set the async plan review callback."""
+        self._plan_callback = callback
+        logger.info("Plan callback updated")
 
     async def apply_edit_outcome(
         self,

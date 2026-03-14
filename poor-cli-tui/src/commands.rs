@@ -30,6 +30,158 @@ fn show_command_info_popup(app: &mut App, raw: &str, body: impl Into<String>) {
     app.open_info_popup(popup_title_from_command(raw), body.into());
 }
 
+fn format_mcp_status(payload: &Value) -> String {
+    let configured = payload
+        .get("configuredServers")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let connected = payload
+        .get("connectedServers")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let tool_count = payload
+        .get("toolCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let mut lines = vec![
+        format!("**MCP Status**"),
+        format!("- Connected servers: {connected}/{configured}"),
+        format!("- Registered tools: {tool_count}"),
+    ];
+
+    if let Some(servers) = payload.get("servers").and_then(|v| v.as_object()) {
+        for (name, entry) in servers {
+            let enabled = entry
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let connected = entry
+                .get("connected")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let tools = entry
+                .get("registeredTools")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let error = entry
+                .get("error")
+                .and_then(|v| v.as_str())
+                .filter(|value| !value.is_empty())
+                .unwrap_or("");
+            lines.push(format!(
+                "- `{name}`: enabled=`{enabled}` connected=`{connected}` tools=`{}`{}",
+                if tools.is_empty() {
+                    "-"
+                } else {
+                    tools.as_str()
+                },
+                if error.is_empty() {
+                    String::new()
+                } else {
+                    format!(" error=`{error}`")
+                }
+            ));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn parse_mcp_tool_names(raw: &str) -> Vec<Value> {
+    raw.split(|ch: char| ch == ',' || ch.is_whitespace())
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| Value::String(value.trim().to_string()))
+        .collect()
+}
+
+fn format_instruction_stack(payload: &Value) -> String {
+    let source_count = payload
+        .get("sourceCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let mut lines = vec![
+        format!("**Instruction Stack**"),
+        format!("- Sources: {source_count}"),
+    ];
+
+    if let Some(sources) = payload.get("sources").and_then(|v| v.as_array()) {
+        for source in sources {
+            let kind = source
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let label = source
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(unnamed)");
+            let path = source.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let content = source.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            lines.push(format!(
+                "- `{kind}` {label}{}",
+                if path.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (`{path}`)")
+                }
+            ));
+            if !content.is_empty() {
+                lines.push(format!("  {}", truncate_block(content, 180)));
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn format_policy_status(payload: &Value) -> String {
+    let hooks_dir = payload
+        .pointer("/hooks/hooksDir")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let total_hooks = payload
+        .pointer("/hooks/totalHooks")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let audit_enabled = payload
+        .pointer("/audit/enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let audit_path = payload
+        .pointer("/audit/path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let mut lines = vec![
+        "**Policy Status**".to_string(),
+        format!("- Hooks: {total_hooks}"),
+        format!("- Hooks dir: `{hooks_dir}`"),
+        format!(
+            "- Audit: {}{}",
+            if audit_enabled { "enabled" } else { "disabled" },
+            if audit_path.is_empty() {
+                String::new()
+            } else {
+                format!(" (`{audit_path}`)")
+            }
+        ),
+    ];
+
+    if let Some(events) = payload.pointer("/hooks/events").and_then(|v| v.as_object()) {
+        for (event, entries) in events {
+            let count = entries.as_array().map(|items| items.len()).unwrap_or(0);
+            lines.push(format!("- `{event}`: {count} hook(s)"));
+        }
+    }
+
+    lines.join("\n")
+}
+
 fn resolve_close_slash_command(raw: &str) -> Option<(String, String, String)> {
     let command_end = raw
         .char_indices()
@@ -110,12 +262,16 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /switch              Switch provider/model\n\
   /api-key             Show or set provider API keys\n\
   /model-info          Show provider-specific model notes\n\
+  /mcp ...             Inspect or control MCP servers (`status|enable|disable|allow|deny|clear-allow|clear-deny`)\n\
   /permission-mode [mode]  Show or set backend permission mode\n\n\
 **Review & Safety Config:**\n\
   /config              Show backend config snapshot\n\
   /settings            List editable config settings\n\
   /toggle <key>        Toggle a boolean config option\n\
   /set <key> <value>   Set a config option value\n\
+  /instructions ...    Inspect the active instruction stack\n\
+  /memory ...          Show or update `.poor-cli/memory.md`\n\
+  /policy              Show repo-local hook and audit status\n\
   /theme [dark|light]  Show or set UI + code-block theme\n\
   /broke               Set response mode to terse, token-minimal output\n\
   /my-treat            Set response mode to rich, comprehensive output\n\
@@ -129,7 +285,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /fix-failures [cmd]  Analyze latest (or fresh) test/lint failures\n\
   /explain-diff [file] Explain behavior/risk/test gaps in git diff\n\
   /image <path>        Queue image for next prompt\n\
-  /watch <dir>         Watch directory and analyze changes\n\
+  /watch <dir>         Watch directory and analyze changes via the guarded agent loop\n\
   /unwatch             Stop active watch mode\n\
   /tools               List backend tool declarations\n\
   /cost                Show token and estimated cost usage\n\n\
@@ -151,8 +307,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /resume              Summarize last session + branch/checkpoint state\n\
   /workspace-map [path] Build repository file/entrypoint map\n\
   /context-budget [tokens] Rank and preview auto-selected context files\n\
-  /autopilot ...       Toggle bounded autonomous execution mode\n\
-  /qa ...              Background incremental QA watch (`start|stop|status`)\n\
+  /autopilot ...       Toggle bounded autonomous execution mode on the shared guarded engine\n\
+  /qa ...              Background incremental QA watch (`start|stop|status`) on the shared guarded engine\n\
   /profile ...         Apply execution profile (`speed|safe|deep-review`)\n\
   /tasks ...           Manage local task board (`add|done|drop|clear`)\n\
   /copy                Copy last assistant response to clipboard\n\
@@ -341,7 +497,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                     if text.is_empty() {
                         app.set_status("Usage: /queue add <prompt text>");
                     } else {
-                        app.prompt_queue.push_back(text.to_string());
+                        app.prompt_queue
+                            .push_back(poor_cli_tui::app::QueuedPrompt::user(text));
                         app.set_status(format!("Queued ({} total)", app.prompt_queue.len()));
                     }
                 } else {
@@ -357,12 +514,12 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                         app.prompt_queue.len()
                     )];
                     for (i, prompt) in app.prompt_queue.iter().enumerate() {
-                        let preview = if prompt.len() > 60 {
-                            &prompt[..60]
+                        let preview = if prompt.display.len() > 60 {
+                            &prompt.display[..60]
                         } else {
-                            prompt
+                            prompt.display.as_str()
                         };
-                        lines.push(format!("  {}. {}", i + 1, preview));
+                        lines.push(format!("  {}. [{}] {}", i + 1, prompt.source, preview));
                     }
                     show_command_info_popup(app, raw, lines.join("\n"));
                 }
@@ -1477,7 +1634,7 @@ Context Window: {max_context} tokens\n\n\
             Err(e) => lines.push(format!("- Service check failed: {e}")),
         }
 
-        match rpc_get_instruction_stack_blocking(rpc_cmd_tx) {
+        match rpc_get_instruction_stack_blocking(rpc_cmd_tx, &[]) {
             Ok(payload) => {
                 let source_count = payload
                     .get("sourceCount")
@@ -1540,6 +1697,207 @@ Context Window: {max_context} tokens\n\n\
         lines.push(String::new());
         lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, `/status`, and the repo-local `.poor-cli` policy files.".to_string());
         show_command_info_popup(app, raw, lines.join("\n"));
+        return false;
+    }
+
+    if lowered == "/mcp" || lowered.starts_with("/mcp ") {
+        let usage = "Usage: /mcp status\n       /mcp enable <server>\n       /mcp disable <server>\n       /mcp allow <server> <tool...>\n       /mcp deny <server> <tool...>\n       /mcp clear-allow <server>\n       /mcp clear-deny <server>";
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("status")
+            .trim()
+            .to_ascii_lowercase();
+
+        if subcommand == "status" {
+            match rpc_get_mcp_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => show_command_info_popup(app, raw, format_mcp_status(&payload)),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("MCP status failed: {error}"))
+                }
+            }
+            return false;
+        }
+
+        let server = match args
+            .get(2)
+            .copied()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(server) => server,
+            None => {
+                show_command_info_popup(app, raw, usage.to_string());
+                return false;
+            }
+        };
+
+        let key_path = match subcommand.as_str() {
+            "enable" | "disable" => format!("mcp_servers.{server}.enabled"),
+            "allow" | "clear-allow" => format!("mcp_servers.{server}.allow_tools"),
+            "deny" | "clear-deny" => format!("mcp_servers.{server}.deny_tools"),
+            _ => {
+                show_command_info_popup(app, raw, usage.to_string());
+                return false;
+            }
+        };
+
+        let value = match subcommand.as_str() {
+            "enable" => Value::Bool(true),
+            "disable" => Value::Bool(false),
+            "clear-allow" | "clear-deny" => Value::Array(Vec::new()),
+            "allow" | "deny" => {
+                let tail = raw.splitn(4, ' ').nth(3).map(str::trim).unwrap_or("");
+                let tools = parse_mcp_tool_names(tail);
+                if tools.is_empty() {
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Usage: /mcp {subcommand} <server> <tool...>"),
+                    );
+                    return false;
+                }
+                Value::Array(tools)
+            }
+            _ => Value::Null,
+        };
+
+        match rpc_set_config_blocking(rpc_cmd_tx, &key_path, value) {
+            Ok(_) => match rpc_get_mcp_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => show_command_info_popup(app, raw, format_mcp_status(&payload)),
+                Err(_) => app.set_status(format!("Updated MCP config for `{server}`")),
+            },
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to update MCP config: {error}"))
+            }
+        }
+        return false;
+    }
+
+    if lowered == "/instructions" || lowered.starts_with("/instructions ") {
+        let referenced_files = raw
+            .split_whitespace()
+            .skip(1)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        match rpc_get_instruction_stack_blocking(rpc_cmd_tx, &referenced_files) {
+            Ok(payload) => show_command_info_popup(app, raw, format_instruction_stack(&payload)),
+            Err(error) => show_command_info_popup(
+                app,
+                raw,
+                format!("Failed to inspect instruction stack: {error}"),
+            ),
+        }
+        return false;
+    }
+
+    if lowered == "/policy" || lowered.starts_with("/policy ") {
+        match rpc_get_policy_status_blocking(rpc_cmd_tx) {
+            Ok(payload) => show_command_info_popup(app, raw, format_policy_status(&payload)),
+            Err(error) => show_command_info_popup(
+                app,
+                raw,
+                format!("Failed to inspect policy status: {error}"),
+            ),
+        }
+        return false;
+    }
+
+    if lowered == "/memory" || lowered.starts_with("/memory ") {
+        let args: Vec<&str> = raw.splitn(3, ' ').collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("show")
+            .trim()
+            .to_ascii_lowercase();
+        let usage = "Usage: /memory\n       /memory show\n       /memory edit\n       /memory set <text>\n       /memory append <text>\n       /memory clear";
+
+        if subcommand == "show" {
+            match load_repo_memory(app) {
+                Ok(Some(content)) if !content.trim().is_empty() => show_command_info_popup(
+                    app,
+                    raw,
+                    format!(
+                        "**Repo Memory**\n\n```markdown\n{}\n```",
+                        truncate_block(&content, 5000)
+                    ),
+                ),
+                Ok(_) => show_command_info_popup(
+                    app,
+                    raw,
+                    "Repo memory is empty.\nUse `/memory set <text>` or `/memory append <text>`."
+                        .to_string(),
+                ),
+                Err(error) => app.push_message(ChatMessage::error(error)),
+            }
+            return false;
+        }
+
+        if subcommand == "edit" {
+            let path = repo_memory_path(app);
+            if !path.exists() {
+                match save_repo_memory(app, "") {
+                    Ok(_) => {}
+                    Err(error) => {
+                        app.push_message(ChatMessage::error(error));
+                        return false;
+                    }
+                }
+            }
+            match open_file_in_editor(path.to_string_lossy().as_ref()) {
+                Ok(()) => app.set_status(format!("Opened `{}`", path.display())),
+                Err(error) => app.push_message(ChatMessage::error(error)),
+            }
+            return false;
+        }
+
+        if subcommand == "clear" {
+            match save_repo_memory(app, "") {
+                Ok(path) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Cleared repo memory at `{}`.", path.display()),
+                ),
+                Err(error) => app.push_message(ChatMessage::error(error)),
+            }
+            return false;
+        }
+
+        if subcommand == "set" || subcommand == "append" {
+            let payload = args.get(2).copied().unwrap_or("").trim();
+            if payload.is_empty() {
+                show_command_info_popup(app, raw, usage.to_string());
+                return false;
+            }
+            let next_content = if subcommand == "set" {
+                payload.to_string()
+            } else {
+                match load_repo_memory(app) {
+                    Ok(Some(existing)) if !existing.trim().is_empty() => {
+                        format!("{}\n\n{}", existing.trim_end(), payload)
+                    }
+                    Ok(_) => payload.to_string(),
+                    Err(error) => {
+                        app.push_message(ChatMessage::error(error));
+                        return false;
+                    }
+                }
+            };
+            match save_repo_memory(app, &next_content) {
+                Ok(path) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Updated repo memory at `{}`.", path.display()),
+                ),
+                Err(error) => app.push_message(ChatMessage::error(error)),
+            }
+            return false;
+        }
+
+        show_command_info_popup(app, raw, usage.to_string());
         return false;
     }
 
@@ -1933,6 +2291,14 @@ Context Window: {max_context} tokens\n\n\
                     }
                 })
                 .clamp(5, 120);
+            if let Err(error) = rpc_set_config_blocking(
+                rpc_cmd_tx,
+                "agentic.max_iterations",
+                Value::Number(serde_json::Number::from(cap)),
+            ) {
+                show_command_info_popup(app, raw, format!("Failed to enable autopilot: {error}"));
+                return false;
+            }
             app.autopilot_enabled = true;
             app.iteration_cap = cap;
             show_command_info_popup(
@@ -1943,6 +2309,14 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
         if subcommand == "stop" {
+            if let Err(error) = rpc_set_config_blocking(
+                rpc_cmd_tx,
+                "agentic.max_iterations",
+                Value::Number(serde_json::Number::from(25u32)),
+            ) {
+                show_command_info_popup(app, raw, format!("Failed to disable autopilot: {error}"));
+                return false;
+            }
             app.autopilot_enabled = false;
             app.iteration_cap = 25;
             show_command_info_popup(
@@ -4318,7 +4692,6 @@ Submitting any slash command will cancel capture."
             directory.to_string(),
             "Explain the changes in these files".to_string(),
             watch_tx,
-            rpc_cmd_tx.clone(),
             stop.clone(),
         );
 

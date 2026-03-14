@@ -165,15 +165,21 @@ class MCPManager:
 
     async def initialize(self) -> None:
         for server_name, cfg in self.servers_config.items():
+            enabled = bool(cfg.get("enabled", True))
             self._server_status[server_name] = {
                 "configured": True,
+                "enabled": enabled,
                 "connected": False,
                 "toolCount": 0,
                 "tools": [],
+                "registeredTools": [],
                 "error": None,
                 "command": cfg.get("command", ""),
                 "args": cfg.get("args", []),
             }
+            if not enabled:
+                self._server_status[server_name]["error"] = "disabled by config"
+                continue
             command = cfg.get("command")
             if not command:
                 logger.warning(f"MCP server '{server_name}' missing command, skipping")
@@ -188,13 +194,36 @@ class MCPManager:
             try:
                 await client.connect()
                 declarations = await client.list_tools()
+                allow_tools = {
+                    str(name)
+                    for name in cfg.get("allow_tools", []) or []
+                    if str(name).strip()
+                }
+                deny_tools = {
+                    str(name)
+                    for name in cfg.get("deny_tools", []) or []
+                    if str(name).strip()
+                }
+                filtered_declarations = []
+                for decl in declarations:
+                    tool_name = str(decl.get("name", "")).strip()
+                    if not tool_name:
+                        continue
+                    if allow_tools and tool_name not in allow_tools:
+                        continue
+                    if tool_name in deny_tools:
+                        continue
+                    filtered_declarations.append(decl)
                 self.clients[server_name] = client
                 self._server_status[server_name]["connected"] = True
                 self._server_status[server_name]["toolCount"] = len(declarations)
                 self._server_status[server_name]["tools"] = [
                     decl.get("name", "") for decl in declarations if decl.get("name")
                 ]
-                for decl in declarations:
+                self._server_status[server_name]["registeredTools"] = [
+                    decl.get("name", "") for decl in filtered_declarations if decl.get("name")
+                ]
+                for decl in filtered_declarations:
                     tool_name = decl.get("name")
                     if not tool_name:
                         continue

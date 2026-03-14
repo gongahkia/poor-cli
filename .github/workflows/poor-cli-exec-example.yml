@@ -1,0 +1,62 @@
+name: poor-cli exec example
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: Prompt to send to poor-cli
+        required: true
+        default: Summarize the repository architecture and propose the next safe implementation step.
+      provider:
+        description: Provider to use
+        required: true
+        default: gemini
+      model:
+        description: Optional model override
+        required: false
+        default: ""
+
+jobs:
+  poor-cli-exec:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install poor-cli
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Run poor-cli exec
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${{ inputs.model }}" ]; then
+            poor-cli exec \
+              --prompt "${{ inputs.prompt }}" \
+              --provider "${{ inputs.provider }}" \
+              --model "${{ inputs.model }}" \
+              --output-format json \
+              --plan-only > poor-cli-output.json
+          else
+            poor-cli exec \
+              --prompt "${{ inputs.prompt }}" \
+              --provider "${{ inputs.provider }}" \
+              --output-format json \
+              --plan-only > poor-cli-output.json
+          fi
+          cat poor-cli-output.json
+
+      - name: Upload output artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: poor-cli-output
+          path: poor-cli-output.json

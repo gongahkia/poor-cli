@@ -244,6 +244,13 @@ pub enum ServerNotification {
         changed: Option<bool>,
         message: String,
     },
+    PlanRequest {
+        request_id: String,
+        prompt_id: String,
+        summary: String,
+        original_request: String,
+        steps: Vec<String>,
+    },
     Progress {
         request_id: String,
         phase: String,
@@ -455,6 +462,38 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
+        }),
+        "poor-cli/planReq" => Some(ServerNotification::PlanRequest {
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            prompt_id: params
+                .get("promptId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            summary: params
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            original_request: params
+                .get("originalRequest")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            steps: params
+                .get("steps")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }),
         "poor-cli/progress" => Some(ServerNotification::Progress {
             request_id: params
@@ -990,15 +1029,27 @@ impl RpcClient {
         self.call("poor-cli/getTools", Value::Object(Default::default()))
     }
 
-    pub fn get_instruction_stack(&self) -> Result<Value, String> {
-        self.call(
-            "poor-cli/getInstructionStack",
-            Value::Object(Default::default()),
-        )
+    pub fn get_instruction_stack(&self, referenced_files: &[String]) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if !referenced_files.is_empty() {
+            params.insert(
+                "referencedFiles".into(),
+                Value::Array(
+                    referenced_files
+                        .iter()
+                        .map(|path| Value::String(path.clone()))
+                        .collect(),
+                ),
+            );
+        }
+        self.call("poor-cli/getInstructionStack", Value::Object(params))
     }
 
     pub fn get_policy_status(&self) -> Result<Value, String> {
-        self.call("poor-cli/getPolicyStatus", Value::Object(Default::default()))
+        self.call(
+            "poor-cli/getPolicyStatus",
+            Value::Object(Default::default()),
+        )
     }
 
     pub fn get_mcp_status(&self) -> Result<Value, String> {
@@ -1492,6 +1543,7 @@ pub enum RpcCommand {
         reply: SyncSender<Result<Value, String>>,
     },
     GetInstructionStack {
+        referenced_files: Vec<String>,
         reply: SyncSender<Result<Value, String>>,
     },
     GetPolicyStatus {
@@ -1774,8 +1826,11 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::GetTools { reply }) => {
                 let _ = reply.send(client.get_tools());
             }
-            Ok(RpcCommand::GetInstructionStack { reply }) => {
-                let _ = reply.send(client.get_instruction_stack());
+            Ok(RpcCommand::GetInstructionStack {
+                referenced_files,
+                reply,
+            }) => {
+                let _ = reply.send(client.get_instruction_stack(&referenced_files));
             }
             Ok(RpcCommand::GetPolicyStatus { reply }) => {
                 let _ = reply.send(client.get_policy_status());

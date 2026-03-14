@@ -155,6 +155,26 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/mcp",
+        description: "Inspect or control MCP servers and tools",
+        recommended: false,
+    },
+    SlashCommandSpec {
+        command: "/instructions",
+        description: "Inspect the active instruction stack",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/memory",
+        description: "Show or update repo-local memory",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/policy",
+        description: "Inspect repo-local hooks and audit status",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/focus",
         description: "Manage persistent coding focus state",
         recommended: true,
@@ -1035,6 +1055,26 @@ fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputAction {
     }
 
     match key.code {
+        KeyCode::Tab | KeyCode::Right => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() && review.jump_to_file_group(false) {
+                return InputAction::Redraw;
+            }
+            InputAction::None
+        }
+        KeyCode::BackTab | KeyCode::Left => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() && review.jump_to_file_group(true) {
+                return InputAction::Redraw;
+            }
+            InputAction::None
+        }
         KeyCode::Up => {
             let review = app
                 .mutation_review
@@ -1101,6 +1141,32 @@ fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputAction {
                 }
                 app.set_status("Selected all hunks in the pending patch");
                 return InputAction::Redraw;
+            }
+            InputAction::None
+        }
+        KeyCode::Char('s') | KeyCode::Char('S') => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() {
+                if let Some(path) = review.set_current_file_group_selection(true) {
+                    app.set_status(format!("Selected all hunks for {path}"));
+                    return InputAction::Redraw;
+                }
+            }
+            InputAction::None
+        }
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() {
+                if let Some(path) = review.set_current_file_group_selection(false) {
+                    app.set_status(format!("Cleared hunk selection for {path}"));
+                    return InputAction::Redraw;
+                }
             }
             InputAction::None
         }
@@ -1879,6 +1945,138 @@ mod tests {
     }
 
     #[test]
+    fn mutation_review_tab_jumps_between_file_groups() {
+        let mut app = App::new();
+        app.mode = AppMode::MutationReview;
+        app.mutation_review = Some(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "apply_patch_unified".to_string(),
+            operation: "apply_patch_unified".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.py".to_string(), "/tmp/other.py".to_string()],
+            diff: String::new(),
+            checkpoint_id: None,
+            changed: Some(true),
+            message: "preview".to_string(),
+            selected_path_index: 0,
+            chunks: vec![
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/demo.py".to_string(),
+                    hunk_index: 0,
+                    header: "@@ -1 +1 @@".to_string(),
+                    diff: "@@ -1 +1 @@\n-old\n+new".to_string(),
+                    selected: false,
+                },
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/demo.py".to_string(),
+                    hunk_index: 1,
+                    header: "@@ -4 +4 @@".to_string(),
+                    diff: "@@ -4 +4 @@\n-left\n+right".to_string(),
+                    selected: false,
+                },
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/other.py".to_string(),
+                    hunk_index: 0,
+                    header: "@@ -8 +8 @@".to_string(),
+                    diff: "@@ -8 +8 @@\n-before\n+after".to_string(),
+                    selected: false,
+                },
+            ],
+            selected_chunk_index: 0,
+        });
+
+        let action = handle_key(&mut app, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(
+            app.mutation_review
+                .as_ref()
+                .map(|review| review.selected_chunk_index),
+            Some(2)
+        );
+        assert_eq!(
+            app.mutation_review
+                .as_ref()
+                .map(|review| review.selected_path_index),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn mutation_review_file_group_shortcuts_select_and_clear_current_file() {
+        let mut app = App::new();
+        app.mode = AppMode::MutationReview;
+        app.mutation_review = Some(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "apply_patch_unified".to_string(),
+            operation: "apply_patch_unified".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.py".to_string(), "/tmp/other.py".to_string()],
+            diff: String::new(),
+            checkpoint_id: None,
+            changed: Some(true),
+            message: "preview".to_string(),
+            selected_path_index: 0,
+            chunks: vec![
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/demo.py".to_string(),
+                    hunk_index: 0,
+                    header: "@@ -1 +1 @@".to_string(),
+                    diff: "@@ -1 +1 @@\n-old\n+new".to_string(),
+                    selected: false,
+                },
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/demo.py".to_string(),
+                    hunk_index: 1,
+                    header: "@@ -4 +4 @@".to_string(),
+                    diff: "@@ -4 +4 @@\n-left\n+right".to_string(),
+                    selected: false,
+                },
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/other.py".to_string(),
+                    hunk_index: 0,
+                    header: "@@ -8 +8 @@".to_string(),
+                    diff: "@@ -8 +8 @@\n-before\n+after".to_string(),
+                    selected: false,
+                },
+            ],
+            selected_chunk_index: 0,
+        });
+
+        let select_action = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+        );
+        assert!(matches!(select_action, InputAction::Redraw));
+        assert_eq!(
+            app.mutation_review.as_ref().map(|review| {
+                review
+                    .chunks
+                    .iter()
+                    .map(|chunk| chunk.selected)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![true, true, false])
+        );
+
+        let clear_action = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        );
+        assert!(matches!(clear_action, InputAction::Redraw));
+        assert_eq!(
+            app.mutation_review.as_ref().map(|review| {
+                review
+                    .chunks
+                    .iter()
+                    .map(|chunk| chunk.selected)
+                    .collect::<Vec<_>>()
+            }),
+            Some(vec![false, false, false])
+        );
+    }
+
+    #[test]
     fn quick_open_enter_returns_selected_item() {
         let mut app = App::new();
         app.mode = AppMode::QuickOpen;
@@ -1924,6 +2122,7 @@ mod tests {
             paths: vec!["/tmp/auth.rs".to_string()],
             checkpoint_id: None,
             changed: Some(true),
+            review_summary: None,
             timestamp: std::time::Instant::now(),
         });
         app.open_transcript_search();

@@ -78,8 +78,9 @@ class PoorCLIServer:
         self._writer: Optional[asyncio.StreamWriter] = None
         self._client_streaming = False  # set True if client opts in during initialize
         self._pending_permissions: Dict[str, asyncio.Future] = {}  # promptId → Future[bool]
+        self._pending_plans: Dict[str, asyncio.Future] = {}  # promptId -> Future[bool]
         self._embedded_multiplayer_room = False
-        self._host_server_lock = asyncio.Lock()
+        self._host_server_lock: Optional[asyncio.Lock] = None
         self._host_server: Optional[Any] = None
         self._host_tunnel: Optional["NgrokTunnel"] = None
         self._host_bind_host = ""
@@ -89,7 +90,7 @@ class PoorCLIServer:
         self._host_public_ws_url: Optional[str] = None
         self._host_rooms: List[str] = []
         self._host_ngrok_enabled = False
-        self._service_lock = asyncio.Lock()
+        self._service_lock: Optional[asyncio.Lock] = None
         self._managed_services: Dict[str, ManagedServiceRuntime] = {}
         self._service_logs_dir = Path.home() / ".poor-cli" / "services"
 
@@ -109,6 +110,16 @@ class PoorCLIServer:
         if isinstance(context_files, list):
             return len(context_files)
         return 0
+
+    def _get_host_server_lock(self) -> asyncio.Lock:
+        if self._host_server_lock is None:
+            self._host_server_lock = asyncio.Lock()
+        return self._host_server_lock
+
+    def _get_service_lock(self) -> asyncio.Lock:
+        if self._service_lock is None:
+            self._service_lock = asyncio.Lock()
+        return self._service_lock
 
     async def _server_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
         """Server-side permission callback for core tool execution."""
@@ -264,9 +275,9 @@ class PoorCLIServer:
         """Shutdown the server."""
         del params
         self.logger.info("Shutdown requested")
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             await self._shutdown_host_server_locked()
-        async with self._service_lock:
+        async with self._get_service_lock():
             await self._shutdown_managed_services_locked()
         await self.core.shutdown()
         self._running = False
@@ -721,6 +732,8 @@ class PoorCLIServer:
                 model_name = self.core.config.model.model_name
                 await self.core.switch_provider(provider_name, model_name)
                 provider_switched = True
+            elif key_path.startswith("mcp_servers."):
+                await self.core.reload_mcp_servers()
 
             if key_path == "security.permission_mode":
                 mode = self.core.config.security.permission_mode
@@ -1579,7 +1592,7 @@ class PoorCLIServer:
                 raise InvalidParamsError(f"cwd is not a directory: {raw_cwd}")
             cwd_value = str(cwd_path)
 
-        async with self._service_lock:
+        async with self._get_service_lock():
             existing = self._managed_services.get(service_name)
             if existing is not None and existing.process.returncode is None:
                 return self._service_payload_locked(
@@ -1712,7 +1725,7 @@ class PoorCLIServer:
 
         service_name = self._normalize_service_name(params.get("name"))
 
-        async with self._service_lock:
+        async with self._get_service_lock():
             service = self._managed_services.get(service_name)
             if service is None:
                 payload = self._service_payload_locked(
@@ -1746,7 +1759,7 @@ class PoorCLIServer:
         self._ensure_service_controls_available()
 
         requested_name = str(params.get("name", "")).strip()
-        async with self._service_lock:
+        async with self._get_service_lock():
             if requested_name:
                 service_name = self._normalize_service_name(requested_name)
                 return self._service_payload_locked(service_name)
@@ -1779,7 +1792,7 @@ class PoorCLIServer:
             raise InvalidParamsError("lines must be an integer") from error
         line_count = max(1, min(line_count, 500))
 
-        async with self._service_lock:
+        async with self._get_service_lock():
             payload = self._service_payload_locked(service_name)
             service = self._managed_services.get(service_name)
             if service is not None:
@@ -2040,7 +2053,7 @@ class PoorCLIServer:
 
         enable_ngrok = bool(params.get("ngrok", False))
 
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is not None:
                 return self._compose_host_server_payload(created=False, stopped=False)
 
@@ -2095,7 +2108,7 @@ class PoorCLIServer:
         del params
         self._ensure_initialized()
         self._ensure_host_controls_available()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             return self._compose_host_server_payload(created=False, stopped=False)
 
     async def handle_stop_host_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2103,7 +2116,7 @@ class PoorCLIServer:
         del params
         self._ensure_initialized()
         self._ensure_host_controls_available()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             was_running = await self._shutdown_host_server_locked()
             return self._compose_host_server_payload(created=False, stopped=was_running)
 
@@ -2158,7 +2171,7 @@ class PoorCLIServer:
         self._ensure_host_controls_available()
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 return {"running": False, "rooms": []}
 
@@ -2191,7 +2204,7 @@ class PoorCLIServer:
             raise InvalidParamsError("Missing connectionId")
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2232,7 +2245,7 @@ class PoorCLIServer:
         role_name = self._normalize_member_role(params.get("role"))
         requested_room = str(params.get("room", "")).strip()
 
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2272,7 +2285,7 @@ class PoorCLIServer:
         enabled = bool(params.get("enabled", True))
         requested_room = str(params.get("room", "")).strip()
 
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2307,7 +2320,7 @@ class PoorCLIServer:
             raise InvalidParamsError("Missing connectionId")
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2345,7 +2358,7 @@ class PoorCLIServer:
             raise InvalidParamsError("Missing connectionId")
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2393,7 +2406,7 @@ class PoorCLIServer:
             if ttl_seconds <= 0:
                 raise InvalidParamsError("expiresInSeconds must be a positive integer")
 
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2454,7 +2467,7 @@ class PoorCLIServer:
             raise InvalidParamsError("Missing value (token or connectionId)")
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2506,7 +2519,7 @@ class PoorCLIServer:
             raise InvalidParamsError("Missing connectionId")
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2572,7 +2585,7 @@ class PoorCLIServer:
         connection_id = str(params.get("connectionId", "")).strip()
         requested_room = str(params.get("room", "")).strip()
         if not connection_id and not display_name:
-            async with self._host_server_lock:
+            async with self._get_host_server_lock():
                 if self._host_server is None:
                     raise InvalidParamsError("No multiplayer host is currently running")
                 room_name = self._resolve_host_room_name_locked(requested_room)
@@ -2591,7 +2604,7 @@ class PoorCLIServer:
                 target = others[0]
                 connection_id = target.connection_id
         if not connection_id and display_name:
-            async with self._host_server_lock:
+            async with self._get_host_server_lock():
                 if self._host_server is None:
                     raise InvalidParamsError("No multiplayer host is currently running")
                 room_name = self._resolve_host_room_name_locked(requested_room)
@@ -2627,7 +2640,7 @@ class PoorCLIServer:
             raise InvalidParamsError("preset must be one of: pairing, mob, review")
 
         requested_room = str(params.get("room", "")).strip()
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2678,7 +2691,7 @@ class PoorCLIServer:
             raise InvalidParamsError("limit must be an integer") from e
         limit = max(1, min(limit, 200))
 
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             if self._host_server is None:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
@@ -2895,6 +2908,30 @@ class PoorCLIServer:
         finally:
             self._pending_permissions.pop(prompt_id, None)
 
+    async def _streaming_plan_callback(self, payload: Dict[str, Any]) -> bool:
+        """Interactive plan review callback used during streaming chat."""
+        prompt_id = str(uuid.uuid4())
+        notification = JsonRpcMessage(
+            method="poor-cli/planReq",
+            params={
+                "requestId": str(payload.get("requestId", "")),
+                "promptId": prompt_id,
+                "summary": str(payload.get("summary", "")),
+                "originalRequest": str(payload.get("originalRequest", "")),
+                "steps": payload.get("steps") or [],
+            },
+        )
+        await self.write_message_stdio(notification)
+        loop = asyncio.get_event_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        self._pending_plans[prompt_id] = future
+        try:
+            return await asyncio.wait_for(future, timeout=300)
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            self._pending_plans.pop(prompt_id, None)
+
     async def _handle_notification(self, message: JsonRpcMessage) -> None:
         """Handle incoming JSON-RPC notifications (no id)."""
         if message.method == "poor-cli/permissionRes":
@@ -2929,6 +2966,18 @@ class PoorCLIServer:
                     if not fut.done():
                         fut.set_result(decision)
                         break
+        if message.method == "poor-cli/planRes":
+            params = message.params or {}
+            prompt_id = str(params.get("promptId", "")).strip()
+            allowed = bool(params.get("allowed", False))
+            future = self._pending_plans.get(prompt_id)
+            if future and not future.done():
+                future.set_result(allowed)
+            elif not prompt_id and self._pending_plans:
+                for _pid, fut in list(self._pending_plans.items()):
+                    if not fut.done():
+                        fut.set_result(allowed)
+                        break
 
     async def handle_chat_streaming(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -2962,7 +3011,9 @@ class PoorCLIServer:
 
         # Install interactive permission callback for this streaming session
         prev_callback = self.core.permission_callback
+        prev_plan_callback = self.core.plan_callback
         self.core.permission_callback = self._streaming_permission_callback
+        self.core.plan_callback = self._streaming_plan_callback
 
         try:
             accumulated_text = ""
@@ -3007,6 +3058,8 @@ class PoorCLIServer:
                         await self.write_message_stdio(notification)
                     elif event.type == "permission_request":
                         pass  # handled by _streaming_permission_callback already
+                    elif event.type == "plan_request":
+                        pass  # handled by _streaming_plan_callback already
                     elif event.type == "cost_update":
                         notification = JsonRpcMessage(
                             method="poor-cli/costUpdate",
@@ -3051,6 +3104,7 @@ class PoorCLIServer:
             raise
         finally:
             self.core.permission_callback = prev_callback
+            self.core.plan_callback = prev_plan_callback
 
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         self.logger.info(
@@ -3208,10 +3262,10 @@ class PoorCLIServer:
             except Exception as e:
                 self.logger.exception("Error in main loop")
 
-        async with self._host_server_lock:
+        async with self._get_host_server_lock():
             with contextlib.suppress(Exception):
                 await self._shutdown_host_server_locked()
-        async with self._service_lock:
+        async with self._get_service_lock():
             with contextlib.suppress(Exception):
                 await self._shutdown_managed_services_locked()
         self.logger.info("Stdio server stopped")

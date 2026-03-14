@@ -362,6 +362,34 @@ class TestPoorCLIServer:
             assert method in server.handlers, f"Missing handler: {method}"
 
     @pytest.mark.asyncio
+    async def test_handle_set_config_reloads_mcp_servers(self, server):
+        server.initialized = True
+        server.core.config = Config()
+        server.core.config.mcp_servers = {
+            "demo": {
+                "command": "demo-mcp",
+                "enabled": True,
+                "allow_tools": [],
+                "deny_tools": [],
+            }
+        }
+        server.core._config_manager = MagicMock()
+        server.core._config_manager.config = server.core.config
+        server.core._config_manager.validate = MagicMock()
+        server.core._config_manager.save = MagicMock()
+        server.core.reload_mcp_servers = AsyncMock(return_value={"configuredServers": 1})
+
+        result = await server.handle_set_config(
+            {"keyPath": "mcp_servers.demo.enabled", "value": False}
+        )
+
+        assert result["success"] is True
+        assert server.core.config.mcp_servers["demo"]["enabled"] is False
+        server.core.reload_mcp_servers.assert_awaited_once()
+        server.core._config_manager.validate.assert_called_once()
+        server.core._config_manager.save.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_host_server_lifecycle_start_status_stop(self, server):
         """In-process host lifecycle returns shareable room join details."""
         server.initialized = True

@@ -8,7 +8,6 @@ use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
 
 use crate::helpers::{detect_project_traits, first_line, should_skip_dir, truncate_block};
-use crate::rpc::RpcCommand;
 
 #[derive(Default)]
 pub struct WatchState {
@@ -62,7 +61,7 @@ impl QaWatchState {
 /// We accept a generic sender that can send these variants.
 pub enum WatchMsg {
     System(String),
-    Chat(String),
+    AutomationPrompt { display: String, prompt: String },
     Error(String),
 }
 
@@ -70,7 +69,6 @@ pub fn spawn_watch_worker(
     directory: String,
     prompt: String,
     tx: mpsc::Sender<WatchMsg>,
-    rpc_cmd_tx: mpsc::Sender<RpcCommand>,
     stop: Arc<AtomicBool>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
@@ -102,56 +100,14 @@ pub fn spawn_watch_worker(
                 changed.len()
             )));
 
-            let chat_prompt = build_watch_prompt(&changed, &prompt);
-            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-            if rpc_cmd_tx
-                .send(RpcCommand::Chat {
-                    message: chat_prompt,
-                    context_files: Vec::new(),
-                    pinned_context_files: Vec::new(),
-                    context_budget_tokens: None,
-                    reply: reply_tx,
-                })
-                .is_err()
-            {
-                let _ = tx.send(WatchMsg::Error(
-                    "Watch mode stopped: RPC worker unavailable".to_string(),
-                ));
-                break;
-            }
-
-            let mut waited_secs = 0u64;
-            loop {
-                if stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match reply_rx.recv_timeout(Duration::from_secs(1)) {
-                    Ok(Ok(content)) => {
-                        let _ = tx.send(WatchMsg::Chat(content));
-                        break;
-                    }
-                    Ok(Err(e)) => {
-                        let _ =
-                            tx.send(WatchMsg::Error(format!("Watch mode analysis failed: {e}")));
-                        break;
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        waited_secs += 1;
-                        if waited_secs >= 240 {
-                            let _ = tx.send(WatchMsg::Error(
-                                "Watch mode timed out waiting for backend response".to_string(),
-                            ));
-                            break;
-                        }
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        let _ = tx.send(WatchMsg::Error(
-                            "Watch mode lost backend reply channel".to_string(),
-                        ));
-                        break;
-                    }
-                }
-            }
+            let _ = tx.send(WatchMsg::AutomationPrompt {
+                display: format!(
+                    "[watch] analyze {} changed file(s) in {}",
+                    changed.len(),
+                    directory
+                ),
+                prompt: build_watch_prompt(&changed, &prompt),
+            });
         }
     })
 }
@@ -252,10 +208,20 @@ pub fn spawn_qa_watch_worker(
                     if !output.trim().is_empty() {
                         lines.push(String::new());
                         lines.push("```text".to_string());
-                        lines.push(output);
+                        lines.push(output.clone());
                         lines.push("```".to_string());
                     }
                     let _ = tx.send(WatchMsg::System(lines.join("\n")));
+                    let _ = tx.send(WatchMsg::AutomationPrompt {
+                        display: format!(
+                            "[qa] inspect {} result for {}",
+                            status.to_ascii_lowercase(),
+                            directory
+                        ),
+                        prompt: build_qa_watch_prompt(
+                            &directory, &command, &changed, &output, success,
+                        ),
+                    });
                 }
                 Err(error) => {
                     let _ = tx.send(WatchMsg::Error(format!("QA watch failed: {error}")));
@@ -355,5 +321,36 @@ pub fn build_watch_prompt(changed: &[String], user_prompt: &str) -> String {
     }
 
     sections.push(format!("User request: {user_prompt}"));
+    sections.join("\n\n")
+}
+
+pub fn build_qa_watch_prompt(
+    directory: &str,
+    command: &str,
+    changed: &[String],
+    output: &str,
+    success: bool,
+) -> String {
+    let mut sections = vec![if success {
+        "QA watch ran after filesystem changes. Review the clean result, summarize residual risk, and only make changes if you see a concrete regression signal.".to_string()
+    } else {
+        "QA watch detected a failing validation run. Diagnose the failure, explain the likely cause, and make the smallest safe fix if the cause is clear.".to_string()
+    }];
+
+    sections.push(format!("Directory: {directory}"));
+    sections.push(format!("Command: {command}"));
+
+    if !changed.is_empty() {
+        sections.push("Changed files:".to_string());
+        for path in changed.iter().take(12) {
+            sections.push(format!("- {path}"));
+        }
+    }
+
+    if !output.trim().is_empty() {
+        sections.push("Command output:".to_string());
+        sections.push(format!("```text\n{}\n```", truncate_block(output, 4000)));
+    }
+
     sections.join("\n\n")
 }

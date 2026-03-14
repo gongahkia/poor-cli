@@ -84,6 +84,17 @@ pub(super) fn handle_server_message(
                 app.push_message(ChatMessage::system(content));
             }
         }
+        ServerMsg::AutomationPrompt { display, prompt } => {
+            app.prompt_queue
+                .push_back(poor_cli_tui::app::QueuedPrompt::automation(
+                    display.clone(),
+                    prompt,
+                ));
+            let queued = app.prompt_queue.len();
+            app.push_message(ChatMessage::system(format!(
+                "Queued automation task: {display} ({queued} queued)"
+            )));
+        }
         ServerMsg::Providers { providers } => {
             app.providers = providers;
             app.provider_select_idx = 0;
@@ -260,6 +271,7 @@ pub(super) fn handle_server_message(
                     paths,
                     checkpoint_id: None,
                     changed: None,
+                    review_summary: None,
                     timestamp: std::time::Instant::now(),
                 });
             } else if event_type == "tool_result" {
@@ -298,6 +310,7 @@ pub(super) fn handle_server_message(
                     paths,
                     checkpoint_id,
                     changed,
+                    review_summary: None,
                     timestamp: std::time::Instant::now(),
                 });
             }
@@ -337,6 +350,7 @@ pub(super) fn handle_server_message(
                 paths: paths.clone(),
                 checkpoint_id: checkpoint_id.clone(),
                 changed,
+                review_summary: None,
                 timestamp: std::time::Instant::now(),
             });
             if !diff.is_empty() || !paths.is_empty() {
@@ -357,6 +371,40 @@ pub(super) fn handle_server_message(
             } else {
                 app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
             }
+        }
+        ServerMsg::PlanRequest {
+            request_id,
+            prompt_id,
+            summary,
+            original_request,
+            steps,
+        } => {
+            write_session_log(
+                session_log,
+                &format!(
+                    "chat_request_plan request_id={} prompt_id={} steps={}",
+                    request_id,
+                    prompt_id,
+                    steps.len()
+                ),
+            );
+            app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                kind: poor_cli_tui::app::TimelineEntryKind::Phase,
+                request_id,
+                title: "Plan review".to_string(),
+                detail: if summary.is_empty() {
+                    "Awaiting plan approval".to_string()
+                } else {
+                    summary.clone()
+                },
+                diff: String::new(),
+                paths: Vec::new(),
+                checkpoint_id: None,
+                changed: None,
+                review_summary: None,
+                timestamp: std::time::Instant::now(),
+            });
+            app.set_plan_review(steps, original_request, summary, prompt_id, true);
         }
         ServerMsg::Progress {
             request_id,
@@ -387,6 +435,7 @@ pub(super) fn handle_server_message(
                 paths: Vec::new(),
                 checkpoint_id: None,
                 changed: None,
+                review_summary: None,
                 timestamp: std::time::Instant::now(),
             });
         }
@@ -415,6 +464,7 @@ pub(super) fn handle_server_message(
                 paths: Vec::new(),
                 checkpoint_id: None,
                 changed: None,
+                review_summary: None,
                 timestamp: std::time::Instant::now(),
             });
         }
