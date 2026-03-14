@@ -35,11 +35,14 @@ import qualified Data.Text as T
 import Data.Time (Day, toModifiedJulianDay)
 
 data Value
-    = VString Text
+    = VNull
+    | VString Text
     | VInt Integer
     | VBool Bool
     | VDate Day
     | VList [Value]
+    | VEntityRef Text
+    | VTimelineRef Text
     deriving (Eq, Ord, Show)
 
 data BinaryOp
@@ -125,6 +128,7 @@ data Relationship = Relationship
 data FunctionSig = FunctionSig
     { functionName :: Text
     , functionParams :: [(Text, Text)]
+    , functionReturnType :: Maybe Text
     }
     deriving (Eq, Show)
 
