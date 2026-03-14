@@ -9,6 +9,7 @@ import Seuss.Config.Loader
 import Seuss.Core.Diff
 import Seuss.Core.Eval
 import Seuss.Core.Validation
+import Seuss.Lang.AST
 import Seuss.Import.CSV
 import Seuss.Lang.Parser
 import Seuss.Model.Types
@@ -82,6 +83,14 @@ spec = do
             configDefaultFormat configValue `shouldBe` Just "pdf"
             configThemeName configValue `shouldBe` Just "light"
             themeBackground resolvedTheme `shouldBe` "#ffffff"
+
+    describe "import parsing" $
+        it "accepts import statements in the Haskell frontend" $ do
+            case parseProgram "<inline>" "import \"shared.seuss\";\n" of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program statements) ->
+                    statements `shouldBe` [StmtImport "shared.seuss"]
 
     describe "diffing" $
         it "reports entity deltas between worlds" $ do
