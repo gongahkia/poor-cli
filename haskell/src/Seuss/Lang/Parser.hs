@@ -107,12 +107,25 @@ boolLiteral =
         <|> (symbol "false" $> False)
 
 exprParser :: Parser Expr
-exprParser = makeExprParser term operatorTable
+exprParser = rangeExprParser
+
+rangeExprParser :: Parser Expr
+rangeExprParser = do
+    startExpr <- nonRangeExprParser
+    maybeEndExpr <- optional (try (symbol ".." *> rangeExprParser))
+    pure $
+        case maybeEndExpr of
+            Nothing -> startExpr
+            Just endExpr -> ExprRange startExpr endExpr
+
+nonRangeExprParser :: Parser Expr
+nonRangeExprParser = makeExprParser term operatorTable
 
 term :: Parser Expr
 term =
     choice
         [ ExprValue <$> literalValueParser
+        , ExprList <$> between (symbol "[") (symbol "]") (exprParser `sepBy` symbol ",")
         , ExprIdent <$> identifier
         , between (symbol "(") (symbol ")") exprParser
         ]
@@ -217,7 +230,7 @@ relationshipDeclParser = do
     target <- identifier
     temporalScope <- optional $ do
         _ <- symbol "@"
-        startValue <- exprParser
+        startValue <- nonRangeExprParser
         _ <- symbol ".."
         endValue <- exprParser
         pure (startValue, endValue)
@@ -267,7 +280,7 @@ forIterableParser =
 
 forRangeParser :: Parser ForIterable
 forRangeParser = do
-    startExpr <- term
+    startExpr <- nonRangeExprParser
     _ <- symbol ".."
     endExpr <- exprParser
     pure (ForRange startExpr endExpr)
@@ -399,7 +412,7 @@ appearanceFieldParser = do
     _ <- symbol ":"
     timelineName <- identifier
     _ <- symbol "@"
-    startValue <- exprParser
+    startValue <- nonRangeExprParser
     _ <- symbol ".."
     endValue <- exprParser
     _ <- optional (symbol ",")
