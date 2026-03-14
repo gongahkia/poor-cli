@@ -355,6 +355,39 @@ spec = do
                         Right worldValue ->
                             Map.member "assigned_while_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "boolean and comparison operator evaluation" $
+        it "evaluates precedence-sensitive boolean logic with extended comparison operators" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "if true || false && false {"
+                        , "  entity precedence_hit : event {"
+                        , "    appears_on: main @ 2000-10-01..2000-10-02,"
+                        , "  }"
+                        , "}"
+                        , ""
+                        , "if 2 <= 2 && 3 >= 3 && 4 != 5 {"
+                        , "  entity comparison_hit : event {"
+                        , "    appears_on: main @ 2000-11-01..2000-11-02,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            Map.member "precedence_hit" (worldEntities worldValue) `shouldBe` True
+                            Map.member "comparison_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "for-loop parsing and evaluation" $ do
         it "parses list and range iterables for for-loops" $ do
             let source =
