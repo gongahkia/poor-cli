@@ -148,6 +148,80 @@ spec = do
                             Map.member "beta" (worldEntities worldValue) `shouldBe` True
                             Map.member "gamma" (worldEntities worldValue) `shouldBe` False
 
+    describe "match parsing and evaluation" $ do
+        it "parses literal, binding, and wildcard match arms into the AST" $ do
+            let source =
+                    T.unlines
+                        [ "match status {"
+                        , "  \"active\" => { let running = true; },"
+                        , "  state => { let seen = state; },"
+                        , "  _ => { let running = false; },"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtMatch decl]) ->
+                    matchArms decl
+                        `shouldBe`
+                            [ MatchArm
+                                { matchArmPattern = MatchPatternValue (VString "active")
+                                , matchArmBody = [StmtLet (LetDecl "running" (ExprValue (VBool True)))]
+                                }
+                            , MatchArm
+                                { matchArmPattern = MatchPatternBind "state"
+                                , matchArmBody = [StmtLet (LetDecl "seen" (ExprIdent "state"))]
+                                }
+                            , MatchArm
+                                { matchArmPattern = MatchPatternWildcard
+                                , matchArmBody = [StmtLet (LetDecl "running" (ExprValue (VBool False)))]
+                                }
+                            ]
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "executes the first matching arm and exposes identifier bindings inside that arm" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "let status = \"paused\";"
+                        , "match status {"
+                        , "  \"active\" => {"
+                        , "    entity wrong_branch : event {"
+                        , "      appears_on: main @ 2000-01-01..2000-01-02,"
+                        , "    }"
+                        , "  },"
+                        , "  state => {"
+                        , "    if state == \"paused\" {"
+                        , "      entity bound_branch : event {"
+                        , "        appears_on: main @ 2000-02-01..2000-02-02,"
+                        , "      }"
+                        , "    }"
+                        , "  },"
+                        , "  _ => {"
+                        , "    entity wildcard_branch : event {"
+                        , "      appears_on: main @ 2000-03-01..2000-03-02,"
+                        , "    }"
+                        , "  },"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            Map.member "wrong_branch" (worldEntities worldValue) `shouldBe` False
+                            Map.member "bound_branch" (worldEntities worldValue) `shouldBe` True
+                            Map.member "wildcard_branch" (worldEntities worldValue) `shouldBe` False
+
     describe "for-loop parsing and evaluation" $ do
         it "parses list and range iterables for for-loops" $ do
             let source =
