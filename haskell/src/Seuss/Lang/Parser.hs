@@ -63,6 +63,7 @@ statementParser =
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
         , StmtMatch <$> matchDeclParser
+        , uncurry StmtAssign <$> assignStmtParser
         ]
 
 sc :: Parser ()
@@ -254,11 +255,20 @@ importStmtParser = do
 letDeclParser :: Parser LetDecl
 letDeclParser = do
     _ <- symbol "let"
+    _ <- optional (symbol "mut")
     name <- identifier
     _ <- symbol "="
     value <- exprParser
     _ <- optional (symbol ";")
     pure (LetDecl name value)
+
+assignStmtParser :: Parser (Text, Expr)
+assignStmtParser = do
+    name <- identifier
+    _ <- symbol "="
+    value <- exprParser
+    _ <- optional (symbol ";")
+    pure (name, value)
 
 forDeclParser :: Parser ForDecl
 forDeclParser = do
