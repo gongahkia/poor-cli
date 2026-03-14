@@ -29,17 +29,9 @@ $ cabal test
 - `diff <file1> <file2>` reports timeline, entity, and relationship deltas.
 - `import <file> --from csv|gedcom|jsonld` converts external sources into `.seuss`.
 - `repl` supports `:load`, `:files`, `:world`, `:entities`, `:rels`, and `:validate`.
-- `lsp` runs a minimal stdio language server with diagnostics, hover, and keyword completion.
 - `export <file> -f svg` writes an SVG using the shared layout engine.
 
 `png` and `pdf` are accepted at the CLI surface but still intentionally fail with an explicit message until those backends are ported.
-
-## Current importer additions
-
-- CSV import now accepts header aliases like `id`, `entity_type`, `lane`, `track`, `from`, and `to`.
-- CSV entity imports now synthesize timeline declarations, sanitize generated identifiers, and preserve booleans, numbers, and ISO dates as typed literals.
-- GEDCOM import now keeps family structure by emitting `spouse` and `parent_of` relationships in addition to person entities.
-- JSON-LD import now turns `@id` references inside object properties and arrays into Seuss relationships instead of flattening them into opaque fields.
 
 ## Current language coverage additions
 
@@ -48,7 +40,6 @@ $ cabal test
 - list literals like `["one", "two"]` and integer range expressions like `1..3` now parse and evaluate.
 - postfix index expressions like `labels[1]` and `"abc"[1]` now parse and evaluate.
 - function declarations now accept optional return annotations like `fn add(a: int, b: int) -> int { ... }`.
-- explicit `return` statements now parse and short-circuit function bodies, including returns from inside loop bodies.
 - named function calls now evaluate with scoped parameter binding, return the last expression in the body, and also work as standalone statement calls.
 - typed closures like `|x: int| x + offset` now parse and evaluate with captured outer bindings.
 - a first builtin set is now wired up in the Haskell runtime: `len`, `before`, `after`, and `type_of`.
@@ -67,16 +58,13 @@ $ cabal test
 ## Current TUI additions
 
 - `?` toggles a help panel.
-- `Enter` follows the current selection: timelines jump into their entities, entities open neighborhood relationships, and relationships jump back to entities.
 - `c` cycles a comparison target timeline and shows a delta summary in the inspector.
 - `b` stores the currently selected entity into the next bookmark slot.
 - `1`-`9` jump to saved entity bookmarks.
-- `s` and `g` jump from a selected relationship to its source or target entity.
-- `:` opens a small command palette with actions like `help`, `compare`, `bookmark`, `clear-search`, `clear-filters`, `follow`, `rel-source`, `rel-target`, `clear-scrub`, `scrub-center`, `timeline-next`, and `timeline-prev`.
+- `:` opens a small command palette with actions like `help`, `compare`, `bookmark`, `clear-search`, `clear-scrub`, `scrub-center`, `timeline-next`, and `timeline-prev`.
 - `[` and `]` step a time scrubber that filters visible entities and relationships to the selected point in time.
 - `{` and `}` jump the scrubber to the selected timeline’s start or end boundary.
 - `u` and `y` undo or redo view-state changes.
-- The inspector now keeps a short recent-selection trail so users can see and retrace what they drilled into most recently.
 
 ## Config shape
 
