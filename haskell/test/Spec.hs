@@ -502,6 +502,27 @@ spec = do
                             expectationFailure "expected type mismatch but evaluation succeeded"
 
     describe "function and field access parsing and evaluation" $ do
+        it "parses explicit return statements inside function bodies" $ do
+            let source =
+                    T.unlines
+                        [ "fn add(a: int, b: int) -> int {"
+                        , "  return a + b;"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtFunction decl]) ->
+                    fnBody decl
+                        `shouldBe`
+                            [ StmtReturn
+                                ( Just
+                                    (ExprBinary OpAdd (ExprIdent "a") (ExprIdent "b"))
+                                )
+                            ]
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
         it "parses function return types, expression bodies, calls, and field access" $ do
             let source =
                     T.unlines
@@ -583,6 +604,39 @@ spec = do
                                     expectationFailure "expected scripted entity from function call"
                                 Just entityValue ->
                                     Map.lookup "note" (entityFields entityValue) `shouldBe` Just (VString "alpha")
+
+        it "honors explicit early returns inside function control flow" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "fn first_match() -> int {"
+                        , "  for value in 1..3 {"
+                        , "    return value;"
+                        , "  }"
+                        , "  return 0;"
+                        , "}"
+                        , ""
+                        , "let picked = first_match();"
+                        , "if picked == 1 {"
+                        , "  entity explicit_return_hit : event {"
+                        , "    appears_on: main @ 2000-07-01..2000-07-02,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            Map.member "explicit_return_hit" (worldEntities worldValue) `shouldBe` True
 
         it "resolves entity and timeline field access against world values" $ do
             let source =
