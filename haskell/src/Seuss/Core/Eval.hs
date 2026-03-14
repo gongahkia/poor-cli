@@ -206,6 +206,27 @@ evalExpr state (ExprRange startExpr endExpr) = do
                             else reverse [endInt .. startInt]
         _ ->
             pure (VList [startValue, endValue])
+evalExpr state (ExprIndex objectExpr indexExpr) = do
+    objectValue <- evalExpr state objectExpr
+    indexValue <- evalExpr state indexExpr
+    case indexValue of
+        VInt indexInt
+            | indexInt < 0 ->
+                Left $
+                    Diagnostic
+                        { diagnosticLevel = DiagnosticError
+                        , diagnosticSource = "evaluator"
+                        , diagnosticMessage = "index must be non-negative"
+                        }
+            | otherwise ->
+                evalIndex objectValue (fromInteger indexInt)
+        _ ->
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage = "index expression must evaluate to an integer"
+                    }
 evalExpr state (ExprBinary op lhs rhs) = do
     leftValue <- evalExpr state lhs
     rightValue <- evalExpr state rhs
@@ -239,6 +260,37 @@ evalBinary op leftValue rightValue =
                     <> " and "
                     <> T.pack (show rightValue)
             }
+
+evalIndex :: Value -> Int -> Either Diagnostic Value
+evalIndex (VList values) indexValue
+    | indexValue < length values = Right (values !! indexValue)
+    | otherwise = Left (indexOutOfBounds "list" indexValue (length values))
+evalIndex (VString textValue) indexValue
+    | indexValue < T.length textValue =
+        Right (VString (T.singleton (T.index textValue indexValue)))
+    | otherwise =
+        Left (indexOutOfBounds "string" indexValue (T.length textValue))
+evalIndex value _ =
+    Left $
+        Diagnostic
+            { diagnosticLevel = DiagnosticError
+            , diagnosticSource = "evaluator"
+            , diagnosticMessage = "cannot index into value " <> T.pack (show value)
+            }
+
+indexOutOfBounds :: Text -> Int -> Int -> Diagnostic
+indexOutOfBounds targetName indexValue targetLength =
+    Diagnostic
+        { diagnosticLevel = DiagnosticError
+        , diagnosticSource = "evaluator"
+        , diagnosticMessage =
+            "index "
+                <> T.pack (show indexValue)
+                <> " is out of bounds for "
+                <> targetName
+                <> " of length "
+                <> T.pack (show targetLength)
+        }
 
 exprToTimePoint :: EvalState -> Expr -> Either Diagnostic TimePoint
 exprToTimePoint state expr = do
