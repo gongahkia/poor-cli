@@ -4,7 +4,7 @@ module Seuss.Core.Eval
     ( evalProgram
     ) where
 
-import Control.Monad (foldM, unless)
+import Control.Monad (foldM, traverse_, unless)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
@@ -122,6 +122,7 @@ evalStmt state statement =
             pure state
         StmtLet decl -> do
             (state1, value) <- evalExpr state (letValue decl)
+            maybe (pure ()) (assertTypeMatches state1 value) (letTypeAnnotation decl)
             pure state1{evalEnv = Map.insert (letName decl) value (evalEnv state1)}
         StmtAssign name expr ->
             if Map.member name (evalEnv state)
@@ -359,6 +360,7 @@ callNamedFunction state name fnDecl argValues =
                             <> T.pack (show (length argValues))
                     }
         else do
+            traverse_ (uncurry (assertTypeMatches state)) (zip argValues (map snd (fnParams fnDecl)))
             let savedEnv = evalEnv state
                 paramBindings = Map.fromList (zip (map fst (fnParams fnDecl)) argValues)
                 callState =
@@ -366,6 +368,7 @@ callNamedFunction state name fnDecl argValues =
                         { evalEnv = paramBindings `Map.union` savedEnv
                         }
             (resultState, resultValue) <- evalBlockWithResult callState (fnBody fnDecl)
+            maybe (pure ()) (assertTypeMatches resultState resultValue) (fnReturnType fnDecl)
             pure (resultState{evalEnv = savedEnv}, resultValue)
 
 callClosure :: EvalState -> Integer -> [Value] -> Either Diagnostic (EvalState, Value)
@@ -430,6 +433,61 @@ valueToOrdinal :: Value -> Maybe Integer
 valueToOrdinal (VInt value) = Just value
 valueToOrdinal (VDate day) = Just (timePointOrdinal (TimeDate day))
 valueToOrdinal _ = Nothing
+
+assertTypeMatches :: EvalState -> Value -> Text -> Either Diagnostic ()
+assertTypeMatches state value expectedType
+    | valueMatchesType state value expectedType = pure ()
+    | otherwise =
+        Left $
+            Diagnostic
+                { diagnosticLevel = DiagnosticError
+                , diagnosticSource = "evaluator"
+                , diagnosticMessage =
+                    "type mismatch: expected "
+                        <> expectedType
+                        <> " but got "
+                        <> renderValueType state value
+                }
+
+valueMatchesType :: EvalState -> Value -> Text -> Bool
+valueMatchesType _ VNull _ = True
+valueMatchesType _ (VInt _) "int" = True
+valueMatchesType _ (VString _) "string" = True
+valueMatchesType _ (VBool _) "bool" = True
+valueMatchesType _ (VDate _) "date" = True
+valueMatchesType _ (VList _) "list" = True
+valueMatchesType _ (VEntityRef _) "entity" = True
+valueMatchesType state (VEntityRef entityName) expectedType =
+    case findEntity entityName (evalWorld state) of
+        Nothing -> False
+        Just entity ->
+            entityType entity == expectedType
+                || hasTypeAncestor (evalWorld state) (entityType entity) expectedType
+valueMatchesType _ (VTimelineRef _) "timeline" = True
+valueMatchesType _ (VClosureRef _) "closure" = True
+valueMatchesType _ _ _ = False
+
+renderValueType :: EvalState -> Value -> Text
+renderValueType _ VNull = "null"
+renderValueType _ (VInt _) = "int"
+renderValueType _ (VString _) = "string"
+renderValueType _ (VBool _) = "bool"
+renderValueType _ (VDate _) = "date"
+renderValueType _ (VList _) = "list"
+renderValueType state (VEntityRef entityName) =
+    maybe "entity" entityType (findEntity entityName (evalWorld state))
+renderValueType _ (VTimelineRef _) = "timeline"
+renderValueType _ (VClosureRef _) = "closure"
+
+hasTypeAncestor :: World -> Text -> Text -> Bool
+hasTypeAncestor worldValue currentType expectedType =
+    currentType == expectedType
+        || case Map.lookup currentType (worldTypes worldValue) of
+            Nothing -> False
+            Just typeDef ->
+                case typeParent typeDef of
+                    Nothing -> False
+                    Just parentName -> hasTypeAncestor worldValue parentName expectedType
 
 undefinedFunction :: Text -> Either Diagnostic a
 undefinedFunction name =
