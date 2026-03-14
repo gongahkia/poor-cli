@@ -10,6 +10,7 @@ module Seuss.Lang.AST
     , IfDecl(..)
     , LetDecl(..)
     , Program(..)
+    , RepeatDecl(..)
     , RelationshipDecl(..)
     , Stmt(..)
     , TimelineDecl(..)
@@ -88,6 +89,12 @@ data ForDecl = ForDecl
     }
     deriving (Eq, Show)
 
+data RepeatDecl = RepeatDecl
+    { repeatCount :: Expr
+    , repeatBody :: [Stmt]
+    }
+    deriving (Eq, Show)
+
 data FnDecl = FnDecl
     { fnName :: Text
     , fnParams :: [(Text, Text)]
@@ -111,6 +118,7 @@ data Stmt
     | StmtImport Text
     | StmtLet LetDecl
     | StmtFor ForDecl
+    | StmtRepeat RepeatDecl
     | StmtFunction FnDecl
     | StmtIf IfDecl
     deriving (Eq, Show)
