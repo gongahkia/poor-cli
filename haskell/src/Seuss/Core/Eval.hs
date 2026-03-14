@@ -151,7 +151,7 @@ evalStmt state statement =
             conditionValue <- evalExpr state (ifCondition decl)
             case conditionValue of
                 VBool True -> foldM evalStmt state (ifThenBlock decl)
-                VBool False -> pure state
+                VBool False -> evalElseBranches state (ifElseIfBlocks decl) (ifElseBlock decl)
                 _ ->
                     Left $
                         Diagnostic
@@ -230,3 +230,19 @@ rejectDuplicate kind name entries =
                 , diagnosticSource = "evaluator"
                 , diagnosticMessage = "duplicate " <> kind <> ": " <> name
                 }
+
+evalElseBranches :: EvalState -> [(Expr, [Stmt])] -> Maybe [Stmt] -> Either Diagnostic EvalState
+evalElseBranches state [] Nothing = pure state
+evalElseBranches state [] (Just elseBlock) = foldM evalStmt state elseBlock
+evalElseBranches state ((conditionExpr, branchBody) : rest) elseBlock = do
+    conditionValue <- evalExpr state conditionExpr
+    case conditionValue of
+        VBool True -> foldM evalStmt state branchBody
+        VBool False -> evalElseBranches state rest elseBlock
+        _ ->
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage = "else-if condition must evaluate to a boolean"
+                    }
