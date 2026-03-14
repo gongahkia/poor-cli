@@ -44,8 +44,20 @@ evalStmt state statement =
             startValue <- exprToTimePoint state (timelineDeclStart decl)
             endValue <- exprToTimePoint state (timelineDeclEnd decl)
             loopCountValue <- traverse (exprToInteger state) (timelineDeclLoopCount decl)
-            forkValue <- traverse (\(name, expr) -> (name,) <$> exprToTimePoint state expr) (timelineDeclForkFrom decl)
-            mergeValue <- traverse (\(name, expr) -> (name,) <$> exprToTimePoint state expr) (timelineDeclMergeInto decl)
+            forkValue <-
+                traverse
+                    ( \(name, expr) -> do
+                        point <- exprToTimePoint state expr
+                        pure (name, point)
+                    )
+                    (timelineDeclForkFrom decl)
+            mergeValue <-
+                traverse
+                    ( \(name, expr) -> do
+                        point <- exprToTimePoint state expr
+                        pure (name, point)
+                    )
+                    (timelineDeclMergeInto decl)
             let world' =
                     (evalWorld state)
                         { worldTimelines =
