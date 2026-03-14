@@ -58,6 +58,7 @@ statementParser =
         , StmtImport <$> importStmtParser
         , StmtLet <$> letDeclParser
         , StmtFor <$> forDeclParser
+        , StmtRepeat <$> repeatDeclParser
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
         ]
@@ -266,6 +267,17 @@ forRangeParser = do
 forListParser :: Parser ForIterable
 forListParser =
     ForList <$> between (symbol "[") (symbol "]") (exprParser `sepBy` symbol ",")
+
+repeatDeclParser :: Parser RepeatDecl
+repeatDeclParser = do
+    _ <- symbol "repeat"
+    countExpr <- exprParser
+    body <- braces (many statementParser)
+    pure
+        RepeatDecl
+            { repeatCount = countExpr
+            , repeatBody = body
+            }
 
 fnDeclParser :: Parser FnDecl
 fnDeclParser = do
