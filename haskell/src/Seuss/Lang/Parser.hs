@@ -123,13 +123,23 @@ nonRangeExprParser :: Parser Expr
 nonRangeExprParser = makeExprParser term operatorTable
 
 term :: Parser Expr
-term =
+term = do
+    baseExpr <- primaryTerm
+    indexExprs <- many indexSuffixParser
+    pure (foldl ExprIndex baseExpr indexExprs)
+
+primaryTerm :: Parser Expr
+primaryTerm =
     choice
         [ ExprValue <$> literalValueParser
         , ExprList <$> between (symbol "[") (symbol "]") (exprParser `sepBy` symbol ",")
         , ExprIdent <$> identifier
         , between (symbol "(") (symbol ")") exprParser
         ]
+
+indexSuffixParser :: Parser Expr
+indexSuffixParser =
+    between (symbol "[") (symbol "]") exprParser
 
 literalValueParser :: Parser Value
 literalValueParser =
