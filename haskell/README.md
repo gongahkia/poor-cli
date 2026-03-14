@@ -33,6 +33,14 @@ $ cabal test
 
 `png` and `pdf` are accepted at the CLI surface but still intentionally fail with an explicit message until those backends are ported.
 
+## Current language coverage additions
+
+- `if`, `else if`, and `else` conditional chains now parse and evaluate.
+- `for` loops support explicit list iterables like `[1, 2, 3]` and integer ranges like `1..3`.
+- `repeat <count> { ... }` loops now parse and evaluate.
+- `while <condition> { ... }` loops now parse and evaluate with a hard safety limit.
+- `import "path";` statements are parsed, and the loader inlines imported files recursively before evaluation.
+
 ## Current TUI additions
 
 - `?` toggles a help panel.
