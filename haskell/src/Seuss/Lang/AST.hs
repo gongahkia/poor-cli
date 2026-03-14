@@ -28,6 +28,8 @@ import Seuss.Model.Types (BinaryOp(..), TimelineKind(..), TypeField(..), Value(.
 data Expr
     = ExprValue Value
     | ExprIdent Text
+    | ExprList [Expr]
+    | ExprRange Expr Expr
     | ExprBinary BinaryOp Expr Expr
     deriving (Eq, Show)
 
