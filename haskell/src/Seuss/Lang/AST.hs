@@ -41,6 +41,7 @@ data TypeDecl = TypeDecl
     { typeDeclName :: Text
     , typeDeclParent :: Maybe Text
     , typeDeclFields :: [TypeField]
+    , typeDeclMeta :: Map Text Expr
     }
     deriving (Eq, Show)
 
