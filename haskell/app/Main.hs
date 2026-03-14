@@ -3,9 +3,9 @@
 module Main (main) where
 
 import Control.Monad (filterM, unless, when)
-import Data.List (isSuffixOf)
+import Data.List (isSuffixOf, sort)
+import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -116,7 +116,7 @@ runImport importOptions = do
 runRepl :: IO ()
 runRepl = do
     putStrLn "Seuss Haskell REPL"
-    putStrLn ":load <path> | :files | :world | :entities | :rels | :validate | :quit"
+    putStrLn ":load <path|index> | :files | :world | :entities | :rels | :validate | :timeline | :quit"
     replLoop initialReplState
 
 initialReplState :: ReplState
@@ -138,21 +138,44 @@ replLoop state = do
         [":q"] -> pure ()
         [":files"] -> do
             files <- discoverSeussFiles "."
-            mapM_ putStrLn files
+            mapM_ putStrLn (zipWith (\idx filePath -> show idx <> "  " <> filePath) [1 :: Int ..] files)
+            replLoop state
+        [":f"] -> do
+            files <- discoverSeussFiles "."
+            mapM_ putStrLn (zipWith (\idx filePath -> show idx <> "  " <> filePath) [1 :: Int ..] files)
             replLoop state
         [":world"] -> do
+            TIO.putStrLn (renderWorldSummary (replWorld state))
+            replLoop state
+        [":w"] -> do
             TIO.putStrLn (renderWorldSummary (replWorld state))
             replLoop state
         [":entities"] -> do
             mapM_ (TIO.putStrLn . renderEntitySummary) (Map.elems (worldEntities (replWorld state)))
             replLoop state
+        [":e"] -> do
+            mapM_ (TIO.putStrLn . renderEntitySummary) (Map.elems (worldEntities (replWorld state)))
+            replLoop state
         [":rels"] -> do
+            mapM_ (TIO.putStrLn . renderRelationshipSummary) (worldRelationships (replWorld state))
+            replLoop state
+        [":r"] -> do
             mapM_ (TIO.putStrLn . renderRelationshipSummary) (worldRelationships (replWorld state))
             replLoop state
         [":validate"] -> do
             reportDiagnostics (validateWorld (replWorld state))
             replLoop state
-        [":load", filePath] -> do
+        [":v"] -> do
+            reportDiagnostics (validateWorld (replWorld state))
+            replLoop state
+        [":timeline"] -> do
+            TIO.putStrLn (renderTimelineView (replWorld state))
+            replLoop state
+        [":t"] -> do
+            TIO.putStrLn (renderTimelineView (replWorld state))
+            replLoop state
+        [":load", target] -> do
+            filePath <- resolveLoadTarget target
             loaded <- loadSeussFile filePath
             reportDiagnostics (loadedDiagnostics loaded)
             replLoop
@@ -207,7 +230,7 @@ discoverSeussFiles root = do
     entries <- listDirectory root
     let filtered = filter (`notElem` [".git", "target", "dist-newstyle"]) entries
     paths <- traverse toPath filtered
-    pure (concat paths)
+    pure (sort (concat paths))
   where
     toPath entry = do
         let path = root </> entry
@@ -223,6 +246,45 @@ renderWorldSummary worldValue =
         , "entities: " <> T.pack (show (Map.size (worldEntities worldValue)))
         , "relationships: " <> T.pack (show (length (worldRelationships worldValue)))
         , "types: " <> T.pack (show (Map.size (worldTypes worldValue)))
+        ]
+
+renderTimelineView :: World -> Text
+renderTimelineView worldValue =
+    if null timelineLines
+        then "(no timelines loaded)\n"
+        else T.unlines timelineLines
+  where
+    timelineLines =
+        concatMap renderTimeline (Map.elems (worldTimelines worldValue))
+    renderTimeline timeline =
+        let matchingEntities =
+                [ entity
+                | entity <- Map.elems (worldEntities worldValue)
+                , any (\appearance -> appearanceTimeline appearance == timelineName timeline) (entityAppearances entity)
+                ]
+            header =
+                timelineName timeline
+                    <> " ["
+                    <> T.pack (show (timelineKind timeline))
+                    <> "] "
+                    <> T.pack (show (timePointOrdinal (timelineStart timeline)))
+                    <> ".."
+                    <> T.pack (show (timePointOrdinal (timelineEnd timeline)))
+            entityLines =
+                [ "  - " <> entityName entity <> " : " <> renderAppearanceRanges (timelineName timeline) entity
+                | entity <- matchingEntities
+                ]
+         in header : entityLines
+
+renderAppearanceRanges :: Text -> Entity -> Text
+renderAppearanceRanges timelineValue entity =
+    T.intercalate
+        ", "
+        [ T.pack (show (timePointOrdinal (rangeStart (appearanceRange appearance))))
+            <> ".."
+            <> T.pack (show (timePointOrdinal (rangeEnd (appearanceRange appearance))))
+        | appearance <- entityAppearances entity
+        , appearanceTimeline appearance == timelineValue
         ]
 
 renderEntitySummary :: Entity -> Text
@@ -251,3 +313,15 @@ failUnsupported :: String -> IO ()
 failUnsupported message = do
     putStrLn message
     exitFailure
+
+resolveLoadTarget :: String -> IO FilePath
+resolveLoadTarget target =
+    case reads target of
+        [(indexValue, "")] -> do
+            files <- discoverSeussFiles "."
+            case listToMaybe (drop (indexValue - 1) files) of
+                Just filePath -> pure filePath
+                Nothing -> do
+                    putStrLn ("No .seuss file at index " <> show indexValue)
+                    exitFailure
+        _ -> pure target
