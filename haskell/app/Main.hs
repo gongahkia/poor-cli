@@ -11,6 +11,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Options.Applicative (execParser)
 import Seuss.CLI.Options
+import Seuss.Config.Loader
 import Seuss.Core.Diff
 import Seuss.Core.Eval
 import Seuss.Core.Validation
@@ -43,33 +44,42 @@ data ReplState = ReplState
 main :: IO ()
 main = do
     options <- execParser optionsParserInfo
+    configValue <- loadConfig (optConfig options)
     when (optVerbose options) $
         putStrLn "Running Haskell Seuss implementation"
-    runCommand options
+    runCommand configValue options
 
-runCommand :: Options -> IO ()
-runCommand options =
+runCommand :: SeussConfig -> Options -> IO ()
+runCommand configValue options =
     case optCommand options of
         CommandRun filePath -> do
             loaded <- loadSeussFile filePath
             reportDiagnostics (loadedDiagnostics loaded)
             runSeussTui filePath (loadedWorld loaded)
-        CommandExport exportOpts -> runExport exportOpts
+        CommandExport exportOpts -> runExport configValue (optTheme options) exportOpts
         CommandCheck filePath -> runCheck filePath
         CommandDiff leftPath rightPath -> runDiff leftPath rightPath
         CommandImport importOpts -> runImport importOpts
         CommandRepl -> runRepl
 
-runExport :: ExportOptions -> IO ()
-runExport exportOptions = do
+runExport :: SeussConfig -> Maybe Text -> ExportOptions -> IO ()
+runExport configValue themeOverride exportOptions = do
     loaded <- loadSeussFile (exportFile exportOptions)
-    case exportFormat exportOptions of
+    themeValue <- resolveSvgTheme themeOverride configValue
+    case effectiveExportFormat configValue exportOptions of
         ExportSvg -> do
             let svgOptions =
                     defaultSvgOptions
-                        { svgWidth = fromMaybe (svgWidth defaultSvgOptions) (exportWidth exportOptions)
-                        , svgHeight = fromMaybe (svgHeight defaultSvgOptions) (exportHeight exportOptions)
+                        { svgWidth =
+                            fromMaybe
+                                (fromMaybe (svgWidth defaultSvgOptions) (configDefaultWidth configValue))
+                                (exportWidth exportOptions)
+                        , svgHeight =
+                            fromMaybe
+                                (fromMaybe (svgHeight defaultSvgOptions) (configDefaultHeight configValue))
+                                (exportHeight exportOptions)
                         , svgTitle = T.pack (takeBaseName (exportFile exportOptions))
+                        , svgTheme = themeValue
                         }
                 outputPath = fromMaybe (replaceExtension (exportFile exportOptions) "svg") (exportOutput exportOptions)
                 svgDocument = renderSvg svgOptions (computeLayout (loadedWorld loaded))
@@ -313,6 +323,16 @@ failUnsupported :: String -> IO ()
 failUnsupported message = do
     putStrLn message
     exitFailure
+
+effectiveExportFormat :: SeussConfig -> ExportOptions -> ExportFormat
+effectiveExportFormat configValue exportOptions =
+    case exportFormat exportOptions of
+        ExportSvg ->
+            case fmap T.toLower (configDefaultFormat configValue) of
+                Just "png" -> ExportPng
+                Just "pdf" -> ExportPdf
+                _ -> ExportSvg
+        explicitFormat -> explicitFormat
 
 resolveLoadTarget :: String -> IO FilePath
 resolveLoadTarget target =
