@@ -134,6 +134,8 @@ evalStmt state statement =
         StmtLet decl -> do
             value <- evalExpr state (letValue decl)
             pure state{evalEnv = Map.insert (letName decl) value (evalEnv state)}
+        StmtFor decl ->
+            evalForLoop state decl
         StmtFunction decl -> do
             let world' =
                     (evalWorld state)
@@ -246,3 +248,41 @@ evalElseBranches state ((conditionExpr, branchBody) : rest) elseBlock = do
                     , diagnosticSource = "evaluator"
                     , diagnosticMessage = "else-if condition must evaluate to a boolean"
                     }
+
+evalForLoop :: EvalState -> ForDecl -> Either Diagnostic EvalState
+evalForLoop state decl = do
+    values <- evalForIterable state (forIterable decl)
+    let previousBinding = Map.lookup (forVar decl) (evalEnv state)
+    iteratedState <-
+        foldM
+            ( \currentState value -> do
+                let scopedState =
+                        currentState
+                            { evalEnv =
+                                Map.insert (forVar decl) value (evalEnv currentState)
+                            }
+                foldM evalStmt scopedState (forBody decl)
+            )
+            state
+            values
+    pure iteratedState{evalEnv = restoreBinding previousBinding (forVar decl) (evalEnv iteratedState)}
+
+evalForIterable :: EvalState -> ForIterable -> Either Diagnostic [Value]
+evalForIterable state iterable =
+    case iterable of
+        ForRange startExpr endExpr -> do
+            startValue <- exprToInteger state startExpr
+            endValue <- exprToInteger state endExpr
+            pure $
+                map VInt $
+                    if startValue <= endValue
+                        then [startValue .. endValue]
+                        else reverse [endValue .. startValue]
+        ForList exprs ->
+            traverse (evalExpr state) exprs
+        ForExpr expr ->
+            pure . pure =<< evalExpr state expr
+
+restoreBinding :: Maybe Value -> Text -> Map Text Value -> Map Text Value
+restoreBinding Nothing name env = Map.delete name env
+restoreBinding (Just value) name env = Map.insert name value env
