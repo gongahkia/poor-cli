@@ -44,6 +44,8 @@ $ cabal test
 - typed closures like `|x: int| x + offset` now parse and evaluate with captured outer bindings.
 - a first builtin set is now wired up in the Haskell runtime: `len`, `before`, `after`, and `type_of`.
 - dot-based field access like `frodo.age` and `main.kind` now resolves against entity and timeline values already present in the world.
+- type declarations now parse optional fields like `age: int?` and metadata entries like `@title: "Leader"`.
+- entity field access now falls back through type metadata inheritance when the field is not set directly on the entity.
 - `for` loops can now iterate over bound list and range expressions, not just inline literals.
 - `let mut name = ...;` is accepted, and existing bindings can now be reassigned with `name = ...;`.
 - boolean logic now includes `&&` and `||`, and comparisons now include `!=`, `<=`, and `>=`.
