@@ -54,6 +54,7 @@ statementParser =
         , StmtTimeline <$> timelineDeclParser
         , StmtEntity <$> entityDeclParser
         , StmtRelationship <$> relationshipDeclParser
+        , StmtImport <$> importStmtParser
         , StmtLet <$> letDeclParser
         , StmtFunction <$> fnDeclParser
         , StmtIf <$> ifDeclParser
@@ -218,6 +219,13 @@ relationshipDeclParser = do
             , relationshipDeclDirected = directedValue
             , relationshipDeclTemporalScope = temporalScope
             }
+
+importStmtParser :: Parser Text
+importStmtParser = do
+    _ <- symbol "import"
+    pathValue <- stringLiteral
+    _ <- symbol ";"
+    pure pathValue
 
 letDeclParser :: Parser LetDecl
 letDeclParser = do
