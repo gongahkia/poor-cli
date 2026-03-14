@@ -1,5 +1,5 @@
-[![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/v1.0.0)
-[![](https://img.shields.io/badge/seuss_2.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/v2.0.0)
+[![](https://img.shields.io/badge/seuss_1.0.0-passing-light_green)](https://github.com/gongahkia/seuss/releases/tag/1.0.0)
+[![](https://img.shields.io/badge/seuss_2.0.0-passing-green)](https://github.com/gongahkia/seuss/releases/tag/2.0.0)
 ![](https://github.com/gongahkia/seuss/actions/workflows/ci.yml/badge.svg)
 ![](https://github.com/gongahkia/seuss/actions/workflows/release.yml/badge.svg)
 
