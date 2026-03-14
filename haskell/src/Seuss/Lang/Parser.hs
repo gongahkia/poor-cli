@@ -344,10 +344,16 @@ letDeclParser = do
     _ <- symbol "let"
     _ <- optional (symbol "mut")
     name <- identifier
+    typeAnnotation <- optional (symbol ":" *> identifier)
     _ <- symbol "="
     value <- exprParser
     _ <- optional (symbol ";")
-    pure (LetDecl name value)
+    pure
+        LetDecl
+            { letName = name
+            , letTypeAnnotation = typeAnnotation
+            , letValue = value
+            }
 
 assignStmtParser :: Parser (Text, Expr)
 assignStmtParser = do
