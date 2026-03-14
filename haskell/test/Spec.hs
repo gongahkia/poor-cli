@@ -388,6 +388,58 @@ spec = do
                             Map.member "precedence_hit" (worldEntities worldValue) `shouldBe` True
                             Map.member "comparison_hit" (worldEntities worldValue) `shouldBe` True
 
+    describe "index expression parsing and evaluation" $ do
+        it "parses postfix index expressions against identifiers" $ do
+            let source =
+                    T.unlines
+                        [ "let labels = [\"one\", \"two\"];"
+                        , "let second = labels[1];"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right (Program [StmtLet _, StmtLet decl]) ->
+                    letValue decl
+                        `shouldBe`
+                            ExprIndex
+                                (ExprIdent "labels")
+                                (ExprValue (VInt 1))
+                Right other ->
+                    expectationFailure ("unexpected parse result: " <> show other)
+
+        it "indexes into bound lists and string literals during evaluation" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: linear,"
+                        , "  start: 2000-01-01,"
+                        , "  end: 2000-12-31,"
+                        , "}"
+                        , ""
+                        , "let labels = [\"one\", \"two\"];"
+                        , "if labels[1] == \"two\" {"
+                        , "  entity list_index_hit : event {"
+                        , "    appears_on: main @ 2000-12-01..2000-12-02,"
+                        , "  }"
+                        , "}"
+                        , ""
+                        , "if \"abc\"[1] == \"b\" {"
+                        , "  entity string_index_hit : event {"
+                        , "    appears_on: main @ 2000-12-03..2000-12-04,"
+                        , "  }"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            Map.member "list_index_hit" (worldEntities worldValue) `shouldBe` True
+                            Map.member "string_index_hit" (worldEntities worldValue) `shouldBe` True
+
     describe "for-loop parsing and evaluation" $ do
         it "parses list and range iterables for for-loops" $ do
             let source =
