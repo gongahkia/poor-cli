@@ -20,7 +20,9 @@ use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::app::{App, AppMode, MessageRole, ThemeMode};
+use crate::app::{
+    App, AppMode, MessageRole, ThemeMode, TimelineEntryKind, TranscriptSearchItemKind,
+};
 use crate::input::{command_palette_matches, SlashCommandSpec};
 use crate::markdown;
 use crate::theme;
@@ -43,14 +45,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
         vec![
             Constraint::Length(1),            // status bar
             Constraint::Length(1),            // presence bar
-            Constraint::Min(5),              // chat area
+            Constraint::Min(5),               // chat area
             Constraint::Length(input_height), // input area
             Constraint::Length(1),            // hint bar
         ]
     } else {
         vec![
             Constraint::Length(1),            // status bar
-            Constraint::Min(5),              // chat area
+            Constraint::Min(5),               // chat area
             Constraint::Length(input_height), // input area
             Constraint::Length(1),            // hint bar
         ]
@@ -83,6 +85,21 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
     if app.mode == AppMode::PermissionPrompt {
         draw_permission_prompt(frame, app);
+    }
+    if app.mode == AppMode::MutationReview {
+        draw_mutation_review(frame, app);
+    }
+    if app.mode == AppMode::ContextInspector {
+        draw_context_inspector(frame, app);
+    }
+    if app.mode == AppMode::QuickOpen {
+        draw_quick_open(frame, app);
+    }
+    if app.mode == AppMode::Timeline {
+        draw_timeline(frame, app);
+    }
+    if app.mode == AppMode::TranscriptSearch {
+        draw_transcript_search(frame, app);
     }
     if app.mode == AppMode::PlanReview {
         draw_plan_review(frame, app);
@@ -246,11 +263,44 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
+    if !app.git_branch.is_empty() {
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        let dirty = if app.git_dirty { "*" } else { "" };
+        spans.push(Span::styled(
+            format!("git:{}{}", app.git_branch, dirty),
+            Style::default().fg(theme::accent(mode)),
+        ));
+    }
+
+    spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+    spans.push(Span::styled(
+        format!(
+            "ctx:{}f/{}tok",
+            app.context_budget_files.len(),
+            app.context_budget_tokens
+        ),
+        Style::default().fg(theme::muted_fg(mode)),
+    ));
+
+    spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+    spans.push(Span::styled(
+        format!("perm:{}", app.permission_mode_label),
+        Style::default().fg(theme::muted_fg(mode)),
+    ));
+
     if !app.prompt_queue.is_empty() {
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
         spans.push(Span::styled(
             format!("queue:{}", app.prompt_queue.len()),
             Style::default().fg(theme::accent(mode)),
+        ));
+    }
+
+    if !app.active_request_id.is_empty() {
+        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
+        spans.push(Span::styled(
+            format!("req:{}", ellipsize_middle(&app.active_request_id, 14)),
+            Style::default().fg(theme::warning(mode)),
         ));
     }
 
@@ -292,10 +342,7 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
         if i > 0 {
             spans.push(Span::styled(" · ", Style::default().fg(dim)));
         }
-        spans.push(Span::styled(
-            format!("{}", i + 1),
-            Style::default().fg(dim),
-        ));
+        spans.push(Span::styled(format!("{}", i + 1), Style::default().fg(dim)));
         spans.push(Span::styled(" ", Style::default()));
         let role_color = match user.role {
             crate::app::PairRole::Driver => theme::success(mode),
@@ -310,10 +357,7 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(theme::base_fg(mode)),
         ));
         if user.is_active {
-            spans.push(Span::styled(
-                " ●",
-                Style::default().fg(theme::accent(mode)),
-            ));
+            spans.push(Span::styled(" ●", Style::default().fg(theme::accent(mode))));
         }
     }
     if app.multiplayer_queue_depth > 0 {
@@ -609,7 +653,10 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
         let wait_msg = if app.prompt_queue.is_empty() {
             " Waiting for response... (type to queue) ".to_string()
         } else {
-            format!(" Waiting... ({} queued, type to add more) ", app.prompt_queue.len())
+            format!(
+                " Waiting... ({} queued, type to add more) ",
+                app.prompt_queue.len()
+            )
         };
         let prompt_spans = vec![
             Span::styled("  ", Style::default()),
@@ -682,6 +729,108 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
         ]
+    } else if app.mode == AppMode::ContextInspector {
+        vec![
+            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": select  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("d", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": remove attachment  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("c", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": copy summary  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::MutationReview {
+        let approve_file_label = if app
+            .mutation_review
+            .as_ref()
+            .map(|review| review.paths.len() > 1)
+            .unwrap_or(false)
+        {
+            ": approve selected file  "
+        } else {
+            ": approve file  "
+        };
+        let supports_chunk_approval = app
+            .mutation_review
+            .as_ref()
+            .map(|review| review.supports_chunk_approval())
+            .unwrap_or(false);
+        vec![
+            Span::styled("  y/Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": approve  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("n/Esc", Style::default().fg(theme::error(mode))),
+            Span::styled(": reject  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Space", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                if supports_chunk_approval {
+                    ": toggle hunk  "
+                } else {
+                    ": no-op  "
+                },
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("h", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                if supports_chunk_approval {
+                    ": approve hunks  "
+                } else {
+                    ": no-op  "
+                },
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("f", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                approve_file_label,
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("u", Style::default().fg(theme::accent(mode))),
+            Span::styled(": undo  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("o", Style::default().fg(theme::accent(mode))),
+            Span::styled(": open file", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::QuickOpen {
+        vec![
+            Span::styled("  type", Style::default().fg(theme::accent(mode))),
+            Span::styled(": filter  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": move  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": open  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::Timeline {
+        vec![
+            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("c", Style::default().fg(theme::accent(mode))),
+            Span::styled(": copy diff  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("u", Style::default().fg(theme::accent(mode))),
+            Span::styled(": undo  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::TranscriptSearch {
+        vec![
+            Span::styled("  type", Style::default().fg(theme::accent(mode))),
+            Span::styled(": search  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": select  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Tab", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": filter group  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
     } else if app.mode == AppMode::Command {
         // Show matching commands
         let prefix = &app.input_buffer;
@@ -742,6 +891,14 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("  /switch", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("  Ctrl+C", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": cancel  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+I", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": context  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+P", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": quick open  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+T", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": timeline  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+F", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": search  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Esc", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": cancel  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Alt+↵", Style::default().fg(theme::muted_fg(mode))),
@@ -904,7 +1061,9 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
 
 fn annotate_copyable_items(content: &str) -> String {
     let parts: Vec<&str> = content.split('`').collect();
-    if parts.len() < 3 { return content.to_string(); } // no backtick pairs
+    if parts.len() < 3 {
+        return content.to_string();
+    } // no backtick pairs
     let mut result = String::with_capacity(content.len() + 64);
     let mut copy_idx = 0usize;
     for (i, part) in parts.iter().enumerate() {
@@ -1009,6 +1168,608 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
     frame.render_widget(para, area);
 }
 
+fn draw_mutation_review(frame: &mut Frame, app: &App) {
+    let Some(review) = app.mutation_review.as_ref() else {
+        return;
+    };
+    let mode = app.theme_mode;
+    let area = centered_rect(82, 82, frame.area());
+    frame.render_widget(Clear, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7),
+            Constraint::Min(10),
+            Constraint::Length(2),
+        ])
+        .split(area);
+
+    let mut header_lines = vec![
+        Line::from(vec![
+            Span::styled(" Review Before Apply ", theme::tool_title_style(mode)),
+            Span::styled(
+                format!("  {} / {}", review.tool_name, review.operation),
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+        ]),
+        Line::from(Span::styled(
+            if review.message.is_empty() {
+                "Pending mutation preview".to_string()
+            } else {
+                review.message.clone()
+            },
+            Style::default().fg(theme::base_fg(mode)),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "checkpoint: {}    changed: {}",
+                review.checkpoint_id.as_deref().unwrap_or("(pending)"),
+                review
+                    .changed
+                    .map(|changed| changed.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            ),
+            Style::default().fg(theme::muted_fg(mode)),
+        )),
+    ];
+    if review.supports_chunk_approval() {
+        let selected_count = review.chunks.iter().filter(|chunk| chunk.selected).count();
+        header_lines.push(Line::from(Span::styled(
+            format!(
+                "hunks: {} selected / {} total",
+                selected_count,
+                review.chunks.len()
+            ),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    }
+    if review.paths.is_empty() {
+        header_lines.push(Line::from(Span::styled(
+            "paths: (none reported)".to_string(),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    } else {
+        for (idx, path) in review.paths.iter().enumerate().take(3) {
+            let marker = if idx == review.selected_path_index {
+                "▸"
+            } else {
+                " "
+            };
+            header_lines.push(Line::from(Span::styled(
+                format!("{marker} {path}"),
+                if idx == review.selected_path_index {
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme::muted_fg(mode))
+                },
+            )));
+        }
+        if review.paths.len() > 3 {
+            header_lines.push(Line::from(Span::styled(
+                format!("… {} more paths", review.paths.len() - 3),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+    }
+
+    let header = Paragraph::new(header_lines).block(
+        Block::default()
+            .title(Span::styled(
+                " Mutation Review ",
+                Style::default()
+                    .fg(theme::warning(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::warning(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(header, chunks[0]);
+
+    let mut diff_lines: Vec<Line<'static>> = Vec::new();
+    if review.diff.trim().is_empty() {
+        diff_lines.push(Line::from(Span::styled(
+            "No diff available for this mutation preview.".to_string(),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    } else if review.chunks.is_empty() {
+        diff_lines.extend(review.diff.lines().take(60).map(|line| {
+            let style = if line.starts_with('+') && !line.starts_with("+++") {
+                Style::default().fg(theme::success(mode))
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                Style::default().fg(theme::error(mode))
+            } else if line.starts_with("@@") {
+                Style::default().fg(theme::accent(mode))
+            } else {
+                Style::default().fg(theme::base_fg(mode))
+            };
+            Line::from(Span::styled(line.to_string(), style))
+        }));
+    } else {
+        for (index, chunk) in review.chunks.iter().enumerate() {
+            let selected = index == review.selected_chunk_index;
+            let marker = if chunk.selected { "[x]" } else { "[ ]" };
+            diff_lines.push(Line::from(vec![
+                Span::styled(
+                    format!(
+                        "{} {} hunk {}",
+                        if selected { "▸" } else { " " },
+                        marker,
+                        chunk.hunk_index + 1
+                    ),
+                    if selected {
+                        Style::default()
+                            .fg(theme::accent(mode))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme::muted_fg(mode))
+                    },
+                ),
+                Span::styled(
+                    format!("  {}  {}", chunk.path, chunk.header),
+                    Style::default().fg(theme::base_fg(mode)),
+                ),
+            ]));
+            if selected {
+                for line in chunk.diff.lines().take(12) {
+                    let style = if line.starts_with('+') && !line.starts_with("+++") {
+                        Style::default().fg(theme::success(mode))
+                    } else if line.starts_with('-') && !line.starts_with("---") {
+                        Style::default().fg(theme::error(mode))
+                    } else if line.starts_with("@@") {
+                        Style::default().fg(theme::accent(mode))
+                    } else {
+                        Style::default().fg(theme::muted_fg(mode))
+                    };
+                    diff_lines.push(Line::from(Span::styled(format!("    {line}"), style)));
+                }
+            }
+            diff_lines.push(Line::from(""));
+        }
+    }
+    let diff = Paragraph::new(Text::from(diff_lines))
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Diff ",
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::input_border_color(mode)))
+                .padding(Padding::new(1, 1, 0, 0)),
+        );
+    frame.render_widget(diff, chunks[1]);
+
+    let footer = Paragraph::new(Line::from(vec![
+        Span::styled(" y/Enter ", Style::default().fg(theme::success(mode))),
+        Span::styled("approve  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" n/Esc ", Style::default().fg(theme::error(mode))),
+        Span::styled("reject  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" Space ", Style::default().fg(theme::accent(mode))),
+        Span::styled("toggle hunk  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" h ", Style::default().fg(theme::accent(mode))),
+        Span::styled("approve hunks  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" f ", Style::default().fg(theme::accent(mode))),
+        Span::styled(
+            if review.paths.len() > 1 {
+                "approve selected file  "
+            } else {
+                "approve file  "
+            },
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
+        Span::styled(" u ", Style::default().fg(theme::accent(mode))),
+        Span::styled("undo  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(" o ", Style::default().fg(theme::accent(mode))),
+        Span::styled("open file", Style::default().fg(theme::muted_fg(mode))),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::input_border_color(mode))),
+    );
+    frame.render_widget(footer, chunks[2]);
+}
+
+fn draw_context_inspector(frame: &mut Frame, app: &App) {
+    let Some(inspector) = app.context_inspector.as_ref() else {
+        return;
+    };
+    let mode = app.theme_mode;
+    let area = centered_rect(82, 82, frame.area());
+    frame.render_widget(Clear, area);
+
+    let mut lines: Vec<Line<'static>> = vec![Line::from(Span::styled(
+        format!(
+            "Context budget: {} tokens  •  selected: ~{}  •  truncated: {}",
+            inspector.budget_tokens, inspector.total_tokens, inspector.truncated
+        ),
+        Style::default().fg(theme::muted_fg(mode)),
+    ))];
+    if !inspector.message.is_empty() {
+        lines.push(Line::from(Span::styled(
+            inspector.message.clone(),
+            Style::default().fg(theme::base_fg(mode)),
+        )));
+    }
+    if !inspector.keywords.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("keywords: {}", inspector.keywords.join(", ")),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    }
+    lines.push(Line::from(""));
+
+    for group in ["explicit", "pinned", "git", "auto"] {
+        let group_files: Vec<_> = inspector
+            .files
+            .iter()
+            .enumerate()
+            .filter(|(_, file)| file.source == group)
+            .collect();
+        if group_files.is_empty() {
+            continue;
+        }
+        lines.push(Line::from(Span::styled(
+            format!("{} files", group.to_uppercase()),
+            Style::default()
+                .fg(theme::accent(mode))
+                .add_modifier(Modifier::BOLD),
+        )));
+        for (index, file) in group_files {
+            let marker = if index == inspector.selected_index {
+                "▸"
+            } else {
+                " "
+            };
+            let label_style = if index == inspector.selected_index {
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::base_fg(mode))
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{marker} "), label_style),
+                Span::styled(file.path.clone(), label_style),
+                Span::styled(
+                    format!(
+                        "  (~{} tok{})",
+                        file.estimated_tokens,
+                        if file.include_full_content {
+                            ", full"
+                        } else {
+                            ""
+                        }
+                    ),
+                    Style::default().fg(theme::muted_fg(mode)),
+                ),
+            ]));
+            if !file.reason.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", file.reason),
+                    Style::default().fg(theme::muted_fg(mode)),
+                )));
+            }
+        }
+        lines.push(Line::from(""));
+    }
+
+    let para = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .title(Span::styled(
+                " Context Inspector ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 1, 1)),
+    );
+    frame.render_widget(para, area);
+}
+
+fn draw_quick_open(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(72, 70, frame.area());
+    frame.render_widget(Clear, area);
+
+    let query = app.quick_open.query.trim().to_lowercase();
+    let filtered: Vec<_> = app
+        .quick_open
+        .items
+        .iter()
+        .filter(|item| {
+            query.is_empty()
+                || item.label.to_lowercase().contains(&query)
+                || item.detail.to_lowercase().contains(&query)
+                || item.value.to_lowercase().contains(&query)
+        })
+        .take(12)
+        .collect();
+
+    let items: Vec<ListItem> = filtered
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let is_selected = idx == app.quick_open.selected_index;
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::base_fg(mode))
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(if is_selected { "▸ " } else { "  " }, style),
+                Span::styled(item.label.clone(), style),
+                Span::styled(
+                    format!("  {}", item.detail),
+                    Style::default().fg(theme::muted_fg(mode)),
+                ),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .title(Span::styled(
+                format!(" Quick Open  query=`{}` ", app.quick_open.query),
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 1, 1)),
+    );
+    frame.render_widget(list, area);
+}
+
+fn draw_timeline(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(82, 82, frame.area());
+    frame.render_widget(Clear, area);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for entry in app.timeline_entries.iter().rev() {
+        let (label, color) = match entry.kind {
+            TimelineEntryKind::Phase => ("phase", theme::accent(mode)),
+            TimelineEntryKind::ToolCall => ("call", theme::warning(mode)),
+            TimelineEntryKind::ToolResult => ("result", theme::success(mode)),
+            TimelineEntryKind::Permission => ("review", theme::warning(mode)),
+            TimelineEntryKind::Diff => ("diff", theme::accent(mode)),
+            TimelineEntryKind::Cost => ("cost", theme::muted_fg(mode)),
+            TimelineEntryKind::Note => ("note", theme::system_color(mode)),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("[{label}] "), Style::default().fg(color)),
+            Span::styled(
+                entry.title.clone(),
+                Style::default()
+                    .fg(theme::base_fg(mode))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        if !entry.detail.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", entry.detail),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+        if !entry.paths.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("  paths: {}", entry.paths.join(", ")),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+        if let Some(checkpoint_id) = &entry.checkpoint_id {
+            lines.push(Line::from(Span::styled(
+                format!("  checkpoint: {checkpoint_id}"),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+        if !entry.diff.is_empty() {
+            for diff_line in entry.diff.lines().take(8) {
+                let style = if diff_line.starts_with('+') && !diff_line.starts_with("+++") {
+                    Style::default().fg(theme::success(mode))
+                } else if diff_line.starts_with('-') && !diff_line.starts_with("---") {
+                    Style::default().fg(theme::error(mode))
+                } else if diff_line.starts_with("@@") {
+                    Style::default().fg(theme::accent(mode))
+                } else {
+                    Style::default().fg(theme::muted_fg(mode))
+                };
+                lines.push(Line::from(Span::styled(format!("  {diff_line}"), style)));
+            }
+        }
+        lines.push(Line::from(""));
+    }
+
+    let para = Paragraph::new(lines)
+        .scroll((app.timeline_scroll, 0))
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Agent Timeline ",
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::accent(mode)))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
+    frame.render_widget(para, area);
+}
+
+fn draw_transcript_search(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(84, 84, frame.area());
+    frame.render_widget(Clear, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(10),
+            Constraint::Length(2),
+        ])
+        .split(area);
+
+    let filters = if app.transcript_search.include_messages
+        && app.transcript_search.include_tools
+        && app.transcript_search.include_diffs
+    {
+        "all"
+    } else if app.transcript_search.include_messages {
+        "messages"
+    } else if app.transcript_search.include_tools {
+        "tools"
+    } else if app.transcript_search.include_diffs {
+        "diffs"
+    } else {
+        "none"
+    };
+
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" Query: ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                if app.transcript_search.query.is_empty() {
+                    "(latest transcript entries)".to_string()
+                } else {
+                    app.transcript_search.query.clone()
+                },
+                Style::default().fg(theme::base_fg(mode)),
+            ),
+        ]),
+        Line::from(Span::styled(
+            format!("Filter group: {filters}  •  Tab cycles all / messages / tools / diffs"),
+            Style::default().fg(theme::muted_fg(mode)),
+        )),
+    ])
+    .block(
+        Block::default()
+            .title(Span::styled(
+                " Transcript Search ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(header, chunks[0]);
+
+    let items = app.transcript_search_items();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if items.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No transcript entries match the current search.",
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    } else {
+        for (idx, item) in items.iter().enumerate() {
+            let selected = idx == app.transcript_search.selected_index;
+            let accent = if selected {
+                theme::accent(mode)
+            } else {
+                theme::muted_fg(mode)
+            };
+            let kind_label = match item.kind {
+                TranscriptSearchItemKind::Message => "msg",
+                TranscriptSearchItemKind::Tool => "tool",
+                TranscriptSearchItemKind::Diff => "diff",
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    if selected { "▸ " } else { "  " },
+                    Style::default().fg(accent),
+                ),
+                Span::styled(format!("[{kind_label}] "), Style::default().fg(accent)),
+                Span::styled(
+                    item.label.clone(),
+                    Style::default()
+                        .fg(theme::base_fg(mode))
+                        .add_modifier(if selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ),
+            ]));
+
+            if !item.paths.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("    paths: {}", item.paths.join(", ")),
+                    Style::default().fg(theme::muted_fg(mode)),
+                )));
+            }
+
+            let detail = if item.kind == TranscriptSearchItemKind::Diff && !item.diff.is_empty() {
+                item.diff.clone()
+            } else {
+                item.detail.clone()
+            };
+            for detail_line in detail.lines().take(if selected { 8 } else { 2 }) {
+                let style = if detail_line.starts_with('+') && !detail_line.starts_with("+++") {
+                    Style::default().fg(theme::success(mode))
+                } else if detail_line.starts_with('-') && !detail_line.starts_with("---") {
+                    Style::default().fg(theme::error(mode))
+                } else if detail_line.starts_with("@@") {
+                    Style::default().fg(theme::accent(mode))
+                } else {
+                    Style::default().fg(theme::muted_fg(mode))
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("    {detail_line}"),
+                    style,
+                )));
+            }
+            lines.push(Line::from(""));
+        }
+    }
+
+    let body = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .title(Span::styled(
+                format!(" Results ({}) ", items.len()),
+                Style::default()
+                    .fg(theme::input_border_color(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::input_border_color(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(body, chunks[1]);
+
+    let footer = Paragraph::new(Line::from(vec![
+        Span::styled(" type ", Style::default().fg(theme::accent(mode))),
+        Span::styled("search  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled("Tab ", Style::default().fg(theme::accent(mode))),
+        Span::styled("cycle filter  ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled("Esc ", Style::default().fg(theme::accent(mode))),
+        Span::styled("close", Style::default().fg(theme::muted_fg(mode))),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::input_border_color(mode))),
+    );
+    frame.render_widget(footer, chunks[2]);
+}
+
 // ── Plan review overlay ──────────────────────────────────────────────
 
 fn draw_plan_review(frame: &mut Frame, app: &App) {
@@ -1100,7 +1861,11 @@ fn draw_compact_select(frame: &mut Frame, app: &App) {
         .iter()
         .enumerate()
         .map(|(i, (key, desc))| {
-            let marker = if i == app.compact_select_idx { "▸ " } else { "  " };
+            let marker = if i == app.compact_select_idx {
+                "▸ "
+            } else {
+                "  "
+            };
             let style = if i == app.compact_select_idx {
                 Style::default()
                     .fg(theme::accent(mode))
@@ -1120,7 +1885,11 @@ fn draw_compact_select(frame: &mut Frame, app: &App) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme::accent(mode)))
             .title(" Context Strategy (↑/↓ Enter) ")
-            .title_style(Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD))
+            .title_style(
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            )
             .padding(Padding::new(1, 1, 1, 0)),
     );
     frame.render_widget(list, popup_area);
@@ -1142,7 +1911,9 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
         Line::from(""),
         Line::from(Span::styled(
             format!("  Join Server — Step {step_label}"),
-            Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::accent(mode))
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -1181,7 +1952,9 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
         Block::default()
             .title(Span::styled(
                 " Join Server ",
-                Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(theme::accent(mode)))

@@ -1,5 +1,5 @@
 /// Input handling: keyboard events, slash-command completion, etc.
-use crate::app::{App, AppMode};
+use crate::app::{App, AppMode, QuickOpenItem};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 /// Outcome of processing one input event.
@@ -28,6 +28,20 @@ pub enum InputAction {
     CopyToClipboard(String),
     /// Join wizard completed with (url, room, token).
     JoinWizardComplete(String, String, String),
+    /// Open the backend-owned context inspector.
+    OpenContextInspector,
+    /// Open the combined quick-open palette.
+    OpenQuickOpen,
+    /// Open the agent timeline panel.
+    OpenTimeline,
+    /// Open transcript search and filter.
+    OpenTranscriptSearch,
+    /// Execute the selected quick-open item.
+    QuickOpenSelected(QuickOpenItem),
+    /// Restore the last mutation checkpoint.
+    RestoreLastMutation,
+    /// Open a file in the user's editor.
+    OpenFileInEditor(String),
 }
 
 /// Metadata for slash-command completion and palette rendering.
@@ -166,6 +180,21 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: false,
     },
     SlashCommandSpec {
+        command: "/context",
+        description: "Open backend context inspector",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/timeline",
+        description: "Open agent timeline and diffs",
+        recommended: true,
+    },
+    SlashCommandSpec {
+        command: "/search",
+        description: "Search transcript, tools, and diffs",
+        recommended: true,
+    },
+    SlashCommandSpec {
         command: "/autopilot",
         description: "Toggle bounded autonomous execution mode",
         recommended: false,
@@ -272,7 +301,7 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     },
     SlashCommandSpec {
         command: "/plan-mode",
-        description: "Toggle plan mode",
+        description: "Toggle experimental plan-mode flag",
         recommended: false,
     },
     SlashCommandSpec {
@@ -621,6 +650,18 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
                 }
                 return InputAction::Redraw;
             }
+            KeyCode::Char('i') => {
+                return InputAction::OpenContextInspector;
+            }
+            KeyCode::Char('p') => {
+                return InputAction::OpenQuickOpen;
+            }
+            KeyCode::Char('t') => {
+                return InputAction::OpenTimeline;
+            }
+            KeyCode::Char('f') => {
+                return InputAction::OpenTranscriptSearch;
+            }
             _ => {}
         }
     }
@@ -632,6 +673,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         AppMode::CompactSelect => handle_key_compact_select(app, key),
         AppMode::InfoPopup => handle_key_info_popup(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
+        AppMode::MutationReview => handle_key_mutation_review(app, key),
+        AppMode::ContextInspector => handle_key_context_inspector(app, key),
+        AppMode::QuickOpen => handle_key_quick_open(app, key),
+        AppMode::Timeline => handle_key_timeline(app, key),
+        AppMode::TranscriptSearch => handle_key_transcript_search(app, key),
         AppMode::PlanReview => handle_key_plan_review(app, key),
         AppMode::JoinWizard => handle_key_join_wizard(app, key),
         AppMode::Quitting => InputAction::Quit,
@@ -824,7 +870,8 @@ fn extract_copyable_items(content: &str) -> Vec<String> {
         }
     }
     // keep only the odd-indexed (inside-backtick) entries, skip empty/trivial
-    content.split('`')
+    content
+        .split('`')
         .enumerate()
         .filter(|(i, s)| i % 2 == 1 && !s.trim().is_empty())
         .map(|(_, s)| s.to_string())
@@ -902,8 +949,11 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
         KeyCode::Enter => {
             let input = app.join_wizard_input.trim().to_string();
             match app.join_wizard_step {
-                0 => { // URL step
-                    if input.is_empty() || !(input.starts_with("ws://") || input.starts_with("wss://")) {
+                0 => {
+                    // URL step
+                    if input.is_empty()
+                        || !(input.starts_with("ws://") || input.starts_with("wss://"))
+                    {
                         app.join_wizard_error = "URL must start with ws:// or wss://".to_string();
                         return InputAction::Redraw;
                     }
@@ -920,7 +970,8 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
                     }
                     InputAction::Redraw
                 }
-                1 => { // room step
+                1 => {
+                    // room step
                     if input.is_empty() {
                         app.join_wizard_error = "Room name cannot be empty.".to_string();
                         return InputAction::Redraw;
@@ -931,7 +982,8 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
                     app.join_wizard_step = 2;
                     InputAction::Redraw
                 }
-                2 => { // token step
+                2 => {
+                    // token step
                     if input.is_empty() {
                         app.join_wizard_error = "Token cannot be empty.".to_string();
                         return InputAction::Redraw;
@@ -961,14 +1013,454 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
 fn handle_key_permission(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+            app.permission_approved_paths.clear();
             app.permission_answer = Some(true);
             app.mode = AppMode::Normal;
             InputAction::PermissionAnswered(true)
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            app.permission_approved_paths.clear();
             app.permission_answer = Some(false);
             app.mode = AppMode::Normal;
             InputAction::PermissionAnswered(false)
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputAction {
+    if app.mutation_review.is_none() {
+        app.mode = AppMode::Normal;
+        return InputAction::Redraw;
+    }
+
+    match key.code {
+        KeyCode::Up => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if !review.chunks.is_empty() {
+                review.selected_chunk_index = review.selected_chunk_index.saturating_sub(1);
+                review.sync_selected_path_from_chunk();
+            } else if review.selected_path_index > 0 {
+                review.selected_path_index -= 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if !review.chunks.is_empty() {
+                if review.selected_chunk_index + 1 < review.chunks.len() {
+                    review.selected_chunk_index += 1;
+                    review.sync_selected_path_from_chunk();
+                }
+            } else if review.selected_path_index + 1 < review.paths.len() {
+                review.selected_path_index += 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Char(' ') => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() {
+                let mut status_message: Option<String> = None;
+                if let Some(chunk) = review.chunks.get_mut(review.selected_chunk_index) {
+                    chunk.selected = !chunk.selected;
+                    status_message = Some(format!(
+                        "{} chunk {} for {}",
+                        if chunk.selected { "Selected" } else { "Cleared" },
+                        chunk.hunk_index + 1,
+                        chunk.path
+                    ));
+                }
+                if let Some(message) = status_message {
+                    app.set_status(message);
+                }
+                return InputAction::Redraw;
+            }
+            InputAction::None
+        }
+        KeyCode::Char('a') | KeyCode::Char('A') => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() {
+                for chunk in &mut review.chunks {
+                    chunk.selected = true;
+                }
+                app.set_status("Selected all hunks in the pending patch");
+                return InputAction::Redraw;
+            }
+            InputAction::None
+        }
+        KeyCode::Char('x') | KeyCode::Char('X') => {
+            let review = app
+                .mutation_review
+                .as_mut()
+                .expect("review state must exist");
+            if review.supports_chunk_approval() {
+                for chunk in &mut review.chunks {
+                    chunk.selected = false;
+                }
+                app.set_status("Cleared hunk selection");
+                return InputAction::Redraw;
+            }
+            InputAction::None
+        }
+        KeyCode::Char('c') | KeyCode::Char('C') => {
+            let diff = app
+                .mutation_review
+                .as_ref()
+                .map(|review| review.diff.clone())
+                .unwrap_or_default();
+            InputAction::CopyToClipboard(diff)
+        }
+        KeyCode::Char('o') | KeyCode::Char('O') => app
+            .mutation_review
+            .as_ref()
+            .and_then(|review| {
+                review
+                    .selected_chunk()
+                    .map(|chunk| chunk.path.clone())
+                    .or_else(|| review.paths.get(review.selected_path_index).cloned())
+            })
+            .map(InputAction::OpenFileInEditor)
+            .unwrap_or(InputAction::None),
+        KeyCode::Char('u') | KeyCode::Char('U') => InputAction::RestoreLastMutation,
+        KeyCode::Char('h') | KeyCode::Char('H') => {
+            let supports_chunk_approval = app
+                .mutation_review
+                .as_ref()
+                .map(|review| review.supports_chunk_approval())
+                .unwrap_or(false);
+            if !supports_chunk_approval {
+                return InputAction::None;
+            }
+            let mut approved_chunks = app
+                .mutation_review
+                .as_ref()
+                .map(|review| review.approved_chunks())
+                .unwrap_or_default();
+            if approved_chunks.is_empty() {
+                if let Some(chunk) = app
+                    .mutation_review
+                    .as_ref()
+                    .and_then(|review| review.selected_chunk())
+                {
+                    approved_chunks.push(crate::app::ApprovedReviewChunk {
+                        path: chunk.path.clone(),
+                        hunk_index: chunk.hunk_index,
+                    });
+                }
+            }
+            if approved_chunks.is_empty() {
+                return InputAction::None;
+            }
+            app.permission_approved_paths.clear();
+            app.permission_approved_chunks = approved_chunks;
+            app.permission_answer = Some(true);
+            app.mode = AppMode::Normal;
+            InputAction::PermissionAnswered(true)
+        }
+        KeyCode::Char('f') | KeyCode::Char('F') => {
+            if let Some(path) = app
+                .mutation_review
+                .as_ref()
+                .and_then(|review| {
+                    review
+                        .selected_chunk()
+                        .map(|chunk| chunk.path.clone())
+                        .or_else(|| review.paths.get(review.selected_path_index).cloned())
+                })
+            {
+                app.permission_approved_paths = vec![path];
+                app.permission_approved_chunks.clear();
+                app.set_status("Approved selected file from the pending mutation");
+            } else {
+                app.permission_approved_paths.clear();
+                app.permission_approved_chunks.clear();
+            }
+            app.permission_answer = Some(true);
+            app.mode = AppMode::Normal;
+            InputAction::PermissionAnswered(true)
+        }
+        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+            app.permission_approved_paths.clear();
+            app.permission_approved_chunks.clear();
+            app.permission_answer = Some(true);
+            app.mode = AppMode::Normal;
+            InputAction::PermissionAnswered(true)
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            app.permission_approved_paths.clear();
+            app.permission_approved_chunks.clear();
+            app.permission_answer = Some(false);
+            app.mode = AppMode::Normal;
+            InputAction::PermissionAnswered(false)
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_context_inspector(app: &mut App, key: KeyEvent) -> InputAction {
+    if app.context_inspector.is_none() {
+        app.mode = AppMode::Normal;
+        return InputAction::Redraw;
+    }
+
+    match key.code {
+        KeyCode::Up => {
+            let inspector = app
+                .context_inspector
+                .as_mut()
+                .expect("context inspector must exist");
+            if inspector.selected_index > 0 {
+                inspector.selected_index -= 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            let inspector = app
+                .context_inspector
+                .as_mut()
+                .expect("context inspector must exist");
+            if inspector.selected_index + 1 < inspector.files.len() {
+                inspector.selected_index += 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Char('c') | KeyCode::Char('C') => {
+            let summary = app
+                .context_inspector
+                .as_ref()
+                .map(|inspector| {
+                    inspector
+                        .files
+                        .iter()
+                        .map(|file| {
+                            format!(
+                                "{} [{}] ~{} tok",
+                                file.path, file.source, file.estimated_tokens
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default();
+            InputAction::CopyToClipboard(summary)
+        }
+        KeyCode::Char('d') | KeyCode::Char('D') => {
+            let maybe_file = app
+                .context_inspector
+                .as_ref()
+                .and_then(|inspector| inspector.files.get(inspector.selected_index).cloned());
+            let selected_index = app
+                .context_inspector
+                .as_ref()
+                .map(|inspector| inspector.selected_index)
+                .unwrap_or(0);
+            if let Some(file) = maybe_file {
+                if let Some(spec) = file.explicit_spec {
+                    if file.source == "pinned" {
+                        app.pinned_context_files.retain(|entry| entry != &spec);
+                        app.set_status(format!("Removed pinned context: {spec}"));
+                    } else if file.source == "explicit" {
+                        let quoted = format!("@\"{spec}\"");
+                        let plain = format!("@{spec}");
+                        if app.input_buffer.contains(&quoted) {
+                            app.input_buffer = app.input_buffer.replacen(&quoted, "", 1);
+                        } else if app.input_buffer.contains(&plain) {
+                            app.input_buffer = app.input_buffer.replacen(&plain, "", 1);
+                        }
+                        app.input_buffer = app
+                            .input_buffer
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        app.input_cursor = app.input_buffer.len();
+                        app.set_status(format!("Removed attachment: {spec}"));
+                    }
+                    if let Some(inspector) = app.context_inspector.as_mut() {
+                        if selected_index < inspector.files.len() {
+                            inspector.files.remove(selected_index);
+                        }
+                        if inspector.selected_index >= inspector.files.len()
+                            && inspector.selected_index > 0
+                        {
+                            inspector.selected_index -= 1;
+                        }
+                    }
+                }
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Esc | KeyCode::Enter => {
+            app.close_context_inspector();
+            InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn filtered_quick_open_items(app: &App) -> Vec<QuickOpenItem> {
+    let query = app.quick_open.query.trim().to_lowercase();
+    let mut items = app.quick_open.items.clone();
+    if query.is_empty() {
+        return items;
+    }
+
+    items.retain(|item| {
+        item.label.to_lowercase().contains(&query)
+            || item.detail.to_lowercase().contains(&query)
+            || item.value.to_lowercase().contains(&query)
+    });
+    items
+}
+
+fn cycle_transcript_filters(app: &mut App, reverse: bool) {
+    let current = (
+        app.transcript_search.include_messages,
+        app.transcript_search.include_tools,
+        app.transcript_search.include_diffs,
+    );
+    let presets = [
+        (true, true, true),
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+    ];
+    let index = presets
+        .iter()
+        .position(|preset| *preset == current)
+        .unwrap_or(0);
+    let next_index = if reverse {
+        if index == 0 {
+            presets.len() - 1
+        } else {
+            index - 1
+        }
+    } else {
+        (index + 1) % presets.len()
+    };
+    let next = presets[next_index];
+    app.transcript_search.include_messages = next.0;
+    app.transcript_search.include_tools = next.1;
+    app.transcript_search.include_diffs = next.2;
+    app.transcript_search.selected_index = 0;
+}
+
+fn handle_key_quick_open(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Esc => {
+            app.close_quick_open();
+            InputAction::Redraw
+        }
+        KeyCode::Backspace => {
+            app.quick_open.query.pop();
+            app.quick_open.selected_index = 0;
+            InputAction::Redraw
+        }
+        KeyCode::Char(c) => {
+            app.quick_open.query.push(c);
+            app.quick_open.selected_index = 0;
+            InputAction::Redraw
+        }
+        KeyCode::Up => {
+            if app.quick_open.selected_index > 0 {
+                app.quick_open.selected_index -= 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            let items = filtered_quick_open_items(app);
+            if app.quick_open.selected_index + 1 < items.len() {
+                app.quick_open.selected_index += 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Enter => {
+            let items = filtered_quick_open_items(app);
+            items
+                .get(app.quick_open.selected_index)
+                .cloned()
+                .map(InputAction::QuickOpenSelected)
+                .unwrap_or(InputAction::None)
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_timeline(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => {
+            app.close_timeline();
+            InputAction::Redraw
+        }
+        KeyCode::Up => {
+            app.timeline_scroll = app.timeline_scroll.saturating_sub(1);
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            app.timeline_scroll = app.timeline_scroll.saturating_add(1);
+            InputAction::Redraw
+        }
+        KeyCode::Char('c') | KeyCode::Char('C') => {
+            let latest_diff = app
+                .timeline_entries
+                .iter()
+                .rev()
+                .find(|entry| !entry.diff.is_empty())
+                .map(|entry| entry.diff.clone())
+                .unwrap_or_default();
+            InputAction::CopyToClipboard(latest_diff)
+        }
+        KeyCode::Char('u') | KeyCode::Char('U') => InputAction::RestoreLastMutation,
+        _ => InputAction::None,
+    }
+}
+
+fn handle_key_transcript_search(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Esc | KeyCode::Enter => {
+            app.close_transcript_search();
+            InputAction::Redraw
+        }
+        KeyCode::Backspace => {
+            app.transcript_search.query.pop();
+            app.transcript_search.selected_index = 0;
+            InputAction::Redraw
+        }
+        KeyCode::Tab => {
+            cycle_transcript_filters(app, false);
+            InputAction::Redraw
+        }
+        KeyCode::BackTab => {
+            cycle_transcript_filters(app, true);
+            InputAction::Redraw
+        }
+        KeyCode::Up => {
+            app.transcript_search.selected_index =
+                app.transcript_search.selected_index.saturating_sub(1);
+            InputAction::Redraw
+        }
+        KeyCode::Down => {
+            let items = app.transcript_search_items();
+            if app.transcript_search.selected_index + 1 < items.len() {
+                app.transcript_search.selected_index += 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Char(c) => {
+            app.transcript_search.query.push(c);
+            app.transcript_search.selected_index = 0;
+            InputAction::Redraw
         }
         _ => InputAction::None,
     }
@@ -1101,6 +1593,9 @@ fn navigate_command_matches(app: &mut App, forward: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::{
+        ChatMessage, MutationReviewState, QuickOpenItemKind, TimelineEntry, TimelineEntryKind,
+    };
 
     fn key_enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
@@ -1239,5 +1734,215 @@ mod tests {
     #[test]
     fn closest_command_rejects_distant_typo() {
         assert_eq!(closest_slash_command("/zzzzzz"), None);
+    }
+
+    #[test]
+    fn ctrl_i_requests_context_inspector() {
+        let mut app = App::new();
+        let action = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL),
+        );
+        assert!(matches!(action, InputAction::OpenContextInspector));
+    }
+
+    #[test]
+    fn ctrl_f_requests_transcript_search() {
+        let mut app = App::new();
+        let action = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+        );
+        assert!(matches!(action, InputAction::OpenTranscriptSearch));
+    }
+
+    #[test]
+    fn mutation_review_enter_approves_permission() {
+        let mut app = App::new();
+        app.mode = AppMode::MutationReview;
+        app.mutation_review = Some(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "edit_file".to_string(),
+            operation: "edit_file".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.py".to_string()],
+            diff: "--- a\n+++ b".to_string(),
+            checkpoint_id: None,
+            changed: Some(true),
+            message: "preview".to_string(),
+            selected_path_index: 0,
+            chunks: Vec::new(),
+            selected_chunk_index: 0,
+        });
+
+        let action = handle_key(&mut app, key_enter());
+
+        assert!(matches!(action, InputAction::PermissionAnswered(true)));
+    }
+
+    #[test]
+    fn mutation_review_file_scope_tracks_selected_path() {
+        let mut app = App::new();
+        app.mode = AppMode::MutationReview;
+        app.mutation_review = Some(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "apply_patch_unified".to_string(),
+            operation: "apply_patch_unified".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.py".to_string(), "/tmp/other.py".to_string()],
+            diff: "--- a\n+++ b".to_string(),
+            checkpoint_id: None,
+            changed: Some(true),
+            message: "preview".to_string(),
+            selected_path_index: 1,
+            chunks: vec![
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/demo.py".to_string(),
+                    hunk_index: 0,
+                    header: "@@ -1 +1 @@".to_string(),
+                    diff: "@@ -1 +1 @@\n-old\n+new".to_string(),
+                    selected: false,
+                },
+                crate::app::MutationReviewChunk {
+                    path: "/tmp/other.py".to_string(),
+                    hunk_index: 0,
+                    header: "@@ -4 +4 @@".to_string(),
+                    diff: "@@ -4 +4 @@\n-left\n+right".to_string(),
+                    selected: false,
+                },
+            ],
+            selected_chunk_index: 1,
+        });
+
+        let action = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+        );
+
+        assert!(matches!(action, InputAction::PermissionAnswered(true)));
+        assert_eq!(
+            app.permission_approved_paths,
+            vec!["/tmp/other.py".to_string()]
+        );
+    }
+
+    #[test]
+    fn mutation_review_chunk_scope_tracks_selected_hunk() {
+        let mut app = App::new();
+        app.mode = AppMode::MutationReview;
+        app.mutation_review = Some(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "apply_patch_unified".to_string(),
+            operation: "apply_patch_unified".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.py".to_string()],
+            diff: "--- a/demo.py\n+++ b/demo.py\n@@ -1 +1 @@\n-old\n+new".to_string(),
+            checkpoint_id: None,
+            changed: Some(true),
+            message: "preview".to_string(),
+            selected_path_index: 0,
+            chunks: vec![crate::app::MutationReviewChunk {
+                path: "/tmp/demo.py".to_string(),
+                hunk_index: 0,
+                header: "@@ -1 +1 @@".to_string(),
+                diff: "@@ -1 +1 @@\n-old\n+new".to_string(),
+                selected: false,
+            }],
+            selected_chunk_index: 0,
+        });
+
+        let toggle = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+        );
+        assert!(matches!(toggle, InputAction::Redraw));
+        assert!(
+            app.mutation_review
+                .as_ref()
+                .and_then(|review| review.chunks.first())
+                .map(|chunk| chunk.selected)
+                .unwrap_or(false)
+        );
+
+        let action = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+        );
+
+        assert!(matches!(action, InputAction::PermissionAnswered(true)));
+        assert_eq!(
+            app.permission_approved_chunks,
+            vec![crate::app::ApprovedReviewChunk {
+                path: "/tmp/demo.py".to_string(),
+                hunk_index: 0,
+            }]
+        );
+    }
+
+    #[test]
+    fn quick_open_enter_returns_selected_item() {
+        let mut app = App::new();
+        app.mode = AppMode::QuickOpen;
+        app.quick_open.items = vec![
+            crate::app::QuickOpenItem {
+                kind: QuickOpenItemKind::Command,
+                label: "/help".to_string(),
+                detail: "Show help".to_string(),
+                value: "/help".to_string(),
+            },
+            crate::app::QuickOpenItem {
+                kind: QuickOpenItemKind::Prompt,
+                label: "review auth".to_string(),
+                detail: "recent prompt".to_string(),
+                value: "review auth".to_string(),
+            },
+        ];
+        app.quick_open.selected_index = 1;
+
+        let action = handle_key(&mut app, key_enter());
+
+        match action {
+            InputAction::QuickOpenSelected(item) => assert_eq!(item.value, "review auth"),
+            _ => panic!("expected quick-open selection"),
+        }
+    }
+
+    #[test]
+    fn transcript_search_filters_messages_and_diffs() {
+        let mut app = App::new();
+        app.messages
+            .push(ChatMessage::assistant("fixed auth retry flow"));
+        app.messages.push(ChatMessage::diff_view(
+            "auth.rs",
+            "--- a/auth.rs\n+++ b/auth.rs\n+retry",
+        ));
+        app.push_timeline_entry(TimelineEntry {
+            kind: TimelineEntryKind::ToolResult,
+            request_id: "req-1".to_string(),
+            title: "edit_file".to_string(),
+            detail: "Updated auth.rs".to_string(),
+            diff: String::new(),
+            paths: vec!["/tmp/auth.rs".to_string()],
+            checkpoint_id: None,
+            changed: Some(true),
+            timestamp: std::time::Instant::now(),
+        });
+        app.open_transcript_search();
+        app.transcript_search.query = "retry".to_string();
+        app.transcript_search.include_messages = false;
+        app.transcript_search.include_tools = false;
+        app.transcript_search.include_diffs = true;
+
+        let items = app.transcript_search_items();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "Diff / auth.rs");
+
+        app.transcript_search.query = "auth".to_string();
+        app.transcript_search.include_messages = false;
+        app.transcript_search.include_tools = true;
+        app.transcript_search.include_diffs = false;
+        let tool_items = app.transcript_search_items();
+        assert_eq!(tool_items.len(), 1);
+        assert!(tool_items[0].label.contains("Tool result"));
     }
 }

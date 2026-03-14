@@ -44,6 +44,8 @@ pub(super) fn handle_server_message(
                     app.theme_mode = ThemeMode::from_ui_theme(raw_theme);
                 }
             }
+            refresh_workspace_status(app);
+            refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
             write_session_log(
                 session_log,
                 &format!(
@@ -229,6 +231,10 @@ pub(super) fn handle_server_message(
             tool_args,
             tool_result,
             diff,
+            paths,
+            checkpoint_id,
+            changed,
+            message,
             iteration_index,
             iteration_cap,
         } => {
@@ -245,13 +251,55 @@ pub(super) fn handle_server_message(
                 app.active_tool = Some(tool_name.clone());
                 let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
                 app.push_message(ChatMessage::tool_call(&tool_name, args_str));
+                app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                    kind: poor_cli_tui::app::TimelineEntryKind::ToolCall,
+                    request_id,
+                    title: tool_name,
+                    detail: serde_json::to_string_pretty(&tool_args).unwrap_or_default(),
+                    diff: String::new(),
+                    paths,
+                    checkpoint_id: None,
+                    changed: None,
+                    timestamp: std::time::Instant::now(),
+                });
             } else if event_type == "tool_result" {
                 app.active_tool = None;
                 if !diff.is_empty() {
-                    app.push_message(ChatMessage::diff_view(&tool_name, diff));
+                    app.push_message(ChatMessage::diff_view(&tool_name, diff.clone()));
                 } else {
-                    app.push_message(ChatMessage::tool_result(&tool_name, tool_result));
+                    app.push_message(ChatMessage::tool_result(&tool_name, tool_result.clone()));
                 }
+                if let Some(ref checkpoint) = checkpoint_id {
+                    app.last_mutation_checkpoint_id = Some(checkpoint.clone());
+                    app.remember_recent_checkpoint(checkpoint);
+                }
+                if !diff.is_empty() {
+                    app.last_mutation_diff = diff.clone();
+                }
+                for path in &paths {
+                    app.remember_recent_edit(path);
+                }
+                refresh_workspace_status(app);
+                refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
+                app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                    kind: if diff.is_empty() {
+                        poor_cli_tui::app::TimelineEntryKind::ToolResult
+                    } else {
+                        poor_cli_tui::app::TimelineEntryKind::Diff
+                    },
+                    request_id,
+                    title: tool_name,
+                    detail: if message.is_empty() {
+                        tool_result
+                    } else {
+                        message
+                    },
+                    diff,
+                    paths,
+                    checkpoint_id,
+                    changed,
+                    timestamp: std::time::Instant::now(),
+                });
             }
         }
         ServerMsg::PermissionRequest {
@@ -259,6 +307,12 @@ pub(super) fn handle_server_message(
             tool_name,
             tool_args,
             prompt_id,
+            operation,
+            paths,
+            diff,
+            checkpoint_id,
+            changed,
+            message,
         } => {
             write_session_log(
                 session_log,
@@ -269,8 +323,40 @@ pub(super) fn handle_server_message(
             );
             let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
             app.permission_message = format!("{tool_name}: {args_str}");
-            app.permission_prompt_id = prompt_id;
-            app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
+            app.permission_prompt_id = prompt_id.clone();
+            app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                kind: poor_cli_tui::app::TimelineEntryKind::Permission,
+                request_id: request_id.clone(),
+                title: tool_name.clone(),
+                detail: if message.is_empty() {
+                    "Awaiting permission".to_string()
+                } else {
+                    message.clone()
+                },
+                diff: diff.clone(),
+                paths: paths.clone(),
+                checkpoint_id: checkpoint_id.clone(),
+                changed,
+                timestamp: std::time::Instant::now(),
+            });
+            if !diff.is_empty() || !paths.is_empty() {
+                app.open_mutation_review(poor_cli_tui::app::MutationReviewState {
+                    request_id,
+                    tool_name,
+                    operation,
+                    prompt_id,
+                    paths,
+                    diff,
+                    checkpoint_id,
+                    changed,
+                    message,
+                    selected_path_index: 0,
+                    chunks: Vec::new(),
+                    selected_chunk_index: 0,
+                });
+            } else {
+                app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
+            }
         }
         ServerMsg::Progress {
             request_id,
@@ -292,6 +378,17 @@ pub(super) fn handle_server_message(
             );
             app.current_iteration = iteration_index;
             app.iteration_cap = iteration_cap;
+            app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                kind: poor_cli_tui::app::TimelineEntryKind::Phase,
+                request_id,
+                title: phase,
+                detail: message,
+                diff: String::new(),
+                paths: Vec::new(),
+                checkpoint_id: None,
+                changed: None,
+                timestamp: std::time::Instant::now(),
+            });
         }
         ServerMsg::CostUpdate {
             request_id,
@@ -309,6 +406,17 @@ pub(super) fn handle_server_message(
             app.turn_output_tokens += output_tokens;
             app.cumulative_input_tokens += input_tokens;
             app.cumulative_output_tokens += output_tokens;
+            app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                kind: poor_cli_tui::app::TimelineEntryKind::Cost,
+                request_id,
+                title: "Token usage".to_string(),
+                detail: format!("input={} output={}", input_tokens, output_tokens),
+                diff: String::new(),
+                paths: Vec::new(),
+                checkpoint_id: None,
+                changed: None,
+                timestamp: std::time::Instant::now(),
+            });
         }
         ServerMsg::RoomEvent {
             room,
@@ -368,10 +476,22 @@ pub(super) fn handle_server_message(
                 if app.pair_mode_active {
                     let mut pair_users = Vec::new();
                     for entry in items.iter().take(20) {
-                        let cid = entry.get("connectionId").and_then(|v| v.as_str()).unwrap_or("unknown");
-                        let r = entry.get("role").and_then(|v| v.as_str()).unwrap_or("viewer");
-                        let name = entry.get("clientName").and_then(|v| v.as_str()).unwrap_or(cid);
-                        let active = entry.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let cid = entry
+                            .get("connectionId")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let r = entry
+                            .get("role")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("viewer");
+                        let name = entry
+                            .get("clientName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(cid);
+                        let active = entry
+                            .get("active")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         pair_users.push(poor_cli_tui::app::PairUser {
                             name: name.to_string(),
                             connection_id: cid.to_string(),

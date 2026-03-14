@@ -20,6 +20,7 @@ from poor_cli.server import (
     _sanitize_exception_message,
     main,
 )
+from poor_cli.tools_async import ToolOutcome
 
 
 class _FragmentedStdin:
@@ -337,6 +338,7 @@ class TestPoorCLIServer:
             "initialize",
             "shutdown",
             "poor-cli/chat",
+            "poor-cli/previewContext",
             "poor-cli/inlineComplete",
             "poor-cli/getProviderInfo",
             "poor-cli/setApiKey",
@@ -613,10 +615,18 @@ class TestPoorCLIServer:
                     "message": "ping!",
                     "requestId": "req-sync-1",
                     "contextFiles": ["a.py", "b.py"],
+                    "pinnedContextFiles": ["README.md"],
+                    "contextBudgetTokens": 3200,
                 }
             )
 
         assert result == {"content": "pong", "role": "assistant"}
+        server.core.send_message_sync.assert_awaited_once_with(
+            message="ping!",
+            context_files=["a.py", "b.py"],
+            pinned_context_files=["README.md"],
+            context_budget_tokens=3200,
+        )
         start_call = next(
             (call for call in info_mock.call_args_list if call.args[0].startswith("chat_start mode=sync")),
             None,
@@ -633,7 +643,7 @@ class TestPoorCLIServer:
         assert complete_call is not None
         assert start_call.args[1] == "req-sync-1"
         assert start_call.args[2] == len("ping!")
-        assert start_call.args[3] == 2
+        assert start_call.args[3] == 3
         assert complete_call.args[1] == "req-sync-1"
         assert complete_call.args[2] == len("pong")
 
@@ -644,9 +654,25 @@ class TestPoorCLIServer:
 
         server.initialized = True
         server.write_message_stdio = AsyncMock()
+        captured = {}
 
-        async def fake_send_message_events(*, message, context_files=None, request_id=""):
-            del message, context_files
+        async def fake_send_message_events(
+            *,
+            message,
+            context_files=None,
+            pinned_context_files=None,
+            context_budget_tokens=None,
+            request_id="",
+        ):
+            captured.update(
+                {
+                    "message": message,
+                    "context_files": context_files,
+                    "pinned_context_files": pinned_context_files,
+                    "context_budget_tokens": context_budget_tokens,
+                    "request_id": request_id,
+                }
+            )
             yield CoreEvent.text_chunk("hello ", request_id)
             yield CoreEvent.text_chunk("world", request_id)
             yield CoreEvent.done("complete")
@@ -660,6 +686,8 @@ class TestPoorCLIServer:
                     "message": "stream this",
                     "requestId": "req-stream-1",
                     "contextFiles": ["ctx.py"],
+                    "pinnedContextFiles": ["README.md"],
+                    "contextBudgetTokens": 4096,
                 }
             )
 
@@ -682,11 +710,97 @@ class TestPoorCLIServer:
         )
         assert start_call is not None
         assert complete_call is not None
+        assert captured == {
+            "message": "stream this",
+            "context_files": ["ctx.py"],
+            "pinned_context_files": ["README.md"],
+            "context_budget_tokens": 4096,
+            "request_id": "req-stream-1",
+        }
         assert start_call.args[1] == "req-stream-1"
         assert start_call.args[2] == len("stream this")
-        assert start_call.args[3] == 1
+        assert start_call.args[3] == 2
         assert complete_call.args[1] == "req-stream-1"
         assert complete_call.args[2] == len("hello world")
+
+    @pytest.mark.asyncio
+    async def test_handle_preview_context_forwards_paths_and_budget(self, server):
+        server.initialized = True
+        server.core.preview_context = AsyncMock(
+            return_value={"files": [], "totalTokens": 0, "truncated": False, "message": "ok"}
+        )
+
+        result = await server.handle_preview_context(
+            {
+                "message": "review this",
+                "contextFiles": ["a.py"],
+                "pinnedContextFiles": ["README.md"],
+                "contextBudgetTokens": 6000,
+            }
+        )
+
+        assert result["message"] == "ok"
+        server.core.preview_context.assert_awaited_once_with(
+            message="review this",
+            context_files=["a.py"],
+            pinned_context_files=["README.md"],
+            context_budget_tokens=6000,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_preview_mutation_forwards_tool_name_and_args(self, server):
+        server.initialized = True
+        server.core.preview_mutation = AsyncMock(
+            return_value={
+                "ok": True,
+                "operation": "edit_file",
+                "paths": ["/tmp/demo.py"],
+                "diff": "--- /tmp/demo.py\n+++ /tmp/demo.py\n",
+                "checkpointId": None,
+                "changed": True,
+                "message": "Preview edit /tmp/demo.py",
+            }
+        )
+
+        result = await server.handle_preview_mutation(
+            {
+                "toolName": "edit_file",
+                "toolArgs": {"file_path": "/tmp/demo.py", "old_text": "old", "new_text": "new"},
+            }
+        )
+
+        assert result["operation"] == "edit_file"
+        assert result["paths"] == ["/tmp/demo.py"]
+        server.core.preview_mutation.assert_awaited_once_with(
+            tool_name="edit_file",
+            arguments={"file_path": "/tmp/demo.py", "old_text": "old", "new_text": "new"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_apply_edit_returns_structured_outcome(self, server):
+        server.initialized = True
+        server.permission_mode = "danger-full-access"
+        server.core.apply_edit_outcome = AsyncMock(
+            return_value=ToolOutcome(
+                ok=True,
+                operation="edit_file",
+                path="/tmp/example.py",
+                changed=True,
+                diff="--- /tmp/example.py\n+++ /tmp/example.py\n",
+                checkpoint_id="cp_123",
+                message="Edited /tmp/example.py",
+                metadata={"mode": "exact_replace"},
+            )
+        )
+
+        result = await server.handle_apply_edit(
+            {"filePath": "/tmp/example.py", "oldText": "a", "newText": "b"}
+        )
+
+        assert result["success"] is True
+        assert result["checkpointId"] == "cp_123"
+        assert result["diff"].startswith("--- /tmp/example.py")
+        assert result["metadata"]["mode"] == "exact_replace"
 
     @pytest.mark.asyncio
     async def test_compare_files_returns_unified_diff(self, server, tmp_path):

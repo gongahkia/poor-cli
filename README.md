@@ -50,9 +50,13 @@ Set at least one API key in `.env` (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROP
 ```console
 $ ./run.sh                   # checks .env, then launches Rust TUI
 $ ./run_tui.sh               # direct Rust TUI launcher
-$ python -m poor_cli         # Python wrapper -> Rust TUI
-$ poor-cli                   # installed entrypoint -> Rust TUI
+$ python -m poor_cli         # Python wrapper -> Rust TUI if a Rust binary is available
+$ poor-cli                   # requires repo launcher or `poor-cli-tui` already in PATH
 ```
+
+The Python package always provides `poor-cli-server`.
+The interactive `poor-cli` command is supported from a repo checkout via `./run.sh` / `./run_tui.sh`,
+or anywhere a `poor-cli-tui` binary is already installed.
 
 4. Optional runtime overrides.
 
@@ -149,7 +153,7 @@ to `--remote-url` / `multiplayer.url`.
 
 | Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
 |---|---|---|---|---|
-| Gemini | `gemini` | `gemini-2.0-flash-exp` | `gemini-2.0-flash-exp`, `gemini-1.5-pro` | Streaming, function calling, system instructions, vision, JSON mode |
+| Gemini | `gemini` | `gemini-2.0-flash` | `gemini-2.0-flash`, `gemini-1.5-pro` | Streaming, function calling, system instructions, vision, JSON mode |
 | OpenAI | `openai` | `gpt-4-turbo` | `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo` | Streaming, function calling, system instructions, JSON mode, vision on GPT-4-class models |
 | Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-3-5-sonnet-20241022` | `claude-sonnet-4-20250514`, `claude-3-haiku-20240307` | Streaming, function calling, system instructions, vision |
 | Ollama | `ollama` | `llama3` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3`, `codellama`, `mistral`, `phi3` | Streaming, system instructions, JSON mode, optional function calling (model-dependent), local-only execution via `http://localhost:11434` |
@@ -216,7 +220,7 @@ Run `!<shell command> [| optional question]` to execute shell output and optiona
 - `/broke` - Set poor mode (terse output)
 - `/my-treat` - Set rich mode (comprehensive output)
 - `/verbose` - Toggle verbose logging
-- `/plan-mode` - Toggle plan mode
+- `/plan-mode` - Toggle experimental plan-mode flag (not yet wired to execution preview)
 - `/profile [speed|safe|deep-review]` - Execution profile control
 
 **Prompt Library, Context & Planning:**

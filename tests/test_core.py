@@ -2,9 +2,13 @@
 Tests for PoorCLICore - the headless engine.
 """
 
+import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
+from types import SimpleNamespace
+
+from poor_cli.tools_async import ToolOutcome
 
 
 @pytest.fixture
@@ -45,6 +49,8 @@ def mock_tool_registry():
         {"name": "write_file", "description": "Write a file"},
     ])
     registry.execute_tool = AsyncMock(return_value="Tool executed")
+    registry.execute_tool_raw = AsyncMock(return_value="Tool executed")
+    registry.inspect_mutation_targets = MagicMock(return_value=[])
     return registry
 
 
@@ -140,12 +146,46 @@ class TestPoorCLICoreWithMocks:
     @pytest.mark.asyncio
     async def test_execute_tool(self, core_with_mocks):
         """Test executing a tool."""
-        result = await core_with_mocks.execute_tool("read_file", {"path": "test.py"})
-        
-        core_with_mocks.tool_registry.execute_tool.assert_called_once_with(
-            "read_file", {"path": "test.py"}
+        outcome = ToolOutcome(
+            ok=True,
+            operation="write_file",
+            path="/tmp/test.py",
+            changed=True,
+            diff="--- /tmp/test.py\n+++ /tmp/test.py\n",
+            message="Created /tmp/test.py",
         )
-        assert result == "Tool executed"
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value=outcome)
+
+        result = await core_with_mocks.execute_tool(
+            "write_file", {"file_path": "/tmp/test.py"}
+        )
+
+        core_with_mocks.tool_registry.execute_tool_raw.assert_awaited_once_with(
+            "write_file", {"file_path": "/tmp/test.py"}
+        )
+        payload = json.loads(result)
+        assert payload["operation"] == "write_file"
+        assert payload["path"] == "/tmp/test.py"
+        assert payload["changed"] is True
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_raw_preserves_tool_outcome(self, core_with_mocks):
+        outcome = ToolOutcome(
+            ok=True,
+            operation="edit_file",
+            path="/tmp/test.py",
+            changed=True,
+            diff="--- /tmp/test.py\n+++ /tmp/test.py\n",
+            message="Edited /tmp/test.py",
+        )
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value=outcome)
+
+        result = await core_with_mocks.execute_tool_raw(
+            "edit_file",
+            {"file_path": "/tmp/test.py", "old_text": "a", "new_text": "b"},
+        )
+
+        assert result is outcome
     
     def test_get_available_tools(self, core_with_mocks):
         """Test getting available tools."""
@@ -192,6 +232,433 @@ class TestPoorCLICoreWithMocks:
         core_with_mocks.permission_callback = callback
         
         assert core_with_mocks.permission_callback == callback
+
+    @pytest.mark.asyncio
+    async def test_create_checkpoint_uses_thread_offload(self, core_with_mocks):
+        from poor_cli.core import PoorCLICore
+
+        checkpoint = MagicMock()
+        checkpoint.checkpoint_id = "cp_123"
+        checkpoint.created_at = "2026-03-14T10:00:00"
+        checkpoint.description = "Manual checkpoint"
+        checkpoint.operation_type = "manual"
+        checkpoint.tags = ["manual"]
+        checkpoint.get_file_count.return_value = 2
+        checkpoint.get_total_size.return_value = 128
+
+        manager = MagicMock()
+        manager.create_checkpoint.return_value = checkpoint
+        core_with_mocks.checkpoint_manager = manager
+
+        with patch("poor_cli.core.asyncio.to_thread", new=AsyncMock(return_value=checkpoint)) as mock_to_thread:
+            payload = await core_with_mocks.create_checkpoint(
+                ["/tmp/a.py", "/tmp/b.py"],
+                "Manual checkpoint",
+            )
+
+        mock_to_thread.assert_awaited_once_with(
+            manager.create_checkpoint,
+            ["/tmp/a.py", "/tmp/b.py"],
+            "Manual checkpoint",
+        )
+        assert payload == {
+            "checkpoint_id": "cp_123",
+            "created_at": "2026-03-14T10:00:00",
+            "description": "Manual checkpoint",
+            "operation_type": "manual",
+            "file_count": 2,
+            "total_size_bytes": 128,
+            "tags": ["manual"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_restore_checkpoint_uses_thread_offload(self, core_with_mocks):
+        checkpoint = MagicMock()
+        checkpoint.checkpoint_id = "cp_123"
+        checkpoint.created_at = "2026-03-14T10:00:00"
+        checkpoint.description = "Manual checkpoint"
+        checkpoint.operation_type = "manual"
+        checkpoint.tags = ["manual"]
+        checkpoint.get_file_count.return_value = 2
+        checkpoint.get_total_size.return_value = 128
+
+        manager = MagicMock()
+        manager.get_checkpoint.return_value = checkpoint
+        core_with_mocks.checkpoint_manager = manager
+
+        with patch("poor_cli.core.asyncio.to_thread", new=AsyncMock(return_value=2)) as mock_to_thread:
+            payload = await core_with_mocks.restore_checkpoint("cp_123")
+
+        mock_to_thread.assert_awaited_once_with(manager.restore_checkpoint, "cp_123")
+        assert payload == {
+            "checkpoint_id": "cp_123",
+            "created_at": "2026-03-14T10:00:00",
+            "description": "Manual checkpoint",
+            "operation_type": "manual",
+            "file_count": 2,
+            "total_size_bytes": 128,
+            "tags": ["manual"],
+            "restored_files": 2,
+        }
+
+    @pytest.mark.asyncio
+    async def test_apply_edit_outcome_uses_structured_tool_result(self, core_with_mocks):
+        outcome = ToolOutcome(
+            ok=True,
+            operation="edit_file",
+            path="/tmp/demo.py",
+            changed=True,
+            diff="--- /tmp/demo.py\n+++ /tmp/demo.py\n",
+            checkpoint_id="cp_123",
+            message="Edited /tmp/demo.py",
+        )
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value=outcome)
+
+        result = await core_with_mocks.apply_edit_outcome(
+            file_path="/tmp/demo.py",
+            old_text="old",
+            new_text="new",
+        )
+
+        assert result is outcome
+        core_with_mocks.tool_registry.execute_tool_raw.assert_awaited_once_with(
+            "edit_file",
+            {"file_path": "/tmp/demo.py", "old_text": "old", "new_text": "new"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_send_message_sync_uses_shared_context_builder(self, core_with_mocks):
+        core_with_mocks.provider.send_message = AsyncMock(
+            return_value=SimpleNamespace(content="done", function_calls=[], metadata={})
+        )
+        core_with_mocks._build_context_message = AsyncMock(return_value="context prompt")
+
+        result = await core_with_mocks.send_message_sync(
+            "review this",
+            context_files=["/tmp/a.py"],
+            pinned_context_files=["/tmp/b.py"],
+            context_budget_tokens=3200,
+        )
+
+        core_with_mocks._build_context_message.assert_awaited_once_with(
+            "review this",
+            context_files=["/tmp/a.py"],
+            pinned_context_files=["/tmp/b.py"],
+            context_budget_tokens=3200,
+        )
+        core_with_mocks.provider.send_message.assert_awaited_once_with("context prompt")
+        assert "done" in result
+
+    @pytest.mark.asyncio
+    async def test_send_message_events_uses_shared_context_builder(self, core_with_mocks):
+        async def fake_stream(_message):
+            yield SimpleNamespace(content="chunk", function_calls=None, metadata={})
+
+        core_with_mocks.provider.send_message_stream = fake_stream
+        core_with_mocks._build_context_message = AsyncMock(return_value="context prompt")
+
+        events = [
+            event
+            async for event in core_with_mocks.send_message_events(
+                "review this",
+                context_files=["/tmp/a.py"],
+                pinned_context_files=["/tmp/b.py"],
+                context_budget_tokens=2048,
+                request_id="req-1",
+            )
+        ]
+
+        core_with_mocks._build_context_message.assert_awaited_once_with(
+            "review this",
+            context_files=["/tmp/a.py"],
+            pinned_context_files=["/tmp/b.py"],
+            context_budget_tokens=2048,
+        )
+        assert any(event.type == "text_chunk" for event in events)
+
+    @pytest.mark.asyncio
+    async def test_preview_context_passes_paths_and_budget_to_context_manager(self, core_with_mocks):
+        core_with_mocks._context_manager.preview_context = AsyncMock(
+            return_value={"files": [], "totalTokens": 0, "truncated": False, "message": "ok"}
+        )
+
+        result = await core_with_mocks.preview_context(
+            message="inspect",
+            context_files=["/tmp/a.py"],
+            pinned_context_files=["/tmp/b.py"],
+            context_budget_tokens=4096,
+        )
+
+        assert result["message"] == "ok"
+        core_with_mocks._context_manager.preview_context.assert_awaited_once_with(
+            message="inspect",
+            explicit_files=["/tmp/a.py"],
+            pinned_files=["/tmp/b.py"],
+            repo_root=str(Path.cwd()),
+            max_tokens=4096,
+            max_files=12,
+        )
+
+    @pytest.mark.asyncio
+    async def test_preview_mutation_uses_tool_registry_preview(self, core_with_mocks):
+        core_with_mocks.tool_registry.preview_mutation = AsyncMock(
+            return_value=ToolOutcome(
+                ok=True,
+                operation="edit_file",
+                path="/tmp/demo.py",
+                changed=True,
+                diff="--- /tmp/demo.py\n+++ /tmp/demo.py\n",
+                message="Preview edit /tmp/demo.py",
+                metadata={"changed_paths": ["/tmp/demo.py"], "preview": True},
+            )
+        )
+
+        result = await core_with_mocks.preview_mutation(
+            "edit_file",
+            {"file_path": "/tmp/demo.py", "old_text": "old", "new_text": "new"},
+        )
+
+        core_with_mocks.tool_registry.preview_mutation.assert_awaited_once_with(
+            "edit_file",
+            {"file_path": "/tmp/demo.py", "old_text": "old", "new_text": "new"},
+        )
+        assert result["operation"] == "edit_file"
+        assert result["paths"] == ["/tmp/demo.py"]
+        assert result["changed"] is True
+        assert result["diff"].startswith("--- /tmp/demo.py")
+
+    @pytest.mark.asyncio
+    async def test_streaming_tool_events_use_real_tool_outcome_diff(self, core_with_mocks):
+        outcome = ToolOutcome(
+            ok=True,
+            operation="edit_file",
+            path="/tmp/demo.py",
+            changed=True,
+            diff="--- /tmp/demo.py\n+++ /tmp/demo.py\n@@ -1 +1 @@\n-old\n+new\n",
+            message="Edited /tmp/demo.py",
+        )
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value=outcome)
+
+        response = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    id="call-1",
+                    name="edit_file",
+                    arguments={
+                        "file_path": "/tmp/demo.py",
+                        "old_text": "old",
+                        "new_text": "new",
+                    },
+                )
+            ]
+        )
+
+        result = await core_with_mocks._handle_function_calls_events(
+            response,
+            iteration=1,
+            max_iterations=5,
+            request_id="req-1",
+        )
+
+        assert result == "formatted"
+        tool_event = next(
+            event for event in core_with_mocks._pending_events if event.type == "tool_result"
+        )
+        assert tool_event.data["diff"].startswith("--- /tmp/demo.py")
+        assert tool_event.data["paths"] == ["/tmp/demo.py"]
+        assert tool_event.data["changed"] is True
+
+    @pytest.mark.asyncio
+    async def test_permission_callback_receives_preview_payload_for_mutations(self, core_with_mocks):
+        preview = ToolOutcome(
+            ok=True,
+            operation="edit_file",
+            path="/tmp/demo.py",
+            changed=True,
+            diff="--- /tmp/demo.py\n+++ /tmp/demo.py\n",
+            message="Preview edit /tmp/demo.py",
+            metadata={"changed_paths": ["/tmp/demo.py"], "preview": True},
+        )
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.preview_mutation = AsyncMock(return_value=preview)
+        core_with_mocks.permission_callback = AsyncMock(return_value=False)
+
+        response = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    id="call-1",
+                    name="edit_file",
+                    arguments={
+                        "file_path": "/tmp/demo.py",
+                        "old_text": "old",
+                        "new_text": "new",
+                    },
+                )
+            ]
+        )
+
+        result = await core_with_mocks._handle_function_calls_events(
+            response,
+            iteration=1,
+            max_iterations=5,
+            request_id="req-1",
+        )
+
+        assert result == "formatted"
+        core_with_mocks.permission_callback.assert_awaited_once()
+        preview_payload = core_with_mocks.permission_callback.await_args.args[2]
+        assert preview_payload["requestId"] == "req-1"
+        assert preview_payload["paths"] == ["/tmp/demo.py"]
+        assert preview_payload["diff"].startswith("--- /tmp/demo.py")
+
+    @pytest.mark.asyncio
+    async def test_permission_callback_can_scope_patch_execution_to_selected_paths(self, core_with_mocks):
+        preview = ToolOutcome(
+            ok=True,
+            operation="apply_patch_unified",
+            path="/tmp",
+            changed=True,
+            diff="--- a/demo.py\n+++ b/demo.py\n",
+            message="Patch preview ready",
+            metadata={
+                "paths": ["/tmp/demo.py", "/tmp/other.py"],
+                "changed_paths": ["/tmp/demo.py", "/tmp/other.py"],
+                "preview": True,
+            },
+        )
+        outcome = ToolOutcome(
+            ok=True,
+            operation="apply_patch_unified",
+            path="/tmp",
+            changed=True,
+            diff="--- /tmp/other.py\n+++ /tmp/other.py\n",
+            message="Patch applied successfully",
+            metadata={"changed_paths": ["/tmp/other.py"]},
+        )
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.preview_mutation = AsyncMock(return_value=preview)
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value=outcome)
+        core_with_mocks.tool_registry.narrow_mutation_arguments = MagicMock(
+            return_value={"patch": "filtered patch", "path": "/tmp"}
+        )
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(
+            side_effect=[
+                ["/tmp/demo.py", "/tmp/other.py"],
+                ["/tmp/other.py"],
+                ["/tmp/other.py"],
+            ]
+        )
+        core_with_mocks.permission_callback = AsyncMock(
+            return_value={"allowed": True, "approvedPaths": ["/tmp/other.py"]}
+        )
+
+        response = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    id="call-1",
+                    name="apply_patch_unified",
+                    arguments={
+                        "patch": "full patch",
+                        "path": "/tmp",
+                    },
+                )
+            ]
+        )
+
+        result = await core_with_mocks._handle_function_calls_events(
+            response,
+            iteration=1,
+            max_iterations=5,
+            request_id="req-1",
+        )
+
+        assert result == "formatted"
+        core_with_mocks.tool_registry.narrow_mutation_arguments.assert_called_once_with(
+            "apply_patch_unified",
+            {"patch": "full patch", "path": "/tmp"},
+            ["/tmp/other.py"],
+            [],
+        )
+        core_with_mocks.tool_registry.execute_tool_raw.assert_awaited_once_with(
+            "apply_patch_unified",
+            {"patch": "filtered patch", "path": "/tmp"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_permission_callback_can_scope_patch_execution_to_selected_hunks(self, core_with_mocks):
+        preview = ToolOutcome(
+            ok=True,
+            operation="apply_patch_unified",
+            path="/tmp",
+            changed=True,
+            diff="--- a/demo.py\n+++ b/demo.py\n@@ -1 +1 @@\n-old\n+new\n",
+            message="Patch preview ready",
+            metadata={
+                "paths": ["/tmp/demo.py"],
+                "changed_paths": ["/tmp/demo.py"],
+                "preview": True,
+            },
+        )
+        outcome = ToolOutcome(
+            ok=True,
+            operation="apply_patch_unified",
+            path="/tmp",
+            changed=True,
+            diff="--- /tmp/demo.py\n+++ /tmp/demo.py\n@@ -4 +4 @@\n-old\n+new\n",
+            message="Patch applied successfully",
+            metadata={"changed_paths": ["/tmp/demo.py"]},
+        )
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.preview_mutation = AsyncMock(return_value=preview)
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value=outcome)
+        core_with_mocks.tool_registry.narrow_mutation_arguments = MagicMock(
+            return_value={"patch": "filtered hunk patch", "path": "/tmp"}
+        )
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(
+            side_effect=[
+                ["/tmp/demo.py"],
+                ["/tmp/demo.py"],
+            ]
+        )
+        core_with_mocks.permission_callback = AsyncMock(
+            return_value={
+                "allowed": True,
+                "approvedChunks": [{"path": "/tmp/demo.py", "index": 1}],
+            }
+        )
+
+        response = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    id="call-1",
+                    name="apply_patch_unified",
+                    arguments={
+                        "patch": "full patch",
+                        "path": "/tmp",
+                    },
+                )
+            ]
+        )
+
+        result = await core_with_mocks._handle_function_calls_events(
+            response,
+            iteration=1,
+            max_iterations=5,
+            request_id="req-1",
+        )
+
+        assert result == "formatted"
+        core_with_mocks.tool_registry.narrow_mutation_arguments.assert_called_once_with(
+            "apply_patch_unified",
+            {"patch": "full patch", "path": "/tmp"},
+            [],
+            [{"path": "/tmp/demo.py", "index": 1}],
+        )
+        core_with_mocks.tool_registry.execute_tool_raw.assert_awaited_once_with(
+            "apply_patch_unified",
+            {"patch": "filtered hunk patch", "path": "/tmp"},
+        )
 
 
 class TestBuildFimPrompt:

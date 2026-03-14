@@ -20,7 +20,10 @@ use ratatui::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use poor_cli_tui::app::{App, AppMode, ChatMessage, MessageRole, ProviderEntry, ResponseMode, ThemeMode};
+use poor_cli_tui::app::{
+    App, AppMode, ChatMessage, ContextInspectorFile, ContextInspectorState, MessageRole,
+    ProviderEntry, QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode,
+};
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;
 use poor_cli_tui::helpers::{
@@ -110,6 +113,10 @@ enum ServerMsg {
         tool_args: Value,
         tool_result: String,
         diff: String,
+        paths: Vec<String>,
+        checkpoint_id: Option<String>,
+        changed: Option<bool>,
+        message: String,
         iteration_index: u32,
         iteration_cap: u32,
     },
@@ -118,6 +125,12 @@ enum ServerMsg {
         tool_name: String,
         tool_args: Value,
         prompt_id: String,
+        operation: String,
+        paths: Vec<String>,
+        diff: String,
+        checkpoint_id: Option<String>,
+        changed: Option<bool>,
+        message: String,
     },
     Progress {
         request_id: String,
@@ -162,6 +175,13 @@ struct BackendLaunchContext {
     cwd: Option<String>,
     backend_log_path: Option<String>,
     session_log: Option<SessionLogWriter>,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedContextRequest {
+    message: String,
+    explicit_files: Vec<String>,
+    pinned_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -362,6 +382,10 @@ fn spawn_backend_worker(
                                 tool_args,
                                 tool_result,
                                 diff,
+                                paths,
+                                checkpoint_id,
+                                changed,
+                                message,
                                 iteration_index,
                                 iteration_cap,
                                 ..
@@ -384,6 +408,10 @@ fn spawn_backend_worker(
                                     tool_args,
                                     tool_result,
                                     diff,
+                                    paths,
+                                    checkpoint_id,
+                                    changed,
+                                    message,
                                     iteration_index,
                                     iteration_cap,
                                 }
@@ -393,6 +421,12 @@ fn spawn_backend_worker(
                                 tool_name,
                                 tool_args,
                                 prompt_id,
+                                operation,
+                                paths,
+                                diff,
+                                checkpoint_id,
+                                changed,
+                                message,
                                 ..
                             } => {
                                 write_session_log(
@@ -407,6 +441,12 @@ fn spawn_backend_worker(
                                     tool_name,
                                     tool_args,
                                     prompt_id,
+                                    operation,
+                                    paths,
+                                    diff,
+                                    checkpoint_id,
+                                    changed,
+                                    message,
                                 }
                             }
                             ServerNotification::Progress {
@@ -502,11 +542,7 @@ fn spawn_backend_worker(
                                     role,
                                 }
                             }
-                            ServerNotification::Suggestion {
-                                sender,
-                                text,
-                                ..
-                            } => {
+                            ServerNotification::Suggestion { sender, text, .. } => {
                                 write_session_log(
                                     notification_log_ctx.as_ref(),
                                     &format!("notif_suggestion sender={}", sender),
@@ -546,17 +582,13 @@ fn spawn_backend_worker(
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_else(|| {
-                                    model
-                                        .clone()
-                                        .unwrap_or_else(|| "gemini-2.0-flash".into())
+                                    model.clone().unwrap_or_else(|| "gemini-2.0-flash".into())
                                 });
                             (prov, mdl)
                         } else {
                             (
                                 provider.clone().unwrap_or_else(|| "gemini".into()),
-                                model
-                                    .clone()
-                                    .unwrap_or_else(|| "gemini-2.0-flash".into()),
+                                model.clone().unwrap_or_else(|| "gemini-2.0-flash".into()),
                             )
                         };
                         let multiplayer_room = init
@@ -648,6 +680,9 @@ fn run_app(
     } else {
         cli.permission_mode.clone()
     };
+    app.permission_mode_label = permission_mode
+        .clone()
+        .unwrap_or_else(|| "prompt".to_string());
     let backend_log_path_string = backend_log_path
         .as_ref()
         .map(|path| path.to_string_lossy().to_string());
@@ -738,8 +773,11 @@ fn run_app(
             // auto-dispatch next queued prompt when AI finishes
             if !app.waiting && !app.prompt_queue.is_empty() && app.plan_steps.is_empty() {
                 dispatch_next_queued_prompt(
-                    app, &tx_for_queue, &rpc_cmd_tx.borrow(),
-                    &cancel_for_queue, session_log.as_ref(),
+                    app,
+                    &tx_for_queue,
+                    &rpc_cmd_tx.borrow(),
+                    &cancel_for_queue,
+                    session_log.as_ref(),
                 );
             }
             Ok(result)
@@ -835,6 +873,19 @@ fn run_app(
                 }
                 InputAction::PermissionAnswered(allowed) => {
                     let prompt_id = std::mem::take(&mut app.permission_prompt_id);
+                    let approved_paths = if allowed {
+                        std::mem::take(&mut app.permission_approved_paths)
+                    } else {
+                        app.permission_approved_paths.clear();
+                        Vec::new()
+                    };
+                    let approved_chunks = if allowed {
+                        std::mem::take(&mut app.permission_approved_chunks)
+                    } else {
+                        app.permission_approved_chunks.clear();
+                        Vec::new()
+                    };
+                    app.close_mutation_review();
                     write_session_log(
                         session_log.as_ref(),
                         &format!(
@@ -847,6 +898,14 @@ fn run_app(
                         params: serde_json::json!({
                             "promptId": prompt_id,
                             "allowed": allowed,
+                            "approvedPaths": approved_paths,
+                            "approvedChunks": approved_chunks
+                                .into_iter()
+                                .map(|chunk| serde_json::json!({
+                                    "path": chunk.path,
+                                    "index": chunk.hunk_index,
+                                }))
+                                .collect::<Vec<_>>(),
                         }),
                     });
                 }
@@ -902,9 +961,18 @@ fn run_app(
                         });
                         match reply_rx.recv_timeout(Duration::from_secs(60)) {
                             Ok(Ok(val)) => {
-                                let summary = val.get("summary").and_then(|v| v.as_str()).unwrap_or("done");
-                                let before = val.get("messages_before").and_then(|v| v.as_u64()).unwrap_or(0);
-                                let after = val.get("messages_after").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let summary = val
+                                    .get("summary")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("done");
+                                let before = val
+                                    .get("messages_before")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let after = val
+                                    .get("messages_after")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
                                 let msg = format!(
                                     "**Context {strategy}** applied: {before} -> {after} messages\n\n{summary}"
                                 );
@@ -925,22 +993,126 @@ fn run_app(
                 }
                 InputAction::JoinWizardComplete(url, room, token) => {
                     multiplayer::reconnect_to_remote_server(
-                        app, &tx, &mut rpc_cmd_tx.borrow_mut(), &launch, &url, &room, &token,
+                        app,
+                        &tx,
+                        &mut rpc_cmd_tx.borrow_mut(),
+                        &launch,
+                        &url,
+                        &room,
+                        &token,
                     );
                 }
-                InputAction::CopyToClipboard(text) => {
-                    match copy_to_clipboard(&text) {
-                        Ok(()) => {
-                            let preview = if text.len() > 40 {
-                                format!("{}...", &text[..40])
-                            } else {
-                                text.clone()
-                            };
-                            app.set_status(format!("Copied: {preview}"));
-                        }
-                        Err(e) => app.set_status(format!("Copy failed: {e}")),
+                InputAction::CopyToClipboard(text) => match copy_to_clipboard(&text) {
+                    Ok(()) => {
+                        let preview = if text.len() > 40 {
+                            format!("{}...", &text[..40])
+                        } else {
+                            text.clone()
+                        };
+                        app.set_status(format!("Copied: {preview}"));
+                    }
+                    Err(e) => app.set_status(format!("Copy failed: {e}")),
+                },
+                InputAction::OpenContextInspector => {
+                    match open_context_inspector_for_message(
+                        app,
+                        &rpc_cmd_tx.borrow(),
+                        app.input_buffer.clone(),
+                    ) {
+                        Ok(()) => {}
+                        Err(error) => app.push_message(ChatMessage::error(error)),
                     }
                 }
+                InputAction::OpenQuickOpen => {
+                    let items = build_quick_open_items(app, &rpc_cmd_tx.borrow());
+                    app.open_quick_open(items);
+                }
+                InputAction::OpenTimeline => {
+                    app.open_timeline();
+                }
+                InputAction::OpenTranscriptSearch => {
+                    app.open_transcript_search();
+                }
+                InputAction::QuickOpenSelected(item) => {
+                    app.close_quick_open();
+                    match item.kind {
+                        QuickOpenItemKind::Command | QuickOpenItemKind::Prompt => {
+                            app.input_buffer = item.value;
+                            app.input_cursor = app.input_buffer.len();
+                            app.mode = if app.input_buffer.starts_with('/') {
+                                AppMode::Command
+                            } else {
+                                AppMode::Normal
+                            };
+                        }
+                        QuickOpenItemKind::File => {
+                            let rendered = if item.value.contains(char::is_whitespace) {
+                                format!("@\"{}\"", item.value)
+                            } else {
+                                format!("@{}", item.value)
+                            };
+                            if app.input_buffer.is_empty() {
+                                app.input_buffer = format!("{rendered} ");
+                            } else {
+                                app.input_buffer.push_str(&format!(" {rendered} "));
+                            }
+                            app.input_cursor = app.input_buffer.len();
+                            app.mode = AppMode::Normal;
+                        }
+                        QuickOpenItemKind::Checkpoint => {
+                            match rpc_restore_checkpoint_blocking(
+                                &rpc_cmd_tx.borrow(),
+                                Some(&item.value),
+                            ) {
+                                Ok(payload) => {
+                                    let checkpoint_id = payload
+                                        .get("checkpointId")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(&item.value);
+                                    app.remember_recent_checkpoint(checkpoint_id);
+                                    refresh_workspace_status(app);
+                                    refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
+                                    app.push_message(ChatMessage::system(format!(
+                                        "Restored checkpoint `{checkpoint_id}` from quick open."
+                                    )));
+                                }
+                                Err(error) => app.push_message(ChatMessage::error(format!(
+                                    "Failed to restore checkpoint `{}`: {error}",
+                                    item.value
+                                ))),
+                            }
+                        }
+                    }
+                }
+                InputAction::RestoreLastMutation => {
+                    let Some(checkpoint_id) = app.last_mutation_checkpoint_id.clone() else {
+                        app.set_status("No recent mutation checkpoint available");
+                        return Ok(LoopControl::Continue);
+                    };
+                    match rpc_restore_checkpoint_blocking(
+                        &rpc_cmd_tx.borrow(),
+                        Some(&checkpoint_id),
+                    ) {
+                        Ok(payload) => {
+                            let restored = payload
+                                .get("restoredFiles")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            refresh_workspace_status(app);
+                            refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
+                            app.push_message(ChatMessage::system(format!(
+                                "Restored checkpoint `{checkpoint_id}` ({restored} file(s))."
+                            )));
+                        }
+                        Err(error) => app.push_message(ChatMessage::error(format!(
+                            "Failed to restore `{checkpoint_id}`: {error}"
+                        ))),
+                    }
+                }
+                InputAction::OpenFileInEditor(path) => match open_file_in_editor(&path) {
+                    Ok(()) => app.set_status(format!("Opened `{path}`")),
+                    Err(error) => app.push_message(ChatMessage::error(error)),
+                },
                 InputAction::Redraw => {}
                 InputAction::None => {}
             }
@@ -975,7 +1147,10 @@ fn handle_submit(
     // auto-queue non-slash input while AI is working
     if app.waiting && !trimmed.starts_with('/') && !trimmed.starts_with('!') {
         app.prompt_queue.push_back(trimmed.to_string());
-        app.set_status(format!("Queued prompt ({} in queue)", app.prompt_queue.len()));
+        app.set_status(format!(
+            "Queued prompt ({} in queue)",
+            app.prompt_queue.len()
+        ));
         return false;
     }
 
@@ -1070,21 +1245,23 @@ fn handle_submit(
     }
 
     refresh_context_budget_state(app);
-    let backend_with_files = match with_context_files(app, trimmed) {
-        Ok(message) => message,
+    let prepared_request = match prepare_context_request(app, trimmed) {
+        Ok(request) => request,
         Err(error_message) => {
             app.push_message(ChatMessage::error(error_message));
             return false;
         }
     };
-    let backend_message = with_pending_images(app, &backend_with_files);
+    let backend_message = with_pending_images(app, &prepared_request.message);
     let backend_message = apply_response_mode_to_user_input(app.response_mode, &backend_message);
-    send_chat_request(
+    send_chat_request_with_context(
         app,
         tx,
         rpc_cmd_tx,
         cancel_token,
         backend_message,
+        prepared_request.explicit_files,
+        prepared_request.pinned_files,
         trimmed.to_string(),
         launch.session_log.as_ref(),
     );
@@ -1100,6 +1277,30 @@ fn send_chat_request(
     display_message: String,
     session_log: Option<&SessionLogWriter>,
 ) {
+    send_chat_request_with_context(
+        app,
+        tx,
+        rpc_cmd_tx,
+        cancel_token,
+        backend_message,
+        Vec::new(),
+        Vec::new(),
+        display_message,
+        session_log,
+    );
+}
+
+fn send_chat_request_with_context(
+    app: &mut App,
+    tx: &mpsc::Sender<ServerMsg>,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    cancel_token: &Arc<AtomicBool>,
+    backend_message: String,
+    explicit_context_files: Vec<String>,
+    pinned_context_files: Vec<String>,
+    display_message: String,
+    session_log: Option<&SessionLogWriter>,
+) {
     const STREAM_REPLY_TIMEOUT_SECS: u64 = 130;
 
     let display_kind = chat_display_kind(&display_message);
@@ -1107,6 +1308,7 @@ fn send_chat_request(
     let backend_char_count = backend_message.chars().count();
 
     cancel_token.store(false, Ordering::SeqCst);
+    app.remember_recent_prompt(&display_message);
     app.record_user_input(&display_message);
     app.push_message(ChatMessage::user(display_message));
     app.start_waiting();
@@ -1133,6 +1335,9 @@ fn send_chat_request(
         .send(RpcCommand::ChatStreaming {
             message: backend_message,
             request_id,
+            context_files: explicit_context_files,
+            pinned_context_files,
+            context_budget_tokens: Some(app.context_budget_tokens),
             reply: reply_tx,
         })
         .is_err()
@@ -1220,28 +1425,31 @@ fn dispatch_next_queued_prompt(
     }
     if let Some(next_prompt) = app.prompt_queue.pop_front() {
         let remaining = app.prompt_queue.len();
-        app.push_message(ChatMessage::system(
-            format!("[queue] auto-sending next prompt ({remaining} remaining)")
-        ));
+        app.push_message(ChatMessage::system(format!(
+            "[queue] auto-sending next prompt ({remaining} remaining)"
+        )));
         let backend_msg = apply_response_mode_to_user_input(app.response_mode, &next_prompt);
         send_chat_request(
-            app, tx, rpc_cmd_tx, cancel_token,
-            backend_msg, next_prompt, session_log,
+            app,
+            tx,
+            rpc_cmd_tx,
+            cancel_token,
+            backend_msg,
+            next_prompt,
+            session_log,
         );
     }
 }
 
 const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
-const MAX_CONTEXT_BYTES_PER_FILE: usize = 32_000;
-const MAX_CONTEXT_TOTAL_BYTES: usize = 180_000;
 
-fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
+fn prepare_context_request(app: &mut App, message: &str) -> Result<PreparedContextRequest, String> {
     let inline_specs = extract_at_references(message)?;
 
-    let mut resolved = Vec::<PathBuf>::new();
     let mut seen_paths = HashSet::<String>::new();
     let mut unresolved_refs = Vec::<String>::new();
     let mut ambiguous_refs = Vec::<String>::new();
+    let mut explicit_paths = Vec::<PathBuf>::new();
 
     for spec in &inline_specs {
         let matches = resolve_context_spec(app, spec);
@@ -1264,7 +1472,7 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         let path = matches[0].clone();
         let key = path.to_string_lossy().to_string();
         if seen_paths.insert(key) {
-            resolved.push(path);
+            explicit_paths.push(path);
         }
     }
 
@@ -1293,90 +1501,31 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         return Err(lines.join("\n"));
     }
 
+    let mut pinned_paths = Vec::<PathBuf>::new();
     if !app.pinned_context_files.is_empty() {
-        let pinned_resolved = resolve_context_specs(
-            app,
-            &app.pinned_context_files,
-            MAX_CONTEXT_FILES_PER_REQUEST,
-        );
+        let remaining = MAX_CONTEXT_FILES_PER_REQUEST.saturating_sub(explicit_paths.len());
+        let pinned_resolved = resolve_context_specs(app, &app.pinned_context_files, remaining);
         for path in pinned_resolved {
-            if resolved.len() >= MAX_CONTEXT_FILES_PER_REQUEST {
-                break;
-            }
             let key = path.to_string_lossy().to_string();
             if seen_paths.insert(key) {
-                resolved.push(path);
+                pinned_paths.push(path);
             }
         }
     }
 
-    if resolved.is_empty()
-        && inline_specs.is_empty()
-        && app.pinned_context_files.is_empty()
-        && !app.context_budget_files.is_empty()
-    {
-        for relative in app.context_budget_files.iter().take(6) {
-            let path = if Path::new(relative).is_absolute() {
-                PathBuf::from(relative)
-            } else {
-                Path::new(&app.cwd).join(relative)
-            };
-            if !path.is_file() {
-                continue;
-            }
-            let key = path.to_string_lossy().to_string();
-            if seen_paths.insert(key) {
-                resolved.push(path);
-            }
-        }
+    if explicit_paths.is_empty() && pinned_paths.is_empty() {
+        return Ok(PreparedContextRequest {
+            message: message.to_string(),
+            explicit_files: Vec::new(),
+            pinned_files: Vec::new(),
+        });
     }
 
-    if resolved.is_empty() {
-        return Ok(message.to_string());
-    }
-
-    let mut total_bytes = 0usize;
-    let mut attached = Vec::new();
-    let mut sections = Vec::new();
-
-    for path in resolved {
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
-        };
-        if bytes.contains(&0) {
-            continue;
-        }
-
-        let content = if bytes.len() > MAX_CONTEXT_BYTES_PER_FILE {
-            String::from_utf8_lossy(&bytes[..MAX_CONTEXT_BYTES_PER_FILE]).to_string()
-        } else {
-            String::from_utf8_lossy(&bytes).to_string()
-        };
-
-        if content.trim().is_empty() {
-            continue;
-        }
-
-        let increment = content.len();
-        if total_bytes + increment > MAX_CONTEXT_TOTAL_BYTES {
-            break;
-        }
-        total_bytes += increment;
-
-        let display = display_project_path(app, &path);
-        let language = detect_language_from_path(&display);
-        attached.push(display.clone());
-        sections.push(format!(
-            "File: {display}\n```{language}\n{}\n```",
-            truncate_block(&content, MAX_CONTEXT_BYTES_PER_FILE)
-        ));
-    }
-
-    if sections.is_empty() {
-        return Ok(message.to_string());
-    }
-
+    let attached = explicit_paths
+        .iter()
+        .chain(pinned_paths.iter())
+        .map(|path| display_project_path(app, path))
+        .collect::<Vec<_>>();
     let attached_summary = attached
         .iter()
         .take(3)
@@ -1384,10 +1533,12 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         .collect::<Vec<_>>()
         .join(", ");
     let extra = attached.len().saturating_sub(3);
-    let source_label = if inline_specs.is_empty() && app.pinned_context_files.is_empty() {
-        "auto-selected context budget files"
-    } else {
+    let source_label = if !inline_specs.is_empty() && !pinned_paths.is_empty() {
         "@ references and pinned files"
+    } else if !inline_specs.is_empty() {
+        "@ references"
+    } else {
+        "pinned files"
     };
     if extra > 0 {
         app.set_status(format!(
@@ -1403,10 +1554,17 @@ fn with_context_files(app: &mut App, message: &str) -> Result<String, String> {
         ));
     }
 
-    Ok(format!(
-        "{message}\n\nReferenced project files:\n\n{}",
-        sections.join("\n\n")
-    ))
+    Ok(PreparedContextRequest {
+        message: message.to_string(),
+        explicit_files: explicit_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect(),
+        pinned_files: pinned_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect(),
+    })
 }
 
 fn extract_at_references(message: &str) -> Result<Vec<String>, String> {
@@ -1502,6 +1660,9 @@ fn is_unquoted_reference_char(ch: char) -> bool {
 }
 
 fn resolve_context_specs(app: &App, specs: &[String], limit: usize) -> Vec<PathBuf> {
+    if limit == 0 {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
@@ -2851,27 +3012,319 @@ fn refresh_context_budget_state(app: &mut App) {
     app.context_budget_estimated_tokens = used_tokens;
 }
 
-fn format_context_budget_report(app: &App) -> String {
-    let mut lines = vec![
-        format!(
-            "**Context Budget** (budget={} tok, used~{} tok)",
-            app.context_budget_tokens, app.context_budget_estimated_tokens
-        ),
-        String::new(),
-    ];
-    if app.context_budget_files.is_empty() {
-        lines.push("No candidate files selected.".to_string());
-        return lines.join("\n");
+fn refresh_workspace_status(app: &mut App) {
+    if app.cwd.is_empty() {
+        return;
     }
 
-    for file in app.context_budget_files.iter().take(12) {
-        lines.push(format!("- `{file}`"));
+    let output = Command::new("git")
+        .args(["-C", &app.cwd, "status", "-sb"])
+        .output();
+    let Ok(output) = output else {
+        app.git_branch.clear();
+        app.git_dirty = false;
+        if app.resume_dashboard.git_summary.is_empty() {
+            app.resume_dashboard.git_summary = "(git unavailable)".to_string();
+        }
+        return;
+    };
+    if !output.status.success() {
+        app.git_branch.clear();
+        app.git_dirty = false;
+        app.resume_dashboard.git_summary = "(not a git repository)".to_string();
+        return;
     }
-    lines.push(String::new());
-    lines.push(
-        "Auto-selection is used when you send prompts without `@refs` or pinned files.".to_string(),
-    );
-    lines.join("\n")
+
+    let status = String::from_utf8_lossy(&output.stdout).to_string();
+    let mut lines = status.lines();
+    let branch_line = lines
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_start_matches("## ")
+        .to_string();
+    app.git_dirty = lines.next().is_some();
+    app.git_branch = branch_line
+        .split("...")
+        .next()
+        .unwrap_or(branch_line.as_str())
+        .trim()
+        .to_string();
+    app.resume_dashboard.git_summary = if branch_line.is_empty() {
+        "(git unavailable)".to_string()
+    } else if app.git_dirty {
+        format!("{branch_line} *dirty*")
+    } else {
+        branch_line
+    };
+}
+
+fn refresh_resume_dashboard(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) {
+    let mut dashboard = app.resume_dashboard.clone();
+    dashboard.recent_edits = app.recent_edited_files.iter().take(5).cloned().collect();
+    dashboard.git_summary = app.resume_dashboard.git_summary.clone();
+
+    if let Ok(payload) = rpc_list_sessions_blocking(rpc_cmd_tx, 1) {
+        let sessions = payload
+            .get("sessions")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if let Some(first) = sessions.first() {
+            let session_id = first
+                .get("sessionId")
+                .and_then(|value| value.as_str())
+                .unwrap_or("(unknown)");
+            let model = first
+                .get("model")
+                .and_then(|value| value.as_str())
+                .unwrap_or("(unknown)");
+            let message_count = first
+                .get("messageCount")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0);
+            dashboard.last_session_summary =
+                format!("{session_id} on {model} ({message_count} messages)");
+        }
+    }
+
+    if let Ok(payload) = rpc_list_checkpoints_blocking(rpc_cmd_tx, 5) {
+        let checkpoints = payload
+            .get("checkpoints")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        dashboard.recent_checkpoints = checkpoints
+            .iter()
+            .filter_map(|entry| entry.get("checkpointId").and_then(|value| value.as_str()))
+            .take(5)
+            .map(|value| value.to_string())
+            .collect();
+    }
+
+    if let Ok(payload) = rpc_get_service_status_blocking(rpc_cmd_tx, None) {
+        if let Some(services) = payload.get("services").and_then(|value| value.as_array()) {
+            dashboard.active_services = services
+                .iter()
+                .filter(|entry| {
+                    entry
+                        .get("running")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false)
+                })
+                .filter_map(|entry| entry.get("name").and_then(|value| value.as_str()))
+                .take(5)
+                .map(|value| value.to_string())
+                .collect();
+        }
+    }
+
+    app.set_resume_dashboard(dashboard);
+}
+
+fn resolve_explicit_context_map(
+    app: &App,
+    message: &str,
+) -> Result<HashMap<String, String>, String> {
+    let inline_specs = extract_at_references(message)?;
+    let mut mapping = HashMap::new();
+    for spec in inline_specs {
+        let matches = resolve_context_spec(app, &spec);
+        if matches.len() == 1 {
+            mapping.insert(matches[0].to_string_lossy().to_string(), spec);
+        }
+    }
+    Ok(mapping)
+}
+
+fn resolve_pinned_context_map(app: &App) -> HashMap<String, String> {
+    let mut mapping = HashMap::new();
+    for spec in &app.pinned_context_files {
+        let matches = resolve_context_spec(app, spec);
+        if matches.len() == 1 {
+            mapping.insert(matches[0].to_string_lossy().to_string(), spec.clone());
+        }
+    }
+    mapping
+}
+
+fn open_context_inspector_for_message(
+    app: &mut App,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    message: String,
+) -> Result<(), String> {
+    let prepared = prepare_context_request(app, &message)?;
+    let preview = rpc_preview_context_blocking(
+        rpc_cmd_tx,
+        &prepared.message,
+        &prepared.explicit_files,
+        &prepared.pinned_files,
+        Some(app.context_budget_tokens),
+    )?;
+
+    let explicit_map = resolve_explicit_context_map(app, &message)?;
+    let pinned_map = resolve_pinned_context_map(app);
+    let files = preview
+        .get("files")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|entry| {
+            let path = entry
+                .get("path")
+                .and_then(|value| value.as_str())?
+                .to_string();
+            let source = entry
+                .get("source")
+                .and_then(|value| value.as_str())
+                .unwrap_or("auto")
+                .to_string();
+            Some(ContextInspectorFile {
+                explicit_spec: if source == "explicit" {
+                    explicit_map.get(&path).cloned()
+                } else if source == "pinned" {
+                    pinned_map.get(&path).cloned()
+                } else {
+                    None
+                },
+                path: path.clone(),
+                source,
+                estimated_tokens: entry
+                    .get("estimatedTokens")
+                    .and_then(|value| value.as_u64())
+                    .unwrap_or(0) as usize,
+                reason: entry
+                    .get("reason")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                include_full_content: entry
+                    .get("includeFullContent")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    app.context_budget_files = files.iter().map(|file| file.path.clone()).collect();
+    app.context_budget_estimated_tokens = preview
+        .get("totalTokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0) as usize;
+    app.open_context_inspector(ContextInspectorState {
+        request_message: prepared.message,
+        total_tokens: app.context_budget_estimated_tokens,
+        budget_tokens: app.context_budget_tokens,
+        truncated: preview
+            .get("truncated")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        message: preview
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string(),
+        keywords: preview
+            .get("keywords")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        files,
+        selected_index: 0,
+    });
+    Ok(())
+}
+
+fn build_quick_open_items(app: &App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Vec<QuickOpenItem> {
+    let mut items = Vec::new();
+
+    for spec in input::SLASH_COMMANDS.iter().take(24) {
+        items.push(QuickOpenItem {
+            kind: QuickOpenItemKind::Command,
+            label: spec.command.to_string(),
+            detail: spec.description.to_string(),
+            value: spec.command.to_string(),
+        });
+    }
+
+    for file in &app.pinned_context_files {
+        items.push(QuickOpenItem {
+            kind: QuickOpenItemKind::File,
+            label: file.clone(),
+            detail: "pinned file".to_string(),
+            value: file.clone(),
+        });
+    }
+
+    for file in app.recent_edited_files.iter().take(10) {
+        items.push(QuickOpenItem {
+            kind: QuickOpenItemKind::File,
+            label: file.clone(),
+            detail: "recent edit".to_string(),
+            value: file.clone(),
+        });
+    }
+
+    if let Ok(payload) = rpc_list_checkpoints_blocking(rpc_cmd_tx, 8) {
+        if let Some(checkpoints) = payload
+            .get("checkpoints")
+            .and_then(|value| value.as_array())
+        {
+            for checkpoint in checkpoints.iter().take(8) {
+                if let Some(checkpoint_id) = checkpoint
+                    .get("checkpointId")
+                    .and_then(|value| value.as_str())
+                {
+                    let description = checkpoint
+                        .get("description")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("checkpoint");
+                    items.push(QuickOpenItem {
+                        kind: QuickOpenItemKind::Checkpoint,
+                        label: checkpoint_id.to_string(),
+                        detail: description.to_string(),
+                        value: checkpoint_id.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    for prompt in app.recent_prompts.iter().take(10) {
+        items.push(QuickOpenItem {
+            kind: QuickOpenItemKind::Prompt,
+            label: truncate_line(prompt, 42),
+            detail: "recent prompt".to_string(),
+            value: prompt.clone(),
+        });
+    }
+
+    items
+}
+
+fn open_file_in_editor(path: &str) -> Result<(), String> {
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let mut parts = editor.split_whitespace();
+    let Some(program) = parts.next() else {
+        return Err("EDITOR is empty".to_string());
+    };
+
+    let mut command = Command::new(program);
+    for arg in parts {
+        command.arg(arg);
+    }
+    command.arg(path);
+
+    command
+        .spawn()
+        .map_err(|error| format!("Failed to open `{path}` in {editor}: {error}"))?;
+    Ok(())
 }
 
 fn command_data_dir(app: &App) -> PathBuf {
@@ -3184,6 +3637,29 @@ fn rpc_get_tools_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for tools".to_string())?
+}
+
+fn rpc_preview_context_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    message: &str,
+    context_files: &[String],
+    pinned_context_files: &[String],
+    context_budget_tokens: Option<usize>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PreviewContext {
+            message: message.to_string(),
+            context_files: context_files.to_vec(),
+            pinned_context_files: pinned_context_files.to_vec(),
+            context_budget_tokens,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request context preview: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for context preview".to_string())?
 }
 
 fn rpc_list_config_options_blocking(
@@ -4102,7 +4578,7 @@ mod tests {
     }
 
     #[test]
-    fn with_context_files_blocks_on_unresolved_or_ambiguous_refs() {
+    fn prepare_context_request_blocks_on_unresolved_or_ambiguous_refs() {
         let root = create_temp_workspace("refs-error");
         fs::create_dir_all(root.join("src")).expect("src dir");
         fs::create_dir_all(root.join("tests")).expect("tests dir");
@@ -4110,26 +4586,52 @@ mod tests {
         fs::write(root.join("tests").join("main.rs"), "#[test]\nfn ok() {}\n").expect("main tests");
 
         let mut app = build_app_for_root(&root);
-        let ambiguous = with_context_files(&mut app, "review @main.rs");
+        let ambiguous = prepare_context_request(&mut app, "review @main.rs");
         assert!(ambiguous.is_err());
 
-        let unresolved = with_context_files(&mut app, "review @missing.rs");
+        let unresolved = prepare_context_request(&mut app, "review @missing.rs");
         assert!(unresolved.is_err());
 
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn with_context_files_accepts_quoted_paths_with_spaces() {
+    fn prepare_context_request_resolves_absolute_paths_without_prompt_stuffing() {
         let root = create_temp_workspace("refs-spaces");
         fs::create_dir_all(root.join("docs")).expect("docs dir");
         fs::write(root.join("docs").join("My File.md"), "# Title\n").expect("docs file");
 
         let mut app = build_app_for_root(&root);
-        let merged = with_context_files(&mut app, r#"summarize @"docs/My File.md""#)
+        let request = prepare_context_request(&mut app, r#"summarize @"docs/My File.md""#)
             .expect("quoted path should resolve");
-        assert!(merged.contains("Referenced project files"));
-        assert!(merged.contains("docs/My File.md"));
+        assert_eq!(request.message, r#"summarize @"docs/My File.md""#);
+        assert_eq!(request.explicit_files.len(), 1);
+        assert!(Path::new(&request.explicit_files[0]).is_absolute());
+        assert!(request.explicit_files[0].ends_with("docs/My File.md"));
+        assert!(request.pinned_files.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn prepare_context_request_includes_pinned_files_as_backend_paths() {
+        let root = create_temp_workspace("refs-pinned");
+        fs::create_dir_all(root.join("src")).expect("src dir");
+        fs::write(
+            root.join("src").join("lib.rs"),
+            "pub fn answer() -> u32 { 42 }\n",
+        )
+        .expect("lib file");
+
+        let mut app = build_app_for_root(&root);
+        app.pinned_context_files.push("src/lib.rs".to_string());
+
+        let request = prepare_context_request(&mut app, "review this change")
+            .expect("pinned files should resolve");
+        assert!(request.explicit_files.is_empty());
+        assert_eq!(request.pinned_files.len(), 1);
+        assert!(Path::new(&request.pinned_files[0]).is_absolute());
+        assert!(request.pinned_files[0].ends_with("src/lib.rs"));
 
         let _ = fs::remove_dir_all(root);
     }

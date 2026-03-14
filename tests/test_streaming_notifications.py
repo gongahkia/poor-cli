@@ -20,6 +20,12 @@ class TestStreamingHandlers:
     def test_chat_streaming_handler_registered(self, server):
         assert "poor-cli/chatStreaming" in server.handlers
 
+    def test_preview_context_handler_registered(self, server):
+        assert "poor-cli/previewContext" in server.handlers
+
+    def test_preview_mutation_handler_registered(self, server):
+        assert "poor-cli/previewMutation" in server.handlers
+
     def test_cancel_request_handler_registered(self, server):
         assert "poor-cli/cancelRequest" in server.handlers
 
@@ -31,12 +37,19 @@ class TestNotificationParsing:
         msg = JsonRpcMessage.from_dict({
             "jsonrpc": "2.0",
             "method": "poor-cli/permissionRes",
-            "params": {"promptId": "abc", "allowed": True},
+            "params": {
+                "promptId": "abc",
+                "allowed": True,
+                "approvedPaths": ["/tmp/demo.py"],
+                "approvedChunks": [{"path": "/tmp/demo.py", "index": 1}],
+            },
         })
         assert msg.id is None
         assert msg.method == "poor-cli/permissionRes"
         assert msg.params["promptId"] == "abc"
         assert msg.params["allowed"] is True
+        assert msg.params["approvedPaths"] == ["/tmp/demo.py"]
+        assert msg.params["approvedChunks"] == [{"path": "/tmp/demo.py", "index": 1}]
 
     def test_plan_approval_notification_structure(self):
         msg = JsonRpcMessage.from_dict({
@@ -85,6 +98,31 @@ class TestStreamingPermissionCallback:
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(future, timeout=0.01)
 
+    @pytest.mark.asyncio
+    async def test_handle_permission_notification_preserves_approved_paths(self, server):
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        server._pending_permissions["test-id"] = future
+
+        await server._handle_notification(
+            JsonRpcMessage(
+                method="poor-cli/permissionRes",
+                params={
+                    "promptId": "test-id",
+                    "allowed": True,
+                    "approvedPaths": ["/tmp/demo.py"],
+                    "approvedChunks": [{"path": "/tmp/demo.py", "index": 1}],
+                },
+            )
+        )
+
+        decision = await asyncio.wait_for(future, timeout=1.0)
+        assert decision == {
+            "allowed": True,
+            "approvedPaths": ["/tmp/demo.py"],
+            "approvedChunks": [{"path": "/tmp/demo.py", "index": 1}],
+        }
+
 
 class TestNotificationOutput:
     """Test outgoing notification serialization."""
@@ -108,18 +146,32 @@ class TestNotificationOutput:
                 "toolName": "edit_file",
                 "toolResult": "ok",
                 "diff": "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new",
+                "paths": ["/tmp/x"],
+                "checkpointId": "cp_123",
+                "changed": True,
             },
         )
         d = msg.to_dict()
         assert d["params"]["diff"].startswith("---")
+        assert d["params"]["paths"] == ["/tmp/x"]
+        assert d["params"]["checkpointId"] == "cp_123"
 
     def test_permission_req_notification(self):
         msg = JsonRpcMessage(
             method="poor-cli/permissionReq",
-            params={"toolName": "bash", "toolArgs": {"cmd": "rm"}, "promptId": "p1"},
+            params={
+                "toolName": "bash",
+                "toolArgs": {"cmd": "rm"},
+                "promptId": "p1",
+                "paths": ["/tmp/x"],
+                "diff": "--- a/x\n+++ b/x\n",
+                "changed": True,
+            },
         )
         d = msg.to_dict()
         assert d["params"]["promptId"] == "p1"
+        assert d["params"]["paths"] == ["/tmp/x"]
+        assert d["params"]["changed"] is True
 
     def test_cost_update_notification(self):
         msg = JsonRpcMessage(

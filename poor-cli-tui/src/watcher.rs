@@ -107,6 +107,9 @@ pub fn spawn_watch_worker(
             if rpc_cmd_tx
                 .send(RpcCommand::Chat {
                     message: chat_prompt,
+                    context_files: Vec::new(),
+                    pinned_context_files: Vec::new(),
+                    context_budget_tokens: None,
                     reply: reply_tx,
                 })
                 .is_err()
@@ -128,9 +131,8 @@ pub fn spawn_watch_worker(
                         break;
                     }
                     Ok(Err(e)) => {
-                        let _ = tx.send(WatchMsg::Error(format!(
-                            "Watch mode analysis failed: {e}"
-                        )));
+                        let _ =
+                            tx.send(WatchMsg::Error(format!("Watch mode analysis failed: {e}")));
                         break;
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {

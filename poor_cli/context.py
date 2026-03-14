@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
 import time
 from urllib.parse import unquote, urlparse
 from dataclasses import dataclass, field
@@ -25,8 +26,18 @@ CHARS_PER_TOKEN = 4
 
 # Default context limits
 DEFAULT_MAX_TOKENS = 8000
-DEFAULT_MAX_FILES = 10
+DEFAULT_MAX_FILES = 12
 DEFAULT_MAX_FILE_SIZE = 50000  # 50KB per file
+DEFAULT_EXPLICIT_MAX_CHARS = 12000
+DEFAULT_EXCERPT_MAX_CHARS = 5000
+DEFAULT_HEADER_LINES = 40
+DEFAULT_EXCERPT_CONTEXT_LINES = 3
+DEFAULT_EXCERPT_MATCHES = 3
+_STOP_WORDS = {
+    "about", "after", "again", "agent", "also", "build", "change", "changes", "check",
+    "code", "current", "file", "files", "from", "into", "make", "need", "only", "please",
+    "review", "show", "that", "this", "those", "update", "with", "without", "would",
+}
 
 
 @dataclass
@@ -39,6 +50,9 @@ class FileContext:
     language: str
     priority: float = 0.0
     tokens_estimate: int = 0
+    source: str = "direct"
+    include_full_content: bool = False
+    selection_reason: str = ""
     
     def __post_init__(self):
         self.tokens_estimate = len(self.content) // CHARS_PER_TOKEN
@@ -138,6 +152,183 @@ class ContextManager:
     def clear_cache(self) -> None:
         """Clear the file content cache."""
         self._cache.clear()
+
+    async def select_context_files(
+        self,
+        message: str,
+        explicit_files: Optional[List[str]] = None,
+        pinned_files: Optional[List[str]] = None,
+        repo_root: Optional[str] = None,
+        max_files: Optional[int] = None,
+    ) -> ContextResult:
+        """Select context files for a chat turn using backend-owned priorities."""
+        root = Path(repo_root or Path.cwd()).resolve()
+        files_to_include: List[FileContext] = []
+        seen_paths: Set[str] = set()
+        effective_max_files = max_files or self.max_files
+
+        explicit_files = explicit_files or []
+        pinned_files = pinned_files or []
+
+        async def _add_candidates(
+            candidates: List[str],
+            *,
+            source: str,
+            base_priority: float,
+            include_full_content: bool,
+            reason: str,
+        ) -> None:
+            for file_path in candidates:
+                file_ctx = await self._load_file(file_path)
+                if not file_ctx or file_ctx.path in seen_paths:
+                    continue
+                file_ctx.source = source
+                file_ctx.include_full_content = include_full_content
+                file_ctx.selection_reason = reason
+                file_ctx.priority = base_priority
+                files_to_include.append(file_ctx)
+                seen_paths.add(file_ctx.path)
+
+        await _add_candidates(
+            self._normalize_input_paths(explicit_files),
+            source="explicit",
+            base_priority=400.0,
+            include_full_content=True,
+            reason="explicit path reference",
+        )
+        await _add_candidates(
+            self._normalize_input_paths(pinned_files),
+            source="pinned",
+            base_priority=300.0,
+            include_full_content=False,
+            reason="pinned context file",
+        )
+        await _add_candidates(
+            self._discover_git_changed_files(root),
+            source="git",
+            base_priority=200.0,
+            include_full_content=False,
+            reason="git-changed file",
+        )
+        await _add_candidates(
+            self._discover_auto_files(root),
+            source="auto",
+            base_priority=100.0,
+            include_full_content=False,
+            reason="workspace auto-selection",
+        )
+
+        self._apply_recency_boost(files_to_include)
+        files_to_include.sort(key=lambda f: (-f.priority, f.path))
+
+        limited_files = files_to_include[:effective_max_files]
+        total_tokens = sum(self._estimate_prompt_tokens(file_ctx, message) for file_ctx in limited_files)
+        truncated = len(files_to_include) > len(limited_files)
+        source_counts: Dict[str, int] = {}
+        for file_ctx in limited_files:
+            source_counts[file_ctx.source] = source_counts.get(file_ctx.source, 0) + 1
+        source_summary = ", ".join(f"{name}={count}" for name, count in sorted(source_counts.items()))
+        message_text = f"Selected {len(limited_files)} files (~{total_tokens} tokens)"
+        if source_summary:
+            message_text += f" [{source_summary}]"
+        if truncated:
+            message_text += " [truncated]"
+
+        return ContextResult(
+            files=limited_files,
+            total_tokens=total_tokens,
+            truncated=truncated,
+            message=message_text,
+        )
+
+    async def build_context_message(
+        self,
+        message: str,
+        selection: ContextResult,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Render a prompt with excerpt-based context sections."""
+        if not selection.files:
+            return message
+
+        keywords = self._extract_keywords(message)
+        sections: List[str] = []
+        total_tokens = 0
+        truncated = selection.truncated
+        token_budget = max_tokens or self.max_tokens
+
+        for file_ctx in selection.files:
+            rendered = self._render_context_file(file_ctx, keywords)
+            if not rendered:
+                continue
+
+            estimated_tokens = max(1, len(rendered) // CHARS_PER_TOKEN)
+            if total_tokens + estimated_tokens > token_budget:
+                remaining_tokens = token_budget - total_tokens
+                if remaining_tokens <= 0:
+                    truncated = True
+                    break
+                rendered = rendered[: remaining_tokens * CHARS_PER_TOKEN] + "\n... (truncated)"
+                estimated_tokens = max(1, len(rendered) // CHARS_PER_TOKEN)
+                truncated = True
+
+            sections.append(rendered)
+            total_tokens += estimated_tokens
+
+        if not sections:
+            return message
+
+        header = "## Context Files\n"
+        if truncated:
+            header += "[excerpted/truncated to fit context budget]\n\n"
+        rendered_sections = "\n\n".join(sections)
+        return f"{header}{rendered_sections}\n\nUser request: {message}"
+
+    async def preview_context(
+        self,
+        message: str,
+        explicit_files: Optional[List[str]] = None,
+        pinned_files: Optional[List[str]] = None,
+        repo_root: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        max_files: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Return preview metadata for backend-owned context selection."""
+        token_budget = max_tokens or self.max_tokens
+        selection = await self.select_context_files(
+            message=message,
+            explicit_files=explicit_files,
+            pinned_files=pinned_files,
+            repo_root=repo_root,
+            max_files=max_files,
+        )
+        keywords = self._extract_keywords(message)
+        files_payload = []
+        total_tokens = 0
+        truncated = selection.truncated
+        for file_ctx in selection.files:
+            estimated_tokens = self._estimate_prompt_tokens(file_ctx, message)
+            if total_tokens + estimated_tokens > token_budget:
+                truncated = True
+                break
+            files_payload.append(
+                {
+                    "path": file_ctx.path,
+                    "source": file_ctx.source,
+                    "estimatedTokens": estimated_tokens,
+                    "language": file_ctx.language,
+                    "reason": file_ctx.selection_reason,
+                    "includeFullContent": file_ctx.include_full_content,
+                }
+            )
+            total_tokens += estimated_tokens
+        return {
+            "files": files_payload,
+            "totalTokens": total_tokens,
+            "truncated": truncated,
+            "message": selection.message,
+            "keywords": keywords[:10],
+        }
     
     async def gather_context(
         self,
@@ -401,6 +592,229 @@ class ContextManager:
                 if recency < 30:
                     boost = 20.0 * (1.0 - recency / 30.0)
                     file_ctx.priority += boost
+
+    def _normalize_input_paths(self, paths: List[str]) -> List[str]:
+        normalized: List[str] = []
+        seen: Set[str] = set()
+        for file_path in paths:
+            resolved = str(Path(file_path).expanduser().resolve())
+            if resolved not in seen:
+                seen.add(resolved)
+                normalized.append(resolved)
+        return normalized
+
+    def _discover_git_changed_files(self, repo_root: Path) -> List[str]:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(repo_root), "status", "--porcelain", "--untracked-files=all"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except Exception:
+            return []
+
+        if result.returncode != 0:
+            return []
+
+        changed: List[str] = []
+        seen: Set[str] = set()
+        for raw_line in result.stdout.splitlines():
+            if len(raw_line) < 4:
+                continue
+            rel_path = raw_line[3:].strip()
+            if " -> " in rel_path:
+                rel_path = rel_path.split(" -> ", maxsplit=1)[-1].strip()
+            if not rel_path:
+                continue
+            candidate = (repo_root / rel_path).resolve()
+            if not candidate.is_file():
+                continue
+            path_parts = set(candidate.parts)
+            if ".git" in path_parts or ".poor-cli" in path_parts:
+                continue
+            resolved = str(candidate)
+            if resolved not in seen:
+                seen.add(resolved)
+                changed.append(resolved)
+        return changed
+
+    def _discover_auto_files(self, repo_root: Path) -> List[str]:
+        candidates: List[Tuple[int, str]] = []
+        skipped_dirs = {
+            ".git",
+            ".poor-cli",
+            "node_modules",
+            "target",
+            "dist",
+            "build",
+            "__pycache__",
+            ".venv",
+            "venv",
+        }
+
+        discovered = 0
+        for root, dirnames, filenames in os.walk(repo_root):
+            dirnames[:] = [name for name in sorted(dirnames) if name not in skipped_dirs]
+            for filename in sorted(filenames):
+                path = Path(root) / filename
+                discovered += 1
+                if discovered > 5000:
+                    break
+                if not path.is_file():
+                    continue
+                if self._is_binary(str(path)):
+                    continue
+                candidates.append((self._context_relevance_score(path), str(path.resolve())))
+            if discovered > 5000:
+                break
+
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        return [path for _, path in candidates[: max(self.max_files * 3, 24)]]
+
+    @staticmethod
+    def _context_relevance_score(path: Path) -> int:
+        file_name = path.name.lower()
+        extension = path.suffix.lower()
+
+        score = {
+            ".rs": 120,
+            ".py": 120,
+            ".ts": 120,
+            ".tsx": 120,
+            ".js": 120,
+            ".jsx": 120,
+            ".go": 120,
+            ".java": 120,
+            ".kt": 120,
+            ".toml": 80,
+            ".yaml": 80,
+            ".yml": 80,
+            ".json": 80,
+            ".md": 60,
+            ".sh": 70,
+        }.get(extension, 40)
+
+        if file_name in {
+            "readme.md",
+            "cargo.toml",
+            "pyproject.toml",
+            "package.json",
+            "makefile",
+            "main.rs",
+            "main.py",
+            "app.py",
+            "index.ts",
+            "index.js",
+        }:
+            score += 120
+        if "test" in file_name:
+            score += 40
+        if "config" in file_name or file_name.endswith(".env"):
+            score += 30
+        if file_name.endswith(".lock"):
+            score -= 40
+        return score
+
+    @staticmethod
+    def _extract_keywords(message: str) -> List[str]:
+        keywords: List[str] = []
+        seen: Set[str] = set()
+        for raw_word in re.findall(r"[A-Za-z_][A-Za-z0-9_./-]{2,}", message.lower()):
+            word = raw_word.strip(".,:;()[]{}<>\"'")
+            if len(word) < 3 or word in _STOP_WORDS:
+                continue
+            if word not in seen:
+                seen.add(word)
+                keywords.append(word)
+        return keywords[:12]
+
+    def _estimate_prompt_tokens(self, file_ctx: FileContext, message: str) -> int:
+        rendered = self._render_context_file(file_ctx, self._extract_keywords(message))
+        if not rendered:
+            return 0
+        return max(1, len(rendered) // CHARS_PER_TOKEN)
+
+    @staticmethod
+    def _line_window(content: str, start: int, end: int) -> str:
+        lines = content.splitlines()
+        start_idx = max(0, start)
+        end_idx = min(len(lines), end)
+        return "\n".join(lines[start_idx:end_idx]).strip()
+
+    def _render_context_file(self, file_ctx: FileContext, keywords: List[str]) -> str:
+        content = file_ctx.content
+        if file_ctx.include_full_content:
+            excerpt = content[:DEFAULT_EXPLICIT_MAX_CHARS]
+            if len(content) > DEFAULT_EXPLICIT_MAX_CHARS:
+                excerpt += "\n... (truncated explicit file)"
+        else:
+            excerpt = self._build_excerpt_content(file_ctx, keywords)
+
+        if not excerpt.strip():
+            return ""
+
+        return (
+            f"### {file_ctx.path} [{file_ctx.source}]\n"
+            f"```{file_ctx.language}\n{excerpt}\n```"
+        )
+
+    def _build_excerpt_content(self, file_ctx: FileContext, keywords: List[str]) -> str:
+        sections: List[str] = []
+        seen_chunks: Set[str] = set()
+        content = file_ctx.content
+        lines = content.splitlines()
+
+        header = "\n".join(lines[:DEFAULT_HEADER_LINES]).strip()
+        if header:
+            seen_chunks.add(header)
+            sections.append(header)
+
+        import_block = self._extract_import_block(lines, file_ctx.language)
+        if import_block and import_block not in seen_chunks:
+            seen_chunks.add(import_block)
+            sections.append(import_block)
+
+        lowered_lines = [line.lower() for line in lines]
+        matches = 0
+        for keyword in keywords:
+            if matches >= DEFAULT_EXCERPT_MATCHES:
+                break
+            for idx, line in enumerate(lowered_lines):
+                if keyword in line:
+                    chunk = self._line_window(
+                        content,
+                        idx - DEFAULT_EXCERPT_CONTEXT_LINES,
+                        idx + DEFAULT_EXCERPT_CONTEXT_LINES + 1,
+                    )
+                    if chunk and chunk not in seen_chunks:
+                        seen_chunks.add(chunk)
+                        sections.append(chunk)
+                        matches += 1
+                    break
+
+        rendered = "\n\n...\n\n".join(section for section in sections if section).strip()
+        if len(rendered) > DEFAULT_EXCERPT_MAX_CHARS:
+            rendered = rendered[:DEFAULT_EXCERPT_MAX_CHARS] + "\n... (excerpt truncated)"
+        return rendered
+
+    def _extract_import_block(self, lines: List[str], language: str) -> str:
+        if language not in self._import_patterns:
+            return ""
+
+        collected: List[str] = []
+        for line in lines[:120]:
+            stripped = line.strip()
+            if not stripped and not collected:
+                continue
+            if any(re.search(pattern, line) for pattern in self._import_patterns[language]):
+                collected.append(line)
+                continue
+            if collected:
+                break
+
+        return "\n".join(collected).strip()
     
     def _truncate_to_limit(self, files: List[FileContext]) -> ContextResult:
         """

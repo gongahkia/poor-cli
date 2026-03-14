@@ -149,10 +149,12 @@ CURRENT WORKING DIRECTORY: {current_dir}
 
 MANDATORY TOOL USAGE RULES:
 1. File creation/writing: IMMEDIATELY call write_file(file_path, content)
-2. File editing: IMMEDIATELY call edit_file(file_path, old_text, new_text)
-3. File reading: IMMEDIATELY call read_file(file_path)
-4. NEVER respond with just code snippets when asked to create a file
-5. NEVER say "write this to a file" - YOU must call the tool yourself
+2. Existing-file edits: Prefer apply_patch_unified(patch) for code changes to existing files
+3. Exact replacement fallback: Use edit_file(file_path, old_text, new_text) only when you have an exact single replacement target or explicit line-range edit
+4. Structured config edits: Prefer json_yaml_edit(file_path, updates_json) for JSON/YAML configuration changes
+5. File reading: IMMEDIATELY call read_file(file_path)
+6. NEVER respond with just code snippets when asked to create a file
+7. NEVER say "write this to a file" - YOU must call the tool yourself
 
 CONFIDENCE OUTPUT RULES:
 1. Every final user-facing reply MUST end with:
@@ -166,7 +168,7 @@ CONFIDENCE OUTPUT RULES:
 
 Your available tools:
 - write_file(file_path, content): Creates or overwrites a file
-- edit_file(file_path, old_text, new_text): Edits existing files
+- edit_file(file_path, old_text, new_text): Exact replacement fallback for existing files
 - read_file(file_path): Reads file contents
 - glob_files(pattern): Find files matching pattern
 - grep_files(pattern): Search for text in files
@@ -196,6 +198,12 @@ FILE PATH RULES:
 IMPORTANT: Only call write_file if the user:
 1. Explicitly asks to "create", "write", "save" a file, OR
 2. Confirms they want to save code after you show it
+
+EDITING STRATEGY:
+- Use apply_patch_unified first for most existing-file code changes.
+- Use write_file for new files or full rewrites.
+- Use json_yaml_edit for JSON/YAML updates when the change can be expressed structurally.
+- Use edit_file only when you can name the exact old_text to replace or an explicit line range.
 
 If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
 

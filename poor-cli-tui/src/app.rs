@@ -122,6 +122,305 @@ impl ChatMessage {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ContextInspectorFile {
+    pub path: String,
+    pub source: String,
+    pub estimated_tokens: usize,
+    pub reason: String,
+    pub include_full_content: bool,
+    pub explicit_spec: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ContextInspectorState {
+    pub request_message: String,
+    pub total_tokens: usize,
+    pub budget_tokens: usize,
+    pub truncated: bool,
+    pub message: String,
+    pub keywords: Vec<String>,
+    pub files: Vec<ContextInspectorFile>,
+    pub selected_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovedReviewChunk {
+    pub path: String,
+    pub hunk_index: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MutationReviewChunk {
+    pub path: String,
+    pub hunk_index: usize,
+    pub header: String,
+    pub diff: String,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MutationReviewState {
+    pub request_id: String,
+    pub tool_name: String,
+    pub operation: String,
+    pub prompt_id: String,
+    pub paths: Vec<String>,
+    pub diff: String,
+    pub checkpoint_id: Option<String>,
+    pub changed: Option<bool>,
+    pub message: String,
+    pub selected_path_index: usize,
+    pub chunks: Vec<MutationReviewChunk>,
+    pub selected_chunk_index: usize,
+}
+
+impl MutationReviewState {
+    pub fn supports_chunk_approval(&self) -> bool {
+        self.tool_name == "apply_patch_unified" && !self.chunks.is_empty()
+    }
+
+    pub fn selected_chunk(&self) -> Option<&MutationReviewChunk> {
+        self.chunks.get(self.selected_chunk_index)
+    }
+
+    pub fn sync_selected_path_from_chunk(&mut self) {
+        if let Some(chunk) = self.selected_chunk() {
+            if let Some(index) = self.paths.iter().position(|path| path == &chunk.path) {
+                self.selected_path_index = index;
+            }
+        }
+    }
+
+    pub fn approved_chunks(&self) -> Vec<ApprovedReviewChunk> {
+        self.chunks
+            .iter()
+            .filter(|chunk| chunk.selected)
+            .map(|chunk| ApprovedReviewChunk {
+                path: chunk.path.clone(),
+                hunk_index: chunk.hunk_index,
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TimelineEntryKind {
+    Phase,
+    ToolCall,
+    ToolResult,
+    Permission,
+    Diff,
+    Cost,
+    Note,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimelineEntry {
+    pub kind: TimelineEntryKind,
+    pub request_id: String,
+    pub title: String,
+    pub detail: String,
+    pub diff: String,
+    pub paths: Vec<String>,
+    pub checkpoint_id: Option<String>,
+    pub changed: Option<bool>,
+    pub timestamp: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub enum QuickOpenItemKind {
+    Command,
+    File,
+    Checkpoint,
+    Prompt,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuickOpenItem {
+    pub kind: QuickOpenItemKind,
+    pub label: String,
+    pub detail: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QuickOpenState {
+    pub query: String,
+    pub selected_index: usize,
+    pub items: Vec<QuickOpenItem>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ResumeDashboardState {
+    pub last_session_summary: String,
+    pub recent_checkpoints: Vec<String>,
+    pub recent_edits: Vec<String>,
+    pub active_services: Vec<String>,
+    pub git_summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TranscriptSearchItemKind {
+    Message,
+    Tool,
+    Diff,
+}
+
+#[derive(Debug, Clone)]
+pub struct TranscriptSearchItem {
+    pub kind: TranscriptSearchItemKind,
+    pub label: String,
+    pub detail: String,
+    pub paths: Vec<String>,
+    pub diff: String,
+    pub timestamp: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct TranscriptSearchState {
+    pub query: String,
+    pub selected_index: usize,
+    pub include_messages: bool,
+    pub include_tools: bool,
+    pub include_diffs: bool,
+}
+
+impl Default for TranscriptSearchState {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            selected_index: 0,
+            include_messages: true,
+            include_tools: true,
+            include_diffs: true,
+        }
+    }
+}
+
+fn normalize_review_chunk_path(raw_path: &str, fallback_paths: &[String]) -> String {
+    let trimmed = raw_path.trim().trim_start_matches("a/").trim_start_matches("b/");
+    if trimmed.is_empty() || trimmed == "/dev/null" {
+        return fallback_paths.first().cloned().unwrap_or_default();
+    }
+    if trimmed.starts_with('/') {
+        return trimmed.to_string();
+    }
+
+    let mut matches = fallback_paths
+        .iter()
+        .filter(|path| path.ends_with(trimmed))
+        .cloned()
+        .collect::<Vec<_>>();
+    if matches.len() == 1 {
+        return matches.remove(0);
+    }
+
+    let file_name = trimmed.rsplit('/').next().unwrap_or(trimmed);
+    matches = fallback_paths
+        .iter()
+        .filter(|path| path.rsplit('/').next().unwrap_or("") == file_name)
+        .cloned()
+        .collect::<Vec<_>>();
+    if matches.len() == 1 {
+        return matches.remove(0);
+    }
+
+    trimmed.to_string()
+}
+
+fn parse_mutation_review_chunks(diff: &str, fallback_paths: &[String]) -> Vec<MutationReviewChunk> {
+    let mut chunks: Vec<MutationReviewChunk> = Vec::new();
+    let mut current_path = fallback_paths.first().cloned().unwrap_or_default();
+    let mut current_lines: Vec<String> = Vec::new();
+    let mut current_header = String::new();
+    let mut hunk_indexes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") || line.starts_with("--- ") {
+            if !current_lines.is_empty() {
+                let chunk_path = if current_path.is_empty() {
+                    fallback_paths.first().cloned().unwrap_or_default()
+                } else {
+                    current_path.clone()
+                };
+                let next_index = hunk_indexes.entry(chunk_path.clone()).or_insert(0usize);
+                chunks.push(MutationReviewChunk {
+                    path: chunk_path,
+                    hunk_index: *next_index,
+                    header: current_header.clone(),
+                    diff: current_lines.join("\n"),
+                    selected: false,
+                });
+                *next_index += 1;
+                current_lines.clear();
+            }
+            if line.starts_with("--- ") {
+                continue;
+            }
+        }
+        if let Some(raw_path) = line.strip_prefix("+++ ") {
+            current_path = normalize_review_chunk_path(raw_path, fallback_paths);
+            continue;
+        }
+
+        if line.starts_with("@@") {
+            if !current_lines.is_empty() {
+                let chunk_path = if current_path.is_empty() {
+                    fallback_paths.first().cloned().unwrap_or_default()
+                } else {
+                    current_path.clone()
+                };
+                let next_index = hunk_indexes.entry(chunk_path.clone()).or_insert(0usize);
+                chunks.push(MutationReviewChunk {
+                    path: chunk_path,
+                    hunk_index: *next_index,
+                    header: current_header.clone(),
+                    diff: current_lines.join("\n"),
+                    selected: false,
+                });
+                *next_index += 1;
+                current_lines.clear();
+            }
+            current_header = line.to_string();
+            current_lines.push(line.to_string());
+            continue;
+        }
+
+        if !current_lines.is_empty() {
+            current_lines.push(line.to_string());
+        }
+    }
+
+    if !current_lines.is_empty() {
+        let chunk_path = if current_path.is_empty() {
+            fallback_paths.first().cloned().unwrap_or_default()
+        } else {
+            current_path
+        };
+        let next_index = hunk_indexes.entry(chunk_path.clone()).or_insert(0usize);
+        chunks.push(MutationReviewChunk {
+            path: chunk_path,
+            hunk_index: *next_index,
+            header: current_header,
+            diff: current_lines.join("\n"),
+            selected: false,
+        });
+    }
+
+    if chunks.is_empty() && !diff.trim().is_empty() {
+        chunks.push(MutationReviewChunk {
+            path: fallback_paths.first().cloned().unwrap_or_default(),
+            hunk_index: 0,
+            header: "Full diff".to_string(),
+            diff: diff.to_string(),
+            selected: false,
+        });
+    }
+
+    chunks
+}
+
 // ── Application state ────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +430,11 @@ pub enum AppMode {
     ProviderSelect,
     InfoPopup,
     PermissionPrompt,
+    MutationReview,
+    ContextInspector,
+    QuickOpen,
+    Timeline,
+    TranscriptSearch,
     PlanReview,
     CompactSelect,
     JoinWizard,
@@ -371,6 +675,15 @@ pub struct App {
     pub permission_message: String,
     pub permission_answer: Option<bool>,
     pub permission_prompt_id: String,
+    pub permission_approved_paths: Vec<String>,
+    pub permission_approved_chunks: Vec<ApprovedReviewChunk>,
+    pub mutation_review: Option<MutationReviewState>,
+    pub context_inspector: Option<ContextInspectorState>,
+    pub quick_open: QuickOpenState,
+    pub timeline_entries: Vec<TimelineEntry>,
+    pub timeline_scroll: u16,
+    pub transcript_search: TranscriptSearchState,
+    pub permission_mode_label: String,
 
     // ── Status message (temporary) ───
     pub status_message: Option<(String, Instant)>,
@@ -409,6 +722,14 @@ pub struct App {
     pub context_budget_tokens: usize,
     pub context_budget_files: Vec<String>,
     pub context_budget_estimated_tokens: usize,
+    pub last_mutation_checkpoint_id: Option<String>,
+    pub last_mutation_diff: String,
+    pub recent_edited_files: VecDeque<String>,
+    pub recent_prompts: VecDeque<String>,
+    pub recent_checkpoints: VecDeque<String>,
+    pub git_branch: String,
+    pub git_dirty: bool,
+    pub resume_dashboard: ResumeDashboardState,
     pub qa_mode_enabled: bool,
     pub qa_command: String,
     pub multiplayer_enabled: bool,
@@ -488,6 +809,15 @@ impl Default for App {
             permission_message: String::new(),
             permission_answer: None,
             permission_prompt_id: String::new(),
+            permission_approved_paths: Vec::new(),
+            permission_approved_chunks: Vec::new(),
+            mutation_review: None,
+            context_inspector: None,
+            quick_open: QuickOpenState::default(),
+            timeline_entries: Vec::new(),
+            timeline_scroll: 0,
+            transcript_search: TranscriptSearchState::default(),
+            permission_mode_label: "prompt".to_string(),
             status_message: None,
             server_connected: false,
             cwd: String::new(),
@@ -516,6 +846,14 @@ impl Default for App {
             context_budget_tokens: 6000,
             context_budget_files: Vec::new(),
             context_budget_estimated_tokens: 0,
+            last_mutation_checkpoint_id: None,
+            last_mutation_diff: String::new(),
+            recent_edited_files: VecDeque::new(),
+            recent_prompts: VecDeque::new(),
+            recent_checkpoints: VecDeque::new(),
+            git_branch: String::new(),
+            git_dirty: false,
+            resume_dashboard: ResumeDashboardState::default(),
             qa_mode_enabled: false,
             qa_command: String::new(),
             multiplayer_enabled: false,
@@ -574,17 +912,50 @@ impl App {
         format!(
             "{dollar}\n\n{logo}\n\n\
             poor-cli v{version}  •  {provider}/{model}\n\
-            AI-powered coding assistant in your terminal\n\n\
+            AI-powered coding assistant in your terminal\n\
+            Permission mode: {permission_mode}\n\
+            Git: {git_summary}\n\n\
             Commands:\n  \
             /help         Show all commands\n  \
             /onboarding   Interactive command walkthrough\n  \
             /switch       Switch AI provider\n  \
             /providers    List all providers\n  \
             /quit         Exit\n\n\
+            Resume Dashboard\n\
+            Last session: {last_session}\n\
+            Recent checkpoints: {checkpoint_summary}\n\
+            Recent edits: {edit_summary}\n\
+            Services: {service_summary}\n\n\
             Tip: History automatically persists across sessions",
             version = self.version,
             provider = self.provider_name,
             model = self.model_name,
+            permission_mode = self.permission_mode_label,
+            git_summary = if self.resume_dashboard.git_summary.is_empty() {
+                "(git unavailable)"
+            } else {
+                &self.resume_dashboard.git_summary
+            },
+            last_session = if self.resume_dashboard.last_session_summary.is_empty() {
+                "(none)"
+            } else {
+                &self.resume_dashboard.last_session_summary
+            },
+            checkpoint_summary = if self.resume_dashboard.recent_checkpoints.is_empty() {
+                "(none)".to_string()
+            } else {
+                self.resume_dashboard.recent_checkpoints.join(", ")
+            },
+            edit_summary = if self.resume_dashboard.recent_edits.is_empty() {
+                "(none)".to_string()
+            } else {
+                self.resume_dashboard.recent_edits.join(", ")
+            },
+            service_summary = if self.resume_dashboard.active_services.is_empty() {
+                "(none)".to_string()
+            } else {
+                self.resume_dashboard.active_services.join(", ")
+            },
         )
     }
 
@@ -638,7 +1009,8 @@ impl App {
     pub fn tick_welcome_anim(&mut self) {
         if self.welcome_anim_active && self.messages.len() <= 1 {
             self.welcome_anim_tick += 1;
-            if self.welcome_anim_tick % 3 == 0 { // advance frame every ~300ms
+            if self.welcome_anim_tick % 3 == 0 {
+                // advance frame every ~300ms
                 self.update_welcome();
             }
         }
@@ -796,6 +1168,236 @@ impl App {
         self.status_message = Some((msg.into(), Instant::now()));
     }
 
+    pub fn push_timeline_entry(&mut self, entry: TimelineEntry) {
+        self.timeline_entries.push(entry);
+        if self.timeline_entries.len() > 200 {
+            let overflow = self.timeline_entries.len() - 200;
+            self.timeline_entries.drain(0..overflow);
+        }
+        self.timeline_scroll = 0;
+    }
+
+    pub fn open_context_inspector(&mut self, state: ContextInspectorState) {
+        self.context_inspector = Some(state);
+        self.mode = AppMode::ContextInspector;
+    }
+
+    pub fn close_context_inspector(&mut self) {
+        self.context_inspector = None;
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn open_mutation_review(&mut self, mut state: MutationReviewState) {
+        if state.chunks.is_empty() {
+            state.chunks = parse_mutation_review_chunks(&state.diff, &state.paths);
+        }
+        state.sync_selected_path_from_chunk();
+        self.permission_prompt_id = state.prompt_id.clone();
+        self.permission_approved_paths.clear();
+        self.permission_approved_chunks.clear();
+        self.permission_message = if state.message.is_empty() {
+            state.tool_name.clone()
+        } else {
+            state.message.clone()
+        };
+        self.mutation_review = Some(state);
+        self.mode = AppMode::MutationReview;
+    }
+
+    pub fn close_mutation_review(&mut self) {
+        self.mutation_review = None;
+        self.permission_approved_paths.clear();
+        self.permission_approved_chunks.clear();
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn open_quick_open(&mut self, items: Vec<QuickOpenItem>) {
+        self.quick_open = QuickOpenState {
+            query: String::new(),
+            selected_index: 0,
+            items,
+        };
+        self.mode = AppMode::QuickOpen;
+    }
+
+    pub fn close_quick_open(&mut self) {
+        self.quick_open = QuickOpenState::default();
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn open_timeline(&mut self) {
+        self.mode = AppMode::Timeline;
+    }
+
+    pub fn close_timeline(&mut self) {
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn open_transcript_search(&mut self) {
+        self.transcript_search = TranscriptSearchState::default();
+        self.mode = AppMode::TranscriptSearch;
+    }
+
+    pub fn close_transcript_search(&mut self) {
+        self.transcript_search = TranscriptSearchState::default();
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn transcript_search_items(&self) -> Vec<TranscriptSearchItem> {
+        let mut items: Vec<TranscriptSearchItem> = Vec::new();
+        let query = self.transcript_search.query.trim().to_lowercase();
+
+        for message in &self.messages {
+            let (kind, label) = match &message.role {
+                MessageRole::User => (TranscriptSearchItemKind::Message, "User".to_string()),
+                MessageRole::Assistant => {
+                    (TranscriptSearchItemKind::Message, "Assistant".to_string())
+                }
+                MessageRole::System => (TranscriptSearchItemKind::Message, "System".to_string()),
+                MessageRole::Error => (TranscriptSearchItemKind::Message, "Error".to_string()),
+                MessageRole::ToolCall { name } => (
+                    TranscriptSearchItemKind::Tool,
+                    format!("Tool call / {name}"),
+                ),
+                MessageRole::ToolResult { name } => (
+                    TranscriptSearchItemKind::Tool,
+                    format!("Tool result / {name}"),
+                ),
+                MessageRole::DiffView { name } => {
+                    (TranscriptSearchItemKind::Diff, format!("Diff / {name}"))
+                }
+            };
+
+            if kind == TranscriptSearchItemKind::Message && !self.transcript_search.include_messages
+            {
+                continue;
+            }
+            if kind == TranscriptSearchItemKind::Tool && !self.transcript_search.include_tools {
+                continue;
+            }
+            if kind == TranscriptSearchItemKind::Diff && !self.transcript_search.include_diffs {
+                continue;
+            }
+
+            items.push(TranscriptSearchItem {
+                kind,
+                label,
+                detail: message.content.clone(),
+                paths: Vec::new(),
+                diff: if matches!(&message.role, MessageRole::DiffView { .. }) {
+                    message.content.clone()
+                } else {
+                    String::new()
+                },
+                timestamp: message.timestamp,
+            });
+        }
+
+        for entry in &self.timeline_entries {
+            let (kind, label, diff) = if (!entry.diff.is_empty()
+                || matches!(entry.kind, TimelineEntryKind::Diff))
+                && self.transcript_search.include_diffs
+            {
+                (
+                    TranscriptSearchItemKind::Diff,
+                    format!("Diff / {}", entry.title),
+                    entry.diff.clone(),
+                )
+            } else if self.transcript_search.include_tools {
+                let prefix = match entry.kind {
+                    TimelineEntryKind::Phase => "Phase",
+                    TimelineEntryKind::ToolCall => "Tool call",
+                    TimelineEntryKind::ToolResult => "Tool result",
+                    TimelineEntryKind::Permission => "Review",
+                    TimelineEntryKind::Diff => "Diff",
+                    TimelineEntryKind::Cost => "Cost",
+                    TimelineEntryKind::Note => "Note",
+                };
+                (
+                    TranscriptSearchItemKind::Tool,
+                    format!("{prefix} / {}", entry.title),
+                    String::new(),
+                )
+            } else {
+                continue;
+            };
+
+            items.push(TranscriptSearchItem {
+                kind,
+                label,
+                detail: entry.detail.clone(),
+                paths: entry.paths.clone(),
+                diff,
+                timestamp: entry.timestamp,
+            });
+        }
+
+        items.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        if query.is_empty() {
+            items.truncate(120);
+            return items;
+        }
+
+        items
+            .into_iter()
+            .filter(|item| {
+                item.label.to_lowercase().contains(&query)
+                    || item.detail.to_lowercase().contains(&query)
+                    || item
+                        .paths
+                        .iter()
+                        .any(|path| path.to_lowercase().contains(&query))
+                    || item.diff.to_lowercase().contains(&query)
+            })
+            .take(120)
+            .collect()
+    }
+
+    pub fn remember_recent_edit(&mut self, path: &str) {
+        let normalized = path.to_string();
+        self.recent_edited_files
+            .retain(|entry| entry != &normalized);
+        self.recent_edited_files.push_front(normalized.clone());
+        while self.recent_edited_files.len() > 12 {
+            self.recent_edited_files.pop_back();
+        }
+        self.resume_dashboard.recent_edits =
+            self.recent_edited_files.iter().take(5).cloned().collect();
+        self.update_welcome();
+    }
+
+    pub fn remember_recent_prompt(&mut self, prompt: &str) {
+        if prompt.trim().is_empty() {
+            return;
+        }
+        let normalized = prompt.trim().to_string();
+        self.recent_prompts.retain(|entry| entry != &normalized);
+        self.recent_prompts.push_front(normalized);
+        while self.recent_prompts.len() > 20 {
+            self.recent_prompts.pop_back();
+        }
+    }
+
+    pub fn remember_recent_checkpoint(&mut self, checkpoint_id: &str) {
+        if checkpoint_id.trim().is_empty() {
+            return;
+        }
+        let normalized = checkpoint_id.trim().to_string();
+        self.recent_checkpoints.retain(|entry| entry != &normalized);
+        self.recent_checkpoints.push_front(normalized.clone());
+        while self.recent_checkpoints.len() > 12 {
+            self.recent_checkpoints.pop_back();
+        }
+        self.resume_dashboard.recent_checkpoints =
+            self.recent_checkpoints.iter().take(5).cloned().collect();
+        self.update_welcome();
+    }
+
+    pub fn set_resume_dashboard(&mut self, dashboard: ResumeDashboardState) {
+        self.resume_dashboard = dashboard;
+        self.update_welcome();
+    }
+
     pub fn open_info_popup(&mut self, title: impl Into<String>, content: impl Into<String>) {
         self.info_popup_title = title.into();
         self.info_popup_content = content.into();
@@ -909,13 +1511,19 @@ impl App {
 
     pub fn clear_old_suggestions(&mut self) {
         let now = Instant::now();
-        while self.suggestions.front().is_some_and(|s| now.duration_since(s.received_at) > SUGGESTION_TTL) {
+        while self
+            .suggestions
+            .front()
+            .is_some_and(|s| now.duration_since(s.received_at) > SUGGESTION_TTL)
+        {
             self.suggestions.pop_front();
         }
     }
 
     pub fn latest_suggestion(&self) -> Option<&Suggestion> {
-        self.suggestions.back().filter(|s| s.received_at.elapsed() < SUGGESTION_HINT_TTL)
+        self.suggestions
+            .back()
+            .filter(|s| s.received_at.elapsed() < SUGGESTION_HINT_TTL)
     }
 
     pub fn reset_pair_state(&mut self) {
@@ -1002,7 +1610,7 @@ fn redact_sensitive_history_command(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ThemeMode;
+    use super::{parse_mutation_review_chunks, ThemeMode};
 
     #[test]
     fn theme_mode_parses_user_values() {
@@ -1018,5 +1626,37 @@ mod tests {
         assert_eq!(ThemeMode::from_ui_theme("default"), ThemeMode::Dark);
         assert_eq!(ThemeMode::from_ui_theme("minimal"), ThemeMode::Dark);
         assert_eq!(ThemeMode::from_ui_theme("unknown"), ThemeMode::Dark);
+    }
+
+    #[test]
+    fn parse_mutation_review_chunks_extracts_per_file_hunks() {
+        let diff = "\
+diff --git a/src/demo.rs b/src/demo.rs
+--- a/src/demo.rs
++++ b/src/demo.rs
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/other.rs b/src/other.rs
+--- a/src/other.rs
++++ b/src/other.rs
+@@ -3 +3 @@
+-left
++right
+";
+
+        let chunks = parse_mutation_review_chunks(
+            diff,
+            &[
+                "/tmp/src/demo.rs".to_string(),
+                "/tmp/src/other.rs".to_string(),
+            ],
+        );
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].path, "/tmp/src/demo.rs");
+        assert_eq!(chunks[0].hunk_index, 0);
+        assert_eq!(chunks[1].path, "/tmp/src/other.rs");
+        assert_eq!(chunks[1].hunk_index, 0);
     }
 }

@@ -34,7 +34,9 @@ fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
             let host = authority[1..close_idx].to_string();
             let remainder = authority[close_idx + 1..].trim();
             let port = if let Some(port_text) = remainder.strip_prefix(':') {
-                port_text.parse::<u16>().map_err(|_| "Invalid URL port".to_string())?
+                port_text
+                    .parse::<u16>()
+                    .map_err(|_| "Invalid URL port".to_string())?
             } else {
                 default_port
             };
@@ -46,7 +48,9 @@ fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
         if host.contains(':') {
             return Ok((authority.to_string(), default_port));
         }
-        let port = port_text.parse::<u16>().map_err(|_| "Invalid URL port".to_string())?;
+        let port = port_text
+            .parse::<u16>()
+            .map_err(|_| "Invalid URL port".to_string())?;
         return Ok((host.to_string(), port));
     }
     Ok((authority.to_string(), default_port))

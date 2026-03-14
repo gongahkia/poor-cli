@@ -152,6 +152,39 @@ impl std::fmt::Display for RpcError {
     }
 }
 
+fn insert_context_file_params(
+    params: &mut serde_json::Map<String, Value>,
+    context_files: &[String],
+    pinned_context_files: &[String],
+) {
+    if !context_files.is_empty() {
+        let files: Vec<Value> = context_files
+            .iter()
+            .map(|f| Value::String(f.clone()))
+            .collect();
+        params.insert("contextFiles".into(), Value::Array(files));
+    }
+    if !pinned_context_files.is_empty() {
+        let files: Vec<Value> = pinned_context_files
+            .iter()
+            .map(|f| Value::String(f.clone()))
+            .collect();
+        params.insert("pinnedContextFiles".into(), Value::Array(files));
+    }
+}
+
+fn insert_context_budget_param(
+    params: &mut serde_json::Map<String, Value>,
+    context_budget_tokens: Option<usize>,
+) {
+    if let Some(tokens) = context_budget_tokens {
+        params.insert(
+            "contextBudgetTokens".into(),
+            Value::Number(serde_json::Number::from(tokens as u64)),
+        );
+    }
+}
+
 // ── High-level response types ────────────────────────────────────────
 
 #[derive(Debug, Clone, Deserialize)]
@@ -192,6 +225,10 @@ pub enum ServerNotification {
         tool_args: Value,
         tool_result: String,
         diff: String,
+        paths: Vec<String>,
+        checkpoint_id: Option<String>,
+        changed: Option<bool>,
+        message: String,
         iteration_index: u32,
         iteration_cap: u32,
     },
@@ -200,6 +237,12 @@ pub enum ServerNotification {
         tool_name: String,
         tool_args: Value,
         prompt_id: String,
+        operation: String,
+        paths: Vec<String>,
+        diff: String,
+        checkpoint_id: Option<String>,
+        changed: Option<bool>,
+        message: String,
     },
     Progress {
         request_id: String,
@@ -286,28 +329,29 @@ fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String
 /// Parse a server notification from JSON-RPC method + params.
 fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
     match method {
-        "poor-cli/streamChunk" | "poor-cli/streamingChunk" => Some(
-            ServerNotification::StreamChunk {
-            request_id: params
-                .get("requestId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            chunk: params
-                .get("chunk")
-                .and_then(|v| v.as_str())
-                .or_else(|| params.get("content").and_then(|v| v.as_str()))
-                .unwrap_or("")
-                .to_string(),
-            done: params
-                .get("done")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            reason: params
-                .get("reason")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-        }),
+        "poor-cli/streamChunk" | "poor-cli/streamingChunk" => {
+            Some(ServerNotification::StreamChunk {
+                request_id: params
+                    .get("requestId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                chunk: params
+                    .get("chunk")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| params.get("content").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string(),
+                done: params
+                    .get("done")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                reason: params
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            })
+        }
         "poor-cli/toolEvent" => Some(ServerNotification::ToolEvent {
             request_id: params
                 .get("requestId")
@@ -335,6 +379,26 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
+            paths: params
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            checkpoint_id: params
+                .get("checkpointId")
+                .and_then(|v| v.as_str())
+                .map(|value| value.to_string()),
+            changed: params.get("changed").and_then(|v| v.as_bool()),
+            message: params
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             iteration_index: params
                 .get("iterationIndex")
                 .and_then(|v| v.as_u64())
@@ -358,6 +422,36 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
             tool_args: params.get("toolArgs").cloned().unwrap_or(Value::Null),
             prompt_id: params
                 .get("promptId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            operation: params
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            paths: params
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            diff: params
+                .get("diff")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            checkpoint_id: params
+                .get("checkpointId")
+                .and_then(|v| v.as_str())
+                .map(|value| value.to_string()),
+            changed: params.get("changed").and_then(|v| v.as_bool()),
+            message: params
+                .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -770,28 +864,59 @@ impl RpcClient {
     }
 
     /// Send a chat message (non-streaming, legacy).
-    pub fn chat(&self, message: &str, context_files: &[String]) -> Result<ChatResult, String> {
+    pub fn chat(
+        &self,
+        message: &str,
+        context_files: &[String],
+        pinned_context_files: &[String],
+        context_budget_tokens: Option<usize>,
+    ) -> Result<ChatResult, String> {
         let mut params = serde_json::Map::new();
         params.insert("message".into(), Value::String(message.into()));
-        if !context_files.is_empty() {
-            let files: Vec<Value> = context_files
-                .iter()
-                .map(|f| Value::String(f.clone()))
-                .collect();
-            params.insert("contextFiles".into(), Value::Array(files));
-        }
+        insert_context_file_params(&mut params, context_files, pinned_context_files);
+        insert_context_budget_param(&mut params, context_budget_tokens);
         let val = self.call("chat", Value::Object(params))?;
         serde_json::from_value(val).map_err(|e| e.to_string())
     }
 
     /// Send a streaming chat message. Notifications arrive via the notification channel.
     /// Returns the final accumulated result.
-    pub fn chat_streaming(&self, message: &str, request_id: &str) -> Result<ChatResult, String> {
+    pub fn chat_streaming(
+        &self,
+        message: &str,
+        request_id: &str,
+        context_files: &[String],
+        pinned_context_files: &[String],
+        context_budget_tokens: Option<usize>,
+    ) -> Result<ChatResult, String> {
         let mut params = serde_json::Map::new();
         params.insert("message".into(), Value::String(message.into()));
         params.insert("requestId".into(), Value::String(request_id.into()));
+        insert_context_file_params(&mut params, context_files, pinned_context_files);
+        insert_context_budget_param(&mut params, context_budget_tokens);
         let val = self.call("poor-cli/chatStreaming", Value::Object(params))?;
         serde_json::from_value(val).map_err(|e| e.to_string())
+    }
+
+    pub fn preview_context(
+        &self,
+        message: &str,
+        context_files: &[String],
+        pinned_context_files: &[String],
+        context_budget_tokens: Option<usize>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("message".into(), Value::String(message.into()));
+        insert_context_file_params(&mut params, context_files, pinned_context_files);
+        insert_context_budget_param(&mut params, context_budget_tokens);
+        self.call("poor-cli/previewContext", Value::Object(params))
+    }
+
+    pub fn preview_mutation(&self, tool_name: &str, tool_args: Value) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("toolName".into(), Value::String(tool_name.to_string()));
+        params.insert("toolArgs".into(), tool_args);
+        self.call("poor-cli/previewMutation", Value::Object(params))
     }
 
     /// Cancel an in-flight request.
@@ -1301,12 +1426,30 @@ impl Drop for RpcClient {
 pub enum RpcCommand {
     Chat {
         message: String,
+        context_files: Vec<String>,
+        pinned_context_files: Vec<String>,
+        context_budget_tokens: Option<usize>,
         reply: SyncSender<Result<String, String>>,
     },
     ChatStreaming {
         message: String,
         request_id: String,
+        context_files: Vec<String>,
+        pinned_context_files: Vec<String>,
+        context_budget_tokens: Option<usize>,
         reply: SyncSender<Result<String, String>>,
+    },
+    PreviewContext {
+        message: String,
+        context_files: Vec<String>,
+        pinned_context_files: Vec<String>,
+        context_budget_tokens: Option<usize>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    PreviewMutation {
+        tool_name: String,
+        tool_args: Value,
+        reply: SyncSender<Result<Value, String>>,
     },
     CancelRequest,
     SendNotification {
@@ -1520,21 +1663,62 @@ pub enum RpcCommand {
 pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
     loop {
         match rx.recv() {
-            Ok(RpcCommand::Chat { message, reply }) => {
+            Ok(RpcCommand::Chat {
+                message,
+                context_files,
+                pinned_context_files,
+                context_budget_tokens,
+                reply,
+            }) => {
                 let result = client
-                    .chat(&message, &[])
+                    .chat(
+                        &message,
+                        &context_files,
+                        &pinned_context_files,
+                        context_budget_tokens,
+                    )
                     .map(|r| r.content.unwrap_or_default());
                 let _ = reply.send(result);
             }
             Ok(RpcCommand::ChatStreaming {
                 message,
                 request_id,
+                context_files,
+                pinned_context_files,
+                context_budget_tokens,
                 reply,
             }) => {
                 let result = client
-                    .chat_streaming(&message, &request_id)
+                    .chat_streaming(
+                        &message,
+                        &request_id,
+                        &context_files,
+                        &pinned_context_files,
+                        context_budget_tokens,
+                    )
                     .map(|r| r.content.unwrap_or_default());
                 let _ = reply.send(result);
+            }
+            Ok(RpcCommand::PreviewContext {
+                message,
+                context_files,
+                pinned_context_files,
+                context_budget_tokens,
+                reply,
+            }) => {
+                let _ = reply.send(client.preview_context(
+                    &message,
+                    &context_files,
+                    &pinned_context_files,
+                    context_budget_tokens,
+                ));
+            }
+            Ok(RpcCommand::PreviewMutation {
+                tool_name,
+                tool_args,
+                reply,
+            }) => {
+                let _ = reply.send(client.preview_mutation(&tool_name, tool_args));
             }
             Ok(RpcCommand::CancelRequest) => {
                 let _ = client.cancel_request();
@@ -1804,6 +1988,30 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn insert_context_file_params_serializes_explicit_and_pinned_files() {
+        let mut params = serde_json::Map::new();
+        insert_context_file_params(
+            &mut params,
+            &[String::from("/tmp/main.rs")],
+            &[String::from("/tmp/README.md")],
+        );
+
+        assert_eq!(params.get("contextFiles"), Some(&json!(["/tmp/main.rs"])));
+        assert_eq!(
+            params.get("pinnedContextFiles"),
+            Some(&json!(["/tmp/README.md"]))
+        );
+    }
+
+    #[test]
+    fn insert_context_budget_param_serializes_optional_budget() {
+        let mut params = serde_json::Map::new();
+        insert_context_budget_param(&mut params, Some(6000));
+
+        assert_eq!(params.get("contextBudgetTokens"), Some(&json!(6000)));
+    }
+
+    #[test]
     fn parse_stream_chunk_notification() {
         let params = json!({"requestId": "r1", "chunk": "hello", "done": false});
         let n = parse_notification("poor-cli/streamChunk", &params)
@@ -1864,18 +2072,24 @@ mod tests {
             "requestId": "r1", "eventType": "tool_result",
             "toolName": "edit_file", "toolArgs": {"path": "x"},
             "toolResult": "ok", "diff": "--- a\n+++ b",
+            "paths": ["/tmp/x"], "checkpointId": "cp_123", "changed": true,
             "iterationIndex": 2, "iterationCap": 10,
         });
-        let n =
-            parse_notification("poor-cli/toolEvent", &params).expect("toolEvent should parse");
+        let n = parse_notification("poor-cli/toolEvent", &params).expect("toolEvent should parse");
         match n {
             ServerNotification::ToolEvent {
                 diff,
+                paths,
+                checkpoint_id,
+                changed,
                 iteration_index,
                 iteration_cap,
                 ..
             } => {
                 assert_eq!(diff, "--- a\n+++ b");
+                assert_eq!(paths, vec!["/tmp/x".to_string()]);
+                assert_eq!(checkpoint_id.as_deref(), Some("cp_123"));
+                assert_eq!(changed, Some(true));
                 assert_eq!(iteration_index, 2);
                 assert_eq!(iteration_cap, 10);
             }
@@ -1885,17 +2099,34 @@ mod tests {
 
     #[test]
     fn parse_permission_request() {
-        let params = json!({"requestId": "r1", "toolName": "bash", "toolArgs": {"cmd": "ls"}, "promptId": "p1"});
+        let params = json!({
+            "requestId": "r1",
+            "toolName": "bash",
+            "toolArgs": {"cmd": "ls"},
+            "promptId": "p1",
+            "operation": "bash",
+            "paths": ["/tmp/x"],
+            "diff": "--- a\n+++ b",
+            "checkpointId": "cp_123",
+            "changed": true,
+            "message": "Preview ready"
+        });
         let n = parse_notification("poor-cli/permissionReq", &params)
             .expect("permissionReq should parse");
         match n {
             ServerNotification::PermissionRequest {
                 prompt_id,
                 tool_name,
+                paths,
+                checkpoint_id,
+                changed,
                 ..
             } => {
                 assert_eq!(prompt_id, "p1");
                 assert_eq!(tool_name, "bash");
+                assert_eq!(paths, vec!["/tmp/x".to_string()]);
+                assert_eq!(checkpoint_id.as_deref(), Some("cp_123"));
+                assert_eq!(changed, Some(true));
             }
             _ => panic!("wrong variant"),
         }
@@ -1952,8 +2183,7 @@ mod tests {
             "preset": "review",
             "members": [{"connectionId": "c-1", "role": "prompter"}]
         });
-        let n =
-            parse_notification("poor-cli/roomEvent", &params).expect("roomEvent should parse");
+        let n = parse_notification("poor-cli/roomEvent", &params).expect("roomEvent should parse");
         match n {
             ServerNotification::RoomEvent {
                 room,

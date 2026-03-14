@@ -22,7 +22,7 @@
 
 - Neovim 0.9+
 - Python 3.8+
-- `poor-cli` installed: `pip install poor-cli`
+- `poor-cli` Python package installed: `pip install poor-cli` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 - Optional: `telescope.nvim` for `:PoorCliCheckpoints`
 

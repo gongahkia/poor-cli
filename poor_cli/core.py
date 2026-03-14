@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol,
 from .config import ConfigManager, Config
 from .providers.base import BaseProvider, ProviderResponse, FunctionCall
 from .providers.provider_factory import ProviderFactory
-from .tools_async import ToolRegistryAsync
+from .tools_async import ToolRegistryAsync, ToolOutcome
 from .checkpoint import CheckpointManager
 from .repo_config import RepoConfig, get_repo_config
 from .context import ContextManager, get_context_manager
@@ -40,6 +40,13 @@ _CONFIDENCE_BANDS: Tuple[Tuple[int, str], ...] = (
     (80, "High"),
     (100, "Very High"),
 )
+_MUTATING_TOOLS = {
+    "write_file",
+    "edit_file",
+    "delete_file",
+    "apply_patch_unified",
+    "json_yaml_edit",
+}
 
 
 # ── CoreEvent: structured events yielded by the agentic loop ─────────
@@ -55,24 +62,53 @@ class CoreEvent:
         return CoreEvent(type="text_chunk", data={"chunk": chunk, "requestId": request_id})
 
     @staticmethod
-    def tool_call_start(tool_name: str, tool_args: Dict[str, Any], call_id: str = "", iteration: int = 0, cap: int = 25) -> "CoreEvent":
+    def tool_call_start(
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        call_id: str = "",
+        iteration: int = 0,
+        cap: int = 25,
+        paths: Optional[List[str]] = None,
+    ) -> "CoreEvent":
         return CoreEvent(type="tool_call_start", data={
             "toolName": tool_name, "toolArgs": tool_args, "callId": call_id,
             "iterationIndex": iteration, "iterationCap": cap,
+            "paths": paths or [],
         })
 
     @staticmethod
-    def tool_result(tool_name: str, result: str, call_id: str = "", iteration: int = 0, cap: int = 25, diff: str = "") -> "CoreEvent":
+    def tool_result(
+        tool_name: str,
+        result: str,
+        call_id: str = "",
+        iteration: int = 0,
+        cap: int = 25,
+        diff: str = "",
+        paths: Optional[List[str]] = None,
+        checkpoint_id: Optional[str] = None,
+        changed: Optional[bool] = None,
+        message: str = "",
+    ) -> "CoreEvent":
         return CoreEvent(type="tool_result", data={
             "toolName": tool_name, "toolResult": result, "callId": call_id,
             "iterationIndex": iteration, "iterationCap": cap,
             "diff": diff,
+            "paths": paths or [],
+            "checkpointId": checkpoint_id,
+            "changed": changed,
+            "message": message,
         })
 
     @staticmethod
-    def permission_request(tool_name: str, tool_args: Dict[str, Any], prompt_id: str = "") -> "CoreEvent":
+    def permission_request(
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        prompt_id: str = "",
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> "CoreEvent":
         return CoreEvent(type="permission_request", data={
             "toolName": tool_name, "toolArgs": tool_args, "promptId": prompt_id,
+            "preview": preview or {},
         })
 
     @staticmethod
@@ -159,7 +195,7 @@ class PoorCLICore:
         
         # Permission callback for file operations
         # Set this to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool]
-        self._permission_callback: Optional[Callable[[str, Dict], Any]] = None
+        self._permission_callback: Optional[Callable[..., Any]] = None
 
         # Context manager for intelligent context gathering
         self._context_manager: Optional[ContextManager] = None
@@ -295,34 +331,94 @@ class PoorCLICore:
         self._cancel_event.set()
 
     def _build_full_message(self, message: str, context_files: Optional[List[str]] = None) -> str:
-        """Build message with context files synchronously where possible."""
-        return message # context is handled in the async variants below
-
-    async def _build_context_message(self, message: str, context_files: Optional[List[str]] = None) -> str:
-        """Build full message with context file contents."""
-        if not context_files:
-            return message
-        if self._context_manager:
-            primary_file = context_files[0] if context_files else None
-            additional_files = context_files[1:] if len(context_files) > 1 else None
-            context_result = await self._context_manager.gather_context(
-                primary_file=primary_file, additional_files=additional_files, include_imports=True,
-            )
-            if context_result.files:
-                context_str = self._context_manager.format_context_for_prompt(context_result, include_paths=True)
-                logger.info(context_result.message)
-                return f"{context_str}\n\nUser request: {message}"
-        else:
-            context_parts = []
-            for file_path in context_files:
-                try:
-                    content = await self.tool_registry.read_file(file_path)
-                    context_parts.append(f"=== {file_path} ===\n{content}")
-                except Exception as e:
-                    logger.warning(f"Failed to read context file {file_path}: {e}")
-            if context_parts:
-                return "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+        """Legacy sync helper retained for compatibility."""
         return message
+
+    async def _select_context_files(
+        self,
+        message: str,
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
+    ):
+        if not self._context_manager:
+            return None
+        return await self._context_manager.select_context_files(
+            message=message,
+            explicit_files=context_files or [],
+            pinned_files=pinned_context_files or [],
+            repo_root=str(Path.cwd()),
+            max_files=12,
+        )
+
+    async def _build_context_message(
+        self,
+        message: str,
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
+    ) -> str:
+        """Build a backend-owned context message with excerpted files."""
+        if not self._context_manager:
+            return message
+
+        context_result = await self._select_context_files(
+            message=message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
+        if context_result is None or not context_result.files:
+            return message
+
+        logger.info(context_result.message)
+        return await self._context_manager.build_context_message(
+            message,
+            context_result,
+            max_tokens=context_budget_tokens,
+        )
+
+    async def preview_context(
+        self,
+        message: str = "",
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Preview backend-owned context selection without sending a chat turn."""
+        if not self._initialized:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+        if not self._context_manager:
+            return {"files": [], "totalTokens": 0, "truncated": False, "message": "Context manager unavailable"}
+        return await self._context_manager.preview_context(
+            message=message,
+            explicit_files=context_files or [],
+            pinned_files=pinned_context_files or [],
+            repo_root=str(Path.cwd()),
+            max_tokens=context_budget_tokens,
+            max_files=12,
+        )
+
+    async def preview_mutation(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Preview a mutating tool without changing the filesystem."""
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        preview = await self.tool_registry.preview_mutation(tool_name, arguments)
+        return {
+            "ok": preview.ok,
+            "operation": preview.operation,
+            "paths": self._tool_result_paths(tool_name, arguments, preview),
+            "diff": preview.diff,
+            "checkpointId": preview.checkpoint_id,
+            "changed": preview.changed,
+            "message": preview.message,
+            "metadata": preview.metadata,
+        }
 
     @staticmethod
     def _confidence_bucket(percent: int) -> str:
@@ -382,10 +478,162 @@ class PoorCLICore:
         appended_suffix = f"{separator}{confidence_line}"
         return f"{trimmed}{appended_suffix}", appended_suffix
 
+    def _tool_result_text(self, result: Any) -> str:
+        if isinstance(result, ToolOutcome):
+            return result.to_json()
+        return str(result)
+
+    def _tool_result_diff(self, result: Any) -> str:
+        if isinstance(result, ToolOutcome):
+            return result.diff
+        return ""
+
+    def _tool_result_paths(self, tool_name: str, tool_args: Dict[str, Any], result: Any) -> List[str]:
+        if isinstance(result, ToolOutcome):
+            paths = result.metadata.get("changed_paths") or result.metadata.get("paths")
+            if isinstance(paths, list) and paths:
+                return [str(path) for path in paths]
+            if result.path:
+                return [result.path]
+        if self.tool_registry:
+            return self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
+        return []
+
+    @staticmethod
+    def _tool_result_checkpoint_id(result: Any) -> Optional[str]:
+        if isinstance(result, ToolOutcome):
+            return result.checkpoint_id
+        return None
+
+    @staticmethod
+    def _tool_result_changed(result: Any) -> Optional[bool]:
+        if isinstance(result, ToolOutcome):
+            return result.changed
+        return None
+
+    @staticmethod
+    def _tool_result_message(result: Any) -> str:
+        if isinstance(result, ToolOutcome):
+            return result.message
+        return ""
+
+    @staticmethod
+    def _normalize_permission_decision(decision: Any) -> Dict[str, Any]:
+        if isinstance(decision, dict):
+            approved_paths = decision.get("approvedPaths")
+            if approved_paths is None:
+                approved_paths = decision.get("approved_paths")
+            if not isinstance(approved_paths, list):
+                approved_paths = []
+            approved_chunks = decision.get("approvedChunks")
+            if approved_chunks is None:
+                approved_chunks = decision.get("approved_chunks")
+            if not isinstance(approved_chunks, list):
+                approved_chunks = []
+            return {
+                "allowed": bool(decision.get("allowed", False)),
+                "approvedPaths": [
+                    str(path)
+                    for path in approved_paths
+                    if isinstance(path, str) and path
+                ],
+                "approvedChunks": [
+                    chunk
+                    for chunk in approved_chunks
+                    if isinstance(chunk, dict)
+                ],
+            }
+        return {"allowed": bool(decision), "approvedPaths": [], "approvedChunks": []}
+
+    async def _request_permission(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if not self._permission_callback:
+            return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
+
+        try:
+            decision = await self._permission_callback(tool_name, tool_args, preview)
+        except TypeError:
+            decision = await self._permission_callback(tool_name, tool_args)
+        return self._normalize_permission_decision(decision)
+
+    async def _apply_permission_scope(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        approved_paths: List[str],
+        approved_chunks: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        approved_chunks = approved_chunks or []
+        if (not approved_paths and not approved_chunks) or not self.tool_registry:
+            return tool_args
+        return self.tool_registry.narrow_mutation_arguments(
+            tool_name,
+            tool_args,
+            approved_paths,
+            approved_chunks,
+        )
+
+    def _should_checkpoint_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+        if tool_name not in _MUTATING_TOOLS:
+            return False
+        if tool_name == "apply_patch_unified" and bool(tool_args.get("check_only")):
+            return False
+        return True
+
+    async def _create_mutation_checkpoint(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+    ) -> Optional[str]:
+        if not self.checkpoint_manager or not self.tool_registry:
+            return None
+
+        targets = self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
+        if not targets:
+            return None
+
+        try:
+            checkpoint = await asyncio.to_thread(
+                self.checkpoint_manager.create_checkpoint,
+                targets,
+                f"Auto checkpoint before {tool_name}",
+                f"pre_{tool_name}",
+                [tool_name],
+            )
+            return checkpoint.checkpoint_id
+        except Exception as error:
+            logger.warning("Failed to create pre-mutation checkpoint for %s: %s", tool_name, error)
+            return None
+
+    async def _execute_tool_internal(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        if not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        checkpoint_id: Optional[str] = None
+        if self._should_checkpoint_tool(tool_name, arguments):
+            checkpoint_id = await self._create_mutation_checkpoint(tool_name, arguments)
+
+        result = await self.tool_registry.execute_tool_raw(tool_name, arguments)
+
+        if isinstance(result, ToolOutcome):
+            if checkpoint_id and not result.checkpoint_id:
+                result.checkpoint_id = checkpoint_id
+            if result.ok and result.changed and self._context_manager:
+                for file_path in self._tool_result_paths(tool_name, arguments, result):
+                    self._context_manager.mark_file_edited(file_path)
+
+        return result
+
     async def send_message_events(
         self,
         message: str,
         context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
         request_id: str = "",
     ) -> AsyncIterator[CoreEvent]:
         """
@@ -402,7 +650,12 @@ class PoorCLICore:
         iteration = 0
 
         logger.info(f"Sending message (events): {message[:100]}...")
-        full_message = await self._build_context_message(message, context_files)
+        full_message = await self._build_context_message(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
 
         if self.history_adapter:
             self.history_adapter.add_message("user", message)
@@ -532,9 +785,18 @@ class PoorCLICore:
         for fc in response.function_calls:
             tool_name = fc.name
             tool_args = fc.arguments
+            preview_payload: Optional[Dict[str, Any]] = None
+            tool_paths = self.tool_registry.inspect_mutation_targets(tool_name, tool_args) if self.tool_registry else []
 
             self._pending_events.append(
-                CoreEvent.tool_call_start(tool_name, tool_args, fc.id, iteration, max_iterations)
+                CoreEvent.tool_call_start(
+                    tool_name,
+                    tool_args,
+                    fc.id,
+                    iteration,
+                    max_iterations,
+                    paths=tool_paths,
+                )
             )
             logger.info(f"Executing tool: {tool_name}")
 
@@ -543,7 +805,16 @@ class PoorCLICore:
             if auto is False:
                 result = "Operation denied by safety policy"
                 self._pending_events.append(
-                    CoreEvent.tool_result(tool_name, result, fc.id, iteration, max_iterations)
+                    CoreEvent.tool_result(
+                        tool_name,
+                        result,
+                        fc.id,
+                        iteration,
+                        max_iterations,
+                        paths=tool_paths,
+                        changed=False,
+                        message=result,
+                    )
                 )
                 tool_results.append({"id": fc.id, "name": tool_name, "result": result})
                 continue
@@ -551,34 +822,103 @@ class PoorCLICore:
             # 2. If not auto-approved, check interactive permission callback
             if auto is None and self._permission_callback:
                 try:
+                    if tool_name in _MUTATING_TOOLS and self.tool_registry:
+                        try:
+                            preview_payload = await self.preview_mutation(tool_name, tool_args)
+                            preview_payload["requestId"] = request_id
+                            tool_paths = preview_payload.get("paths") or tool_paths
+                        except Exception as preview_error:
+                            logger.warning(
+                                "Failed to preview mutation for %s: %s",
+                                tool_name,
+                                preview_error,
+                            )
                     self._pending_events.append(
-                        CoreEvent.permission_request(tool_name, tool_args, request_id)
+                        CoreEvent.permission_request(
+                            tool_name,
+                            tool_args,
+                            request_id,
+                            preview=preview_payload,
+                        )
                     )
-                    permitted = await self._permission_callback(tool_name, tool_args)
-                    if not permitted:
+                    permission = await self._request_permission(
+                        tool_name,
+                        tool_args,
+                        preview_payload,
+                    )
+                    if not permission["allowed"]:
                         result = "Operation cancelled by user"
                         self._pending_events.append(
-                            CoreEvent.tool_result(tool_name, result, fc.id, iteration, max_iterations)
+                            CoreEvent.tool_result(
+                                tool_name,
+                                result,
+                                fc.id,
+                                iteration,
+                                max_iterations,
+                                diff=(preview_payload or {}).get("diff", ""),
+                                paths=tool_paths,
+                                changed=False,
+                                message=result,
+                            )
                         )
                         tool_results.append({"id": fc.id, "name": tool_name, "result": result})
                         continue
+                    if permission["approvedChunks"] or permission["approvedPaths"]:
+                        try:
+                            tool_args = await self._apply_permission_scope(
+                                tool_name,
+                                tool_args,
+                                permission["approvedPaths"],
+                                permission["approvedChunks"],
+                            )
+                            tool_paths = (
+                                self.tool_registry.inspect_mutation_targets(tool_name, tool_args)
+                                if self.tool_registry
+                                else tool_paths
+                            )
+                        except Exception as scope_error:
+                            result = f"Operation cancelled: {scope_error}"
+                            self._pending_events.append(
+                                CoreEvent.tool_result(
+                                    tool_name,
+                                    result,
+                                    fc.id,
+                                    iteration,
+                                    max_iterations,
+                                    diff=(preview_payload or {}).get("diff", ""),
+                                    paths=tool_paths,
+                                    changed=False,
+                                    message=str(scope_error),
+                                )
+                            )
+                            tool_results.append({"id": fc.id, "name": tool_name, "result": result})
+                            continue
                 except Exception as e:
                     logger.error(f"Permission callback error: {e}")
 
-            # 3. Compute diff before execution for edit_file
-            diff_text = self._compute_edit_diff(tool_name, tool_args)
-
-            # 4. Execute the tool
+            # 3. Execute the tool
             try:
-                result = await self.tool_registry.execute_tool(tool_name, tool_args)
+                result = await self._execute_tool_internal(tool_name, tool_args)
             except Exception as e:
                 result = f"Error: {e}"
                 logger.error(f"Tool execution failed: {e}")
 
+            result_text = self._tool_result_text(result)
             self._pending_events.append(
-                CoreEvent.tool_result(tool_name, str(result), fc.id, iteration, max_iterations, diff=diff_text)
+                CoreEvent.tool_result(
+                    tool_name,
+                    result_text,
+                    fc.id,
+                    iteration,
+                    max_iterations,
+                    diff=self._tool_result_diff(result),
+                    paths=self._tool_result_paths(tool_name, tool_args, result),
+                    checkpoint_id=self._tool_result_checkpoint_id(result),
+                    changed=self._tool_result_changed(result),
+                    message=self._tool_result_message(result),
+                )
             )
-            tool_results.append({"id": fc.id, "name": tool_name, "result": result})
+            tool_results.append({"id": fc.id, "name": tool_name, "result": result_text})
 
         if not self.provider:
             return tool_results
@@ -587,7 +927,9 @@ class PoorCLICore:
     async def send_message(
         self,
         message: str,
-        context_files: Optional[List[str]] = None
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
     ) -> AsyncIterator[str]:
         """
         Send a message and yield streaming text chunks.
@@ -599,7 +941,12 @@ class PoorCLICore:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
         logger.info(f"Sending message: {message[:100]}...")
-        full_message = await self._build_context_message(message, context_files)
+        full_message = await self._build_context_message(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
 
         if self.history_adapter:
             self.history_adapter.add_message("user", message)
@@ -665,8 +1012,8 @@ class PoorCLICore:
             # Check permission if callback is set
             if self._permission_callback:
                 try:
-                    permitted = await self._permission_callback(tool_name, tool_args)
-                    if not permitted:
+                    permission = await self._request_permission(tool_name, tool_args)
+                    if not permission["allowed"]:
                         result = "Operation cancelled by user"
                         tool_results.append({
                             "id": fc.id,
@@ -674,20 +1021,37 @@ class PoorCLICore:
                             "result": result
                         })
                         continue
+                    if permission["approvedChunks"] or permission["approvedPaths"]:
+                        try:
+                            tool_args = await self._apply_permission_scope(
+                                tool_name,
+                                tool_args,
+                                permission["approvedPaths"],
+                                permission["approvedChunks"],
+                            )
+                        except Exception as scope_error:
+                            result = f"Operation cancelled: {scope_error}"
+                            tool_results.append({
+                                "id": fc.id,
+                                "name": tool_name,
+                                "result": result,
+                            })
+                            continue
                 except Exception as e:
                     logger.error(f"Permission callback error: {e}")
             
             # Execute the tool
             try:
-                result = await self.tool_registry.execute_tool(tool_name, tool_args)
+                result = await self._execute_tool_internal(tool_name, tool_args)
             except Exception as e:
                 result = f"Error: {e}"
                 logger.error(f"Tool execution failed: {e}")
-            
+
+            result_text = self._tool_result_text(result)
             tool_results.append({
                 "id": fc.id,
                 "name": tool_name,
-                "result": result
+                "result": result_text
             })
         
         if not self.provider:
@@ -699,7 +1063,9 @@ class PoorCLICore:
     async def send_message_sync(
         self,
         message: str,
-        context_files: Optional[List[str]] = None
+        context_files: Optional[List[str]] = None,
+        pinned_context_files: Optional[List[str]] = None,
+        context_budget_tokens: Optional[int] = None,
     ) -> str:
         """
         Send a message and return complete response text.
@@ -722,18 +1088,12 @@ class PoorCLICore:
         
         logger.info(f"Sending message (sync): {message[:100]}...")
         
-        # Build context from files if provided
-        full_message = message
-        if context_files:
-            context_parts = []
-            for file_path in context_files:
-                try:
-                    content = await self.tool_registry.read_file(file_path)
-                    context_parts.append(f"=== {file_path} ===\n{content}")
-                except Exception as e:
-                    logger.warning(f"Failed to read context file {file_path}: {e}")
-            if context_parts:
-                full_message = "Context files:\n" + "\n\n".join(context_parts) + f"\n\nUser request: {message}"
+        full_message = await self._build_context_message(
+            message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        )
         
         # Save to history
         if self.history_adapter:
@@ -787,11 +1147,27 @@ class PoorCLICore:
         logger.info(f"Executing tool: {tool_name}")
         
         try:
-            result = await self.tool_registry.execute_tool(tool_name, arguments)
+            result = await self._execute_tool_internal(tool_name, arguments)
             logger.info(f"Tool {tool_name} completed successfully")
-            return result
+            return self._tool_result_text(result)
         except Exception as e:
             logger.error(f"Tool execution failed: {e}")
+            raise PoorCLIError(f"Tool execution failed: {e}")
+
+    async def execute_tool_raw(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any]
+    ) -> Any:
+        """Execute a tool and return its structured/raw result."""
+        if not self._initialized or not self.tool_registry:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        logger.info(f"Executing tool (raw): {tool_name}")
+        try:
+            return await self._execute_tool_internal(tool_name, arguments)
+        except Exception as e:
+            logger.error(f"Raw tool execution failed: {e}")
             raise PoorCLIError(f"Tool execution failed: {e}")
 
     def build_fim_prompt(
@@ -884,7 +1260,7 @@ class PoorCLICore:
             raise PoorCLIError(f"Inline completion failed: {e}")
 
     @property
-    def permission_callback(self) -> Optional[Callable[[str, Dict], Any]]:
+    def permission_callback(self) -> Optional[Callable[..., Any]]:
         """
         Get the permission callback for file operations.
         
@@ -894,7 +1270,7 @@ class PoorCLICore:
         return self._permission_callback
     
     @permission_callback.setter
-    def permission_callback(self, callback: Optional[Callable[[str, Dict], Any]]) -> None:
+    def permission_callback(self, callback: Optional[Callable[..., Any]]) -> None:
         """
         Set the permission callback for file operations.
         
@@ -911,12 +1287,12 @@ class PoorCLICore:
         self._permission_callback = callback
         logger.info("Permission callback updated")
 
-    async def apply_edit(
+    async def apply_edit_outcome(
         self,
         file_path: str,
         old_text: str,
         new_text: str
-    ) -> str:
+    ) -> ToolOutcome:
         """
         Apply a code edit to a file.
         
@@ -926,7 +1302,7 @@ class PoorCLICore:
             new_text: Replacement text.
         
         Returns:
-            Success or error message.
+            Structured mutation outcome.
         
         Raises:
             PoorCLIError: If not initialized.
@@ -937,7 +1313,7 @@ class PoorCLICore:
         logger.info(f"Applying edit to {file_path}")
         
         try:
-            result = await self.tool_registry.execute_tool(
+            result = await self.execute_tool_raw(
                 "edit_file",
                 {
                     "file_path": file_path,
@@ -945,10 +1321,22 @@ class PoorCLICore:
                     "new_text": new_text
                 }
             )
-            return result
+            if isinstance(result, ToolOutcome):
+                return result
+            raise PoorCLIError("edit_file returned an unexpected result type")
         except Exception as e:
             logger.error(f"Edit failed: {e}")
-            return f"Error: {e}"
+            raise PoorCLIError(f"Edit failed: {e}")
+
+    async def apply_edit(
+        self,
+        file_path: str,
+        old_text: str,
+        new_text: str
+    ) -> str:
+        """Apply a code edit and return a serialized tool result."""
+        outcome = await self.apply_edit_outcome(file_path, old_text, new_text)
+        return outcome.to_json()
 
     async def read_file(
         self,
@@ -1314,11 +1702,30 @@ class PoorCLICore:
         self._system_instruction = instruction
         logger.info("System instruction updated")
 
+    @staticmethod
+    def _checkpoint_metadata(
+        checkpoint: Any,
+        restored_files: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Normalize checkpoint metadata for API-style responses."""
+        payload = {
+            "checkpoint_id": checkpoint.checkpoint_id,
+            "created_at": checkpoint.created_at,
+            "description": checkpoint.description,
+            "operation_type": checkpoint.operation_type,
+            "file_count": checkpoint.get_file_count(),
+            "total_size_bytes": checkpoint.get_total_size(),
+            "tags": checkpoint.tags,
+        }
+        if restored_files is not None:
+            payload["restored_files"] = restored_files
+        return payload
+
     async def create_checkpoint(
         self,
         file_paths: List[str],
         description: str
-    ) -> Optional[str]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Create a checkpoint for the given files.
         
@@ -1327,7 +1734,7 @@ class PoorCLICore:
             description: Description of the checkpoint.
         
         Returns:
-            Checkpoint ID or None if checkpointing is disabled.
+            Checkpoint metadata or None if checkpointing is disabled.
         
         Raises:
             PoorCLIError: If not initialized.
@@ -1342,16 +1749,17 @@ class PoorCLICore:
         logger.info(f"Creating checkpoint for {len(file_paths)} files")
         
         try:
-            checkpoint_id = await self.checkpoint_manager.create_checkpoint(
+            checkpoint = await asyncio.to_thread(
+                self.checkpoint_manager.create_checkpoint,
                 file_paths,
                 description
             )
-            return checkpoint_id
+            return self._checkpoint_metadata(checkpoint)
         except Exception as e:
             logger.error(f"Checkpoint creation failed: {e}")
             raise PoorCLIError(f"Failed to create checkpoint: {e}")
 
-    async def restore_checkpoint(self, checkpoint_id: str) -> bool:
+    async def restore_checkpoint(self, checkpoint_id: str) -> Dict[str, Any]:
         """
         Restore a checkpoint.
         
@@ -1359,7 +1767,7 @@ class PoorCLICore:
             checkpoint_id: ID of the checkpoint to restore.
         
         Returns:
-            True if successful, False otherwise.
+            Checkpoint restore metadata.
         
         Raises:
             PoorCLIError: If not initialized.
@@ -1369,13 +1777,20 @@ class PoorCLICore:
         
         if not self.checkpoint_manager:
             logger.warning("Checkpoint manager not enabled")
-            return False
+            return {}
         
         logger.info(f"Restoring checkpoint: {checkpoint_id}")
         
         try:
-            success = await self.checkpoint_manager.restore_checkpoint(checkpoint_id)
-            return success
+            checkpoint = self.checkpoint_manager.get_checkpoint(checkpoint_id)
+            if checkpoint is None:
+                raise PoorCLIError(f"Checkpoint not found: {checkpoint_id}")
+
+            restored_files = await asyncio.to_thread(
+                self.checkpoint_manager.restore_checkpoint,
+                checkpoint_id,
+            )
+            return self._checkpoint_metadata(checkpoint, restored_files=restored_files)
         except Exception as e:
             logger.error(f"Checkpoint restore failed: {e}")
             raise PoorCLIError(f"Failed to restore checkpoint: {e}")

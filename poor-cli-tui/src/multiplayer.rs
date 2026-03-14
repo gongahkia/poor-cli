@@ -81,26 +81,39 @@ pub fn decode_invite_code(input: &str) -> Result<(String, String, String), Strin
     // try pipe-delimited first
     let parts: Vec<&str> = input.split('|').collect();
     if parts.len() == 3 && parts[0].starts_with("ws") {
-        return Ok((parts[0].trim().to_string(), parts[1].trim().to_string(), parts[2].trim().to_string()));
+        return Ok((
+            parts[0].trim().to_string(),
+            parts[1].trim().to_string(),
+            parts[2].trim().to_string(),
+        ));
     }
     // try base64url decode
     let mut padded = input.to_string();
-    while padded.len() % 4 != 0 { padded.push('='); }
-    let decoded = base64_url_decode(&padded)
-        .map_err(|_| "Invalid invite code: not a valid base64 or pipe-delimited format.".to_string())?;
+    while padded.len() % 4 != 0 {
+        padded.push('=');
+    }
+    let decoded = base64_url_decode(&padded).map_err(|_| {
+        "Invalid invite code: not a valid base64 or pipe-delimited format.".to_string()
+    })?;
     let text = String::from_utf8(decoded)
         .map_err(|_| "Invalid invite code: decoded bytes are not valid UTF-8.".to_string())?;
     let parts: Vec<&str> = text.split('|').collect();
     if parts.len() != 3 {
         return Err("Invalid invite code: expected url|room|token after decoding.".to_string());
     }
-    Ok((parts[0].trim().to_string(), parts[1].trim().to_string(), parts[2].trim().to_string()))
+    Ok((
+        parts[0].trim().to_string(),
+        parts[1].trim().to_string(),
+        parts[2].trim().to_string(),
+    ))
 }
 
 fn base64_url_decode(input: &str) -> Result<Vec<u8>, ()> {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut lookup = [255u8; 256];
-    for (i, &c) in TABLE.iter().enumerate() { lookup[c as usize] = i as u8; }
+    for (i, &c) in TABLE.iter().enumerate() {
+        lookup[c as usize] = i as u8;
+    }
     // also accept + and / for standard base64
     lookup[b'+' as usize] = 62;
     lookup[b'/' as usize] = 63;
@@ -108,10 +121,18 @@ fn base64_url_decode(input: &str) -> Result<Vec<u8>, ()> {
     let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
     for chunk in bytes.chunks(4) {
         let vals: Vec<u8> = chunk.iter().map(|&b| lookup[b as usize]).collect();
-        if vals.iter().any(|&v| v == 255) { return Err(()); }
-        if vals.len() >= 2 { out.push((vals[0] << 2) | (vals[1] >> 4)); }
-        if vals.len() >= 3 { out.push((vals[1] << 4) | (vals[2] >> 2)); }
-        if vals.len() >= 4 { out.push((vals[2] << 6) | vals[3]); }
+        if vals.iter().any(|&v| v == 255) {
+            return Err(());
+        }
+        if vals.len() >= 2 {
+            out.push((vals[0] << 2) | (vals[1] >> 4));
+        }
+        if vals.len() >= 3 {
+            out.push((vals[1] << 4) | (vals[2] >> 2));
+        }
+        if vals.len() >= 4 {
+            out.push((vals[2] << 6) | vals[3]);
+        }
     }
     Ok(out)
 }

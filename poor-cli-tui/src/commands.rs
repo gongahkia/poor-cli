@@ -120,7 +120,7 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /broke               Set response mode to terse, token-minimal output\n\
   /my-treat            Set response mode to rich, comprehensive output\n\
   /verbose             Toggle verbose logging\n\
-  /plan-mode           Toggle plan mode\n\n\
+  /plan-mode           Toggle experimental plan-mode flag (not wired)\n\n\
 **Git Integration:**\n\
   /commit              Generate commit message from staged diff\n\
   /review [file]       Review a file or staged diff\n\n\
@@ -351,9 +351,16 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                 if app.prompt_queue.is_empty() {
                     show_command_info_popup(app, raw, "Prompt queue is empty.");
                 } else {
-                    let mut lines = vec![format!("**Prompt Queue** ({} items)\n", app.prompt_queue.len())];
+                    let mut lines = vec![format!(
+                        "**Prompt Queue** ({} items)\n",
+                        app.prompt_queue.len()
+                    )];
                     for (i, prompt) in app.prompt_queue.iter().enumerate() {
-                        let preview = if prompt.len() > 60 { &prompt[..60] } else { prompt };
+                        let preview = if prompt.len() > 60 {
+                            &prompt[..60]
+                        } else {
+                            prompt
+                        };
                         lines.push(format!("  {}. {}", i + 1, preview));
                     }
                     show_command_info_popup(app, raw, lines.join("\n"));
@@ -369,7 +376,10 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                     if let Ok(idx) = idx_str.trim().parse::<usize>() {
                         if idx >= 1 && idx <= app.prompt_queue.len() {
                             app.prompt_queue.remove(idx - 1);
-                            app.set_status(format!("Dropped item {idx} ({} remaining)", app.prompt_queue.len()));
+                            app.set_status(format!(
+                                "Dropped item {idx} ({} remaining)",
+                                app.prompt_queue.len()
+                            ));
                         } else {
                             app.set_status(format!("Invalid index (1-{})", app.prompt_queue.len()));
                         }
@@ -378,18 +388,24 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
                     }
                 } else if !app.prompt_queue.is_empty() {
                     app.prompt_queue.pop_back();
-                    app.set_status(format!("Dropped last ({} remaining)", app.prompt_queue.len()));
+                    app.set_status(format!(
+                        "Dropped last ({} remaining)",
+                        app.prompt_queue.len()
+                    ));
                 } else {
                     app.set_status("Queue is empty");
                 }
             }
             _ => {
-                show_command_info_popup(app, raw,
+                show_command_info_popup(
+                    app,
+                    raw,
                     "**Queue Commands**\n\n\
                     /queue add <text>   Add prompt to queue\n\
                     /queue list         Show queued prompts\n\
                     /queue clear        Clear all queued prompts\n\
-                    /queue drop [N]     Drop item N (or last)");
+                    /queue drop [N]     Drop item N (or last)",
+                );
             }
         }
         return false;
@@ -962,9 +978,9 @@ Version: v{}",
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 let message = if enabled {
-                    "Plan mode enabled (preview before execution)"
+                    "Plan-mode flag enabled. Execution preview is not wired into the main agent loop yet."
                 } else {
-                    "Plan mode disabled (direct execution)"
+                    "Plan-mode flag disabled. Execution preview remains inactive until the main agent loop is wired."
                 };
                 show_command_info_popup(app, raw, message.to_string());
             }
@@ -1719,8 +1735,34 @@ Context Window: {max_context} tokens\n\n\
             }
         }
 
-        refresh_context_budget_state(app);
-        show_command_info_popup(app, raw, format_context_budget_report(app));
+        let preview_message = app.last_user_message.clone().unwrap_or_default();
+        match open_context_inspector_for_message(app, rpc_cmd_tx, preview_message) {
+            Ok(()) => {}
+            Err(error) => app.push_message(ChatMessage::error(format!(
+                "Failed to preview context budget: {error}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/context" {
+        let preview_message = app.last_user_message.clone().unwrap_or_default();
+        match open_context_inspector_for_message(app, rpc_cmd_tx, preview_message) {
+            Ok(()) => {}
+            Err(error) => app.push_message(ChatMessage::error(format!(
+                "Failed to open context inspector: {error}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/timeline" {
+        app.open_timeline();
+        return false;
+    }
+
+    if lowered == "/search" {
+        app.open_transcript_search();
         return false;
     }
 
@@ -2151,22 +2193,38 @@ Context Window: {max_context} tokens\n\n\
             match sub.as_str() {
                 "status" => {
                     match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
-                        Ok(payload) => show_command_info_popup(app, raw, format_host_server_payload(&payload)),
-                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch status: {e}"))),
+                        Ok(payload) => {
+                            show_command_info_popup(app, raw, format_host_server_payload(&payload))
+                        }
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to fetch status: {e}"
+                        ))),
                     }
                     return false;
                 }
                 "members" | "who" => {
-                    let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
+                    let room = if app.multiplayer_room.is_empty() {
+                        None
+                    } else {
+                        Some(app.multiplayer_room.as_str())
+                    };
                     match rpc_list_room_members_blocking(rpc_cmd_tx, room) {
-                        Ok(payload) => show_command_info_popup(app, raw, format_room_members_payload(&payload)),
-                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch members: {e}"))),
+                        Ok(payload) => {
+                            show_command_info_popup(app, raw, format_room_members_payload(&payload))
+                        }
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to fetch members: {e}"
+                        ))),
                     }
                     return false;
                 }
                 "kick" => {
                     if args.len() < 3 {
-                        show_command_info_popup(app, raw, "Usage: /pair kick <connection-id|number>".to_string());
+                        show_command_info_popup(
+                            app,
+                            raw,
+                            "Usage: /pair kick <connection-id|number>".to_string(),
+                        );
                         return false;
                     }
                     let target = args[2];
@@ -2174,16 +2232,33 @@ Context Window: {max_context} tokens\n\n\
                         if num >= 1 && num <= app.connected_users.len() {
                             app.connected_users[num - 1].connection_id.clone()
                         } else {
-                            show_command_info_popup(app, raw, format!("Invalid user number. Use 1-{}.", app.connected_users.len()));
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                format!(
+                                    "Invalid user number. Use 1-{}.",
+                                    app.connected_users.len()
+                                ),
+                            );
                             return false;
                         }
                     } else {
                         target.to_string()
                     };
-                    let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
+                    let room = if app.multiplayer_room.is_empty() {
+                        None
+                    } else {
+                        Some(app.multiplayer_room.as_str())
+                    };
                     match rpc_kick_member_blocking(rpc_cmd_tx, &cid, room) {
-                        Ok(_) => show_command_info_popup(app, raw, format!("Kicked `{cid}` from session.")),
-                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to kick: {e}"))),
+                        Ok(_) => show_command_info_popup(
+                            app,
+                            raw,
+                            format!("Kicked `{cid}` from session."),
+                        ),
+                        Err(e) => {
+                            app.push_message(ChatMessage::error(format!("Failed to kick: {e}")))
+                        }
                     }
                     return false;
                 }
@@ -2191,10 +2266,20 @@ Context Window: {max_context} tokens\n\n\
                     match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
                         Ok(payload) => {
                             let role = args.get(2).copied();
-                            let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
-                            show_command_info_popup(app, raw, format_host_share_payload(&payload, role, room));
+                            let room = if app.multiplayer_room.is_empty() {
+                                None
+                            } else {
+                                Some(app.multiplayer_room.as_str())
+                            };
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                format_host_share_payload(&payload, role, room),
+                            );
                         }
-                        Err(e) => app.push_message(ChatMessage::error(format!("Failed to fetch share info: {e}"))),
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to fetch share info: {e}"
+                        ))),
                     }
                     return false;
                 }
@@ -2302,9 +2387,13 @@ Context Window: {max_context} tokens\n\n\
         let args: Vec<&str> = raw.split_whitespace().collect();
         let (display_name, connection_id): (Option<String>, Option<String>) = if args.len() > 1 {
             let target = args[1..].join(" ");
-            if let Ok(num) = target.parse::<usize>() { // numeric index from presence bar
+            if let Ok(num) = target.parse::<usize>() {
+                // numeric index from presence bar
                 if num >= 1 && num <= app.connected_users.len() {
-                    (None, Some(app.connected_users[num - 1].connection_id.clone()))
+                    (
+                        None,
+                        Some(app.connected_users[num - 1].connection_id.clone()),
+                    )
                 } else {
                     app.push_message(ChatMessage::error(format!(
                         "Invalid user number {num}. Use 1-{} per the presence bar.",
@@ -2320,14 +2409,30 @@ Context Window: {max_context} tokens\n\n\
         } else {
             (None, None) // pass to next navigator
         };
-        let room = if app.multiplayer_room.is_empty() { None } else { Some(app.multiplayer_room.as_str()) };
-        match rpc_pass_driver_blocking(rpc_cmd_tx, display_name.as_deref(), connection_id.as_deref(), room) {
+        let room = if app.multiplayer_room.is_empty() {
+            None
+        } else {
+            Some(app.multiplayer_room.as_str())
+        };
+        match rpc_pass_driver_blocking(
+            rpc_cmd_tx,
+            display_name.as_deref(),
+            connection_id.as_deref(),
+            room,
+        ) {
             Ok(payload) => {
-                let target_id = payload.get("connectionId").and_then(|v| v.as_str()).unwrap_or("someone");
-                app.push_message(ChatMessage::system(format!("Driver role passed to `{target_id}`.")));
+                let target_id = payload
+                    .get("connectionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("someone");
+                app.push_message(ChatMessage::system(format!(
+                    "Driver role passed to `{target_id}`."
+                )));
                 app.set_status("Driver role handed off");
             }
-            Err(e) => app.push_message(ChatMessage::error(format!("Failed to pass driver: {e}\nEnsure you are the driver. Use /who to check roles."))),
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Failed to pass driver: {e}\nEnsure you are the driver. Use /who to check roles."
+            ))),
         }
         return false;
     }
@@ -2340,12 +2445,18 @@ Context Window: {max_context} tokens\n\n\
         }
         match rpc_suggest_text_blocking(rpc_cmd_tx, text) {
             Ok(_) => app.set_status("Suggestion sent"),
-            Err(e) => app.push_message(ChatMessage::error(format!("Suggest failed: {e}\nEnsure you are connected to a pair session."))),
+            Err(e) => app.push_message(ChatMessage::error(format!(
+                "Suggest failed: {e}\nEnsure you are connected to a pair session."
+            ))),
         }
         return false;
     }
     if lowered == "/suggest" {
-        show_command_info_popup(app, raw, "Usage: /suggest <text>\nSend a suggestion visible to the driver.".to_string());
+        show_command_info_popup(
+            app,
+            raw,
+            "Usage: /suggest <text>\nSend a suggestion visible to the driver.".to_string(),
+        );
         return false;
     }
 
@@ -2353,10 +2464,14 @@ Context Window: {max_context} tokens\n\n\
         if app.pair_is_host {
             match rpc_stop_host_server_blocking(rpc_cmd_tx) {
                 Ok(_) => app.push_message(ChatMessage::system("Pair session stopped.".to_string())),
-                Err(e) => app.push_message(ChatMessage::error(format!("Failed to stop pair session: {e}\nThe session may have already ended."))),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to stop pair session: {e}\nThe session may have already ended."
+                ))),
             }
         } else {
-            app.push_message(ChatMessage::system("Disconnected from pair session.".to_string()));
+            app.push_message(ChatMessage::system(
+                "Disconnected from pair session.".to_string(),
+            ));
         }
         app.reset_pair_state();
         app.multiplayer_enabled = false;
@@ -4196,6 +4311,9 @@ Task: {request}"
             .send(RpcCommand::ChatStreaming {
                 message: plan_prompt,
                 request_id: app.next_request_id(),
+                context_files: Vec::new(),
+                pinned_context_files: Vec::new(),
+                context_budget_tokens: Some(app.context_budget_tokens),
                 reply: reply_tx,
             })
             .is_err()

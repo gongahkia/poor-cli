@@ -1,4 +1,10 @@
 # Multi-stage build for poor-cli
+FROM rust:1-slim-bookworm as rust-builder
+
+WORKDIR /src
+COPY poor-cli-tui ./poor-cli-tui
+RUN cargo build --manifest-path poor-cli-tui/Cargo.toml --release
+
 FROM python:3.11-slim as builder
 
 # Set working directory
@@ -35,6 +41,11 @@ COPY --from=builder /root/.local /home/pooruser/.local
 
 # Copy application code
 COPY --chown=pooruser:pooruser . .
+
+# Copy the prebuilt Rust TUI so both `poor-cli` and `./run_tui.sh` work without cargo.
+RUN mkdir -p /app/poor-cli-tui/target/release
+COPY --from=rust-builder /src/poor-cli-tui/target/release/poor-cli-tui /usr/local/bin/poor-cli-tui
+COPY --from=rust-builder /src/poor-cli-tui/target/release/poor-cli-tui /app/poor-cli-tui/target/release/poor-cli-tui
 
 # Install poor-cli
 RUN pip install --no-cache-dir -e .

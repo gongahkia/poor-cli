@@ -18,6 +18,7 @@ import importlib.metadata
 import sys
 import aiofiles
 from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 from collections import Counter
@@ -59,6 +60,55 @@ from .command_validator import get_command_validator
 
 # Setup logger
 logger = setup_logger(__name__)
+
+
+@dataclass
+class ToolOutcome:
+    """Structured result for mutating tools."""
+
+    ok: bool
+    operation: str
+    path: str
+    changed: bool
+    diff: str = ""
+    checkpoint_id: Optional[str] = None
+    message: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "ok": self.ok,
+            "operation": self.operation,
+            "path": self.path,
+            "changed": self.changed,
+            "diff": self.diff,
+            "checkpoint_id": self.checkpoint_id,
+            "message": self.message,
+            "metadata": self.metadata,
+        }
+        return payload
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+
+@dataclass
+class PatchHunk:
+    """Single hunk inside a unified patch section."""
+
+    path: str
+    index: int
+    header: str
+    lines: List[str]
+
+
+@dataclass
+class PatchSection:
+    """Unified patch section for a single target file."""
+
+    path: str
+    header_lines: List[str]
+    hunks: List[PatchHunk]
 
 
 class ToolRegistryAsync:
@@ -696,6 +746,26 @@ class ToolRegistryAsync:
             "declaration": declaration,
         }
 
+    async def execute_tool_raw(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Execute a tool and return its raw result."""
+        try:
+            if tool_name not in self.tools:
+                raise ToolExecutionError(tool_name, f"Unknown tool: {tool_name}")
+
+            tool_function = self.tools[tool_name]["function"]
+            logger.info(f"Executing tool: {tool_name} with args: {arguments}")
+
+            result = await tool_function(**arguments)
+            logger.debug(f"Tool {tool_name} executed successfully")
+            return result
+
+        except (ToolExecutionError, ValidationError, FileOperationError) as e:
+            logger.error(f"Tool execution failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in tool execution: {e}", exc_info=True)
+            raise ToolExecutionError(tool_name, f"Tool execution failed: {str(e)}")
+
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool with given arguments
 
@@ -709,24 +779,702 @@ class ToolRegistryAsync:
         Raises:
             ToolExecutionError: If tool execution fails
         """
+        result = await self.execute_tool_raw(tool_name, arguments)
+        if isinstance(result, ToolOutcome):
+            return result.to_json()
+        return result
+
+    @staticmethod
+    def _text_diff(file_path: str, before: str, after: str) -> str:
+        import difflib
+
+        diff_lines = difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path}",
+        )
+        return "".join(diff_lines)
+
+    @staticmethod
+    def _read_text_for_diff(path: Path) -> Optional[str]:
         try:
-            if tool_name not in self.tools:
-                raise ToolExecutionError(tool_name, f"Unknown tool: {tool_name}")
+            raw = path.read_bytes()
+        except OSError:
+            return None
+        if b"\0" in raw:
+            return None
+        return raw.decode("utf-8", errors="ignore")
 
-            tool_function = self.tools[tool_name]["function"]
-            logger.info(f"Executing tool: {tool_name} with args: {arguments}")
-
-            result = await tool_function(**arguments)
-            logger.debug(f"Tool {tool_name} executed successfully")
-
-            return result
-
-        except (ToolExecutionError, ValidationError, FileOperationError) as e:
-            logger.error(f"Tool execution failed: {e}")
+    @staticmethod
+    def _atomic_write_text(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            os.replace(temp_path, path)
+        except Exception:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
             raise
-        except Exception as e:
-            logger.error(f"Unexpected error in tool execution: {e}", exc_info=True)
-            raise ToolExecutionError(tool_name, f"Tool execution failed: {str(e)}")
+
+    def _tool_outcome(
+        self,
+        *,
+        operation: str,
+        path: Path,
+        before: Optional[str],
+        after: Optional[str],
+        changed: bool,
+        message: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ToolOutcome:
+        diff = ""
+        if before is not None and after is not None and (before != after):
+            diff = self._text_diff(str(path), before, after)
+        return ToolOutcome(
+            ok=True,
+            operation=operation,
+            path=str(path),
+            changed=changed,
+            diff=diff,
+            message=message,
+            metadata=metadata or {},
+        )
+
+    def inspect_mutation_targets(self, tool_name: str, arguments: Dict[str, Any]) -> List[str]:
+        """Return candidate file paths touched by a mutating tool invocation."""
+        if tool_name in {"write_file", "edit_file", "delete_file", "json_yaml_edit"}:
+            file_path = arguments.get("file_path")
+            if file_path:
+                try:
+                    return [str(validate_file_path(file_path, must_exist=False))]
+                except Exception:
+                    return [str(Path(str(file_path)).expanduser().resolve())]
+            return []
+
+        if tool_name == "apply_patch_unified":
+            patch = str(arguments.get("patch", "") or "")
+            patch_root = self._resolve_directory(arguments.get("path"))
+            return self._extract_patch_targets(patch, patch_root)
+
+        return []
+
+    @staticmethod
+    def _normalize_mutation_paths(paths: List[str]) -> List[str]:
+        normalized: List[str] = []
+        seen: set[str] = set()
+        for path in paths:
+            if not path:
+                continue
+            resolved = str(Path(str(path)).expanduser().resolve())
+            if resolved not in seen:
+                seen.add(resolved)
+                normalized.append(resolved)
+        return normalized
+
+    @staticmethod
+    def _normalize_chunk_index(value: Any) -> Optional[int]:
+        if isinstance(value, int):
+            return value if value >= 0 else None
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+        return None
+
+    @staticmethod
+    def _resolve_patch_path(path: str, work_dir: Path) -> str:
+        candidate = Path(path).expanduser()
+        if candidate.is_absolute():
+            return str(candidate.resolve())
+        return str((work_dir / candidate).resolve())
+
+    def _split_patch_sections(
+        self,
+        patch: str,
+        work_dir: Path,
+    ) -> Tuple[List[str], List[PatchSection]]:
+        if not patch.strip():
+            return [], []
+
+        lines = patch.splitlines(keepends=True)
+        preamble: List[str] = []
+        raw_sections: List[List[str]] = []
+        current_section: List[str] = []
+        saw_section = False
+
+        for line in lines:
+            if line.startswith("diff --git "):
+                saw_section = True
+                if current_section:
+                    raw_sections.append(current_section)
+                current_section = [line]
+                continue
+
+            if saw_section:
+                current_section.append(line)
+            else:
+                preamble.append(line)
+
+        if current_section:
+            raw_sections.append(current_section)
+        elif not raw_sections:
+            raw_sections.append(lines)
+            preamble = []
+
+        sections: List[PatchSection] = []
+        for raw_section in raw_sections:
+            header_lines: List[str] = []
+            hunks: List[PatchHunk] = []
+            current_hunk: List[str] = []
+            section_text = "".join(raw_section)
+            targets = self._extract_patch_targets(section_text, work_dir)
+            section_path = targets[0] if targets else ""
+            hunk_index = 0
+
+            for line in raw_section:
+                if line.startswith("@@"):
+                    if current_hunk:
+                        hunks.append(
+                            PatchHunk(
+                                path=section_path,
+                                index=hunk_index,
+                                header=current_hunk[0].rstrip("\n"),
+                                lines=current_hunk,
+                            )
+                        )
+                        hunk_index += 1
+                    current_hunk = [line]
+                elif current_hunk:
+                    current_hunk.append(line)
+                else:
+                    header_lines.append(line)
+
+            if current_hunk:
+                hunks.append(
+                    PatchHunk(
+                        path=section_path,
+                        index=hunk_index,
+                        header=current_hunk[0].rstrip("\n"),
+                        lines=current_hunk,
+                    )
+                )
+
+            sections.append(
+                PatchSection(
+                    path=section_path,
+                    header_lines=header_lines,
+                    hunks=hunks,
+                )
+            )
+
+        return preamble, sections
+
+    @staticmethod
+    def _render_patch_sections(preamble: List[str], sections: List[PatchSection]) -> str:
+        rendered: List[str] = list(preamble)
+        for section in sections:
+            rendered.extend(section.header_lines)
+            for hunk in section.hunks:
+                rendered.extend(hunk.lines)
+        return "".join(rendered)
+
+    def _filter_patch_to_targets(
+        self,
+        patch: str,
+        work_dir: Path,
+        approved_paths: List[str],
+    ) -> Tuple[str, List[str]]:
+        if not patch.strip():
+            return "", []
+
+        normalized_paths = set(self._normalize_mutation_paths(approved_paths))
+        if not normalized_paths:
+            return patch, []
+
+        preamble, sections = self._split_patch_sections(patch, work_dir)
+        selected_sections: List[PatchSection] = []
+        matched_targets: List[str] = []
+        seen_targets: set[str] = set()
+        for section in sections:
+            if section.path not in normalized_paths:
+                continue
+            selected_sections.append(section)
+            if section.path and section.path not in seen_targets:
+                seen_targets.add(section.path)
+                matched_targets.append(section.path)
+
+        if not selected_sections:
+            return "", []
+
+        return self._render_patch_sections(preamble, selected_sections), matched_targets
+
+    def _filter_patch_to_hunks(
+        self,
+        patch: str,
+        work_dir: Path,
+        approved_chunks: List[Dict[str, Any]],
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        if not patch.strip():
+            return "", []
+
+        chunk_refs: Dict[str, set[int]] = {}
+        for chunk in approved_chunks:
+            if not isinstance(chunk, dict):
+                continue
+            raw_path = chunk.get("path") or chunk.get("filePath")
+            raw_index = chunk.get("index")
+            if raw_index is None:
+                raw_index = chunk.get("hunkIndex")
+            if not isinstance(raw_path, str) or not raw_path:
+                continue
+            index = self._normalize_chunk_index(raw_index)
+            if index is None:
+                continue
+            resolved_path = self._resolve_patch_path(raw_path, work_dir)
+            chunk_refs.setdefault(resolved_path, set()).add(index)
+
+        if not chunk_refs:
+            return patch, []
+
+        preamble, sections = self._split_patch_sections(patch, work_dir)
+        selected_sections: List[PatchSection] = []
+        matched_chunks: List[Dict[str, Any]] = []
+
+        for section in sections:
+            allowed_indexes = chunk_refs.get(section.path)
+            if not allowed_indexes:
+                continue
+            selected_hunks = [
+                PatchHunk(
+                    path=hunk.path,
+                    index=hunk.index,
+                    header=hunk.header,
+                    lines=list(hunk.lines),
+                )
+                for hunk in section.hunks
+                if hunk.index in allowed_indexes
+            ]
+            if not selected_hunks:
+                continue
+            selected_sections.append(
+                PatchSection(
+                    path=section.path,
+                    header_lines=list(section.header_lines),
+                    hunks=selected_hunks,
+                )
+            )
+            for hunk in selected_hunks:
+                matched_chunks.append(
+                    {
+                        "path": hunk.path,
+                        "index": hunk.index,
+                        "header": hunk.header,
+                    }
+                )
+
+        if not selected_sections:
+            return "", []
+
+        return self._render_patch_sections(preamble, selected_sections), matched_chunks
+
+    def narrow_mutation_arguments(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        approved_paths: List[str],
+        approved_chunks: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Restrict a mutation to the approved file subset when possible."""
+        normalized_paths = self._normalize_mutation_paths(approved_paths)
+        approved_chunks = approved_chunks or []
+        if not normalized_paths and not approved_chunks:
+            return dict(arguments)
+
+        if tool_name in {"write_file", "edit_file", "delete_file", "json_yaml_edit"}:
+            if not normalized_paths:
+                return dict(arguments)
+            targets = self.inspect_mutation_targets(tool_name, arguments)
+            if not targets:
+                raise ValidationError("Mutation does not expose file targets")
+            if targets[0] not in set(normalized_paths):
+                raise ValidationError("Selected file is not part of this mutation")
+            return dict(arguments)
+
+        if tool_name == "apply_patch_unified":
+            work_dir = self._resolve_directory(arguments.get("path"))
+            filtered_patch = str(arguments.get("patch", ""))
+            matched_targets: List[str] = []
+
+            if approved_chunks:
+                filtered_patch, matched_chunks = self._filter_patch_to_hunks(
+                    filtered_patch,
+                    work_dir,
+                    approved_chunks,
+                )
+                if not matched_chunks or not filtered_patch.strip():
+                    raise ValidationError("Selected chunk is not part of this patch")
+                matched_targets = self._normalize_mutation_paths(
+                    [str(chunk["path"]) for chunk in matched_chunks]
+                )
+            elif normalized_paths:
+                filtered_patch, matched_targets = self._filter_patch_to_targets(
+                    filtered_patch,
+                    work_dir,
+                    normalized_paths,
+                )
+                if not matched_targets or not filtered_patch.strip():
+                    raise ValidationError("Selected file is not part of this patch")
+            narrowed = dict(arguments)
+            narrowed["patch"] = filtered_patch
+            return narrowed
+
+        return dict(arguments)
+
+    async def preview_mutation(self, tool_name: str, arguments: Dict[str, Any]) -> ToolOutcome:
+        """Preview a mutating tool without writing to disk."""
+        if tool_name == "write_file":
+            return await self._preview_write_file(
+                str(arguments.get("file_path", "")),
+                str(arguments.get("content", "")),
+            )
+        if tool_name == "edit_file":
+            return await self._preview_edit_file(
+                file_path=str(arguments.get("file_path", "")),
+                new_text=str(arguments.get("new_text", "")),
+                old_text=arguments.get("old_text"),
+                start_line=arguments.get("start_line"),
+                end_line=arguments.get("end_line"),
+            )
+        if tool_name == "delete_file":
+            return await self._preview_delete_file(str(arguments.get("file_path", "")))
+        if tool_name == "apply_patch_unified":
+            return await self._preview_apply_patch_unified(
+                patch=str(arguments.get("patch", "")),
+                path=arguments.get("path"),
+                check_only=bool(arguments.get("check_only", False)),
+            )
+        if tool_name == "json_yaml_edit":
+            return await self._preview_json_yaml_edit(
+                file_path=str(arguments.get("file_path", "")),
+                updates_json=str(arguments.get("updates_json", "")),
+                create_missing=bool(arguments.get("create_missing", True)),
+            )
+        raise ValidationError(f"preview_mutation does not support tool `{tool_name}`")
+
+    @staticmethod
+    def _extract_patch_targets(patch: str, work_dir: Path) -> List[str]:
+        targets: List[str] = []
+        seen: set[str] = set()
+        for line in patch.splitlines():
+            candidate: Optional[str] = None
+            if line.startswith("diff --git "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    candidate = parts[3]
+            elif line.startswith("+++ "):
+                candidate = line[4:].strip()
+
+            if not candidate or candidate == "/dev/null":
+                continue
+
+            if candidate.startswith("a/") or candidate.startswith("b/"):
+                candidate = candidate[2:]
+
+            resolved = str((work_dir / candidate).resolve())
+            if resolved not in seen:
+                seen.add(resolved)
+                targets.append(resolved)
+        return targets
+
+    def _render_edit_content(
+        self,
+        *,
+        content: str,
+        new_text: str,
+        old_text: Optional[str] = None,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        if old_text is None and start_line is None:
+            raise ValidationError("edit_file requires `old_text` or `start_line`")
+
+        if old_text is not None:
+            occurrences = content.count(old_text)
+            if occurrences == 0:
+                raise ValidationError(f"Text not found in file: {old_text[:50]}...")
+            if occurrences > 1:
+                raise ValidationError(
+                    "edit_file requires an exact single match; multiple matches found"
+                )
+            return (
+                content.replace(old_text, new_text, 1),
+                {"mode": "exact_replace", "match_count": occurrences},
+            )
+
+        lines = content.splitlines(keepends=True)
+        if not lines and start_line not in (None, 1):
+            raise ValidationError(f"Invalid start_line: {start_line}")
+
+        start = (start_line or 1) - 1
+        end = end_line if end_line is not None else start + 1
+
+        if start < 0 or start > len(lines):
+            raise ValidationError(f"Invalid start_line: {start_line}")
+        if end < start + 1 or end > len(lines):
+            raise ValidationError(f"Invalid end_line: {end_line}")
+
+        replacement_lines = new_text.splitlines(keepends=True)
+        if new_text and not replacement_lines:
+            replacement_lines = [new_text]
+
+        return (
+            "".join(lines[:start] + replacement_lines + lines[end:]),
+            {
+                "mode": "line_range",
+                "start_line": start_line,
+                "end_line": end_line or (start_line or 1),
+            },
+        )
+
+    def _render_json_yaml_edit(
+        self,
+        *,
+        path_obj: Path,
+        updates_json: str,
+        create_missing: bool,
+    ) -> Tuple[str, str, List[str]]:
+        suffix = path_obj.suffix.lower()
+        if suffix not in {".json", ".yaml", ".yml"}:
+            raise ValidationError("json_yaml_edit only supports .json/.yaml/.yml files")
+
+        try:
+            updates = json.loads(updates_json)
+        except json.JSONDecodeError as e:
+            raise ValidationError(f"updates_json must be valid JSON: {e}") from e
+
+        if not isinstance(updates, dict) or not updates:
+            raise ValidationError("updates_json must be a non-empty JSON object")
+
+        raw_content = path_obj.read_text(encoding="utf-8")
+        if suffix == ".json":
+            document = json.loads(raw_content or "{}")
+        else:
+            if not YAML_AVAILABLE:
+                raise ToolExecutionError("json_yaml_edit", "PyYAML is required to edit YAML files")
+            document = yaml.safe_load(raw_content) if raw_content.strip() else {}
+
+        if document is None:
+            document = {}
+        if not isinstance(document, dict):
+            raise ValidationError("Root document must be an object/dictionary")
+
+        changed_paths = []
+        for dotted_path, value in updates.items():
+            if not isinstance(dotted_path, str) or not dotted_path.strip():
+                raise ValidationError("Update keys must be non-empty dotted paths")
+            segments = [segment for segment in dotted_path.split(".") if segment]
+            if not segments:
+                raise ValidationError(f"Invalid dotted path: {dotted_path}")
+
+            cursor = document
+            for segment in segments[:-1]:
+                existing = cursor.get(segment)
+                if existing is None:
+                    if not create_missing:
+                        raise ValidationError(
+                            f"Missing path segment '{segment}' in '{dotted_path}'"
+                        )
+                    cursor[segment] = {}
+                    existing = cursor[segment]
+                elif not isinstance(existing, dict):
+                    if not create_missing:
+                        raise ValidationError(
+                            f"Path segment '{segment}' is not an object in '{dotted_path}'"
+                        )
+                    cursor[segment] = {}
+                    existing = cursor[segment]
+                cursor = existing
+            cursor[segments[-1]] = value
+            changed_paths.append(dotted_path)
+
+        if suffix == ".json":
+            rendered = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+        else:
+            rendered = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+
+        return raw_content, rendered, changed_paths
+
+    async def _preview_write_file(self, file_path: str, content: str) -> ToolOutcome:
+        path_obj = validate_file_path(file_path, must_exist=False)
+        existed_before = path_obj.exists()
+        before = self._read_text_for_diff(path_obj) if existed_before else ""
+        changed = before != content
+        return self._tool_outcome(
+            operation="write_file",
+            path=path_obj,
+            before=before or "",
+            after=content,
+            changed=changed,
+            message=(
+                f"Preview create {path_obj}" if not existed_before else f"Preview write {path_obj}"
+            ),
+            metadata={
+                "created": not existed_before,
+                "bytes": len(content),
+                "preview": True,
+                "paths": [str(path_obj)],
+                "changed_paths": [str(path_obj)] if changed else [],
+            },
+        )
+
+    async def _preview_edit_file(
+        self,
+        *,
+        file_path: str,
+        new_text: str,
+        old_text: Optional[str] = None,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+    ) -> ToolOutcome:
+        path_obj = validate_file_path(file_path, must_exist=True, must_be_file=True)
+        content = path_obj.read_text(encoding="utf-8")
+        new_content, metadata = self._render_edit_content(
+            content=content,
+            new_text=new_text,
+            old_text=old_text,
+            start_line=start_line,
+            end_line=end_line,
+        )
+        changed = new_content != content
+        return self._tool_outcome(
+            operation="edit_file",
+            path=path_obj,
+            before=content,
+            after=new_content,
+            changed=changed,
+            message=f"Preview edit {path_obj}",
+            metadata={
+                **metadata,
+                "preview": True,
+                "paths": [str(path_obj)],
+                "changed_paths": [str(path_obj)] if changed else [],
+            },
+        )
+
+    async def _preview_delete_file(self, file_path: str) -> ToolOutcome:
+        path_obj = validate_file_path(file_path, must_exist=True, must_be_file=True)
+        before = self._read_text_for_diff(path_obj)
+        return self._tool_outcome(
+            operation="delete_file",
+            path=path_obj,
+            before=before,
+            after="",
+            changed=True,
+            message=f"Preview delete {path_obj}",
+            metadata={
+                "deleted": True,
+                "preview": True,
+                "paths": [str(path_obj)],
+                "changed_paths": [str(path_obj)],
+            },
+        )
+
+    async def _preview_apply_patch_unified(
+        self,
+        *,
+        patch: str,
+        path: Optional[str] = None,
+        check_only: bool = False,
+    ) -> ToolOutcome:
+        if not patch or not patch.strip():
+            raise ValidationError("Patch content cannot be empty")
+        if not shutil.which("git"):
+            raise ToolExecutionError("apply_patch_unified", "`git` is required for apply_patch_unified")
+
+        work_dir = self._resolve_directory(path)
+        patch_file = None
+        target_paths = self._extract_patch_targets(patch, work_dir)
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                suffix=".patch",
+                prefix="poor_cli_preview_",
+                delete=False,
+                dir=str(work_dir),
+            ) as handle:
+                handle.write(patch)
+                patch_file = handle.name
+
+            check_result = await self._run_command_capture(
+                ["git", "apply", "--check", patch_file],
+                timeout=60,
+                cwd=str(work_dir),
+            )
+            if check_result["timed_out"]:
+                raise ToolExecutionError("apply_patch_unified", "Patch validation timed out")
+            if check_result["exit_code"] != 0:
+                details = (check_result["stderr"] or check_result["stdout"]).strip()
+                raise ToolExecutionError("apply_patch_unified", f"Patch validation failed: {details}")
+
+            changed = (not check_only) and bool(target_paths)
+            return ToolOutcome(
+                ok=True,
+                operation="apply_patch_unified",
+                path=str(work_dir),
+                changed=changed,
+                diff=patch,
+                message="Patch preview ready",
+                metadata={
+                    "check_only": check_only,
+                    "preview": True,
+                    "paths": target_paths,
+                    "changed_paths": target_paths if changed else [],
+                },
+            )
+        finally:
+            if patch_file and os.path.exists(patch_file):
+                os.remove(patch_file)
+
+    async def _preview_json_yaml_edit(
+        self,
+        *,
+        file_path: str,
+        updates_json: str,
+        create_missing: bool = True,
+    ) -> ToolOutcome:
+        path_obj = validate_file_path(file_path, must_exist=True, must_be_file=True)
+        raw_content, rendered, changed_paths = self._render_json_yaml_edit(
+            path_obj=path_obj,
+            updates_json=updates_json,
+            create_missing=create_missing,
+        )
+        changed = rendered != raw_content
+        return self._tool_outcome(
+            operation="json_yaml_edit",
+            path=path_obj,
+            before=raw_content,
+            after=rendered,
+            changed=changed,
+            message=(
+                f"Preview update {path_obj} with {len(changed_paths)} changes: "
+                + ", ".join(changed_paths[:15])
+            ),
+            metadata={
+                "changed_paths": changed_paths,
+                "create_missing": create_missing,
+                "preview": True,
+                "paths": [str(path_obj)],
+            },
+        )
 
     async def read_file(self, file_path: str, start_line: Optional[int] = None,
                        end_line: Optional[int] = None) -> str:
@@ -765,7 +1513,7 @@ class ToolRegistryAsync:
         except Exception as e:
             raise FileOperationError(f"Failed to read file {file_path}: {str(e)}")
 
-    async def write_file(self, file_path: str, content: str) -> str:
+    async def write_file(self, file_path: str, content: str) -> ToolOutcome:
         """Write content to file asynchronously
 
         Args:
@@ -781,16 +1529,27 @@ class ToolRegistryAsync:
         try:
             # Validate path (don't require existence for write)
             file_path = validate_file_path(file_path, must_exist=False)
+            path_obj = Path(file_path)
+            existed_before = path_obj.exists()
+            before = self._read_text_for_diff(path_obj) if existed_before else ""
 
-            # Create parent directories if needed
-            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-
-            # Write file asynchronously
-            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
-                await f.write(content)
+            changed = before != content
+            if changed:
+                self._atomic_write_text(path_obj, content)
 
             logger.info(f"Wrote file: {file_path}")
-            return f"Successfully wrote to {file_path}"
+            message = (
+                f"Created {file_path}" if not existed_before else f"Wrote {file_path}"
+            )
+            return self._tool_outcome(
+                operation="write_file",
+                path=path_obj,
+                before=before or "",
+                after=content,
+                changed=changed,
+                message=message,
+                metadata={"created": not existed_before, "bytes": len(content)},
+            )
 
         except (PathTraversalError, FilePermissionError):
             raise
@@ -798,7 +1557,7 @@ class ToolRegistryAsync:
             raise FileOperationError(f"Failed to write file {file_path}: {str(e)}")
 
     async def edit_file(self, file_path: str, new_text: str, old_text: Optional[str] = None,
-                       start_line: Optional[int] = None, end_line: Optional[int] = None) -> str:
+                       start_line: Optional[int] = None, end_line: Optional[int] = None) -> ToolOutcome:
         """Edit file by replacing text or lines
 
         Args:
@@ -817,38 +1576,34 @@ class ToolRegistryAsync:
         try:
             # Validate path
             file_path = validate_file_path(file_path, must_exist=True, must_be_file=True)
+            path_obj = Path(file_path)
 
             # Read current content
             async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
 
-            # Perform edit
-            if old_text is not None:
-                # Text replacement mode
-                if old_text not in content:
-                    raise ValidationError(f"Text not found in file: {old_text[:50]}...")
-                new_content = content.replace(old_text, new_text)
-            elif start_line is not None:
-                # Line-based editing mode
-                lines = content.split('\n')
-                start = start_line - 1
-                end = end_line if end_line else start + 1
+            new_content, metadata = self._render_edit_content(
+                content=content,
+                new_text=new_text,
+                old_text=old_text,
+                start_line=start_line,
+                end_line=end_line,
+            )
 
-                if start < 0 or start >= len(lines):
-                    raise ValidationError(f"Invalid start_line: {start_line}")
-
-                lines[start:end] = [new_text]
-                new_content = '\n'.join(lines)
-            else:
-                # Just append if no old_text or line numbers
-                new_content = content + new_text
-
-            # Write new content
-            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
-                await f.write(new_content)
+            changed = new_content != content
+            if changed:
+                self._atomic_write_text(path_obj, new_content)
 
             logger.info(f"Edited file: {file_path}")
-            return f"Successfully edited {file_path}"
+            return self._tool_outcome(
+                operation="edit_file",
+                path=path_obj,
+                before=content,
+                after=new_content,
+                changed=changed,
+                message=f"Edited {file_path}",
+                metadata=metadata,
+            )
 
         except (PoorFileNotFoundError, FilePermissionError, ValidationError):
             raise
@@ -1413,7 +2168,7 @@ class ToolRegistryAsync:
         except Exception as e:
             raise FileOperationError(f"Failed to move file: {str(e)}")
 
-    async def delete_file(self, file_path: str) -> str:
+    async def delete_file(self, file_path: str) -> ToolOutcome:
         """Delete a file
 
         Args:
@@ -1427,12 +2182,22 @@ class ToolRegistryAsync:
         """
         try:
             file_path = validate_file_path(file_path, must_exist=True, must_be_file=True)
+            path_obj = Path(file_path)
+            before = self._read_text_for_diff(path_obj)
 
             # Delete file
             await asyncio.to_thread(os.remove, file_path)
 
             logger.info(f"Deleted file: {file_path}")
-            return f"Successfully deleted {file_path}"
+            return self._tool_outcome(
+                operation="delete_file",
+                path=path_obj,
+                before=before,
+                after="",
+                changed=True,
+                message=f"Deleted {file_path}",
+                metadata={"deleted": True},
+            )
 
         except Exception as e:
             raise FileOperationError(f"Failed to delete file: {str(e)}")
@@ -1488,16 +2253,33 @@ class ToolRegistryAsync:
         Raises:
             CommandExecutionError: If git command fails
         """
-        command = "git status"
         try:
-            work_dir = path or os.getcwd()
-            command = f"cd {work_dir} && git status"
+            work_dir = self._resolve_directory(path)
+            result = await self._run_command_capture(
+                ["git", "status"],
+                timeout=30,
+                cwd=str(work_dir),
+            )
+            if result["timed_out"]:
+                raise CommandExecutionError(
+                    "git status",
+                    "Git status timed out after 30 seconds",
+                )
+            if result["exit_code"] != 0:
+                details = (result["stderr"] or result["stdout"]).strip() or "Git status failed"
+                raise CommandExecutionError(
+                    "git status",
+                    details,
+                    return_code=result["exit_code"],
+                )
 
-            result = await self.bash(command, timeout=30)
-            return result
+            output = (result["stdout"] or result["stderr"]).strip()
+            return output or "Working tree clean"
 
         except Exception as e:
-            raise CommandExecutionError(command, f"Git status failed: {str(e)}")
+            if isinstance(e, CommandExecutionError):
+                raise
+            raise CommandExecutionError("git status", f"Git status failed: {str(e)}")
 
     async def git_diff(self, path: Optional[str] = None, file_path: Optional[str] = None) -> str:
         """Show git differences
@@ -1512,17 +2294,37 @@ class ToolRegistryAsync:
         Raises:
             CommandExecutionError: If git command fails
         """
-        command = "git diff"
         try:
-            work_dir = path or os.getcwd()
-            file_arg = file_path if file_path else ""
-            command = f"cd {work_dir} && git diff {file_arg}"
+            work_dir = self._resolve_directory(path)
+            argv = ["git", "diff"]
+            if file_path:
+                argv.extend(["--", file_path])
 
-            result = await self.bash(command, timeout=30)
-            return result if result.strip() else "No changes"
+            result = await self._run_command_capture(
+                argv,
+                timeout=30,
+                cwd=str(work_dir),
+            )
+            if result["timed_out"]:
+                raise CommandExecutionError(
+                    "git diff",
+                    "Git diff timed out after 30 seconds",
+                )
+            if result["exit_code"] != 0:
+                details = (result["stderr"] or result["stdout"]).strip() or "Git diff failed"
+                raise CommandExecutionError(
+                    "git diff",
+                    details,
+                    return_code=result["exit_code"],
+                )
+
+            output = result["stdout"].strip()
+            return output or "No changes"
 
         except Exception as e:
-            raise CommandExecutionError(command, f"Git diff failed: {str(e)}")
+            if isinstance(e, CommandExecutionError):
+                raise
+            raise CommandExecutionError("git diff", f"Git diff failed: {str(e)}")
 
     async def create_directory(self, path: str) -> str:
         """Create a new directory
@@ -1689,7 +2491,7 @@ class ToolRegistryAsync:
         patch: str,
         path: Optional[str] = None,
         check_only: bool = False,
-    ) -> str:
+    ) -> ToolOutcome:
         """Validate and apply a unified patch using git apply."""
         if not patch or not patch.strip():
             raise ValidationError("Patch content cannot be empty")
@@ -1698,6 +2500,11 @@ class ToolRegistryAsync:
 
         work_dir = self._resolve_directory(path)
         patch_file = None
+        target_paths = self._extract_patch_targets(patch, work_dir)
+        before_map = {
+            target_path: self._read_text_for_diff(Path(target_path))
+            for target_path in target_paths
+        }
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -1722,13 +2529,16 @@ class ToolRegistryAsync:
                 raise ToolExecutionError("apply_patch_unified", f"Patch validation failed: {details}")
 
             if check_only:
-                return json.dumps(
-                    {
-                        "ok": True,
+                return ToolOutcome(
+                    ok=True,
+                    operation="apply_patch_unified",
+                    path=str(work_dir),
+                    changed=False,
+                    message="Patch validation successful",
+                    metadata={
                         "check_only": True,
-                        "message": "Patch validation successful",
+                        "paths": target_paths,
                     },
-                    indent=2,
                 )
 
             apply_result = await self._run_command_capture(
@@ -1742,14 +2552,34 @@ class ToolRegistryAsync:
                 details = (apply_result["stderr"] or apply_result["stdout"]).strip()
                 raise ToolExecutionError("apply_patch_unified", f"Patch apply failed: {details}")
 
-            return json.dumps(
-                {
-                    "ok": True,
+            diff_parts: List[str] = []
+            changed_paths: List[str] = []
+            for target_path in target_paths:
+                after = self._read_text_for_diff(Path(target_path))
+                before = before_map.get(target_path)
+                if before is None and after is None:
+                    continue
+                rendered_before = before or ""
+                rendered_after = after or ""
+                if rendered_before != rendered_after:
+                    changed_paths.append(target_path)
+                    diff_parts.append(
+                        self._text_diff(target_path, rendered_before, rendered_after)
+                    )
+
+            return ToolOutcome(
+                ok=True,
+                operation="apply_patch_unified",
+                path=str(work_dir),
+                changed=bool(changed_paths),
+                diff="".join(diff_parts),
+                message="Patch applied successfully",
+                metadata={
                     "check_only": False,
-                    "message": "Patch applied successfully",
+                    "paths": target_paths,
+                    "changed_paths": changed_paths,
                     "stdout": apply_result["stdout"].strip(),
                 },
-                indent=2,
             )
         finally:
             if patch_file and os.path.exists(patch_file):
@@ -1972,73 +2802,34 @@ class ToolRegistryAsync:
         file_path: str,
         updates_json: str,
         create_missing: bool = True,
-    ) -> str:
+    ) -> ToolOutcome:
         """Apply dotted-path updates to JSON/YAML files."""
         try:
             path_obj = validate_file_path(file_path, must_exist=True, must_be_file=True)
-            suffix = path_obj.suffix.lower()
-            if suffix not in {".json", ".yaml", ".yml"}:
-                raise ValidationError("json_yaml_edit only supports .json/.yaml/.yml files")
+            raw_content, rendered, changed_paths = self._render_json_yaml_edit(
+                path_obj=path_obj,
+                updates_json=updates_json,
+                create_missing=create_missing,
+            )
 
-            try:
-                updates = json.loads(updates_json)
-            except json.JSONDecodeError as e:
-                raise ValidationError(f"updates_json must be valid JSON: {e}") from e
+            changed = rendered != raw_content
+            if changed:
+                self._atomic_write_text(path_obj, rendered)
 
-            if not isinstance(updates, dict) or not updates:
-                raise ValidationError("updates_json must be a non-empty JSON object")
-
-            raw_content = path_obj.read_text(encoding="utf-8")
-            if suffix == ".json":
-                document = json.loads(raw_content or "{}")
-            else:
-                if not YAML_AVAILABLE:
-                    raise ToolExecutionError("json_yaml_edit", "PyYAML is required to edit YAML files")
-                document = yaml.safe_load(raw_content) if raw_content.strip() else {}
-
-            if document is None:
-                document = {}
-            if not isinstance(document, dict):
-                raise ValidationError("Root document must be an object/dictionary")
-
-            changed_paths = []
-            for dotted_path, value in updates.items():
-                if not isinstance(dotted_path, str) or not dotted_path.strip():
-                    raise ValidationError("Update keys must be non-empty dotted paths")
-                segments = [segment for segment in dotted_path.split(".") if segment]
-                if not segments:
-                    raise ValidationError(f"Invalid dotted path: {dotted_path}")
-
-                cursor = document
-                for segment in segments[:-1]:
-                    existing = cursor.get(segment)
-                    if existing is None:
-                        if not create_missing:
-                            raise ValidationError(
-                                f"Missing path segment '{segment}' in '{dotted_path}'"
-                            )
-                        cursor[segment] = {}
-                        existing = cursor[segment]
-                    elif not isinstance(existing, dict):
-                        if not create_missing:
-                            raise ValidationError(
-                                f"Path segment '{segment}' is not an object in '{dotted_path}'"
-                            )
-                        cursor[segment] = {}
-                        existing = cursor[segment]
-                    cursor = existing
-                cursor[segments[-1]] = value
-                changed_paths.append(dotted_path)
-
-            if suffix == ".json":
-                rendered = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
-            else:
-                rendered = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
-
-            path_obj.write_text(rendered, encoding="utf-8")
-            return (
-                f"Updated {path_obj} with {len(changed_paths)} changes: "
-                + ", ".join(changed_paths[:15])
+            return self._tool_outcome(
+                operation="json_yaml_edit",
+                path=path_obj,
+                before=raw_content,
+                after=rendered,
+                changed=changed,
+                message=(
+                    f"Updated {path_obj} with {len(changed_paths)} changes: "
+                    + ", ".join(changed_paths[:15])
+                ),
+                metadata={
+                    "changed_paths": changed_paths,
+                    "create_missing": create_missing,
+                },
             )
         except (ValidationError, ToolExecutionError):
             raise

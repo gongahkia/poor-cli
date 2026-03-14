@@ -161,6 +161,8 @@ class PoorCLIServer:
             "poor-cli/getProviderInfo": self.handle_get_provider_info,
             "poor-cli/clearHistory": self.handle_clear_history,
             "poor-cli/compactContext": self.handle_compact_context,
+            "poor-cli/previewContext": self.handle_preview_context,
+            "poor-cli/previewMutation": self.handle_preview_mutation,
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
@@ -281,9 +283,13 @@ class PoorCLIServer:
 
         message = params.get("message", "")
         context_files = params.get("contextFiles")
+        pinned_context_files = params.get("pinnedContextFiles")
+        context_budget_tokens = params.get("contextBudgetTokens")
         request_id = self._chat_request_id(params)
         message_text = str(message)
-        context_count = self._chat_context_count(context_files)
+        context_count = self._chat_context_count(context_files) + self._chat_context_count(
+            pinned_context_files
+        )
         started_at = time.monotonic()
 
         self.logger.info(
@@ -296,7 +302,10 @@ class PoorCLIServer:
         try:
             with log_context(request_id=request_id):
                 response_text = await self.core.send_message_sync(
-                    message=message, context_files=context_files
+                    message=message,
+                    context_files=context_files,
+                    pinned_context_files=pinned_context_files,
+                    context_budget_tokens=context_budget_tokens,
                 )
         except Exception:
             elapsed_ms = int((time.monotonic() - started_at) * 1000)
@@ -353,6 +362,26 @@ class PoorCLIServer:
 
         return {"completion": "".join(chunks), "isPartial": False}
 
+    async def handle_preview_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Preview backend-owned context selection for a chat turn."""
+        self._ensure_initialized()
+
+        return await self.core.preview_context(
+            message=str(params.get("message", "")),
+            context_files=params.get("contextFiles"),
+            pinned_context_files=params.get("pinnedContextFiles"),
+            context_budget_tokens=params.get("contextBudgetTokens"),
+        )
+
+    async def handle_preview_mutation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Preview a mutating file tool without writing to disk."""
+        self._ensure_initialized()
+
+        return await self.core.preview_mutation(
+            tool_name=str(params.get("toolName", "")),
+            arguments=params.get("toolArgs") or {},
+        )
+
     async def handle_apply_edit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Apply a code edit.
@@ -381,13 +410,13 @@ class PoorCLIServer:
             },
         )
 
-        result = await self.core.apply_edit(
+        outcome = await self.core.apply_edit_outcome(
             file_path=file_path, old_text=old_text, new_text=new_text
         )
-
-        success = not result.startswith("Error")
-
-        return {"success": success, "message": result}
+        payload = outcome.to_dict()
+        payload["success"] = outcome.ok
+        payload["checkpointId"] = outcome.checkpoint_id
+        return payload
 
     async def handle_read_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -2767,27 +2796,38 @@ class PoorCLIServer:
         return {"success": True}
 
     async def _streaming_permission_callback(
-        self, tool_name: str, tool_args: Dict[str, Any]
-    ) -> bool:
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Interactive permission callback used during streaming chat.
         Sends permissionReq notification and waits for permissionRes."""
         prompt_id = str(uuid.uuid4())
+        preview = preview or {}
         notification = JsonRpcMessage(
             method="poor-cli/permissionReq",
             params={
+                "requestId": str(preview.get("requestId", "")),
                 "toolName": tool_name,
                 "toolArgs": tool_args,
                 "promptId": prompt_id,
+                "operation": str(preview.get("operation", tool_name)),
+                "paths": preview.get("paths") or [],
+                "diff": str(preview.get("diff", "")),
+                "checkpointId": preview.get("checkpointId"),
+                "changed": preview.get("changed"),
+                "message": str(preview.get("message", "")),
             },
         )
         await self.write_message_stdio(notification)
         loop = asyncio.get_event_loop()
-        future: asyncio.Future[bool] = loop.create_future()
+        future: asyncio.Future[Dict[str, Any]] = loop.create_future()
         self._pending_permissions[prompt_id] = future
         try:
             return await asyncio.wait_for(future, timeout=300)  # 5 min timeout
         except asyncio.TimeoutError:
-            return False
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
         finally:
             self._pending_permissions.pop(prompt_id, None)
 
@@ -2797,14 +2837,33 @@ class PoorCLIServer:
             params = message.params or {}
             prompt_id = params.get("promptId", "")
             allowed = params.get("allowed", False)
+            approved_paths = params.get("approvedPaths") or []
+            if not isinstance(approved_paths, list):
+                approved_paths = []
+            approved_chunks = params.get("approvedChunks") or []
+            if not isinstance(approved_chunks, list):
+                approved_chunks = []
+            decision = {
+                "allowed": bool(allowed),
+                "approvedPaths": [
+                    str(path)
+                    for path in approved_paths
+                    if isinstance(path, str) and path
+                ],
+                "approvedChunks": [
+                    chunk
+                    for chunk in approved_chunks
+                    if isinstance(chunk, dict)
+                ],
+            }
             future = self._pending_permissions.get(prompt_id)
             if future and not future.done():
-                future.set_result(allowed)
+                future.set_result(decision)
             elif not prompt_id and self._pending_permissions:
                 # fallback: resolve the first pending permission
                 for _pid, fut in list(self._pending_permissions.items()):
                     if not fut.done():
-                        fut.set_result(allowed)
+                        fut.set_result(decision)
                         break
 
     async def handle_chat_streaming(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2821,9 +2880,13 @@ class PoorCLIServer:
 
         message = params.get("message", "")
         context_files = params.get("contextFiles")
+        pinned_context_files = params.get("pinnedContextFiles")
+        context_budget_tokens = params.get("contextBudgetTokens")
         request_id = self._chat_request_id(params)
         message_text = str(message)
-        context_count = self._chat_context_count(context_files)
+        context_count = self._chat_context_count(context_files) + self._chat_context_count(
+            pinned_context_files
+        )
         started_at = time.monotonic()
 
         self.logger.info(
@@ -2843,6 +2906,8 @@ class PoorCLIServer:
                 async for event in self.core.send_message_events(
                     message=message,
                     context_files=context_files,
+                    pinned_context_files=pinned_context_files,
+                    context_budget_tokens=context_budget_tokens,
                     request_id=request_id,
                 ):
                     if event.type == "text_chunk":
@@ -2867,6 +2932,10 @@ class PoorCLIServer:
                                 "toolArgs": event.data.get("toolArgs", {}),
                                 "toolResult": event.data.get("toolResult", ""),
                                 "diff": event.data.get("diff", ""),
+                                "paths": event.data.get("paths", []),
+                                "checkpointId": event.data.get("checkpointId"),
+                                "changed": event.data.get("changed"),
+                                "message": event.data.get("message", ""),
                                 "iterationIndex": event.data.get("iterationIndex", 0),
                                 "iterationCap": event.data.get("iterationCap", 25),
                             },
@@ -3103,8 +3172,15 @@ class StreamingJsonRpcServer(PoorCLIServer):
 
         message = params.get("message", "")
         context_files = params.get("contextFiles")
+        pinned_context_files = params.get("pinnedContextFiles")
+        context_budget_tokens = params.get("contextBudgetTokens")
 
-        async for chunk in self.core.send_message(message=message, context_files=context_files):
+        async for chunk in self.core.send_message(
+            message=message,
+            context_files=context_files,
+            pinned_context_files=pinned_context_files,
+            context_budget_tokens=context_budget_tokens,
+        ):
             notification = JsonRpcMessage(
                 method="poor-cli/streamChunk",
                 params={"requestId": request_id, "chunk": chunk, "done": False},
