@@ -873,8 +873,6 @@ pub const COMPACT_STRATEGIES: &[(&str, &str)] = &[
     ("handoff", "New session with context summary"),
 ];
 
-pub const DOLLAR_FRAMES: &[&str] = &["◜$◝", "◠$◞", "◝$◟", "◞$◜", "◟$◠", "◜$◡"];
-
 pub const THINKING_FRAMES: &[&str] = &[
     "▁▂▃▂",
     "▂▃▄▃",
@@ -1030,8 +1028,6 @@ pub struct App {
     pub response_mode: ResponseMode,
     pub theme_mode: ThemeMode,
     pub compact_select_idx: usize,
-    pub welcome_anim_tick: usize,
-    pub welcome_anim_active: bool,
 
     // ── Reconnect message tracking ───
     pub reconnect_message_idx: Option<usize>,
@@ -1151,8 +1147,6 @@ impl Default for App {
             response_mode: ResponseMode::Rich,
             theme_mode: ThemeMode::Dark,
             compact_select_idx: 0,
-            welcome_anim_tick: 0,
-            welcome_anim_active: true,
             reconnect_message_idx: None,
             pair_mode_active: false,
             pair_short_code: String::new(),
@@ -1170,18 +1164,15 @@ impl App {
     }
 
     fn welcome_text(&self) -> String {
-        let dollar = DOLLAR_FRAMES[(self.welcome_anim_tick / 2) % DOLLAR_FRAMES.len()];
         let workspace = if self.cwd.trim().is_empty() {
             "(workspace unavailable)".to_string()
         } else {
             self.cwd.clone()
         };
-        let git_summary = if self.git_branch.is_empty() {
-            "git unavailable".to_string()
-        } else if self.git_dirty {
-            format!("{}*", self.git_branch)
+        let model_display = if self.model_name.trim().is_empty() || self.model_name == "unknown" {
+            self.provider_name.clone()
         } else {
-            self.git_branch.clone()
+            self.model_name.clone()
         };
         let last_session_line = if self.resume_dashboard.last_session_summary.is_empty() {
             String::new()
@@ -1192,20 +1183,14 @@ impl App {
             )
         };
         format!(
-            "{dollar}  poor-cli  v{version}\n\
-            {provider}/{model}\n\
-            {workspace}\n\
-            {permission_mode}  ·  git {git_summary}\n\n\
-            ? shortcuts\n\
-            /switch change provider   /pair collaborate\n\
-            @path attach context      Ctrl+P quick open\n\
-            /review inspect changes   /help all commands{last_session_line}",
+            ">_ poor-cli (v{version})\n\
+            \n\
+            model:     {model_display}   /switch to change\n\
+            directory: {workspace}\n\n\
+            ? for shortcuts{last_session_line}",
             version = self.version,
-            provider = self.provider_name,
-            model = self.model_name,
+            model_display = model_display,
             workspace = workspace,
-            permission_mode = self.permission_mode_label,
-            git_summary = git_summary,
             last_session_line = last_session_line,
         )
     }
@@ -1230,9 +1215,6 @@ impl App {
 
     /// Push a message and auto-scroll to bottom.
     pub fn push_message(&mut self, msg: ChatMessage) {
-        if matches!(msg.role, MessageRole::User) {
-            self.welcome_anim_active = false;
-        }
         self.messages.push(msg);
         // Reset scroll to bottom
         self.scroll_offset = 0;
@@ -1255,16 +1237,6 @@ impl App {
     pub fn tick_spinner(&mut self) {
         if self.waiting {
             self.spinner_tick = (self.spinner_tick + 1) % SPINNER_FRAMES.len();
-        }
-    }
-
-    pub fn tick_welcome_anim(&mut self) {
-        if self.welcome_anim_active {
-            self.welcome_anim_tick += 1;
-            if self.welcome_anim_tick % 3 == 0 {
-                // advance frame every ~300ms
-                self.update_welcome();
-            }
         }
     }
 
@@ -1891,7 +1863,7 @@ fn redact_sensitive_history_command(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_mutation_review_chunks, App, ApprovedReviewChunk, ChatMessage, MutationReviewChunk,
+        parse_mutation_review_chunks, ApprovedReviewChunk, MutationReviewChunk,
         MutationReviewState, ReviewDecisionState, ThemeMode,
     };
 
@@ -2059,20 +2031,5 @@ diff --git a/src/other.rs b/src/other.rs
             summary.files[1].summary_line(),
             "/tmp/src/other.rs: rejected hunks h1"
         );
-    }
-
-    #[test]
-    fn welcome_animation_keeps_ticking_after_extra_system_messages() {
-        let mut app = App::new();
-        app.add_welcome();
-        let original = app.messages[0].content.clone();
-        app.push_message(ChatMessage::system("Session logs ready"));
-
-        for _ in 0..3 {
-            app.tick_welcome_anim();
-        }
-
-        assert!(app.welcome_anim_tick >= 3);
-        assert_ne!(app.messages[0].content, original);
     }
 }

@@ -92,6 +92,14 @@ pub fn surface_style(mode: ThemeMode) -> Style {
     Style::default().fg(base_fg(mode)).bg(surface_bg(mode))
 }
 
+pub fn footer_style(mode: ThemeMode) -> Style {
+    Style::default().fg(muted_fg(mode)).bg(surface_bg(mode))
+}
+
+pub fn activity_style(mode: ThemeMode) -> Style {
+    Style::default().fg(base_fg(mode)).bg(surface_bg(mode))
+}
+
 pub fn input_panel_style(mode: ThemeMode) -> Style {
     Style::default().fg(base_fg(mode)).bg(elevated_bg(mode))
 }
@@ -158,7 +166,7 @@ pub fn local_badge_style(mode: ThemeMode) -> Style {
 }
 
 pub fn hint_style(mode: ThemeMode) -> Style {
-    Style::default().fg(muted_fg(mode)).bg(app_bg(mode))
+    footer_style(mode)
 }
 
 pub fn spinner_style(mode: ThemeMode) -> Style {

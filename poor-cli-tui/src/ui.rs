@@ -1,13 +1,12 @@
-/// TUI layout renderer — Claude Code / Codex inspired interface.
+/// TUI layout renderer for the terminal agent surface.
 ///
 /// Layout:
 /// ┌───────────────────────────────────────────┐
-/// │ status bar (provider, model, streaming)    │
-/// ├───────────────────────────────────────────┤
-/// │ chat messages area (scrollable)           │
-/// │   ● You / ● Assistant / tool panels       │
-/// ├───────────────────────────────────────────┤
-/// │ input bar + hints                          │
+/// │ optional presence row                     │
+/// │ chat transcript                           │
+/// │ optional activity row                     │
+/// │ composer                                  │
+/// │ footer                                    │
 /// └───────────────────────────────────────────┘
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -46,40 +45,35 @@ pub fn draw(frame: &mut Frame, app: &App) {
     );
 
     let input_height = compute_input_height(app, frame.area().width);
+    let activity_height = if show_activity_bar(app) { 1 } else { 0 };
     let has_presence = app.pair_mode_active && !app.connected_users.is_empty();
-    let constraints = if has_presence {
-        vec![
-            Constraint::Length(1),            // status bar
-            Constraint::Length(1),            // presence bar
-            Constraint::Min(5),               // chat area
-            Constraint::Length(input_height), // input area
-            Constraint::Length(1),            // hint bar
-        ]
-    } else {
-        vec![
-            Constraint::Length(1),            // status bar
-            Constraint::Min(5),               // chat area
-            Constraint::Length(input_height), // input area
-            Constraint::Length(1),            // hint bar
-        ]
-    };
+    let mut constraints = Vec::new();
+    if has_presence {
+        constraints.push(Constraint::Length(1));
+    }
+    constraints.push(Constraint::Min(5));
+    constraints.push(Constraint::Length(activity_height));
+    constraints.push(Constraint::Length(input_height));
+    constraints.push(Constraint::Length(1));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(frame.area());
 
+    let mut idx = 0usize;
     if has_presence {
-        draw_status_bar(frame, app, chunks[0]);
-        draw_presence_bar(frame, app, chunks[1]);
-        draw_chat_area(frame, app, chunks[2]);
-        draw_input_bar(frame, app, chunks[3]);
-        draw_hint_bar(frame, app, chunks[4]);
-    } else {
-        draw_status_bar(frame, app, chunks[0]);
-        draw_chat_area(frame, app, chunks[1]);
-        draw_input_bar(frame, app, chunks[2]);
-        draw_hint_bar(frame, app, chunks[3]);
+        draw_presence_bar(frame, app, chunks[idx]);
+        idx += 1;
     }
+    draw_chat_area(frame, app, chunks[idx]);
+    idx += 1;
+    if activity_height > 0 {
+        draw_activity_bar(frame, app, chunks[idx]);
+    }
+    idx += 1;
+    draw_input_bar(frame, app, chunks[idx]);
+    idx += 1;
+    draw_hint_bar(frame, app, chunks[idx]);
     draw_command_palette(frame, app);
 
     // Overlays
@@ -140,7 +134,11 @@ fn build_input_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
             spans.push(Span::styled("█", theme::input_cursor_style(mode)));
             if app.input_buffer.is_empty() {
                 spans.push(Span::styled(
-                    " Type your message or @path/to/file".to_string(),
+                    if app.waiting {
+                        " Queue another prompt or @path/to/file".to_string()
+                    } else {
+                        " Type your message or @path/to/file".to_string()
+                    },
                     Style::default().fg(theme::muted_fg(mode)),
                 ));
             }
@@ -153,10 +151,6 @@ fn build_input_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 }
 
 fn compute_input_height(app: &App, terminal_width: u16) -> u16 {
-    if app.waiting {
-        return 4;
-    }
-
     let mode = app.theme_mode;
     let input_lines = build_input_lines(app, mode);
     let input_paragraph = Paragraph::new(input_lines).wrap(Wrap { trim: false });
@@ -165,112 +159,7 @@ fn compute_input_height(app: &App, terminal_width: u16) -> u16 {
         .max(1)
         .min(u16::MAX as usize) as u16;
 
-    // +2 keeps prior layout rhythm: top border + breathing room.
-    visual_lines.saturating_add(2).clamp(3, 8)
-}
-
-// ── Status bar ───────────────────────────────────────────────────────
-
-fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let mode = app.theme_mode;
-    let dim = theme::muted_fg(mode);
-    let model_full = if app.model_name.is_empty() {
-        app.provider_name.clone()
-    } else {
-        format!("{}/{}", app.provider_name, app.model_name)
-    };
-    let model_display = ellipsize_middle(&model_full, 28);
-    let workspace = if app.cwd.trim().is_empty() {
-        "~".to_string()
-    } else {
-        ellipsize_middle(&app.cwd, 28)
-    };
-
-    let mut spans = vec![
-        Span::styled("  >", Style::default().fg(theme::warning(mode))),
-        Span::styled(" poor-cli ", theme::brand_style(mode)),
-        Span::styled(format!("(v{})", app.version), Style::default().fg(dim)),
-        Span::styled("  ", Style::default()),
-        Span::styled(model_display, Style::default().fg(theme::base_fg(mode))),
-        Span::styled("  ", Style::default()),
-        Span::styled(workspace, Style::default().fg(dim)),
-    ];
-
-    if !app.git_branch.is_empty() {
-        spans.push(Span::styled("  ", Style::default()));
-        spans.push(Span::styled(
-            format!(
-                "({}{})",
-                app.git_branch,
-                if app.git_dirty { "*" } else { "" }
-            ),
-            Style::default().fg(dim),
-        ));
-    }
-
-    if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
-        spans.push(Span::styled("  ", Style::default()));
-        spans.push(Span::styled(
-            format!(
-                "[{}/{}]",
-                app.multiplayer_room,
-                if app.multiplayer_role.is_empty() {
-                    "?"
-                } else {
-                    &app.multiplayer_role
-                }
-            ),
-            Style::default().fg(theme::accent(mode)),
-        ));
-    }
-
-    let right_text = if let Some(tool) = &app.active_tool {
-        format!(
-            "{} {}  [{}/{}]  {}",
-            app.spinner_frame(),
-            ellipsize_middle(tool, 18),
-            app.current_iteration,
-            app.iteration_cap,
-            app.wait_elapsed()
-        )
-    } else if app.streaming_message.is_some() {
-        format!(
-            "responding {}  {}",
-            app.thinking_frame(),
-            app.wait_elapsed()
-        )
-    } else if app.waiting {
-        format!("thinking {}  {}", app.thinking_frame(), app.wait_elapsed())
-    } else if app.server_connected {
-        format!(
-            "{}  {}",
-            app.permission_mode_label,
-            if app.is_local_provider {
-                "local"
-            } else {
-                "remote"
-            }
-        )
-    } else {
-        "offline".to_string()
-    };
-
-    let used_width: usize = spans.iter().map(|s| s.content.len()).sum();
-    let remaining = (area.width as usize).saturating_sub(used_width + right_text.len());
-    if remaining > 0 {
-        spans.push(Span::raw(" ".repeat(remaining)));
-    }
-    spans.push(Span::styled(
-        format!(" {right_text} "),
-        if app.server_connected {
-            Style::default().fg(theme::muted_fg(mode))
-        } else {
-            Style::default().fg(theme::error(mode))
-        },
-    ));
-
-    let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style(mode));
-    frame.render_widget(bar, area);
+    visual_lines.saturating_add(2).clamp(3, 6)
 }
 
 // ── Presence bar (pair mode) ──────────────────────────────────────────
@@ -315,7 +204,61 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(dim),
         ));
     }
-    let bar = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));
+    let bar = Paragraph::new(Line::from(spans)).style(theme::footer_style(mode));
+    frame.render_widget(bar, area);
+}
+
+fn show_activity_bar(app: &App) -> bool {
+    app.active_tool.is_some() || app.streaming_message.is_some() || app.waiting
+}
+
+fn draw_activity_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
+    let mut spans = vec![Span::styled("  ", Style::default())];
+
+    let (label, detail) = if let Some(tool) = &app.active_tool {
+        (
+            format!("{} {}", app.spinner_frame(), ellipsize_middle(tool, 22)),
+            format!(
+                "  [{}/{}]  {}",
+                app.current_iteration,
+                app.iteration_cap,
+                app.wait_elapsed()
+            ),
+        )
+    } else if app.streaming_message.is_some() {
+        (
+            format!("{} responding", app.thinking_frame()),
+            format!("  {}  ·  Ctrl+C cancel", app.wait_elapsed()),
+        )
+    } else {
+        let queue_detail = if app.prompt_queue.is_empty() {
+            "type to queue".to_string()
+        } else {
+            format!("{} queued", app.prompt_queue.len())
+        };
+        (
+            format!("{} thinking", app.thinking_frame()),
+            format!(
+                "  {}  ·  {}  ·  Ctrl+C cancel",
+                app.wait_elapsed(),
+                queue_detail
+            ),
+        )
+    };
+
+    spans.push(Span::styled(
+        label,
+        Style::default()
+            .fg(theme::accent(mode))
+            .add_modifier(Modifier::BOLD),
+    ));
+    spans.push(Span::styled(
+        detail,
+        Style::default().fg(theme::muted_fg(mode)),
+    ));
+
+    let bar = Paragraph::new(Line::from(spans)).style(theme::activity_style(mode));
     frame.render_widget(bar, area);
 }
 
@@ -399,7 +342,6 @@ fn cached_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 fn chat_fingerprint(app: &App) -> u64 {
     let mut hasher = DefaultHasher::new();
     app.messages.len().hash(&mut hasher);
-    app.welcome_anim_tick.hash(&mut hasher); // invalidate cache on animation frame change
     app.waiting.hash(&mut hasher);
     if app.waiting {
         app.spinner_tick.hash(&mut hasher);
@@ -595,20 +537,6 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
         }
     }
 
-    if app.waiting && app.streaming_message.is_none() && app.active_tool.is_none() {
-        if !all_lines.is_empty() {
-            all_lines.push(Line::from(""));
-        }
-        all_lines.push(Line::from(vec![
-            Span::styled("  ✦ ", Style::default().fg(theme::assistant_color(mode))),
-            Span::styled("poor-cli", theme::assistant_label_style(mode)),
-        ]));
-        all_lines.push(Line::from(Span::styled(
-            format!("    thinking {}  planning next step", app.thinking_frame()),
-            Style::default().fg(theme::muted_fg(mode)),
-        )));
-    }
-
     all_lines
 }
 
@@ -616,37 +544,6 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 
 fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
-    if app.waiting {
-        let queued = app.prompt_queue.len();
-        let wait_detail = if queued == 0 {
-            "type to queue another prompt".to_string()
-        } else {
-            format!("{queued} queued  ·  type to add more")
-        };
-        let tool_detail = app
-            .active_tool
-            .as_ref()
-            .map(|tool| format!("  running {}", ellipsize_middle(tool, 18)))
-            .unwrap_or_default();
-        let lines = vec![
-            Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled("thinking ", Style::default().fg(theme::accent(mode))),
-                Span::styled(app.thinking_frame(), theme::spinner_style(mode)),
-                Span::styled(tool_detail, Style::default().fg(theme::muted_fg(mode))),
-            ]),
-            Line::from(Span::styled(
-                format!("  {wait_detail}"),
-                Style::default().fg(theme::muted_fg(mode)),
-            )),
-        ];
-        let input = Paragraph::new(lines)
-            .style(theme::input_panel_style(mode))
-            .block(Block::default().style(theme::input_panel_style(mode)));
-        frame.render_widget(input, area);
-        return;
-    }
-
     let input_lines = build_input_lines(app, mode);
     let input = Paragraph::new(input_lines)
         .wrap(Wrap { trim: false })
@@ -817,74 +714,112 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
         }
         spans
     } else {
-        let mut spans = Vec::new();
-        if app.multiplayer_enabled {
-            let room = if app.multiplayer_room.is_empty() {
-                "?"
-            } else {
-                &app.multiplayer_room
-            };
-            let role = if app.multiplayer_role.is_empty() {
-                "?"
-            } else {
-                &app.multiplayer_role
-            };
-            spans.push(Span::styled(
-                format!("  {room}/{role}  "),
-                Style::default().fg(theme::accent(mode)),
-            ));
-            spans.push(Span::styled(
-                format!("{} members", app.multiplayer_member_count),
-                Style::default().fg(theme::muted_fg(mode)),
-            ));
-            if app.multiplayer_queue_depth > 0 {
-                spans.push(Span::styled(
-                    format!("  ·  {} queued", app.multiplayer_queue_depth),
-                    Style::default().fg(theme::muted_fg(mode)),
-                ));
-            }
-        }
-        if !app.execution_profile.is_empty() {
-            spans.push(Span::styled(
-                format!("  ·  {}", app.execution_profile),
-                Style::default().fg(theme::system_color(mode)),
-            ));
-        }
-        if app.qa_mode_enabled {
-            spans.push(Span::styled(
-                "  ·  qa running",
-                Style::default().fg(theme::success(mode)),
-            ));
-        }
-        if !app.prompt_queue.is_empty() {
-            spans.push(Span::styled(
-                format!("  ·  queue {}", app.prompt_queue.len()),
-                Style::default().fg(theme::accent(mode)),
-            ));
-        }
-        spans.extend(vec![
-            Span::styled("  ? ", Style::default().fg(theme::warning(mode))),
-            Span::styled("shortcuts", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("@", Style::default().fg(theme::accent(mode))),
-            Span::styled("attach", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("/switch", Style::default().fg(theme::accent(mode))),
-            Span::styled(" provider", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("/pair", Style::default().fg(theme::accent(mode))),
-            Span::styled(" collaborate", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+P", Style::default().fg(theme::accent(mode))),
-            Span::styled(" open", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+T", Style::default().fg(theme::accent(mode))),
-            Span::styled(" timeline", Style::default().fg(theme::muted_fg(mode))),
-        ]);
-        spans
+        draw_default_footer_bar(frame, app, area);
+        return;
     };
 
     let hint = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));
+    frame.render_widget(hint, area);
+}
+
+fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
+    let width = usize::from(area.width);
+    if width == 0 {
+        return;
+    }
+
+    let branch = if app.git_branch.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " ({}{})",
+            app.git_branch,
+            if app.git_dirty { "*" } else { "" }
+        )
+    };
+    let workspace = if app.cwd.trim().is_empty() {
+        "~".to_string()
+    } else {
+        ellipsize_middle(&app.cwd, 22)
+    };
+    let model = if app.model_name.is_empty() {
+        app.provider_name.clone()
+    } else {
+        format!("{}/{}", app.provider_name, app.model_name)
+    };
+    let transport = if app.server_connected {
+        if app.is_local_provider {
+            "local"
+        } else {
+            "remote"
+        }
+    } else {
+        "offline"
+    };
+    let mut right = format!(
+        "{}{} · {} · {}",
+        workspace,
+        branch,
+        app.permission_mode_label,
+        ellipsize_middle(&model, 20)
+    );
+    if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
+        let role = if app.multiplayer_role.is_empty() {
+            "?"
+        } else {
+            &app.multiplayer_role
+        };
+        right.push_str(&format!(" · {}/{}", app.multiplayer_room, role));
+    } else if !app.execution_profile.is_empty() {
+        right.push_str(&format!(" · {}", app.execution_profile));
+    } else {
+        right.push_str(&format!(" · {transport}"));
+    }
+
+    let left_candidates: Vec<String> = if !app.prompt_queue.is_empty() {
+        vec![
+            format!("queue {} · type to add more", app.prompt_queue.len()),
+            format!("queue {}", app.prompt_queue.len()),
+        ]
+    } else if app.input_buffer.trim().is_empty() {
+        vec![
+            "? shortcuts · @ attach · /switch · /pair".to_string(),
+            "? shortcuts".to_string(),
+        ]
+    } else {
+        vec![
+            "Enter send · Alt+↵ newline · Ctrl+P open".to_string(),
+            "Enter send".to_string(),
+        ]
+    };
+
+    let mut chosen_left: Option<String> = None;
+    for candidate in &left_candidates {
+        if candidate.chars().count() + right.chars().count() + 4 <= width {
+            chosen_left = Some(candidate.clone());
+            break;
+        }
+    }
+
+    let line = if let Some(left) = chosen_left {
+        let spacing = width.saturating_sub(left.chars().count() + right.chars().count());
+        format!("{left}{}{}", " ".repeat(spacing), right)
+    } else if right.chars().count() < width {
+        format!(
+            "{}{}",
+            " ".repeat(width.saturating_sub(right.chars().count())),
+            right
+        )
+    } else {
+        ellipsize_middle(&right, width.saturating_sub(1).max(1))
+    };
+
+    let hint = Paragraph::new(Line::from(Span::styled(
+        format!("  {line}"),
+        Style::default().fg(theme::muted_fg(mode)),
+    )))
+    .style(theme::footer_style(mode));
     frame.render_widget(hint, area);
 }
 
