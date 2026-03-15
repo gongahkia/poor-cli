@@ -8,18 +8,21 @@ use std::time::{Duration, Instant};
 pub enum PairRole {
     Driver,
     Navigator,
+    Reviewer,
 }
 
 impl PairRole {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Driver => "D",
-            Self::Navigator => "N",
+            Self::Driver => "DRV",
+            Self::Navigator => "NAV",
+            Self::Reviewer => "REV",
         }
     }
-    pub fn from_wire(role: &str) -> Self {
+    pub fn from_ui_role(role: &str) -> Self {
         match role {
-            "prompter" => Self::Driver,
+            "driver" | "prompter" => Self::Driver,
+            "reviewer" => Self::Reviewer,
             _ => Self::Navigator,
         }
     }
@@ -38,6 +41,14 @@ pub struct Suggestion {
     pub sender: String,
     pub text: String,
     pub received_at: Instant,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CollaborationAgendaItem {
+    pub item_id: String,
+    pub text: String,
+    pub author: String,
+    pub resolved: bool,
 }
 
 const SUGGESTION_TTL: Duration = Duration::from_secs(30);
@@ -936,6 +947,7 @@ pub struct App {
     pub permission_prompt_id: String,
     pub permission_approved_paths: Vec<String>,
     pub permission_approved_chunks: Vec<ApprovedReviewChunk>,
+    pub permission_review_read_only: bool,
     pub mutation_review: Option<MutationReviewState>,
     pub context_inspector: Option<ContextInspectorState>,
     pub quick_open: QuickOpenState,
@@ -994,6 +1006,13 @@ pub struct App {
     pub multiplayer_enabled: bool,
     pub multiplayer_room: String,
     pub multiplayer_role: String,
+    pub multiplayer_ui_role: String,
+    pub multiplayer_mode: String,
+    pub multiplayer_connection_id: String,
+    pub multiplayer_display_name: String,
+    pub multiplayer_approval_state: String,
+    pub multiplayer_hand_raised: bool,
+    pub multiplayer_queue_position: u64,
     pub multiplayer_remote_url: String,
     pub multiplayer_remote_token: String,
     pub multiplayer_queue_depth: u64,
@@ -1002,6 +1021,9 @@ pub struct App {
     pub multiplayer_lobby_enabled: bool,
     pub multiplayer_preset: String,
     pub multiplayer_member_roles: Vec<String>,
+    pub multiplayer_agenda: Vec<CollaborationAgendaItem>,
+    pub multiplayer_agenda_open_count: u64,
+    pub multiplayer_agenda_total_count: u64,
 
     // ── Streaming / agentic state ───
     pub streaming_message: Option<usize>, // index of in-progress assistant message
@@ -1019,6 +1041,7 @@ pub struct App {
     pub plan_summary: String,
     pub plan_prompt_id: String,
     pub plan_is_execution_gate: bool,
+    pub plan_review_read_only: bool,
 
     // ── Real token tracking (from server) ───
     pub turn_input_tokens: u64,
@@ -1071,6 +1094,7 @@ impl Default for App {
             permission_prompt_id: String::new(),
             permission_approved_paths: Vec::new(),
             permission_approved_chunks: Vec::new(),
+            permission_review_read_only: false,
             mutation_review: None,
             context_inspector: None,
             quick_open: QuickOpenState::default(),
@@ -1119,6 +1143,13 @@ impl Default for App {
             multiplayer_enabled: false,
             multiplayer_room: String::new(),
             multiplayer_role: String::new(),
+            multiplayer_ui_role: String::new(),
+            multiplayer_mode: String::new(),
+            multiplayer_connection_id: String::new(),
+            multiplayer_display_name: String::new(),
+            multiplayer_approval_state: String::new(),
+            multiplayer_hand_raised: false,
+            multiplayer_queue_position: 0,
             multiplayer_remote_url: String::new(),
             multiplayer_remote_token: String::new(),
             multiplayer_queue_depth: 0,
@@ -1127,6 +1158,9 @@ impl Default for App {
             multiplayer_lobby_enabled: false,
             multiplayer_preset: String::new(),
             multiplayer_member_roles: Vec::new(),
+            multiplayer_agenda: Vec::new(),
+            multiplayer_agenda_open_count: 0,
+            multiplayer_agenda_total_count: 0,
             streaming_message: None,
             current_iteration: 0,
             iteration_cap: 25,
@@ -1140,6 +1174,7 @@ impl Default for App {
             plan_summary: String::new(),
             plan_prompt_id: String::new(),
             plan_is_execution_gate: false,
+            plan_review_read_only: false,
             turn_input_tokens: 0,
             turn_output_tokens: 0,
             cumulative_input_tokens: 0,
@@ -1703,7 +1738,14 @@ impl App {
     }
 
     pub fn set_plan(&mut self, steps: Vec<String>, original_request: String) {
-        self.set_plan_review(steps, original_request, String::new(), String::new(), false);
+        self.set_plan_review(
+            steps,
+            original_request,
+            String::new(),
+            String::new(),
+            false,
+            false,
+        );
     }
 
     pub fn set_plan_review(
@@ -1713,6 +1755,7 @@ impl App {
         summary: String,
         prompt_id: String,
         is_execution_gate: bool,
+        read_only: bool,
     ) {
         self.plan_steps = steps
             .into_iter()
@@ -1726,6 +1769,7 @@ impl App {
         self.plan_summary = summary;
         self.plan_prompt_id = prompt_id;
         self.plan_is_execution_gate = is_execution_gate;
+        self.plan_review_read_only = read_only;
         self.mode = AppMode::PlanReview;
     }
 
@@ -1749,6 +1793,7 @@ impl App {
         self.plan_summary.clear();
         self.plan_prompt_id.clear();
         self.plan_is_execution_gate = false;
+        self.plan_review_read_only = false;
     }
 
     pub fn push_suggestion(&mut self, sender: String, text: String) {
@@ -1786,6 +1831,66 @@ impl App {
         self.pair_is_host = false;
         self.connected_users.clear();
         self.suggestions.clear();
+        self.multiplayer_agenda.clear();
+        self.multiplayer_agenda_open_count = 0;
+        self.multiplayer_agenda_total_count = 0;
+        self.multiplayer_ui_role.clear();
+        self.multiplayer_mode.clear();
+        self.multiplayer_connection_id.clear();
+        self.multiplayer_display_name.clear();
+        self.multiplayer_approval_state.clear();
+        self.multiplayer_hand_raised = false;
+        self.multiplayer_queue_position = 0;
+    }
+
+    pub fn can_control_multiplayer_reviews(&self) -> bool {
+        self.multiplayer_enabled
+            && self.multiplayer_ui_role == "driver"
+            && self.multiplayer_approval_state != "pending"
+    }
+
+    pub fn update_agenda_from_summary(
+        &mut self,
+        summary: &serde_json::Map<String, serde_json::Value>,
+    ) {
+        self.multiplayer_agenda = summary
+            .get("openItems")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| CollaborationAgendaItem {
+                        item_id: item
+                            .get("id")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        text: item
+                            .get("text")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        author: item
+                            .get("author")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        resolved: item
+                            .get("resolved")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(false),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.multiplayer_agenda_open_count = summary
+            .get("open")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        self.multiplayer_agenda_total_count = summary
+            .get("total")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
     }
 
     pub fn record_user_input(&mut self, text: &str) {

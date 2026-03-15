@@ -30,6 +30,72 @@ fn show_command_info_popup(app: &mut App, raw: &str, body: impl Into<String>) {
     app.open_info_popup(popup_title_from_command(raw), body.into());
 }
 
+fn current_multiplayer_room(app: &App) -> Option<&str> {
+    if app.multiplayer_room.is_empty() {
+        None
+    } else {
+        Some(app.multiplayer_room.as_str())
+    }
+}
+
+fn first_host_room_name(payload: &Value, preferred_room: Option<&str>) -> Option<String> {
+    let rooms = payload.get("rooms").and_then(|value| value.as_array())?;
+    if let Some(preferred) = preferred_room.filter(|value| !value.is_empty()) {
+        for room in rooms {
+            if room.get("name").and_then(|value| value.as_str()) == Some(preferred) {
+                return Some(preferred.to_string());
+            }
+        }
+    }
+    rooms.iter().find_map(|room| {
+        room.get("name")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+    })
+}
+
+fn room_field<'a>(payload: &'a Value, room_name: &str, field: &str) -> Option<&'a str> {
+    payload
+        .get("rooms")
+        .and_then(|value| value.as_array())
+        .and_then(|rooms| {
+            rooms.iter().find(|room| {
+                room.get("name")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|name| name == room_name)
+            })
+        })
+        .and_then(|room| room.get(field))
+        .and_then(|value| value.as_str())
+}
+
+fn collab_share_role(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "driver" | "prompter" => Some("prompter"),
+        "viewer" | "navigator" | "reviewer" => Some("viewer"),
+        _ => None,
+    }
+}
+
+fn collab_usage_text() -> &'static str {
+    "Usage: /collab start <pair|mob|review>\n\
+       /collab join [invite-code]\n\
+       /collab status\n\
+       /collab members\n\
+       /collab share [driver|viewer]\n\
+       /collab handoff [next|#N|@name]\n\
+       /collab remove [#N|@name|connection-id]\n\
+       /collab lobby <on|off>\n\
+       /collab approve [#N|@name]\n\
+       /collab deny [#N|@name]\n\
+       /collab agenda add <text>\n\
+       /collab agenda list\n\
+       /collab agenda done <item-id>\n\
+       /collab hand raise\n\
+       /collab hand lower\n\n\
+Legacy aliases remain available: `/pair`, `/join-server`, `/host-server`, `/pass`, `/members`, `/kick`."
+}
+
 fn format_mcp_status(payload: &Value) -> String {
     let configured = payload
         .get("configuredServers")
@@ -314,16 +380,20 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /copy                Copy last assistant response to clipboard\n\
   /onboarding ...      Guided walkthrough of core commands\n\
 **Collaboration:**\n\
-  /pair                Start pair session (host) or join with invite code\n\
-  /pair <invite-code>  Join a pair session using invite code\n\
-  /pass                Hand driver role to next eligible participant\n\
-  /pass @name          Hand driver role to specific person\n\
-  /suggest <text>      Send suggestion to the active driver\n\
-  /leave               Disconnect from pair session\n\
-  /who [room]          Show connected users and roles\n\
-  /host-server ...     Start/share/manage host session (advanced)\n\
-  /kick <connection-id> [room]  Kick member in current/target multiplayer room\n\
+  /collab start <pair|mob|review>  Start a collaboration room\n\
+  /collab join <invite-code>       Join with an invite code\n\
+  /collab members                  Show room members and roles\n\
+  /collab share [driver|viewer]    Show invite payloads for the current room\n\
+  /collab handoff [next|#N|@name]  Pass driver to the next or named member\n\
+  /collab agenda add <text>        Add a shared agenda item\n\
+  /collab hand raise|lower         Join or leave the hand-raise queue\n\
+  /suggest <text>                  Send a suggestion to the active driver\n\
+  /leave                           Disconnect from collaboration session\n\
+  /who [room]                      Show connected users and roles\n\
+  /host-server ...                 Start/share/manage host session (advanced)\n\
+  /kick <connection-id|#N|@name> [room]  Remove a member from the current/target room\n\
   /members [room]      Alias for /who\n\
+  /pair                Legacy pair alias (quick host / invite join)\n\
   /host-server share [viewer|prompter] [room]  Print role-specific join payloads\n\
   /host-server members [room]               List connected room members\n\
   /host-server kick <connection-id> [room]  Remove a connected member\n\
@@ -336,8 +406,8 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
   /host-server handoff <id> [room]           Transfer prompter role\n\
   /host-server preset <pairing|mob|review> [room]  Apply room collaboration preset\n\
   /host-server activity [room] [limit] [event-type]  Show room activity log\n\
-  /join-server <code>  Join host using invite code or url/room/token\n\
-  /join-server         Launch interactive join wizard\n\
+  /join-server <code>  Legacy join alias using invite code or url/room/token\n\
+  /join-server         Launch invite-first join wizard\n\
   /service ...         Manage local background services (start/stop/status/logs)\n\
   /ollama ...          Convenience wrapper for Ollama lifecycle/model commands\n\
   /run <command>       Run shell command through backend\n\
@@ -2609,6 +2679,458 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    // ── Collaboration commands ────────────────────────────────────────
+    if lowered == "/collab" || lowered.starts_with("/collab ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("help")
+            .trim()
+            .to_ascii_lowercase();
+
+        if args.len() == 1 || subcommand.is_empty() || subcommand == "help" {
+            show_command_info_popup(app, raw, collab_usage_text().to_string());
+            return false;
+        }
+
+        match subcommand.as_str() {
+            "start" => {
+                if args.len() != 3 {
+                    show_command_info_popup(app, raw, collab_usage_text().to_string());
+                    return false;
+                }
+
+                let mode = args[2].trim().to_ascii_lowercase();
+                match mode.as_str() {
+                    "pair" => {
+                        return handle_slash_command(
+                            app,
+                            tx,
+                            rpc_cmd_tx,
+                            launch,
+                            cancel_token,
+                            watch_state,
+                            qa_watch_state,
+                            "/pair",
+                        );
+                    }
+                    "mob" | "review" => {
+                        let start_payload = match rpc_start_host_server_blocking(rpc_cmd_tx, None) {
+                            Ok(payload) => payload,
+                            Err(e) => {
+                                app.push_message(ChatMessage::error(format!(
+                                    "Failed to start collaboration host: {e}"
+                                )));
+                                return false;
+                            }
+                        };
+                        let room_name =
+                            first_host_room_name(&start_payload, current_multiplayer_room(app))
+                                .unwrap_or_else(|| "dev".to_string());
+                        let preset_payload = match rpc_set_host_preset_blocking(
+                            rpc_cmd_tx,
+                            &mode,
+                            Some(room_name.as_str()),
+                        ) {
+                            Ok(payload) => payload,
+                            Err(e) => {
+                                app.push_message(ChatMessage::error(format!(
+                                    "Started host, but failed to apply `{mode}` preset: {e}"
+                                )));
+                                return false;
+                            }
+                        };
+                        let host_payload = match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                            Ok(payload) => payload,
+                            Err(_) => start_payload,
+                        };
+
+                        app.pair_is_host = true;
+                        app.pair_mode_active = false;
+                        app.multiplayer_enabled = true;
+                        app.multiplayer_room = room_name.clone();
+                        app.multiplayer_role = "prompter".to_string();
+                        app.multiplayer_ui_role = "driver".to_string();
+                        app.multiplayer_mode = mode.clone();
+                        app.multiplayer_preset = mode.clone();
+                        app.multiplayer_lobby_enabled = preset_payload
+                            .get("lobbyEnabled")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(mode != "pair");
+
+                        let viewer_invite =
+                            room_field(&host_payload, &room_name, "viewerInviteCode").unwrap_or("");
+                        if !viewer_invite.is_empty() {
+                            let _ = copy_to_clipboard(viewer_invite);
+                        }
+
+                        let mut lines = vec![format!("Started **{mode}** room `{room_name}`.")];
+                        if !viewer_invite.is_empty() {
+                            lines.push(
+                                "Viewer invite code copied to clipboard. Use `/collab share driver` if you need a driver invite."
+                                    .to_string(),
+                            );
+                        }
+                        lines.push(String::new());
+                        lines.push(format_host_share_payload(
+                            &host_payload,
+                            Some("viewer"),
+                            Some(room_name.as_str()),
+                        ));
+                        show_command_info_popup(app, raw, lines.join("\n"));
+                        app.set_status(format!("{mode} room ready: {room_name}"));
+                        return false;
+                    }
+                    _ => {
+                        show_command_info_popup(
+                            app,
+                            raw,
+                            "Usage: /collab start <pair|mob|review>".to_string(),
+                        );
+                        return false;
+                    }
+                }
+            }
+            "join" => {
+                if args.len() == 2 && matches!(args[1], "manual" | "wizard") {
+                    return handle_slash_command(
+                        app,
+                        tx,
+                        rpc_cmd_tx,
+                        launch,
+                        cancel_token,
+                        watch_state,
+                        qa_watch_state,
+                        "/join-server",
+                    );
+                }
+                if args.len() == 2 {
+                    let join_command = format!("/join-server {}", args[1]);
+                    return handle_slash_command(
+                        app,
+                        tx,
+                        rpc_cmd_tx,
+                        launch,
+                        cancel_token,
+                        watch_state,
+                        qa_watch_state,
+                        &join_command,
+                    );
+                }
+                if args.len() > 2 {
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        "Usage: /collab join <invite-code>\n       /collab join manual".to_string(),
+                    );
+                    return false;
+                }
+                return handle_slash_command(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    launch,
+                    cancel_token,
+                    watch_state,
+                    qa_watch_state,
+                    "/join-server",
+                );
+            }
+            "status" => {
+                if let Some(room) = current_multiplayer_room(app) {
+                    match rpc_list_room_members_blocking(rpc_cmd_tx, Some(room)) {
+                        Ok(payload) => {
+                            let mut sections = vec![format_room_members_payload(&payload)];
+                            if let Ok(agenda_payload) =
+                                rpc_list_agenda_blocking(rpc_cmd_tx, Some(room), true)
+                            {
+                                sections.push(String::new());
+                                sections.push(format_agenda_payload(&agenda_payload));
+                            }
+                            show_command_info_popup(app, raw, sections.join("\n"));
+                        }
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to fetch collaboration status: {e}"
+                        ))),
+                    }
+                } else {
+                    match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                        Ok(payload) => {
+                            show_command_info_popup(app, raw, format_host_server_payload(&payload))
+                        }
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to fetch collaboration status: {e}"
+                        ))),
+                    }
+                }
+                return false;
+            }
+            "members" => {
+                return handle_slash_command(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    launch,
+                    cancel_token,
+                    watch_state,
+                    qa_watch_state,
+                    "/members",
+                );
+            }
+            "share" => {
+                if args.len() > 3 {
+                    show_command_info_popup(app, raw, collab_usage_text().to_string());
+                    return false;
+                }
+                let role_filter = if let Some(value) = args.get(2).copied() {
+                    match collab_share_role(value) {
+                        Some(role) => Some(role),
+                        None => {
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                "Usage: /collab share [driver|viewer]".to_string(),
+                            );
+                            return false;
+                        }
+                    }
+                } else {
+                    None
+                };
+                match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
+                    Ok(payload) => show_command_info_popup(
+                        app,
+                        raw,
+                        format_host_share_payload(
+                            &payload,
+                            role_filter,
+                            current_multiplayer_room(app),
+                        ),
+                    ),
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to fetch share details: {e}"
+                    ))),
+                }
+                return false;
+            }
+            "handoff" => {
+                if args.len() == 2 || (args.len() == 3 && args[2].eq_ignore_ascii_case("next")) {
+                    match rpc_next_driver_blocking(rpc_cmd_tx, current_multiplayer_room(app)) {
+                        Ok(payload) => {
+                            let connection_id = payload
+                                .get("connectionId")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("next driver");
+                            app.set_status(format!("Driver handed off to `{connection_id}`"));
+                        }
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to hand off driver: {e}"
+                        ))),
+                    }
+                    return false;
+                }
+
+                let target = args[2..].join(" ");
+                let handoff_command = format!("/pass {target}");
+                return handle_slash_command(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    launch,
+                    cancel_token,
+                    watch_state,
+                    qa_watch_state,
+                    &handoff_command,
+                );
+            }
+            "remove" => {
+                if args.len() < 3 {
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        "Usage: /collab remove [#N|@name|connection-id]".to_string(),
+                    );
+                    return false;
+                }
+                let remove_command = format!("/kick {}", args[2..].join(" "));
+                return handle_slash_command(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    launch,
+                    cancel_token,
+                    watch_state,
+                    qa_watch_state,
+                    &remove_command,
+                );
+            }
+            "lobby" => {
+                if args.len() != 3 {
+                    show_command_info_popup(app, raw, "Usage: /collab lobby <on|off>".to_string());
+                    return false;
+                }
+                let lobby_command = format!("/host-server lobby {}", args[2]);
+                return handle_slash_command(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    launch,
+                    cancel_token,
+                    watch_state,
+                    qa_watch_state,
+                    &lobby_command,
+                );
+            }
+            "approve" | "deny" => {
+                if args.len() < 3 {
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Usage: /collab {subcommand} [#N|@name|connection-id]"),
+                    );
+                    return false;
+                }
+                let review_command = format!("/host-server {subcommand} {}", args[2..].join(" "));
+                return handle_slash_command(
+                    app,
+                    tx,
+                    rpc_cmd_tx,
+                    launch,
+                    cancel_token,
+                    watch_state,
+                    qa_watch_state,
+                    &review_command,
+                );
+            }
+            "agenda" => {
+                let action = args
+                    .get(2)
+                    .copied()
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase();
+                match action.as_str() {
+                    "add" => {
+                        let text = raw.splitn(4, ' ').nth(3).map(str::trim).unwrap_or("");
+                        if text.is_empty() {
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                "Usage: /collab agenda add <text>".to_string(),
+                            );
+                            return false;
+                        }
+                        match rpc_add_agenda_item_blocking(
+                            rpc_cmd_tx,
+                            text,
+                            current_multiplayer_room(app),
+                        ) {
+                            Ok(payload) => {
+                                show_command_info_popup(app, raw, format_agenda_payload(&payload));
+                                app.set_status("Agenda item added");
+                            }
+                            Err(e) => app.push_message(ChatMessage::error(format!(
+                                "Failed to add agenda item: {e}"
+                            ))),
+                        }
+                    }
+                    "list" => match rpc_list_agenda_blocking(
+                        rpc_cmd_tx,
+                        current_multiplayer_room(app),
+                        true,
+                    ) {
+                        Ok(payload) => show_command_info_popup(app, raw, format_agenda_payload(&payload)),
+                        Err(e) => app.push_message(ChatMessage::error(format!(
+                            "Failed to load agenda: {e}"
+                        ))),
+                    },
+                    "done" => {
+                        let item_id = args.get(3).copied().unwrap_or("").trim();
+                        if item_id.is_empty() {
+                            show_command_info_popup(
+                                app,
+                                raw,
+                                "Usage: /collab agenda done <item-id>".to_string(),
+                            );
+                            return false;
+                        }
+                        match rpc_resolve_agenda_item_blocking(
+                            rpc_cmd_tx,
+                            item_id,
+                            current_multiplayer_room(app),
+                        ) {
+                            Ok(payload) => {
+                                show_command_info_popup(app, raw, format_agenda_payload(&payload));
+                                app.set_status(format!("Resolved agenda item #{item_id}"));
+                            }
+                            Err(e) => app.push_message(ChatMessage::error(format!(
+                                "Failed to resolve agenda item #{item_id}: {e}"
+                            ))),
+                        }
+                    }
+                    _ => show_command_info_popup(
+                        app,
+                        raw,
+                        "Usage: /collab agenda add <text>\n       /collab agenda list\n       /collab agenda done <item-id>"
+                            .to_string(),
+                    ),
+                }
+                return false;
+            }
+            "hand" => {
+                let action = args
+                    .get(2)
+                    .copied()
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase();
+                let raised = match action.as_str() {
+                    "raise" => true,
+                    "lower" => false,
+                    _ => {
+                        show_command_info_popup(
+                            app,
+                            raw,
+                            "Usage: /collab hand raise\n       /collab hand lower".to_string(),
+                        );
+                        return false;
+                    }
+                };
+                match rpc_set_hand_raised_blocking(
+                    rpc_cmd_tx,
+                    raised,
+                    current_multiplayer_room(app),
+                    None,
+                ) {
+                    Ok(payload) => {
+                        let queue_position = payload
+                            .get("queuePosition")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(0);
+                        if raised && queue_position > 0 {
+                            app.set_status(format!(
+                                "Hand raised. Queue position: {queue_position}"
+                            ));
+                        } else if raised {
+                            app.set_status("Hand raised");
+                        } else {
+                            app.set_status("Hand lowered");
+                        }
+                    }
+                    Err(e) => app.push_message(ChatMessage::error(format!(
+                        "Failed to update hand raise state: {e}"
+                    ))),
+                }
+                return false;
+            }
+            _ => {
+                show_command_info_popup(app, raw, collab_usage_text().to_string());
+                return false;
+            }
+        }
+    }
+
     // ── Pair mode commands ─────────────────────────────────────────────
     if lowered == "/pair" || lowered.starts_with("/pair ") {
         let args: Vec<&str> = raw.split_whitespace().collect();
@@ -2869,9 +3391,19 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
         match rpc_suggest_text_blocking(rpc_cmd_tx, text) {
-            Ok(_) => app.set_status("Suggestion sent"),
+            Ok(payload) => {
+                let mode = payload
+                    .get("mode")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("suggestion");
+                if mode == "agenda" {
+                    app.set_status("Suggestion added to the shared agenda");
+                } else {
+                    app.set_status("Suggestion sent");
+                }
+            }
             Err(e) => app.push_message(ChatMessage::error(format!(
-                "Suggest failed: {e}\nEnsure you are connected to a pair session."
+                "Suggest failed: {e}\nEnsure you are connected to a collaboration session."
             ))),
         }
         return false;
@@ -2880,23 +3412,29 @@ Context Window: {max_context} tokens\n\n\
         show_command_info_popup(
             app,
             raw,
-            "Usage: /suggest <text>\nSend a suggestion visible only to the active driver."
+            "Usage: /suggest <text>\nSend a suggestion to the active driver. In review rooms it is added to the shared agenda."
                 .to_string(),
         );
         return false;
     }
 
     if lowered == "/leave" {
-        if app.pair_is_host {
+        let host_running = rpc_get_host_server_status_blocking(rpc_cmd_tx)
+            .ok()
+            .and_then(|payload| payload.get("running").and_then(|value| value.as_bool()))
+            .unwrap_or(false);
+        if app.pair_is_host || host_running {
             match rpc_stop_host_server_blocking(rpc_cmd_tx) {
-                Ok(_) => app.push_message(ChatMessage::system("Pair session stopped.".to_string())),
+                Ok(_) => app.push_message(ChatMessage::system(
+                    "Collaboration session stopped.".to_string(),
+                )),
                 Err(e) => app.push_message(ChatMessage::error(format!(
-                    "Failed to stop pair session: {e}\nThe session may have already ended."
+                    "Failed to stop collaboration session: {e}\nThe session may have already ended."
                 ))),
             }
         } else {
             app.push_message(ChatMessage::system(
-                "Disconnected from pair session.".to_string(),
+                "Disconnected from collaboration session.".to_string(),
             ));
         }
         app.reset_pair_state();
@@ -2944,7 +3482,7 @@ Context Window: {max_context} tokens\n\n\
         app.set_status("Connecting to endpoint...");
         if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
             app.push_message(ChatMessage::error(format!(
-                "Join preflight failed: {e}\nUse `/join-server` for wizard mode."
+                "Join preflight failed: {e}\nUse `/collab join manual` for the guided join flow."
             )));
             return false;
         }
@@ -2959,7 +3497,7 @@ Context Window: {max_context} tokens\n\n\
             show_command_info_popup(
                 app,
                 raw,
-                "Usage: /kick <connection-id> [room]\nIf room is omitted, the current multiplayer room is used."
+                "Usage: /kick <connection-id|#N|@name> [room]\nIf room is omitted, the current collaboration room is used."
                     .to_string(),
             );
             return false;
@@ -2988,7 +3526,7 @@ Context Window: {max_context} tokens\n\n\
                 );
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
-                "Failed to kick `{connection_id}`: {e}\nUse /who to verify the connection-id."
+                "Failed to kick `{connection_id}`: {e}\nUse /who to verify the member reference."
             ))),
         }
         return false;

@@ -266,6 +266,7 @@ pub enum ServerNotification {
     },
     RoomEvent {
         room: String,
+        mode: String,
         event_type: String,
         request_id: String,
         actor: String,
@@ -274,6 +275,7 @@ pub enum ServerNotification {
         active_connection_id: String,
         lobby_enabled: bool,
         preset: String,
+        agenda_summary: Value,
         members: Value,
         details: Value,
     },
@@ -281,6 +283,7 @@ pub enum ServerNotification {
         room: String,
         connection_id: String,
         role: String,
+        ui_role: String,
     },
     Suggestion {
         sender: String,
@@ -545,6 +548,11 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
+            mode: params
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             event_type: params
                 .get("eventType")
                 .and_then(|v| v.as_str())
@@ -582,6 +590,7 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
+            agenda_summary: params.get("agendaSummary").cloned().unwrap_or(Value::Null),
             members: params.get("members").cloned().unwrap_or(Value::Null),
             details: params.get("details").cloned().unwrap_or(Value::Null),
         }),
@@ -598,6 +607,11 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .to_string(),
             role: params
                 .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            ui_role: params
+                .get("uiRole")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -1475,6 +1489,61 @@ impl RpcClient {
         self.call("poor-cli/suggestText", Value::Object(params))
     }
 
+    pub fn add_agenda_item(&self, text: &str, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("text".into(), Value::String(text.to_string()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/addAgendaItem", Value::Object(params))
+    }
+
+    pub fn list_agenda(&self, room: Option<&str>, include_resolved: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("includeResolved".into(), Value::Bool(include_resolved));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/listAgenda", Value::Object(params))
+    }
+
+    pub fn resolve_agenda_item(&self, item_id: &str, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("itemId".into(), Value::String(item_id.to_string()));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/resolveAgendaItem", Value::Object(params))
+    }
+
+    pub fn set_hand_raised(
+        &self,
+        raised: bool,
+        room: Option<&str>,
+        connection_id: Option<&str>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("raised".into(), Value::Bool(raised));
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        if let Some(connection_id) = connection_id {
+            params.insert(
+                "connectionId".into(),
+                Value::String(connection_id.to_string()),
+            );
+        }
+        self.call("poor-cli/setHandRaised", Value::Object(params))
+    }
+
+    pub fn next_driver(&self, room: Option<&str>) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(room_name) = room {
+            params.insert("room".into(), Value::String(room_name.to_string()));
+        }
+        self.call("poor-cli/nextDriver", Value::Object(params))
+    }
+
     pub fn pass_driver(
         &self,
         display_name: Option<&str>,
@@ -1746,6 +1815,31 @@ pub enum RpcCommand {
     },
     SuggestText {
         text: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    AddAgendaItem {
+        text: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListAgenda {
+        room: Option<String>,
+        include_resolved: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ResolveAgendaItem {
+        item_id: String,
+        room: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetHandRaised {
+        raised: bool,
+        room: Option<String>,
+        connection_id: Option<String>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    NextDriver {
+        room: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
     PassDriver {
@@ -2075,6 +2169,38 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::SuggestText { text, reply }) => {
                 let _ = reply.send(client.suggest_text(&text));
             }
+            Ok(RpcCommand::AddAgendaItem { text, room, reply }) => {
+                let _ = reply.send(client.add_agenda_item(&text, room.as_deref()));
+            }
+            Ok(RpcCommand::ListAgenda {
+                room,
+                include_resolved,
+                reply,
+            }) => {
+                let _ = reply.send(client.list_agenda(room.as_deref(), include_resolved));
+            }
+            Ok(RpcCommand::ResolveAgendaItem {
+                item_id,
+                room,
+                reply,
+            }) => {
+                let _ = reply.send(client.resolve_agenda_item(&item_id, room.as_deref()));
+            }
+            Ok(RpcCommand::SetHandRaised {
+                raised,
+                room,
+                connection_id,
+                reply,
+            }) => {
+                let _ = reply.send(client.set_hand_raised(
+                    raised,
+                    room.as_deref(),
+                    connection_id.as_deref(),
+                ));
+            }
+            Ok(RpcCommand::NextDriver { room, reply }) => {
+                let _ = reply.send(client.next_driver(room.as_deref()));
+            }
             Ok(RpcCommand::PassDriver {
                 display_name,
                 connection_id,
@@ -2320,7 +2446,8 @@ mod tests {
         let params = json!({
             "room": "dev",
             "connectionId": "c-2",
-            "role": "viewer"
+            "role": "viewer",
+            "uiRole": "reviewer"
         });
         let n = parse_notification("poor-cli/memberRoleUpdated", &params)
             .expect("memberRoleUpdated should parse");
@@ -2329,10 +2456,12 @@ mod tests {
                 room,
                 connection_id,
                 role,
+                ui_role,
             } => {
                 assert_eq!(room, "dev");
                 assert_eq!(connection_id, "c-2");
                 assert_eq!(role, "viewer");
+                assert_eq!(ui_role, "reviewer");
             }
             _ => panic!("wrong variant"),
         }

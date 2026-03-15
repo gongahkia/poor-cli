@@ -15,6 +15,11 @@ pub(super) fn handle_server_message(
             version,
             multiplayer_room,
             multiplayer_role,
+            multiplayer_ui_role,
+            multiplayer_mode,
+            multiplayer_connection_id,
+            multiplayer_display_name,
+            multiplayer_approval_state,
         } => {
             let mut state = remote_reconnect_state.borrow_mut();
             if state.2 {
@@ -37,6 +42,21 @@ pub(super) fn handle_server_message(
             }
             if let Some(role_name) = multiplayer_role {
                 app.multiplayer_role = role_name;
+            }
+            if let Some(ui_role) = multiplayer_ui_role {
+                app.multiplayer_ui_role = ui_role;
+            }
+            if let Some(mode_name) = multiplayer_mode {
+                app.multiplayer_mode = mode_name;
+            }
+            if let Some(connection_id) = multiplayer_connection_id {
+                app.multiplayer_connection_id = connection_id;
+            }
+            if let Some(display_name) = multiplayer_display_name {
+                app.multiplayer_display_name = display_name;
+            }
+            if let Some(approval_state) = multiplayer_approval_state {
+                app.multiplayer_approval_state = approval_state;
             }
             app.update_welcome();
             if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx.borrow()) {
@@ -337,6 +357,7 @@ pub(super) fn handle_server_message(
             let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
             app.permission_message = format!("{tool_name}: {args_str}");
             app.permission_prompt_id = prompt_id.clone();
+            app.permission_review_read_only = !app.can_control_multiplayer_reviews();
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Permission,
                 request_id: request_id.clone(),
@@ -353,7 +374,20 @@ pub(super) fn handle_server_message(
                 review_summary: None,
                 timestamp: std::time::Instant::now(),
             });
-            if !diff.is_empty() || !paths.is_empty() {
+            if app.permission_review_read_only {
+                app.info_popup_title = "Driver Review In Progress".to_string();
+                app.info_popup_content = if message.is_empty() {
+                    format!(
+                        "The active driver is reviewing `{tool_name}`.\n\nThis client is read-only for approval prompts. Use `/suggest <text>` or `/collab agenda add <text>` to give input."
+                    )
+                } else {
+                    format!(
+                        "{message}\n\nThe active driver is reviewing `{tool_name}`.\nThis client is read-only for approval prompts. Use `/suggest <text>` or `/collab agenda add <text>` to give input."
+                    )
+                };
+                app.info_popup_scroll = 0;
+                app.mode = poor_cli_tui::app::AppMode::InfoPopup;
+            } else if !diff.is_empty() || !paths.is_empty() {
                 app.open_mutation_review(poor_cli_tui::app::MutationReviewState {
                     request_id,
                     tool_name,
@@ -404,7 +438,8 @@ pub(super) fn handle_server_message(
                 review_summary: None,
                 timestamp: std::time::Instant::now(),
             });
-            app.set_plan_review(steps, original_request, summary, prompt_id, true);
+            let read_only = !app.can_control_multiplayer_reviews();
+            app.set_plan_review(steps, original_request, summary, prompt_id, true, read_only);
         }
         ServerMsg::Progress {
             request_id,
@@ -470,6 +505,7 @@ pub(super) fn handle_server_message(
         }
         ServerMsg::RoomEvent {
             room,
+            mode,
             event_type,
             actor,
             request_id,
@@ -478,6 +514,7 @@ pub(super) fn handle_server_message(
             active_connection_id,
             lobby_enabled,
             preset,
+            agenda_summary,
             members,
         } => {
             write_session_log(
@@ -489,11 +526,15 @@ pub(super) fn handle_server_message(
             );
             app.multiplayer_enabled = true;
             app.multiplayer_room = room;
+            app.multiplayer_mode = mode;
             app.multiplayer_queue_depth = queue_depth;
             app.multiplayer_member_count = member_count;
             app.multiplayer_active_connection_id = active_connection_id;
             app.multiplayer_lobby_enabled = lobby_enabled;
             app.multiplayer_preset = preset;
+            if let Some(summary) = agenda_summary.as_object() {
+                app.update_agenda_from_summary(summary);
+            }
             if let Some(items) = members.as_array() {
                 let mut summaries = Vec::new();
                 for entry in items.iter().take(10) {
@@ -505,6 +546,7 @@ pub(super) fn handle_server_message(
                         .get("role")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
+                    let ui_role = entry.get("uiRole").and_then(|v| v.as_str()).unwrap_or("");
                     let approved = entry
                         .get("approved")
                         .and_then(|v| v.as_bool())
@@ -513,7 +555,11 @@ pub(super) fn handle_server_message(
                         .get("active")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    let mut label = format!("{connection_id}:{role}");
+                    let mut label = if ui_role.is_empty() {
+                        format!("{connection_id}:{role}")
+                    } else {
+                        format!("{connection_id}:{role}/{ui_role}")
+                    };
                     if !approved {
                         label.push_str(" (pending)");
                     }
@@ -523,34 +569,55 @@ pub(super) fn handle_server_message(
                     summaries.push(label);
                 }
                 app.multiplayer_member_roles = summaries;
-                if app.pair_mode_active {
-                    let mut pair_users = Vec::new();
-                    for entry in items.iter().take(20) {
-                        let cid = entry
-                            .get("connectionId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        let r = entry
+                let mut pair_users = Vec::new();
+                for entry in items.iter().take(20) {
+                    let cid = entry
+                        .get("connectionId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let ui_role = entry
+                        .get("uiRole")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("navigator");
+                    let name = entry
+                        .get("displayName")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| entry.get("clientName").and_then(|v| v.as_str()))
+                        .unwrap_or(cid);
+                    let active = entry
+                        .get("active")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    pair_users.push(poor_cli_tui::app::PairUser {
+                        name: name.to_string(),
+                        connection_id: cid.to_string(),
+                        role: poor_cli_tui::app::PairRole::from_ui_role(ui_role),
+                        is_active: active,
+                    });
+                    if app.multiplayer_connection_id == cid {
+                        app.multiplayer_role = entry
                             .get("role")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("viewer");
-                        let name = entry
-                            .get("clientName")
+                            .unwrap_or(&app.multiplayer_role)
+                            .to_string();
+                        app.multiplayer_ui_role = ui_role.to_string();
+                        app.multiplayer_display_name = name.to_string();
+                        app.multiplayer_approval_state = entry
+                            .get("approvalState")
                             .and_then(|v| v.as_str())
-                            .unwrap_or(cid);
-                        let active = entry
-                            .get("active")
+                            .unwrap_or("approved")
+                            .to_string();
+                        app.multiplayer_hand_raised = entry
+                            .get("handRaised")
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false);
-                        pair_users.push(poor_cli_tui::app::PairUser {
-                            name: name.to_string(),
-                            connection_id: cid.to_string(),
-                            role: poor_cli_tui::app::PairRole::from_wire(r),
-                            is_active: active,
-                        });
+                        app.multiplayer_queue_position = entry
+                            .get("queuePosition")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                     }
-                    app.connected_users = pair_users;
                 }
+                app.connected_users = pair_users;
             }
             let status = match event_type.as_str() {
                 "queued" => format!("Room queue depth: {queue_depth}"),
@@ -561,6 +628,16 @@ pub(super) fn handle_server_message(
                 "member_pending" => format!("Pending approval: `{actor}`"),
                 "member_approved" => format!("Member approved: `{actor}`"),
                 "member_denied" => format!("Member denied: `{actor}`"),
+                "agenda_added" => format!(
+                    "Agenda updated ({} open)",
+                    app.multiplayer_agenda_open_count
+                ),
+                "agenda_resolved" => format!(
+                    "Agenda resolved ({} open)",
+                    app.multiplayer_agenda_open_count
+                ),
+                "hand_raised" => format!("Hand raised: `{actor}`"),
+                "hand_lowered" => format!("Hand lowered: `{actor}`"),
                 _ => format!("Room event: {event_type}"),
             };
             app.set_status(status);
@@ -577,6 +654,7 @@ pub(super) fn handle_server_message(
             room,
             connection_id,
             role,
+            ui_role,
         } => {
             write_session_log(
                 session_log,
@@ -599,10 +677,24 @@ pub(super) fn handle_server_message(
                 }
             }
             if !updated {
-                app.multiplayer_member_roles
-                    .push(format!("{connection_id}:{role}"));
+                if ui_role.is_empty() {
+                    app.multiplayer_member_roles
+                        .push(format!("{connection_id}:{role}"));
+                } else {
+                    app.multiplayer_member_roles
+                        .push(format!("{connection_id}:{role}/{ui_role}"));
+                }
             }
-            app.set_status(format!("Role updated: `{connection_id}` -> {role}"));
+            if connection_id == app.multiplayer_connection_id {
+                app.multiplayer_role = role.clone();
+                if !ui_role.is_empty() {
+                    app.multiplayer_ui_role = ui_role.clone();
+                }
+            }
+            app.set_status(format!(
+                "Role updated: `{connection_id}` -> {}",
+                if ui_role.is_empty() { role } else { ui_role }
+            ));
         }
     }
 

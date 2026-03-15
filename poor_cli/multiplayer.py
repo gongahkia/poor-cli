@@ -46,10 +46,35 @@ class ConnectionState:
     inline_server: Any = None
     joined_at: Optional[str] = None
     approved: bool = True
+    hand_raised: bool = False
     connected_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
     last_pong: float = field(default_factory=time.monotonic)
     request_timestamps: Deque[float] = field(default_factory=deque)
+
+
+@dataclass
+class AgendaItem:
+    """Room-scoped collaboration agenda item."""
+
+    item_id: str
+    text: str
+    author: str
+    created_at: str
+    resolved: bool = False
+    resolved_at: Optional[str] = None
+    resolved_by: str = ""
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "id": self.item_id,
+            "text": self.text,
+            "author": self.author,
+            "createdAt": self.created_at,
+            "resolved": self.resolved,
+            "resolvedAt": self.resolved_at or "",
+            "resolvedBy": self.resolved_by,
+        }
 
 
 @dataclass
@@ -77,6 +102,9 @@ class RoomState:
     lobby_enabled: bool = False
     preset: str = "pairing"
     activity: List[Dict[str, Any]] = field(default_factory=list)
+    agenda: List[AgendaItem] = field(default_factory=list)
+    hand_raise_queue: List[str] = field(default_factory=list)
+    next_agenda_id: int = 1
 
 
 class MultiplayerHost:
@@ -112,6 +140,8 @@ class MultiplayerHost:
         "poor-cli/handoffHostMember",
         "poor-cli/setHostPreset",
         "poor-cli/listHostActivity",
+        "poor-cli/resolveAgendaItem",
+        "poor-cli/nextDriver",
         "poor-cli/cancelRequest",
         "shutdown",
     }
@@ -195,6 +225,42 @@ class MultiplayerHost:
         return datetime.now(timezone.utc).isoformat()
 
     @staticmethod
+    def _room_mode(room: RoomState) -> str:
+        if room.preset == "pairing":
+            return "pair"
+        return room.preset
+
+    @staticmethod
+    def _member_display_name(member: ConnectionState) -> str:
+        return member.client_name or member.connection_id
+
+    @staticmethod
+    def _member_approval_state(member: ConnectionState) -> str:
+        return "approved" if member.approved else "pending"
+
+    def _member_ui_role(self, room: RoomState, member: ConnectionState) -> str:
+        if member.role == "prompter" and member.approved:
+            return "driver"
+        if room.preset == "review":
+            return "reviewer"
+        return "navigator"
+
+    @staticmethod
+    def _ordered_member_items(room: RoomState) -> List[tuple[str, ConnectionState]]:
+        return sorted(
+            room.members.items(),
+            key=lambda item: (item[1].connected_at, item[0]),
+        )
+
+    def _agenda_summary(self, room: RoomState) -> Dict[str, Any]:
+        open_items = [item for item in room.agenda if not item.resolved]
+        return {
+            "total": len(room.agenda),
+            "open": len(open_items),
+            "openItems": [item.to_payload() for item in open_items[-10:]],
+        }
+
+    @staticmethod
     def _is_token_expired(invite: InviteToken) -> bool:
         if not invite.expires_at:
             return False
@@ -207,35 +273,49 @@ class MultiplayerHost:
 
     def _room_member_snapshots(self, room: RoomState) -> List[Dict[str, Any]]:
         members: List[Dict[str, Any]] = []
-        for connection_id, member in room.members.items():
+        for connection_id, member in self._ordered_member_items(room):
+            queue_position = 0
+            if connection_id in room.hand_raise_queue:
+                queue_position = room.hand_raise_queue.index(connection_id) + 1
             members.append(
                 {
                     "connectionId": connection_id,
                     "role": member.role or "unknown",
                     "clientName": member.client_name,
+                    "displayName": self._member_display_name(member),
+                    "uiRole": self._member_ui_role(room, member),
                     "initialized": member.initialized,
                     "connected": not member.ws.closed,
                     "active": room.active_connection_id == connection_id,
                     "approved": member.approved,
+                    "approvalState": self._member_approval_state(member),
+                    "handRaised": member.hand_raised,
+                    "queuePosition": queue_position,
                     "joinedAt": member.joined_at or "",
                 }
             )
-        members.sort(key=lambda entry: entry["connectionId"])
         return members
 
     def _list_room_member_payload(self, room: RoomState) -> List[Dict[str, Any]]:
         members: List[Dict[str, Any]] = []
-        for connection_id, member in room.members.items():
+        for connection_id, member in self._ordered_member_items(room):
+            queue_position = 0
+            if connection_id in room.hand_raise_queue:
+                queue_position = room.hand_raise_queue.index(connection_id) + 1
             members.append(
                 {
                     "connection_id": connection_id,
                     "role": member.role or "unknown",
+                    "ui_role": self._member_ui_role(room, member),
+                    "display_name": self._member_display_name(member),
+                    "approval_state": self._member_approval_state(member),
+                    "hand_raised": member.hand_raised,
+                    "queue_position": queue_position,
                     "connected_at": member.connected_at,
                     "last_active": member.last_active,
                     "is_active_prompter": member.role == "prompter",
                 }
             )
-        members.sort(key=lambda entry: entry["connection_id"])
         return members
 
     def _pick_room_prompter(
@@ -301,6 +381,7 @@ class MultiplayerHost:
                     "room": room.name,
                     "connectionId": connection_id,
                     "role": member.role or "viewer",
+                    "uiRole": self._member_ui_role(room, member),
                 },
             )
             await self._broadcast_rpc(room, notification)
@@ -325,6 +406,235 @@ class MultiplayerHost:
         room.activity.append(event)
         if len(room.activity) > 300:
             del room.activity[:-300]
+
+    @staticmethod
+    def _prune_hand_raise_queue(room: RoomState) -> None:
+        room.hand_raise_queue = [
+            connection_id
+            for connection_id in room.hand_raise_queue
+            if (
+                connection_id in room.members
+                and room.members[connection_id].approved
+                and not room.members[connection_id].ws.closed
+                and room.members[connection_id].role != "prompter"
+            )
+        ]
+
+    def resolve_room_member_reference(self, room_name: str, reference: str) -> Optional[str]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+        normalized = str(reference or "").strip()
+        if not normalized:
+            return None
+
+        member = room.members.get(normalized)
+        if member is not None and not member.ws.closed:
+            return normalized
+
+        if normalized.startswith("@"):
+            normalized = normalized[1:].strip()
+
+        ordered_members = self._ordered_member_items(room)
+        if normalized.startswith("#") and normalized[1:].isdigit():
+            index = int(normalized[1:]) - 1
+            if 0 <= index < len(ordered_members):
+                return ordered_members[index][0]
+
+        if normalized.isdigit():
+            index = int(normalized) - 1
+            if 0 <= index < len(ordered_members):
+                return ordered_members[index][0]
+
+        lowered = normalized.lower()
+        for connection_id, member_state in ordered_members:
+            display_name = self._member_display_name(member_state).lower()
+            if display_name == lowered or connection_id.lower() == lowered:
+                return connection_id
+        return None
+
+    def list_room_agenda(
+        self,
+        room_name: str,
+        *,
+        include_resolved: bool = True,
+    ) -> List[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return []
+        items = room.agenda
+        if not include_resolved:
+            items = [item for item in items if not item.resolved]
+        return [item.to_payload() for item in items]
+
+    async def add_room_agenda_item(
+        self,
+        room_name: str,
+        text: str,
+        *,
+        author: str,
+        actor_connection_id: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        normalized_text = str(text or "").strip()
+        if not normalized_text:
+            raise ValueError("agenda text cannot be empty")
+
+        item = AgendaItem(
+            item_id=f"a-{room.next_agenda_id}",
+            text=normalized_text,
+            author=author.strip() or "unknown",
+            created_at=self._now_iso(),
+        )
+        room.next_agenda_id += 1
+        room.agenda.append(item)
+        await self._broadcast_room_event(
+            room,
+            "agenda_added",
+            actor=actor_connection_id,
+            queue_depth=room.request_queue.qsize(),
+            details={"agendaItem": item.to_payload()},
+        )
+        return item.to_payload()
+
+    async def resolve_room_agenda_item(
+        self,
+        room_name: str,
+        item_id: str,
+        *,
+        resolved_by: str,
+        actor_connection_id: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        normalized_id = str(item_id or "").strip()
+        if not normalized_id:
+            raise ValueError("agenda item id is required")
+
+        for item in room.agenda:
+            if item.item_id != normalized_id:
+                continue
+            item.resolved = True
+            item.resolved_at = self._now_iso()
+            item.resolved_by = resolved_by.strip() or "unknown"
+            await self._broadcast_room_event(
+                room,
+                "agenda_resolved",
+                actor=actor_connection_id,
+                queue_depth=room.request_queue.qsize(),
+                details={"agendaItem": item.to_payload()},
+            )
+            return item.to_payload()
+        return None
+
+    async def set_room_member_hand_raised(
+        self,
+        room_name: str,
+        connection_id: str,
+        raised: bool,
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        member = room.members.get(connection_id)
+        if member is None or member.ws.closed or not member.approved:
+            return None
+
+        if member.role == "prompter":
+            member.hand_raised = False
+            self._prune_hand_raise_queue(room)
+            return {
+                "connectionId": connection_id,
+                "handRaised": False,
+                "queuePosition": 0,
+            }
+
+        member.hand_raised = bool(raised)
+        self._prune_hand_raise_queue(room)
+        if member.hand_raised:
+            if connection_id not in room.hand_raise_queue:
+                room.hand_raise_queue.append(connection_id)
+        else:
+            room.hand_raise_queue = [
+                queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
+            ]
+        queue_position = 0
+        if connection_id in room.hand_raise_queue:
+            queue_position = room.hand_raise_queue.index(connection_id) + 1
+        await self._broadcast_room_event(
+            room,
+            "hand_raised" if member.hand_raised else "hand_lowered",
+            actor=connection_id,
+            queue_depth=room.request_queue.qsize(),
+            details={
+                "connectionId": connection_id,
+                "handRaised": member.hand_raised,
+                "queuePosition": queue_position,
+            },
+        )
+        return {
+            "connectionId": connection_id,
+            "handRaised": member.hand_raised,
+            "queuePosition": queue_position,
+        }
+
+    async def handoff_next_driver(
+        self,
+        room_name: str,
+        *,
+        actor_connection_id: str = "",
+    ) -> Optional[str]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        self._prune_hand_raise_queue(room)
+        next_connection_id = next(
+            (connection_id for connection_id in room.hand_raise_queue if connection_id != actor_connection_id),
+            None,
+        )
+        if next_connection_id is None:
+            ordered_members = [
+                connection_id
+                for connection_id, member in self._ordered_member_items(room)
+                if member.approved and not member.ws.closed
+            ]
+            if not ordered_members:
+                return None
+            if actor_connection_id in ordered_members:
+                start_index = ordered_members.index(actor_connection_id) + 1
+                rotated = ordered_members[start_index:] + ordered_members[:start_index]
+            else:
+                rotated = ordered_members
+            next_connection_id = next(
+                (connection_id for connection_id in rotated if connection_id != actor_connection_id),
+                None,
+            )
+        if next_connection_id is None:
+            return None
+        updated = await self.handoff_room_prompter(room_name, next_connection_id)
+        if not updated:
+            return None
+        room.hand_raise_queue = [
+            connection_id for connection_id in room.hand_raise_queue if connection_id != next_connection_id
+        ]
+        target = room.members.get(next_connection_id)
+        if target is not None:
+            target.hand_raised = False
+        await self._broadcast_room_event(
+            room,
+            "next_driver_selected",
+            actor=next_connection_id,
+            queue_depth=room.request_queue.qsize(),
+            details={"connectionId": next_connection_id},
+        )
+        return next_connection_id
 
     def get_room_tokens(self) -> Dict[str, Dict[str, str]]:
         """Return room->role->token mapping for host-local sharing."""
@@ -360,12 +670,15 @@ class MultiplayerHost:
             output.append(
                 {
                     "name": selected_room,
+                    "mode": self._room_mode(room),
                     "memberCount": len(members),
                     "members": members,
                     "queueDepth": room.request_queue.qsize(),
                     "activeConnectionId": room.active_connection_id or "",
                     "lobbyEnabled": room.lobby_enabled,
                     "preset": room.preset,
+                    "agendaSummary": self._agenda_summary(room),
+                    "handsRaised": len(room.hand_raise_queue),
                 }
             )
         return output
@@ -401,6 +714,7 @@ class MultiplayerHost:
                 member.approved = True
             self._rebalance_room_roles(room)
             roles_rebalanced = True
+        self._prune_hand_raise_queue(room)
         if roles_rebalanced:
             await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
@@ -427,6 +741,7 @@ class MultiplayerHost:
                 room,
                 preferred_connection_id=connection_id,
             )
+        self._prune_hand_raise_queue(room)
         if promoted_connection_id is not None:
             await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
@@ -449,6 +764,9 @@ class MultiplayerHost:
         self.connections.pop(connection_id, None)
         if room.active_connection_id == connection_id:
             room.active_connection_id = None
+        room.hand_raise_queue = [
+            queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
+        ]
         promoted_connection_id = None
         if member.role == "prompter":
             promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
@@ -540,6 +858,10 @@ class MultiplayerHost:
         if target.ws.closed or not target.approved:
             return False
 
+        target.hand_raised = False
+        room.hand_raise_queue = [
+            queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
+        ]
         self._rebalance_room_roles(room, preferred_connection_id=connection_id)
         await self._broadcast_member_role_updates(room)
 
@@ -563,13 +885,21 @@ class MultiplayerHost:
         room.preset = normalized
         if normalized == "pairing":
             room.lobby_enabled = False
+            room.hand_raise_queue.clear()
+            for member in room.members.values():
+                member.hand_raised = False
         else:
             room.lobby_enabled = True
+        self._prune_hand_raise_queue(room)
 
         await self._broadcast_room_event(
             room,
             "preset_updated",
-            details={"preset": normalized, "lobbyEnabled": room.lobby_enabled},
+            details={
+                "preset": normalized,
+                "mode": self._room_mode(room),
+                "lobbyEnabled": room.lobby_enabled,
+            },
             queue_depth=room.request_queue.qsize(),
         )
         return True
@@ -587,6 +917,9 @@ class MultiplayerHost:
         self.connections.pop(connection_id, None)
         if room.active_connection_id == connection_id:
             room.active_connection_id = None
+        room.hand_raise_queue = [
+            queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
+        ]
         promoted_connection_id = None
         if member.role == "prompter":
             promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
@@ -623,6 +956,7 @@ class MultiplayerHost:
 
         member.role = normalized_role
         if normalized_role == "prompter":
+            member.hand_raised = False
             self._rebalance_room_roles(room, preferred_connection_id=connection_id)
         else:
             fallback_connection_id = next(
@@ -640,6 +974,7 @@ class MultiplayerHost:
                 preferred_connection_id=fallback_connection_id,
                 promote_fallback=fallback_connection_id is None,
             )
+        self._prune_hand_raise_queue(room)
         await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
@@ -833,6 +1168,26 @@ class MultiplayerHost:
             await self._handle_suggest_text(conn, room, message)
             return
 
+        if method == "poor-cli/addAgendaItem":
+            await self._handle_add_agenda_item(conn, room, message)
+            return
+
+        if method == "poor-cli/listAgenda":
+            await self._handle_list_agenda(conn, room, message)
+            return
+
+        if method == "poor-cli/resolveAgendaItem":
+            await self._handle_resolve_agenda_item(conn, room, message)
+            return
+
+        if method == "poor-cli/setHandRaised":
+            await self._handle_set_hand_raised(conn, room, message)
+            return
+
+        if method == "poor-cli/nextDriver":
+            await self._handle_next_driver(conn, room, message)
+            return
+
         if method == "poor-cli/passDriver":
             await self._handle_pass_driver(conn, room, message)
             return
@@ -895,6 +1250,8 @@ class MultiplayerHost:
                         result={
                             "room": room.name,
                             "members": self._list_room_member_payload(room),
+                            "mode": self._room_mode(room),
+                            "agendaSummary": self._agenda_summary(room),
                         },
                     ),
                 )
@@ -941,6 +1298,205 @@ class MultiplayerHost:
         timestamps.append(now)
         return True
 
+    async def _handle_add_agenda_item(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        params = message.params or {}
+        text = str(params.get("text", "")).strip()
+        if not text:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="text is required",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        try:
+            item = await self.add_room_agenda_item(
+                room.name,
+                text,
+                author=self._member_display_name(conn),
+                actor_connection_id=conn.connection_id,
+            )
+        except ValueError as error:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=str(error),
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "success": True,
+                        "room": room.name,
+                        "item": item,
+                        "agendaSummary": self._agenda_summary(room),
+                    },
+                ),
+            )
+
+    async def _handle_list_agenda(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        params = message.params or {}
+        include_resolved = bool(params.get("includeResolved", True))
+        if message.id is None:
+            return
+        await self._send_rpc(
+            conn.ws,
+            self.message_cls(
+                id=message.id,
+                result={
+                    "room": room.name,
+                    "items": self.list_room_agenda(room.name, include_resolved=include_resolved),
+                    "agendaSummary": self._agenda_summary(room),
+                },
+            ),
+        )
+
+    async def _handle_resolve_agenda_item(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        if conn.role != "prompter" or not conn.approved:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Only the active driver can resolve agenda items",
+                data={"error_code": "permission_denied", "role": conn.role},
+            )
+            return
+
+        params = message.params or {}
+        item_id = str(params.get("itemId", params.get("id", ""))).strip()
+        if not item_id:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="itemId is required",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        try:
+            item = await self.resolve_room_agenda_item(
+                room.name,
+                item_id,
+                resolved_by=self._member_display_name(conn),
+                actor_connection_id=conn.connection_id,
+            )
+        except ValueError as error:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=str(error),
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        if item is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=f"Unknown agenda item: {item_id}",
+                data={"error_code": "AGENDA_NOT_FOUND"},
+            )
+            return
+
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "success": True,
+                        "room": room.name,
+                        "item": item,
+                        "agendaSummary": self._agenda_summary(room),
+                    },
+                ),
+            )
+
+    async def _handle_set_hand_raised(
+        self,
+        conn: ConnectionState,
+        room: RoomState,
+        message: Any,
+    ) -> None:
+        params = message.params or {}
+        raised = bool(params.get("raised", True))
+        result = await self.set_room_member_hand_raised(room.name, conn.connection_id, raised)
+        if result is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="Unable to update hand raise state",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "success": True,
+                        "room": room.name,
+                        **result,
+                    },
+                ),
+            )
+
+    async def _handle_next_driver(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        if conn.role != "prompter" or not conn.approved:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Only the active driver can hand off to the next driver",
+                data={"error_code": "permission_denied", "role": conn.role},
+            )
+            return
+
+        connection_id = await self.handoff_next_driver(
+            room.name,
+            actor_connection_id=conn.connection_id,
+        )
+        if connection_id is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="No eligible member found to receive driver role",
+                data={"error_code": "MEMBER_NOT_FOUND"},
+            )
+            return
+
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "success": True,
+                        "room": room.name,
+                        "connectionId": connection_id,
+                    },
+                ),
+            )
+
     async def _handle_kick_member(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
         params = message.params or {}
         target_connection_id = str(
@@ -978,6 +1534,10 @@ class MultiplayerHost:
             )
             return
 
+        resolved_connection_id = self.resolve_room_member_reference(room.name, target_connection_id)
+        if resolved_connection_id:
+            target_connection_id = resolved_connection_id
+
         if target_connection_id == conn.connection_id:
             await self._send_error_response(
                 conn.ws,
@@ -1002,11 +1562,20 @@ class MultiplayerHost:
         self.connections.pop(target_connection_id, None)
         if room.active_connection_id == target_connection_id:
             room.active_connection_id = None
+        room.hand_raise_queue = [
+            queued_id for queued_id in room.hand_raise_queue if queued_id != target_connection_id
+        ]
+        promoted_connection_id = None
+        if member.role == "prompter":
+            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4001, message=b"Kicked by host")
         except Exception:
             pass
+
+        if promoted_connection_id is not None:
+            await self._broadcast_member_role_updates(room)
 
         await self._broadcast_room_event(
             room,
@@ -1080,15 +1649,43 @@ class MultiplayerHost:
         target: Optional[ConnectionState] = None
 
         if target_connection_id:
+            resolved_connection_id = self.resolve_room_member_reference(room.name, target_connection_id)
+            if resolved_connection_id:
+                target_connection_id = resolved_connection_id
             target = room.members.get(target_connection_id)
         elif display_name:
-            for member in room.members.values():
-                member_name = member.client_name or member.connection_id
-                if member_name.lower() == display_name.lower():
-                    target = member
-                    break
+            resolved_connection_id = self.resolve_room_member_reference(room.name, display_name)
+            if resolved_connection_id:
+                target = room.members.get(resolved_connection_id)
         else:
-            for member in room.members.values():
+            if room.preset == "mob":
+                next_connection_id = await self.handoff_next_driver(
+                    room.name,
+                    actor_connection_id=conn.connection_id,
+                )
+                if next_connection_id is None:
+                    await self._send_error_response(
+                        conn.ws,
+                        request_id=message.id,
+                        code=self.rpc_error_cls.INVALID_PARAMS,
+                        message="No eligible member found to receive driver role",
+                        data={"error_code": "MEMBER_NOT_FOUND"},
+                    )
+                    return
+                if message.id is not None:
+                    await self._send_rpc(
+                        conn.ws,
+                        self.message_cls(
+                            id=message.id,
+                            result={
+                                "success": True,
+                                "room": room.name,
+                                "connectionId": next_connection_id,
+                            },
+                        ),
+                    )
+                return
+            for _, member in self._ordered_member_items(room):
                 if member.connection_id == conn.connection_id:
                     continue
                 if member.ws.closed or not member.approved:
@@ -1176,6 +1773,7 @@ class MultiplayerHost:
         conn.client_name = client_name
         conn.joined_at = datetime.now().isoformat()
         conn.approved = not room.lobby_enabled
+        conn.hand_raised = False
 
         if not room.initialized:
             init_params = dict(params)
@@ -1190,17 +1788,25 @@ class MultiplayerHost:
         room.members[conn.connection_id] = conn
         if conn.approved and conn.role == "prompter":
             self._rebalance_room_roles(room, preferred_connection_id=conn.connection_id)
+        self._prune_hand_raise_queue(room)
 
         capabilities = dict(room.base_capabilities)
         capabilities["multiplayer"] = {
             "enabled": True,
             "room": room_name,
+            "mode": self._room_mode(room),
             "role": conn.role,
+            "uiRole": self._member_ui_role(room, conn),
             "connectionId": conn.connection_id,
+            "displayName": self._member_display_name(conn),
             "queueMode": "serialized",
             "approved": conn.approved,
+            "approvalState": self._member_approval_state(conn),
+            "handRaised": conn.hand_raised,
+            "queuePosition": 0,
             "lobbyEnabled": room.lobby_enabled,
             "preset": room.preset,
+            "agendaSummary": self._agenda_summary(room),
             "events": {
                 "roomEvent": True,
                 "memberRoleUpdated": True,
@@ -1210,6 +1816,11 @@ class MultiplayerHost:
                 "listRoomMembers": True,
                 "suggestText": True,
                 "passDriver": True,
+                "addAgendaItem": True,
+                "listAgenda": True,
+                "resolveAgendaItem": True,
+                "setHandRaised": True,
+                "nextDriver": True,
             },
         }
 
@@ -1290,6 +1901,27 @@ class MultiplayerHost:
                 )
             return
         sender = conn.client_name or conn.connection_id
+        if room.preset == "review":
+            item = await self.add_room_agenda_item(
+                room.name,
+                text,
+                author=sender,
+                actor_connection_id=conn.connection_id,
+            )
+            if message.id is not None:
+                await self._send_rpc(
+                    conn.ws,
+                    self.message_cls(
+                        id=message.id,
+                        result={
+                            "success": True,
+                            "mode": "agenda",
+                            "item": item,
+                            "agendaSummary": self._agenda_summary(room),
+                        },
+                    ),
+                )
+            return
         recipients = [
             member
             for member in room.members.values()
@@ -1314,7 +1946,10 @@ class MultiplayerHost:
         if message.id is not None:
             await self._send_rpc(
                 conn.ws,
-                self.message_cls(id=message.id, result={"success": True, "delivered": len(recipients)}),
+                self.message_cls(
+                    id=message.id,
+                    result={"success": True, "mode": "suggestion", "delivered": len(recipients)},
+                ),
             )
 
     async def _cleanup_connection(self, conn: ConnectionState) -> None:
@@ -1324,9 +1959,13 @@ class MultiplayerHost:
             room = self.rooms.get(conn.room_name)
             if room and conn.connection_id in room.members:
                 room.members.pop(conn.connection_id, None)
+                room.hand_raise_queue = [
+                    queued_id for queued_id in room.hand_raise_queue if queued_id != conn.connection_id
+                ]
                 promoted_connection_id = None
                 if conn.role == "prompter":
                     promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
+                self._prune_hand_raise_queue(room)
                 if promoted_connection_id is not None:
                     await self._broadcast_member_role_updates(room)
                 await self._broadcast_room_event(
@@ -1375,6 +2014,8 @@ class MultiplayerHost:
         for connection_id in dead_members:
             room.members.pop(connection_id, None)
             self.connections.pop(connection_id, None)
+        if dead_members:
+            self._prune_hand_raise_queue(room)
 
     async def _broadcast_streaming_chunk(
         self,
@@ -1409,6 +2050,8 @@ class MultiplayerHost:
         for connection_id in dead_members:
             room.members.pop(connection_id, None)
             self.connections.pop(connection_id, None)
+        if dead_members:
+            self._prune_hand_raise_queue(room)
 
     async def _broadcast_room_event(
         self,
@@ -1423,6 +2066,7 @@ class MultiplayerHost:
         payload = {
             "eventType": event_type,
             "room": room.name,
+            "mode": self._room_mode(room),
             "requestId": request_id,
             "actor": actor,
             "queueDepth": queue_depth,
@@ -1430,6 +2074,7 @@ class MultiplayerHost:
             "activeConnectionId": room.active_connection_id or "",
             "lobbyEnabled": room.lobby_enabled,
             "preset": room.preset,
+            "agendaSummary": self._agenda_summary(room),
             "members": member_snapshots,
             "details": details or {},
         }

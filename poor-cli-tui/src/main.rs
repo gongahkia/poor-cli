@@ -83,6 +83,11 @@ enum ServerMsg {
         version: String,
         multiplayer_room: Option<String>,
         multiplayer_role: Option<String>,
+        multiplayer_ui_role: Option<String>,
+        multiplayer_mode: Option<String>,
+        multiplayer_connection_id: Option<String>,
+        multiplayer_display_name: Option<String>,
+        multiplayer_approval_state: Option<String>,
     },
     ChatResponse {
         content: String,
@@ -158,6 +163,7 @@ enum ServerMsg {
     },
     RoomEvent {
         room: String,
+        mode: String,
         event_type: String,
         actor: String,
         request_id: String,
@@ -166,12 +172,14 @@ enum ServerMsg {
         active_connection_id: String,
         lobby_enabled: bool,
         preset: String,
+        agenda_summary: Value,
         members: Value,
     },
     MemberRoleUpdated {
         room: String,
         connection_id: String,
         role: String,
+        ui_role: String,
     },
     Suggestion {
         sender: String,
@@ -529,6 +537,7 @@ fn spawn_backend_worker(
                             }
                             ServerNotification::RoomEvent {
                                 room,
+                                mode,
                                 event_type,
                                 actor,
                                 request_id,
@@ -537,6 +546,7 @@ fn spawn_backend_worker(
                                 active_connection_id,
                                 lobby_enabled,
                                 preset,
+                                agenda_summary,
                                 members,
                                 ..
                             } => {
@@ -549,6 +559,7 @@ fn spawn_backend_worker(
                                 );
                                 ServerMsg::RoomEvent {
                                     room,
+                                    mode,
                                     event_type,
                                     actor,
                                     request_id,
@@ -557,6 +568,7 @@ fn spawn_backend_worker(
                                     active_connection_id,
                                     lobby_enabled,
                                     preset,
+                                    agenda_summary,
                                     members,
                                 }
                             }
@@ -564,6 +576,7 @@ fn spawn_backend_worker(
                                 room,
                                 connection_id,
                                 role,
+                                ui_role,
                             } => {
                                 write_session_log(
                                     notification_log_ctx.as_ref(),
@@ -576,6 +589,7 @@ fn spawn_backend_worker(
                                     room,
                                     connection_id,
                                     role,
+                                    ui_role,
                                 }
                             }
                             ServerNotification::Suggestion { sender, text, .. } => {
@@ -639,12 +653,47 @@ fn spawn_backend_worker(
                             .and_then(|caps| caps.pointer("/multiplayer/role"))
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
+                        let multiplayer_ui_role = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/uiRole"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let multiplayer_mode = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/mode"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let multiplayer_connection_id = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/connectionId"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let multiplayer_display_name = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/displayName"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let multiplayer_approval_state = init
+                            .capabilities
+                            .as_ref()
+                            .and_then(|caps| caps.pointer("/multiplayer/approvalState"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         let _ = tx_init.send(ServerMsg::Initialized {
                             provider: prov,
                             model: mdl,
                             version: init.version.unwrap_or_else(|| "0.4.0".into()),
                             multiplayer_room,
                             multiplayer_role,
+                            multiplayer_ui_role,
+                            multiplayer_mode,
+                            multiplayer_connection_id,
+                            multiplayer_display_name,
+                            multiplayer_approval_state,
                         });
                         run_rpc_worker(client, rpc_cmd_rx);
                     }
@@ -2012,16 +2061,16 @@ const ONBOARDING_STEPS: &[OnboardingStep] = &[
         try_now: "/service status",
     },
     OnboardingStep {
-        title: "Host Multiplayer Sessions",
-        objective: "Start a room, invite collaborators, and manage member access from host mode.",
+        title: "Run Collaboration Sessions",
+        objective: "Start a mob or review room, invite collaborators, and keep the session moving with handoff and agenda commands.",
         commands: &[
-            "/host-server",
-            "/host-server members [room]",
-            "/host-server kick <connection-id> [room]",
-            "/host-server role <connection-id> <viewer|prompter> [room]",
-            "/join-server <code>",
+            "/collab start mob",
+            "/collab join <invite-code>",
+            "/collab members",
+            "/collab handoff next",
+            "/collab agenda add <text>",
         ],
-        try_now: "/host-server",
+        try_now: "/collab start mob",
     },
     OnboardingStep {
         title: "Daily Coding Workflow",
@@ -2197,7 +2246,7 @@ fn format_host_server_payload(payload: &Value) -> String {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if !running {
-        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+        return "No collaboration host is running.\nUse `/collab start mob` or `/host-server` to start one.".to_string();
     }
 
     let created = payload
@@ -2328,7 +2377,7 @@ fn format_host_share_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if !running {
-        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+        return "No collaboration host is running.\nUse `/collab start mob` or `/host-server` to start one.".to_string();
     }
 
     let rooms = payload
@@ -2505,7 +2554,7 @@ fn format_host_members_payload(payload: &Value) -> String {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if !running {
-        return "No multiplayer host is running.\nUse `/host-server` to start one.".to_string();
+        return "No collaboration host is running.\nUse `/collab start mob` or `/host-server` to start one.".to_string();
     }
 
     let rooms = payload
@@ -2612,45 +2661,181 @@ fn format_room_members_payload(payload: &Value) -> String {
         .get("room")
         .and_then(|value| value.as_str())
         .unwrap_or("unknown");
+    let mode = payload
+        .get("mode")
+        .and_then(|value| value.as_str())
+        .unwrap_or("pair");
+    let agenda_summary = payload
+        .get("agendaSummary")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let agenda_open = agenda_summary
+        .get("open")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let agenda_total = agenda_summary
+        .get("total")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let hands_raised = payload
+        .get("handsRaised")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     let members = payload
         .get("members")
         .and_then(|value| value.as_array())
         .cloned()
         .unwrap_or_default();
 
-    if members.is_empty() {
-        return format!("No members connected in room `{room}`.");
+    let mut lines = vec![
+        format!("**Collaboration Status** room `{room}`"),
+        format!("- Mode: `{mode}`"),
+        format!("- Members: {}", members.len()),
+    ];
+    if agenda_total > 0 {
+        lines.push(format!(
+            "- Agenda: {agenda_open} open / {agenda_total} total"
+        ));
+    }
+    if !hands_raised.is_empty() {
+        let raised = hands_raised
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !raised.is_empty() {
+            lines.push(format!("- Hands raised: {raised}"));
+        }
     }
 
-    let mut lines = vec![format!("**Room Members** `{room}` ({})", members.len())];
+    if members.is_empty() {
+        lines.push("- No members connected".to_string());
+        return lines.join("\n");
+    }
+
+    lines.push(String::new());
+    lines.push("**Members**".to_string());
     for member in members {
         let connection_id = member
             .get("connection_id")
+            .or_else(|| member.get("connectionId"))
             .and_then(|value| value.as_str())
             .unwrap_or("unknown");
+        let display_name = member
+            .get("display_name")
+            .or_else(|| member.get("displayName"))
+            .and_then(|value| value.as_str())
+            .unwrap_or(connection_id);
         let role = member
-            .get("role")
+            .get("ui_role")
+            .or_else(|| member.get("uiRole"))
+            .or_else(|| member.get("role"))
             .and_then(|value| value.as_str())
             .unwrap_or("unknown");
-        let connected_at = member
-            .get("connected_at")
-            .and_then(|value| value.as_f64())
-            .map(|value| format!("{value:.0}"))
-            .unwrap_or_else(|| "-".to_string());
-        let last_active = member
-            .get("last_active")
-            .and_then(|value| value.as_f64())
-            .map(|value| format!("{value:.0}"))
-            .unwrap_or_else(|| "-".to_string());
+        let approval_state = member
+            .get("approval_state")
+            .or_else(|| member.get("approvalState"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("approved");
         let active_prompter = member
             .get("is_active_prompter")
+            .or_else(|| member.get("active"))
             .and_then(|value| value.as_bool())
             .unwrap_or(false);
-        let active_marker = if active_prompter { " *active" } else { "" };
+        let hand_raised = member
+            .get("hand_raised")
+            .or_else(|| member.get("handRaised"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let queue_position = member
+            .get("queue_position")
+            .or_else(|| member.get("queuePosition"))
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+
+        let mut tags = vec![format!("role=`{role}`")];
+        if active_prompter {
+            tags.push("active".to_string());
+        }
+        if approval_state != "approved" {
+            tags.push(format!("approval=`{approval_state}`"));
+        }
+        if hand_raised {
+            if queue_position > 0 {
+                tags.push(format!("hand-raised#{}", queue_position));
+            } else {
+                tags.push("hand-raised".to_string());
+            }
+        }
         lines.push(format!(
-            "- `{connection_id}` role=`{role}`{active_marker} connected_at={connected_at} last_active={last_active}"
+            "- `{display_name}` (`{connection_id}`) {}",
+            tags.join(" ")
         ));
     }
+    lines.join("\n")
+}
+
+fn format_agenda_payload(payload: &Value) -> String {
+    let room = payload
+        .get("room")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let agenda_summary = payload
+        .get("agendaSummary")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let agenda_open = agenda_summary
+        .get("open")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let agenda_total = agenda_summary
+        .get("total")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let items = payload
+        .get("items")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut lines = vec![format!("**Shared Agenda** room `{room}`")];
+    if agenda_total > 0 {
+        lines.push(format!("- {agenda_open} open / {agenda_total} total"));
+    }
+    if items.is_empty() {
+        lines.push("- No agenda items yet".to_string());
+        return lines.join("\n");
+    }
+
+    for item in items {
+        let item_id = item
+            .get("id")
+            .and_then(|value| value.as_u64())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "?".to_string());
+        let text = item
+            .get("text")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(untitled)");
+        let author = item
+            .get("author")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let resolved = item
+            .get("resolved")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let status = if resolved { "done" } else { "open" };
+        if author.is_empty() {
+            lines.push(format!("- #{item_id} [{status}] {text}"));
+        } else {
+            lines.push(format!("- #{item_id} [{status}] {text} ({author})"));
+        }
+    }
+
     lines.join("\n")
 }
 
@@ -4454,6 +4639,96 @@ fn rpc_suggest_text_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(10))
         .map_err(|_| "Timed out waiting for suggest response".to_string())?
+}
+
+fn rpc_add_agenda_item_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    text: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::AddAgendaItem {
+            text: text.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to add agenda item: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for agenda add response".to_string())?
+}
+
+fn rpc_list_agenda_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+    include_resolved: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListAgenda {
+            room: room.map(|value| value.to_string()),
+            include_resolved,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to list agenda: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for agenda list response".to_string())?
+}
+
+fn rpc_resolve_agenda_item_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    item_id: &str,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ResolveAgendaItem {
+            item_id: item_id.to_string(),
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to resolve agenda item: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for agenda resolve response".to_string())?
+}
+
+fn rpc_set_hand_raised_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    raised: bool,
+    room: Option<&str>,
+    connection_id: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetHandRaised {
+            raised,
+            room: room.map(|value| value.to_string()),
+            connection_id: connection_id.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to update hand raise state: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for hand raise response".to_string())?
+}
+
+fn rpc_next_driver_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    room: Option<&str>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::NextDriver {
+            room: room.map(|value| value.to_string()),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request next driver: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(15))
+        .map_err(|_| "Timed out waiting for next driver response".to_string())?
 }
 
 fn rpc_pass_driver_blocking(

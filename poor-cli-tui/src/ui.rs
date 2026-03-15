@@ -46,7 +46,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let input_height = compute_input_height(app, frame.area().width);
     let activity_height = if show_activity_bar(app) { 1 } else { 0 };
-    let has_presence = app.pair_mode_active && !app.connected_users.is_empty();
+    let has_presence = app.multiplayer_enabled && !app.connected_users.is_empty();
     let mut constraints = Vec::new();
     if has_presence {
         constraints.push(Constraint::Length(1));
@@ -177,6 +177,7 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
         let role_color = match user.role {
             crate::app::PairRole::Driver => theme::success(mode),
             crate::app::PairRole::Navigator => theme::accent(mode),
+            crate::app::PairRole::Reviewer => theme::warning(mode),
         };
         spans.push(Span::styled(
             user.role.label().to_string(),
@@ -197,10 +198,15 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(theme::warning(mode)),
         ));
     }
-    if !app.pair_short_code.is_empty() {
+    let room_label = if !app.pair_short_code.is_empty() {
+        app.pair_short_code.as_str()
+    } else {
+        app.multiplayer_room.as_str()
+    };
+    if !room_label.is_empty() {
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
         spans.push(Span::styled(
-            format!("room:{}", app.pair_short_code),
+            format!("room:{room_label}"),
             Style::default().fg(dim),
         ));
     }
@@ -776,12 +782,17 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
     right_segments.push(format!("{workspace}{branch}"));
     let mut right = right_segments.join(" · ");
     if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
-        let role = if app.multiplayer_role.is_empty() {
+        let role = if app.multiplayer_ui_role.is_empty() {
             "?"
         } else {
-            &app.multiplayer_role
+            &app.multiplayer_ui_role
         };
-        right.push_str(&format!(" · {}/{}", app.multiplayer_room, role));
+        let mode = if app.multiplayer_mode.is_empty() {
+            "collab"
+        } else {
+            &app.multiplayer_mode
+        };
+        right.push_str(&format!(" · {}/{} ({mode})", app.multiplayer_room, role));
     }
 
     let left_candidates: Vec<String> = if app.waiting || !app.prompt_queue.is_empty() {
@@ -1857,13 +1868,23 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
     lines.push(Line::from(vec![
         Span::styled("  Press ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(
-            "Enter",
+            if app.plan_review_read_only {
+                "Enter"
+            } else {
+                "Enter"
+            },
             Style::default()
-                .fg(theme::success(mode))
+                .fg(if app.plan_review_read_only {
+                    theme::accent(mode)
+                } else {
+                    theme::success(mode)
+                })
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            if app.plan_is_execution_gate {
+            if app.plan_review_read_only {
+                " to close, "
+            } else if app.plan_is_execution_gate {
                 " to approve, "
             } else {
                 " to execute, "
@@ -1877,7 +1898,9 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            if app.plan_is_execution_gate {
+            if app.plan_review_read_only {
+                " to dismiss"
+            } else if app.plan_is_execution_gate {
                 " to reject"
             } else {
                 " to cancel"
@@ -1885,6 +1908,13 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
             Style::default().fg(theme::muted_fg(mode)),
         ),
     ]));
+    if app.plan_review_read_only {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Driver review in progress. This client is read-only for plan approval prompts.",
+            Style::default().fg(theme::warning(mode)),
+        )));
+    }
     lines.push(Line::from(""));
 
     let para = Paragraph::new(lines).block(
@@ -1955,15 +1985,19 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
     let area = centered_rect(55, 30, frame.area());
     frame.render_widget(Clear, area);
     let step = app.join_wizard_step;
-    let (step_label, prompt) = match step {
-        0 => ("1/3", "WebSocket URL (ws://host:port/rpc)"),
-        1 => ("2/3", "Room name"),
-        _ => ("3/3", "Invite token"),
+    let (step_label, prompt, hint) = match step {
+        0 => (
+            "1/1",
+            "Invite code or WebSocket URL",
+            "Paste a full invite code to join now, or enter ws://host:port/rpc for manual room + token entry.",
+        ),
+        1 => ("2/3", "Room name", "Manual join mode"),
+        _ => ("3/3", "Invite token", "Manual join mode"),
     };
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("  Join Server — Step {step_label}"),
+            format!("  Join Collaboration — Step {step_label}"),
             Style::default()
                 .fg(theme::accent(mode))
                 .add_modifier(Modifier::BOLD),
@@ -1976,6 +2010,11 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
         Line::from(Span::styled(
             format!("  > {}_", app.join_wizard_input),
             Style::default().fg(theme::accent(mode)),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  {hint}"),
+            Style::default().fg(theme::muted_fg(mode)),
         )),
     ];
     if !app.join_wizard_error.is_empty() {
@@ -2004,7 +2043,7 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
     let popup = Paragraph::new(lines).block(
         Block::default()
             .title(Span::styled(
-                " Join Server ",
+                " Join Collaboration ",
                 Style::default()
                     .fg(theme::accent(mode))
                     .add_modifier(Modifier::BOLD),

@@ -120,33 +120,38 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         recommended: true,
     },
     SlashCommandSpec {
-        command: "/pair",
-        description: "Start/join pair (status|members|kick|share when host)",
+        command: "/collab",
+        description: "Start, join, and manage collaboration sessions",
         recommended: true,
     },
     SlashCommandSpec {
+        command: "/pair",
+        description: "Legacy pair alias for collaboration sessions",
+        recommended: false,
+    },
+    SlashCommandSpec {
         command: "/pass",
-        description: "Hand driver role to next navigator",
+        description: "Hand driver role to the next collaborator",
         recommended: true,
     },
     SlashCommandSpec {
         command: "/suggest",
-        description: "Send suggestion to driver (navigator)",
+        description: "Send suggestion to the active driver",
         recommended: true,
     },
     SlashCommandSpec {
         command: "/leave",
-        description: "Disconnect from pair session",
+        description: "Disconnect from collaboration session",
         recommended: true,
     },
     SlashCommandSpec {
         command: "/host-server",
-        description: "Start/share/manage multiplayer host session",
+        description: "Legacy advanced host controls for collaboration",
         recommended: false,
     },
     SlashCommandSpec {
         command: "/join-server",
-        description: "Join multiplayer host by invite code",
+        description: "Legacy join alias for invite/manual room entry",
         recommended: false,
     },
     SlashCommandSpec {
@@ -970,13 +975,39 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
             let input = app.join_wizard_input.trim().to_string();
             match app.join_wizard_step {
                 0 => {
-                    // URL step
-                    if input.is_empty()
-                        || !(input.starts_with("ws://") || input.starts_with("wss://"))
-                    {
-                        app.join_wizard_error = "URL must start with ws:// or wss://".to_string();
+                    // Invite-first step. A raw ws:// URL falls back to manual room/token entry.
+                    if input.is_empty() {
+                        app.join_wizard_error =
+                            "Paste an invite code or enter a ws:// / wss:// URL.".to_string();
                         return InputAction::Redraw;
                     }
+
+                    if let Ok((url, room, token)) = crate::multiplayer::decode_invite_code(&input) {
+                        match crate::multiplayer::preflight_join_endpoint(&url) {
+                            Ok(_) => {
+                                app.join_wizard_active = false;
+                                app.join_wizard_step = 0;
+                                app.join_wizard_url.clear();
+                                app.join_wizard_room.clear();
+                                app.join_wizard_input.clear();
+                                app.join_wizard_error.clear();
+                                app.mode = AppMode::Normal;
+                                return InputAction::JoinWizardComplete(url, room, token);
+                            }
+                            Err(e) => {
+                                app.join_wizard_error = format!("Preflight failed: {e}");
+                                return InputAction::Redraw;
+                            }
+                        }
+                    }
+
+                    if !(input.starts_with("ws://") || input.starts_with("wss://")) {
+                        app.join_wizard_error =
+                            "Enter an invite code or a URL starting with ws:// or wss://."
+                                .to_string();
+                        return InputAction::Redraw;
+                    }
+
                     match crate::multiplayer::preflight_join_endpoint(&input) {
                         Ok(_) => {
                             app.join_wizard_url = input;
@@ -1536,11 +1567,19 @@ fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Enter => {
             app.mode = AppMode::Normal;
-            InputAction::PlanApproved
+            if app.plan_review_read_only {
+                InputAction::Redraw
+            } else {
+                InputAction::PlanApproved
+            }
         }
         KeyCode::Esc | KeyCode::Char('q') => {
             app.mode = AppMode::Normal;
-            InputAction::PlanCancelled
+            if app.plan_review_read_only {
+                InputAction::Redraw
+            } else {
+                InputAction::PlanCancelled
+            }
         }
         _ => InputAction::None,
     }
@@ -1784,6 +1823,7 @@ mod tests {
     #[test]
     fn known_command_match_is_case_insensitive() {
         assert!(is_known_slash_command("/HeLp"));
+        assert!(is_known_slash_command("/CoLlAb"));
     }
 
     #[test]
@@ -1800,6 +1840,12 @@ mod tests {
     #[test]
     fn closest_command_rejects_distant_typo() {
         assert_eq!(closest_slash_command("/zzzzzz"), None);
+    }
+
+    #[test]
+    fn command_palette_includes_collab() {
+        let matches = command_palette_matches("/col");
+        assert!(matches.iter().any(|spec| spec.command == "/collab"));
     }
 
     #[test]

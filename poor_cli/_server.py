@@ -382,6 +382,11 @@ class PoorCLIServer:
             "poor-cli/pairStart": self.handle_pair_start,
             "poor-cli/suggestText": self.handle_suggest_text,
             "poor-cli/passDriver": self.handle_pass_driver,
+            "poor-cli/addAgendaItem": self.handle_add_agenda_item,
+            "poor-cli/listAgenda": self.handle_list_agenda,
+            "poor-cli/resolveAgendaItem": self.handle_resolve_agenda_item,
+            "poor-cli/setHandRaised": self.handle_set_hand_raised,
+            "poor-cli/nextDriver": self.handle_next_driver,
         }
 
     # =========================================================================
@@ -2110,6 +2115,9 @@ class PoorCLIServer:
         member_count_by_room: Dict[str, int] = {}
         lobby_by_room: Dict[str, bool] = {}
         preset_by_room: Dict[str, str] = {}
+        mode_by_room: Dict[str, str] = {}
+        agenda_summary_by_room: Dict[str, Dict[str, Any]] = {}
+        hands_raised_by_room: Dict[str, int] = {}
         if hasattr(self._host_server, "list_room_members"):
             with contextlib.suppress(Exception):
                 member_snapshots = self._host_server.list_room_members(None)
@@ -2126,6 +2134,14 @@ class PoorCLIServer:
                             member_count_by_room[room_name] = 0
                         lobby_by_room[room_name] = bool(room_entry.get("lobbyEnabled", False))
                         preset_by_room[room_name] = str(room_entry.get("preset", "pairing"))
+                        mode_by_room[room_name] = str(room_entry.get("mode", "pair"))
+                        agenda_summary_by_room[room_name] = dict(
+                            room_entry.get("agendaSummary", {}) or {}
+                        )
+                        try:
+                            hands_raised_by_room[room_name] = int(room_entry.get("handsRaised", 0))
+                        except (TypeError, ValueError):
+                            hands_raised_by_room[room_name] = 0
 
         rooms: List[Dict[str, Any]] = []
         for room_name in sorted(tokens.keys()):
@@ -2164,6 +2180,9 @@ class PoorCLIServer:
                     "memberCount": member_count_by_room.get(room_name, 0),
                     "lobbyEnabled": lobby_by_room.get(room_name, False),
                     "preset": preset_by_room.get(room_name, "pairing"),
+                    "mode": mode_by_room.get(room_name, "pair"),
+                    "agendaSummary": agenda_summary_by_room.get(room_name, {}),
+                    "handsRaised": hands_raised_by_room.get(room_name, 0),
                 }
             )
 
@@ -2350,6 +2369,19 @@ class PoorCLIServer:
             return "prompter"
         raise InvalidParamsError("role must be one of: viewer, prompter")
 
+    def _resolve_host_member_reference_locked(self, room_name: str, reference: str) -> str:
+        normalized = str(reference or "").strip()
+        if not normalized:
+            raise InvalidParamsError("Missing connectionId")
+        host = self._host_server
+        if host is None:
+            raise InvalidParamsError("No multiplayer host is currently running")
+        if hasattr(host, "resolve_room_member_reference"):
+            resolved = host.resolve_room_member_reference(room_name, normalized)
+            if resolved:
+                return resolved
+        return normalized
+
     async def handle_list_host_members(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         List connected members per room for the active in-process multiplayer host.
@@ -2399,6 +2431,7 @@ class PoorCLIServer:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
             room_name = self._resolve_host_room_name_locked(requested_room)
+            connection_id = self._resolve_host_member_reference_locked(room_name, connection_id)
             host = self._host_server
             if not hasattr(host, "remove_room_member"):
                 raise RuntimeError("Active host does not support member removal")
@@ -2440,6 +2473,7 @@ class PoorCLIServer:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
             room_name = self._resolve_host_room_name_locked(requested_room)
+            connection_id = self._resolve_host_member_reference_locked(room_name, connection_id)
             host = self._host_server
             if not hasattr(host, "set_room_member_role"):
                 raise RuntimeError("Active host does not support role updates")
@@ -2515,6 +2549,7 @@ class PoorCLIServer:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
             room_name = self._resolve_host_room_name_locked(requested_room)
+            connection_id = self._resolve_host_member_reference_locked(room_name, connection_id)
             host = self._host_server
             if not hasattr(host, "approve_room_member"):
                 raise RuntimeError("Active host does not support member approvals")
@@ -2553,6 +2588,7 @@ class PoorCLIServer:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
             room_name = self._resolve_host_room_name_locked(requested_room)
+            connection_id = self._resolve_host_member_reference_locked(room_name, connection_id)
             host = self._host_server
             if not hasattr(host, "deny_room_member"):
                 raise RuntimeError("Active host does not support member denial")
@@ -2665,13 +2701,14 @@ class PoorCLIServer:
             host = self._host_server
 
             removed_member = False
+            resolved_value = self._resolve_host_member_reference_locked(room_name, value)
             if hasattr(host, "remove_room_member"):
-                removed_member = await host.remove_room_member(room_name, value)
+                removed_member = await host.remove_room_member(room_name, resolved_value)
                 if removed_member:
                     return {
                         "success": True,
                         "room": room_name,
-                        "connectionId": value,
+                        "connectionId": resolved_value,
                         "removed": True,
                         "kind": "member",
                     }
@@ -2714,6 +2751,7 @@ class PoorCLIServer:
                 raise InvalidParamsError("No multiplayer host is currently running")
 
             room_name = self._resolve_host_room_name_locked(requested_room)
+            connection_id = self._resolve_host_member_reference_locked(room_name, connection_id)
             host = self._host_server
             if not hasattr(host, "handoff_room_prompter"):
                 raise RuntimeError("Active host does not support role handoff")
@@ -2769,9 +2807,166 @@ class PoorCLIServer:
         }
 
     async def handle_suggest_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Local no-op for suggest text — bridge mode routes to host directly."""
-        del params
+        """Suggest text in local host mode; review rooms promote suggestions into agenda."""
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+        text = str(params.get("text", "")).strip()
+        if not text:
+            raise InvalidParamsError("text is required")
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                return {"success": True, "local": True}
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            room = host.rooms.get(room_name) if hasattr(host, "rooms") else None
+            if room is not None and room.preset == "review" and hasattr(host, "add_room_agenda_item"):
+                item = await host.add_room_agenda_item(room_name, text, author="host")
+                return {
+                    "success": True,
+                    "room": room_name,
+                    "mode": "agenda",
+                    "item": item,
+                    "agendaSummary": host.list_room_members(room_name)[0].get("agendaSummary", {}),
+                }
         return {"success": True, "local": True}
+
+    async def handle_add_agenda_item(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+        text = str(params.get("text", "")).strip()
+        if not text:
+            raise InvalidParamsError("text is required")
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "add_room_agenda_item"):
+                raise RuntimeError("Active host does not support agenda items")
+            item = await host.add_room_agenda_item(
+                room_name,
+                text,
+                author=str(params.get("author", "host")).strip() or "host",
+            )
+            if item is None:
+                raise InvalidParamsError(f"Unknown room `{room_name}`")
+            room_payload = host.list_room_members(room_name) if hasattr(host, "list_room_members") else []
+            agenda_summary = {}
+            if room_payload and isinstance(room_payload, list):
+                agenda_summary = dict(room_payload[0].get("agendaSummary", {}) or {})
+            return {
+                "success": True,
+                "room": room_name,
+                "item": item,
+                "agendaSummary": agenda_summary,
+            }
+
+    async def handle_list_agenda(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+        include_resolved = bool(params.get("includeResolved", True))
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "list_room_agenda"):
+                raise RuntimeError("Active host does not support agenda items")
+            items = host.list_room_agenda(room_name, include_resolved=include_resolved)
+            agenda_summary = {}
+            if hasattr(host, "list_room_members"):
+                room_payload = host.list_room_members(room_name)
+                if room_payload and isinstance(room_payload, list):
+                    agenda_summary = dict(room_payload[0].get("agendaSummary", {}) or {})
+            return {
+                "room": room_name,
+                "items": items,
+                "agendaSummary": agenda_summary,
+            }
+
+    async def handle_resolve_agenda_item(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+        item_id = str(params.get("itemId", params.get("id", ""))).strip()
+        if not item_id:
+            raise InvalidParamsError("itemId is required")
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "resolve_room_agenda_item"):
+                raise RuntimeError("Active host does not support agenda items")
+            item = await host.resolve_room_agenda_item(
+                room_name,
+                item_id,
+                resolved_by=str(params.get("resolvedBy", "host")).strip() or "host",
+            )
+            if item is None:
+                raise InvalidParamsError(f"Agenda item `{item_id}` was not found in room `{room_name}`")
+            agenda_summary = {}
+            if hasattr(host, "list_room_members"):
+                room_payload = host.list_room_members(room_name)
+                if room_payload and isinstance(room_payload, list):
+                    agenda_summary = dict(room_payload[0].get("agendaSummary", {}) or {})
+            return {
+                "success": True,
+                "room": room_name,
+                "item": item,
+                "agendaSummary": agenda_summary,
+            }
+
+    async def handle_set_hand_raised(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+        connection_id = str(params.get("connectionId", "")).strip()
+        if not connection_id:
+            raise InvalidParamsError("connectionId is required in local host mode")
+        raised = bool(params.get("raised", True))
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            connection_id = self._resolve_host_member_reference_locked(room_name, connection_id)
+            host = self._host_server
+            if not hasattr(host, "set_room_member_hand_raised"):
+                raise RuntimeError("Active host does not support hand raise state")
+            result = await host.set_room_member_hand_raised(room_name, connection_id, raised)
+            if result is None:
+                raise InvalidParamsError(
+                    f"Connection `{connection_id}` was not found in room `{room_name}`"
+                )
+            return {
+                "success": True,
+                "room": room_name,
+                **result,
+            }
+
+    async def handle_next_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_initialized()
+        requested_room = str(params.get("room", "")).strip()
+
+        async with self._get_host_server_lock():
+            if self._host_server is None:
+                raise InvalidParamsError("No multiplayer host is currently running")
+            room_name = self._resolve_host_room_name_locked(requested_room)
+            host = self._host_server
+            if not hasattr(host, "handoff_next_driver"):
+                raise RuntimeError("Active host does not support next-driver handoff")
+            connection_id = await host.handoff_next_driver(room_name)
+            if connection_id is None:
+                raise InvalidParamsError("No eligible member found to receive driver role")
+            return {
+                "success": True,
+                "room": room_name,
+                "connectionId": connection_id,
+                "handoff": True,
+            }
 
     async def handle_pass_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve display name to connection ID and hand off prompter role."""
@@ -2781,40 +2976,9 @@ class PoorCLIServer:
         connection_id = str(params.get("connectionId", "")).strip()
         requested_room = str(params.get("room", "")).strip()
         if not connection_id and not display_name:
-            async with self._get_host_server_lock():
-                if self._host_server is None:
-                    raise InvalidParamsError("No multiplayer host is currently running")
-                room_name = self._resolve_host_room_name_locked(requested_room)
-                host = self._host_server
-                if not hasattr(host, "rooms"):
-                    raise RuntimeError("Host does not expose rooms")
-                room = host.rooms.get(room_name)
-                if room is None:
-                    raise InvalidParamsError(f"Unknown room: {room_name}")
-                prompters = [m for m in room.members.values() if m.role == "prompter"]
-                if not prompters:
-                    raise InvalidParamsError("No current driver found")
-                others = [m for m in room.members.values() if m.role != "prompter"]
-                if not others:
-                    raise InvalidParamsError("No other members to pass to")
-                target = others[0]
-                connection_id = target.connection_id
+            return await self.handle_next_driver({"room": requested_room})
         if not connection_id and display_name:
-            async with self._get_host_server_lock():
-                if self._host_server is None:
-                    raise InvalidParamsError("No multiplayer host is currently running")
-                room_name = self._resolve_host_room_name_locked(requested_room)
-                host = self._host_server
-                room = host.rooms.get(room_name) if hasattr(host, "rooms") else None
-                if room is None:
-                    raise InvalidParamsError(f"Unknown room: {room_name}")
-                for member in room.members.values():
-                    name = member.client_name or member.connection_id
-                    if name.lower() == display_name.lower():
-                        connection_id = member.connection_id
-                        break
-                if not connection_id:
-                    raise InvalidParamsError(f"No member with name `{display_name}` found")
+            connection_id = display_name
         return await self.handle_handoff_host_member({
             "connectionId": connection_id,
             "room": requested_room,
