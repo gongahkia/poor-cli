@@ -285,46 +285,6 @@ fn ellipsize_middle(value: &str, max_chars: usize) -> String {
     format!("{head}…{tail}")
 }
 
-fn pad_to_width(value: &str, width: usize) -> String {
-    let padding = width.saturating_sub(value.chars().count());
-    format!("{value}{}", " ".repeat(padding))
-}
-
-fn build_welcome_card(lines: &[String], mode: ThemeMode) -> Vec<Line<'static>> {
-    let border_style = Style::default().fg(theme::muted_fg(mode));
-    let width = lines
-        .iter()
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or(0);
-    let mut rendered = Vec::new();
-
-    rendered.push(Line::from(Span::styled(
-        format!("  ╭{}╮", "─".repeat(width + 2)),
-        border_style,
-    )));
-
-    for (idx, line) in lines.iter().enumerate() {
-        let content_style = match idx {
-            0 => theme::brand_style(mode),
-            2 => Style::default().fg(theme::base_fg(mode)),
-            3 => Style::default().fg(theme::muted_fg(mode)),
-            _ => Style::default().fg(theme::base_fg(mode)),
-        };
-        rendered.push(Line::from(vec![
-            Span::styled("  │ ", border_style),
-            Span::styled(pad_to_width(line, width), content_style),
-            Span::styled(" │", border_style),
-        ]));
-    }
-
-    rendered.push(Line::from(Span::styled(
-        format!("  ╰{}╯", "─".repeat(width + 2)),
-        border_style,
-    )));
-    rendered
-}
-
 // ── Chat area ────────────────────────────────────────────────────────
 
 fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
@@ -432,26 +392,38 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
         match &msg.role {
             MessageRole::Welcome => {
                 let lines: Vec<String> = msg.content.lines().map(ToString::to_string).collect();
-                let card_lines = lines.iter().take(4).cloned().collect::<Vec<_>>();
                 let extra_lines = lines
                     .iter()
-                    .skip(4)
+                    .skip(3)
                     .skip_while(|line| line.trim().is_empty())
                     .cloned()
                     .collect::<Vec<_>>();
 
-                if !card_lines.is_empty() {
-                    all_lines.extend(build_welcome_card(&card_lines, mode));
+                if let Some(title) = lines.first() {
+                    all_lines.push(Line::from(vec![
+                        Span::styled("  ▣ ", Style::default().fg(theme::accent(mode))),
+                        Span::styled(title.clone(), theme::brand_style(mode)),
+                    ]));
+                }
+                if let Some(model_line) = lines.get(1) {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("    {model_line}"),
+                        Style::default().fg(theme::base_fg(mode)),
+                    )));
+                }
+                if let Some(workspace_line) = lines.get(2) {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("    {workspace_line}"),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
                 }
                 for line in extra_lines {
                     let style = if line.starts_with('?') {
-                        Style::default()
-                            .fg(theme::muted_fg(mode))
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(theme::warning(mode))
                     } else {
                         Style::default().fg(theme::muted_fg(mode))
                     };
-                    all_lines.push(Line::from(Span::styled(format!("  {line}"), style)));
+                    all_lines.push(Line::from(Span::styled(format!("    {line}"), style)));
                 }
             }
             MessageRole::User => {
@@ -775,27 +747,24 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         app.model_name.clone()
     };
+    let branch = if app.git_branch.is_empty() {
+        String::new()
+    } else if app.git_dirty {
+        format!(" ({})", format!("{}*", app.git_branch))
+    } else {
+        format!(" ({})", app.git_branch)
+    };
     let workspace = if app.cwd.trim().is_empty() {
         "~".to_string()
     } else {
         ellipsize_middle(&app.cwd, 28)
     };
-
-    let context_right = if app.context_budget_tokens > 0 {
-        let used = app
-            .context_budget_estimated_tokens
-            .min(app.context_budget_tokens);
-        let left = app.context_budget_tokens.saturating_sub(used);
-        let pct = ((left * 100) + (app.context_budget_tokens / 2)) / app.context_budget_tokens;
-        format!("{pct}% context left")
-    } else {
-        "context unknown".to_string()
-    };
     let mut right = format!(
-        "{} · {} · {}",
+        "{} · {} · {}{}",
         ellipsize_middle(&model, 24),
-        context_right,
-        workspace
+        app.permission_mode_label,
+        workspace,
+        branch
     );
     if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
         let role = if app.multiplayer_role.is_empty() {
@@ -807,11 +776,11 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let left_candidates: Vec<String> = if app.waiting || !app.prompt_queue.is_empty() {
-        vec!["tab to queue message".to_string()]
+        vec!["Tab to queue message".to_string()]
     } else if app.input_buffer.trim().is_empty() {
         vec!["? for shortcuts".to_string()]
     } else {
-        vec!["shift + enter for newline".to_string()]
+        vec!["Shift+Enter for newline".to_string()]
     };
 
     let mut chosen_left: Option<String> = None;

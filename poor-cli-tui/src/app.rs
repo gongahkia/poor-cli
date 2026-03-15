@@ -1183,13 +1183,14 @@ impl App {
             )
         };
         format!(
-            ">_ poor-cli (v{version})\n\
-            \n\
-            model:     {model_display}   /switch to change\n\
-            directory: {workspace}\n\n\
+            "poor-cli Code v{version}\n\
+            {model_display} · {provider} · {permission_mode}\n\
+            {workspace}\n\n\
             ? for shortcuts{last_session_line}",
             version = self.version,
             model_display = model_display,
+            provider = self.provider_name,
+            permission_mode = self.permission_mode_label,
             workspace = workspace,
             last_session_line = last_session_line,
         )
