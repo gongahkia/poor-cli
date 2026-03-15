@@ -4630,6 +4630,22 @@ mod tests {
     }
 
     #[test]
+    fn join_server_parser_accepts_base64_invite_code() {
+        let parsed = multiplayer::parse_join_server_args(
+            "/join-server d3M6Ly8xMjcuMC4wLjE6ODc2NS9ycGN8ZGV2fHRvay1hYmM",
+        )
+        .expect("base64 invite code should parse");
+        assert_eq!(
+            parsed,
+            (
+                "ws://127.0.0.1:8765/rpc".to_string(),
+                "dev".to_string(),
+                "tok-abc".to_string(),
+            )
+        );
+    }
+
+    #[test]
     fn join_server_parser_accepts_explicit_triplet() {
         let parsed =
             multiplayer::parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")

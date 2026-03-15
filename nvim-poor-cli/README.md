@@ -14,6 +14,8 @@
 - ⚡ **Streaming Responses** - Real-time AI output
 - 🎯 **Context-Aware** - Uses open buffers as context
 - 🩺 **Inline Diagnostics** - Optional file:line suggestions as Neovim diagnostics
+- ✅ **Guarded Plan Review** - Approve or reject backend execution plans from Neovim
+- 🤝 **Remote Multiplayer Bridge** - Pair-session status, role updates, room events, and driver suggestions
 - 🔐 **BYOK** - Bring Your Own Key, no subscription needed
 
 ## 📦 Installation
@@ -93,6 +95,14 @@ require("poor-cli").setup({
     -- AI Provider (nil = auto-detect from environment)
     provider = nil,     -- "gemini", "openai", "anthropic", "ollama"
     model = nil,        -- Specific model name
+
+    -- Optional remote multiplayer bridge
+    multiplayer = {
+        enabled = false,
+        url = nil,
+        room = nil,
+        token = nil,
+    },
     
     -- Auto-completion
     auto_trigger = false,   -- Auto-trigger on CursorHoldI
@@ -126,7 +136,7 @@ require("poor-cli").setup({
 |---------|-------------|
 | `:PoorCliStart` | Start the AI server |
 | `:PoorCliStop` | Stop the AI server |
-| `:PoorCliStatus` | Show server status and provider info |
+| `:PoorCliStatus` | Show provider info, guarded-flow support, and room status |
 | `:PoorCliChat` | Toggle chat panel |
 | `:PoorCliSend [message]` | Send message to chat |
 | `:PoorCliClear` | Clear chat history |
@@ -144,6 +154,35 @@ require("poor-cli").setup({
 ### Health Check
 
 Run `:checkhealth poor-cli` to verify your setup.
+
+## Guarded Execution
+
+When the backend requests plan review, the plugin opens the chat panel, shows the plan summary, and prompts through `vim.ui.select()` for `Approve` or `Reject`. Permission reviews use the same backend RPC path and are surfaced through notifications.
+
+## Remote Multiplayer Bridge
+
+Configure the plugin to attach to an existing host room:
+
+```lua
+require("poor-cli").setup({
+    multiplayer = {
+        enabled = true,
+        url = "ws://HOST:8765/rpc",
+        room = "dev",
+        token = "<viewer-or-prompter-token>",
+    },
+})
+```
+
+What Neovim currently supports:
+- joining an existing room through the stdio bridge
+- room/member state updates in `:PoorCliStatus`
+- plan review prompts, room events, and suggestions in the chat panel
+
+What remains TUI-first:
+- creating/stopping host sessions
+- advanced room admin commands (`/host-server ...`)
+- direct `/pass` and `/pair` command UX inside Neovim
 
 ## 🔧 API
 
@@ -181,6 +220,18 @@ poor_cli.send("Hello!")  -- Send message to chat
 2. Check server status: `:PoorCliStatus`
 3. Enable debug mode: `require("poor-cli").setup({ debug = true })`
 4. Check `:messages` for errors
+
+### Plan review prompt not appearing
+
+1. Check that the server initialized successfully with `:PoorCliStatus`
+2. Ensure your `vim.ui.select()` provider is working
+3. Open the chat panel and inspect `:messages` for RPC errors
+
+### Multiplayer room state missing
+
+1. Confirm `multiplayer.enabled = true` and that `url`, `room`, and `token` are all set
+2. Check `:PoorCliStatus` for room, role, and member count
+3. Verify the remote host `/rpc` endpoint is reachable from Neovim
 
 ### Ghost text not visible
 

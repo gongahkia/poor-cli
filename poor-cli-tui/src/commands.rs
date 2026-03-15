@@ -316,9 +316,9 @@ Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
 **Collaboration:**\n\
   /pair                Start pair session (host) or join with invite code\n\
   /pair <invite-code>  Join a pair session using invite code\n\
-  /pass                Hand driver role to next navigator\n\
+  /pass                Hand driver role to next eligible participant\n\
   /pass @name          Hand driver role to specific person\n\
-  /suggest <text>      Send suggestion to driver (navigator)\n\
+  /suggest <text>      Send suggestion to the active driver\n\
   /leave               Disconnect from pair session\n\
   /who [room]          Show connected users and roles\n\
   /host-server ...     Start/share/manage host session (advanced)\n\
@@ -2880,7 +2880,7 @@ Context Window: {max_context} tokens\n\n\
         show_command_info_popup(
             app,
             raw,
-            "Usage: /suggest <text>\nSend a suggestion visible to the driver.".to_string(),
+            "Usage: /suggest <text>\nSend a suggestion visible only to the active driver.".to_string(),
         );
         return false;
     }
