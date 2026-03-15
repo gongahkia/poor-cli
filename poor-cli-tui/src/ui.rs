@@ -860,7 +860,7 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
         .max(1);
     let area = Rect::new(x, y, width, palette_height);
 
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let selected_index = app
         .command_match_index
@@ -920,7 +920,7 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
 fn draw_provider_select(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(50, 60, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let items: Vec<ListItem> = app
         .providers
@@ -1007,7 +1007,7 @@ fn annotate_copyable_items(content: &str) -> String {
 fn draw_info_popup(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(72, 72, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let title = if app.info_popup_title.trim().is_empty() {
         " Info "
@@ -1040,7 +1040,7 @@ fn draw_info_popup(frame: &mut Frame, app: &App) {
 fn draw_permission_prompt(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(60, 30, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let text = vec![
         Line::from(""),
@@ -1091,7 +1091,7 @@ fn draw_mutation_review(frame: &mut Frame, app: &App) {
     };
     let mode = app.theme_mode;
     let area = centered_rect(82, 82, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1391,7 +1391,7 @@ fn draw_context_inspector(frame: &mut Frame, app: &App) {
     };
     let mode = app.theme_mode;
     let area = centered_rect(82, 82, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let mut lines: Vec<Line<'static>> = vec![Line::from(Span::styled(
         format!(
@@ -1487,7 +1487,7 @@ fn draw_context_inspector(frame: &mut Frame, app: &App) {
 fn draw_quick_open(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(72, 70, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let query = app.quick_open.query.trim().to_lowercase();
     let filtered: Vec<_> = app
@@ -1511,40 +1511,52 @@ fn draw_quick_open(frame: &mut Frame, app: &App) {
             let style = if is_selected {
                 Style::default()
                     .fg(theme::accent(mode))
+                    .bg(theme::surface_bg(mode))
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(theme::base_fg(mode))
+                Style::default()
+                    .fg(theme::base_fg(mode))
+                    .bg(theme::elevated_bg(mode))
+            };
+            let detail_style = if is_selected {
+                Style::default()
+                    .fg(theme::base_fg(mode))
+                    .bg(theme::surface_bg(mode))
+            } else {
+                Style::default()
+                    .fg(theme::muted_fg(mode))
+                    .bg(theme::elevated_bg(mode))
             };
             ListItem::new(Line::from(vec![
                 Span::styled(if is_selected { "▸ " } else { "  " }, style),
                 Span::styled(item.label.clone(), style),
-                Span::styled(
-                    format!("  {}", item.detail),
-                    Style::default().fg(theme::muted_fg(mode)),
-                ),
+                Span::styled(format!("  {}", item.detail), detail_style),
             ]))
         })
         .collect();
 
-    let list = List::new(items).block(
-        Block::default()
-            .title(Span::styled(
-                format!(" Quick Open  query=`{}` ", app.quick_open.query),
-                Style::default()
-                    .fg(theme::accent(mode))
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme::accent(mode)))
-            .padding(Padding::new(1, 1, 1, 1)),
-    );
+    let list = List::new(items)
+        .style(Style::default().bg(theme::elevated_bg(mode)))
+        .block(
+            Block::default()
+                .style(Style::default().bg(theme::elevated_bg(mode)))
+                .title(Span::styled(
+                    format!(" Quick Open  query=`{}` ", app.quick_open.query),
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::accent(mode)))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
     frame.render_widget(list, area);
 }
 
 fn draw_timeline(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(82, 82, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
     for entry in app.timeline_entries.iter().rev() {
@@ -1645,7 +1657,7 @@ fn draw_timeline(frame: &mut Frame, app: &App) {
 fn draw_transcript_search(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(84, 84, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1806,7 +1818,7 @@ fn draw_transcript_search(frame: &mut Frame, app: &App) {
 fn draw_plan_review(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(70, 70, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
 
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(""),
@@ -1938,7 +1950,7 @@ fn draw_compact_select(frame: &mut Frame, app: &App) {
     let y = (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(x, y, popup_width, popup_height);
 
-    frame.render_widget(Clear, popup_area);
+    render_popup_surface(frame, popup_area, mode);
 
     let items: Vec<ListItem> = COMPACT_STRATEGIES
         .iter()
@@ -1983,7 +1995,7 @@ fn draw_compact_select(frame: &mut Frame, app: &App) {
 fn draw_join_wizard(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(55, 30, frame.area());
-    frame.render_widget(Clear, area);
+    render_popup_surface(frame, area, mode);
     let step = app.join_wizard_step;
     let (step_label, prompt, hint) = match step {
         0 => (
@@ -2056,6 +2068,18 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+fn render_popup_surface(frame: &mut Frame, area: Rect, mode: ThemeMode) {
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Block::default().style(
+            Style::default()
+                .fg(theme::base_fg(mode))
+                .bg(theme::elevated_bg(mode)),
+        ),
+        area,
+    );
+}
 
 /// Create a centered rectangle with percentage-based width/height.
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

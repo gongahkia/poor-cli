@@ -166,11 +166,31 @@ async def test_initialize_auth_and_viewer_denied_prompt_methods():
                 )
                 init_resp = await _ws_recv_json(ws)
                 assert init_resp["id"] == 1
-                assert init_resp["result"]["capabilities"]["multiplayer"]["role"] == "viewer"
+                multiplayer_caps = init_resp["result"]["capabilities"]["multiplayer"]
+                assert multiplayer_caps["role"] == "viewer"
+                assert multiplayer_caps["mode"] == "pair"
+                assert multiplayer_caps["uiRole"] == "navigator"
+                assert multiplayer_caps["displayName"] == "viewer-a"
+                assert multiplayer_caps["approvalState"] == "approved"
+                assert multiplayer_caps["handRaised"] is False
+                assert multiplayer_caps["queuePosition"] == 0
+                assert multiplayer_caps["agendaSummary"] == {
+                    "total": 0,
+                    "open": 0,
+                    "openItems": [],
+                }
+                assert multiplayer_caps["roomActions"]["addAgendaItem"] is True
+                assert multiplayer_caps["roomActions"]["nextDriver"] is True
 
                 # member_joined room event
                 room_event = await _ws_recv_json(ws)
                 assert room_event["method"] == "poor-cli/roomEvent"
+                assert room_event["params"]["mode"] == "pair"
+                assert room_event["params"]["agendaSummary"] == {
+                    "total": 0,
+                    "open": 0,
+                    "openItems": [],
+                }
 
                 await ws.send_json(
                     {
@@ -673,7 +693,7 @@ async def test_kick_member_rpc_disconnects_target():
                         "jsonrpc": "2.0",
                         "id": 55,
                         "method": "poor-cli/kickMember",
-                        "params": {"room": "dev", "connectionId": target_connection_id},
+                        "params": {"room": "dev", "connectionId": "#2"},
                     }
                 )
 
@@ -857,11 +877,22 @@ async def test_list_room_members_rpc_available_to_authenticated_viewer():
                 payload = await _wait_for_response_id(viewer_ws, 99)
                 result = payload.get("result", {})
                 assert result.get("room") == "dev"
+                assert result.get("mode") == "pair"
+                assert result.get("agendaSummary") == {
+                    "total": 0,
+                    "open": 0,
+                    "openItems": [],
+                }
                 members = result.get("members")
                 assert isinstance(members, list)
                 assert len(members) == 2
                 assert all("connection_id" in member for member in members)
                 assert all("role" in member for member in members)
+                assert all("ui_role" in member for member in members)
+                assert all("display_name" in member for member in members)
+                assert all("approval_state" in member for member in members)
+                assert all("hand_raised" in member for member in members)
+                assert all("queue_position" in member for member in members)
                 assert all("connected_at" in member for member in members)
                 assert all("last_active" in member for member in members)
                 assert all("is_active_prompter" in member for member in members)
@@ -941,7 +972,7 @@ async def test_prompter_join_and_pass_driver_preserve_single_active_driver():
                         "jsonrpc": "2.0",
                         "id": 3,
                         "method": "poor-cli/passDriver",
-                        "params": {"displayName": "driver-a"},
+                        "params": {"displayName": "@driver-a"},
                     }
                 )
                 pass_response = await _wait_for_response_id(second_prompter_ws, 3)
@@ -1016,7 +1047,11 @@ async def test_suggest_text_is_delivered_only_to_active_driver():
                     }
                 )
                 suggest_response = await _wait_for_response_id(viewer_ws, 3)
-                assert suggest_response["result"] == {"success": True, "delivered": 1}
+                assert suggest_response["result"] == {
+                    "success": True,
+                    "mode": "suggestion",
+                    "delivered": 1,
+                }
 
                 suggestion = await _wait_for_notification(driver_ws, "poor-cli/suggestion")
                 assert suggestion["params"]["sender"] == "navigator"
@@ -1076,6 +1111,356 @@ async def test_plan_response_notifications_are_forwarded_to_embedded_room_server
                 assert any(
                     message.method == "poor-cli/planRes"
                     for message in factory.instances[0].notification_calls
+                )
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_review_preset_converts_suggestions_to_agenda_and_blocks_non_driver_actions():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as driver_ws, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as reviewer_ws:
+                await driver_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["prompter"],
+                            "clientName": "driver-a",
+                        },
+                    }
+                )
+                _ = await _wait_for_response_id(driver_ws, 1)
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["viewer"],
+                            "clientName": "reviewer-a",
+                        },
+                    }
+                )
+                _ = await _wait_for_response_id(reviewer_ws, 2)
+                _ = await _wait_for_notification(reviewer_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+
+                assert await host.set_room_preset("dev", "review") is True
+                review_event = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+                assert review_event["params"]["eventType"] == "preset_updated"
+                assert review_event["params"]["mode"] == "review"
+                reviewer_event = await _wait_for_notification(reviewer_ws, "poor-cli/roomEvent")
+                assert reviewer_event["params"]["mode"] == "review"
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "poor-cli/listRoomMembers",
+                        "params": {"room": "dev"},
+                    }
+                )
+                members_payload = await _wait_for_response_id(reviewer_ws, 3)
+                members_result = members_payload["result"]
+                assert members_result["mode"] == "review"
+                reviewer_member = next(
+                    member
+                    for member in members_result["members"]
+                    if member["display_name"] == "reviewer-a"
+                )
+                driver_member = next(
+                    member
+                    for member in members_result["members"]
+                    if member["display_name"] == "driver-a"
+                )
+                assert reviewer_member["ui_role"] == "reviewer"
+                assert driver_member["ui_role"] == "driver"
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 4,
+                        "method": "poor-cli/planRes",
+                        "params": {"promptId": "plan-1", "allowed": True},
+                    }
+                )
+                blocked_plan = await _wait_for_response_id(reviewer_ws, 4)
+                assert blocked_plan["error"]["data"]["error_code"] == "permission_denied"
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 5,
+                        "method": "poor-cli/suggestText",
+                        "params": {"text": "add regression coverage"},
+                    }
+                )
+                agenda_added = await _wait_for_response_id(reviewer_ws, 5)
+                agenda_item = agenda_added["result"]["item"]
+                assert agenda_added["result"]["success"] is True
+                assert agenda_added["result"]["mode"] == "agenda"
+                assert agenda_added["result"]["agendaSummary"]["open"] == 1
+                assert agenda_item["text"] == "add regression coverage"
+                assert agenda_item["resolved"] is False
+
+                driver_agenda_event = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+                assert driver_agenda_event["params"]["eventType"] == "agenda_added"
+                assert driver_agenda_event["params"]["agendaSummary"]["open"] == 1
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 6,
+                        "method": "poor-cli/listAgenda",
+                        "params": {"room": "dev"},
+                    }
+                )
+                listed = await _wait_for_response_id(reviewer_ws, 6)
+                assert listed["result"]["agendaSummary"]["open"] == 1
+                assert [item["id"] for item in listed["result"]["items"]] == [agenda_item["id"]]
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 7,
+                        "method": "poor-cli/resolveAgendaItem",
+                        "params": {"itemId": agenda_item["id"]},
+                    }
+                )
+                blocked_resolve = await _wait_for_response_id(reviewer_ws, 7)
+                assert blocked_resolve["error"]["data"]["error_code"] == "permission_denied"
+
+                await driver_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 8,
+                        "method": "poor-cli/resolveAgendaItem",
+                        "params": {"itemId": agenda_item["id"]},
+                    }
+                )
+                resolved = await _wait_for_response_id(driver_ws, 8)
+                assert resolved["result"]["success"] is True
+                assert resolved["result"]["item"]["resolved"] is True
+                assert resolved["result"]["item"]["resolvedBy"] == "driver-a"
+                assert resolved["result"]["agendaSummary"]["open"] == 0
+
+                await reviewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 9,
+                        "method": "poor-cli/listAgenda",
+                        "params": {"room": "dev"},
+                    }
+                )
+                listed_after = await _wait_for_response_id(reviewer_ws, 9)
+                assert listed_after["result"]["agendaSummary"]["open"] == 0
+                assert listed_after["result"]["items"][0]["resolved"] is True
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_mob_preset_hand_raise_queue_and_next_driver_follow_queue_order():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as driver_ws, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as alice_ws, session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as bob_ws:
+                await driver_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["prompter"],
+                            "clientName": "driver-a",
+                        },
+                    }
+                )
+                driver_init = await _wait_for_response_id(driver_ws, 1)
+                driver_connection_id = driver_init["result"]["capabilities"]["multiplayer"][
+                    "connectionId"
+                ]
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+
+                await alice_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["viewer"],
+                            "clientName": "alice",
+                        },
+                    }
+                )
+                alice_init = await _wait_for_response_id(alice_ws, 2)
+                alice_connection_id = alice_init["result"]["capabilities"]["multiplayer"][
+                    "connectionId"
+                ]
+                _ = await _wait_for_notification(alice_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+
+                await bob_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["viewer"],
+                            "clientName": "bob",
+                        },
+                    }
+                )
+                bob_init = await _wait_for_response_id(bob_ws, 3)
+                bob_connection_id = bob_init["result"]["capabilities"]["multiplayer"][
+                    "connectionId"
+                ]
+                _ = await _wait_for_notification(bob_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(alice_ws, "poor-cli/roomEvent")
+
+                assert await host.set_room_preset("dev", "mob") is True
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(alice_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(bob_ws, "poor-cli/roomEvent")
+
+                await alice_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 4,
+                        "method": "poor-cli/setHandRaised",
+                        "params": {"raised": True},
+                    }
+                )
+                alice_hand = await _wait_for_response_id(alice_ws, 4)
+                assert alice_hand["result"]["handRaised"] is True
+                assert alice_hand["result"]["queuePosition"] == 1
+
+                await bob_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 5,
+                        "method": "poor-cli/setHandRaised",
+                        "params": {"raised": True},
+                    }
+                )
+                bob_hand = await _wait_for_response_id(bob_ws, 5)
+                assert bob_hand["result"]["handRaised"] is True
+                assert bob_hand["result"]["queuePosition"] == 2
+
+                await driver_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 6,
+                        "method": "poor-cli/listRoomMembers",
+                        "params": {"room": "dev"},
+                    }
+                )
+                before_handoff = await _wait_for_response_id(driver_ws, 6)
+                before_result = before_handoff["result"]
+                assert before_result["mode"] == "mob"
+                alice_member = next(
+                    member
+                    for member in before_result["members"]
+                    if member["connection_id"] == alice_connection_id
+                )
+                bob_member = next(
+                    member
+                    for member in before_result["members"]
+                    if member["connection_id"] == bob_connection_id
+                )
+                assert alice_member["queue_position"] == 1
+                assert bob_member["queue_position"] == 2
+                assert host.list_room_members("dev")[0]["handsRaised"] == 2
+
+                await driver_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 7,
+                        "method": "poor-cli/nextDriver",
+                        "params": {"room": "dev"},
+                    }
+                )
+                next_driver = await _wait_for_response_id(driver_ws, 7)
+                assert next_driver["result"]["connectionId"] == alice_connection_id
+
+                members_after_first = host.list_room_members("dev")[0]["members"]
+                assert any(
+                    member["connectionId"] == alice_connection_id and member["role"] == "prompter"
+                    for member in members_after_first
+                )
+                assert any(
+                    member["connectionId"] == driver_connection_id and member["role"] == "viewer"
+                    for member in members_after_first
+                )
+                assert any(
+                    member["connectionId"] == bob_connection_id
+                    and member["handRaised"] is True
+                    and member["queuePosition"] == 1
+                    for member in members_after_first
+                )
+
+                await alice_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 8,
+                        "method": "poor-cli/nextDriver",
+                        "params": {"room": "dev"},
+                    }
+                )
+                next_after_alice = await _wait_for_response_id(alice_ws, 8)
+                assert next_after_alice["result"]["connectionId"] == bob_connection_id
+
+                members_after_second = host.list_room_members("dev")[0]["members"]
+                assert any(
+                    member["connectionId"] == bob_connection_id and member["role"] == "prompter"
+                    for member in members_after_second
+                )
+                assert all(
+                    not (
+                        member["connectionId"] == bob_connection_id
+                        and member["handRaised"] is True
+                    )
+                    for member in members_after_second
                 )
     finally:
         await host.stop()
