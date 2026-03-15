@@ -159,6 +159,8 @@ class SecurityConfig:
         "pwd", "ls", "echo", "cat", "head", "tail",
         "grep", "find", "which", "whoami", "date"
     ])
+    trusted_roots: list = field(default_factory=lambda: [])
+    enforce_trusted_workspace: bool = True
     permission_mode: PermissionMode = PermissionMode.PROMPT
     require_permission_for_write: bool = True
     require_permission_for_bash: bool = True

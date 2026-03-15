@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from poor_cli.config import Config
+from poor_cli.exceptions import PermissionDeniedError
 from poor_cli.server import (
     PoorCLIServer,
     JsonRpcMessage,
@@ -331,6 +332,34 @@ class TestPoorCLIServer:
         callback = server.core.permission_callback
         assert callback is not None
         assert await callback("read_file", {"file_path": "x"}) is True
+
+    @pytest.mark.asyncio
+    async def test_server_callback_auto_safe_allows_only_allowlisted_bash_commands(self, server):
+        server.permission_mode = "auto-safe"
+        server.core.config = Config()
+
+        callback = server.core.permission_callback
+        assert callback is not None
+        assert await callback("bash", {"command": "pwd"}) is True
+        assert await callback("bash", {"command": "touch demo.txt"}) is False
+
+    @pytest.mark.asyncio
+    async def test_server_callback_denies_out_of_workspace_mutations(
+        self,
+        server,
+        monkeypatch,
+        tmp_path,
+    ):
+        server.permission_mode = "prompt"
+        server.core.config = Config()
+        monkeypatch.chdir(tmp_path)
+
+        callback = server.core.permission_callback
+        assert callback is not None
+        with pytest.raises(PermissionDeniedError) as exc_info:
+            await callback("write_file", {"file_path": str(tmp_path.parent / "outside.txt")})
+
+        assert "trusted workspace" in str(exc_info.value)
 
     def test_has_required_handlers(self, server):
         """Test that required handlers are registered."""
@@ -804,6 +833,28 @@ class TestPoorCLIServer:
         server.write_message_stdio.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_streaming_permission_callback_auto_safe_uses_allowlist(self, server):
+        server.initialized = True
+        server.permission_mode = "auto-safe"
+        server.core.config = Config()
+        server.write_message_stdio = AsyncMock()
+
+        allowed = await server._streaming_permission_callback(
+            "bash",
+            {"command": "pwd"},
+            {"requestId": "req-safe"},
+        )
+        denied = await server._streaming_permission_callback(
+            "bash",
+            {"command": "touch demo.txt"},
+            {"requestId": "req-unsafe"},
+        )
+
+        assert allowed == {"allowed": True, "approvedPaths": [], "approvedChunks": []}
+        assert denied == {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+        server.write_message_stdio.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_handle_preview_context_forwards_paths_and_budget(self, server):
         server.initialized = True
         server.core.preview_context = AsyncMock(
@@ -1038,6 +1089,22 @@ class TestPoorCLIServer:
 
         assert server.permission_mode == "auto-safe"
         assert result["capabilities"]["permissionMode"] == "auto-safe"
+
+    @pytest.mark.asyncio
+    async def test_initialize_reports_trusted_workspace_capabilities(
+        self,
+        server,
+        monkeypatch,
+        tmp_path,
+    ):
+        server.core.initialize = AsyncMock()
+        server.core.get_provider_info = MagicMock(return_value={"name": "gemini"})
+        monkeypatch.chdir(tmp_path)
+
+        result = await server.handle_initialize({})
+
+        assert result["capabilities"]["security"]["trustedWorkspaceBoundary"] is True
+        assert result["capabilities"]["security"]["trustedRoots"] == [str(tmp_path.resolve())]
 
     @pytest.mark.asyncio
     async def test_initialize_rejects_invalid_permission_mode(self, server):

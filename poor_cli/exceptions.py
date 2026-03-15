@@ -122,14 +122,25 @@ class PermissionDeniedError(PoorCLIError):
     """Raised when execution is blocked by permission policy."""
     ERROR_CODE = "permission_denied"
 
-    def __init__(self, tool_name: str, permission_mode: Optional[str] = None):
+    def __init__(
+        self,
+        tool_name: str,
+        permission_mode: Optional[str] = None,
+        reason: Optional[str] = None,
+    ):
         self.tool_name = tool_name
         self.permission_mode = permission_mode
+        self.reason = reason
         details = f"Tool: {tool_name}"
         if permission_mode:
             details += f"\nPermission mode: {permission_mode}"
+        if reason:
+            details += f"\nReason: {reason}"
+        message = f"Permission denied for tool '{tool_name}'"
+        if reason:
+            message = f"{message}: {reason}"
         super().__init__(
-            f"Permission denied for tool '{tool_name}'",
+            message,
             details=details,
             error_code=self.ERROR_CODE,
         )

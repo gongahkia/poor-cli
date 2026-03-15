@@ -136,7 +136,7 @@ require("poor-cli").setup({
 |---------|-------------|
 | `:PoorCliStart` | Start the AI server |
 | `:PoorCliStop` | Stop the AI server |
-| `:PoorCliStatus` | Show provider info, guarded-flow support, and room status |
+| `:PoorCliStatus` | Show provider info, guarded-flow support, trusted-workspace status, and room state |
 | `:PoorCliChat` | Toggle chat panel |
 | `:PoorCliSend [message]` | Send message to chat |
 | `:PoorCliClear` | Clear chat history |
@@ -177,6 +177,7 @@ require("poor-cli").setup({
 What Neovim currently supports:
 - joining an existing room through the stdio bridge
 - room/member state updates in `:PoorCliStatus`
+- trusted-workspace boundary visibility in `:PoorCliStatus`
 - plan review prompts, room events, and suggestions in the chat panel
 
 What remains TUI-first:

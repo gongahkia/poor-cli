@@ -111,7 +111,8 @@ $ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev --room docs
 The host prints:
 - room names
 - viewer/prompter tokens per room
-- ready-to-run join command examples
+- canonical viewer/prompter invite codes built from the externally joinable `joinWsUrl`
+- ready-to-run join command examples that can be pasted into another TUI instance
 
 ### Optional ngrok helper
 
@@ -141,11 +142,31 @@ require("poor-cli").setup({
 })
 ```
 
+Neovim remote bridge mode now supports:
+- guarded execution reviews (`planReq` -> `planRes`)
+- room presence and role updates in `:PoorCliStatus`
+- driver-targeted suggestions and room event notifications in the chat panel
+
+Host lifecycle management and advanced room admin commands remain TUI-first.
+
 ### Tunnel alternatives
 
 You can use cloudflared, Tailscale funnel, or any reverse tunnel/provider.
 Expose the host `/rpc` endpoint and pass the resulting `ws://` or `wss://` URL
 to `--remote-url` / `multiplayer.url`.
+
+## Surface Matrix
+
+| Surface | Chat + tools | Permission review | Plan review | Pair join | Pair host/admin | Room presence/status | Suggestions / handoff |
+|---|---|---|---|---|---|---|---|
+| Rust TUI (`poor-cli`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Neovim plugin (`nvim-poor-cli`) | Yes | Yes | Yes | Yes (remote bridge config) | No | Yes | Suggestions only |
+| Remote stdio bridge (`poor-cli-server --bridge`) | Transport only | Client-dependent | Client-dependent | Yes | No | Client-dependent | Client-dependent |
+
+Current install status:
+- `poor-cli-server` ships with the Python package.
+- Interactive `poor-cli` still requires either a repo checkout launcher or a separately installed `poor-cli-tui` binary.
+- In `auto-safe`, mutating tools are limited to trusted workspace roots and `bash` is restricted to allowlisted safe commands.
 
 ## Model support
 
@@ -220,7 +241,7 @@ Run `!<shell command> [| optional question]` to execute shell output and optiona
 - `/broke` - Set poor mode (terse output)
 - `/my-treat` - Set rich mode (comprehensive output)
 - `/verbose` - Toggle verbose logging
-- `/plan-mode` - Toggle experimental plan-mode flag (not yet wired to execution preview)
+- `/plan-mode` - Toggle plan-first execution guidance in the shared guarded agent loop
 - `/profile [speed|safe|deep-review]` - Execution profile control
 
 **Prompt Library, Context & Planning:**
@@ -265,6 +286,11 @@ Run `!<shell command> [| optional question]` to execute shell output and optiona
 - `/tools` - List backend tool declarations
 
 **Multiplayer Commands:**
+- `/pair` - Start a host pair session or show current pair state
+- `/pair <invite-code>` - Join a pair session from a shareable invite code
+- `/pass`, `/pass @name` - Hand driver role to the next or named eligible participant
+- `/suggest <text>` - Send a suggestion visible to the active driver
+- `/leave` - Leave the active pair session or stop the hosted pair session
 - `/host-server [room]` - Start host (or room-scoped host context)
 - `/host-server status|stop|share [viewer|prompter] [room]` - Host lifecycle/share payloads
 - `/host-server members [room]` - List host-connected members
@@ -286,7 +312,7 @@ Run `!<shell command> [| optional question]` to execute shell output and optiona
 **Neovim Commands:**
 - `:PoorCliStart`: Start the AI server
 - `:PoorCliStop`: Stop the AI server
-- `:PoorCliStatus`: Show server status
+- `:PoorCliStatus`: Show provider, guarded-flow support, trusted-workspace status, and room status when multiplayer is enabled
 - `:PoorCliChat`: Toggle chat panel
 - `:PoorCliSend [message]`: Send message to chat
 - `:PoorCliClear`: Clear chat history

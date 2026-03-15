@@ -27,6 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from .command_validator import CommandRisk, get_command_validator
 from .config import PermissionMode
 from .core import PoorCLICore, CoreEvent
 
@@ -130,6 +131,135 @@ class PoorCLIServer:
             return current
         return default
 
+    def _trusted_workspace_enabled(self) -> bool:
+        security_cfg = getattr(getattr(self.core, "config", None), "security", None)
+        if security_cfg is None:
+            return True
+        return bool(getattr(security_cfg, "enforce_trusted_workspace", True))
+
+    def _trusted_workspace_roots(self) -> List[Path]:
+        security_cfg = getattr(getattr(self.core, "config", None), "security", None)
+        roots: List[Path] = []
+        raw_roots = getattr(security_cfg, "trusted_roots", []) if security_cfg is not None else []
+        if isinstance(raw_roots, list):
+            for raw_root in raw_roots:
+                if not isinstance(raw_root, str) or not raw_root.strip():
+                    continue
+                root_path = Path(raw_root).expanduser()
+                if not root_path.is_absolute():
+                    root_path = Path.cwd() / root_path
+                roots.append(root_path.resolve())
+        if not roots:
+            roots.append(Path.cwd().resolve())
+
+        deduped: List[Path] = []
+        seen = set()
+        for root in roots:
+            key = str(root)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(root)
+        return deduped
+
+    @staticmethod
+    def _path_is_within_root(candidate: Path, root: Path) -> bool:
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    def _path_is_trusted(self, raw_path: str) -> bool:
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        resolved = candidate.resolve()
+        return any(
+            self._path_is_within_root(resolved, root)
+            for root in self._trusted_workspace_roots()
+        )
+
+    def _trusted_workspace_reason(self) -> str:
+        roots = ", ".join(str(root) for root in self._trusted_workspace_roots())
+        return f"requested mutation falls outside trusted workspace roots ({roots})"
+
+    def _mutation_paths_for_tool(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
+        preview = preview or {}
+        key_map = {
+            "write_file": ("file_path",),
+            "edit_file": ("file_path",),
+            "delete_file": ("file_path",),
+            "copy_file": ("source", "destination"),
+            "move_file": ("source", "destination"),
+            "create_directory": ("path",),
+            "json_yaml_edit": ("file_path",),
+            "format_and_lint": ("path",),
+        }
+        if tool_name == "apply_patch_unified":
+            preview_paths = preview.get("paths")
+            if isinstance(preview_paths, list):
+                return [str(path).strip() for path in preview_paths if str(path).strip()]
+            base_path = str(tool_args.get("path", "")).strip()
+            return [base_path] if base_path else []
+
+        keys = key_map.get(tool_name, ())
+        paths: List[str] = []
+        for key in keys:
+            value = tool_args.get(key)
+            if isinstance(value, str) and value.strip():
+                paths.append(value.strip())
+        return paths
+
+    def _ensure_tool_paths_are_trusted(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not self._trusted_workspace_enabled():
+            return
+        for path in self._mutation_paths_for_tool(tool_name, tool_args, preview):
+            if not self._path_is_trusted(path):
+                raise PermissionDeniedError(
+                    tool_name=tool_name,
+                    permission_mode=self.permission_mode,
+                    reason=self._trusted_workspace_reason(),
+                )
+
+    def _auto_safe_bash_allowed(self, tool_args: Dict[str, Any]) -> bool:
+        command = str(tool_args.get("command", "")).strip()
+        if not command:
+            return False
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return False
+        if not argv:
+            return False
+
+        validation = get_command_validator(strict_mode=False).validate(command)
+        if validation.risk_level != CommandRisk.SAFE:
+            return False
+
+        security_cfg = getattr(getattr(self.core, "config", None), "security", None)
+        raw_safe_commands = getattr(security_cfg, "safe_commands", []) if security_cfg is not None else []
+        safe_commands = {
+            str(entry).strip()
+            for entry in raw_safe_commands
+            if isinstance(entry, str) and str(entry).strip()
+        }
+        if argv[0] in safe_commands:
+            return True
+        if len(argv) >= 2 and " ".join(argv[:2]) in safe_commands:
+            return True
+        return command in safe_commands
+
     def _get_host_server_lock(self) -> asyncio.Lock:
         if self._host_server_lock is None:
             self._host_server_lock = asyncio.Lock()
@@ -140,10 +270,13 @@ class PoorCLIServer:
             self._service_lock = asyncio.Lock()
         return self._service_lock
 
-    async def _server_permission_callback(self, tool_name: str, tool_args: Dict[str, Any]) -> bool:
+    async def _server_permission_callback(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        preview: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """Server-side permission callback for core tool execution."""
-        del tool_args  # Unused for default mode-based enforcement.
-
         try:
             permission_mode = PermissionMode(self.permission_mode)
         except ValueError:
@@ -151,6 +284,22 @@ class PoorCLIServer:
 
         if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
             return True
+
+        if tool_name in {
+            "write_file",
+            "edit_file",
+            "delete_file",
+            "apply_patch_unified",
+            "json_yaml_edit",
+            "format_and_lint",
+            "copy_file",
+            "move_file",
+            "create_directory",
+        }:
+            self._ensure_tool_paths_are_trusted(tool_name, tool_args, preview)
+
+        if permission_mode == PermissionMode.AUTO_SAFE and tool_name == "bash":
+            return self._auto_safe_bash_allowed(tool_args)
 
         if permission_mode == PermissionMode.PROMPT and tool_name in {
             "write_file",
@@ -291,6 +440,10 @@ class PoorCLIServer:
                     "guardedFlow": {
                         "permissionRequests": True,
                         "planReview": True,
+                    },
+                    "security": {
+                        "trustedWorkspaceBoundary": self._trusted_workspace_enabled(),
+                        "trustedRoots": [str(root) for root in self._trusted_workspace_roots()],
                     },
                 }
             }
@@ -2923,6 +3076,36 @@ class PoorCLIServer:
     ) -> Dict[str, Any]:
         """Interactive permission callback used during streaming chat.
         Sends permissionReq notification and waits for permissionRes."""
+        try:
+            permission_mode = PermissionMode(self.permission_mode)
+        except ValueError:
+            permission_mode = PermissionMode.PROMPT
+
+        if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
+            return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
+
+        if tool_name in {
+            "write_file",
+            "edit_file",
+            "delete_file",
+            "apply_patch_unified",
+            "json_yaml_edit",
+            "format_and_lint",
+            "copy_file",
+            "move_file",
+            "create_directory",
+        }:
+            self._ensure_tool_paths_are_trusted(tool_name, tool_args, preview)
+
+        if permission_mode == PermissionMode.AUTO_SAFE:
+            if tool_name == "bash":
+                return {
+                    "allowed": self._auto_safe_bash_allowed(tool_args),
+                    "approvedPaths": [],
+                    "approvedChunks": [],
+                }
+            return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
+
         if not self._client_supports("reviewFlows", "permissionRequests", default=True):
             self.logger.warning(
                 "Client does not support interactive permission review; denying %s",

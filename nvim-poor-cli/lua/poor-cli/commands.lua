@@ -142,6 +142,11 @@ function M.setup()
                             "\nPlan review: " .. tostring(guarded.planReview == true) ..
                             "\nPermission review: " .. tostring(guarded.permissionRequests == true)
                     end
+                    local security = capabilities and capabilities.security or nil
+                    if type(security) == "table" then
+                        info = info ..
+                            "\nTrusted workspace: " .. tostring(security.trustedWorkspaceBoundary == true)
+                    end
                     vim.notify("[poor-cli] " .. info, vim.log.levels.INFO)
                 end
             end)
