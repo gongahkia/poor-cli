@@ -39,8 +39,8 @@ pub fn muted_fg(mode: ThemeMode) -> Color {
 
 pub fn accent(mode: ThemeMode) -> Color {
     match mode {
-        ThemeMode::Dark => Color::Rgb(220, 132, 97),
-        ThemeMode::Light => Color::Rgb(160, 88, 58),
+        ThemeMode::Dark => Color::Rgb(176, 187, 143),
+        ThemeMode::Light => Color::Rgb(107, 118, 74),
     }
 }
 

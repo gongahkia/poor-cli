@@ -1183,7 +1183,7 @@ impl App {
             )
         };
         format!(
-            "poor-cli Code v{version}\n\
+            "poor-cli (v{version})\n\
             {model_display} · {provider} · {permission_mode}\n\
             {workspace}\n\n\
             ? for shortcuts{last_session_line}",

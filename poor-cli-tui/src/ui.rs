@@ -401,7 +401,12 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 
                 if let Some(title) = lines.first() {
                     all_lines.push(Line::from(vec![
-                        Span::styled("  ▣ ", Style::default().fg(theme::accent(mode))),
+                        Span::styled(
+                            "  >_ ",
+                            Style::default()
+                                .fg(theme::accent(mode))
+                                .add_modifier(Modifier::BOLD),
+                        ),
                         Span::styled(title.clone(), theme::brand_style(mode)),
                     ]));
                 }
@@ -759,13 +764,17 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         ellipsize_middle(&app.cwd, 28)
     };
-    let mut right = format!(
-        "{} · {} · {}{}",
-        ellipsize_middle(&model, 24),
-        app.permission_mode_label,
-        workspace,
-        branch
-    );
+    let mut right_segments = vec![ellipsize_middle(&model, 24)];
+    if app.context_budget_tokens > 0 {
+        let used = app
+            .context_budget_estimated_tokens
+            .min(app.context_budget_tokens);
+        let remaining_pct = 100usize.saturating_sub((used * 100) / app.context_budget_tokens);
+        right_segments.push(format!("{remaining_pct}% left"));
+    }
+    right_segments.push(app.permission_mode_label.clone());
+    right_segments.push(format!("{workspace}{branch}"));
+    let mut right = right_segments.join(" · ");
     if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
         let role = if app.multiplayer_role.is_empty() {
             "?"
