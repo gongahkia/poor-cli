@@ -285,6 +285,46 @@ fn ellipsize_middle(value: &str, max_chars: usize) -> String {
     format!("{head}…{tail}")
 }
 
+fn pad_to_width(value: &str, width: usize) -> String {
+    let padding = width.saturating_sub(value.chars().count());
+    format!("{value}{}", " ".repeat(padding))
+}
+
+fn build_welcome_card(lines: &[String], mode: ThemeMode) -> Vec<Line<'static>> {
+    let border_style = Style::default().fg(theme::muted_fg(mode));
+    let width = lines
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut rendered = Vec::new();
+
+    rendered.push(Line::from(Span::styled(
+        format!("  ╭{}╮", "─".repeat(width + 2)),
+        border_style,
+    )));
+
+    for (idx, line) in lines.iter().enumerate() {
+        let content_style = match idx {
+            0 => theme::brand_style(mode),
+            2 => Style::default().fg(theme::base_fg(mode)),
+            3 => Style::default().fg(theme::muted_fg(mode)),
+            _ => Style::default().fg(theme::base_fg(mode)),
+        };
+        rendered.push(Line::from(vec![
+            Span::styled("  │ ", border_style),
+            Span::styled(pad_to_width(line, width), content_style),
+            Span::styled(" │", border_style),
+        ]));
+    }
+
+    rendered.push(Line::from(Span::styled(
+        format!("  ╰{}╯", "─".repeat(width + 2)),
+        border_style,
+    )));
+    rendered
+}
+
 // ── Chat area ────────────────────────────────────────────────────────
 
 fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
@@ -391,26 +431,27 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 
         match &msg.role {
             MessageRole::Welcome => {
-                for (idx, line) in msg.content.lines().enumerate() {
-                    let style = match idx {
-                        0 => theme::brand_style(mode),
-                        1 => Style::default()
-                            .fg(theme::base_fg(mode))
-                            .add_modifier(Modifier::BOLD),
-                        2 | 3 => Style::default().fg(theme::muted_fg(mode)),
-                        _ if line.starts_with('?') => Style::default()
-                            .fg(theme::warning(mode))
-                            .add_modifier(Modifier::BOLD),
-                        _ if line.starts_with('/')
-                            || line.starts_with('@')
-                            || line.starts_with("Ctrl") =>
-                        {
-                            Style::default().fg(theme::base_fg(mode))
-                        }
-                        _ => Style::default().fg(theme::muted_fg(mode)),
+                let lines: Vec<String> = msg.content.lines().map(ToString::to_string).collect();
+                let card_lines = lines.iter().take(4).cloned().collect::<Vec<_>>();
+                let extra_lines = lines
+                    .iter()
+                    .skip(4)
+                    .skip_while(|line| line.trim().is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                if !card_lines.is_empty() {
+                    all_lines.extend(build_welcome_card(&card_lines, mode));
+                }
+                for line in extra_lines {
+                    let style = if line.starts_with('?') {
+                        Style::default()
+                            .fg(theme::muted_fg(mode))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme::muted_fg(mode))
                     };
-                    let prefix = if idx == 0 { "  " } else { "    " };
-                    all_lines.push(Line::from(Span::styled(format!("{prefix}{line}"), style)));
+                    all_lines.push(Line::from(Span::styled(format!("  {line}"), style)));
                 }
             }
             MessageRole::User => {
@@ -729,40 +770,32 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let branch = if app.git_branch.is_empty() {
-        String::new()
+    let model = if app.model_name.trim().is_empty() || app.model_name == "unknown" {
+        app.provider_name.clone()
     } else {
-        format!(
-            " ({}{})",
-            app.git_branch,
-            if app.git_dirty { "*" } else { "" }
-        )
+        app.model_name.clone()
     };
     let workspace = if app.cwd.trim().is_empty() {
         "~".to_string()
     } else {
-        ellipsize_middle(&app.cwd, 22)
+        ellipsize_middle(&app.cwd, 28)
     };
-    let model = if app.model_name.is_empty() {
-        app.provider_name.clone()
+
+    let context_right = if app.context_budget_tokens > 0 {
+        let used = app
+            .context_budget_estimated_tokens
+            .min(app.context_budget_tokens);
+        let left = app.context_budget_tokens.saturating_sub(used);
+        let pct = ((left * 100) + (app.context_budget_tokens / 2)) / app.context_budget_tokens;
+        format!("{pct}% context left")
     } else {
-        format!("{}/{}", app.provider_name, app.model_name)
-    };
-    let transport = if app.server_connected {
-        if app.is_local_provider {
-            "local"
-        } else {
-            "remote"
-        }
-    } else {
-        "offline"
+        "context unknown".to_string()
     };
     let mut right = format!(
-        "{}{} · {} · {}",
-        workspace,
-        branch,
-        app.permission_mode_label,
-        ellipsize_middle(&model, 20)
+        "{} · {} · {}",
+        ellipsize_middle(&model, 24),
+        context_right,
+        workspace
     );
     if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
         let role = if app.multiplayer_role.is_empty() {
@@ -771,27 +804,14 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
             &app.multiplayer_role
         };
         right.push_str(&format!(" · {}/{}", app.multiplayer_room, role));
-    } else if !app.execution_profile.is_empty() {
-        right.push_str(&format!(" · {}", app.execution_profile));
-    } else {
-        right.push_str(&format!(" · {transport}"));
     }
 
-    let left_candidates: Vec<String> = if !app.prompt_queue.is_empty() {
-        vec![
-            format!("queue {} · type to add more", app.prompt_queue.len()),
-            format!("queue {}", app.prompt_queue.len()),
-        ]
+    let left_candidates: Vec<String> = if app.waiting || !app.prompt_queue.is_empty() {
+        vec!["tab to queue message".to_string()]
     } else if app.input_buffer.trim().is_empty() {
-        vec![
-            "? shortcuts · @ attach · /switch · /pair".to_string(),
-            "? shortcuts".to_string(),
-        ]
+        vec!["? for shortcuts".to_string()]
     } else {
-        vec![
-            "Enter send · Alt+↵ newline · Ctrl+P open".to_string(),
-            "Enter send".to_string(),
-        ]
+        vec!["shift + enter for newline".to_string()]
     };
 
     let mut chosen_left: Option<String> = None;
