@@ -19,10 +19,13 @@ function M.setup()
             rpc.request("initialize", {
                 provider = config.get("provider"),
                 model = config.get("model"),
+                streaming = true,
+                clientCapabilities = rpc.client_capabilities(),
             }, function(result, err)
                 if err then
                     vim.notify("[poor-cli] Init failed: " .. vim.inspect(err), vim.log.levels.ERROR)
                 else
+                    rpc.capture_initialize_result(result)
                     vim.notify("[poor-cli] Initialized", vim.log.levels.INFO)
                 end
             end)
@@ -122,8 +125,23 @@ function M.setup()
                 if err then
                     vim.notify("[poor-cli] Status error: " .. vim.inspect(err), vim.log.levels.ERROR)
                 else
-                    local info = "Provider: " .. (result.name or "unknown") .. 
+                    local info = "Provider: " .. (result.name or "unknown") ..
                                  "\nModel: " .. (result.model or "unknown")
+                    local multiplayer = rpc.get_multiplayer_state()
+                    if multiplayer.enabled then
+                        info = info ..
+                            "\nRoom: " .. (multiplayer.room or "") ..
+                            "\nRole: " .. (multiplayer.role or "") ..
+                            "\nMembers: " .. tostring(multiplayer.member_count or 0) ..
+                            "\nQueue: " .. tostring(multiplayer.queue_depth or 0)
+                    end
+                    local capabilities = rpc.get_capabilities()
+                    local guarded = capabilities and capabilities.guardedFlow or nil
+                    if type(guarded) == "table" then
+                        info = info ..
+                            "\nPlan review: " .. tostring(guarded.planReview == true) ..
+                            "\nPermission review: " .. tostring(guarded.permissionRequests == true)
+                    end
                     vim.notify("[poor-cli] " .. info, vim.log.levels.INFO)
                 end
             end)

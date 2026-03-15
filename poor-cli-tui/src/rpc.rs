@@ -898,6 +898,28 @@ impl RpcClient {
         if self.notification_tx.is_some() {
             params.insert("streaming".into(), Value::Bool(true));
         }
+        params.insert(
+            "clientCapabilities".into(),
+            serde_json::json!({
+                "uiSurface": "tui",
+                "streaming": self.notification_tx.is_some(),
+                "reviewFlows": {
+                    "permissionRequests": true,
+                    "planReview": true,
+                },
+                "multiplayer": {
+                    "events": true,
+                    "roleUpdates": true,
+                    "suggestions": true,
+                    "roomPresence": true,
+                    "roomActions": {
+                        "suggestText": true,
+                        "passDriver": true,
+                        "listRoomMembers": true,
+                    },
+                },
+            }),
+        );
         let val = self.call("initialize", Value::Object(params))?;
         serde_json::from_value(val).map_err(|e| e.to_string())
     }

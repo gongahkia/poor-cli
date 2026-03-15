@@ -54,11 +54,16 @@ function M.setup(opts)
                     M.rpc.request("initialize", {
                         provider = M.config.get("provider"),
                         model = M.config.get("model"),
+                        streaming = true,
+                        clientCapabilities = M.rpc.client_capabilities(),
                     }, function(result, err)
                         if err then
                             vim.notify("[poor-cli] Init failed: " .. vim.inspect(err), vim.log.levels.ERROR)
-                        elseif M.config.is_debug() then
-                            vim.notify("[poor-cli] Initialized: " .. vim.inspect(result), vim.log.levels.DEBUG)
+                        else
+                            M.rpc.capture_initialize_result(result)
+                            if M.config.is_debug() then
+                                vim.notify("[poor-cli] Initialized: " .. vim.inspect(result), vim.log.levels.DEBUG)
+                            end
                         end
                     end)
                 end

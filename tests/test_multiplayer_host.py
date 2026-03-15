@@ -113,6 +113,16 @@ async def _wait_for_response_id(
     raise AssertionError(f"Did not receive response id={expected_id}")
 
 
+async def _wait_for_notification(
+    ws: aiohttp.ClientWebSocketResponse, expected_method: str, max_messages: int = 40
+) -> Dict[str, Any]:
+    for _ in range(max_messages):
+        payload = await _ws_recv_json(ws)
+        if payload.get("method") == expected_method:
+            return payload
+    raise AssertionError(f"Did not receive notification method={expected_method}")
+
+
 async def _drain_pending(ws: aiohttp.ClientWebSocketResponse, timeout: float = 0.05) -> None:
     while True:
         try:
@@ -212,10 +222,10 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as prompter_ws, session.ws_connect(
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as driver_ws, session.ws_connect(
                 f"ws://127.0.0.1:{port}/rpc"
-            ) as other_prompter_ws, session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as viewer_ws:
-                await prompter_ws.send_json(
+            ) as viewer_a_ws, session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as viewer_b_ws:
+                await driver_ws.send_json(
                     {
                         "jsonrpc": "2.0",
                         "id": 1,
@@ -223,10 +233,10 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
                         "params": {"room": "dev", "inviteToken": tokens["prompter"]},
                     }
                 )
-                _ = await _ws_recv_json(prompter_ws)
-                _ = await _ws_recv_json(prompter_ws)
+                _ = await _ws_recv_json(driver_ws)
+                _ = await _ws_recv_json(driver_ws)
 
-                await viewer_ws.send_json(
+                await viewer_a_ws.send_json(
                     {
                         "jsonrpc": "2.0",
                         "id": 2,
@@ -234,25 +244,25 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
                         "params": {"room": "dev", "inviteToken": tokens["viewer"]},
                     }
                 )
-                _ = await _ws_recv_json(viewer_ws)
-                _ = await _ws_recv_json(viewer_ws)
+                _ = await _ws_recv_json(viewer_a_ws)
+                _ = await _ws_recv_json(viewer_a_ws)
 
-                await other_prompter_ws.send_json(
+                await viewer_b_ws.send_json(
                     {
                         "jsonrpc": "2.0",
                         "id": 3,
                         "method": "initialize",
-                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                        "params": {"room": "dev", "inviteToken": tokens["viewer"]},
                     }
                 )
-                _ = await _ws_recv_json(other_prompter_ws)
-                _ = await _ws_recv_json(other_prompter_ws)
+                _ = await _ws_recv_json(viewer_b_ws)
+                _ = await _ws_recv_json(viewer_b_ws)
 
-                await _drain_pending(prompter_ws)
-                await _drain_pending(viewer_ws)
-                await _drain_pending(other_prompter_ws)
+                await _drain_pending(driver_ws)
+                await _drain_pending(viewer_a_ws)
+                await _drain_pending(viewer_b_ws)
 
-                await prompter_ws.send_json(
+                await driver_ws.send_json(
                     {
                         "jsonrpc": "2.0",
                         "id": 99,
@@ -261,43 +271,39 @@ async def test_streaming_notifications_broadcast_but_response_only_to_requester(
                     }
                 )
 
-                # both receive queue/started/stream events
-                seen_stream_prompter = False
-                seen_stream_viewer = False
-                seen_stream_other_prompter = False
+                seen_stream_driver = False
+                seen_stream_viewer_a = False
+                seen_stream_viewer_b = False
                 got_final_response = False
 
                 for _ in range(8):
-                    payload = await _ws_recv_json(prompter_ws)
+                    payload = await _ws_recv_json(driver_ws)
                     if payload.get("method") == "poor-cli/streamingChunk":
-                        seen_stream_prompter = True
+                        seen_stream_driver = True
                     if payload.get("id") == 99:
                         got_final_response = True
                         break
 
                 for _ in range(6):
-                    payload = await _ws_recv_json(viewer_ws)
+                    payload = await _ws_recv_json(viewer_a_ws)
                     if payload.get("method") == "poor-cli/streamingChunk":
-                        seen_stream_viewer = True
+                        seen_stream_viewer_a = True
                         break
 
                 for _ in range(6):
-                    with contextlib.suppress(asyncio.TimeoutError):
-                        maybe = await asyncio.wait_for(other_prompter_ws.receive(), timeout=0.1)
-                        if maybe.type == aiohttp.WSMsgType.TEXT:
-                            payload = json.loads(maybe.data)
-                            if payload.get("method") == "poor-cli/streamingChunk":
-                                seen_stream_other_prompter = True
-                            assert payload.get("id") != 99
+                    payload = await _ws_recv_json(viewer_b_ws)
+                    if payload.get("method") == "poor-cli/streamingChunk":
+                        seen_stream_viewer_b = True
+                        break
 
-                assert seen_stream_prompter
-                assert seen_stream_viewer
-                assert not seen_stream_other_prompter
+                assert seen_stream_driver
+                assert seen_stream_viewer_a
+                assert seen_stream_viewer_b
                 assert got_final_response
 
                 # Viewer should not receive requester's final RPC response id=99.
                 with contextlib.suppress(asyncio.TimeoutError):
-                    maybe_extra = await asyncio.wait_for(viewer_ws.receive(), timeout=0.1)
+                    maybe_extra = await asyncio.wait_for(viewer_a_ws.receive(), timeout=0.1)
                     if maybe_extra.type == aiohttp.WSMsgType.TEXT:
                         payload = json.loads(maybe_extra.data)
                         assert payload.get("id") != 99
@@ -324,20 +330,17 @@ async def test_same_room_queue_is_fifo():
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws1, session.ws_connect(
-                f"ws://127.0.0.1:{port}/rpc"
-            ) as ws2:
-                for ws in (ws1, ws2):
-                    await ws.send_json(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "initialize",
-                            "params": {"room": "dev", "inviteToken": tokens["prompter"]},
-                        }
-                    )
-                    _ = await _ws_recv_json(ws)
-                    _ = await _ws_recv_json(ws)
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws1:
+                await ws1.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _ws_recv_json(ws1)
+                _ = await _ws_recv_json(ws1)
 
                 await ws1.send_json(
                     {
@@ -347,7 +350,7 @@ async def test_same_room_queue_is_fifo():
                         "params": {"message": "first", "requestId": "first"},
                     }
                 )
-                await ws2.send_json(
+                await ws1.send_json(
                     {
                         "jsonrpc": "2.0",
                         "id": 20,
@@ -364,9 +367,6 @@ async def test_same_room_queue_is_fifo():
                     payload1 = await _ws_recv_json(ws1)
                     if payload1.get("id") in {10, 20}:
                         final_ids.add(payload1["id"])
-                    payload2 = await _ws_recv_json(ws2)
-                    if payload2.get("id") in {10, 20}:
-                        final_ids.add(payload2["id"])
 
                 assert final_ids == {10, 20}
                 room_server = factory.instances[0]
@@ -457,18 +457,29 @@ async def test_queued_request_dropped_when_connection_disconnects():
             async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws1, session.ws_connect(
                 f"ws://127.0.0.1:{port}/rpc"
             ) as ws2:
-                for ws in (ws1, ws2):
-                    await ws.send_json(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "initialize",
-                            "params": {"room": "dev", "inviteToken": tokens["prompter"]},
-                        }
-                    )
-                    _ = await _ws_recv_json(ws)
-                    _ = await _ws_recv_json(ws)
-                _ = await _ws_recv_json(ws1)  # second member_joined event
+                await ws1.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _ws_recv_json(ws1)
+                _ = await _ws_recv_json(ws1)
+
+                await ws2.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["viewer"]},
+                    }
+                )
+                ws2_init = await _wait_for_response_id(ws2, 2)
+                ws2_connection_id = ws2_init["result"]["capabilities"]["multiplayer"]["connectionId"]
+                _ = await _wait_for_notification(ws2, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(ws1, "poor-cli/roomEvent")
 
                 await ws1.send_json(
                     {
@@ -478,6 +489,11 @@ async def test_queued_request_dropped_when_connection_disconnects():
                         "params": {"message": "first", "requestId": "first"},
                     }
                 )
+                await asyncio.sleep(0.03)
+
+                promoted = await host.set_room_member_role("dev", ws2_connection_id, "prompter")
+                assert promoted is True
+
                 await ws2.send_json(
                     {
                         "jsonrpc": "2.0",
@@ -710,18 +726,29 @@ async def test_rate_limit_per_connection_blocks_flooding_not_other_members():
             async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws_a, session.ws_connect(
                 f"ws://127.0.0.1:{port}/rpc"
             ) as ws_b:
-                for ws in (ws_a, ws_b):
-                    await ws.send_json(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "initialize",
-                            "params": {"room": "dev", "inviteToken": tokens["prompter"]},
-                        }
-                    )
-                    _ = await _ws_recv_json(ws)
-                    _ = await _ws_recv_json(ws)
+                await ws_a.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
                 _ = await _ws_recv_json(ws_a)
+                _ = await _ws_recv_json(ws_a)
+
+                await ws_b.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["viewer"]},
+                    }
+                )
+                ws_b_init = await _wait_for_response_id(ws_b, 2)
+                ws_b_connection_id = ws_b_init["result"]["capabilities"]["multiplayer"]["connectionId"]
+                _ = await _wait_for_notification(ws_b, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(ws_a, "poor-cli/roomEvent")
 
                 await ws_a.send_json(
                     {
@@ -756,6 +783,11 @@ async def test_rate_limit_per_connection_blocks_flooding_not_other_members():
                 limited = await _wait_for_response_id(ws_a, 13)
                 assert limited.get("error", {}).get("code") == -32029
                 assert limited.get("error", {}).get("message") == "Rate limited"
+
+                promoted = await host.set_room_member_role("dev", ws_b_connection_id, "prompter")
+                assert promoted is True
+                await _drain_pending(ws_a)
+                await _drain_pending(ws_b)
 
                 await ws_b.send_json(
                     {
@@ -833,5 +865,217 @@ async def test_list_room_members_rpc_available_to_authenticated_viewer():
                 assert all("connected_at" in member for member in members)
                 assert all("last_active" in member for member in members)
                 assert all("is_active_prompter" in member for member in members)
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_prompter_join_and_pass_driver_preserve_single_active_driver():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as first_prompter_ws, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as second_prompter_ws:
+                await first_prompter_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["prompter"],
+                            "clientName": "driver-a",
+                        },
+                    }
+                )
+                first_init = await _wait_for_response_id(first_prompter_ws, 1)
+                first_connection_id = first_init["result"]["capabilities"]["multiplayer"]["connectionId"]
+                _ = await _wait_for_notification(first_prompter_ws, "poor-cli/roomEvent")
+
+                await second_prompter_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {
+                            "room": "dev",
+                            "inviteToken": tokens["prompter"],
+                            "clientName": "driver-b",
+                        },
+                    }
+                )
+                second_init = await _wait_for_response_id(second_prompter_ws, 2)
+                second_connection_id = second_init["result"]["capabilities"]["multiplayer"]["connectionId"]
+                _ = await _wait_for_notification(second_prompter_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(first_prompter_ws, "poor-cli/roomEvent")
+
+                members_after_join = host.list_room_members("dev")[0]["members"]
+                assert sum(member["role"] == "prompter" for member in members_after_join) == 1
+                assert any(
+                    member["connectionId"] == second_connection_id and member["role"] == "prompter"
+                    for member in members_after_join
+                )
+                assert any(
+                    member["connectionId"] == first_connection_id and member["role"] == "viewer"
+                    for member in members_after_join
+                )
+
+                await _drain_pending(first_prompter_ws)
+                await _drain_pending(second_prompter_ws)
+
+                await second_prompter_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "poor-cli/passDriver",
+                        "params": {"displayName": "driver-a"},
+                    }
+                )
+                pass_response = await _wait_for_response_id(second_prompter_ws, 3)
+                assert pass_response["result"]["success"] is True
+                assert pass_response["result"]["connectionId"] == first_connection_id
+
+                members_after_pass = host.list_room_members("dev")[0]["members"]
+                assert sum(member["role"] == "prompter" for member in members_after_pass) == 1
+                assert any(
+                    member["connectionId"] == first_connection_id and member["role"] == "prompter"
+                    for member in members_after_pass
+                )
+                assert any(
+                    member["connectionId"] == second_connection_id and member["role"] == "viewer"
+                    for member in members_after_pass
+                )
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_suggest_text_is_delivered_only_to_active_driver():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as driver_ws, session.ws_connect(
+                f"ws://127.0.0.1:{port}/rpc"
+            ) as viewer_ws:
+                await driver_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _wait_for_response_id(driver_ws, 1)
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+
+                await viewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["viewer"], "clientName": "navigator"},
+                    }
+                )
+                _ = await _wait_for_response_id(viewer_ws, 2)
+                _ = await _wait_for_notification(viewer_ws, "poor-cli/roomEvent")
+                _ = await _wait_for_notification(driver_ws, "poor-cli/roomEvent")
+                await _drain_pending(driver_ws)
+                await _drain_pending(viewer_ws)
+
+                await viewer_ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "poor-cli/suggestText",
+                        "params": {"text": "check the failing branch"},
+                    }
+                )
+                suggest_response = await _wait_for_response_id(viewer_ws, 3)
+                assert suggest_response["result"] == {"success": True, "delivered": 1}
+
+                suggestion = await _wait_for_notification(driver_ws, "poor-cli/suggestion")
+                assert suggestion["params"]["sender"] == "navigator"
+                assert suggestion["params"]["text"] == "check the failing branch"
+
+                with pytest.raises(asyncio.TimeoutError):
+                    await asyncio.wait_for(_wait_for_notification(viewer_ws, "poor-cli/suggestion", 1), timeout=0.1)
+    finally:
+        await host.stop()
+
+
+@pytest.mark.asyncio
+async def test_plan_response_notifications_are_forwarded_to_embedded_room_server():
+    factory = _FakeServerFactory()
+    port = _free_port()
+    host = MultiplayerHost(
+        bind_host="127.0.0.1",
+        port=port,
+        room_names=["dev"],
+        server_factory=factory,
+        message_cls=JsonRpcMessage,
+        rpc_error_cls=JsonRpcError,
+    )
+    await host.start()
+    tokens = host.get_room_tokens()["dev"]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(f"ws://127.0.0.1:{port}/rpc") as ws:
+                await ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {"room": "dev", "inviteToken": tokens["prompter"]},
+                    }
+                )
+                _ = await _wait_for_response_id(ws, 1)
+                _ = await _wait_for_notification(ws, "poor-cli/roomEvent")
+
+                await ws.send_json(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "poor-cli/planRes",
+                        "params": {"promptId": "plan-1", "allowed": True},
+                    }
+                )
+
+                for _ in range(20):
+                    if any(
+                        message.method == "poor-cli/planRes"
+                        for message in factory.instances[0].notification_calls
+                    ):
+                        break
+                    await asyncio.sleep(0.05)
+
+                assert any(
+                    message.method == "poor-cli/planRes"
+                    for message in factory.instances[0].notification_calls
+                )
     finally:
         await host.stop()

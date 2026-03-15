@@ -232,14 +232,78 @@ class MultiplayerHost:
                     "role": member.role or "unknown",
                     "connected_at": member.connected_at,
                     "last_active": member.last_active,
-                    "is_active_prompter": (
-                        member.role == "prompter"
-                        and room.active_connection_id == connection_id
-                    ),
+                    "is_active_prompter": member.role == "prompter",
                 }
             )
         members.sort(key=lambda entry: entry["connection_id"])
         return members
+
+    def _pick_room_prompter(
+        self,
+        room: RoomState,
+        *,
+        preferred_connection_id: Optional[str] = None,
+        promote_fallback: bool = False,
+    ) -> Optional[str]:
+        approved_member_ids = [
+            connection_id
+            for connection_id, member in room.members.items()
+            if member.approved and not member.ws.closed
+        ]
+        if not approved_member_ids:
+            return None
+
+        if preferred_connection_id:
+            preferred = room.members.get(preferred_connection_id)
+            if preferred is not None and preferred.approved and not preferred.ws.closed:
+                return preferred_connection_id
+
+        approved_prompters = [
+            connection_id
+            for connection_id in approved_member_ids
+            if room.members[connection_id].role == "prompter"
+        ]
+        if approved_prompters:
+            if room.active_connection_id in approved_prompters:
+                return room.active_connection_id
+            return approved_prompters[0]
+
+        if promote_fallback:
+            return approved_member_ids[0]
+        return None
+
+    def _rebalance_room_roles(
+        self,
+        room: RoomState,
+        *,
+        preferred_connection_id: Optional[str] = None,
+        promote_fallback: bool = False,
+    ) -> Optional[str]:
+        promoted_connection_id = self._pick_room_prompter(
+            room,
+            preferred_connection_id=preferred_connection_id,
+            promote_fallback=promote_fallback,
+        )
+        if promoted_connection_id is None:
+            return None
+
+        for connection_id, member in room.members.items():
+            if not member.approved or member.ws.closed:
+                continue
+            member.role = "prompter" if connection_id == promoted_connection_id else "viewer"
+        return promoted_connection_id
+
+    async def _broadcast_member_role_updates(self, room: RoomState) -> None:
+        for connection_id, member in room.members.items():
+            notification = self.message_cls(
+                method="poor-cli/memberRoleUpdated",
+                params={
+                    "room": room.name,
+                    "connectionId": connection_id,
+                    "role": member.role or "viewer",
+                },
+            )
+            await self._broadcast_rpc(room, notification)
 
     def _record_activity(
         self,
@@ -331,9 +395,14 @@ class MultiplayerHost:
         if room is None:
             return False
         room.lobby_enabled = enabled
+        roles_rebalanced = False
         if not enabled:
             for member in room.members.values():
                 member.approved = True
+            self._rebalance_room_roles(room)
+            roles_rebalanced = True
+        if roles_rebalanced:
+            await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
             "lobby_updated",
@@ -352,6 +421,14 @@ class MultiplayerHost:
             return False
 
         member.approved = True
+        promoted_connection_id = None
+        if member.role == "prompter":
+            promoted_connection_id = self._rebalance_room_roles(
+                room,
+                preferred_connection_id=connection_id,
+            )
+        if promoted_connection_id is not None:
+            await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
             "member_approved",
@@ -372,11 +449,17 @@ class MultiplayerHost:
         self.connections.pop(connection_id, None)
         if room.active_connection_id == connection_id:
             room.active_connection_id = None
+        promoted_connection_id = None
+        if member.role == "prompter":
+            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4003, message=b"Denied by host")
         except Exception:
             pass
+
+        if promoted_connection_id is not None:
+            await self._broadcast_member_role_updates(room)
 
         await self._broadcast_room_event(
             room,
@@ -454,22 +537,11 @@ class MultiplayerHost:
         target = room.members.get(connection_id)
         if target is None:
             return False
+        if target.ws.closed or not target.approved:
+            return False
 
-        for member in room.members.values():
-            if member.role == "prompter":
-                member.role = "viewer"
-        target.role = "prompter"
-
-        for member_id in room.members.keys():
-            notification = self.message_cls(
-                method="poor-cli/memberRoleUpdated",
-                params={
-                    "room": room.name,
-                    "connectionId": member_id,
-                    "role": member.role or "viewer",
-                },
-            )
-            await self._broadcast_rpc(room, notification)
+        self._rebalance_room_roles(room, preferred_connection_id=connection_id)
+        await self._broadcast_member_role_updates(room)
 
         await self._broadcast_room_event(
             room,
@@ -515,11 +587,17 @@ class MultiplayerHost:
         self.connections.pop(connection_id, None)
         if room.active_connection_id == connection_id:
             room.active_connection_id = None
+        promoted_connection_id = None
+        if member.role == "prompter":
+            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4001, message=b"Removed by host")
         except Exception:
             pass
+
+        if promoted_connection_id is not None:
+            await self._broadcast_member_role_updates(room)
 
         await self._broadcast_room_event(
             room,
@@ -544,15 +622,25 @@ class MultiplayerHost:
             raise ValueError("role must be viewer or prompter")
 
         member.role = normalized_role
-        notification = self.message_cls(
-            method="poor-cli/memberRoleUpdated",
-            params={
-                "room": room.name,
-                "connectionId": connection_id,
-                "role": normalized_role,
-            },
-        )
-        await self._broadcast_rpc(room, notification)
+        if normalized_role == "prompter":
+            self._rebalance_room_roles(room, preferred_connection_id=connection_id)
+        else:
+            fallback_connection_id = next(
+                (
+                    other_connection_id
+                    for other_connection_id, other_member in room.members.items()
+                    if other_connection_id != connection_id
+                    and other_member.approved
+                    and not other_member.ws.closed
+                ),
+                None,
+            )
+            self._rebalance_room_roles(
+                room,
+                preferred_connection_id=fallback_connection_id,
+                promote_fallback=fallback_connection_id is None,
+            )
+        await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
             "member_role_updated",
@@ -718,13 +806,13 @@ class MultiplayerHost:
 
         method = message.method or ""
 
-        if method == "poor-cli/permissionRes":
-            if conn.role != "prompter":
+        if method in {"poor-cli/permissionRes", "poor-cli/planRes"}:
+            if conn.role != "prompter" or not conn.approved:
                 await self._send_error_response(
                     conn.ws,
                     request_id=message.id,
                     code=self.rpc_error_cls.INTERNAL_ERROR,
-                    message="Only prompter role can answer permission prompts",
+                    message="Only the active driver can answer interactive review prompts",
                     data={"error_code": "permission_denied", "role": conn.role},
                 )
                 return
@@ -743,6 +831,10 @@ class MultiplayerHost:
 
         if method == "poor-cli/suggestText":
             await self._handle_suggest_text(conn, room, message)
+            return
+
+        if method == "poor-cli/passDriver":
+            await self._handle_pass_driver(conn, room, message)
             return
 
         if conn.role == "viewer" and method in self._VIEWER_BLOCKED_METHODS:
@@ -960,6 +1052,104 @@ class MultiplayerHost:
         response = await conn.inline_server.dispatch(message)
         return response
 
+    async def _handle_pass_driver(self, conn: ConnectionState, room: RoomState, message: Any) -> None:
+        params = message.params or {}
+        requested_room = str(params.get("room", room.name)).strip() or room.name
+        if requested_room != room.name:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=f"Unknown room: {requested_room}",
+                data={"error_code": "ROOM_NOT_FOUND"},
+            )
+            return
+
+        if conn.role != "prompter" or not conn.approved:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INTERNAL_ERROR,
+                message="Only the active driver can pass driver role",
+                data={"error_code": "permission_denied", "role": conn.role},
+            )
+            return
+
+        display_name = str(params.get("displayName", "")).strip()
+        target_connection_id = str(params.get("connectionId", "")).strip()
+        target: Optional[ConnectionState] = None
+
+        if target_connection_id:
+            target = room.members.get(target_connection_id)
+        elif display_name:
+            for member in room.members.values():
+                member_name = member.client_name or member.connection_id
+                if member_name.lower() == display_name.lower():
+                    target = member
+                    break
+        else:
+            for member in room.members.values():
+                if member.connection_id == conn.connection_id:
+                    continue
+                if member.ws.closed or not member.approved:
+                    continue
+                target = member
+                break
+
+        if target is None:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="No eligible member found to receive driver role",
+                data={"error_code": "MEMBER_NOT_FOUND"},
+            )
+            return
+
+        if target.connection_id == conn.connection_id:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="Driver role is already assigned to this connection",
+                data={"error_code": "INVALID_PARAMS"},
+            )
+            return
+
+        if target.ws.closed or not target.approved:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message="Cannot pass driver role to a pending or disconnected member",
+                data={"error_code": "MEMBER_NOT_ELIGIBLE"},
+            )
+            return
+
+        updated = await self.handoff_room_prompter(room.name, target.connection_id)
+        if not updated:
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=self.rpc_error_cls.INVALID_PARAMS,
+                message=f"Could not hand off driver role to `{target.connection_id}`",
+                data={"error_code": "MEMBER_NOT_FOUND"},
+            )
+            return
+
+        if message.id is not None:
+            await self._send_rpc(
+                conn.ws,
+                self.message_cls(
+                    id=message.id,
+                    result={
+                        "success": True,
+                        "room": room.name,
+                        "connectionId": target.connection_id,
+                    },
+                ),
+            )
+
     async def _handle_initialize(self, conn: ConnectionState, message: Any) -> None:
         params = message.params or {}
         room_name = str(params.get("room", "")).strip()
@@ -998,16 +1188,29 @@ class MultiplayerHost:
 
         conn.initialized = True
         room.members[conn.connection_id] = conn
+        if conn.approved and conn.role == "prompter":
+            self._rebalance_room_roles(room, preferred_connection_id=conn.connection_id)
 
         capabilities = dict(room.base_capabilities)
         capabilities["multiplayer"] = {
             "enabled": True,
             "room": room_name,
             "role": conn.role,
+            "connectionId": conn.connection_id,
             "queueMode": "serialized",
             "approved": conn.approved,
             "lobbyEnabled": room.lobby_enabled,
             "preset": room.preset,
+            "events": {
+                "roomEvent": True,
+                "memberRoleUpdated": True,
+                "suggestion": True,
+            },
+            "roomActions": {
+                "listRoomMembers": True,
+                "suggestText": True,
+                "passDriver": True,
+            },
         }
 
         response = self.message_cls(id=message.id, result={"capabilities": capabilities})
@@ -1087,17 +1290,31 @@ class MultiplayerHost:
                 )
             return
         sender = conn.client_name or conn.connection_id
+        recipients = [
+            member
+            for member in room.members.values()
+            if member.role == "prompter" and member.approved and member.ws is not None and not member.ws.closed
+        ]
+        if not recipients:
+            if message.id is not None:
+                await self._send_rpc(
+                    conn.ws,
+                    self.message_cls(
+                        id=message.id,
+                        result={"success": False, "reason": "no_active_driver"},
+                    ),
+                )
+            return
         notification = self.message_cls(
             method="poor-cli/suggestion",
             params={"sender": sender, "text": text, "room": room.name},
         )
-        for member in room.members.values():
-            if member.ws is not None and not member.ws.closed:
-                await self._send_rpc(member.ws, notification)
+        for member in recipients:
+            await self._send_rpc(member.ws, notification)
         if message.id is not None:
             await self._send_rpc(
                 conn.ws,
-                self.message_cls(id=message.id, result={"success": True}),
+                self.message_cls(id=message.id, result={"success": True, "delivered": len(recipients)}),
             )
 
     async def _cleanup_connection(self, conn: ConnectionState) -> None:
@@ -1107,6 +1324,11 @@ class MultiplayerHost:
             room = self.rooms.get(conn.room_name)
             if room and conn.connection_id in room.members:
                 room.members.pop(conn.connection_id, None)
+                promoted_connection_id = None
+                if conn.role == "prompter":
+                    promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
+                if promoted_connection_id is not None:
+                    await self._broadcast_member_role_updates(room)
                 await self._broadcast_room_event(
                     room,
                     "member_left",

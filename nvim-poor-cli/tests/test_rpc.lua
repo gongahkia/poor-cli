@@ -16,6 +16,7 @@ describe("poor-cli.rpc", function()
         rpc.buffer = ""
         rpc.manual_stop = false
         rpc.restart_attempt = 0
+        rpc.reset_session_state()
         if rpc.restart_timer then
             rpc.restart_timer:stop()
             rpc.restart_timer:close()
@@ -224,6 +225,32 @@ describe("poor-cli.rpc", function()
             vim.fn.chansend = original_chansend
             rpc.job_id = nil
         end)
+
+        it("should not arm a timeout for streaming chat requests", function()
+            rpc.job_id = 1
+
+            local original_chansend = vim.fn.chansend
+            vim.fn.chansend = function()
+                return 1
+            end
+
+            local original_defer_fn = vim.defer_fn
+            local defer_called = false
+            vim.defer_fn = function(cb, delay)
+                defer_called = true
+                return original_defer_fn(cb, delay)
+            end
+
+            local request_id = rpc.request("poor-cli/chatStreaming", {}, function() end)
+
+            assert.are.equal(1, request_id)
+            assert.is_false(defer_called)
+            assert.is_nil(rpc.pending_timers[request_id])
+
+            vim.defer_fn = original_defer_fn
+            vim.fn.chansend = original_chansend
+            rpc.job_id = nil
+        end)
     end)
     
     describe("response handling", function()
@@ -280,6 +307,69 @@ describe("poor-cli.rpc", function()
                     params = { chunk = "test", done = false },
                 })
             end)
+        end)
+
+        it("should update multiplayer state from room notifications", function()
+            rpc.capture_initialize_result({
+                capabilities = {
+                    multiplayer = {
+                        enabled = true,
+                        room = "dev",
+                        role = "viewer",
+                        connectionId = "c-local",
+                    },
+                },
+            })
+
+            rpc.handle_response({
+                jsonrpc = "2.0",
+                method = "poor-cli/roomEvent",
+                params = {
+                    room = "dev",
+                    eventType = "member_joined",
+                    memberCount = 2,
+                    queueDepth = 1,
+                    activeConnectionId = "c-local",
+                    lobbyEnabled = false,
+                    preset = "pairing",
+                    members = {
+                        { connectionId = "c-local", role = "viewer" },
+                        { connectionId = "c-2", role = "prompter" },
+                    },
+                },
+            })
+
+            local state = rpc.get_multiplayer_state()
+            assert.is_true(state.enabled)
+            assert.are.equal("dev", state.room)
+            assert.are.equal(2, state.member_count)
+            assert.are.equal("viewer", state.role)
+
+            rpc.handle_response({
+                jsonrpc = "2.0",
+                method = "poor-cli/memberRoleUpdated",
+                params = {
+                    room = "dev",
+                    connectionId = "c-local",
+                    role = "prompter",
+                },
+            })
+
+            rpc.handle_response({
+                jsonrpc = "2.0",
+                method = "poor-cli/suggestion",
+                params = {
+                    room = "dev",
+                    sender = "navigator",
+                    text = "check the test output",
+                },
+            })
+
+            state = rpc.get_multiplayer_state()
+            assert.are.equal("prompter", state.role)
+            assert.is_not_nil(state.last_suggestion)
+            assert.are.equal("navigator", state.last_suggestion.sender)
+            assert.are.equal("check the test output", state.last_suggestion.text)
         end)
     end)
 end)

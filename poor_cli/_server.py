@@ -77,6 +77,7 @@ class PoorCLIServer:
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._client_streaming = False  # set True if client opts in during initialize
+        self._client_capabilities: Dict[str, Any] = {}
         self._pending_permissions: Dict[str, asyncio.Future] = {}  # promptId → Future[bool]
         self._pending_plans: Dict[str, asyncio.Future] = {}  # promptId -> Future[bool]
         self._embedded_multiplayer_room = False
@@ -110,6 +111,24 @@ class PoorCLIServer:
         if isinstance(context_files, list):
             return len(context_files)
         return 0
+
+    @staticmethod
+    def _normalize_client_capabilities(raw_capabilities: Any) -> Dict[str, Any]:
+        if isinstance(raw_capabilities, dict):
+            return dict(raw_capabilities)
+        return {}
+
+    def _client_supports(self, *path: str, default: bool = True) -> bool:
+        if not self._client_capabilities:
+            return default
+        current: Any = self._client_capabilities
+        for key in path:
+            if not isinstance(current, dict) or key not in current:
+                return default
+            current = current[key]
+        if isinstance(current, bool):
+            return current
+        return default
 
     def _get_host_server_lock(self) -> asyncio.Lock:
         if self._host_server_lock is None:
@@ -247,6 +266,9 @@ class PoorCLIServer:
             # Client declares streaming support
             if params.get("streaming"):
                 self._client_streaming = True
+            self._client_capabilities = self._normalize_client_capabilities(
+                params.get("clientCapabilities")
+            )
 
             await self.core.initialize(
                 provider_name=params.get("provider"),
@@ -266,6 +288,10 @@ class PoorCLIServer:
                     "fileOperations": True,
                     "permissionMode": self.permission_mode,
                     "providerInfo": provider_info,
+                    "guardedFlow": {
+                        "permissionRequests": True,
+                        "planReview": True,
+                    },
                 }
             }
         except ConfigurationError as e:
@@ -1975,6 +2001,7 @@ class PoorCLIServer:
             rooms.append(
                 {
                     "name": room_name,
+                    "joinWsUrl": join_ws_url,
                     "viewerToken": viewer_token,
                     "prompterToken": prompter_token,
                     "viewerJoinCommand": viewer_join_command,
@@ -2001,6 +2028,16 @@ class PoorCLIServer:
             "ngrokEnabled": self._host_ngrok_enabled,
             "rooms": rooms,
         }
+
+    @staticmethod
+    def _find_host_room_payload(payload: Dict[str, Any], room_name: str) -> Optional[Dict[str, Any]]:
+        rooms = payload.get("rooms")
+        if not isinstance(rooms, list):
+            return None
+        for room in rooms:
+            if isinstance(room, dict) and str(room.get("name", "")).strip() == room_name:
+                return room
+        return None
 
     async def _shutdown_host_server_locked(self) -> bool:
         """Stop active host/tunnel and reset state. Call only while holding lock."""
@@ -2549,16 +2586,21 @@ class PoorCLIServer:
         short_code = _secrets.token_hex(3)  # 6 hex chars
         lobby = bool(params.get("lobby", False))
         host_result = await self.handle_start_host_server({"room": short_code})
-        tokens = host_result.get("tokens", {})
-        ws_url = host_result.get("localWsUrl", "")
-        viewer_token = ""
-        for role_key in ("viewer",):
-            role_tokens = tokens.get(role_key, {})
-            if isinstance(role_tokens, dict):
-                viewer_token = role_tokens.get("token", "")
-            elif isinstance(role_tokens, list) and role_tokens:
-                viewer_token = role_tokens[0].get("token", "") if isinstance(role_tokens[0], dict) else str(role_tokens[0])
-        invite_code = _encode_invite(f"{ws_url}|{short_code}|{viewer_token}")
+        room_payload = self._find_host_room_payload(host_result, short_code)
+        if room_payload is None:
+            raise RuntimeError("Host started without returning canonical pair room details")
+
+        viewer_token = str(room_payload.get("viewerToken", "")).strip()
+        invite_code = str(room_payload.get("viewerInviteCode", "")).strip()
+        ws_url = str(
+            room_payload.get("joinWsUrl")
+            or host_result.get("joinWsUrl")
+            or host_result.get("shareWsUrl")
+            or host_result.get("publicWsUrl")
+            or ""
+        ).strip()
+        if not viewer_token or not invite_code or not ws_url:
+            raise RuntimeError("Pair session is missing viewer token or shareable invite details")
         if lobby:
             try:
                 await self.handle_set_host_lobby({"enabled": True, "room": short_code})
@@ -2569,6 +2611,7 @@ class PoorCLIServer:
             "inviteCode": invite_code,
             "wsUrl": ws_url,
             "viewerToken": viewer_token,
+            "room": room_payload,
             **host_result,
         }
 
@@ -2880,6 +2923,12 @@ class PoorCLIServer:
     ) -> Dict[str, Any]:
         """Interactive permission callback used during streaming chat.
         Sends permissionReq notification and waits for permissionRes."""
+        if not self._client_supports("reviewFlows", "permissionRequests", default=True):
+            self.logger.warning(
+                "Client does not support interactive permission review; denying %s",
+                tool_name,
+            )
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
         prompt_id = str(uuid.uuid4())
         preview = preview or {}
         notification = JsonRpcMessage(
@@ -2910,6 +2959,9 @@ class PoorCLIServer:
 
     async def _streaming_plan_callback(self, payload: Dict[str, Any]) -> bool:
         """Interactive plan review callback used during streaming chat."""
+        if not self._client_supports("reviewFlows", "planReview", default=True):
+            self.logger.warning("Client does not support interactive plan review; rejecting plan")
+            return False
         prompt_id = str(uuid.uuid4())
         notification = JsonRpcMessage(
             method="poor-cli/planReq",

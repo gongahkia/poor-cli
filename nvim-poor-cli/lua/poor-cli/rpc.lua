@@ -14,6 +14,21 @@ M.buffer = ""   -- Accumulates partial messages
 M.manual_stop = false
 M.restart_attempt = 0
 M.restart_timer = nil
+M.capabilities = nil
+M.multiplayer_state = {
+    enabled = false,
+    room = "",
+    role = "",
+    local_connection_id = "",
+    member_count = 0,
+    queue_depth = 0,
+    active_connection_id = "",
+    lobby_enabled = false,
+    preset = "",
+    last_event_type = "",
+    members = {},
+    last_suggestion = nil,
+}
 
 local function clear_request_timer(id)
     local timer = M.pending_timers[id]
@@ -45,6 +60,138 @@ local function clear_restart_timer()
         timer:stop()
         timer:close()
     end)
+end
+
+local function fresh_multiplayer_state()
+    return {
+        enabled = false,
+        room = "",
+        role = "",
+        local_connection_id = "",
+        member_count = 0,
+        queue_depth = 0,
+        active_connection_id = "",
+        lobby_enabled = false,
+        preset = "",
+        last_event_type = "",
+        members = {},
+        last_suggestion = nil,
+    }
+end
+
+function M.reset_session_state()
+    M.capabilities = nil
+    M.multiplayer_state = fresh_multiplayer_state()
+end
+
+function M.client_capabilities()
+    return {
+        uiSurface = "neovim",
+        streaming = true,
+        reviewFlows = {
+            permissionRequests = true,
+            planReview = true,
+        },
+        multiplayer = {
+            events = true,
+            roleUpdates = true,
+            suggestions = true,
+            roomPresence = true,
+            roomActions = {
+                suggestText = true,
+                passDriver = true,
+                listRoomMembers = true,
+            },
+        },
+    }
+end
+
+function M.capture_initialize_result(result)
+    local caps = result and result.capabilities or nil
+    if type(caps) ~= "table" then
+        M.capabilities = nil
+        return
+    end
+
+    M.capabilities = caps
+    local multiplayer = caps.multiplayer
+    if type(multiplayer) ~= "table" then
+        return
+    end
+
+    M.multiplayer_state.enabled = multiplayer.enabled == true
+    M.multiplayer_state.room = multiplayer.room or ""
+    M.multiplayer_state.role = multiplayer.role or ""
+    M.multiplayer_state.local_connection_id = multiplayer.connectionId or ""
+    M.multiplayer_state.lobby_enabled = multiplayer.lobbyEnabled == true
+    M.multiplayer_state.preset = multiplayer.preset or ""
+end
+
+function M.get_capabilities()
+    return M.capabilities
+end
+
+function M.get_multiplayer_state()
+    return M.multiplayer_state
+end
+
+function M.apply_room_event(params)
+    if type(params) ~= "table" then
+        return
+    end
+    M.multiplayer_state.enabled = true
+    M.multiplayer_state.room = params.room or M.multiplayer_state.room or ""
+    M.multiplayer_state.member_count = params.memberCount or 0
+    M.multiplayer_state.queue_depth = params.queueDepth or 0
+    M.multiplayer_state.active_connection_id = params.activeConnectionId or ""
+    M.multiplayer_state.lobby_enabled = params.lobbyEnabled == true
+    M.multiplayer_state.preset = params.preset or ""
+    M.multiplayer_state.last_event_type = params.eventType or ""
+    M.multiplayer_state.members = params.members or {}
+
+    local local_connection_id = M.multiplayer_state.local_connection_id
+    if local_connection_id ~= "" and type(M.multiplayer_state.members) == "table" then
+        for _, member in ipairs(M.multiplayer_state.members) do
+            if type(member) == "table" and member.connectionId == local_connection_id then
+                M.multiplayer_state.role = member.role or M.multiplayer_state.role
+                break
+            end
+        end
+    end
+end
+
+function M.apply_member_role_update(params)
+    if type(params) ~= "table" then
+        return
+    end
+
+    local connection_id = params.connectionId or ""
+    local role = params.role or ""
+    local members = M.multiplayer_state.members
+    if type(members) ~= "table" then
+        members = {}
+        M.multiplayer_state.members = members
+    end
+
+    local updated = false
+    for _, member in ipairs(members) do
+        if type(member) == "table" and member.connectionId == connection_id then
+            member.role = role
+            updated = true
+            break
+        end
+    end
+
+    if not updated and connection_id ~= "" then
+        table.insert(members, {
+            connectionId = connection_id,
+            role = role,
+        })
+    end
+
+    if connection_id ~= "" and connection_id == M.multiplayer_state.local_connection_id then
+        M.multiplayer_state.role = role
+    end
 end
 
 local function restart_delay_ms()
@@ -113,6 +260,7 @@ function M.start(is_restart)
 
     clear_restart_timer()
     M.manual_stop = false
+    M.reset_session_state()
 
     local cmd, err = M.resolve_server_command()
     if not cmd then
@@ -164,6 +312,7 @@ function M.stop()
         M.pending = {}
         M.buffer = ""
         M.restart_attempt = 0
+        M.reset_session_state()
         vim.notify("[poor-cli] Server stopped", vim.log.levels.INFO)
     else
         M.manual_stop = false
@@ -198,6 +347,9 @@ function M.request(method, params, callback)
     M.pending[id] = callback
     if callback then
         local timeout_ms = config.get("request_timeout") or 15000
+        if method == "poor-cli/chatStreaming" then
+            timeout_ms = 0
+        end
         if timeout_ms > 0 then
             M.pending_timers[id] = vim.defer_fn(function()
                 local timed_out_callback = M.pending[id]
@@ -385,6 +537,17 @@ function M.handle_notification(message)
                 prompt_id = params.promptId or "",
             },
         })
+    elseif message.method == "poor-cli/planReq" then
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliPlanReq",
+            data = {
+                request_id = params.requestId or "",
+                prompt_id = params.promptId or "",
+                summary = params.summary or "",
+                original_request = params.originalRequest or "",
+                steps = params.steps or {},
+            },
+        })
     elseif message.method == "poor-cli/progress" then
         vim.api.nvim_exec_autocmds("User", {
             pattern = "PoorCliProgress",
@@ -404,6 +567,48 @@ function M.handle_notification(message)
                 input_tokens = params.inputTokens or 0,
                 output_tokens = params.outputTokens or 0,
                 estimated_cost = params.estimatedCost or 0,
+            },
+        })
+    elseif message.method == "poor-cli/roomEvent" then
+        M.apply_room_event(params)
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliRoomEvent",
+            data = {
+                room = params.room or "",
+                event_type = params.eventType or "",
+                request_id = params.requestId or "",
+                actor = params.actor or "",
+                queue_depth = params.queueDepth or 0,
+                member_count = params.memberCount or 0,
+                active_connection_id = params.activeConnectionId or "",
+                lobby_enabled = params.lobbyEnabled or false,
+                preset = params.preset or "",
+                members = params.members or {},
+                details = params.details or {},
+            },
+        })
+    elseif message.method == "poor-cli/memberRoleUpdated" then
+        M.apply_member_role_update(params)
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliMemberRoleUpdated",
+            data = {
+                room = params.room or "",
+                connection_id = params.connectionId or "",
+                role = params.role or "",
+            },
+        })
+    elseif message.method == "poor-cli/suggestion" then
+        M.multiplayer_state.last_suggestion = {
+            sender = params.sender or "",
+            text = params.text or "",
+            room = params.room or "",
+        }
+        vim.api.nvim_exec_autocmds("User", {
+            pattern = "PoorCliSuggestion",
+            data = {
+                sender = params.sender or "",
+                text = params.text or "",
+                room = params.room or "",
             },
         })
     end
@@ -427,6 +632,7 @@ function M.handle_exit(code)
     clear_all_request_timers()
     M.pending = {}
     M.buffer = ""
+    M.reset_session_state()
 
     if was_manual_stop then
         M.manual_stop = false

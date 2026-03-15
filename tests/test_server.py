@@ -442,6 +442,29 @@ class TestPoorCLIServer:
         assert len(_FakeMultiplayerHost.instances) == 1
 
     @pytest.mark.asyncio
+    async def test_pair_start_returns_canonical_room_payload(self, server):
+        """Pair start should reuse canonical room join data from host status payload."""
+        server.initialized = True
+        _FakeMultiplayerHost.instances.clear()
+
+        with (
+            patch.dict(
+                sys.modules,
+                {"poor_cli.multiplayer": SimpleNamespace(MultiplayerHost=_FakeMultiplayerHost)},
+            ),
+            patch.object(server, "_is_port_bindable", return_value=True),
+            patch.object(server, "_resolve_multiplayer_share_host", return_value="192.168.1.42"),
+        ):
+            pair = await server.handle_pair_start({})
+            await server.handle_stop_host_server({})
+
+        assert pair["room"]["name"] == pair["shortCode"]
+        assert pair["room"]["joinWsUrl"] == "ws://192.168.1.42:8765/rpc"
+        assert pair["wsUrl"] == pair["room"]["joinWsUrl"]
+        assert pair["viewerToken"] == pair["room"]["viewerToken"]
+        assert pair["inviteCode"] == pair["room"]["viewerInviteCode"]
+
+    @pytest.mark.asyncio
     async def test_host_member_admin_controls_list_role_remove(self, server):
         """Host admin handlers can list members, change role, and remove users."""
         server.initialized = True
@@ -750,6 +773,35 @@ class TestPoorCLIServer:
         assert start_call.args[3] == 2
         assert complete_call.args[1] == "req-stream-1"
         assert complete_call.args[2] == len("hello world")
+
+    @pytest.mark.asyncio
+    async def test_streaming_reviews_fail_fast_when_client_capability_is_disabled(self, server):
+        server.initialized = True
+        server.write_message_stdio = AsyncMock()
+        server._client_capabilities = {
+            "reviewFlows": {
+                "permissionRequests": False,
+                "planReview": False,
+            }
+        }
+
+        permission_result = await server._streaming_permission_callback(
+            "bash",
+            {"command": "pwd"},
+            {"requestId": "req-1"},
+        )
+        plan_result = await server._streaming_plan_callback(
+            {
+                "requestId": "req-1",
+                "summary": "write files",
+                "originalRequest": "update repo",
+                "steps": ["edit foo.py"],
+            }
+        )
+
+        assert permission_result == {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+        assert plan_result is False
+        server.write_message_stdio.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handle_preview_context_forwards_paths_and_budget(self, server):

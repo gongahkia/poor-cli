@@ -134,6 +134,27 @@ function M.append_message(role, content)
     end
 end
 
+function M.append_system_note(content)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+
+    local lines = { "## ℹ️ System", "" }
+    for _, line in ipairs(vim.split(content, "\n", { plain = true })) do
+        table.insert(lines, line)
+    end
+    table.insert(lines, "")
+    table.insert(lines, "---")
+    table.insert(lines, "")
+
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+    if M.win and vim.api.nvim_win_is_valid(M.win) then
+        local new_count = vim.api.nvim_buf_line_count(M.buf)
+        vim.api.nvim_win_set_cursor(M.win, { new_count, 0 })
+    end
+end
+
 -- Resolve @file:path and @workspace mentions, returns expanded message + extra context files
 function M._resolve_mentions(message)
     local extra_files = {}
@@ -317,6 +338,51 @@ function M.setup_streaming_autocmds()
             end)
         end,
     })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliPlanReq",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                M._handle_plan_request(
+                    data.summary,
+                    data.original_request,
+                    data.steps,
+                    data.prompt_id
+                )
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliRoomEvent",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                M._handle_room_event(data)
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliMemberRoleUpdated",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                M._handle_member_role_update(data)
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliSuggestion",
+        callback = function(ev)
+            local data = ev.data or {}
+            vim.schedule(function()
+                M._handle_suggestion(data)
+            end)
+        end,
+    })
 end
 
 -- Handle interactive permission request from server
@@ -330,6 +396,101 @@ function M._handle_permission_request(tool_name, tool_args, prompt_id)
             allowed = allowed,
         })
     end)
+end
+
+function M._handle_plan_request(summary, original_request, steps, prompt_id)
+    local lines = {}
+    if summary and summary ~= "" then
+        table.insert(lines, summary)
+    elseif original_request and original_request ~= "" then
+        table.insert(lines, original_request)
+    end
+    if type(steps) == "table" then
+        for index, step in ipairs(steps) do
+            table.insert(lines, string.format("%d. %s", index, tostring(step)))
+        end
+    end
+
+    local review_text = table.concat(lines, "\n")
+    if review_text ~= "" then
+        M.open()
+        M.append_system_note("Plan review requested:\n" .. review_text)
+    end
+
+    vim.ui.select({ "Approve", "Reject" }, { prompt = "Approve execution plan?" }, function(choice)
+        local allowed = choice == "Approve"
+        rpc.notify("poor-cli/planRes", {
+            promptId = prompt_id or "",
+            allowed = allowed,
+        })
+        vim.notify(
+            "[poor-cli] Plan " .. (allowed and "approved" or "rejected"),
+            allowed and vim.log.levels.INFO or vim.log.levels.WARN
+        )
+    end)
+end
+
+function M._handle_room_event(data)
+    local event_type = data.event_type or ""
+    if event_type == "" then
+        return
+    end
+
+    local notable_events = {
+        member_joined = true,
+        member_pending = true,
+        member_approved = true,
+        member_denied = true,
+        member_removed = true,
+        member_kicked = true,
+        member_left = true,
+        role_handoff = true,
+        lobby_updated = true,
+        preset_updated = true,
+    }
+    if not notable_events[event_type] then
+        return
+    end
+
+    local room = data.room or ""
+    local summary = string.format(
+        "Room `%s`: %s (%d members, queue %d)",
+        room,
+        event_type:gsub("_", " "),
+        tonumber(data.member_count) or 0,
+        tonumber(data.queue_depth) or 0
+    )
+    vim.notify("[poor-cli] " .. summary, vim.log.levels.INFO)
+    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+        M.append_system_note(summary)
+    end
+end
+
+function M._handle_member_role_update(data)
+    local connection_id = data.connection_id or ""
+    local role = data.role or ""
+    if connection_id == "" or role == "" then
+        return
+    end
+
+    local summary = string.format("Role update: %s -> %s", connection_id, role)
+    vim.notify("[poor-cli] " .. summary, vim.log.levels.INFO)
+    if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+        M.append_system_note(summary)
+    end
+end
+
+function M._handle_suggestion(data)
+    local sender = data.sender or "teammate"
+    local text = data.text or ""
+    if text == "" then
+        return
+    end
+
+    local summary = string.format("Suggestion from %s: %s", sender, text)
+    vim.notify("[poor-cli] " .. summary, vim.log.levels.INFO)
+    M.open()
+    M.append_system_note(summary)
 end
 
 -- Append a tool call block to the chat buffer
