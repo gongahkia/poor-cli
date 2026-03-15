@@ -746,11 +746,7 @@ fn run_app(
     refresh_context_budget_state(&mut app);
     if let (Some(tui_path), Some(backend_path)) = (tui_log_path.as_ref(), backend_log_path.as_ref())
     {
-        app.push_message(ChatMessage::system(format!(
-            "Session logs:\n- TUI: `{}`\n- Backend: `{}`",
-            tui_path.display(),
-            backend_path.display()
-        )));
+        app.set_status("Session logs ready");
         write_session_log(
             session_log.as_ref(),
             &format!(

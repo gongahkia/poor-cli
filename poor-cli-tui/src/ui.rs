@@ -40,6 +40,11 @@ thread_local! {
 
 /// Main render function called each frame.
 pub fn draw(frame: &mut Frame, app: &App) {
+    frame.render_widget(
+        Block::default().style(theme::app_background_style(app.theme_mode)),
+        frame.area(),
+    );
+
     let input_height = compute_input_height(app, frame.area().width);
     let has_presence = app.pair_mode_active && !app.connected_users.is_empty();
     let constraints = if has_presence {
@@ -113,23 +118,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 }
 
-fn provider_short_label(app: &App) -> String {
-    if app.provider_name.len() > 4 {
-        app.provider_name[..4].to_string()
-    } else {
-        app.provider_name.clone()
-    }
-}
-
 fn build_input_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
-    let provider_short = provider_short_label(app);
     let mut lines: Vec<Line<'static>> = Vec::new();
     let parts: Vec<&str> = app.input_buffer.split('\n').collect();
 
     for (idx, part) in parts.iter().enumerate() {
         let is_first = idx == 0;
         let is_last = idx + 1 == parts.len();
-        let prefix = if is_first { "  ❯ " } else { "  … " };
+        let prefix = if is_first { "  > " } else { "    " };
         let mut spans = vec![
             Span::styled(
                 prefix.to_string(),
@@ -144,7 +140,7 @@ fn build_input_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
             spans.push(Span::styled("█", theme::input_cursor_style(mode)));
             if app.input_buffer.is_empty() {
                 spans.push(Span::styled(
-                    format!(" Type your message ({})...", provider_short.to_uppercase()),
+                    " Type your message or @path/to/file".to_string(),
                     Style::default().fg(theme::muted_fg(mode)),
                 ));
             }
@@ -158,7 +154,7 @@ fn build_input_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 
 fn compute_input_height(app: &App, terminal_width: u16) -> u16 {
     if app.waiting {
-        return 3;
+        return 4;
     }
 
     let mode = app.theme_mode;
@@ -178,156 +174,100 @@ fn compute_input_height(app: &App, terminal_width: u16) -> u16 {
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     let dim = theme::muted_fg(mode);
-    let model_full = format!("{}/{}", app.provider_name, app.model_name);
-    let model_display = ellipsize_middle(&model_full, 34);
-    let (status_label, status_color) = if !app.server_connected {
-        ("offline", theme::error(mode))
-    } else if app.waiting || app.streaming_message.is_some() {
-        ("busy", theme::warning(mode))
+    let model_full = if app.model_name.is_empty() {
+        app.provider_name.clone()
     } else {
-        ("online", theme::success(mode))
+        format!("{}/{}", app.provider_name, app.model_name)
+    };
+    let model_display = ellipsize_middle(&model_full, 28);
+    let workspace = if app.cwd.trim().is_empty() {
+        "~".to_string()
+    } else {
+        ellipsize_middle(&app.cwd, 28)
     };
 
     let mut spans = vec![
-        Span::styled(
-            "  poor-cli",
-            Style::default()
-                .fg(theme::accent(mode))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(format!(" v{} ", app.version), Style::default().fg(dim)),
-        Span::styled("│ ", Style::default().fg(dim)),
-        Span::styled("model:", Style::default().fg(dim)),
-        Span::styled(
-            format!(" {model_display}"),
-            Style::default()
-                .fg(theme::system_color(mode))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" │ ", Style::default().fg(dim)),
-        Span::styled("status:", Style::default().fg(dim)),
-        Span::styled(" ", Style::default().fg(dim)),
-        Span::styled("●", Style::default().fg(status_color)),
-        Span::styled(
-            format!(" {status_label}"),
-            Style::default().fg(status_color),
-        ),
+        Span::styled("  >", Style::default().fg(theme::warning(mode))),
+        Span::styled(" poor-cli ", theme::brand_style(mode)),
+        Span::styled(format!("(v{})", app.version), Style::default().fg(dim)),
+        Span::styled("  ", Style::default()),
+        Span::styled(model_display, Style::default().fg(theme::base_fg(mode))),
+        Span::styled("  ", Style::default()),
+        Span::styled(workspace, Style::default().fg(dim)),
     ];
 
-    if app.streaming_enabled {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            "streaming",
-            Style::default().fg(theme::success(mode)),
-        ));
-    }
-
-    if app.is_local_provider {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled("[local]", theme::local_badge_style(mode)));
-    }
-
-    // Show real token counts if available, else estimates
-    let real_total = app.cumulative_input_tokens + app.cumulative_output_tokens;
-    if real_total > 0 {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            format!("{}tok", real_total),
-            Style::default().fg(dim),
-        ));
-        if app.turn_input_tokens + app.turn_output_tokens > 0 {
-            spans.push(Span::styled(
-                format!(
-                    " (turn: {})",
-                    app.turn_input_tokens + app.turn_output_tokens
-                ),
-                Style::default().fg(theme::muted_fg(mode)),
-            ));
-        }
-    } else {
-        let total_tokens = app.input_tokens_estimate + app.output_tokens_estimate;
-        if total_tokens > 0 {
-            spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-            spans.push(Span::styled(
-                format!("~{total_tokens}tok"),
-                Style::default().fg(dim),
-            ));
-        }
-    }
-
-    if !app.cwd.is_empty() {
-        let cwd_short = app.cwd.split('/').last().unwrap_or(&app.cwd);
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            format!("~/{cwd_short}"),
-            Style::default().fg(dim),
-        ));
-    }
-
     if !app.git_branch.is_empty() {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        let dirty = if app.git_dirty { "*" } else { "" };
+        spans.push(Span::styled("  ", Style::default()));
         spans.push(Span::styled(
-            format!("git:{}{}", app.git_branch, dirty),
-            Style::default().fg(theme::accent(mode)),
-        ));
-    }
-
-    spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-    spans.push(Span::styled(
-        format!(
-            "ctx:{}f/{}tok",
-            app.context_budget_files.len(),
-            app.context_budget_tokens
-        ),
-        Style::default().fg(theme::muted_fg(mode)),
-    ));
-
-    spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-    spans.push(Span::styled(
-        format!("perm:{}", app.permission_mode_label),
-        Style::default().fg(theme::muted_fg(mode)),
-    ));
-
-    if !app.prompt_queue.is_empty() {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            format!("queue:{}", app.prompt_queue.len()),
-            Style::default().fg(theme::accent(mode)),
-        ));
-    }
-
-    if !app.active_request_id.is_empty() {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            format!("req:{}", ellipsize_middle(&app.active_request_id, 14)),
-            Style::default().fg(theme::warning(mode)),
-        ));
-    }
-
-    // Waiting indicator on the right side
-    if app.waiting {
-        let elapsed = app.wait_elapsed();
-        let right_text = if let Some(tool) = &app.active_tool {
             format!(
-                " [{}/{}] Running: {tool}… {elapsed} ",
-                app.current_iteration, app.iteration_cap
-            )
-        } else if app.streaming_message.is_some() {
-            format!(" {} streaming… {elapsed} ", app.spinner_frame())
-        } else {
-            format!(" {} thinking… {elapsed} ", app.spinner_frame())
-        };
-        let used_width: usize = spans.iter().map(|s| s.content.len()).sum();
-        let remaining = (area.width as usize).saturating_sub(used_width + right_text.len());
-        if remaining > 0 {
-            spans.push(Span::raw(" ".repeat(remaining)));
-        }
+                "({}{})",
+                app.git_branch,
+                if app.git_dirty { "*" } else { "" }
+            ),
+            Style::default().fg(dim),
+        ));
+    }
+
+    if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
+        spans.push(Span::styled("  ", Style::default()));
         spans.push(Span::styled(
-            right_text,
+            format!(
+                "[{}/{}]",
+                app.multiplayer_room,
+                if app.multiplayer_role.is_empty() {
+                    "?"
+                } else {
+                    &app.multiplayer_role
+                }
+            ),
             Style::default().fg(theme::accent(mode)),
         ));
     }
+
+    let right_text = if let Some(tool) = &app.active_tool {
+        format!(
+            "{} {}  [{}/{}]  {}",
+            app.spinner_frame(),
+            ellipsize_middle(tool, 18),
+            app.current_iteration,
+            app.iteration_cap,
+            app.wait_elapsed()
+        )
+    } else if app.streaming_message.is_some() {
+        format!(
+            "responding {}  {}",
+            app.thinking_frame(),
+            app.wait_elapsed()
+        )
+    } else if app.waiting {
+        format!("thinking {}  {}", app.thinking_frame(), app.wait_elapsed())
+    } else if app.server_connected {
+        format!(
+            "{}  {}",
+            app.permission_mode_label,
+            if app.is_local_provider {
+                "local"
+            } else {
+                "remote"
+            }
+        )
+    } else {
+        "offline".to_string()
+    };
+
+    let used_width: usize = spans.iter().map(|s| s.content.len()).sum();
+    let remaining = (area.width as usize).saturating_sub(used_width + right_text.len());
+    if remaining > 0 {
+        spans.push(Span::raw(" ".repeat(remaining)));
+    }
+    spans.push(Span::styled(
+        format!(" {right_text} "),
+        if app.server_connected {
+            Style::default().fg(theme::muted_fg(mode))
+        } else {
+            Style::default().fg(theme::error(mode))
+        },
+    ));
 
     let bar = Paragraph::new(Line::from(spans)).style(theme::status_bar_style(mode));
     frame.render_widget(bar, area);
@@ -460,6 +400,10 @@ fn chat_fingerprint(app: &App) -> u64 {
     let mut hasher = DefaultHasher::new();
     app.messages.len().hash(&mut hasher);
     app.welcome_anim_tick.hash(&mut hasher); // invalidate cache on animation frame change
+    app.waiting.hash(&mut hasher);
+    if app.waiting {
+        app.spinner_tick.hash(&mut hasher);
+    }
     for msg in &app.messages {
         role_fingerprint(&msg.role, &mut hasher);
         msg.content.len().hash(&mut hasher);
@@ -475,22 +419,23 @@ fn chat_fingerprint(app: &App) -> u64 {
 
 fn role_fingerprint(role: &MessageRole, hasher: &mut impl Hasher) {
     match role {
-        MessageRole::User => 0u8.hash(hasher),
-        MessageRole::Assistant => 1u8.hash(hasher),
-        MessageRole::System => 2u8.hash(hasher),
+        MessageRole::Welcome => 0u8.hash(hasher),
+        MessageRole::User => 1u8.hash(hasher),
+        MessageRole::Assistant => 2u8.hash(hasher),
+        MessageRole::System => 3u8.hash(hasher),
         MessageRole::ToolCall { name } => {
-            3u8.hash(hasher);
-            name.hash(hasher);
-        }
-        MessageRole::ToolResult { name } => {
             4u8.hash(hasher);
             name.hash(hasher);
         }
-        MessageRole::DiffView { name } => {
+        MessageRole::ToolResult { name } => {
             5u8.hash(hasher);
             name.hash(hasher);
         }
-        MessageRole::Error => 6u8.hash(hasher),
+        MessageRole::DiffView { name } => {
+            6u8.hash(hasher);
+            name.hash(hasher);
+        }
+        MessageRole::Error => 7u8.hash(hasher),
     }
 }
 
@@ -498,15 +443,39 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
     for msg in &app.messages {
-        all_lines.push(Line::from("")); // spacing
+        if !all_lines.is_empty() {
+            all_lines.push(Line::from(""));
+        }
 
         match &msg.role {
+            MessageRole::Welcome => {
+                for (idx, line) in msg.content.lines().enumerate() {
+                    let style = match idx {
+                        0 => theme::brand_style(mode),
+                        1 => Style::default()
+                            .fg(theme::base_fg(mode))
+                            .add_modifier(Modifier::BOLD),
+                        2 | 3 => Style::default().fg(theme::muted_fg(mode)),
+                        _ if line.starts_with('?') => Style::default()
+                            .fg(theme::warning(mode))
+                            .add_modifier(Modifier::BOLD),
+                        _ if line.starts_with('/')
+                            || line.starts_with('@')
+                            || line.starts_with("Ctrl") =>
+                        {
+                            Style::default().fg(theme::base_fg(mode))
+                        }
+                        _ => Style::default().fg(theme::muted_fg(mode)),
+                    };
+                    let prefix = if idx == 0 { "  " } else { "    " };
+                    all_lines.push(Line::from(Span::styled(format!("{prefix}{line}"), style)));
+                }
+            }
             MessageRole::User => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ● ", Style::default().fg(theme::user_color(mode))),
-                    Span::styled("You", theme::user_label_style(mode)),
+                    Span::styled("  › ", Style::default().fg(theme::user_color(mode))),
+                    Span::styled("you", theme::user_label_style(mode)),
                 ]));
-                // Render user content with simple wrapping
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(Span::styled(
                         format!("    {line}"),
@@ -516,10 +485,9 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
             }
             MessageRole::Assistant => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ● ", Style::default().fg(theme::assistant_color(mode))),
-                    Span::styled("Assistant", theme::assistant_label_style(mode)),
+                    Span::styled("  ✦ ", Style::default().fg(theme::assistant_color(mode))),
+                    Span::styled("poor-cli", theme::assistant_label_style(mode)),
                 ]));
-                // Render assistant content as markdown
                 let md_lines = markdown::render_markdown(&msg.content, mode);
                 for ml in md_lines {
                     let mut padded_spans: Vec<Span<'static>> = vec![Span::raw("    ".to_string())];
@@ -529,9 +497,9 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
             }
             MessageRole::System => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ◆ ", Style::default().fg(theme::system_color(mode))),
+                    Span::styled("  · ", Style::default().fg(theme::system_color(mode))),
                     Span::styled(
-                        "System",
+                        "notice",
                         Style::default()
                             .fg(theme::system_color(mode))
                             .add_modifier(Modifier::BOLD),
@@ -546,92 +514,76 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
             }
             MessageRole::ToolCall { name } => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ┌─ ", theme::tool_border_style(mode)),
-                    Span::styled(name.clone(), theme::tool_title_style(mode)),
-                    Span::styled(" ──────────────", theme::tool_border_style(mode)),
+                    Span::styled("  ↳ ", theme::tool_border_style(mode)),
+                    Span::styled(format!("tool {name}"), theme::tool_title_style(mode)),
                 ]));
-                for line in msg.content.lines() {
-                    all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style(mode)),
-                        Span::styled(line.to_string(), Style::default().fg(theme::muted_fg(mode))),
-                    ]));
+                for line in msg.content.lines().take(8) {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("    {line}"),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
                 }
-                all_lines.push(Line::from(Span::styled(
-                    "  └────────────────────",
-                    theme::tool_border_style(mode),
-                )));
+                if msg.content.lines().count() > 8 {
+                    all_lines.push(Line::from(Span::styled(
+                        "    …".to_string(),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
+                }
             }
             MessageRole::ToolResult { name } => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ┌─ ", theme::tool_border_style(mode)),
+                    Span::styled("  ✓ ", Style::default().fg(theme::success(mode))),
                     Span::styled(format!("{name} result"), theme::tool_title_style(mode)),
-                    Span::styled(" ─────", theme::tool_border_style(mode)),
                 ]));
-                // Truncate long tool output
                 let content = if msg.content.len() > 500 {
                     format!("{}…", &msg.content[..500])
                 } else {
                     msg.content.clone()
                 };
                 for line in content.lines().take(15) {
-                    all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style(mode)),
-                        Span::styled(line.to_string(), Style::default().fg(theme::muted_fg(mode))),
-                    ]));
+                    all_lines.push(Line::from(Span::styled(
+                        format!("    {line}"),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
                 }
                 if msg.content.lines().count() > 15 {
-                    all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style(mode)),
-                        Span::styled(
-                            "... (truncated)".to_string(),
-                            Style::default().fg(theme::muted_fg(mode)),
-                        ),
-                    ]));
+                    all_lines.push(Line::from(Span::styled(
+                        "    …".to_string(),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
                 }
-                all_lines.push(Line::from(Span::styled(
-                    "  └────────────────────",
-                    theme::tool_border_style(mode),
-                )));
             }
             MessageRole::DiffView { name } => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ┌─ ", theme::tool_border_style(mode)),
+                    Span::styled("  ± ", Style::default().fg(theme::accent(mode))),
                     Span::styled(format!("{name} diff"), theme::tool_title_style(mode)),
-                    Span::styled(" ─────", theme::tool_border_style(mode)),
                 ]));
                 for line in msg.content.lines().take(40) {
-                    let (prefix, style) = if line.starts_with('+') && !line.starts_with("+++") {
-                        ("  │+", Style::default().fg(theme::success(mode)))
+                    let (prefix, color) = if line.starts_with('+') && !line.starts_with("+++") {
+                        ("    ", theme::success(mode))
                     } else if line.starts_with('-') && !line.starts_with("---") {
-                        ("  │-", Style::default().fg(theme::error(mode)))
+                        ("    ", theme::error(mode))
                     } else if line.starts_with("@@") {
-                        ("  │ ", Style::default().fg(theme::accent(mode)))
+                        ("    ", theme::accent(mode))
                     } else {
-                        ("  │ ", Style::default().fg(theme::muted_fg(mode)))
+                        ("    ", theme::muted_fg(mode))
                     };
                     all_lines.push(Line::from(vec![
-                        Span::styled(prefix.to_string(), theme::tool_border_style(mode)),
-                        Span::styled(line.to_string(), style),
+                        Span::styled(prefix.to_string(), Style::default().fg(color)),
+                        Span::styled(line.to_string(), Style::default().fg(color)),
                     ]));
                 }
                 if msg.content.lines().count() > 40 {
-                    all_lines.push(Line::from(vec![
-                        Span::styled("  │ ", theme::tool_border_style(mode)),
-                        Span::styled(
-                            "... (truncated)".to_string(),
-                            Style::default().fg(theme::muted_fg(mode)),
-                        ),
-                    ]));
+                    all_lines.push(Line::from(Span::styled(
+                        "    …".to_string(),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
                 }
-                all_lines.push(Line::from(Span::styled(
-                    "  └────────────────────",
-                    theme::tool_border_style(mode),
-                )));
             }
             MessageRole::Error => {
                 all_lines.push(Line::from(vec![
-                    Span::styled("  ⚠ ", Style::default().fg(theme::error(mode))),
-                    Span::styled("Error", theme::error_style(mode)),
+                    Span::styled("  ! ", Style::default().fg(theme::error(mode))),
+                    Span::styled("error", theme::error_style(mode)),
                 ]));
                 for line in msg.content.lines() {
                     all_lines.push(Line::from(Span::styled(
@@ -643,6 +595,20 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
         }
     }
 
+    if app.waiting && app.streaming_message.is_none() && app.active_tool.is_none() {
+        if !all_lines.is_empty() {
+            all_lines.push(Line::from(""));
+        }
+        all_lines.push(Line::from(vec![
+            Span::styled("  ✦ ", Style::default().fg(theme::assistant_color(mode))),
+            Span::styled("poor-cli", theme::assistant_label_style(mode)),
+        ]));
+        all_lines.push(Line::from(Span::styled(
+            format!("    thinking {}  planning next step", app.thinking_frame()),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    }
+
     all_lines
 }
 
@@ -651,25 +617,32 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
 fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     if app.waiting {
-        let wait_msg = if app.prompt_queue.is_empty() {
-            " Waiting for response... (type to queue) ".to_string()
+        let queued = app.prompt_queue.len();
+        let wait_detail = if queued == 0 {
+            "type to queue another prompt".to_string()
         } else {
-            format!(
-                " Waiting... ({} queued, type to add more) ",
-                app.prompt_queue.len()
-            )
+            format!("{queued} queued  ·  type to add more")
         };
-        let prompt_spans = vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(app.spinner_frame(), theme::spinner_style(mode)),
-            Span::styled(wait_msg, Style::default().fg(theme::muted_fg(mode))),
+        let tool_detail = app
+            .active_tool
+            .as_ref()
+            .map(|tool| format!("  running {}", ellipsize_middle(tool, 18)))
+            .unwrap_or_default();
+        let lines = vec![
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("thinking ", Style::default().fg(theme::accent(mode))),
+                Span::styled(app.thinking_frame(), theme::spinner_style(mode)),
+                Span::styled(tool_detail, Style::default().fg(theme::muted_fg(mode))),
+            ]),
+            Line::from(Span::styled(
+                format!("  {wait_detail}"),
+                Style::default().fg(theme::muted_fg(mode)),
+            )),
         ];
-        let input = Paragraph::new(Line::from(prompt_spans)).block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(theme::input_border_color(mode)))
-                .padding(Padding::new(0, 0, 0, 0)),
-        );
+        let input = Paragraph::new(lines)
+            .style(theme::input_panel_style(mode))
+            .block(Block::default().style(theme::input_panel_style(mode)));
         frame.render_widget(input, area);
         return;
     }
@@ -677,12 +650,8 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
     let input_lines = build_input_lines(app, mode);
     let input = Paragraph::new(input_lines)
         .wrap(Wrap { trim: false })
-        .block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(theme::input_border_color(mode)))
-                .padding(Padding::new(0, 0, 0, 0)),
-        );
+        .style(theme::input_panel_style(mode))
+        .block(Block::default().style(theme::input_panel_style(mode)));
     frame.render_widget(input, area);
 }
 
@@ -861,53 +830,56 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
                 &app.multiplayer_role
             };
             spans.push(Span::styled(
-                format!(
-                    "  mp:{room}/{role} members:{} queue:{}  ",
-                    app.multiplayer_member_count, app.multiplayer_queue_depth
-                ),
+                format!("  {room}/{role}  "),
                 Style::default().fg(theme::accent(mode)),
             ));
+            spans.push(Span::styled(
+                format!("{} members", app.multiplayer_member_count),
+                Style::default().fg(theme::muted_fg(mode)),
+            ));
+            if app.multiplayer_queue_depth > 0 {
+                spans.push(Span::styled(
+                    format!("  ·  {} queued", app.multiplayer_queue_depth),
+                    Style::default().fg(theme::muted_fg(mode)),
+                ));
+            }
         }
         if !app.execution_profile.is_empty() {
             spans.push(Span::styled(
-                format!(" profile:{}  ", app.execution_profile),
+                format!("  ·  {}", app.execution_profile),
                 Style::default().fg(theme::system_color(mode)),
             ));
         }
         if app.qa_mode_enabled {
             spans.push(Span::styled(
-                " qa:running  ",
+                "  ·  qa running",
                 Style::default().fg(theme::success(mode)),
             ));
         }
         if !app.prompt_queue.is_empty() {
             spans.push(Span::styled(
-                format!(" queue:{}  ", app.prompt_queue.len()),
+                format!("  ·  queue {}", app.prompt_queue.len()),
                 Style::default().fg(theme::accent(mode)),
             ));
         }
         spans.extend(vec![
-            Span::styled("  /help", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  /quit", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  /switch", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("  Ctrl+C", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": cancel  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+I", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": context  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+P", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": quick open  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+T", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": timeline  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+F", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": search  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": cancel  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Alt+↵", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": newline  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": history", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  ? ", Style::default().fg(theme::warning(mode))),
+            Span::styled("shortcuts", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("@", Style::default().fg(theme::accent(mode))),
+            Span::styled("attach", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("/switch", Style::default().fg(theme::accent(mode))),
+            Span::styled(" provider", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("/pair", Style::default().fg(theme::accent(mode))),
+            Span::styled(" collaborate", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+P", Style::default().fg(theme::accent(mode))),
+            Span::styled(" open", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("  ·  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+T", Style::default().fg(theme::accent(mode))),
+            Span::styled(" timeline", Style::default().fg(theme::muted_fg(mode))),
         ]);
         spans
     };

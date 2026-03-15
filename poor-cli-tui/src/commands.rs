@@ -2880,7 +2880,8 @@ Context Window: {max_context} tokens\n\n\
         show_command_info_popup(
             app,
             raw,
-            "Usage: /suggest <text>\nSend a suggestion visible only to the active driver.".to_string(),
+            "Usage: /suggest <text>\nSend a suggestion visible only to the active driver."
+                .to_string(),
         );
         return false;
     }

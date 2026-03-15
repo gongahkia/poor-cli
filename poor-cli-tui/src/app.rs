@@ -48,6 +48,7 @@ pub const SUGGESTION_HINT_TTL: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 pub enum MessageRole {
+    Welcome,
     User,
     Assistant,
     System,
@@ -65,6 +66,14 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    pub fn welcome(content: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::Welcome,
+            content: content.into(),
+            timestamp: Instant::now(),
+        }
+    }
+
     pub fn user(content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::User,
@@ -864,119 +873,17 @@ pub const COMPACT_STRATEGIES: &[(&str, &str)] = &[
     ("handoff", "New session with context summary"),
 ];
 
-pub const DOLLAR_FRAMES: &[&str] = &[
-    // frame 0: front (0°)
-    "⠀⠀⠀⠀⠀⠀⣠⡤⢤⡄⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣾⣿⠂⠀⣇⣀⠀⠀⠀\n\
-     ⠀⠀⠀⣠⠖⠉⠀⠀⠀⠀⠀⠉⠙⢢\n\
-     ⠀⠀⣴⠃⠀⢰⣮⠿⠿⢍⣻⡒⣶⠃\n\
-     ⠀⢀⡿⡄⠀⠈⠳⢤⣀⠀⠀⠉⠁⠀\n\
-     ⠀⠈⢗⠝⡢⣄⡀⠀⠀⠉⠓⠢⡀⠀\n\
-     ⠀⠀⠀⠙⠮⢔⣝⣗⠦⣄⠀⠀⠘⡆\n\
-     ⠀⠀⠀⡀⠀⠀⠀⠉⢳⠬⡇⠀⠀⡱\n\
-     ⢀⡶⡾⠉⠒⠢⠤⠤⠼⠟⠁⠀⢠⡇\n\
-     ⠺⣍⡣⣄⣀⣀⣀⠀⠀⣠⣤⣴⡟⠁\n\
-     ⠀⠈⠙⠲⠵⢽⡹⡇⠀⢹⠟⠉⠀⠀\n\
-     ⠀⠀⠀⠀⠀⢸⡦⣷⢖⣾⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠈⠛⠓⠋⠁⠀⠀⠀⠀",
-    // frame 1: 3/4 right (45°)
-    "⠀⠀⠀⠀⠀⠀⢠⡤⡄⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⣿⠃⣇⣀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⣠⠖⠁⠀⠀⠈⠙⢢⠀⠀\n\
-     ⠀⠀⠀⣴⠃⠀⣮⠿⢍⣻⣒⠃⠀⠀\n\
-     ⠀⠀⢀⡿⡄⠀⠳⢤⣀⠈⠁⠀⠀⠀\n\
-     ⠀⠀⠈⢗⠝⡢⣄⠀⠉⠓⢄⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠙⠮⣝⣗⠦⣄⠀⡆⠀⠀\n\
-     ⠀⠀⠀⠀⡀⠀⠈⢳⠬⡇⠀⡱⠀⠀\n\
-     ⠀⢀⡶⡾⠉⠒⠤⠼⠟⠁⢠⡇⠀⠀\n\
-     ⠀⠺⣍⡣⣄⣀⣀⠀⣠⣴⡟⠁⠀⠀\n\
-     ⠀⠀⠈⠙⠲⢽⡹⡇⢹⠉⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⡦⣷⣾⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⠛⠓⠁⠀⠀⠀⠀⠀",
-    // frame 2: right edge (90°)
-    "⠀⠀⠀⠀⠀⠀⠀⢤⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⠀⣿⣀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⠖⠁⠙⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣴⣮⢍⠃⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⢀⡿⠳⠁⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠈⢗⡢⠓⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠙⣝⠦⡆⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⡀⢳⡇⡱⠀⠀⠀⠀⠀\n\
-     ⠀⠀⢀⡶⡾⠒⠼⠁⡇⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠺⣍⡣⣀⣠⡟⠁⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠈⠙⢽⢹⠀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⣷⠀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⠓⠀⠀⠀⠀⠀⠀⠀",
-    // frame 3: 3/4 back-right (135°)
-    "⠀⠀⠀⠀⠀⡤⢤⡄⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⣀⣇⠀⣿⣷⠀⠀⠀⠀⠀\n\
-     ⠀⠀⢢⠉⠀⠀⠀⠀⠉⠖⠀⠀⠀⠀\n\
-     ⠀⠀⠀⣶⣻⢍⠿⣮⢰⠀⣴⠀⠀⠀\n\
-     ⠀⠀⠀⠉⠀⣀⢤⠳⠈⡄⡿⠀⠀⠀\n\
-     ⠀⠀⠀⡀⠓⠉⠀⡀⡢⠝⢗⠀⠀⠀\n\
-     ⠀⠀⡆⠀⠀⣄⣗⣝⢔⠙⠀⠀⠀⠀\n\
-     ⠀⠀⡱⠀⡇⠬⢳⠉⠀⡀⠀⠀⠀⠀\n\
-     ⠀⠀⡇⢠⠁⠟⠼⠤⠒⠉⡾⡶⠀⠀\n\
-     ⠀⠀⠁⡴⣤⣠⠀⣀⣀⣄⡣⣍⠀⠀\n\
-     ⠀⠀⠀⠉⠟⢹⡇⡹⢽⠲⠙⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣾⢖⣷⢸⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⠋⠓⠛⠀⠀⠀⠀⠀",
-    // frame 4: back (180°)
-    "⠀⠀⠀⠀⣠⢤⡤⠀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⣀⣇⠀⠐⣿⣷⠀⠀⠀⠀⠀\n\
-     ⢢⠙⠉⠀⠀⠀⠀⠀⠉⠖⣠⠀⠀⠀\n\
-     ⠀⣶⡒⣻⢍⠿⠿⣮⢰⠀⠀⣴⠀⠀\n\
-     ⠀⠉⠁⠀⠀⣀⢤⠳⠈⠀⡄⡿⢀⠀\n\
-     ⠀⡀⠢⠓⠉⠀⠀⡀⣄⡢⠝⢗⠈⠀\n\
-     ⡆⠘⠀⠀⣄⠦⣗⣝⢔⠮⠙⠀⠀⠀\n\
-     ⡱⠀⠀⡇⠬⢳⠉⠀⠀⠀⡀⠀⠀⠀\n\
-     ⡇⢠⠀⠁⠟⠼⠤⠤⠢⠒⠉⡾⡶⢀\n\
-     ⠁⠟⡴⣤⣠⠀⠀⣀⣀⣀⣄⡣⣍⠺\n\
-     ⠀⠀⠉⠟⢹⠀⡇⡹⢽⠵⠲⠙⠈⠀\n\
-     ⠀⠀⠀⠀⣾⢖⣷⡦⢸⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠁⠋⠓⠛⠈⠀⠀⠀⠀",
-    // frame 5: 3/4 back-left (225°)
-    "⠀⠀⠀⠀⠀⠀⣠⢤⡤⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣀⣇⠐⣿⣷⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠙⠉⠀⠀⠀⠉⠖⣠⠀⠀\n\
-     ⠀⠀⠀⣶⡒⣻⢍⠿⣮⢰⠀⣴⠀⠀\n\
-     ⠀⠀⠀⠉⠁⠀⣀⢤⠳⠈⡄⡿⠀⠀\n\
-     ⠀⠀⠀⡀⠢⠓⠉⠀⡀⡢⠝⢗⠀⠀\n\
-     ⠀⠀⠀⠘⠀⣄⠦⣗⣝⢔⠮⠀⠀⠀\n\
-     ⠀⠀⠀⡱⡇⠬⢳⠉⠀⠀⡀⠀⠀⠀\n\
-     ⠀⠀⡇⢠⠁⠟⠼⠤⠢⠒⠉⡾⡶⠀\n\
-     ⠀⠀⠁⡴⣤⣠⠀⣀⣀⣀⣄⡣⣍⠀\n\
-     ⠀⠀⠀⠉⠟⢹⡇⡹⢽⠵⠲⠙⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣾⢖⣷⡦⢸⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠀⠋⠓⠛⠀⠀⠀⠀⠀",
-    // frame 6: left edge (270°)
-    "⠀⠀⠀⠀⠀⠀⢤⠀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣀⣿⠀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠙⠁⠖⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠃⢍⣮⣴⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠁⠳⡿⢀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠓⡢⢗⠈⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⡆⠦⣝⠙⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⡱⡇⢳⡀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⡇⠁⠼⡾⡶⢀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠁⡟⣠⡣⣍⠺⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⢹⢽⠙⠈⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⣷⠀⠀⠀⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠓⠀⠀⠀⠀⠀⠀⠀⠀",
-    // frame 7: 3/4 front-left (315°)
-    "⠀⠀⠀⠀⠀⣠⡤⢤⡄⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⣾⣿⠂⠀⣇⣀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠖⠉⠀⠀⠀⠀⠉⠙⢢⠀⠀\n\
-     ⠀⠀⣴⠃⠀⣮⠿⠿⢍⣻⡒⣶⠀⠀\n\
-     ⠀⢀⡿⡄⠀⠳⢤⣀⠀⠀⠉⠁⠀⠀\n\
-     ⠀⠈⢗⠝⡢⣄⠀⠀⠉⠓⠢⡀⠀⠀\n\
-     ⠀⠀⠀⠙⠮⢔⣝⣗⠦⣄⠀⠘⡆⠀\n\
-     ⠀⠀⠀⡀⠀⠀⠉⢳⠬⡇⠀⠀⡱⠀\n\
-     ⠀⡶⡾⠉⠒⠢⠤⠼⠟⠁⠀⢠⡇⠀\n\
-     ⠺⣍⡣⣄⣀⣀⠀⠀⣠⣤⣴⡟⠁⠀\n\
-     ⠀⠈⠙⠲⠵⢽⡹⡇⢹⠟⠉⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⢸⡦⣷⣾⠀⠀⠀⠀⠀\n\
-     ⠀⠀⠀⠀⠀⠈⠛⠓⠋⠀⠀⠀⠀⠀",
+pub const DOLLAR_FRAMES: &[&str] = &["◜$◝", "◠$◞", "◝$◟", "◞$◜", "◟$◠", "◜$◡"];
+
+pub const THINKING_FRAMES: &[&str] = &[
+    "▁▂▃▂",
+    "▂▃▄▃",
+    "▃▄▅▄",
+    "▄▅▆▅",
+    "▅▆▇▆",
+    "▆▇█▇",
+    "▅▆▇▆",
+    "▄▅▆▅",
 ];
 
 #[derive(Debug, Clone)]
@@ -1263,65 +1170,50 @@ impl App {
     }
 
     fn welcome_text(&self) -> String {
-        let dollar = DOLLAR_FRAMES[(self.welcome_anim_tick / 3) % DOLLAR_FRAMES.len()];
-        let logo = r#" ____   ___   ___  ____        ____ _     ___
-|  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
-| |_) | | | | | | | |_) |    | |   | |    | |
-|  __/| |_| | |_| |  _ <     | |___| |___ | |
-|_|    \___/ \___/|_| \_\     \____|_____|___|"#;
+        let dollar = DOLLAR_FRAMES[(self.welcome_anim_tick / 2) % DOLLAR_FRAMES.len()];
+        let workspace = if self.cwd.trim().is_empty() {
+            "(workspace unavailable)".to_string()
+        } else {
+            self.cwd.clone()
+        };
+        let git_summary = if self.git_branch.is_empty() {
+            "git unavailable".to_string()
+        } else if self.git_dirty {
+            format!("{}*", self.git_branch)
+        } else {
+            self.git_branch.clone()
+        };
+        let last_session_line = if self.resume_dashboard.last_session_summary.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\nlast session  {}",
+                self.resume_dashboard.last_session_summary
+            )
+        };
         format!(
-            "{dollar}\n\n{logo}\n\n\
-            poor-cli v{version}  •  {provider}/{model}\n\
-            AI-powered coding assistant in your terminal\n\
-            Permission mode: {permission_mode}\n\
-            Git: {git_summary}\n\n\
-            Commands:\n  \
-            /help         Show all commands\n  \
-            /onboarding   Interactive command walkthrough\n  \
-            /switch       Switch AI provider\n  \
-            /providers    List all providers\n  \
-            /quit         Exit\n\n\
-            Resume Dashboard\n\
-            Last session: {last_session}\n\
-            Recent checkpoints: {checkpoint_summary}\n\
-            Recent edits: {edit_summary}\n\
-            Services: {service_summary}\n\n\
-            Tip: History automatically persists across sessions",
+            "{dollar}  poor-cli  v{version}\n\
+            {provider}/{model}\n\
+            {workspace}\n\
+            {permission_mode}  ·  git {git_summary}\n\n\
+            ? shortcuts\n\
+            /switch change provider   /pair collaborate\n\
+            @path attach context      Ctrl+P quick open\n\
+            /review inspect changes   /help all commands{last_session_line}",
             version = self.version,
             provider = self.provider_name,
             model = self.model_name,
+            workspace = workspace,
             permission_mode = self.permission_mode_label,
-            git_summary = if self.resume_dashboard.git_summary.is_empty() {
-                "(git unavailable)"
-            } else {
-                &self.resume_dashboard.git_summary
-            },
-            last_session = if self.resume_dashboard.last_session_summary.is_empty() {
-                "(none)"
-            } else {
-                &self.resume_dashboard.last_session_summary
-            },
-            checkpoint_summary = if self.resume_dashboard.recent_checkpoints.is_empty() {
-                "(none)".to_string()
-            } else {
-                self.resume_dashboard.recent_checkpoints.join(", ")
-            },
-            edit_summary = if self.resume_dashboard.recent_edits.is_empty() {
-                "(none)".to_string()
-            } else {
-                self.resume_dashboard.recent_edits.join(", ")
-            },
-            service_summary = if self.resume_dashboard.active_services.is_empty() {
-                "(none)".to_string()
-            } else {
-                self.resume_dashboard.active_services.join(", ")
-            },
+            git_summary = git_summary,
+            last_session_line = last_session_line,
         )
     }
 
     /// Add a welcome message on startup.
     pub fn add_welcome(&mut self) {
-        self.messages.push(ChatMessage::system(self.welcome_text()));
+        self.messages
+            .push(ChatMessage::welcome(self.welcome_text()));
         self.scroll_offset = 0;
     }
 
@@ -1329,7 +1221,7 @@ impl App {
     pub fn update_welcome(&mut self) {
         let text = self.welcome_text();
         if let Some(msg) = self.messages.first_mut() {
-            if matches!(msg.role, MessageRole::System) {
+            if matches!(msg.role, MessageRole::Welcome) {
                 msg.content = text;
             }
         }
@@ -1367,7 +1259,7 @@ impl App {
     }
 
     pub fn tick_welcome_anim(&mut self) {
-        if self.welcome_anim_active && self.messages.len() <= 1 {
+        if self.welcome_anim_active {
             self.welcome_anim_tick += 1;
             if self.welcome_anim_tick % 3 == 0 {
                 // advance frame every ~300ms
@@ -1379,6 +1271,10 @@ impl App {
     /// Get the current spinner frame.
     pub fn spinner_frame(&self) -> &str {
         SPINNER_FRAMES[self.spinner_tick % SPINNER_FRAMES.len()]
+    }
+
+    pub fn thinking_frame(&self) -> &str {
+        THINKING_FRAMES[self.spinner_tick % THINKING_FRAMES.len()]
     }
 
     /// Get elapsed wait time string.
@@ -1609,6 +1505,7 @@ impl App {
 
         for message in &self.messages {
             let (kind, label) = match &message.role {
+                MessageRole::Welcome => (TranscriptSearchItemKind::Message, "Welcome".to_string()),
                 MessageRole::User => (TranscriptSearchItemKind::Message, "User".to_string()),
                 MessageRole::Assistant => {
                     (TranscriptSearchItemKind::Message, "Assistant".to_string())
@@ -1994,7 +1891,7 @@ fn redact_sensitive_history_command(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_mutation_review_chunks, ApprovedReviewChunk, MutationReviewChunk,
+        parse_mutation_review_chunks, App, ApprovedReviewChunk, ChatMessage, MutationReviewChunk,
         MutationReviewState, ReviewDecisionState, ThemeMode,
     };
 
@@ -2162,5 +2059,20 @@ diff --git a/src/other.rs b/src/other.rs
             summary.files[1].summary_line(),
             "/tmp/src/other.rs: rejected hunks h1"
         );
+    }
+
+    #[test]
+    fn welcome_animation_keeps_ticking_after_extra_system_messages() {
+        let mut app = App::new();
+        app.add_welcome();
+        let original = app.messages[0].content.clone();
+        app.push_message(ChatMessage::system("Session logs ready"));
+
+        for _ in 0..3 {
+            app.tick_welcome_anim();
+        }
+
+        assert!(app.welcome_anim_tick >= 3);
+        assert_ne!(app.messages[0].content, original);
     }
 }
