@@ -207,6 +207,7 @@ class OpenAIProvider(BaseProvider):
             if accumulated_tool_calls:
                 # Convert accumulated tool calls to proper format
                 tool_calls_list = []
+                function_calls = []
                 for idx in sorted(accumulated_tool_calls.keys()):
                     tc = accumulated_tool_calls[idx]
                     tool_calls_list.append({
@@ -217,7 +218,24 @@ class OpenAIProvider(BaseProvider):
                             "arguments": tc["arguments"]
                         }
                     })
+                    try:
+                        args = json.loads(tc["arguments"]) if tc["arguments"] else {}
+                    except json.JSONDecodeError:
+                        args = {}
+                    function_calls.append(FunctionCall(
+                        id=tc["id"],
+                        name=tc["name"],
+                        arguments=args,
+                    ))
                 assistant_message["tool_calls"] = tool_calls_list
+
+                # Yield final response with tool calls so the agentic loop can execute them
+                yield ProviderResponse(
+                    content=accumulated_content,
+                    role="assistant",
+                    function_calls=function_calls,
+                    metadata={"is_chunk": False},
+                )
 
             self.messages.append(assistant_message)
 
