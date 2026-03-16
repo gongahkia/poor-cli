@@ -236,6 +236,15 @@ pub(super) fn handle_server_message(
             app.active_request_id.clear();
             app.active_request_started_at = None;
         }
+        ServerMsg::ThinkingChunk {
+            request_id,
+            chunk,
+        } => {
+            if !chunk.is_empty() {
+                app.append_thinking_chunk(&chunk);
+            }
+            let _ = request_id;
+        }
         ServerMsg::StreamChunk {
             request_id,
             chunk,

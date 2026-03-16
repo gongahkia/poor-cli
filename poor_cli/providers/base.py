@@ -17,6 +17,7 @@ class ProviderCapabilities:
     supports_vision: bool = False
     supports_json_mode: bool = False
     supports_code_interpreter: bool = False
+    supports_thinking: bool = False  # extended thinking / reasoning
 
 
 @dataclass
@@ -36,6 +37,7 @@ class ProviderResponse:
     function_calls: Optional[List[FunctionCall]] = None
     raw_response: Optional[Any] = None  # Original provider response
     metadata: Dict[str, Any] = field(default_factory=dict)
+    thinking_content: Optional[str] = None  # model reasoning/thinking text
 
 
 class BaseProvider(ABC):

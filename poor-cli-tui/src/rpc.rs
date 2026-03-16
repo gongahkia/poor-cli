@@ -216,6 +216,10 @@ pub struct ProviderInfo {
 
 #[derive(Debug, Clone)]
 pub enum ServerNotification {
+    ThinkingChunk {
+        request_id: String,
+        chunk: String,
+    },
     StreamChunk {
         request_id: String,
         chunk: String,
@@ -343,6 +347,20 @@ fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String
 /// Parse a server notification from JSON-RPC method + params.
 fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
     match method {
+        "poor-cli/thinkingChunk" => {
+            Some(ServerNotification::ThinkingChunk {
+                request_id: params
+                    .get("requestId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                chunk: params
+                    .get("chunk")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
+        }
         "poor-cli/streamChunk" | "poor-cli/streamingChunk" => {
             Some(ServerNotification::StreamChunk {
                 request_id: params

@@ -4130,7 +4130,16 @@ class PoorCLIServer:
                     context_budget_tokens=context_budget_tokens,
                     request_id=request_id,
                 ):
-                    if event.type == "text_chunk":
+                    if event.type == "thinking_chunk":
+                        notification = JsonRpcMessage(
+                            method="poor-cli/thinkingChunk",
+                            params={
+                                "requestId": request_id,
+                                "chunk": event.data.get("chunk", ""),
+                            },
+                        )
+                        await self.write_message_stdio(notification)
+                    elif event.type == "text_chunk":
                         notification = JsonRpcMessage(
                             method="poor-cli/streamChunk",
                             params={

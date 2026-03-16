@@ -1094,6 +1094,8 @@ pub struct App {
 
     // ── Streaming / agentic state ───
     pub streaming_message: Option<usize>, // index of in-progress assistant message
+    pub thinking_buffer: String,          // accumulated thinking/reasoning text
+    pub thinking_active: bool,            // true while thinking content is streaming
     pub current_iteration: u32,
     pub iteration_cap: u32,
     pub active_tool: Option<String>,
@@ -1236,6 +1238,8 @@ impl Default for App {
             multiplayer_agenda_open_count: 0,
             multiplayer_agenda_total_count: 0,
             streaming_message: None,
+            thinking_buffer: String::new(),
+            thinking_active: false,
             current_iteration: 0,
             iteration_cap: 25,
             active_tool: None,
@@ -2074,13 +2078,70 @@ impl App {
         let idx = self.messages.len();
         self.messages.push(ChatMessage::assistant(""));
         self.streaming_message = Some(idx);
+        self.thinking_buffer.clear();
+        self.thinking_active = false;
         self.current_iteration = 0;
         self.turn_input_tokens = 0;
         self.turn_output_tokens = 0;
         self.scroll_offset = 0;
     }
 
+    pub fn append_thinking_chunk(&mut self, chunk: &str) {
+        self.thinking_active = true;
+        self.thinking_buffer.push_str(chunk);
+        // Render thinking inline as a dimmed block in the streaming message
+        if self.streaming_message.is_none() {
+            self.start_streaming_message();
+        }
+        if let Some(idx) = self.streaming_message {
+            if let Some(msg) = self.messages.get_mut(idx) {
+                // Rebuild the message: thinking block (dimmed via marker) + any content after
+                let thinking_display = self.format_thinking_display();
+                let content_after = msg.content.split("\n\n---\n\n").last()
+                    .and_then(|s| if s.starts_with("💭") { None } else { Some(s.to_string()) })
+                    .unwrap_or_default();
+                msg.content = if content_after.is_empty() {
+                    thinking_display
+                } else {
+                    format!("{thinking_display}\n\n---\n\n{content_after}")
+                };
+            }
+        }
+        if self.scroll_offset <= 1 {
+            self.scroll_offset = 0;
+        }
+    }
+
+    fn format_thinking_display(&self) -> String {
+        if self.thinking_buffer.is_empty() {
+            return String::new();
+        }
+        // Show a condensed view of thinking, last few lines
+        let lines: Vec<&str> = self.thinking_buffer.lines().collect();
+        let display_lines = if lines.len() > 20 {
+            let hidden = lines.len() - 20;
+            let mut out = vec![format!("💭 Thinking ({} lines, {} hidden):", lines.len(), hidden)];
+            out.extend(lines[lines.len()-20..].iter().map(|s| s.to_string()));
+            out
+        } else {
+            let mut out = vec![format!("💭 Thinking ({} lines):", lines.len())];
+            out.extend(lines.iter().map(|s| s.to_string()));
+            out
+        };
+        display_lines.join("\n")
+    }
+
     pub fn append_streaming_chunk(&mut self, chunk: &str) {
+        // If we were in thinking mode, transition to response mode
+        if self.thinking_active {
+            self.thinking_active = false;
+            if let Some(idx) = self.streaming_message {
+                if let Some(msg) = self.messages.get_mut(idx) {
+                    let thinking_display = self.format_thinking_display();
+                    msg.content = format!("{thinking_display}\n\n---\n\n");
+                }
+            }
+        }
         if let Some(idx) = self.streaming_message {
             if let Some(msg) = self.messages.get_mut(idx) {
                 msg.content.push_str(chunk);
@@ -2098,6 +2159,7 @@ impl App {
             }
         }
         self.streaming_message = None;
+        self.thinking_active = false;
         self.active_tool = None;
         self.scroll_offset = 0;
     }

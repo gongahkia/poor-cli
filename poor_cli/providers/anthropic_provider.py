@@ -90,24 +90,36 @@ class AnthropicProvider(BaseProvider):
         except Exception as e:
             raise ConfigurationError(f"Failed to initialize Anthropic: {e}")
 
+    def _supports_extended_thinking(self) -> bool:
+        """Check if current model supports extended thinking."""
+        m = self.model_name.lower()
+        return any(tag in m for tag in ("claude-3-7", "claude-4", "claude-opus", "claude-sonnet-4"))
+
+    def _build_request_params(self) -> Dict[str, Any]:
+        """Build common request params with optional thinking support."""
+        params: Dict[str, Any] = {
+            "model": self.model_name,
+            "messages": self.messages,
+            "max_tokens": 16384,
+        }
+        if self._supports_extended_thinking():
+            params["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+            params["max_tokens"] = 16384
+        else:
+            params["max_tokens"] = 4096
+        if self.system_instruction:
+            params["system"] = self.system_instruction
+        if self.tools:
+            params["tools"] = self.tools
+        return params
+
     async def send_message(self, message: Any) -> ProviderResponse:
         """Send message to Anthropic"""
         self._append_message(message)
 
         for attempt in range(self.max_retries):
             try:
-                # Prepare request
-                request_params = {
-                    "model": self.model_name,
-                    "messages": self.messages,
-                    "max_tokens": 4096,  # Anthropic requires max_tokens
-                }
-
-                if self.system_instruction:
-                    request_params["system"] = self.system_instruction
-
-                if self.tools:
-                    request_params["tools"] = self.tools
+                request_params = self._build_request_params()
 
                 # Send request
                 response = await self.client.messages.create(**request_params)
@@ -148,61 +160,60 @@ class AnthropicProvider(BaseProvider):
         self._append_message(message)
 
         try:
-            # Prepare request
-            request_params = {
-                "model": self.model_name,
-                "messages": self.messages,
-                "max_tokens": 4096,
-                "stream": True
-            }
-
-            if self.system_instruction:
-                request_params["system"] = self.system_instruction
-
-            if self.tools:
-                request_params["tools"] = self.tools
+            request_params = self._build_request_params()
+            request_params["stream"] = True
 
             # Stream response
             accumulated_content = ""
+            accumulated_thinking = ""
             accumulated_tool_uses = []
 
             async with self.client.messages.stream(**request_params) as stream:
                 async for event in stream:
-                    # Handle different event types
                     if hasattr(event, 'type'):
                         if event.type == "content_block_delta":
                             if hasattr(event, 'delta'):
                                 delta = event.delta
+                                delta_type = getattr(delta, 'type', '')
 
-                                # Text content
-                                if hasattr(delta, 'type') and delta.type == "text_delta":
-                                    if hasattr(delta, 'text'):
-                                        accumulated_content += delta.text
+                                if delta_type == "text_delta":
+                                    text = getattr(delta, 'text', '')
+                                    if text:
+                                        accumulated_content += text
                                         yield ProviderResponse(
-                                            content=delta.text,
-                                            role="assistant",
+                                            content=text, role="assistant",
                                             raw_response=event,
-                                            metadata={"is_chunk": True}
+                                            metadata={"is_chunk": True},
                                         )
 
-                                # Tool use (Anthropic calls it tool_use)
-                                elif hasattr(delta, 'type') and delta.type == "input_json_delta":
-                                    # Tool input is being streamed
-                                    pass
+                                elif delta_type == "thinking_delta":
+                                    thinking = getattr(delta, 'thinking', '')
+                                    if thinking:
+                                        accumulated_thinking += thinking
+                                        yield ProviderResponse(
+                                            content="", role="assistant",
+                                            thinking_content=thinking,
+                                            metadata={"is_chunk": True, "is_thinking": True},
+                                        )
+
+                                elif delta_type == "input_json_delta":
+                                    pass  # tool input streaming
 
                         elif event.type == "content_block_start":
-                            # Track tool use starts
                             if hasattr(event, 'content_block'):
                                 block = event.content_block
-                                if hasattr(block, 'type') and block.type == "tool_use":
+                                block_type = getattr(block, 'type', '')
+                                if block_type == "tool_use":
                                     accumulated_tool_uses.append({
-                                        "id": block.id,
-                                        "name": block.name,
-                                        "input": {}
+                                        "id": block.id, "name": block.name, "input": {},
                                     })
+                                elif block_type == "thinking":
+                                    yield ProviderResponse(
+                                        content="", role="assistant",
+                                        metadata={"is_chunk": True, "thinking_started": True},
+                                    )
 
                         elif event.type == "content_block_stop":
-                            # Content block finished
                             pass
 
             # Get final message (Anthropic stream provides it)
@@ -299,26 +310,23 @@ class AnthropicProvider(BaseProvider):
             Normalized ProviderResponse
         """
         try:
-            # Extract content and tool uses
             content = ""
+            thinking_content = ""
             function_calls = None
 
             if hasattr(response, 'content'):
                 for block in response.content:
-                    # Text content
-                    if hasattr(block, 'type') and block.type == "text":
-                        if hasattr(block, 'text'):
-                            content += block.text
-
-                    # Tool use (Anthropic's function calling)
-                    elif hasattr(block, 'type') and block.type == "tool_use":
+                    block_type = getattr(block, 'type', '')
+                    if block_type == "text":
+                        content += getattr(block, 'text', '')
+                    elif block_type == "thinking":
+                        thinking_content += getattr(block, 'thinking', '')
+                    elif block_type == "tool_use":
                         if function_calls is None:
                             function_calls = []
-
                         function_calls.append(FunctionCall(
-                            id=block.id,
-                            name=block.name,
-                            arguments=block.input if hasattr(block, 'input') else {}
+                            id=block.id, name=block.name,
+                            arguments=block.input if hasattr(block, 'input') else {},
                         ))
 
             # Build assistant message for history
@@ -355,7 +363,8 @@ class AnthropicProvider(BaseProvider):
                         "input_tokens": response.usage.input_tokens,
                         "output_tokens": response.usage.output_tokens,
                     } if hasattr(response, 'usage') else None
-                }
+                },
+                thinking_content=thinking_content or None,
             )
 
         except Exception as e:
@@ -389,7 +398,8 @@ class AnthropicProvider(BaseProvider):
             supports_function_calling=True,
             supports_system_instructions=True,
             max_context_tokens=max_tokens,
-            supports_vision=True,  # Claude 3 supports vision
+            supports_vision=True,
             supports_json_mode=False,
-            supports_code_interpreter=False
+            supports_code_interpreter=False,
+            supports_thinking=self._supports_extended_thinking(),
         )

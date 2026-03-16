@@ -110,6 +110,10 @@ enum ServerMsg {
         message: String,
     },
     // ── Streaming notifications ───
+    ThinkingChunk {
+        request_id: String,
+        chunk: String,
+    },
     StreamChunk {
         request_id: String,
         chunk: String,
@@ -394,6 +398,13 @@ fn spawn_backend_worker(
                 thread::spawn(move || {
                     while let Ok(notif) = notification_rx.recv() {
                         let msg = match notif {
+                            ServerNotification::ThinkingChunk {
+                                request_id,
+                                chunk,
+                            } => ServerMsg::ThinkingChunk {
+                                request_id,
+                                chunk,
+                            },
                             ServerNotification::StreamChunk {
                                 request_id,
                                 chunk,

@@ -66,12 +66,16 @@ _MUTATING_TOOLS = {
 @dataclass
 class CoreEvent:
     """Structured event emitted by the agentic loop."""
-    type: str # text_chunk | tool_call_start | tool_result | permission_request | cost_update | progress | done
+    type: str # text_chunk | thinking_chunk | tool_call_start | tool_result | permission_request | cost_update | progress | done
     data: Dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def text_chunk(chunk: str, request_id: str = "") -> "CoreEvent":
         return CoreEvent(type="text_chunk", data={"chunk": chunk, "requestId": request_id})
+
+    @staticmethod
+    def thinking_chunk(chunk: str, request_id: str = "") -> "CoreEvent":
+        return CoreEvent(type="thinking_chunk", data={"chunk": chunk, "requestId": request_id})
 
     @staticmethod
     def tool_call_start(
@@ -1308,9 +1312,12 @@ class PoorCLICore:
 
                     break
 
-                elif chunk.content:
-                    accumulated_text += chunk.content
-                    yield CoreEvent.text_chunk(chunk.content, request_id)
+                else:
+                    if chunk.thinking_content:
+                        yield CoreEvent.thinking_chunk(chunk.thinking_content, request_id)
+                    if chunk.content:
+                        accumulated_text += chunk.content
+                        yield CoreEvent.text_chunk(chunk.content, request_id)
 
             accumulated_text, confidence_suffix = self._ensure_confidence_line(accumulated_text)
             if confidence_suffix:
