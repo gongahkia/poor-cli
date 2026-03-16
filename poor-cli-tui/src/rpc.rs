@@ -205,6 +205,10 @@ pub struct ProviderInfo {
     pub name: String,
     pub available: bool,
     #[serde(default)]
+    pub ready: bool,
+    #[serde(default)]
+    pub status_label: String,
+    #[serde(default)]
     pub models: Vec<String>,
 }
 
@@ -1013,6 +1017,12 @@ impl RpcClient {
                         .get("available")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
+                    let ready = info.get("ready").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let status_label = info
+                        .get("statusLabel")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let models = info
                         .get("models")
                         .and_then(|v| v.as_array())
@@ -1025,6 +1035,8 @@ impl RpcClient {
                     ProviderInfo {
                         name: name.clone(),
                         available,
+                        ready,
+                        status_label,
                         models,
                     }
                 })

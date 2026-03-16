@@ -882,14 +882,22 @@ pub(super) fn handle_slash_command(
             Ok(Ok(providers)) => {
                 let mut info = "**Available Providers:**\n\n".to_string();
                 for p in &providers {
-                    let status = if p.available { "✓" } else { "✗" };
+                    let status = if p.ready { "ready" } else { "not ready" };
                     let local = if p.name == "ollama" { " [local]" } else { "" };
                     let models = if p.models.is_empty() {
                         String::new()
                     } else {
                         format!(" ({})", p.models.join(", "))
                     };
-                    info.push_str(&format!("  {status} **{}**{local}{models}\n", p.name));
+                    let detail = if p.status_label.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" - {}", p.status_label)
+                    };
+                    info.push_str(&format!(
+                        "  {status} **{}**{local}{models}{detail}\n",
+                        p.name
+                    ));
                 }
                 info.push_str("\nUse /switch to change provider/model");
                 show_command_info_popup(app, raw, info);
@@ -914,6 +922,8 @@ pub(super) fn handle_slash_command(
                         .map(|p| ProviderEntry {
                             name: p.name,
                             available: p.available,
+                            ready: p.ready,
+                            status_label: p.status_label,
                             models: p.models,
                         })
                         .collect(),

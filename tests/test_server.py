@@ -1015,20 +1015,31 @@ class TestPoorCLIServer:
     async def test_handle_list_providers_prefers_installed_ollama_models(self, server):
         """Provider listing surfaces live Ollama models when endpoint is reachable."""
         from poor_cli.providers.provider_factory import ProviderFactory
+        from poor_cli.config import Config
 
         fake_providers = {"ollama": object(), "openai": object()}
         fake_info = {"available": True}
+        config = Config()
+        config_manager = MagicMock()
+        config_manager.get_api_key.side_effect = lambda provider: (
+            "sk-openai" if provider == "openai" else None
+        )
 
         with (
             patch.object(ProviderFactory, "list_providers", return_value=fake_providers),
             patch.object(ProviderFactory, "get_provider_info", return_value=fake_info),
             patch.object(server, "_is_ollama_reachable", return_value=True),
             patch.object(server, "_list_ollama_models", return_value=["llama2:7b"]),
+            patch.object(server, "_ensure_config_loaded", return_value=(config_manager, config)),
         ):
             providers = await server.handle_list_providers({})
 
         assert providers["ollama"]["models"] == ["llama2:7b"]
+        assert providers["ollama"]["ready"] is True
+        assert providers["ollama"]["statusLabel"] == "service up"
         assert providers["openai"]["models"] == ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
+        assert providers["openai"]["ready"] is True
+        assert providers["openai"]["statusLabel"] == "API key configured"
 
     @pytest.mark.asyncio
     async def test_list_sessions_serializes_active_and_completed(self, server):

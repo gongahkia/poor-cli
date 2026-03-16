@@ -634,6 +634,18 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
         ]
+    } else if app.mode == AppMode::ProviderSelect {
+        vec![
+            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": choose provider  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled("Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": switch  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
     } else if app.mode == AppMode::QueueManager {
         vec![
             Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
@@ -1042,8 +1054,13 @@ fn draw_at_path_completion(frame: &mut Frame, app: &App) {
 
 fn draw_provider_select(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
-    let area = centered_rect(50, 60, frame.area());
+    let area = centered_rect(78, 68, frame.area());
     render_popup_surface(frame, area, mode);
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
+        .split(area);
 
     let items: Vec<ListItem> = app
         .providers
@@ -1054,12 +1071,6 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                 "▸ "
             } else {
                 "  "
-            };
-            let status = if p.available { "✓" } else { "✗" };
-            let models = if p.models.is_empty() {
-                String::new()
-            } else {
-                format!(" ({})", p.models.join(", "))
             };
             let style = if i == app.provider_select_idx {
                 Style::default()
@@ -1076,18 +1087,36 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
             } else {
                 ""
             };
+            let model_count = if p.models.is_empty() {
+                "no models".to_string()
+            } else if p.models.len() == 1 {
+                "1 model".to_string()
+            } else {
+                format!("{} models", p.models.len())
+            };
+            let dot_style = if p.ready {
+                Style::default().fg(theme::success(mode))
+            } else {
+                Style::default().fg(theme::error(mode))
+            };
 
-            ListItem::new(Line::from(Span::styled(
-                format!("{marker}{status} {}{local_tag}{models}", p.name),
-                style,
-            )))
+            ListItem::new(Line::from(vec![
+                Span::styled(marker.to_string(), style),
+                Span::styled("● ".to_string(), dot_style),
+                Span::styled(p.name.clone(), style),
+                Span::styled(local_tag.to_string(), theme::local_badge_style(mode)),
+                Span::styled(
+                    format!("  {model_count}"),
+                    Style::default().fg(theme::muted_fg(mode)),
+                ),
+            ]))
         })
         .collect();
 
     let list = List::new(items).block(
         Block::default()
             .title(Span::styled(
-                " Switch Provider ",
+                " Switch ",
                 Style::default()
                     .fg(theme::accent(mode))
                     .add_modifier(Modifier::BOLD),
@@ -1096,7 +1125,160 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
             .border_style(Style::default().fg(theme::accent(mode)))
             .padding(Padding::new(1, 1, 1, 1)),
     );
-    frame.render_widget(list, area);
+    frame.render_widget(list, chunks[0]);
+
+    let selected = app.providers.get(app.provider_select_idx);
+    let selected_provider_name = selected
+        .map(|provider| provider.name.as_str())
+        .unwrap_or("unknown");
+    let selected_model = selected
+        .and_then(|provider| {
+            if provider.name.eq_ignore_ascii_case(&app.provider_name)
+                && !app.model_name.trim().is_empty()
+                && app.model_name != "unknown"
+            {
+                Some(app.model_name.clone())
+            } else {
+                provider.models.first().cloned()
+            }
+        })
+        .unwrap_or_else(|| "default".to_string());
+    let provider_note = match selected_provider_name.to_ascii_lowercase().as_str() {
+        "gemini" => "Fast inference with a broad free-tier path and strong coding output.",
+        "openai" => "Strong general reasoning with broad tool-calling support.",
+        "anthropic" | "claude" => {
+            "Strong analysis and long-form reasoning, especially for review work."
+        }
+        "ollama" => "Runs locally. Best when you want data locality and no per-call API cost.",
+        _ => "Provider metadata is limited to the configured model list.",
+    };
+
+    let mut detail_lines = vec![
+        Line::from(vec![
+            Span::styled(" Provider ", theme::tool_title_style(mode)),
+            Span::styled(
+                selected_provider_name.to_string(),
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(Span::styled(
+            provider_note.to_string(),
+            Style::default().fg(theme::muted_fg(mode)),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                selected
+                    .map(|provider| provider.status_label.clone())
+                    .filter(|label| !label.trim().is_empty())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                if selected.map(|provider| provider.ready).unwrap_or(false) {
+                    Style::default()
+                        .fg(theme::success(mode))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                        .fg(theme::error(mode))
+                        .add_modifier(Modifier::BOLD)
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "Selected model: ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+            Span::styled(
+                selected_model.clone(),
+                Style::default()
+                    .fg(theme::base_fg(mode))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+    ];
+
+    if selected_provider_name.eq_ignore_ascii_case(&app.provider_name) {
+        detail_lines.push(Line::from(Span::styled(
+            "This is the provider active in the current session.",
+            Style::default().fg(theme::success(mode)),
+        )));
+    } else {
+        detail_lines.push(Line::from(Span::styled(
+            "Press Enter to switch to this provider using the selected model below.",
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    }
+
+    detail_lines.push(Line::from(""));
+    detail_lines.push(Line::from(Span::styled(
+        "Available models",
+        Style::default()
+            .fg(theme::accent(mode))
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    if let Some(provider) = selected {
+        if provider.models.is_empty() {
+            detail_lines.push(Line::from(Span::styled(
+                "- No model metadata reported",
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        } else {
+            for model in provider.models.iter().take(8) {
+                let is_selected_model = model == &selected_model;
+                detail_lines.push(Line::from(vec![
+                    Span::styled(
+                        if is_selected_model { "▸ " } else { "  " },
+                        if is_selected_model {
+                            Style::default().fg(theme::accent(mode))
+                        } else {
+                            Style::default().fg(theme::muted_fg(mode))
+                        },
+                    ),
+                    Span::styled(
+                        model.clone(),
+                        if is_selected_model {
+                            Style::default()
+                                .fg(theme::base_fg(mode))
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(theme::base_fg(mode))
+                        },
+                    ),
+                ]));
+            }
+            if provider.models.len() > 8 {
+                detail_lines.push(Line::from(Span::styled(
+                    format!("… {} more model(s)", provider.models.len() - 8),
+                    Style::default().fg(theme::muted_fg(mode)),
+                )));
+            }
+        }
+    } else {
+        detail_lines.push(Line::from(Span::styled(
+            "- No provider selected",
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    }
+
+    let details = Paragraph::new(detail_lines)
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Model Info ",
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::input_border_color(mode)))
+                .padding(Padding::new(1, 1, 1, 1)),
+        );
+    frame.render_widget(details, chunks[1]);
 }
 
 fn annotate_copyable_items(content: &str) -> String {

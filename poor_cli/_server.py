@@ -1065,14 +1065,19 @@ class PoorCLIServer:
         """
         from .providers.provider_factory import ProviderFactory
 
+        config_manager, config = self._ensure_config_loaded()
         result: Dict[str, Any] = {}
         ollama_models: List[str] = []
         ollama_base_url = self._ollama_base_url()
-        if self._is_ollama_reachable(ollama_base_url):
+        ollama_ready = self._is_ollama_reachable(ollama_base_url)
+        if ollama_ready:
             ollama_models = self._list_ollama_models(ollama_base_url)
 
         for name, cls in ProviderFactory.list_providers().items():
             info = ProviderFactory.get_provider_info(name) or {}
+            provider_key = self._normalize_provider_name(name)
+            provider_cfg = config.model.providers.get(provider_key)
+            dependency_available = bool(info.get("available", True))
             # Provide default model suggestions per provider
             model_suggestions: Dict[str, list] = {
                 "gemini": ["gemini-2.0-flash", "gemini-1.5-pro"],
@@ -1083,8 +1088,27 @@ class PoorCLIServer:
                 if ollama_models
                 else ["llama3", "codellama", "mistral", "phi3"],
             }
+            if provider_key == "ollama":
+                ready = ollama_ready
+                status_label = (
+                    "service up"
+                    if ready
+                    else f"service unavailable at {ollama_base_url}"
+                )
+            else:
+                api_key = config_manager.get_api_key(provider_key) if provider_cfg else None
+                ready = bool(api_key)
+                env_var = provider_cfg.api_key_env_var if provider_cfg else "API key"
+                status_label = (
+                    "API key configured" if ready else f"missing {env_var}"
+                )
+            if not dependency_available:
+                ready = False
+                status_label = "provider dependency unavailable"
             result[name] = {
-                "available": info.get("available", True),
+                "available": dependency_available,
+                "ready": ready,
+                "statusLabel": status_label,
                 "models": model_suggestions.get(name, []),
             }
         return result

@@ -951,6 +951,8 @@ pub const THINKING_FRAMES: &[&str] = &[
 pub struct ProviderEntry {
     pub name: String,
     pub available: bool,
+    pub ready: bool,
+    pub status_label: String,
     pub models: Vec<String>,
 }
 
