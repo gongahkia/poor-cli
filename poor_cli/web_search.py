@@ -43,8 +43,10 @@ async def brave_search(query: str, api_key: str, count: int = 5) -> str:
 
 
 def _strip_html(text: str) -> str:
-    stripped = re.sub(r"<[^>]+>", "", text)
-    return unescape(stripped).strip()
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", text) # strip script/style blocks
+    text = re.sub(r"<[^>]+>", " ", text) # strip remaining tags
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text) # strip control chars
+    return re.sub(r"\s+", " ", unescape(text)).strip()
 
 
 async def duckduckgo_search(query: str, count: int = 5) -> str:

@@ -63,8 +63,8 @@ class DatabaseInspector:
             table_names = [row[0] for row in cursor.fetchall()]
 
             for table_name in table_names:
-                # Get table info
-                cursor.execute(f"PRAGMA table_info({table_name})")
+                safe_name = '"{}"'.format(table_name.replace('"', '""'))
+                cursor.execute(f"PRAGMA table_info({safe_name})")
                 columns = []
                 for row in cursor.fetchall():
                     columns.append({
