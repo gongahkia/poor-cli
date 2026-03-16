@@ -1,5 +1,5 @@
 /// Input handling: keyboard events, slash-command completion, etc.
-use crate::app::{App, AppMode, QuickOpenItem};
+use crate::app::{App, AppMode, QuickOpenItem, QueuedPrompt};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -41,6 +41,8 @@ pub enum InputAction {
     OpenTranscriptSearch,
     /// Execute the selected quick-open item.
     QuickOpenSelected(QuickOpenItem),
+    /// Send the selected queued prompt immediately.
+    QueueSendSelected(QueuedPrompt),
     /// Restore the last mutation checkpoint.
     RestoreLastMutation,
     /// Open a file in the user's editor.
@@ -258,6 +260,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         AppMode::CompactSelect => handle_key_compact_select(app, key),
         AppMode::InfoPopup => handle_key_info_popup(app, key),
         AppMode::ApiKeyEditor => handle_key_api_key_editor(app, key),
+        AppMode::QueueManager => handle_key_queue_manager(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
         AppMode::MutationReview => handle_key_mutation_review(app, key),
         AppMode::ContextInspector => handle_key_context_inspector(app, key),

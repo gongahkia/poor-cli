@@ -1,5 +1,8 @@
 /// Application state machine for the poor-cli TUI.
-use std::collections::{HashMap, VecDeque};
+use crate::helpers::should_skip_dir;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 // ── Pair mode types ─────────────────────────────────────────────────
@@ -610,6 +613,29 @@ pub struct QuickOpenState {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct AtPathCompletionItem {
+    pub path: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AtPathCompletionState {
+    pub active: bool,
+    pub query: String,
+    pub token_start: usize,
+    pub token_end: usize,
+    pub selected_index: usize,
+    pub quoted: bool,
+    pub quote_char: char,
+    pub items: Vec<AtPathCompletionItem>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QueueManagerState {
+    pub selected_index: usize,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct ApiKeyEditorField {
     pub label: String,
     pub provider: Option<String>,
@@ -828,6 +854,7 @@ pub enum AppMode {
     ProviderSelect,
     InfoPopup,
     ApiKeyEditor,
+    QueueManager,
     PermissionPrompt,
     MutationReview,
     ContextInspector,
@@ -961,6 +988,7 @@ pub struct App {
 
     // ── Prompt queue (steering harness) ───
     pub prompt_queue: VecDeque<QueuedPrompt>,
+    pub queue_paused: bool,
 
     // ── Command history ───
     pub command_history: VecDeque<String>,
@@ -977,6 +1005,8 @@ pub struct App {
     pub mutation_review: Option<MutationReviewState>,
     pub context_inspector: Option<ContextInspectorState>,
     pub quick_open: QuickOpenState,
+    pub at_path_completion: AtPathCompletionState,
+    pub queue_manager: QueueManagerState,
     pub timeline_entries: Vec<TimelineEntry>,
     pub timeline_scroll: u16,
     pub transcript_search: TranscriptSearchState,
@@ -1113,6 +1143,7 @@ impl Default for App {
             spinner_tick: 0,
             wait_start: None,
             prompt_queue: VecDeque::new(),
+            queue_paused: false,
             command_history: VecDeque::with_capacity(100),
             history_index: None,
             command_match_index: 0,
@@ -1125,6 +1156,8 @@ impl Default for App {
             mutation_review: None,
             context_inspector: None,
             quick_open: QuickOpenState::default(),
+            at_path_completion: AtPathCompletionState::default(),
+            queue_manager: QueueManagerState::default(),
             timeline_entries: Vec::new(),
             timeline_scroll: 0,
             transcript_search: TranscriptSearchState::default(),
@@ -1400,6 +1433,7 @@ impl App {
         self.input_cursor = 0;
         self.history_index = None;
         self.command_match_index = 0;
+        self.at_path_completion = AtPathCompletionState::default();
 
         // Save to history (redact sensitive command arguments).
         let history_entry = redact_sensitive_history_command(&text);
@@ -1520,6 +1554,109 @@ impl App {
     pub fn close_quick_open(&mut self) {
         self.quick_open = QuickOpenState::default();
         self.mode = AppMode::Normal;
+    }
+
+    pub fn refresh_at_path_completion(&mut self) {
+        self.at_path_completion = build_at_path_completion_state(self).unwrap_or_default();
+    }
+
+    pub fn clear_at_path_completion(&mut self) {
+        self.at_path_completion = AtPathCompletionState::default();
+    }
+
+    pub fn move_at_path_selection(&mut self, forward: bool) -> bool {
+        if !self.at_path_completion.active || self.at_path_completion.items.is_empty() {
+            return false;
+        }
+
+        let item_count = self.at_path_completion.items.len();
+        if forward {
+            self.at_path_completion.selected_index =
+                (self.at_path_completion.selected_index + 1) % item_count;
+        } else if self.at_path_completion.selected_index == 0 {
+            self.at_path_completion.selected_index = item_count - 1;
+        } else {
+            self.at_path_completion.selected_index -= 1;
+        }
+        true
+    }
+
+    pub fn accept_at_path_completion(&mut self) -> bool {
+        if !self.at_path_completion.active {
+            return false;
+        }
+
+        let Some(item) = self
+            .at_path_completion
+            .items
+            .get(
+                self.at_path_completion
+                    .selected_index
+                    .min(self.at_path_completion.items.len().saturating_sub(1)),
+            )
+            .cloned()
+        else {
+            return false;
+        };
+
+        let replacement = render_at_path_token(
+            &item.path,
+            self.at_path_completion.quoted,
+            self.at_path_completion.quote_char,
+        );
+        let token_start = self.at_path_completion.token_start;
+        let token_end = self.at_path_completion.token_end.min(self.input_buffer.len());
+        let suffix_char = self.input_buffer[token_end..].chars().next();
+        let needs_space = suffix_char.is_none_or(|ch| {
+            !ch.is_whitespace() && !matches!(ch, ',' | ';' | ':' | ')' | ']' | '}')
+        });
+        let inserted = if needs_space {
+            format!("{replacement} ")
+        } else {
+            replacement
+        };
+
+        self.input_buffer
+            .replace_range(token_start..token_end, inserted.as_str());
+        self.input_cursor = token_start + inserted.len();
+        self.refresh_at_path_completion();
+        true
+    }
+
+    pub fn open_queue_manager(&mut self) {
+        self.queue_manager.selected_index = self
+            .queue_manager
+            .selected_index
+            .min(self.prompt_queue.len().saturating_sub(1));
+        self.mode = AppMode::QueueManager;
+    }
+
+    pub fn close_queue_manager(&mut self) {
+        self.queue_manager.selected_index = self
+            .queue_manager
+            .selected_index
+            .min(self.prompt_queue.len().saturating_sub(1));
+        self.mode = if self.input_buffer.starts_with('/') {
+            AppMode::Command
+        } else {
+            AppMode::Normal
+        };
+    }
+
+    pub fn sync_queue_selection(&mut self) {
+        if self.prompt_queue.is_empty() {
+            self.queue_manager.selected_index = 0;
+            self.queue_paused = false;
+            if self.mode == AppMode::QueueManager {
+                self.close_queue_manager();
+            }
+            return;
+        }
+
+        self.queue_manager.selected_index = self
+            .queue_manager
+            .selected_index
+            .min(self.prompt_queue.len() - 1);
     }
 
     pub fn open_timeline(&mut self) {
@@ -1981,6 +2118,272 @@ Output: {} chars (~{} tokens)",
             self.output_tokens_estimate
         )
     }
+}
+
+#[derive(Debug, Clone)]
+struct AtPathTokenMatch {
+    query: String,
+    token_start: usize,
+    token_end: usize,
+    quoted: bool,
+    quote_char: char,
+}
+
+fn build_at_path_completion_state(app: &App) -> Option<AtPathCompletionState> {
+    let token = detect_at_path_token(&app.input_buffer, app.input_cursor)?;
+    Some(AtPathCompletionState {
+        active: true,
+        query: token.query.clone(),
+        token_start: token.token_start,
+        token_end: token.token_end,
+        selected_index: 0,
+        quoted: token.quoted,
+        quote_char: token.quote_char,
+        items: build_at_path_completion_items(app, &token.query, 8),
+    })
+}
+
+fn detect_at_path_token(buffer: &str, cursor: usize) -> Option<AtPathTokenMatch> {
+    if buffer.is_empty() || cursor > buffer.len() || !buffer.is_char_boundary(cursor) {
+        return None;
+    }
+
+    let before_cursor = &buffer[..cursor];
+    let at_index = before_cursor.rfind('@')?;
+    if !is_reference_boundary(buffer[..at_index].chars().last()) {
+        return None;
+    }
+
+    let after_at = &buffer[at_index + 1..];
+    let first_after = after_at.chars().next()?;
+    if first_after.is_whitespace() {
+        return None;
+    }
+
+    if first_after == '"' || first_after == '\'' {
+        let content_start = at_index + 1 + first_after.len_utf8();
+        if cursor < content_start {
+            return None;
+        }
+
+        let closing_index = buffer[content_start..]
+            .find(first_after)
+            .map(|relative| content_start + relative + first_after.len_utf8())
+            .unwrap_or(cursor);
+        if cursor > closing_index {
+            return None;
+        }
+
+        return Some(AtPathTokenMatch {
+            query: buffer[content_start..cursor].to_string(),
+            token_start: at_index,
+            token_end: closing_index,
+            quoted: true,
+            quote_char: first_after,
+        });
+    }
+
+    let token_end = find_unquoted_reference_end(buffer, at_index + 1);
+    if cursor > token_end {
+        return None;
+    }
+
+    Some(AtPathTokenMatch {
+        query: buffer[at_index + 1..cursor].to_string(),
+        token_start: at_index,
+        token_end,
+        quoted: false,
+        quote_char: '"',
+    })
+}
+
+fn find_unquoted_reference_end(buffer: &str, start: usize) -> usize {
+    for (offset, ch) in buffer[start..].char_indices() {
+        if !is_unquoted_reference_char(ch) {
+            return start + offset;
+        }
+    }
+    buffer.len()
+}
+
+fn build_at_path_completion_items(
+    app: &App,
+    query: &str,
+    limit: usize,
+) -> Vec<AtPathCompletionItem> {
+    if limit == 0 || app.cwd.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let root = Path::new(&app.cwd);
+    if !root.exists() || !root.is_dir() {
+        return Vec::new();
+    }
+
+    let normalized_query = normalize_reference_query(query);
+    let mut scored: Vec<(usize, usize, AtPathCompletionItem)> = Vec::new();
+    let mut seen = HashSet::new();
+
+    let mut push_candidate = |path: String,
+                              detail: &str,
+                              score: usize,
+                              scored: &mut Vec<(usize, usize, AtPathCompletionItem)>| {
+        let normalized_path = path.trim().trim_start_matches("./").to_string();
+        if normalized_path.is_empty() || !seen.insert(normalized_path.clone()) {
+            return;
+        }
+        scored.push((
+            score,
+            normalized_path.len(),
+            AtPathCompletionItem {
+                path: normalized_path,
+                detail: detail.to_string(),
+            },
+        ));
+    };
+
+    if normalized_query.is_empty() {
+        for path in &app.pinned_context_files {
+            push_candidate(path.clone(), "pinned", 0, &mut scored);
+        }
+        for path in app.recent_edited_files.iter() {
+            if let Some(relative) = normalize_candidate_path(root, path) {
+                push_candidate(relative, "recent", 1, &mut scored);
+            }
+        }
+    }
+
+    let mut queue = VecDeque::from([root.to_path_buf()]);
+    while let Some(dir) = queue.pop_front() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        let mut sorted_entries = entries.flatten().collect::<Vec<_>>();
+        sorted_entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
+
+        for entry in sorted_entries {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if should_skip_dir(&name) {
+                    continue;
+                }
+                queue.push_back(path);
+                continue;
+            }
+
+            if !path.is_file() {
+                continue;
+            }
+
+            let relative = relative_display_path(root, &path);
+            let Some(score) = score_path_candidate(&relative, &normalized_query) else {
+                continue;
+            };
+            push_candidate(relative, "file", score + 2, &mut scored);
+            if scored.len() >= limit.saturating_mul(6) {
+                break;
+            }
+        }
+
+        if scored.len() >= limit.saturating_mul(6) {
+            break;
+        }
+    }
+
+    scored.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then(left.1.cmp(&right.1))
+            .then(left.2.path.cmp(&right.2.path))
+    });
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, item)| item)
+        .collect()
+}
+
+fn normalize_candidate_path(root: &Path, value: &str) -> Option<String> {
+    let path = PathBuf::from(value);
+    let candidate = if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    };
+    if !candidate.is_file() {
+        return None;
+    }
+    Some(relative_display_path(root, &candidate))
+}
+
+fn normalize_reference_query(query: &str) -> String {
+    query
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim_start_matches("./")
+        .to_ascii_lowercase()
+}
+
+fn relative_display_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .ok()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
+fn score_path_candidate(path: &str, normalized_query: &str) -> Option<usize> {
+    if normalized_query.is_empty() {
+        return Some(0);
+    }
+
+    let path_lower = path.to_ascii_lowercase();
+    let file_name = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .to_ascii_lowercase();
+
+    if path_lower == normalized_query {
+        Some(0)
+    } else if path_lower.starts_with(normalized_query) {
+        Some(1)
+    } else if path_lower.contains(&format!("/{normalized_query}")) {
+        Some(2)
+    } else if file_name.starts_with(normalized_query) {
+        Some(3)
+    } else if path_lower.contains(normalized_query) {
+        Some(4)
+    } else {
+        None
+    }
+}
+
+fn render_at_path_token(path: &str, quoted: bool, quote_char: char) -> String {
+    if quoted || path.contains(char::is_whitespace) {
+        let quote = if quote_char == '\'' { '\'' } else { '"' };
+        format!("@{quote}{path}{quote}")
+    } else {
+        format!("@{path}")
+    }
+}
+
+fn is_reference_boundary(previous: Option<char>) -> bool {
+    match previous {
+        None => true,
+        Some(ch) => ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '<'),
+    }
+}
+
+fn is_unquoted_reference_char(ch: char) -> bool {
+    !ch.is_whitespace()
+        && !matches!(
+            ch,
+            '"' | '\'' | '`' | ',' | ';' | ':' | ')' | ']' | '}' | '(' | '[' | '{'
+        )
 }
 
 fn redact_sensitive_history_command(raw: &str) -> String {
