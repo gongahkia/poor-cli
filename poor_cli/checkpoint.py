@@ -443,6 +443,7 @@ class CheckpointManager:
             raise FileOperationError(f"Checkpoint data missing: {checkpoint_id}")
 
         restored_count = 0
+        failures = []
 
         try:
             # Restore snapshots
@@ -457,14 +458,23 @@ class CheckpointManager:
                     restored_count += 1
                 except Exception as e:
                     logger.error(f"Failed to restore {snapshot.file_path}: {e}")
+                    failures.append(f"{snapshot.file_path}: {e}")
                     continue
 
             logger.info(
                 f"Restored {restored_count} file(s) from checkpoint {checkpoint_id}"
             )
 
+            if failures:
+                raise FileOperationError(
+                    f"Partial restore: {restored_count} succeeded, {len(failures)} failed",
+                    "; ".join(failures),
+                )
+
             return restored_count
 
+        except FileOperationError:
+            raise
         except Exception as e:
             logger.error(f"Failed to restore checkpoint: {e}")
             raise FileOperationError("Failed to restore checkpoint", str(e))

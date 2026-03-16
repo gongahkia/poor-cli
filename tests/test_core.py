@@ -796,3 +796,230 @@ class TestConfidenceOutput:
 
         assert appended == ""
         assert final_text == response
+
+
+class TestStreamingToolLoop:
+    """Test Phase 1: streaming tool loop via _stream_and_collect."""
+
+    @pytest.fixture
+    def core_with_mocks(self, mock_config, mock_provider, mock_tool_registry):
+        from poor_cli.core import PoorCLICore
+        core = PoorCLICore()
+        core.provider = mock_provider
+        core.tool_registry = mock_tool_registry
+        core.config = mock_config
+        core._initialized = True
+        core._config_manager = MagicMock()
+        core._context_manager = MagicMock()
+        return core
+
+    @pytest.mark.asyncio
+    async def test_tool_loop_streams_text_chunks(self, core_with_mocks):
+        """Verify text_chunk events are emitted during tool loop iterations."""
+        from poor_cli.core import CoreEvent
+
+        async def fake_stream(_message):
+            yield SimpleNamespace(content="chunk1", function_calls=None, metadata={})
+            yield SimpleNamespace(content="chunk2", function_calls=None, metadata={})
+
+        core_with_mocks.provider.send_message_stream = fake_stream
+        response, events = await core_with_mocks._stream_and_collect("test", "req-1")
+
+        text_events = [e for e in events if e.type == "text_chunk"]
+        assert len(text_events) == 2
+        assert text_events[0].data["chunk"] == "chunk1"
+        assert text_events[1].data["chunk"] == "chunk2"
+        assert response.content == "chunk1chunk2"
+
+    @pytest.mark.asyncio
+    async def test_tool_loop_streams_thinking_chunks(self, core_with_mocks):
+        """Verify thinking_chunk events during tool loop."""
+
+        async def fake_stream(_message):
+            yield SimpleNamespace(content="", function_calls=None, metadata={}, thinking_content="thinking...")
+
+        core_with_mocks.provider.send_message_stream = fake_stream
+        response, events = await core_with_mocks._stream_and_collect("test", "req-1")
+
+        thinking_events = [e for e in events if e.type == "thinking_chunk"]
+        assert len(thinking_events) == 1
+        assert thinking_events[0].data["chunk"] == "thinking..."
+
+    @pytest.mark.asyncio
+    async def test_tool_loop_cost_tracking_per_stream(self, core_with_mocks):
+        """Verify cost_update events emitted per streaming call."""
+        core_with_mocks._track_cost = MagicMock()
+
+        fc = SimpleNamespace(id="c1", name="read_file", arguments={"file_path": "/tmp/a.py"})
+
+        async def fake_stream(_message):
+            yield SimpleNamespace(
+                content="",
+                function_calls=[fc],
+                metadata={"usage": {"input_tokens": 100, "output_tokens": 50}},
+            )
+
+        core_with_mocks.provider.send_message_stream = fake_stream
+        response, events = await core_with_mocks._stream_and_collect("test", "req-1")
+
+        cost_events = [e for e in events if e.type == "cost_update"]
+        assert len(cost_events) == 1
+        assert cost_events[0].data["inputTokens"] == 100
+        assert cost_events[0].data["outputTokens"] == 50
+
+    @pytest.mark.asyncio
+    async def test_stream_and_collect_returns_function_calls(self, core_with_mocks):
+        """Verify function_calls are collected from stream."""
+        fc = SimpleNamespace(id="c1", name="read_file", arguments={"file_path": "/tmp/a.py"})
+
+        async def fake_stream(_message):
+            yield SimpleNamespace(content="", function_calls=[fc], metadata={})
+
+        core_with_mocks.provider.send_message_stream = fake_stream
+        response, events = await core_with_mocks._stream_and_collect("test", "req-1")
+
+        assert response.function_calls == [fc]
+
+
+class TestParallelToolExecution:
+    """Test Phase 2: parallel readonly tool execution."""
+
+    @pytest.fixture
+    def core_with_mocks(self, mock_config, mock_provider, mock_tool_registry):
+        from poor_cli.core import PoorCLICore
+        core = PoorCLICore()
+        core.provider = mock_provider
+        core.tool_registry = mock_tool_registry
+        core.config = mock_config
+        core._initialized = True
+        core._config_manager = MagicMock()
+        core._context_manager = MagicMock()
+        return core
+
+    def test_is_readonly_tool(self):
+        from poor_cli.core import PoorCLICore
+        assert PoorCLICore._is_readonly_tool("read_file") is True
+        assert PoorCLICore._is_readonly_tool("grep_files") is True
+        assert PoorCLICore._is_readonly_tool("glob_files") is True
+        assert PoorCLICore._is_readonly_tool("bash") is True
+        assert PoorCLICore._is_readonly_tool("write_file") is False
+        assert PoorCLICore._is_readonly_tool("edit_file") is False
+        assert PoorCLICore._is_readonly_tool("delete_file") is False
+
+    @pytest.mark.asyncio
+    async def test_parallel_readonly_tools_execute_concurrently(self, core_with_mocks):
+        """3 read_file calls should run via asyncio.gather."""
+        import asyncio
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value="content")
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(return_value=[])
+
+        calls = [
+            SimpleNamespace(id=f"c{i}", name="read_file", arguments={"file_path": f"/tmp/{i}.py"})
+            for i in range(3)
+        ]
+        response = SimpleNamespace(function_calls=calls)
+
+        result = await core_with_mocks._handle_function_calls_events(
+            response, iteration=0, max_iterations=5, request_id="req-1",
+        )
+
+        assert result == "formatted"
+        assert core_with_mocks.tool_registry.execute_tool_raw.await_count == 3
+        tool_results = [e for e in core_with_mocks._pending_events if e.type == "tool_result"]
+        assert len(tool_results) == 3
+
+    @pytest.mark.asyncio
+    async def test_mutating_tools_remain_sequential(self, core_with_mocks):
+        """write_file + edit_file should execute sequentially (not via gather)."""
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(return_value=[])
+        execution_order = []
+
+        async def track_execution(tool_name, tool_args):
+            execution_order.append(tool_name)
+            return "ok"
+
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(side_effect=track_execution)
+
+        calls = [
+            SimpleNamespace(id="c1", name="write_file", arguments={"file_path": "/tmp/a.py", "content": "x"}),
+            SimpleNamespace(id="c2", name="edit_file", arguments={"file_path": "/tmp/b.py", "new_text": "y"}),
+        ]
+        response = SimpleNamespace(function_calls=calls)
+
+        await core_with_mocks._handle_function_calls_events(
+            response, iteration=0, max_iterations=5, request_id="req-1",
+        )
+
+        assert execution_order == ["write_file", "edit_file"]
+
+    @pytest.mark.asyncio
+    async def test_mixed_batch_readonly_then_mutating(self, core_with_mocks):
+        """Reads run in parallel batch, writes run sequentially after."""
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(return_value=[])
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value="ok")
+
+        calls = [
+            SimpleNamespace(id="c1", name="read_file", arguments={"file_path": "/tmp/a.py"}),
+            SimpleNamespace(id="c2", name="write_file", arguments={"file_path": "/tmp/b.py", "content": "x"}),
+            SimpleNamespace(id="c3", name="read_file", arguments={"file_path": "/tmp/c.py"}),
+        ]
+        response = SimpleNamespace(function_calls=calls)
+
+        await core_with_mocks._handle_function_calls_events(
+            response, iteration=0, max_iterations=5, request_id="req-1",
+        )
+
+        # all 3 should have results
+        tool_results = [e for e in core_with_mocks._pending_events if e.type == "tool_result"]
+        assert len(tool_results) == 3
+
+    @pytest.mark.asyncio
+    async def test_parallel_events_emitted_in_order(self, core_with_mocks):
+        """tool_call_start before tool_result for each call even when parallel."""
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(return_value=[])
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value="ok")
+
+        calls = [
+            SimpleNamespace(id="c1", name="read_file", arguments={"file_path": "/tmp/a.py"}),
+            SimpleNamespace(id="c2", name="glob_files", arguments={"pattern": "*.py"}),
+        ]
+        response = SimpleNamespace(function_calls=calls)
+
+        await core_with_mocks._handle_function_calls_events(
+            response, iteration=0, max_iterations=5, request_id="req-1",
+        )
+
+        events = core_with_mocks._pending_events
+        for call_id in ["c1", "c2"]:
+            start_idx = next(i for i, e in enumerate(events) if e.type == "tool_call_start" and e.data["callId"] == call_id)
+            result_idx = next(i for i, e in enumerate(events) if e.type == "tool_result" and e.data["callId"] == call_id)
+            assert start_idx < result_idx
+
+    @pytest.mark.asyncio
+    async def test_permission_callback_still_works_in_parallel(self, core_with_mocks):
+        """Mutating tool in batch still triggers permission callback."""
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.inspect_mutation_targets = MagicMock(return_value=[])
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value="ok")
+        core_with_mocks.permission_callback = AsyncMock(
+            return_value={"allowed": True, "approvedPaths": [], "approvedChunks": []}
+        )
+
+        calls = [
+            SimpleNamespace(id="c1", name="read_file", arguments={"file_path": "/tmp/a.py"}),
+            SimpleNamespace(id="c2", name="edit_file", arguments={"file_path": "/tmp/b.py", "new_text": "y", "old_text": "x"}),
+        ]
+        response = SimpleNamespace(function_calls=calls)
+
+        await core_with_mocks._handle_function_calls_events(
+            response, iteration=0, max_iterations=5, request_id="req-1",
+        )
+
+        # permission callback should have been called for the mutating tool
+        core_with_mocks.permission_callback.assert_awaited()
+        tool_results = [e for e in core_with_mocks._pending_events if e.type == "tool_result"]
+        assert len(tool_results) == 2

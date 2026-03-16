@@ -1262,10 +1262,11 @@ class PoorCLICore:
                         yield ev
                     self._pending_events = []
 
-                    response = await self.provider.send_message(tool_results)
-                    if response.content:
-                        accumulated_text += response.content
-                        yield CoreEvent.text_chunk(response.content, request_id)
+                    response, stream_events = await self._stream_and_collect(tool_results, request_id)
+                    for ev in stream_events:
+                        yield ev
+                        if ev.type == "text_chunk":
+                            accumulated_text += ev.data["chunk"]
 
                     while response.function_calls:
                         iteration += 1
@@ -1289,19 +1290,11 @@ class PoorCLICore:
                             yield ev
                         self._pending_events = []
 
-                        response = await self.provider.send_message(tool_results)
-                        if response.content:
-                            accumulated_text += response.content
-                            yield CoreEvent.text_chunk(response.content, request_id)
-
-                        if response.metadata:
-                            usage = response.metadata.get("usage", {})
-                            if usage:
-                                self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
-                                yield CoreEvent.cost_update(
-                                    input_tokens=usage.get("input_tokens", 0),
-                                    output_tokens=usage.get("output_tokens", 0),
-                                )
+                        response, stream_events = await self._stream_and_collect(tool_results, request_id)
+                        for ev in stream_events:
+                            yield ev
+                            if ev.type == "text_chunk":
+                                accumulated_text += ev.data["chunk"]
 
                         # Check cost guardrails mid-loop
                         cost_reason = self._check_cost_guardrails()
@@ -1362,6 +1355,43 @@ class PoorCLICore:
         finally:
             self._clear_cancel_event(request_id)
 
+    async def _stream_and_collect(
+        self,
+        message: Any,
+        request_id: str = "",
+    ) -> Tuple["ProviderResponse", List["CoreEvent"]]:
+        """Stream a provider call, collecting events and building a response."""
+        accumulated_text = ""
+        function_calls: Optional[List[FunctionCall]] = None
+        metadata: Dict[str, Any] = {}
+        events: List[CoreEvent] = []
+        async for chunk in self.provider.send_message_stream(message):
+            if chunk.function_calls:
+                function_calls = chunk.function_calls
+                if chunk.metadata:
+                    metadata = chunk.metadata
+            else:
+                thinking = getattr(chunk, "thinking_content", None)
+                if thinking:
+                    events.append(CoreEvent.thinking_chunk(thinking, request_id))
+                if chunk.content:
+                    accumulated_text += chunk.content
+                    events.append(CoreEvent.text_chunk(chunk.content, request_id))
+        if metadata:
+            usage = metadata.get("usage", {})
+            if usage:
+                self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+                events.append(CoreEvent.cost_update(
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                ))
+        response = ProviderResponse(
+            content=accumulated_text,
+            function_calls=function_calls,
+            metadata=metadata,
+        )
+        return response, events
+
     def _check_auto_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[bool]:
         """Check auto-approve/deny from AgenticConfig. Returns True/False/None."""
         if not self.config:
@@ -1394,6 +1424,107 @@ class PoorCLICore:
         ))
         return "".join(diff_lines)
 
+    @staticmethod
+    def _is_readonly_tool(tool_name: str) -> bool:
+        """Check if a tool is read-only (safe for parallel execution)."""
+        return tool_name not in _MUTATING_TOOLS
+
+    async def _execute_single_call_events(
+        self,
+        fc: FunctionCall,
+        iteration: int,
+        max_iterations: int,
+        request_id: str,
+    ) -> Tuple[List["CoreEvent"], Dict[str, Any]]:
+        """Execute a single function call with permission checks. Returns (events, result_dict)."""
+        events: List[CoreEvent] = []
+        tool_name = fc.name
+        tool_args = fc.arguments
+        preview_payload: Optional[Dict[str, Any]] = None
+        tool_paths = self._inspect_tool_targets(tool_name, tool_args)
+
+        events.append(
+            CoreEvent.tool_call_start(
+                tool_name, tool_args, fc.id, iteration, max_iterations, paths=tool_paths,
+            )
+        )
+        logger.info(f"Executing tool: {tool_name}")
+
+        # 1. check auto-approve/deny from config
+        auto = self._check_auto_permission(tool_name, tool_args)
+        if auto is False:
+            result = "Operation denied by safety policy"
+            self._audit_permission_decision(tool_name, tool_args, allowed=False, source="config:auto-deny")
+            events.append(CoreEvent.tool_result(
+                tool_name, result, fc.id, iteration, max_iterations,
+                paths=tool_paths, changed=False, message=result,
+            ))
+            return events, {"id": fc.id, "name": tool_name, "result": result}
+
+        # 2. if not auto-approved, check interactive permission callback
+        if auto is None and self._permission_callback:
+            try:
+                if tool_name in _MUTATING_TOOLS and self.tool_registry:
+                    try:
+                        preview_payload = await self.preview_mutation(tool_name, tool_args)
+                        preview_payload["requestId"] = request_id
+                        tool_paths = preview_payload.get("paths") or tool_paths
+                    except Exception as preview_error:
+                        logger.warning("Failed to preview mutation for %s: %s", tool_name, preview_error)
+                events.append(CoreEvent.permission_request(tool_name, tool_args, request_id, preview=preview_payload))
+                permission = await self._request_permission(tool_name, tool_args, preview_payload)
+                if not permission["allowed"]:
+                    self._audit_permission_decision(tool_name, tool_args, allowed=False, source="interactive", preview=preview_payload)
+                    result = "Operation cancelled by user"
+                    events.append(CoreEvent.tool_result(
+                        tool_name, result, fc.id, iteration, max_iterations,
+                        diff=(preview_payload or {}).get("diff", ""), paths=tool_paths, changed=False, message=result,
+                    ))
+                    return events, {"id": fc.id, "name": tool_name, "result": result}
+                self._audit_permission_decision(tool_name, tool_args, allowed=True, source="interactive", preview=preview_payload)
+                if permission["approvedChunks"] or permission["approvedPaths"]:
+                    try:
+                        tool_args = await self._apply_permission_scope(
+                            tool_name, tool_args, permission["approvedPaths"], permission["approvedChunks"],
+                        )
+                        tool_paths = self._inspect_tool_targets(tool_name, tool_args) or tool_paths
+                    except Exception as scope_error:
+                        result = f"Operation cancelled: {scope_error}"
+                        events.append(CoreEvent.tool_result(
+                            tool_name, result, fc.id, iteration, max_iterations,
+                            diff=(preview_payload or {}).get("diff", ""), paths=tool_paths, changed=False, message=str(scope_error),
+                        ))
+                        return events, {"id": fc.id, "name": tool_name, "result": result}
+            except Exception as e:
+                logger.error(f"Permission callback error: {e}")
+                self._audit_permission_decision(tool_name, tool_args, allowed=False, source="permission-callback-error", preview=preview_payload)
+                result = "Operation denied: permission callback failed"
+                events.append(CoreEvent.tool_result(
+                    tool_name, result, fc.id, iteration, max_iterations,
+                    diff=(preview_payload or {}).get("diff", ""), paths=tool_paths, changed=False, message=str(e),
+                ))
+                return events, {"id": fc.id, "name": tool_name, "result": result}
+        elif auto is True:
+            self._audit_permission_decision(tool_name, tool_args, allowed=True, source="config:auto-approve")
+
+        # 3. execute the tool
+        try:
+            result = await self._execute_tool_internal(tool_name, tool_args)
+        except Exception as e:
+            result = f"Error: {e}"
+            logger.error(f"Tool execution failed: {e}")
+
+        result_text = self._tool_result_text(result)
+        events.append(CoreEvent.tool_result(
+            tool_name, result_text, fc.id, iteration, max_iterations,
+            diff=self._tool_result_diff(result),
+            paths=self._tool_result_paths(tool_name, tool_args, result),
+            checkpoint_id=self._tool_result_checkpoint_id(result),
+            changed=self._tool_result_changed(result),
+            message=self._tool_result_message(result),
+        ))
+        return events, {"id": fc.id, "name": tool_name, "result": result_text}
+
     async def _handle_function_calls_events(
         self,
         response: ProviderResponse,
@@ -1419,13 +1550,8 @@ class PoorCLICore:
             for fc in response.function_calls:
                 self._pending_events.append(
                     CoreEvent.tool_result(
-                        fc.name,
-                        rejection,
-                        fc.id,
-                        iteration,
-                        max_iterations,
-                        changed=False,
-                        message=rejection,
+                        fc.name, rejection, fc.id, iteration, max_iterations,
+                        changed=False, message=rejection,
                     )
                 )
                 tool_results.append({"id": fc.id, "name": fc.name, "result": rejection})
@@ -1433,189 +1559,27 @@ class PoorCLICore:
                 return tool_results
             return self.provider.format_tool_results(tool_results)
 
-        for fc in response.function_calls:
-            tool_name = fc.name
-            tool_args = fc.arguments
-            preview_payload: Optional[Dict[str, Any]] = None
-            tool_paths = self._inspect_tool_targets(tool_name, tool_args)
+        # partition into readonly (parallelizable) and mutating (sequential)
+        readonly_calls = [fc for fc in response.function_calls if self._is_readonly_tool(fc.name)]
+        mutating_calls = [fc for fc in response.function_calls if not self._is_readonly_tool(fc.name)]
 
-            self._pending_events.append(
-                CoreEvent.tool_call_start(
-                    tool_name,
-                    tool_args,
-                    fc.id,
-                    iteration,
-                    max_iterations,
-                    paths=tool_paths,
-                )
+        # execute readonly calls in parallel
+        if readonly_calls:
+            parallel_results = await asyncio.gather(*[
+                self._execute_single_call_events(fc, iteration, max_iterations, request_id)
+                for fc in readonly_calls
+            ])
+            for call_events, call_result in parallel_results:
+                self._pending_events.extend(call_events)
+                tool_results.append(call_result)
+
+        # execute mutating calls sequentially
+        for fc in mutating_calls:
+            call_events, call_result = await self._execute_single_call_events(
+                fc, iteration, max_iterations, request_id,
             )
-            logger.info(f"Executing tool: {tool_name}")
-
-            # 1. Check auto-approve/deny from config
-            auto = self._check_auto_permission(tool_name, tool_args)
-            if auto is False:
-                result = "Operation denied by safety policy"
-                self._audit_permission_decision(
-                    tool_name,
-                    tool_args,
-                    allowed=False,
-                    source="config:auto-deny",
-                )
-                self._pending_events.append(
-                    CoreEvent.tool_result(
-                        tool_name,
-                        result,
-                        fc.id,
-                        iteration,
-                        max_iterations,
-                        paths=tool_paths,
-                        changed=False,
-                        message=result,
-                    )
-                )
-                tool_results.append({"id": fc.id, "name": tool_name, "result": result})
-                continue
-
-            # 2. If not auto-approved, check interactive permission callback
-            if auto is None and self._permission_callback:
-                try:
-                    if tool_name in _MUTATING_TOOLS and self.tool_registry:
-                        try:
-                            preview_payload = await self.preview_mutation(tool_name, tool_args)
-                            preview_payload["requestId"] = request_id
-                            tool_paths = preview_payload.get("paths") or tool_paths
-                        except Exception as preview_error:
-                            logger.warning(
-                                "Failed to preview mutation for %s: %s",
-                                tool_name,
-                                preview_error,
-                            )
-                    self._pending_events.append(
-                        CoreEvent.permission_request(
-                            tool_name,
-                            tool_args,
-                            request_id,
-                            preview=preview_payload,
-                        )
-                    )
-                    permission = await self._request_permission(
-                        tool_name,
-                        tool_args,
-                        preview_payload,
-                    )
-                    if not permission["allowed"]:
-                        self._audit_permission_decision(
-                            tool_name,
-                            tool_args,
-                            allowed=False,
-                            source="interactive",
-                            preview=preview_payload,
-                        )
-                        result = "Operation cancelled by user"
-                        self._pending_events.append(
-                            CoreEvent.tool_result(
-                                tool_name,
-                                result,
-                                fc.id,
-                                iteration,
-                                max_iterations,
-                                diff=(preview_payload or {}).get("diff", ""),
-                                paths=tool_paths,
-                                changed=False,
-                                message=result,
-                            )
-                            )
-                        tool_results.append({"id": fc.id, "name": tool_name, "result": result})
-                        continue
-                    self._audit_permission_decision(
-                        tool_name,
-                        tool_args,
-                        allowed=True,
-                        source="interactive",
-                        preview=preview_payload,
-                    )
-                    if permission["approvedChunks"] or permission["approvedPaths"]:
-                        try:
-                            tool_args = await self._apply_permission_scope(
-                                tool_name,
-                                tool_args,
-                                permission["approvedPaths"],
-                                permission["approvedChunks"],
-                            )
-                            tool_paths = self._inspect_tool_targets(tool_name, tool_args) or tool_paths
-                        except Exception as scope_error:
-                            result = f"Operation cancelled: {scope_error}"
-                            self._pending_events.append(
-                                CoreEvent.tool_result(
-                                    tool_name,
-                                    result,
-                                    fc.id,
-                                    iteration,
-                                    max_iterations,
-                                    diff=(preview_payload or {}).get("diff", ""),
-                                    paths=tool_paths,
-                                    changed=False,
-                                    message=str(scope_error),
-                                )
-                            )
-                            tool_results.append({"id": fc.id, "name": tool_name, "result": result})
-                            continue
-                except Exception as e:
-                    logger.error(f"Permission callback error: {e}")
-                    self._audit_permission_decision(
-                        tool_name,
-                        tool_args,
-                        allowed=False,
-                        source="permission-callback-error",
-                        preview=preview_payload,
-                    )
-                    result = "Operation denied: permission callback failed"
-                    self._pending_events.append(
-                        CoreEvent.tool_result(
-                            tool_name,
-                            result,
-                            fc.id,
-                            iteration,
-                            max_iterations,
-                            diff=(preview_payload or {}).get("diff", ""),
-                            paths=tool_paths,
-                            changed=False,
-                            message=str(e),
-                        )
-                    )
-                    tool_results.append({"id": fc.id, "name": tool_name, "result": result})
-                    continue
-            elif auto is True:
-                self._audit_permission_decision(
-                    tool_name,
-                    tool_args,
-                    allowed=True,
-                    source="config:auto-approve",
-                )
-
-            # 3. Execute the tool
-            try:
-                result = await self._execute_tool_internal(tool_name, tool_args)
-            except Exception as e:
-                result = f"Error: {e}"
-                logger.error(f"Tool execution failed: {e}")
-
-            result_text = self._tool_result_text(result)
-            self._pending_events.append(
-                CoreEvent.tool_result(
-                    tool_name,
-                    result_text,
-                    fc.id,
-                    iteration,
-                    max_iterations,
-                    diff=self._tool_result_diff(result),
-                    paths=self._tool_result_paths(tool_name, tool_args, result),
-                    checkpoint_id=self._tool_result_checkpoint_id(result),
-                    changed=self._tool_result_changed(result),
-                    message=self._tool_result_message(result),
-                )
-            )
-            tool_results.append({"id": fc.id, "name": tool_name, "result": result_text})
+            self._pending_events.extend(call_events)
+            tool_results.append(call_result)
 
         if not self.provider:
             return tool_results

@@ -50,31 +50,34 @@ class APIKeyManager:
         """
         salt_file = self.config_dir / ".salt"
 
-        if salt_file.exists():
-            with open(salt_file, 'rb') as f:
-                salt = f.read()
-            return self._derive_key(salt)
-
         # Check for legacy raw keyfile — migrate to PBKDF2
         if self.key_file.exists():
             with open(self.key_file, 'rb') as f:
                 legacy_key = f.read()
             salt = os.urandom(16)
-            salt_file.touch(mode=0o600)
-            with open(salt_file, 'wb') as f:
-                f.write(salt)
+            try:
+                fd = os.open(str(salt_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.write(fd, salt)
+                os.close(fd)
+            except FileExistsError:
+                with open(salt_file, 'rb') as f:
+                    salt = f.read()
             new_key = self._derive_key(salt)
             self._migrate_keys(legacy_key, new_key)
             self.key_file.unlink()
             logger.info("Migrated legacy raw keyfile to PBKDF2 and deleted keyfile")
             return new_key
 
-        # Generate new salt and derive key
+        # Generate new salt atomically or read existing
         salt = os.urandom(16)
-        salt_file.touch(mode=0o600)
-        with open(salt_file, 'wb') as f:
-            f.write(salt)
-        logger.info("Generated new encryption salt (PBKDF2)")
+        try:
+            fd = os.open(str(salt_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.write(fd, salt)
+            os.close(fd)
+            logger.info("Generated new encryption salt (PBKDF2)")
+        except FileExistsError:
+            with open(salt_file, 'rb') as f:
+                salt = f.read()
         return self._derive_key(salt)
 
     def _derive_key(self, salt: bytes) -> bytes:

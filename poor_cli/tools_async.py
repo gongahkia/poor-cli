@@ -77,6 +77,9 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "diff_files": [ToolCapability.FILESYSTEM_READ.value],
     "git_status": [ToolCapability.GIT_READ.value],
     "git_diff": [ToolCapability.GIT_READ.value],
+    "git_log": [ToolCapability.GIT_READ.value],
+    "git_add": [ToolCapability.GIT_WRITE.value],
+    "git_commit": [ToolCapability.GIT_WRITE.value],
     "create_directory": [ToolCapability.FILESYSTEM_WRITE.value],
     "run_tests": [ToolCapability.PROCESS_EXECUTE.value],
     "git_status_diff": [ToolCapability.GIT_READ.value],
@@ -108,6 +111,8 @@ DEFAULT_MUTATING_TOOLS = {
     "apply_patch_unified",
     "format_and_lint",
     "json_yaml_edit",
+    "git_add",
+    "git_commit",
 }
 
 
@@ -186,8 +191,12 @@ class ToolRegistryAsync:
         self.tools = {}
         self._output_max_chars = output_max_chars  # 0 = no truncation
         self._output_max_lines = output_max_lines
+        self._cwd: str = os.getcwd()  # persisted working directory across bash calls
         self.command_validator = get_command_validator(strict_mode=False)
         self._register_tools()
+
+    def reset_cwd(self) -> None:
+        self._cwd = os.getcwd()  # reset to process working directory
 
     def _register_tools(self):
         """Register all available tools"""
@@ -265,6 +274,10 @@ class ToolRegistryAsync:
                             "end_line": {
                                 "type": "INTEGER",
                                 "description": "Ending line number for line-based editing (1-indexed)"
+                            },
+                            "replace_all": {
+                                "type": "BOOLEAN",
+                                "description": "Replace all occurrences of old_text (default false)"
                             }
                         },
                         "required": ["file_path", "new_text"]
@@ -315,6 +328,10 @@ class ToolRegistryAsync:
                             "case_sensitive": {
                                 "type": "BOOLEAN",
                                 "description": "Whether search should be case sensitive"
+                            },
+                            "context_lines": {
+                                "type": "INTEGER",
+                                "description": "Number of context lines before and after each match"
                             }
                         },
                         "required": ["pattern"]
@@ -478,6 +495,56 @@ class ToolRegistryAsync:
                             }
                         },
                         "required": []
+                    }
+                }
+            },
+            "git_log": {
+                "function": self.git_log,
+                "declaration": {
+                    "name": "git_log",
+                    "description": "Show recent git commit history",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "count": {"type": "INTEGER", "description": "Number of recent commits to show (default 10)"},
+                            "file_path": {"type": "STRING", "description": "Optional file path to show history for"},
+                            "path": {"type": "STRING", "description": "Repository path (defaults to current)"}
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "git_add": {
+                "function": self.git_add,
+                "declaration": {
+                    "name": "git_add",
+                    "description": "Stage specific files for commit",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "file_paths": {
+                                "type": "ARRAY",
+                                "items": {"type": "STRING"},
+                                "description": "List of file paths to stage"
+                            },
+                            "path": {"type": "STRING", "description": "Repository path (defaults to current)"}
+                        },
+                        "required": ["file_paths"]
+                    }
+                }
+            },
+            "git_commit": {
+                "function": self.git_commit,
+                "declaration": {
+                    "name": "git_commit",
+                    "description": "Create a git commit with a message",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "message": {"type": "STRING", "description": "Commit message"},
+                            "path": {"type": "STRING", "description": "Repository path (defaults to current)"}
+                        },
+                        "required": ["message"]
                     }
                 }
             },
@@ -1315,6 +1382,7 @@ class ToolRegistryAsync:
         old_text: Optional[str] = None,
         start_line: Optional[int] = None,
         end_line: Optional[int] = None,
+        replace_all: bool = False,
     ) -> Tuple[str, Dict[str, Any]]:
         if old_text is None and start_line is None:
             raise ValidationError("edit_file requires `old_text` or `start_line`")
@@ -1323,13 +1391,14 @@ class ToolRegistryAsync:
             occurrences = content.count(old_text)
             if occurrences == 0:
                 raise ValidationError(f"Text not found in file: {old_text[:50]}...")
-            if occurrences > 1:
+            if not replace_all and occurrences > 1:
                 raise ValidationError(
                     "edit_file requires an exact single match; multiple matches found"
                 )
+            replaced = content.replace(old_text, new_text) if replace_all else content.replace(old_text, new_text, 1)
             return (
-                content.replace(old_text, new_text, 1),
-                {"mode": "exact_replace", "match_count": occurrences},
+                replaced,
+                {"mode": "exact_replace", "match_count": occurrences, "replacements": occurrences},
             )
 
         lines = content.splitlines(keepends=True)
@@ -1614,9 +1683,14 @@ class ToolRegistryAsync:
                     lines = await f.readlines()
                     start = (start_line - 1) if start_line else 0
                     end = end_line if end_line else len(lines)
-                    content = ''.join(lines[start:end])
+                    selected = lines[start:end]
+                    offset = start + 1 # 1-indexed line numbers matching file position
+                    content = ''.join(f"{offset + i:6d}\t{line}" for i, line in enumerate(selected))
                 else:
                     content = await f.read()
+                    if content: # add line numbers in cat -n format
+                        raw_lines = content.splitlines(True)
+                        content = ''.join(f"{i:6d}\t{line}" for i, line in enumerate(raw_lines, 1))
 
             logger.info(f"Read file: {file_path}")
             return content
@@ -1670,7 +1744,8 @@ class ToolRegistryAsync:
             raise FileOperationError(f"Failed to write file {file_path}: {str(e)}")
 
     async def edit_file(self, file_path: str, new_text: str, old_text: Optional[str] = None,
-                       start_line: Optional[int] = None, end_line: Optional[int] = None) -> ToolOutcome:
+                       start_line: Optional[int] = None, end_line: Optional[int] = None,
+                       replace_all: bool = False) -> ToolOutcome:
         """Edit file by replacing text or lines
 
         Args:
@@ -1701,6 +1776,7 @@ class ToolRegistryAsync:
                 old_text=old_text,
                 start_line=start_line,
                 end_line=end_line,
+                replace_all=replace_all,
             )
 
             changed = new_content != content
@@ -1758,7 +1834,8 @@ class ToolRegistryAsync:
             raise ToolExecutionError("glob_files", f"Glob search failed: {str(e)}")
 
     async def grep_files(self, pattern: str, path: Optional[str] = None,
-                        file_pattern: str = "*", case_sensitive: bool = True) -> str:
+                        file_pattern: str = "*", case_sensitive: bool = True,
+                        context_lines: int = 0) -> str:
         """Search for pattern in files
 
         Args:
@@ -1766,6 +1843,7 @@ class ToolRegistryAsync:
             path: Directory or file to search
             file_pattern: Glob pattern to filter files
             case_sensitive: Case sensitivity
+            context_lines: Number of context lines before and after each match
 
         Returns:
             Search results
@@ -1775,52 +1853,99 @@ class ToolRegistryAsync:
         """
         try:
             search_path = path or os.getcwd()
-            flags = 0 if case_sensitive else re.IGNORECASE
 
-            # Compile regex
-            regex = re.compile(pattern, flags)
+            if shutil.which("rg"): # prefer ripgrep when available
+                return await self._grep_ripgrep(pattern, search_path, file_pattern, case_sensitive, context_lines)
+            return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
 
-            results = []
-            result_count = 0
+        except ToolExecutionError:
+            raise
+        except Exception as e:
+            raise ToolExecutionError("grep_files", f"Grep search failed: {str(e)}")
 
-            # Get files to search
-            if os.path.isfile(search_path):
-                files = [search_path]
-            else:
-                full_pattern = os.path.join(search_path, "**", file_pattern)
-                files = glob_module.glob(full_pattern, recursive=True)
-                files = [f for f in files if os.path.isfile(f)]
+    async def _grep_ripgrep(self, pattern: str, search_path: str,
+                            file_pattern: str, case_sensitive: bool,
+                            context_lines: int) -> str:
+        """ripgrep-based grep implementation"""
+        cmd = ["rg", "--line-number", "--no-heading", "--max-count", "500"]
+        if context_lines > 0:
+            cmd.extend(["-C", str(context_lines)])
+        if not case_sensitive:
+            cmd.append("-i")
+        if file_pattern != "*":
+            cmd.extend(["--glob", file_pattern])
+        cmd.append(pattern)
+        cmd.append(search_path)
 
-            # Search each file
-            for file_path in files[:50]:  # Limit files searched
-                try:
-                    async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        lines = await f.readlines()
+        result = await self._run_command_capture(cmd, timeout=30)
+        if result["timed_out"]:
+            raise ToolExecutionError("grep_files", "ripgrep search timed out")
+        if result["exit_code"] == 1: # rg exit 1 means no matches
+            return f"No matches found for pattern: {pattern}"
+        if result["exit_code"] not in (0, 1):
+            raise ToolExecutionError("grep_files", f"ripgrep failed: {result['stderr']}")
 
-                    for line_num, line in enumerate(lines, 1):
-                        if regex.search(line):
+        stdout = result["stdout"].rstrip()
+        if not stdout:
+            return f"No matches found for pattern: {pattern}"
+
+        lines = stdout.split("\n")[:500] # cap result lines
+        output = f"Found {len(lines)} result lines:\n" + "\n".join(lines)
+        logger.info(f"Grep search (rg): {pattern} found {len(lines)} result lines")
+        return output
+
+    async def _grep_python_fallback(self, pattern: str, search_path: str,
+                                    file_pattern: str, case_sensitive: bool,
+                                    context_lines: int) -> str:
+        """python re-based grep fallback"""
+        flags = 0 if case_sensitive else re.IGNORECASE
+        regex = re.compile(pattern, flags)
+        results = []
+        result_count = 0
+
+        if os.path.isfile(search_path):
+            files = [search_path]
+        else:
+            full_pattern = os.path.join(search_path, "**", file_pattern)
+            files = glob_module.glob(full_pattern, recursive=True)
+            files = [f for f in files if os.path.isfile(f)]
+
+        for file_path in files[:200]: # raised cap from 50 to 200
+            try:
+                async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    all_lines = await f.readlines()
+
+                for line_num, line in enumerate(all_lines, 1):
+                    if regex.search(line):
+                        if context_lines > 0: # add context window around match
+                            start = max(0, line_num - 1 - context_lines)
+                            end = min(len(all_lines), line_num + context_lines)
+                            for ctx_idx in range(start, end):
+                                ctx_line = all_lines[ctx_idx].rstrip()
+                                results.append(f"{file_path}:{ctx_idx + 1}: {ctx_line}")
+                                result_count += 1
+                                if result_count >= 500:
+                                    break
+                        else:
                             results.append(f"{file_path}:{line_num}: {line.rstrip()}")
                             result_count += 1
 
-                            if result_count >= 100:  # Limit total results
-                                break
+                        if result_count >= 500: # raised cap from 100 to 500
+                            break
 
-                except Exception as e:
-                    logger.debug(f"Skipping file {file_path}: {e}")
-                    continue
+            except Exception as e:
+                logger.debug(f"Skipping file {file_path}: {e}")
+                continue
 
-                if result_count >= 100:
-                    break
+            if result_count >= 500:
+                break
 
-            if not results:
-                return f"No matches found for pattern: {pattern}"
+        if not results:
+            return f"No matches found for pattern: {pattern}"
 
-            result = f"Found {len(results)} matches:\n" + "\n".join(results)
-            logger.info(f"Grep search: {pattern} found {len(results)} matches")
-            return result
-
-        except Exception as e:
-            raise ToolExecutionError("grep_files", f"Grep search failed: {str(e)}")
+        result = f"Found {len(results)} matches:\n" + "\n".join(results)
+        logger.info(f"Grep search: {pattern} found {len(results)} matches")
+        return result
 
     async def _read_stream_with_limit(
         self,
@@ -2172,15 +2297,17 @@ class ToolRegistryAsync:
                     "; ".join(validation.warnings),
                 )
 
-            argv = shlex.split(command)
-            if not argv:
+            if not command.strip():
                 raise CommandExecutionError(command, "Command is empty after parsing")
 
-            # Create subprocess asynchronously without shell interpolation.
+            wrapped_cmd = f"{command}; echo __CWD__=$(pwd)"  # track cwd after execution
+            argv = ["sh", "-c", wrapped_cmd]
+
             process = await asyncio.create_subprocess_exec(
                 *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=self._cwd,
                 **self._subprocess_spawn_kwargs(),
             )
 
@@ -2214,6 +2341,18 @@ class ToolRegistryAsync:
             # Decode output
             stdout_text = stdout_bytes.decode('utf-8', errors='replace')
             stderr_text = stderr_bytes.decode('utf-8', errors='replace')
+
+            # extract cwd marker and update persisted working directory
+            _cwd_lines = []
+            _output_lines = []
+            for _line in stdout_text.splitlines(True):
+                if _line.rstrip("\n\r").startswith("__CWD__="):
+                    _cwd_lines.append(_line.rstrip("\n\r")[len("__CWD__="):])
+                else:
+                    _output_lines.append(_line)
+            if _cwd_lines and process.returncode == 0:
+                self._cwd = _cwd_lines[-1]  # use last marker
+            stdout_text = "".join(_output_lines)
 
             truncation_notes: List[str] = []
             if stdout_truncated:
@@ -2516,6 +2655,69 @@ class ToolRegistryAsync:
             if isinstance(e, CommandExecutionError):
                 raise
             raise CommandExecutionError("git diff", f"Git diff failed: {str(e)}")
+
+    async def git_log(self, count: int = 10, file_path: Optional[str] = None, path: Optional[str] = None) -> str:
+        """Show recent git commit history"""
+        try:
+            work_dir = self._resolve_directory(path)
+            argv = ["git", "log", "--oneline", f"-{count}"]
+            if file_path:
+                argv.extend(["--", file_path])
+            result = await self._run_command_capture(argv, timeout=30, cwd=str(work_dir))
+            if result["timed_out"]:
+                raise CommandExecutionError("git log", "Git log timed out after 30 seconds")
+            if result["exit_code"] != 0:
+                details = (result["stderr"] or result["stdout"]).strip() or "Git log failed"
+                raise CommandExecutionError("git log", details, return_code=result["exit_code"])
+            output = (result["stdout"] or result["stderr"]).strip()
+            return output or "No commits found"
+        except Exception as e:
+            if isinstance(e, CommandExecutionError):
+                raise
+            raise CommandExecutionError("git log", f"Git log failed: {str(e)}")
+
+    async def git_add(self, file_paths: List[str], path: Optional[str] = None) -> str:
+        """Stage specific files for commit"""
+        if not file_paths:
+            raise ValidationError("file_paths must not be empty")
+        for fp in file_paths: # reject broad-add patterns
+            stripped = fp.strip()
+            if stripped in (".", "-A", "--all"):
+                raise ValidationError(f"Refusing to stage '{stripped}': specify individual files instead")
+        try:
+            work_dir = self._resolve_directory(path)
+            argv = ["git", "add", "--"] + list(file_paths)
+            result = await self._run_command_capture(argv, timeout=30, cwd=str(work_dir))
+            if result["timed_out"]:
+                raise CommandExecutionError("git add", "Git add timed out after 30 seconds")
+            if result["exit_code"] != 0:
+                details = (result["stderr"] or result["stdout"]).strip() or "Git add failed"
+                raise CommandExecutionError("git add", details, return_code=result["exit_code"])
+            return f"Staged {len(file_paths)} file(s)"
+        except Exception as e:
+            if isinstance(e, (CommandExecutionError, ValidationError)):
+                raise
+            raise CommandExecutionError("git add", f"Git add failed: {str(e)}")
+
+    async def git_commit(self, message: str, path: Optional[str] = None) -> str:
+        """Create a git commit with a message"""
+        if not message or not message.strip():
+            raise ValidationError("Commit message must not be empty")
+        try:
+            work_dir = self._resolve_directory(path)
+            argv = ["git", "commit", "-m", message]
+            result = await self._run_command_capture(argv, timeout=30, cwd=str(work_dir))
+            if result["timed_out"]:
+                raise CommandExecutionError("git commit", "Git commit timed out after 30 seconds")
+            if result["exit_code"] != 0:
+                details = (result["stderr"] or result["stdout"]).strip() or "Git commit failed"
+                raise CommandExecutionError("git commit", details, return_code=result["exit_code"])
+            output = (result["stdout"] or result["stderr"]).strip()
+            return output or "Commit created"
+        except Exception as e:
+            if isinstance(e, (CommandExecutionError, ValidationError)):
+                raise
+            raise CommandExecutionError("git commit", f"Git commit failed: {str(e)}")
 
     async def create_directory(self, path: str) -> str:
         """Create a new directory

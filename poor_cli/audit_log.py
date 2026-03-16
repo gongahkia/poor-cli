@@ -167,12 +167,10 @@ class AuditLogger:
             Event ID
         """
         import os
-        import hashlib
+        import uuid
 
         # Generate event ID
-        event_id = hashlib.sha256(
-            f"{datetime.now().isoformat()}{operation}{target}".encode()
-        ).hexdigest()[:16]
+        event_id = uuid.uuid4().hex[:16]
 
         # Get current user
         user = os.getenv("USER", os.getenv("USERNAME", "unknown"))
@@ -192,10 +190,9 @@ class AuditLogger:
         )
 
         # Save to database
+        conn = sqlite3.connect(self.db_path)
         try:
-            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-
             event_dict = event.to_dict()
             cursor.execute("""
                 INSERT INTO audit_events
@@ -214,14 +211,13 @@ class AuditLogger:
                 1 if event_dict["success"] else 0,
                 event_dict["error_message"]
             ))
-
             conn.commit()
-            conn.close()
-
             logger.debug(f"Logged audit event: {event_type.value} - {operation}")
-
         except Exception as e:
             logger.error(f"Failed to log audit event: {e}")
+            raise
+        finally:
+            conn.close()
 
         return event_id
 

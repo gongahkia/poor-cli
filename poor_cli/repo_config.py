@@ -507,7 +507,7 @@ class RepoConfig:
     @contextmanager
     def _history_file_lock(self, exclusive: bool) -> Iterator[None]:
         """Synchronize history file access across concurrent processes."""
-        self.history_lock_file.touch(exist_ok=True)
+        self.history_lock_file.touch(mode=0o600, exist_ok=True)
 
         if fcntl is None:  # pragma: no cover - non-Unix fallback
             yield
@@ -524,7 +524,7 @@ class RepoConfig:
     @contextmanager
     def _preferences_file_lock(self, exclusive: bool) -> Iterator[None]:
         """Synchronize preferences file access across concurrent processes."""
-        self.preferences_lock_file.touch(exist_ok=True)
+        self.preferences_lock_file.touch(mode=0o600, exist_ok=True)
 
         if fcntl is None:  # pragma: no cover - non-Unix fallback
             yield

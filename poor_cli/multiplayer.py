@@ -1326,6 +1326,19 @@ class MultiplayerHost:
             )
             return
 
+        if not self._consume_rate_limit_token(conn):
+            await self._send_error_response(
+                conn.ws,
+                request_id=message.id,
+                code=-32029,
+                message="Rate limited",
+                data={
+                    "error_code": "RATE_LIMITED",
+                    "requestsPerMinute": self.requests_per_minute,
+                },
+            )
+            return
+
         async with room.dispatch_lock:
             response = await room.server.dispatch(message)
         if message.id is not None:

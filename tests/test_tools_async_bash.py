@@ -175,3 +175,111 @@ async def test_bash_timeout_is_clamped_by_security_config():
 
     assert result == "ok\n"
     assert observed["timeout"] == 5
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_persists_across_calls():
+    registry = ToolRegistryAsync()
+    proc_cd = _FakeProcess(
+        returncode=0,
+        stdout=b"__CWD__=/tmp\n",
+        stderr=b"",
+    )
+    proc_pwd = _FakeProcess(
+        returncode=0,
+        stdout=b"/tmp\n__CWD__=/tmp\n",
+        stderr=b"",
+    )
+    call_count = {"n": 0}
+
+    async def _factory(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return proc_cd
+        return proc_pwd
+
+    with patch(
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
+        AsyncMock(side_effect=_factory),
+    ) as mock_exec:
+        await registry.bash("cd /tmp")
+        assert registry._cwd == "/tmp"
+        result = await registry.bash("pwd")
+
+    assert "/tmp" in result
+    assert mock_exec.await_args.kwargs["cwd"] == "/tmp"  # second call used persisted cwd
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_resets_on_session_clear():
+    registry = ToolRegistryAsync()
+    proc = _FakeProcess(
+        returncode=0,
+        stdout=b"__CWD__=/tmp\n",
+        stderr=b"",
+    )
+    with patch(
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
+        AsyncMock(return_value=proc),
+    ):
+        await registry.bash("cd /tmp")
+
+    assert registry._cwd == "/tmp"
+    registry.reset_cwd()
+    import os
+    assert registry._cwd == os.getcwd()
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_invalid_dir_no_change():
+    registry = ToolRegistryAsync()
+    original_cwd = registry._cwd
+    proc = _FakeProcess(
+        returncode=1,
+        stdout=b"__CWD__=/nonexistent\n",
+        stderr=b"sh: cd: /nonexistent: No such file or directory\n",
+    )
+    with patch(
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
+        AsyncMock(return_value=proc),
+    ):
+        with pytest.raises(CommandExecutionError):
+            await registry.bash("cd /nonexistent_path_xyz")
+
+    assert registry._cwd == original_cwd  # unchanged on failure
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_chained_cd():
+    registry = ToolRegistryAsync()
+    proc = _FakeProcess(
+        returncode=0,
+        stdout=b"__CWD__=/var\n",
+        stderr=b"",
+    )
+    with patch(
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
+        AsyncMock(return_value=proc),
+    ):
+        await registry.bash("cd /tmp && cd /var")
+
+    assert registry._cwd == "/var"
+
+
+@pytest.mark.asyncio
+async def test_bash_cwd_explicit_marker_stripped():
+    registry = ToolRegistryAsync()
+    proc = _FakeProcess(
+        returncode=0,
+        stdout=b"hello world\n__CWD__=/home/user\n",
+        stderr=b"",
+    )
+    with patch(
+        "poor_cli.tools_async.asyncio.create_subprocess_exec",
+        AsyncMock(return_value=proc),
+    ):
+        result = await registry.bash("echo hello world")
+
+    assert "__CWD__" not in result
+    assert result == "hello world\n"
+    assert registry._cwd == "/home/user"
