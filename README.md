@@ -6,7 +6,7 @@
 
 # `poor-cli`
 
-[Multiplayer](#multiplayer-lan--tunnel) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface) and [Neovim](https://neovim.io/) Coding Agent *(optimised for the [poor man](#available-commands))*.
+[Multiplayer](#multiplayer) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface) and [Neovim](https://neovim.io/) Coding [Agent](#available-tools) *(optimised for the [poor man](#available-commands))*.
 
 <div align="center">
     <img src="./asset/logo/1.png" width="30%">
@@ -26,7 +26,7 @@
 
 ## Usage
 
-The below instructions are for locally hosting `poor-cli`. See screenshots [here](#screenshots).
+The below instructions are for locally hosting `poor-cli`.
 
 1. Bootstrap the project.
 
@@ -37,63 +37,25 @@ $ python3 -m venv .venv && source .venv/bin/activate
 $ pip install -e ".[dev]"
 ```
 
-2. Configure providers.
+2. Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
 
 ```console
 $ cp .env.example .env
 ```
 
-You can still pre-create `.env` yourself, but it is no longer required before launch. `poor-cli` can now open a guided `/setup` editor in-chat, create `.env` from `.env.example`, and save API keys there for you. Local [Ollama](https://ollama.com/) still works with `ollama serve` and `ollama pull <model>`.
-
-3. Start the CLI/TUI.
+3. Finally run any of the below to begin using `poor-cli`'s TUI.
 
 ```console
-$ ./run.sh                   # launches Rust TUI; use /setup if you need credentials
-$ ./run_tui.sh               # direct Rust TUI launcher
-$ python3 -m poor_cli        # Python wrapper -> Rust TUI if a Rust binary is available
-$ poor-cli                   # requires repo launcher or `poor-cli-tui` already in PATH
-$ poor-cli help              # show the full Python/TUI surface overview without launching the TUI
-```
+$ ./run.sh                   
+$ ./run_tui.sh               
 
-The Python package always provides `poor-cli-server`.
-The interactive `poor-cli` command is supported from a repo checkout via `./run.sh` / `./run_tui.sh`,
-or anywhere a `poor-cli-tui` binary is already installed.
+$ python3 -m poor_cli        
 
-4. Optional runtime overrides.
-
-```console
-$ poor-cli --provider ollama --model llama3
-$ poor-cli --provider openai --model gpt-4o
-$ poor-cli --remote-url ws://127.0.0.1:8765/rpc --remote-room dev --remote-token <token>
-```
-
-5. Run backend server directly (for editor integrations / host controls).
-
-```console
-$ poor-cli-server --stdio
-$ poor-cli server --stdio
-$ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev
-```
-
-6. The Python entrypoint also exposes headless and automation surfaces.
-
-```console
-$ poor-cli exec --prompt "Summarize this repository" --plan-only
-$ poor-cli task --help
-$ poor-cli automation --help
-$ poor-cli github-task --help
-$ poor-cli skills --help
-$ poor-cli commands --help
-```
-
-7. You can also run `poor-cli` with [Docker](https://www.docker.com/).
-
-```console
 $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
 
-8. Finally, you can also use `poor-cli` directly through a [Neovim plugin](https://neovim.io/), where it provides inline ghost text completion and a chat panel similar to [Windsurf](https://windsurf.com/) or [Copilot](https://copilot.microsoft.com/). The easiest way to install this is through the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
+4. Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
 
 ```lua
 {
@@ -110,31 +72,22 @@ $ docker run -it --env-file .env poor-cli
 }
 ```
 
-## Multiplayer (LAN / Tunnel)
+## Multiplayer
 
 `poor-cli-server` can run in multiplayer WebSocket host mode with room-scoped
-invite tokens and role permissions (`viewer` or `prompter`).
+invite tokens and role permissions *(`viewer` or `prompter`)*.
 
-### Start host (LAN)
+### Start host
 
 ```console
 $ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev --room docs
 ```
-
-The host prints:
-- room names
-- viewer/prompter tokens per room
-- canonical viewer/prompter invite codes built from the externally joinable `joinWsUrl`
-- ready-to-run join command examples that can be pasted into another TUI instance
 
 ### Optional ngrok helper
 
 ```console
 $ poor-cli-server --host --bind 127.0.0.1 --port 8765 --room dev --ngrok
 ```
-
-If `ngrok` is available in PATH, the host also prints `wss://.../rpc` join URLs.
-If ngrok is unavailable/fails, local hosting continues normally.
 
 ### Join from TUI
 
@@ -154,33 +107,6 @@ require("poor-cli").setup({
     },
 })
 ```
-
-Neovim remote bridge mode now supports:
-- guarded execution reviews (`planReq` -> `planRes`)
-- room presence and role updates in `:PoorCliStatus`
-- driver-targeted suggestions and room event notifications in the chat panel
-
-Host lifecycle management and advanced room admin commands remain TUI-first.
-
-### Tunnel alternatives
-
-You can use cloudflared, Tailscale funnel, or any reverse tunnel/provider.
-Expose the host `/rpc` endpoint and pass the resulting `ws://` or `wss://` URL
-to `--remote-url` / `multiplayer.url`.
-
-## Surface Matrix
-
-| Surface | Chat + tools | Permission review | Plan review | Pair join | Pair host/admin | Room presence/status | Suggestions / handoff |
-|---|---|---|---|---|---|---|---|
-| Rust TUI (`poor-cli`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Neovim plugin (`nvim-poor-cli`) | Yes | Yes | Yes | Yes (remote bridge config) | No | Yes | Suggestions only |
-| Remote stdio bridge (`poor-cli-server --bridge`) | Transport only | Client-dependent | Client-dependent | Yes | No | Client-dependent | Client-dependent |
-
-Current install status:
-- `poor-cli-server` ships with the Python package.
-- Interactive `poor-cli` still requires either a repo checkout launcher or a separately installed `poor-cli-tui` binary.
-- `poor-cli help` shows the full Python CLI surface, including `exec`, `task`, `automation`, `skills`, `commands`, `github-task`, and the `server` alias.
-- In `auto-safe`, mutating tools are limited to trusted workspace roots and `bash` is restricted to allowlisted safe commands.
 
 ## Model support
 
