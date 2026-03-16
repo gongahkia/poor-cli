@@ -75,6 +75,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     idx += 1;
     draw_hint_bar(frame, app, chunks[idx]);
     draw_command_palette(frame, app);
+    draw_at_path_completion(frame, app);
 
     // Overlays
     if app.mode == AppMode::ProviderSelect {
@@ -85,6 +86,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
     if app.mode == AppMode::ApiKeyEditor {
         draw_api_key_editor(frame, app);
+    }
+    if app.mode == AppMode::QueueManager {
+        draw_queue_manager(frame, app);
     }
     if app.mode == AppMode::PermissionPrompt {
         draw_permission_prompt(frame, app);
@@ -848,7 +852,7 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_command_palette(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
-    if app.waiting || !app.input_buffer.starts_with('/') {
+    if app.waiting || !app.input_buffer.starts_with('/') || app.at_path_completion.active {
         return;
     }
 
@@ -913,6 +917,81 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
         " Commands (recommended first) "
     } else {
         " Commands "
+    };
+
+    let list = List::new(items).block(
+        Block::default()
+            .title(Span::styled(
+                title,
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::input_border_color(mode))),
+    );
+    frame.render_widget(list, area);
+}
+
+fn draw_at_path_completion(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    if !app.at_path_completion.active || !matches!(app.mode, AppMode::Normal | AppMode::Command) {
+        return;
+    }
+
+    let row_count = app.at_path_completion.items.len().max(1).min(8) as u16;
+    let popup_height = row_count + 3;
+    if frame.area().height <= popup_height + 4 {
+        return;
+    }
+
+    let width = frame.area().width.min(78);
+    let x = 2.min(frame.area().width.saturating_sub(width));
+    let y = frame
+        .area()
+        .height
+        .saturating_sub(popup_height + 4)
+        .max(1);
+    let area = Rect::new(x, y, width, popup_height);
+    render_popup_surface(frame, area, mode);
+
+    let items: Vec<ListItem> = if app.at_path_completion.items.is_empty() {
+        vec![ListItem::new(Line::from(Span::styled(
+            "  No matching files",
+            Style::default().fg(theme::muted_fg(mode)),
+        )))]
+    } else {
+        app.at_path_completion
+            .items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let is_selected = index == app.at_path_completion.selected_index;
+                let marker = if is_selected { "▸ " } else { "  " };
+                let path_style = if is_selected {
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme::base_fg(mode))
+                };
+                let detail_style = if is_selected {
+                    Style::default().fg(theme::base_fg(mode))
+                } else {
+                    Style::default().fg(theme::muted_fg(mode))
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("{marker}{}", item.path), path_style),
+                    Span::styled(format!("  {}", item.detail), detail_style),
+                ]))
+            })
+            .collect()
+    };
+
+    let title = if app.at_path_completion.query.trim().is_empty() {
+        " Attach File "
+    } else {
+        " Attach File (@...) "
     };
 
     let list = List::new(items).block(
