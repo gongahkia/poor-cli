@@ -30,7 +30,7 @@ from urllib.request import Request, urlopen
 
 from .automation_manager import AutomationManager
 from .command_validator import CommandRisk, get_command_validator
-from .config import PermissionMode
+from .config import Config, ConfigManager, PermissionMode
 from .core import PoorCLICore, CoreEvent
 from .custom_commands import CustomCommandRegistry
 from .sandbox import (
@@ -1253,6 +1253,14 @@ class PoorCLIServer:
             return "*" * len(raw_key)
         return f"{raw_key[:4]}…{raw_key[-4:]}"
 
+    def _ensure_config_loaded(self) -> Tuple[ConfigManager, Config]:
+        """Load config metadata needed for API key/status operations before full init."""
+        if self.core._config_manager is None:
+            self.core._config_manager = ConfigManager(self.core._config_path)
+        if self.core.config is None:
+            self.core.config = self.core._config_manager.load()
+        return self.core._config_manager, self.core.config
+
     async def handle_set_api_key(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Store/update a provider API key for this session and secure local storage.
@@ -1263,11 +1271,7 @@ class PoorCLIServer:
             persist: Optional bool (default true) to persist in secure key store
             reloadActiveProvider: Optional bool (default true) to reinitialize current provider
         """
-        self._ensure_initialized()
-        if self.core.config is None:
-            raise RuntimeError("Core configuration unavailable")
-        if self.core._config_manager is None:
-            raise RuntimeError("Config manager unavailable")
+        config_manager, config = self._ensure_config_loaded()
 
         provider = self._normalize_provider_name(str(params.get("provider", "")))
         if not provider:
@@ -1280,7 +1284,7 @@ class PoorCLIServer:
         if provider == "ollama":
             raise InvalidParamsError("Ollama does not require an API key")
 
-        provider_config = self.core.config.model.providers.get(provider)
+        provider_config = config.model.providers.get(provider)
         if provider_config is None:
             raise InvalidParamsError(f"Unknown provider: {provider}")
 
@@ -1289,8 +1293,8 @@ class PoorCLIServer:
 
         env_var = provider_config.api_key_env_var
         os.environ[env_var] = api_key
-        self.core.config.api_keys[provider] = api_key
-        self.core._config_manager.config.api_keys[provider] = api_key
+        config.api_keys[provider] = api_key
+        config_manager.config.api_keys[provider] = api_key
 
         stored_securely = False
         if persist:
@@ -1304,10 +1308,14 @@ class PoorCLIServer:
             stored_securely = True
 
         active_provider_reloaded = False
-        if reload_active_provider and self.core.config.model.provider == provider:
+        if (
+            self.initialized
+            and reload_active_provider
+            and config.model.provider == provider
+        ):
             await self.core.switch_provider(
                 provider,
-                self.core.config.model.model_name,
+                config.model.model_name,
             )
             active_provider_reloaded = True
 
@@ -1327,20 +1335,18 @@ class PoorCLIServer:
         Params:
             provider: Optional provider filter.
         """
-        self._ensure_initialized()
-        if self.core.config is None:
-            raise RuntimeError("Core configuration unavailable")
+        _, config = self._ensure_config_loaded()
 
         requested_provider = str(params.get("provider", "")).strip()
         normalized_provider = self._normalize_provider_name(requested_provider)
 
         providers: List[str]
         if normalized_provider:
-            if normalized_provider not in self.core.config.model.providers:
+            if normalized_provider not in config.model.providers:
                 raise InvalidParamsError(f"Unknown provider: {requested_provider}")
             providers = [normalized_provider]
         else:
-            providers = sorted(self.core.config.model.providers.keys())
+            providers = sorted(config.model.providers.keys())
 
         secure_store = None
         secure_store_entries: Dict[str, Dict[str, Any]] = {}
@@ -1352,14 +1358,14 @@ class PoorCLIServer:
         except Exception as error:  # pragma: no cover - defensive fallback
             self.logger.debug(f"API key manager unavailable: {error}")
 
-        active_provider = self._normalize_provider_name(self.core.config.model.provider)
+        active_provider = self._normalize_provider_name(config.model.provider)
         status: Dict[str, Dict[str, Any]] = {}
         for provider in providers:
-            provider_cfg = self.core.config.model.providers[provider]
+            provider_cfg = config.model.providers[provider]
             env_var = provider_cfg.api_key_env_var
 
             env_key = os.getenv(env_var)
-            session_key = self.core.config.api_keys.get(provider)
+            session_key = config.api_keys.get(provider)
             secure_key = None
             secure_available = provider in secure_store_entries
             if secure_available and secure_store is not None:

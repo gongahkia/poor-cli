@@ -1760,6 +1760,12 @@ pub enum RpcCommand {
         key_path: String,
         reply: SyncSender<Result<Value, String>>,
     },
+    Initialize {
+        provider: Option<String>,
+        model: Option<String>,
+        permission_mode: Option<String>,
+        reply: SyncSender<Result<InitResult, String>>,
+    },
     SetApiKey {
         provider: String,
         api_key: String,
@@ -2118,6 +2124,19 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ToggleConfig { key_path, reply }) => {
                 let _ = reply.send(client.toggle_config(&key_path));
+            }
+            Ok(RpcCommand::Initialize {
+                provider,
+                model,
+                permission_mode,
+                reply,
+            }) => {
+                let _ = reply.send(client.initialize(
+                    provider.as_deref(),
+                    model.as_deref(),
+                    None,
+                    permission_mode.as_deref(),
+                ));
             }
             Ok(RpcCommand::SetApiKey {
                 provider,

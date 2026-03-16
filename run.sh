@@ -3,14 +3,6 @@
 # Quick start script for poor-cli
 set -euo pipefail
 
-# Check if .env exists
-if [ ! -f .env ]; then
-    echo "Error: .env file not found!"
-    echo "Please create a .env file with your GEMINI_API_KEY"
-    echo "Example: cp .env.example .env"
-    exit 1
-fi
-
 load_env_file() {
     local env_file="$1"
     local line
@@ -54,8 +46,12 @@ load_env_file() {
     done < "$env_file"
 }
 
-# Load environment variables from .env safely.
-load_env_file ".env"
+# Load environment variables from .env safely when present.
+if [ -f .env ]; then
+    load_env_file ".env"
+else
+    echo "Info: .env not found. Launching poor-cli anyway; use /setup in chat to create one."
+fi
 
 # Run poor-cli Rust TUI (Python now only serves the backend JSON-RPC process)
 clear
