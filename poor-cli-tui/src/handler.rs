@@ -225,6 +225,14 @@ pub(super) fn handle_server_message(
                     app.set_status(format!("Setup editor unavailable: {error}"));
                 }
             }
+            if !app.prompt_queue.is_empty() {
+                app.queue_paused = true;
+                let remaining = app.prompt_queue.len();
+                app.push_message(ChatMessage::system(format!(
+                    "[queue] paused after error ({remaining} remaining). Use `/queue` to review or resend."
+                )));
+                app.set_status(format!("Queue paused after error ({remaining} remaining)"));
+            }
             app.push_message(ChatMessage::error(message));
             app.active_request_id.clear();
             app.active_request_started_at = None;

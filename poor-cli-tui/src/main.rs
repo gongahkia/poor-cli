@@ -891,7 +891,11 @@ fn run_app(
                 session_log.as_ref(),
             )?;
             // auto-dispatch next queued prompt when AI finishes
-            if !app.waiting && !app.prompt_queue.is_empty() && app.plan_steps.is_empty() {
+            if !app.waiting
+                && !app.prompt_queue.is_empty()
+                && !app.queue_paused
+                && app.plan_steps.is_empty()
+            {
                 dispatch_next_queued_prompt(
                     app,
                     &tx_for_queue,
@@ -1281,6 +1285,23 @@ fn run_app(
                         }
                     }
                 }
+                InputAction::QueueSendSelected(prompt) => {
+                    app.queue_paused = false;
+                    app.push_message(ChatMessage::system(format!(
+                        "[queue] sending selected {} prompt ({} remaining)",
+                        prompt.source,
+                        app.prompt_queue.len()
+                    )));
+                    send_chat_request(
+                        app,
+                        &tx,
+                        &rpc_cmd_tx.borrow(),
+                        &cancel_token,
+                        prompt.backend,
+                        prompt.display,
+                        session_log.as_ref(),
+                    );
+                }
                 InputAction::RestoreLastMutation => {
                     let Some(checkpoint_id) = app.last_mutation_checkpoint_id.clone() else {
                         app.set_status("No recent mutation checkpoint available");
@@ -1344,6 +1365,7 @@ fn handle_submit(
     // auto-queue non-slash input while AI is working
     if app.waiting && !trimmed.starts_with('/') && !trimmed.starts_with('!') {
         app.prompt_queue.push_back(QueuedPrompt::user(trimmed));
+        app.sync_queue_selection();
         app.set_status(format!(
             "Queued prompt ({} in queue)",
             app.prompt_queue.len()
@@ -1617,10 +1639,12 @@ fn dispatch_next_queued_prompt(
     cancel_token: &Arc<AtomicBool>,
     session_log: Option<&SessionLogWriter>,
 ) {
-    if app.waiting || app.prompt_queue.is_empty() || !app.plan_steps.is_empty() {
+    if app.waiting || app.prompt_queue.is_empty() || app.queue_paused || !app.plan_steps.is_empty()
+    {
         return;
     }
     if let Some(next_prompt) = app.prompt_queue.pop_front() {
+        app.sync_queue_selection();
         let remaining = app.prompt_queue.len();
         app.push_message(ChatMessage::system(format!(
             "[queue] auto-sending next {} prompt ({remaining} remaining)",

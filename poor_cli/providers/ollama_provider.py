@@ -182,7 +182,7 @@ class OllamaProvider(BaseProvider):
 
             except Exception as e:
                 logger.debug(f"Ollama request failed: {e}")
-                raise APIError("Ollama API error", str(e))
+                raise APIError(f"Ollama API error: {e}", str(e))
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from Ollama"""
@@ -251,7 +251,7 @@ class OllamaProvider(BaseProvider):
                 raise
             except Exception as e:
                 logger.debug(f"Ollama streaming request failed: {e}")
-                raise APIError("Ollama streaming error", str(e))
+                raise APIError(f"Ollama streaming error: {e}", str(e))
 
     def _append_message(self, message: Any) -> None:
         """Append or extend chat history with user/tool messages."""

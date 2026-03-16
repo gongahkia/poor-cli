@@ -545,6 +545,7 @@ pub(super) fn handle_slash_command(
                     } else {
                         app.prompt_queue
                             .push_back(poor_cli_tui::app::QueuedPrompt::user(text));
+                        app.sync_queue_selection();
                         app.set_status(format!("Queued ({} total)", app.prompt_queue.len()));
                     }
                 } else {
@@ -552,27 +553,13 @@ pub(super) fn handle_slash_command(
                 }
             }
             "list" | "ls" | "l" => {
-                if app.prompt_queue.is_empty() {
-                    show_command_info_popup(app, raw, "Prompt queue is empty.");
-                } else {
-                    let mut lines = vec![format!(
-                        "**Prompt Queue** ({} items)\n",
-                        app.prompt_queue.len()
-                    )];
-                    for (i, prompt) in app.prompt_queue.iter().enumerate() {
-                        let preview = if prompt.display.len() > 60 {
-                            &prompt.display[..60]
-                        } else {
-                            prompt.display.as_str()
-                        };
-                        lines.push(format!("  {}. [{}] {}", i + 1, prompt.source, preview));
-                    }
-                    show_command_info_popup(app, raw, lines.join("\n"));
-                }
+                app.open_queue_manager();
             }
             "clear" | "c" => {
                 let count = app.prompt_queue.len();
                 app.prompt_queue.clear();
+                app.queue_paused = false;
+                app.sync_queue_selection();
                 app.set_status(format!("Cleared {count} queued prompt(s)"));
             }
             "drop" | "d" => {
@@ -580,6 +567,7 @@ pub(super) fn handle_slash_command(
                     if let Ok(idx) = idx_str.trim().parse::<usize>() {
                         if idx >= 1 && idx <= app.prompt_queue.len() {
                             app.prompt_queue.remove(idx - 1);
+                            app.sync_queue_selection();
                             app.set_status(format!(
                                 "Dropped item {idx} ({} remaining)",
                                 app.prompt_queue.len()
@@ -592,6 +580,7 @@ pub(super) fn handle_slash_command(
                     }
                 } else if !app.prompt_queue.is_empty() {
                     app.prompt_queue.pop_back();
+                    app.sync_queue_selection();
                     app.set_status(format!(
                         "Dropped last ({} remaining)",
                         app.prompt_queue.len()
@@ -605,8 +594,9 @@ pub(super) fn handle_slash_command(
                     app,
                     raw,
                     "**Queue Commands**\n\n\
+                    /queue              Open queue manager modal\n\
                     /queue add <text>   Add prompt to queue\n\
-                    /queue list         Show queued prompts\n\
+                    /queue list         Open queue manager modal\n\
                     /queue clear        Clear all queued prompts\n\
                     /queue drop [N]     Drop item N (or last)",
                 );

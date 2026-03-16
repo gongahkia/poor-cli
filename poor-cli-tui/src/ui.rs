@@ -631,6 +631,31 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
         ]
+    } else if app.mode == AppMode::QueueManager {
+        vec![
+            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": select  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Enter/s", Style::default().fg(theme::success(mode))),
+            Span::styled(": send  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("e", Style::default().fg(theme::accent(mode))),
+            Span::styled(": edit  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("d", Style::default().fg(theme::accent(mode))),
+            Span::styled(": drop  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("u/j", Style::default().fg(theme::accent(mode))),
+            Span::styled(": reorder  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("c", Style::default().fg(theme::accent(mode))),
+            Span::styled(": clear", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.at_path_completion.active && matches!(app.mode, AppMode::Normal | AppMode::Command)
+    {
+        vec![
+            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": select file  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Tab/Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": attach  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
     } else if app.mode == AppMode::JoinWizard {
         vec![
             Span::styled("  Enter", Style::default().fg(theme::accent(mode))),
@@ -813,7 +838,9 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
         right.push_str(&format!(" · {}/{} ({mode})", app.multiplayer_room, role));
     }
 
-    let left_candidates: Vec<String> = if app.waiting || !app.prompt_queue.is_empty() {
+    let left_candidates: Vec<String> = if app.queue_paused && !app.prompt_queue.is_empty() {
+        vec!["Queue paused · /queue to review".to_string()]
+    } else if app.waiting || !app.prompt_queue.is_empty() {
         vec!["Tab to queue message".to_string()]
     } else if app.input_buffer.trim().is_empty() {
         vec!["? for shortcuts".to_string()]
@@ -1312,6 +1339,140 @@ fn draw_api_key_editor(frame: &mut Frame, app: &App) {
         )
         .style(Style::default().fg(theme::muted_fg(mode)));
     frame.render_widget(footer, chunks[2]);
+}
+
+fn draw_queue_manager(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(82, 72, frame.area());
+    render_popup_surface(frame, area, mode);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(6),
+            Constraint::Min(8),
+            Constraint::Length(8),
+        ])
+        .split(area);
+
+    let queue_status = if app.queue_paused {
+        "paused after error"
+    } else if app.waiting {
+        "waiting for active request"
+    } else {
+        "ready"
+    };
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" Prompt Queue ", theme::tool_title_style(mode)),
+            Span::styled(
+                format!("  {} item(s)", app.prompt_queue.len()),
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+        ]),
+        Line::from(Span::styled(
+            format!("status: {queue_status}"),
+            if app.queue_paused {
+                Style::default().fg(theme::warning(mode))
+            } else {
+                Style::default().fg(theme::muted_fg(mode))
+            },
+        )),
+        Line::from(Span::styled(
+            "Open / manage queued prompts without leaving the chat composer.",
+            Style::default().fg(theme::muted_fg(mode)),
+        )),
+    ])
+    .block(
+        Block::default()
+            .title(Span::styled(
+                " Queue ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(header, chunks[0]);
+
+    let items: Vec<ListItem> = if app.prompt_queue.is_empty() {
+        vec![ListItem::new(Line::from(Span::styled(
+            "  Queue is empty",
+            Style::default().fg(theme::muted_fg(mode)),
+        )))]
+    } else {
+        app.prompt_queue
+            .iter()
+            .enumerate()
+            .map(|(index, prompt)| {
+                let is_selected = index == app.queue_manager.selected_index;
+                let marker = if is_selected { "▸ " } else { "  " };
+                let style = if is_selected {
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme::base_fg(mode))
+                };
+                let meta_style = if is_selected {
+                    Style::default().fg(theme::base_fg(mode))
+                } else {
+                    Style::default().fg(theme::muted_fg(mode))
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("{marker}{}. ", index + 1), style),
+                    Span::styled(format!("[{}] ", prompt.source), meta_style),
+                    Span::styled(ellipsize_middle(&prompt.display, 72), style),
+                ]))
+            })
+            .collect()
+    };
+    let list = List::new(items).block(
+        Block::default()
+            .title(Span::styled(
+                " Items ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::input_border_color(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(list, chunks[1]);
+
+    let preview_text = app
+        .prompt_queue
+        .get(app.queue_manager.selected_index)
+        .map(|prompt| {
+            if prompt.backend == prompt.display {
+                prompt.backend.clone()
+            } else {
+                format!(
+                    "Display\n{}\n\nBackend\n{}",
+                    prompt.display, prompt.backend
+                )
+            }
+        })
+        .unwrap_or_else(|| "No queued prompts.".to_string());
+    let preview = Paragraph::new(preview_text)
+        .wrap(Wrap { trim: false })
+        .style(Style::default().fg(theme::base_fg(mode)))
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Preview ",
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::input_border_color(mode)))
+                .padding(Padding::new(1, 1, 0, 0)),
+        );
+    frame.render_widget(preview, chunks[2]);
 }
 
 // ── Permission prompt overlay ────────────────────────────────────────
