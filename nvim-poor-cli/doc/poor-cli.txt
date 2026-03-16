@@ -15,6 +15,7 @@ Features:
 - Chat panel with markdown rendering
 - Multi-provider support (Gemini, OpenAI, Claude, Ollama)
 - Managed log file and diagnostic report commands
+- Native blink.cmp source and nvim-cmp source
 - AI-powered code commands (explain, refactor, test, docs)
 
 REQUIREMENTS                                            *poor-cli-requirements*
@@ -282,11 +283,28 @@ Lua API for custom integrations:
     poor_cli.send("message")   -- Send message to chat
 <
 
+BLINK.CMP                                               *poor-cli-blink*
+
+PoorCLI exposes a blink.cmp provider helper:
+>lua
+    require("blink.cmp").setup({
+        sources = {
+            default = { "lsp", "path", "snippets", "buffer", "poor_cli" },
+            providers = {
+                poor_cli = require("poor-cli.blink").provider(),
+            },
+        },
+    })
+<
+
+The blink source reuses poor-cli inline completion request shaping and
+buffer/filetype gating rules.
+
 HEALTH CHECK                                            *poor-cli-health*
 
 Run `:checkhealth poor-cli` to verify your configured server command, log path,
 Python availability, detected API keys, active provider state, and optional
-nvim-cmp integration.
+nvim-cmp/blink.cmp integration.
 
 TROUBLESHOOTING                                         *poor-cli-troubleshooting*
 
@@ -304,6 +322,12 @@ No completions:
    completion settings
 4. If you use nvim-cmp, run `:checkhealth poor-cli`
 5. Open the server log with `:PoorCliOpenLog`
+
+blink.cmp source missing:
+1. Confirm blink.cmp is installed
+2. Add `poor_cli = require("poor-cli.blink").provider()` to blink providers
+3. Include `poor_cli` in blink default sources
+4. Run `:checkhealth poor-cli`
 
 Bug reports:
 1. Run `:PoorCliCopyDebugInfo`

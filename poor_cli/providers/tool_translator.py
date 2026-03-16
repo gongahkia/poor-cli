@@ -28,6 +28,20 @@ class ToolTranslator:
     """Translates canonical tool format to provider-specific formats"""
 
     @staticmethod
+    def _strip_vendor_extensions(payload: Any) -> Any:
+        """Remove custom extension fields unsupported by strict provider schemas."""
+        if isinstance(payload, dict):
+            sanitized: Dict[str, Any] = {}
+            for key, value in payload.items():
+                if isinstance(key, str) and key.startswith("x-"):
+                    continue
+                sanitized[key] = ToolTranslator._strip_vendor_extensions(value)
+            return sanitized
+        if isinstance(payload, list):
+            return [ToolTranslator._strip_vendor_extensions(item) for item in payload]
+        return payload
+
+    @staticmethod
     def to_gemini(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Convert to Gemini format (already in this format)
@@ -49,9 +63,12 @@ class ToolTranslator:
         Returns:
             Tools in Gemini format
         """
-        # Canonical format is Gemini format
+        # Gemini rejects unknown vendor extension fields such as `x-poor-cli`.
         logger.debug(f"Translating {len(tools)} tools to Gemini format")
-        return tools
+        return [
+            ToolTranslator._strip_vendor_extensions(tool)
+            for tool in tools
+        ]
 
     @staticmethod
     def to_openai(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - protobuf is an indirect dependency.
     MessageToDict = None
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
+from .tool_translator import ToolTranslator, ProviderType
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -91,8 +92,10 @@ class GeminiProvider(BaseProvider):
             }
 
             if tools:
-                # Existing tool declarations already match Gemini function schema.
-                config_kwargs["tools"] = [genai_types.Tool(function_declarations=tools)]
+                translated_tools = ToolTranslator.translate(tools, ProviderType.GEMINI)
+                config_kwargs["tools"] = [
+                    genai_types.Tool(function_declarations=translated_tools)
+                ]
 
             if system_instruction:
                 config_kwargs["system_instruction"] = system_instruction

@@ -12,6 +12,7 @@
 - 💬 **Chat Panel** - Conversational AI with markdown rendering
 - 🔄 **Multi-Provider Support** - Gemini, OpenAI, Claude, Ollama
 - 🔌 **nvim-cmp Integration** - registers a `poor-cli` completion source when `nvim-cmp` is installed
+- ⚡ **blink.cmp Integration** - provides a native `poor-cli` source for blink.cmp users
 - 🛠️ **AI Commands** - Explain, Refactor, Generate Tests, Generate Docs
 - ⚡ **Streaming Responses** - Real-time AI output
 - 🎯 **Context-Aware** - Uses open buffers as context
@@ -140,6 +141,23 @@ require("poor-cli").setup({
 
 ## 🎮 Usage
 
+### blink.cmp
+
+PoorCLI exposes a blink.cmp provider at `require("poor-cli.blink").provider()`:
+
+```lua
+require("blink.cmp").setup({
+    sources = {
+        default = { "lsp", "path", "snippets", "buffer", "poor_cli" },
+        providers = {
+            poor_cli = require("poor-cli.blink").provider(),
+        },
+    },
+})
+```
+
+This reuses the same enablement rules and completion request shaping as the inline ghost-text path.
+
 ### Keymaps
 
 | Keymap | Mode | Description |
@@ -194,6 +212,7 @@ Run `:checkhealth poor-cli` to verify:
 - detected API keys
 - active provider/session state
 - optional `nvim-cmp` attachment
+- optional `blink.cmp` availability
 
 ## Guarded Execution
 
@@ -264,6 +283,13 @@ poor_cli.send("Hello!")  -- Send message to chat
 3. Check whether completion is disabled for the current buffer/filetype in `:PoorCliStatus`
 4. If you use `nvim-cmp`, run `:checkhealth poor-cli` to confirm the `poor-cli` source is registered
 5. Open the server log with `:PoorCliOpenLog`
+
+### blink.cmp source not appearing
+
+1. Confirm `blink.cmp` is installed and loaded
+2. Add `poor_cli = require("poor-cli.blink").provider()` to your blink `sources.providers`
+3. Include `"poor_cli"` in blink `sources.default`
+4. Run `:checkhealth poor-cli`
 
 ### Plan review prompt not appearing
 

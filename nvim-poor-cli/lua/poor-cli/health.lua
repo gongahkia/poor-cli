@@ -128,6 +128,14 @@ function M.check()
     else
         info("nvim-cmp not found. poor-cli inline completion still works without cmp")
     end
+
+    local has_blink = pcall(require, "blink.cmp")
+    if has_blink then
+        ok("blink.cmp available")
+        info("Configure provider via require('poor-cli.blink').provider() in blink.cmp sources")
+    else
+        info("blink.cmp not found. poor-cli provides a source at require('poor-cli.blink')")
+    end
 end
 
 return M

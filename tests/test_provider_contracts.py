@@ -102,6 +102,72 @@ async def test_gemini_stream_chunk_contract(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gemini_initialize_strips_vendor_extension_fields(monkeypatch):
+    provider = _make_gemini_provider()
+    provider.model_name = "gemini-test"
+    captured = {}
+
+    class _FakeAutomaticFunctionCallingConfig:
+        def __init__(self, *, disable):
+            self.disable = disable
+
+    class _FakeTool:
+        def __init__(self, *, function_declarations):
+            captured["function_declarations"] = function_declarations
+
+    class _FakeGenerateContentConfig:
+        def __init__(self, **kwargs):
+            captured["config_kwargs"] = kwargs
+
+    provider.client = SimpleNamespace(
+        chats=SimpleNamespace(
+            create=lambda *, model, config: SimpleNamespace(model=model, config=config)
+        )
+    )
+
+    monkeypatch.setattr(
+        gemini_module,
+        "genai_types",
+        SimpleNamespace(
+            AutomaticFunctionCallingConfig=_FakeAutomaticFunctionCallingConfig,
+            Tool=_FakeTool,
+            GenerateContentConfig=_FakeGenerateContentConfig,
+        ),
+    )
+
+    await provider.initialize(
+        tools=[
+            {
+                "name": "read_file",
+                "description": "Read a file from disk.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "path": {
+                            "type": "STRING",
+                            "description": "File path",
+                            "x-poor-cli": {
+                                "capabilities": ["filesystem:read"],
+                            },
+                        }
+                    },
+                    "required": ["path"],
+                },
+                "x-poor-cli": {
+                    "capabilities": ["filesystem:read"],
+                    "mutating": False,
+                },
+            }
+        ],
+        system_instruction="system",
+    )
+
+    declarations = captured["function_declarations"]
+    assert "x-poor-cli" not in declarations[0]
+    assert "x-poor-cli" not in declarations[0]["parameters"]["properties"]["path"]
+
+
+@pytest.mark.asyncio
 async def test_openai_stream_chunk_contract():
     provider = _make_openai_provider()
 
