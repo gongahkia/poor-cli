@@ -574,6 +574,42 @@
       "description": "Alias for /who",
       "recommended": false,
       "category": "Collaboration"
+    },
+    {
+      "command": "/cost",
+      "description": "Show session token usage and estimated cost",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/gc",
+      "description": "Run checkpoint garbage collection",
+      "recommended": false,
+      "category": "Safety & Undo"
+    },
+    {
+      "command": "/save-session",
+      "description": "Save current session for later restore",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/restore-session",
+      "description": "Restore most recent saved session",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/ollama-models",
+      "description": "List locally available Ollama models",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/mcp-health",
+      "description": "Check health of MCP servers",
+      "recommended": false,
+      "category": "Core Workflow"
     }
   ]
 }

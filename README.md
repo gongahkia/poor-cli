@@ -222,6 +222,9 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/exit` - Exit the TUI (alias)
 - `/clear` - Clear conversation history
 - `/clear-output` - Clear screen output only
+- `/cost` - Show session token usage and estimated cost
+- `/ollama-models` - List locally available Ollama models
+- `/mcp-health` - Check health of MCP servers
 
 **Review & Safety:**
 - `/review` - Review code or staged diff
@@ -254,10 +257,9 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/broke` - Set poor mode (terse responses)
 - `/my-treat` - Set rich mode (comprehensive responses)
 - `/settings` - List editable config settings
-- `/setup` - Open the guided API key and `.env` editor
-- `/env` - Alias for the guided API key and `.env` editor
-- `/api-key` - Open the API key editor
-- `/api-key status` - Inspect provider API key status
+- `/setup` - Open the guided API key and .env editor
+- `/env` - Open the guided API key and .env editor
+- `/api-key` - Open the API key editor or use `/api-key status`
 - `/verbose` - Toggle verbose logging
 - `/toggle` - Toggle boolean config value
 - `/set` - Set config key to a value
@@ -279,6 +281,8 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/save-prompt` - Save reusable prompt
 - `/use` - Load and run saved prompt
 - `/prompts` - List saved prompts
+- `/save-session` - Save current session for later restore
+- `/restore-session` - Restore most recent saved session
 
 **Automation & Tasks:**
 - `/autopilot` - Toggle bounded autonomous execution mode
@@ -314,6 +318,9 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/kick` - Remove a room member from collaboration
 - `/who` - Show room members and roles
 - `/members` - Alias for /who
+
+**Safety & Undo:**
+- `/gc` - Run checkpoint garbage collection
 
 ## Available Tools
 

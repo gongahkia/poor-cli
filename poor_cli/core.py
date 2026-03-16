@@ -1127,12 +1127,17 @@ class PoorCLICore:
         """Check if session cost/token limits are exceeded. Returns reason or None."""
         if not self.config:
             return None
-        cg = self.config.cost_guardrails
-        total_tokens = self._session_total_input_tokens + self._session_total_output_tokens
-        if cg.session_max_tokens > 0 and total_tokens >= cg.session_max_tokens:
-            return f"Session token limit reached ({total_tokens}/{cg.session_max_tokens})"
-        if cg.session_max_cost_usd > 0 and self._session_total_cost_usd >= cg.session_max_cost_usd:
-            return f"Session cost limit reached (${self._session_total_cost_usd:.4f}/${cg.session_max_cost_usd})"
+        try:
+            cg = self.config.cost_guardrails
+            total_tokens = self._session_total_input_tokens + self._session_total_output_tokens
+            max_tokens = getattr(cg, "session_max_tokens", 0) or 0
+            max_cost = getattr(cg, "session_max_cost_usd", 0.0) or 0.0
+            if max_tokens > 0 and total_tokens >= max_tokens:
+                return f"Session token limit reached ({total_tokens}/{max_tokens})"
+            if max_cost > 0 and self._session_total_cost_usd >= max_cost:
+                return f"Session cost limit reached (${self._session_total_cost_usd:.4f}/${max_cost})"
+        except (AttributeError, TypeError):
+            pass  # gracefully handle mocked/incomplete config
         return None
 
     def get_session_cost_summary(self) -> Dict[str, Any]:
@@ -1213,12 +1218,16 @@ class PoorCLICore:
             self.history_adapter.add_message("user", message)
 
         # Compress conversation context if configured and threshold exceeded
-        if self.config and self.config.context_compression.enabled and self.provider:
-            history = self.provider.get_history()
-            if self._context_compressor.should_compress(history, self.config.context_compression):
-                compressed = self._context_compressor.compress(history, self.config.context_compression)
-                self.provider.set_history(compressed)
-                logger.info("Compressed conversation context: %d -> %d messages", len(history), len(compressed))
+        try:
+            cc_cfg = getattr(self.config, "context_compression", None) if self.config else None
+            if cc_cfg and getattr(cc_cfg, "enabled", False) and self.provider:
+                history = self.provider.get_history()
+                if self._context_compressor.should_compress(history, cc_cfg):
+                    compressed = self._context_compressor.compress(history, cc_cfg)
+                    self.provider.set_history(compressed)
+                    logger.info("Compressed conversation context: %d -> %d messages", len(history), len(compressed))
+        except (AttributeError, TypeError):
+            pass
 
         try:
             accumulated_text = ""

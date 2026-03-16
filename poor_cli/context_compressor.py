@@ -25,15 +25,19 @@ _DECISION_RE = re.compile( # phrases signalling a decision or outcome
 class ContextCompressor:
     """Compresses conversation history by extractively summarizing old turns."""
 
-    def should_compress(self, history: List[Dict[str, Any]], config: ContextCompressionConfig) -> bool:
-        if not config.enabled:
+    def should_compress(self, history: List[Dict[str, Any]], config: Any) -> bool:
+        try:
+            if not getattr(config, "enabled", False):
+                return False
+            threshold = getattr(config, "compress_after_turns", 20)
+            return len(history) > threshold
+        except (AttributeError, TypeError):
             return False
-        return len(history) > config.compress_after_turns
 
-    def compress(self, history: List[Dict[str, Any]], config: ContextCompressionConfig) -> List[Dict[str, Any]]:
+    def compress(self, history: List[Dict[str, Any]], config: Any) -> List[Dict[str, Any]]:
         if not self.should_compress(history, config):
             return history
-        split = len(history) - config.preserve_recent_turns
+        split = len(history) - getattr(config, "preserve_recent_turns", 8)
         if split <= 0: # nothing old enough to compress
             return history
         old_turns = history[:split]

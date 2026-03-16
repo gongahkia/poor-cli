@@ -61,6 +61,9 @@ class _FakeCore:
     def get_provider_info(self):
         return {"name": "gemini", "model": "gemini-2.0-flash"}
 
+    def get_session_cost_summary(self):
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "estimated_cost_usd": 0.0}
+
     def inspect_instruction_stack(self, referenced_files=None):
         return {"sourceCount": 1, "sources": [{"label": "Repo Root AGENTS.md"}]}
 
