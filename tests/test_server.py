@@ -829,6 +829,9 @@ class TestPoorCLIServer:
         assert stopped["stopped"] is True
         assert stopped["running"] is False
         assert fake_process.terminated is True
+        assert server._managed_services["demo"].log_handle is None
+        if hasattr(os, "killpg"):
+            assert spawn_mock.await_args.kwargs["start_new_session"] is True
 
     @pytest.mark.asyncio
     async def test_service_status_reconciles_exited_managed_process(self, server, tmp_path):
@@ -876,6 +879,59 @@ class TestPoorCLIServer:
                         "cwd": str(outside_root),
                     }
                 )
+
+    @pytest.mark.asyncio
+    async def test_start_service_rejects_inherited_untrusted_cwd(self, server, tmp_path, monkeypatch):
+        server.initialized = True
+        server.core.config = Config()
+        trusted_root = tmp_path / "trusted"
+        trusted_root.mkdir()
+        outside_root = tmp_path / "outside"
+        outside_root.mkdir()
+        monkeypatch.chdir(trusted_root)
+
+        server._managed_services["demo"] = SimpleNamespace(
+            name="demo",
+            command=["/usr/bin/fake", "serve"],
+            command_display="/usr/bin/fake serve",
+            cwd=str(outside_root),
+            process=SimpleNamespace(pid=9999, returncode=0),
+            log_path=tmp_path / "services" / "demo.log",
+            log_handle=None,
+            started_at="now",
+            last_exit_code=0,
+        )
+
+        with pytest.raises(InvalidParamsError, match="trusted workspace roots"):
+            await server.handle_start_service({"name": "demo"})
+
+    @pytest.mark.asyncio
+    async def test_start_service_rotates_oversized_log_before_spawn(self, server, tmp_path):
+        server.initialized = True
+        fake_process = _FakeManagedProcess(pid=9876)
+        spawn_mock = AsyncMock(return_value=fake_process)
+        log_dir = tmp_path / "services"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "demo.log"
+        log_path.write_text("stale log\n", encoding="utf-8")
+
+        with (
+            patch.object(server, "_service_logs_dir", log_dir),
+            patch.object(server, "_service_log_rotation_threshold_bytes", return_value=4),
+            patch.object(server, "_resolve_service_executable", return_value="/usr/bin/fake"),
+            patch("poor_cli._server.asyncio.create_subprocess_exec", spawn_mock),
+            patch.object(server, "_is_ollama_reachable", return_value=False),
+            patch("poor_cli._server.asyncio.sleep", AsyncMock(return_value=None)),
+        ):
+            started = await server.handle_start_service(
+                {"name": "demo", "command": "demo-server --port 9000"}
+            )
+            await server.handle_stop_service({"name": "demo"})
+
+        rotated_path = log_dir / "demo.log.1"
+        assert started["logPath"] == str(log_path)
+        assert rotated_path.read_text(encoding="utf-8") == "stale log\n"
+        assert log_path.exists()
 
     @pytest.mark.asyncio
     async def test_start_service_ollama_uses_default_command(self, server, tmp_path):

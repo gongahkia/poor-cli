@@ -14,6 +14,7 @@ import difflib
 import json
 import logging
 import os
+import signal
 import shlex
 import shutil
 import socket
@@ -2093,13 +2094,11 @@ class PoorCLIServer:
         was_running = service.process.returncode is None
 
         if was_running:
-            with contextlib.suppress(ProcessLookupError):
-                service.process.terminate()
+            self._signal_managed_service_process(service, signal.SIGTERM)
             try:
                 await asyncio.wait_for(service.process.wait(), timeout=timeout_seconds)
             except asyncio.TimeoutError:
-                with contextlib.suppress(ProcessLookupError):
-                    service.process.kill()
+                self._signal_managed_service_process(service, signal.SIGKILL)
                 with contextlib.suppress(Exception):
                     await service.process.wait()
 
@@ -2110,6 +2109,7 @@ class PoorCLIServer:
             with contextlib.suppress(Exception):
                 service.log_handle.flush()
                 service.log_handle.close()
+            service.log_handle = None
 
         return was_running
 
@@ -2217,6 +2217,59 @@ class PoorCLIServer:
             tail = deque(handle, maxlen=max(line_count, 1))
         return "".join(tail).strip()
 
+    @staticmethod
+    def _service_log_rotation_threshold_bytes() -> int:
+        """Maximum managed service log size before rotating on next launch."""
+        return 5 * 1024 * 1024
+
+    def _rotate_service_log_if_needed(self, log_path: Path) -> None:
+        threshold_bytes = int(self._service_log_rotation_threshold_bytes())
+        if threshold_bytes <= 0 or not log_path.exists():
+            return
+
+        with contextlib.suppress(OSError):
+            if log_path.stat().st_size < threshold_bytes:
+                return
+
+        rotated_path = log_path.with_name(f"{log_path.name}.1")
+        with contextlib.suppress(OSError):
+            rotated_path.unlink()
+        with contextlib.suppress(OSError):
+            log_path.replace(rotated_path)
+
+    def _normalize_service_cwd(self, cwd_path: Path, raw_cwd: str) -> str:
+        resolved = cwd_path.resolve()
+        if not resolved.is_dir():
+            raise InvalidParamsError(f"cwd is not a directory: {raw_cwd}")
+        if self._trusted_workspace_enabled() and not self._path_is_trusted(str(resolved)):
+            raise InvalidParamsError(
+                f"cwd falls outside trusted workspace roots: {resolved}"
+            )
+        return str(resolved)
+
+    @staticmethod
+    def _signal_managed_service_process(service: ManagedServiceRuntime, sig: int) -> bool:
+        process = service.process
+        pid = getattr(process, "pid", None)
+
+        if pid is not None and int(pid) > 0 and hasattr(os, "killpg"):
+            try:
+                os.killpg(int(pid), sig)
+                return True
+            except PermissionError:
+                return True
+            except OSError:
+                pass
+
+        try:
+            if sig == signal.SIGTERM:
+                process.terminate()
+            else:
+                process.kill()
+        except ProcessLookupError:
+            return False
+        return True
+
     async def handle_start_service(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Start a managed local background service.
@@ -2236,13 +2289,7 @@ class PoorCLIServer:
         raw_cwd = params.get("cwd")
         if raw_cwd not in (None, ""):
             cwd_path = self._resolve_path(str(raw_cwd))
-            if not cwd_path.is_dir():
-                raise InvalidParamsError(f"cwd is not a directory: {raw_cwd}")
-            if self._trusted_workspace_enabled() and not self._path_is_trusted(str(cwd_path)):
-                raise InvalidParamsError(
-                    f"cwd falls outside trusted workspace roots: {cwd_path}"
-                )
-            cwd_value = str(cwd_path)
+            cwd_value = self._normalize_service_cwd(cwd_path, str(raw_cwd))
 
         async with self._get_service_lock():
             existing = self._refresh_managed_service_locked(service_name)
@@ -2268,7 +2315,7 @@ class PoorCLIServer:
                 )
 
             if cwd_value is None and existing is not None and existing.cwd:
-                cwd_value = existing.cwd
+                cwd_value = self._normalize_service_cwd(Path(existing.cwd), existing.cwd)
 
             executable_path = self._resolve_service_executable(
                 command_parts[0],
@@ -2294,6 +2341,7 @@ class PoorCLIServer:
 
             self._service_logs_dir.mkdir(parents=True, exist_ok=True)
             log_path = self._service_logs_dir / f"{service_name}.log"
+            self._rotate_service_log_if_needed(log_path)
 
             if existing is not None and getattr(existing, "log_handle", None) is not None:
                 with contextlib.suppress(Exception):
@@ -2302,11 +2350,16 @@ class PoorCLIServer:
 
             log_handle = open(log_path, "ab")
             try:
+                spawn_kwargs = {
+                    "stdout": log_handle,
+                    "stderr": asyncio.subprocess.STDOUT,
+                    "cwd": cwd_value,
+                }
+                if hasattr(os, "killpg"):
+                    spawn_kwargs["start_new_session"] = True
                 process = await asyncio.create_subprocess_exec(
                     *command_parts,
-                    stdout=log_handle,
-                    stderr=asyncio.subprocess.STDOUT,
-                    cwd=cwd_value,
+                    **spawn_kwargs,
                 )
             except Exception:
                 with contextlib.suppress(Exception):

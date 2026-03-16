@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import signal
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -112,6 +113,31 @@ def test_task_manager_start_process_passes_execution_config(tmp_path: Path):
     assert ".poor-cli/task-config.yaml" in argv
 
 
+def test_task_manager_start_process_marks_task_failed_when_worker_spawn_fails(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_git_repo(repo_root)
+
+    manager = TaskManager(repo_root)
+    task = manager.create_task(
+        title="Review repo",
+        prompt="Review the current repo",
+        sandbox_preset="review-only",
+        source="manual",
+    )
+
+    with patch(
+        "poor_cli.task_manager.subprocess.Popen",
+        side_effect=OSError("spawn failed"),
+    ):
+        failed = manager.start_task_process(task.task_id)
+
+    assert failed.status == "failed"
+    assert failed.worker_pid is None
+    assert "spawn failed" in failed.error_message
+    assert failed.finished_at is not None
+
+
 @pytest.mark.asyncio
 async def test_run_task_worker_uses_execution_overrides(tmp_path: Path):
     repo_root = tmp_path / "repo"
@@ -218,6 +244,44 @@ def test_task_manager_approve_and_cancel_update_status(tmp_path: Path):
     assert cancelled.status == "cancelled"
     assert cancelled.finished_at is not None
     assert cancelled.error_message == "cancelled by user"
+
+
+def test_signal_task_process_group_prefers_killpg():
+    with patch("poor_cli.task_manager.os.killpg", return_value=None, create=True) as killpg_mock:
+        assert TaskManager._signal_task_process_group(4242, signal.SIGTERM) is True
+
+    killpg_mock.assert_called_once_with(4242, signal.SIGTERM)
+
+
+def test_cancel_task_terminates_worker_process_group(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_git_repo(repo_root)
+
+    manager = TaskManager(repo_root)
+    created = manager.create_task(
+        title="Long running review",
+        prompt="Review the repository",
+        sandbox_preset="review-only",
+        source="manual",
+    )
+
+    require_calls = {"count": 0}
+
+    def _fake_require_task(task_id: str):
+        require_calls["count"] += 1
+        if require_calls["count"] == 1:
+            return SimpleNamespace(task_id=task_id, worker_pid=4242)
+        return manager.get_task(task_id)
+
+    with (
+        patch.object(TaskManager, "_signal_task_process_group", return_value=True) as signal_mock,
+        patch.object(manager, "_require_task", side_effect=_fake_require_task),
+    ):
+        cancelled = manager.cancel_task(created.task_id)
+
+    assert cancelled.status == "cancelled"
+    signal_mock.assert_called_once_with(4242, signal.SIGTERM)
 
 
 def test_get_task_marks_stale_running_worker_as_failed(tmp_path: Path):

@@ -293,8 +293,7 @@ class TaskManager:
     def cancel_task(self, task_id: str) -> TaskRecord:
         task = self._require_task(task_id)
         if task.worker_pid:
-            with contextlib.suppress(ProcessLookupError):
-                os.kill(task.worker_pid, signal.SIGTERM)
+            self._signal_task_process_group(task.worker_pid, signal.SIGTERM)
         self._update_task(
             task.task_id,
             status="cancelled",
@@ -335,13 +334,23 @@ class TaskManager:
             if config_path:
                 argv.extend(["--config", config_path])
         with worker_log_path.open("ab") as handle:
-            process = subprocess.Popen(
-                argv,
-                cwd=task.repo_root,
-                stdout=handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
+            try:
+                process = subprocess.Popen(
+                    argv,
+                    cwd=task.repo_root,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            except Exception as error:
+                self._update_task(
+                    task.task_id,
+                    status="failed",
+                    finished_at=_utc_now(),
+                    worker_pid=None,
+                    error_message=f"worker failed to start: {error}",
+                )
+                return self._require_task(task.task_id)
         self._update_task(
             task.task_id,
             worker_pid=process.pid,
@@ -405,6 +414,29 @@ class TaskManager:
             return False
         try:
             os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @staticmethod
+    def _signal_task_process_group(pid: Optional[int], sig: int) -> bool:
+        if pid is None or int(pid) <= 0:
+            return False
+
+        target_pid = int(pid)
+        if hasattr(os, "killpg"):
+            try:
+                os.killpg(target_pid, sig)
+                return True
+            except PermissionError:
+                return True
+            except OSError:
+                pass
+
+        try:
+            os.kill(target_pid, sig)
         except ProcessLookupError:
             return False
         except PermissionError:
