@@ -1300,8 +1300,14 @@ impl App {
         } else {
             "\n/setup configures API keys and creates .env".to_string()
         };
+        let logo = r#" ____   ___   ___  ____        ____ _     ___
+|  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
+| |_) | | | | | | | |_) |    | |   | |    | |
+|  __/| |_| | |_| |  _ <     | |___| |___ | |
+|_|    \___/ \___/|_| \_\     \____|_____|___|"#;
         format!(
-            "poor-cli (v{version})\n\
+            "{logo}\n\n\
+            poor-cli (v{version})\n\
             {model_display} · {provider} · {permission_mode}\n\
             {workspace}\n\n\
             ? for shortcuts{setup_line}{last_session_line}",
