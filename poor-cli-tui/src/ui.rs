@@ -588,43 +588,44 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
         match &msg.role {
             MessageRole::Welcome => {
                 let lines: Vec<String> = msg.content.lines().map(ToString::to_string).collect();
-                let extra_lines = lines
-                    .iter()
-                    .skip(3)
-                    .skip_while(|line| line.trim().is_empty())
-                    .cloned()
-                    .collect::<Vec<_>>();
-
-                if let Some(title) = lines.first() {
-                    all_lines.push(Line::from(vec![
-                        Span::styled(
-                            "  >_ ",
-                            Style::default()
-                                .fg(theme::accent(mode))
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(title.clone(), theme::brand_style(mode)),
-                    ]));
-                }
-                if let Some(model_line) = lines.get(1) {
+                // find the blank line separating the logo from the info block
+                let sep = lines.iter().position(|l| l.trim().is_empty()).unwrap_or(0);
+                // logo lines
+                for line in lines.iter().take(sep) {
                     all_lines.push(Line::from(Span::styled(
-                        format!("    {model_line}"),
+                        format!("  {line}"),
+                        theme::brand_style(mode),
+                    )));
+                }
+                // info block starts after the separator blank line
+                let info = &lines[sep..];
+                let info: Vec<&String> = info.iter().skip_while(|l| l.trim().is_empty()).collect();
+                if let Some(title) = info.first() {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("  {title}"),
+                        theme::brand_style(mode),
+                    )));
+                }
+                if let Some(model_line) = info.get(1) {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("  {model_line}"),
                         Style::default().fg(theme::base_fg(mode)),
                     )));
                 }
-                if let Some(workspace_line) = lines.get(2) {
+                if let Some(workspace_line) = info.get(2) {
                     all_lines.push(Line::from(Span::styled(
-                        format!("    {workspace_line}"),
+                        format!("  {workspace_line}"),
                         Style::default().fg(theme::muted_fg(mode)),
                     )));
                 }
-                for line in extra_lines {
+                let extra = info.iter().skip(3).skip_while(|l| l.trim().is_empty());
+                for line in extra {
                     let style = if line.starts_with('?') {
                         Style::default().fg(theme::warning(mode))
                     } else {
                         Style::default().fg(theme::muted_fg(mode))
                     };
-                    all_lines.push(Line::from(Span::styled(format!("    {line}"), style)));
+                    all_lines.push(Line::from(Span::styled(format!("  {line}"), style)));
                 }
             }
             MessageRole::User => {

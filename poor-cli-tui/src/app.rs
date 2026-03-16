@@ -1307,10 +1307,10 @@ impl App {
 |_|    \___/ \___/|_| \_\     \____|_____|___|"#;
         format!(
             "{logo}\n\n\
-            poor-cli (v{version})\n\
-            {model_display} · {provider} · {permission_mode}\n\
-            {workspace}\n\n\
-            ? for shortcuts{setup_line}{last_session_line}",
+             poor-cli (v{version})\n\
+             {model_display} · {provider} · {permission_mode}\n\
+             {workspace}\n\n\
+             ? for shortcuts{setup_line}{last_session_line}",
             version = self.version,
             model_display = model_display,
             provider = self.provider_name,
