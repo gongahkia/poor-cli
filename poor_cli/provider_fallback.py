@@ -1,0 +1,93 @@
+"""
+Provider fallback chain logic for poor-cli.
+
+Automatically retries operations against alternate providers when the
+active provider returns a rate-limit or 5xx server error.
+"""
+
+from typing import Any, Callable, Dict, List, Optional
+from .exceptions import (
+    setup_logger,
+    APIRateLimitError,
+    APIError,
+    APIConnectionError,
+    ConfigurationError,
+)
+from .config import FallbackConfig, ConfigManager
+from .providers.base import BaseProvider
+from .providers.provider_factory import ProviderFactory
+
+logger = setup_logger(__name__)
+
+
+class ProviderFallbackManager:
+    """Manages provider fallback chains for resilient API execution."""
+
+    def __init__(self, config: FallbackConfig, config_manager: ConfigManager):
+        self.config = config
+        self.config_manager = config_manager
+        self._attempt_index = 0  # tracks position in chain across retries
+
+    async def try_fallback(
+        self,
+        primary_provider_name: str,
+        error: Exception,
+        tools: Any = None,
+        system_instruction: Any = None,
+    ) -> Optional[BaseProvider]:
+        """Given a failed primary provider, return an initialized fallback or None."""
+        if not self.config.enabled or not self._should_fallback(error):
+            return None
+        chain = self._get_fallback_chain(primary_provider_name)
+        if not chain:
+            return None
+        for provider_name in chain:
+            if self._attempt_index >= self.config.max_fallback_attempts:
+                break
+            self._attempt_index += 1
+            try:
+                provider = await self.create_fallback_provider(provider_name)
+                await provider.initialize(tools=tools or [], system_instruction=system_instruction)
+                logger.info("fallback provider ready: %s", provider_name)
+                return provider
+            except Exception as init_err:
+                logger.warning("fallback provider %s init failed: %s", provider_name, init_err)
+        return None
+
+    def _should_fallback(self, error: Exception) -> bool:
+        """Return True if the error type warrants trying the next provider."""
+        if isinstance(error, APIRateLimitError) and self.config.retry_on_rate_limit:
+            return True
+        if isinstance(error, (APIError, APIConnectionError)) and self.config.retry_on_server_error:
+            error_msg = str(error).lower()
+            if any(code in error_msg for code in ("500", "502", "503", "504", "server error")):
+                return True
+            if isinstance(error, APIConnectionError): # connection failures are server-side
+                return True
+        return False
+
+    def _get_fallback_chain(self, primary: str) -> List[str]:
+        """Return ordered list of providers to try after the primary."""
+        if not self.config.chain:
+            return []
+        return [p for p in self.config.chain if p.lower() != primary.lower()]
+
+    async def create_fallback_provider(self, provider_name: str) -> BaseProvider:
+        """Create a provider instance for fallback use."""
+        api_key = self.config_manager.get_api_key(provider_name) # may return None for ollama
+        if not api_key and provider_name.lower() != "ollama":
+            raise ConfigurationError(f"no API key available for fallback provider: {provider_name}")
+        provider_config = self.config_manager.get_provider_config(provider_name)
+        if not provider_config:
+            raise ConfigurationError(f"no configuration found for fallback provider: {provider_name}")
+        extra_kwargs: Dict[str, Any] = {}
+        if provider_config.base_url:
+            extra_kwargs["base_url"] = provider_config.base_url
+        provider = ProviderFactory.create(
+            provider_name=provider_name,
+            api_key=api_key or "",
+            model_name=provider_config.default_model,
+            **extra_kwargs,
+        )
+        logger.info("created fallback provider: %s (%s)", provider_name, provider_config.default_model)
+        return provider

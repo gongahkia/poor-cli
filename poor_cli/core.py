@@ -15,6 +15,8 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol,
 
 from .audit_log import AuditEventType, AuditLogger, AuditSeverity
 from .config import ConfigManager, Config
+from .context_compressor import ContextCompressor
+from .provider_fallback import ProviderFallbackManager
 from .providers.base import BaseProvider, ProviderResponse, FunctionCall
 from .providers.provider_factory import ProviderFactory
 from .tools_async import ToolRegistryAsync, ToolOutcome
@@ -33,6 +35,8 @@ from .prompts import (
 from .exceptions import (
     PoorCLIError,
     ConfigurationError,
+    APIRateLimitError,
+    APIError,
     setup_logger,
 )
 
@@ -238,6 +242,17 @@ class PoorCLICore:
         self._cancel_event: threading.Event = threading.Event()
         self._cancel_events: Dict[str, threading.Event] = {}
 
+        # Cost tracking for guardrails
+        self._session_total_input_tokens: int = 0
+        self._session_total_output_tokens: int = 0
+        self._session_total_cost_usd: float = 0.0
+
+        # Context compressor
+        self._context_compressor: ContextCompressor = ContextCompressor()
+
+        # Provider fallback manager (initialized after config load)
+        self._fallback_manager: Optional[ProviderFallbackManager] = None
+
         logger.info("PoorCLICore instance created")
     
     async def initialize(
@@ -304,8 +319,18 @@ class PoorCLICore:
             )
             logger.info(f"Created {self.config.model.provider} provider")
             
-            # Initialize tool registry
-            self.tool_registry = ToolRegistryAsync()
+            # Initialize tool registry with output truncation config
+            trunc_cfg = self.config.output_truncation
+            self.tool_registry = ToolRegistryAsync(
+                output_max_chars=trunc_cfg.max_output_chars if trunc_cfg.enabled else 0,
+                output_max_lines=trunc_cfg.max_output_lines if trunc_cfg.enabled else 0,
+            )
+
+            # Initialize fallback manager
+            if self.config.fallback.enabled and self.config.fallback.chain:
+                self._fallback_manager = ProviderFallbackManager(
+                    self.config.fallback, self._config_manager
+                )
             self._instruction_manager = InstructionManager(repo_root)
             self._hook_manager = PolicyHookManager(repo_root)
             self._audit_logger = AuditLogger(audit_dir=repo_root / ".poor-cli" / "audit")
@@ -334,8 +359,10 @@ class PoorCLICore:
             tool_declarations = self.tool_registry.get_tool_declarations()
             logger.info(f"Registered {len(tool_declarations)} tools")
             
-            # Build system instruction
-            self._system_instruction = build_tool_calling_system_instruction(str(repo_root))
+            # Build system instruction (provider-tuned for constrained models)
+            self._system_instruction = build_tool_calling_system_instruction(
+                str(repo_root), provider=self.config.model.provider,
+            )
             
             provider_capabilities = self.provider.get_capabilities()
             init_tools = (
@@ -367,9 +394,13 @@ class PoorCLICore:
                 self.history_adapter.start_session(self.config.model.model_name)
                 logger.info("History adapter initialized")
             
-            # Initialize checkpoint manager if enabled
+            # Initialize checkpoint manager if enabled (with GC settings)
             if self.config.checkpoint.enabled:
-                self.checkpoint_manager = CheckpointManager()
+                self.checkpoint_manager = CheckpointManager(
+                    max_checkpoints=self.config.checkpoint.max_checkpoints,
+                    max_age_hours=self.config.checkpoint.max_age_hours,
+                    max_disk_mb=self.config.checkpoint.max_disk_mb,
+                )
                 logger.info("Checkpoint manager initialized")
             
             # Initialize context manager
@@ -715,6 +746,13 @@ class PoorCLICore:
         referenced_files: List[str] = []
         referenced_files.extend(context_files or [])
         referenced_files.extend(pinned_context_files or [])
+
+        # Inject git context for change-related queries
+        git_keywords = {"commit", "change", "diff", "push", "merge", "rebase", "staged", "recent"}
+        if any(kw in message.lower() for kw in git_keywords):
+            git_ctx = self._git_context_summary()
+            if git_ctx:
+                message = f"{message}\n\n[Git context]\n{git_ctx}"
 
         context_result = None
         if self._context_manager:
@@ -1063,6 +1101,71 @@ class PoorCLICore:
         )
         return result
 
+    def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        """Rough cost estimation based on provider/model."""
+        cost_per_1k_input = 0.0005  # conservative default
+        cost_per_1k_output = 0.0015
+        if self.config:
+            provider = self.config.model.provider
+            if provider == "gemini":
+                cost_per_1k_input, cost_per_1k_output = 0.00035, 0.00105
+            elif provider == "anthropic":
+                cost_per_1k_input, cost_per_1k_output = 0.003, 0.015
+            elif provider == "openai":
+                cost_per_1k_input, cost_per_1k_output = 0.001, 0.003
+            elif provider == "ollama":
+                return 0.0  # local, free
+        return (input_tokens / 1000) * cost_per_1k_input + (output_tokens / 1000) * cost_per_1k_output
+
+    def _track_cost(self, input_tokens: int, output_tokens: int) -> None:
+        """Accumulate session cost tracking."""
+        self._session_total_input_tokens += input_tokens
+        self._session_total_output_tokens += output_tokens
+        self._session_total_cost_usd += self._estimate_cost(input_tokens, output_tokens)
+
+    def _check_cost_guardrails(self) -> Optional[str]:
+        """Check if session cost/token limits are exceeded. Returns reason or None."""
+        if not self.config:
+            return None
+        cg = self.config.cost_guardrails
+        total_tokens = self._session_total_input_tokens + self._session_total_output_tokens
+        if cg.session_max_tokens > 0 and total_tokens >= cg.session_max_tokens:
+            return f"Session token limit reached ({total_tokens}/{cg.session_max_tokens})"
+        if cg.session_max_cost_usd > 0 and self._session_total_cost_usd >= cg.session_max_cost_usd:
+            return f"Session cost limit reached (${self._session_total_cost_usd:.4f}/${cg.session_max_cost_usd})"
+        return None
+
+    def get_session_cost_summary(self) -> Dict[str, Any]:
+        """Return current session cost/token totals."""
+        return {
+            "input_tokens": self._session_total_input_tokens,
+            "output_tokens": self._session_total_output_tokens,
+            "total_tokens": self._session_total_input_tokens + self._session_total_output_tokens,
+            "estimated_cost_usd": round(self._session_total_cost_usd, 6),
+        }
+
+    @staticmethod
+    def _git_context_summary() -> str:
+        """Build git-aware context (staged diff + recent commits) for injection."""
+        parts = []
+        try:
+            staged = subprocess.check_output(
+                ["git", "diff", "--cached", "--stat"], stderr=subprocess.DEVNULL, text=True, timeout=5,
+            ).strip()
+            if staged:
+                parts.append(f"Staged changes:\n{staged}")
+        except Exception:
+            pass
+        try:
+            log = subprocess.check_output(
+                ["git", "log", "--oneline", "-5"], stderr=subprocess.DEVNULL, text=True, timeout=5,
+            ).strip()
+            if log:
+                parts.append(f"Recent commits:\n{log}")
+        except Exception:
+            pass
+        return "\n\n".join(parts)
+
     async def send_message_events(
         self,
         message: str,
@@ -1079,6 +1182,13 @@ class PoorCLICore:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        # Check cost guardrails before processing
+        cost_reason = self._check_cost_guardrails()
+        if cost_reason:
+            yield CoreEvent.text_chunk(f"[Cost guardrail] {cost_reason}", request_id)
+            yield CoreEvent.done(reason="cost_limit")
+            return
 
         cancel_event = self._prepare_cancel_event(request_id)
         max_iterations = self.config.agentic.max_iterations if self.config else 25
@@ -1102,6 +1212,14 @@ class PoorCLICore:
         if self.history_adapter:
             self.history_adapter.add_message("user", message)
 
+        # Compress conversation context if configured and threshold exceeded
+        if self.config and self.config.context_compression.enabled and self.provider:
+            history = self.provider.get_history()
+            if self._context_compressor.should_compress(history, self.config.context_compression):
+                compressed = self._context_compressor.compress(history, self.config.context_compression)
+                self.provider.set_history(compressed)
+                logger.info("Compressed conversation context: %d -> %d messages", len(history), len(compressed))
+
         try:
             accumulated_text = ""
 
@@ -1114,6 +1232,7 @@ class PoorCLICore:
                     if chunk.metadata:
                         usage = chunk.metadata.get("usage", {})
                         if usage:
+                            self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
                             yield CoreEvent.cost_update(
                                 input_tokens=usage.get("input_tokens", 0),
                                 output_tokens=usage.get("output_tokens", 0),
@@ -1165,10 +1284,18 @@ class PoorCLICore:
                         if response.metadata:
                             usage = response.metadata.get("usage", {})
                             if usage:
+                                self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
                                 yield CoreEvent.cost_update(
                                     input_tokens=usage.get("input_tokens", 0),
                                     output_tokens=usage.get("output_tokens", 0),
                                 )
+
+                        # Check cost guardrails mid-loop
+                        cost_reason = self._check_cost_guardrails()
+                        if cost_reason:
+                            yield CoreEvent.text_chunk(f"\n[Cost guardrail] {cost_reason}", request_id)
+                            yield CoreEvent.done(reason="cost_limit")
+                            return
 
                     break
 
@@ -1186,6 +1313,32 @@ class PoorCLICore:
             yield CoreEvent.done(reason="complete")
             logger.info(f"Message complete (events), {len(accumulated_text)} chars")
 
+        except (APIRateLimitError, APIError) as e:
+            # Attempt provider fallback on rate-limit / server errors
+            if self._fallback_manager and self.provider:
+                fallback_provider = await self._fallback_manager.try_fallback(
+                    self.config.model.provider if self.config else "",
+                    e,
+                    tools=self.tool_registry.get_tool_declarations() if self.tool_registry else [],
+                    system_instruction=self._system_instruction,
+                )
+                if fallback_provider:
+                    logger.info("Falling back to %s", fallback_provider.get_provider_name())
+                    yield CoreEvent.text_chunk(
+                        f"[Fallback] Switching to {fallback_provider.get_provider_name()}\n", request_id
+                    )
+                    self.provider = fallback_provider
+                    # Retry with fallback provider (non-recursive, single retry)
+                    try:
+                        async for chunk in self.provider.send_message_stream(full_message):
+                            if chunk.content:
+                                accumulated_text += chunk.content
+                                yield CoreEvent.text_chunk(chunk.content, request_id)
+                        yield CoreEvent.done(reason="complete")
+                        return
+                    except Exception as fallback_err:
+                        logger.error("Fallback provider also failed: %s", fallback_err)
+            raise PoorCLIError(f"Failed to send message: {e}")
         except Exception as e:
             logger.exception("Error sending message (events)")
             raise PoorCLIError(f"Failed to send message: {e}")

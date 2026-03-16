@@ -387,14 +387,36 @@ def format_prompt(template: str, **kwargs) -> str:
     return result
 
 
-def build_tool_calling_system_instruction(current_dir: str) -> str:
+_PROVIDER_INSTRUCTION_MAX_CHARS = { # limit instruction length for constrained models
+    "ollama": 4000,
+}
+
+
+def _truncate_instruction_for_provider(instruction: str, provider: str) -> str:
+    """Truncate system instruction for providers with limited context."""
+    max_chars = _PROVIDER_INSTRUCTION_MAX_CHARS.get(provider, 0)
+    if max_chars <= 0 or len(instruction) <= max_chars:
+        return instruction
+    # Keep the most important parts (beginning) and truncate
+    truncated = instruction[:max_chars]
+    last_newline = truncated.rfind("\n")
+    if last_newline > max_chars * 0.8:
+        truncated = truncated[:last_newline]
+    return truncated + "\n\n[System instruction truncated for model context limits]"
+
+
+def build_tool_calling_system_instruction(current_dir: str, provider: str = "") -> str:
     """
     Build the shared tool-calling system instruction used by CLI and server flows.
 
     Args:
         current_dir: Current working directory.
+        provider: Optional provider name for instruction tuning.
 
     Returns:
         Fully rendered system instruction.
     """
-    return SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE.format(current_dir=current_dir)
+    instruction = SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE.format(current_dir=current_dir)
+    if provider:
+        instruction = _truncate_instruction_for_provider(instruction, provider)
+    return instruction

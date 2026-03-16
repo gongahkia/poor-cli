@@ -598,6 +598,7 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                         "permissionMode": effective_permission_mode,
                         "sandboxPreset": effective_sandbox_preset,
                         "autoApprove": bool(args.auto_approve),
+                        "cost": core.get_session_cost_summary(),
                         "instructionStack": core.inspect_instruction_stack(
                             list(args.context_file or []) + list(args.pinned_context_file or [])
                         ),

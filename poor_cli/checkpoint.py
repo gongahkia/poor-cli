@@ -99,7 +99,9 @@ class CheckpointManager:
         enable_compression: bool = True,
         enable_parallel: bool = True,
         enable_background_cleanup: bool = True,
-        max_checkpoints: Optional[int] = None
+        max_checkpoints: Optional[int] = None,
+        max_age_hours: int = 0,
+        max_disk_mb: int = 0
     ):
         """Initialize checkpoint manager
 
@@ -109,9 +111,13 @@ class CheckpointManager:
             enable_parallel: Enable parallel checkpoint creation
             enable_background_cleanup: Enable background cleanup thread
             max_checkpoints: Maximum checkpoints to retain (default: 50)
+            max_age_hours: Prune checkpoints older than N hours (0 = disabled)
+            max_disk_mb: Prune when total disk exceeds N MB (0 = disabled)
         """
         if max_checkpoints is not None:
             self.MAX_CHECKPOINTS = max_checkpoints
+        self.max_age_hours = max_age_hours
+        self.max_disk_mb = max_disk_mb
         self.workspace_root = workspace_root or Path.cwd()
         self.checkpoints_dir = self.workspace_root / self.CHECKPOINTS_DIR
         self.index_file = self.checkpoints_dir / self.INDEX_FILE
@@ -570,29 +576,60 @@ class CheckpointManager:
             raise FileOperationError("Failed to delete checkpoint", str(e))
 
     def _cleanup_old_checkpoints(self):
-        """Remove old checkpoints if over limit"""
-        if len(self.checkpoints) <= self.MAX_CHECKPOINTS:
-            return
+        """Remove old checkpoints exceeding count, age, or disk limits"""
+        deleted_ids: set = set()
 
-        # Sort by creation time
-        sorted_checkpoints = sorted(
-            self.checkpoints,
-            key=lambda cp: cp.created_at,
-            reverse=True
-        )
+        # --- count-based pruning ---
+        if len(self.checkpoints) > self.MAX_CHECKPOINTS:
+            sorted_cps = sorted(self.checkpoints, key=lambda cp: cp.created_at, reverse=True)
+            for cp in sorted_cps[self.MAX_CHECKPOINTS:]:
+                deleted_ids.add(cp.checkpoint_id)
 
-        # Keep only recent ones
-        to_keep = sorted_checkpoints[:self.MAX_CHECKPOINTS]
-        to_delete = sorted_checkpoints[self.MAX_CHECKPOINTS:]
+        # --- age-based pruning ---
+        if self.max_age_hours > 0:
+            now = datetime.now()
+            for cp in self.checkpoints:
+                try:
+                    created = datetime.fromisoformat(cp.created_at)
+                    age_hours = (now - created).total_seconds() / 3600
+                    if age_hours > self.max_age_hours:
+                        deleted_ids.add(cp.checkpoint_id)
+                except (ValueError, TypeError):
+                    continue
 
-        # Delete old checkpoints
-        for checkpoint in to_delete:
+        # --- perform pending deletes before disk check ---
+        for cp_id in list(deleted_ids):
             try:
-                self.delete_checkpoint(checkpoint.checkpoint_id)
+                self.delete_checkpoint(cp_id)
             except Exception as e:
-                logger.warning(f"Failed to cleanup checkpoint {checkpoint.checkpoint_id}: {e}")
+                logger.warning(f"Failed to cleanup checkpoint {cp_id}: {e}")
 
-        logger.info(f"Cleaned up {len(to_delete)} old checkpoint(s)")
+        # --- disk-based pruning ---
+        if self.max_disk_mb > 0:
+            max_bytes = self.max_disk_mb * 1024 * 1024
+            while self.get_storage_size() > max_bytes and self.checkpoints:
+                oldest = min(self.checkpoints, key=lambda cp: cp.created_at)
+                try:
+                    self.delete_checkpoint(oldest.checkpoint_id)
+                    deleted_ids.add(oldest.checkpoint_id)
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup checkpoint {oldest.checkpoint_id}: {e}")
+                    break
+
+        if deleted_ids:
+            logger.info(f"Cleaned up {len(deleted_ids)} old checkpoint(s)")
+
+    def gc(self) -> Dict[str, Any]:
+        """Run full garbage collection. Returns {"deleted": N, "freed_bytes": N}."""
+        before_count = len(self.checkpoints)
+        before_size = self.get_storage_size()
+        self._cleanup_old_checkpoints()
+        after_count = len(self.checkpoints)
+        after_size = self.get_storage_size()
+        return {
+            "deleted": before_count - after_count,
+            "freed_bytes": max(before_size - after_size, 0),
+        }
 
     def get_storage_size(self) -> int:
         """Get total storage size used by checkpoints"""
@@ -617,10 +654,9 @@ class CheckpointManager:
                     if self._cleanup_stop_event.wait(timeout=300):
                         break
 
-                    # Run cleanup
-                    if len(self.checkpoints) > self.MAX_CHECKPOINTS:
-                        logger.info("Running background checkpoint cleanup")
-                        self._cleanup_old_checkpoints()
+                    # Run cleanup (count, age, and disk policies)
+                    logger.info("Running background checkpoint cleanup")
+                    self._cleanup_old_checkpoints()
 
                 except Exception as e:
                     logger.error(f"Background cleanup error: {e}")

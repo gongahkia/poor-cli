@@ -242,6 +242,20 @@ function M.send(message)
 
     local resolved_msg, mention_files = M._resolve_mentions(message)
     diagnostics.clear()
+
+    -- auto-inject LSP diagnostics when user asks about errors/warnings/issues
+    local error_keywords = { "error", "warning", "issue", "bug", "fix", "broken", "fail", "diagnostic" }
+    local lower_msg = message:lower()
+    for _, kw in ipairs(error_keywords) do
+        if lower_msg:find(kw, 1, true) then
+            local diag_ctx = diagnostics.get_workspace_diagnostics_summary()
+            if diag_ctx then
+                resolved_msg = resolved_msg .. "\n\n" .. diag_ctx
+            end
+            break
+        end
+    end
+
     M.append_message("user", message)
 
     local context_files = M.get_context_files()

@@ -128,6 +128,44 @@ class PlanModeConfig:
 
 
 @dataclass
+class CostGuardrailConfig:
+    """Token budget and cost limits."""
+    session_max_tokens: int = 0  # max total tokens per session (0 = unlimited)
+    session_max_cost_usd: float = 0.0  # max estimated cost per session (0 = unlimited)
+    task_max_tokens: int = 0  # max tokens per single task/exec run
+    task_max_cost_usd: float = 0.0  # max cost per single task/exec run
+    pause_on_limit: bool = True  # pause and prompt user instead of hard-stopping
+
+
+@dataclass
+class FallbackConfig:
+    """Provider fallback chain for resilient execution."""
+    enabled: bool = False
+    chain: list = field(default_factory=list)  # e.g. ["gemini", "openai", "ollama"]
+    retry_on_rate_limit: bool = True
+    retry_on_server_error: bool = True
+    max_fallback_attempts: int = 3
+
+
+@dataclass
+class ContextCompressionConfig:
+    """Context compression / summarization settings."""
+    enabled: bool = True
+    compress_after_turns: int = 20  # compress history older than N turns
+    target_token_ratio: float = 0.3  # compress to ~30% of original tokens
+    preserve_recent_turns: int = 8  # always keep last N turns uncompressed
+
+
+@dataclass
+class OutputTruncationConfig:
+    """Tool output truncation for context efficiency."""
+    enabled: bool = True
+    max_output_chars: int = 32000  # truncate tool output beyond this
+    max_output_lines: int = 500  # truncate beyond this many lines
+    show_truncation_notice: bool = True
+
+
+@dataclass
 class AgenticConfig:
     """Configuration for agentic loop behavior"""
     max_iterations: int = 25 # max tool-call round-trips per request
@@ -150,6 +188,8 @@ class CheckpointConfig:
     max_checkpoints: int = 50  # Maximum checkpoints to keep
     checkpoint_on_session_start: bool = False  # Create checkpoint at start
     checkpoint_on_session_end: bool = False  # Create checkpoint at end
+    max_age_hours: int = 0  # prune checkpoints older than N hours (0 = disabled)
+    max_disk_mb: int = 0  # prune when total disk exceeds N MB (0 = disabled)
 
 
 @dataclass
@@ -249,6 +289,10 @@ class Config:
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
+    cost_guardrails: CostGuardrailConfig = field(default_factory=CostGuardrailConfig)
+    fallback: FallbackConfig = field(default_factory=FallbackConfig)
+    context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
+    output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
@@ -268,6 +312,10 @@ class Config:
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
             "agentic": asdict(self.agentic),
+            "cost_guardrails": asdict(self.cost_guardrails),
+            "fallback": asdict(self.fallback),
+            "context_compression": asdict(self.context_compression),
+            "output_truncation": asdict(self.output_truncation),
             "mcp_servers": self.mcp_servers,
         }
         return config_dict
@@ -287,6 +335,10 @@ class Config:
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
             agentic=AgenticConfig(**data.get("agentic", {})),
+            cost_guardrails=CostGuardrailConfig(**data.get("cost_guardrails", {})),
+            fallback=FallbackConfig(**data.get("fallback", {})),
+            context_compression=ContextCompressionConfig(**data.get("context_compression", {})),
+            output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
             mcp_servers=data.get("mcp_servers", {}),
         )
 
@@ -379,6 +431,10 @@ class ConfigManager:
             "plan_mode",
             "checkpoint",
             "agentic",
+            "cost_guardrails",
+            "fallback",
+            "context_compression",
+            "output_truncation",
             "mcp_servers",
         }
 

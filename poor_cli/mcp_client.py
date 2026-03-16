@@ -141,6 +141,22 @@ class MCPClient:
                 return str(first.get("text", ""))
         return json.dumps(result, ensure_ascii=False)
 
+    async def health_check(self) -> bool:
+        """Ping the MCP server process to check if it's still alive."""
+        if self.process is None or self.process.returncode is not None:
+            return False
+        try:
+            await self._send({
+                "jsonrpc": "2.0",
+                "id": self._next_request_id,
+                "method": "ping",
+            })
+            self._next_request_id += 1
+            await asyncio.wait_for(self._read_response(), timeout=3)
+            return True
+        except Exception:
+            return self.process.returncode is None # fallback: process alive check
+
     async def disconnect(self) -> None:
         if not self.process:
             return
@@ -232,6 +248,23 @@ class MCPManager:
             except Exception as e:
                 logger.warning(f"Failed to initialize MCP server '{server_name}': {e}")
                 self._server_status[server_name]["error"] = str(e)
+
+    async def health_check_all(self) -> Dict[str, bool]:
+        """Check health of all registered MCP servers. Returns {name: alive}."""
+        results: Dict[str, bool] = {}
+        for name, client in self.clients.items():
+            results[name] = await client.health_check()
+        return results
+
+    def get_healthy_tool_declarations(self) -> List[Dict[str, Any]]:
+        """Return tool declarations only from healthy servers."""
+        healthy: List[Dict[str, Any]] = []
+        for decl in self._declarations:
+            tool_name = decl.get("name", "")
+            client = self._tool_to_client.get(tool_name)
+            if client and client.process is not None and client.process.returncode is None:
+                healthy.append(decl)
+        return healthy
 
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         return list(self._declarations)

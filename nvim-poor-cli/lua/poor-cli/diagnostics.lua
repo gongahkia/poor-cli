@@ -110,4 +110,43 @@ function M.toggle()
     return enabled
 end
 
+--- Gather LSP diagnostics for the current buffer and format as context string.
+--- Automatically injected when user asks about errors/warnings.
+function M.get_buffer_diagnostics(bufnr)
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    local diags = vim.diagnostic.get(bufnr)
+    if #diags == 0 then
+        return nil
+    end
+    local fname = vim.api.nvim_buf_get_name(bufnr)
+    local lines = { "[LSP Diagnostics for " .. vim.fn.fnamemodify(fname, ":~:.") .. "]" }
+    local severity_map = { "ERROR", "WARN", "INFO", "HINT" }
+    for _, d in ipairs(diags) do
+        local sev = severity_map[d.severity] or "UNKNOWN"
+        local src = d.source and (" (" .. d.source .. ")") or ""
+        table.insert(lines, string.format(
+            "  L%d: [%s]%s %s",
+            (d.lnum or 0) + 1, sev, src, d.message or ""
+        ))
+    end
+    return table.concat(lines, "\n")
+end
+
+--- Build diagnostics context for all open buffers with errors/warnings.
+function M.get_workspace_diagnostics_summary()
+    local parts = {}
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(bufnr) then
+            local ctx = M.get_buffer_diagnostics(bufnr)
+            if ctx then
+                table.insert(parts, ctx)
+            end
+        end
+    end
+    if #parts == 0 then
+        return nil
+    end
+    return table.concat(parts, "\n\n")
+end
+
 return M

@@ -160,12 +160,32 @@ class PatchSection:
     hunks: List[PatchHunk]
 
 
+def truncate_output(text: str, max_chars: int = 32000, max_lines: int = 500) -> str:
+    """Truncate tool output to stay within context budget."""
+    if not text:
+        return text
+    lines = text.splitlines(keepends=True)
+    truncated = False
+    if max_lines > 0 and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        truncated = True
+    result = "".join(lines)
+    if max_chars > 0 and len(result) > max_chars:
+        result = result[:max_chars]
+        truncated = True
+    if truncated:
+        result += "\n\n[Output truncated. Use specific file/line tools for full content.]"
+    return result
+
+
 class ToolRegistryAsync:
     """Async registry for all available tools"""
     MAX_CAPTURED_OUTPUT_BYTES = 1024 * 1024  # 1 MiB per stream
 
-    def __init__(self):
+    def __init__(self, output_max_chars: int = 0, output_max_lines: int = 0):
         self.tools = {}
+        self._output_max_chars = output_max_chars  # 0 = no truncation
+        self._output_max_lines = output_max_lines
         self.command_validator = get_command_validator(strict_mode=False)
         self._register_tools()
 
@@ -856,8 +876,12 @@ class ToolRegistryAsync:
         """
         result = await self.execute_tool_raw(tool_name, arguments)
         if isinstance(result, ToolOutcome):
-            return result.to_json()
-        return result
+            text = result.to_json()
+        else:
+            text = str(result)
+        if self._output_max_chars > 0 or self._output_max_lines > 0:
+            text = truncate_output(text, self._output_max_chars, self._output_max_lines)
+        return text
 
     @staticmethod
     def _text_diff(file_path: str, before: str, after: str) -> str:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import json
+from pathlib import Path
 import secrets
 import time
 import uuid
@@ -105,6 +106,51 @@ class RoomState:
     agenda: List[AgendaItem] = field(default_factory=list)
     hand_raise_queue: List[str] = field(default_factory=list)
     next_agenda_id: int = 1
+    persist_path: Optional[str] = None  # path to persist room state
+
+
+class RoomPersistence:
+    """Persist/restore room state to .poor-cli/rooms/."""
+    ROOMS_DIR = ".poor-cli/rooms"
+
+    def __init__(self, workspace_root: Optional[Path] = None):
+        self.workspace_root = workspace_root or Path.cwd()
+        self.rooms_dir = self.workspace_root / self.ROOMS_DIR
+
+    def save_room(self, room: RoomState) -> None:
+        """Save room metadata (not connections) to disk."""
+        self.rooms_dir.mkdir(parents=True, exist_ok=True)
+        data: Dict[str, Any] = {
+            "name": room.name,
+            "tokens": [
+                {"token": t.token, "role": t.role, "expires_at": t.expires_at}
+                for t in room.tokens.values()
+            ],
+            "chat_history": getattr(room, "chat_history", []),
+            "agenda": [item.to_payload() for item in room.agenda],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        path = self.rooms_dir / f"{room.name}.json"
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def load_room(self, room_name: str) -> Optional[Dict[str, Any]]:
+        """Load saved room metadata. Returns None if not found."""
+        path = self.rooms_dir / f"{room_name}.json"
+        if not path.is_file():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+    def list_saved_rooms(self) -> List[str]:
+        """List room names with saved state."""
+        if not self.rooms_dir.is_dir():
+            return []
+        return [p.stem for p in sorted(self.rooms_dir.glob("*.json"))]
+
+    def delete_room(self, room_name: str) -> None:
+        """Delete saved room state."""
+        path = self.rooms_dir / f"{room_name}.json"
+        if path.is_file():
+            path.unlink()
 
 
 class MultiplayerHost:

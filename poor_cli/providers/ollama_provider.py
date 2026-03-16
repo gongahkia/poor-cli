@@ -359,6 +359,26 @@ class OllamaProvider(BaseProvider):
         else:
             self.messages = list(messages)
 
+    @classmethod
+    async def discover_models(cls, base_url: str = "http://localhost:11434") -> List[str]:
+        """Query Ollama server for locally available models."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{base_url.rstrip('/')}/api/tags",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return [m["name"] for m in data.get("models", [])]
+                    return []
+        except Exception:
+            return []
+
+    async def list_available_models(self) -> List[str]:
+        """Return models available on the configured Ollama server."""
+        return await self.discover_models(self.base_url)
+
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Ollama capabilities"""
         # Capabilities vary by model

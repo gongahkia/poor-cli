@@ -577,6 +577,12 @@ class PoorCLIServer:
             "poor-cli/resolveAgendaItem": self.handle_resolve_agenda_item,
             "poor-cli/setHandRaised": self.handle_set_hand_raised,
             "poor-cli/nextDriver": self.handle_next_driver,
+            "poor-cli/getSessionCost": self.handle_get_session_cost,
+            "poor-cli/listOllamaModels": self.handle_list_ollama_models,
+            "poor-cli/gcCheckpoints": self.handle_gc_checkpoints,
+            "poor-cli/saveSession": self.handle_save_session,
+            "poor-cli/mcpHealthCheck": self.handle_mcp_health_check,
+            "poor-cli/restoreSession": self.handle_restore_session,
         }
 
     # =========================================================================
@@ -676,6 +682,11 @@ class PoorCLIServer:
         """Shutdown the server."""
         del params
         self.logger.info("Shutdown requested")
+        # Auto-save session on shutdown for TUI restore
+        try:
+            await self.handle_save_session({})
+        except Exception as e:
+            self.logger.debug("Auto-save session on shutdown failed: %s", e)
         self._resolve_pending_review_requests()
         await self._shutdown_background_tasks()
         async with self._get_host_server_lock():
@@ -1045,6 +1056,7 @@ class PoorCLIServer:
                 "content": response_text,
                 "provider": self.core.get_provider_info(),
                 "outputFormat": output_format,
+                "cost": self.core.get_session_cost_summary(),
             }
         return {"content": response_text, "outputFormat": output_format}
 
@@ -3855,6 +3867,96 @@ class PoorCLIServer:
         request_id = str(params.get("requestId", "")).strip()
         self.core.cancel_request(request_id)
         return {"success": True, "requestId": request_id}
+
+    async def handle_get_session_cost(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return session token/cost totals."""
+        self._ensure_initialized()
+        return self.core.get_session_cost_summary()
+
+    async def handle_list_ollama_models(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Discover models available on the local Ollama server."""
+        self._ensure_initialized()
+        try:
+            from .providers.ollama_provider import OllamaProvider
+            base_url = str(params.get("baseUrl", "http://localhost:11434")).strip()
+            models = await OllamaProvider.discover_models(base_url)
+            return {"models": models, "count": len(models)}
+        except Exception as e:
+            return {"models": [], "count": 0, "error": str(e)}
+
+    async def handle_gc_checkpoints(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run checkpoint garbage collection."""
+        self._ensure_initialized()
+        if not self.core.checkpoint_manager:
+            return {"deleted": 0, "freed_bytes": 0, "error": "Checkpoints disabled"}
+        stats = self.core.checkpoint_manager.gc()
+        return stats
+
+    async def handle_save_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Save current session transcript for later restore."""
+        self._ensure_initialized()
+        if not self.core.provider:
+            return {"saved": False, "error": "No active provider"}
+        history = self.core.provider.get_history()
+        session_path = Path.cwd() / ".poor-cli" / "sessions"
+        session_path.mkdir(parents=True, exist_ok=True)
+        session_file = session_path / f"session-{self.session_id}.json"
+        try:
+            import json as _json
+            with open(session_file, "w", encoding="utf-8") as f:
+                _json.dump({
+                    "session_id": self.session_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "provider": self.core.config.model.provider if self.core.config else "",
+                    "model": self.core.config.model.model_name if self.core.config else "",
+                    "message_count": len(history),
+                    "messages": history,
+                    "cost": self.core.get_session_cost_summary(),
+                }, f, indent=2, default=str)
+            return {"saved": True, "path": str(session_file)}
+        except Exception as e:
+            return {"saved": False, "error": str(e)}
+
+    async def handle_mcp_health_check(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Check health of all registered MCP servers."""
+        self._ensure_initialized()
+        mcp = getattr(self.core, "_mcp_manager", None)
+        if mcp is None:
+            return {"servers": {}, "error": "No MCP servers configured"}
+        try:
+            results = await mcp.health_check_all()
+            return {"servers": results}
+        except Exception as e:
+            return {"servers": {}, "error": str(e)}
+
+    async def handle_restore_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Restore the most recent saved session transcript."""
+        self._ensure_initialized()
+        session_dir = Path.cwd() / ".poor-cli" / "sessions"
+        if not session_dir.exists():
+            return {"restored": False, "error": "No saved sessions found"}
+        try:
+            import json as _json
+            session_files = sorted(session_dir.glob("session-*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not session_files:
+                return {"restored": False, "error": "No saved sessions found"}
+            session_file = session_files[0]  # most recent
+            with open(session_file, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+            messages = data.get("messages", [])
+            if not messages:
+                return {"restored": False, "error": "Session has no messages"}
+            if self.core.provider:
+                self.core.provider.set_history(messages)
+            return {
+                "restored": True,
+                "session_id": data.get("session_id", ""),
+                "message_count": len(messages),
+                "provider": data.get("provider", ""),
+                "model": data.get("model", ""),
+            }
+        except Exception as e:
+            return {"restored": False, "error": str(e)}
 
     async def _streaming_permission_callback(
         self,
