@@ -1,11 +1,12 @@
 # Multi-stage build for poor-cli
-FROM rust:1-slim-bookworm as rust-builder
+FROM rust:1-slim-bookworm AS rust-builder
 
 WORKDIR /src
 COPY poor-cli-tui ./poor-cli-tui
-RUN cargo build --manifest-path poor-cli-tui/Cargo.toml --release
+COPY poor_cli/command_manifest.json ./poor_cli/command_manifest.json
+RUN cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
 
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Set working directory
 WORKDIR /app
