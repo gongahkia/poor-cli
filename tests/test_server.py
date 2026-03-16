@@ -476,7 +476,8 @@ class TestPoorCLIServer:
             source="manual",
         )
 
-        running = manager.mark_running(task.task_id, worker_pid=321)
+        with patch.object(TaskManager, "_pid_is_running", return_value=True):
+            running = manager.mark_running(task.task_id, worker_pid=321)
         server.initialized = True
         server._task_manager = manager
 
@@ -828,6 +829,53 @@ class TestPoorCLIServer:
         assert stopped["stopped"] is True
         assert stopped["running"] is False
         assert fake_process.terminated is True
+
+    @pytest.mark.asyncio
+    async def test_service_status_reconciles_exited_managed_process(self, server, tmp_path):
+        server.initialized = True
+        fake_process = _FakeManagedProcess()
+        spawn_mock = AsyncMock(return_value=fake_process)
+
+        with (
+            patch.object(server, "_service_logs_dir", tmp_path / "services"),
+            patch.object(server, "_resolve_service_executable", return_value="/usr/bin/fake"),
+            patch("poor_cli._server.asyncio.create_subprocess_exec", spawn_mock),
+            patch.object(server, "_is_ollama_reachable", return_value=False),
+            patch("poor_cli._server.asyncio.sleep", AsyncMock(return_value=None)),
+        ):
+            started = await server.handle_start_service(
+                {"name": "demo", "command": "demo-server --port 9000"}
+            )
+            runtime = server._managed_services["demo"]
+            runtime.process.returncode = 7
+
+            status = await server.handle_get_service_status({"name": "demo"})
+
+        assert started["running"] is True
+        assert status["running"] is False
+        assert status["managedRunning"] is False
+        assert status["exitCode"] == 7
+        assert runtime.log_handle is None
+
+    @pytest.mark.asyncio
+    async def test_start_service_rejects_untrusted_cwd(self, server, tmp_path, monkeypatch):
+        server.initialized = True
+        server.core.config = Config()
+        trusted_root = tmp_path / "trusted"
+        trusted_root.mkdir()
+        outside_root = tmp_path / "outside"
+        outside_root.mkdir()
+        monkeypatch.chdir(trusted_root)
+
+        with patch.object(server, "_resolve_service_executable", return_value="/usr/bin/fake"):
+            with pytest.raises(InvalidParamsError, match="trusted workspace roots"):
+                await server.handle_start_service(
+                    {
+                        "name": "demo",
+                        "command": "demo-server",
+                        "cwd": str(outside_root),
+                    }
+                )
 
     @pytest.mark.asyncio
     async def test_start_service_ollama_uses_default_command(self, server, tmp_path):

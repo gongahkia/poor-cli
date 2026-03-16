@@ -97,7 +97,10 @@ def test_task_manager_start_process_passes_execution_config(tmp_path: Path):
     )
 
     fake_process = SimpleNamespace(pid=4242)
-    with patch("poor_cli.task_manager.subprocess.Popen", return_value=fake_process) as popen_mock:
+    with (
+        patch("poor_cli.task_manager.subprocess.Popen", return_value=fake_process) as popen_mock,
+        patch.object(TaskManager, "_pid_is_running", return_value=True),
+    ):
         started = manager.start_task_process(task.task_id)
 
     argv = popen_mock.call_args.args[0]
@@ -215,3 +218,27 @@ def test_task_manager_approve_and_cancel_update_status(tmp_path: Path):
     assert cancelled.status == "cancelled"
     assert cancelled.finished_at is not None
     assert cancelled.error_message == "cancelled by user"
+
+
+def test_get_task_marks_stale_running_worker_as_failed(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_git_repo(repo_root)
+
+    manager = TaskManager(repo_root)
+    task = manager.create_task(
+        title="Hung worker",
+        prompt="Review the repository",
+        sandbox_preset="review-only",
+        source="manual",
+    )
+    manager.mark_running(task.task_id, worker_pid=99999)
+
+    with patch("poor_cli.task_manager.os.kill", side_effect=ProcessLookupError):
+        refreshed = manager.get_task(task.task_id)
+
+    assert refreshed is not None
+    assert refreshed.status == "failed"
+    assert refreshed.worker_pid is None
+    assert refreshed.finished_at is not None
+    assert refreshed.error_message == "worker process exited unexpectedly"

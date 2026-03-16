@@ -2120,6 +2120,25 @@ class PoorCLIServer:
                 await self._stop_managed_service_locked(service)
         self._managed_services.clear()
 
+    def _refresh_managed_service_locked(
+        self,
+        service_name: str,
+    ) -> Optional[ManagedServiceRuntime]:
+        """Sync cached service runtime state with the underlying process."""
+        service = self._managed_services.get(service_name)
+        if service is None:
+            return None
+        if service.process.returncode is None:
+            return service
+
+        service.last_exit_code = service.process.returncode
+        if getattr(service, "log_handle", None) is not None:
+            with contextlib.suppress(Exception):
+                service.log_handle.flush()
+                service.log_handle.close()
+            service.log_handle = None
+        return service
+
     def _service_payload_locked(
         self,
         service_name: str,
@@ -2129,7 +2148,7 @@ class PoorCLIServer:
         message: str = "",
     ) -> Dict[str, Any]:
         """Build stable status payload for a managed/external service."""
-        managed = self._managed_services.get(service_name)
+        managed = self._refresh_managed_service_locked(service_name)
         managed_running = False
 
         payload: Dict[str, Any] = {
@@ -2219,10 +2238,14 @@ class PoorCLIServer:
             cwd_path = self._resolve_path(str(raw_cwd))
             if not cwd_path.is_dir():
                 raise InvalidParamsError(f"cwd is not a directory: {raw_cwd}")
+            if self._trusted_workspace_enabled() and not self._path_is_trusted(str(cwd_path)):
+                raise InvalidParamsError(
+                    f"cwd falls outside trusted workspace roots: {cwd_path}"
+                )
             cwd_value = str(cwd_path)
 
         async with self._get_service_lock():
-            existing = self._managed_services.get(service_name)
+            existing = self._refresh_managed_service_locked(service_name)
             if existing is not None and existing.process.returncode is None:
                 return self._service_payload_locked(
                     service_name,

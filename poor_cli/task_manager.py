@@ -264,7 +264,7 @@ class TaskManager:
                 """,
                 params,
             ).fetchall()
-        return [self._row_to_task(row) for row in rows]
+        return [self._reconcile_task_runtime(self._row_to_task(row)) for row in rows]
 
     def get_task(self, task_id: str) -> Optional[TaskRecord]:
         with self._connect() as conn:
@@ -274,7 +274,7 @@ class TaskManager:
             ).fetchone()
         if row is None:
             return None
-        return self._row_to_task(row)
+        return self._reconcile_task_runtime(self._row_to_task(row))
 
     def approve_task(self, task_id: str, *, auto_start: bool = True) -> TaskRecord:
         task = self._require_task(task_id)
@@ -398,6 +398,38 @@ class TaskManager:
         if task is None:
             raise FileNotFoundError(f"Unknown task: {task_id}")
         return task
+
+    @staticmethod
+    def _pid_is_running(pid: Optional[int]) -> bool:
+        if pid is None or int(pid) <= 0:
+            return False
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def _reconcile_task_runtime(self, task: TaskRecord) -> TaskRecord:
+        if task.status != "running":
+            return task
+        if task.worker_pid is None or self._pid_is_running(task.worker_pid):
+            return task
+
+        self._update_task(
+            task.task_id,
+            status="failed",
+            finished_at=_utc_now(),
+            worker_pid=None,
+            error_message="worker process exited unexpectedly",
+        )
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE task_id = ?",
+                (task.task_id,),
+            ).fetchone()
+        return self._row_to_task(row) if row is not None else task
 
     def _row_to_task(self, row: sqlite3.Row) -> TaskRecord:
         return TaskRecord(
