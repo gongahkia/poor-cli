@@ -83,6 +83,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.mode == AppMode::InfoPopup {
         draw_info_popup(frame, app);
     }
+    if app.mode == AppMode::ApiKeyEditor {
+        draw_api_key_editor(frame, app);
+    }
     if app.mode == AppMode::PermissionPrompt {
         draw_permission_prompt(frame, app);
     }
@@ -613,6 +616,17 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(": fast scroll", Style::default().fg(theme::muted_fg(mode))),
         ]
+    } else if app.mode == AppMode::ApiKeyEditor {
+        vec![
+            Span::styled("  ↑↓/Tab", Style::default().fg(theme::accent(mode))),
+            Span::styled(": switch field  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": next/save  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Ctrl+S", Style::default().fg(theme::success(mode))),
+            Span::styled(": save  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+            Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
+        ]
     } else if app.mode == AppMode::JoinWizard {
         vec![
             Span::styled("  Enter", Style::default().fg(theme::accent(mode))),
@@ -1033,6 +1047,192 @@ fn draw_info_popup(frame: &mut Frame, app: &App) {
                 .padding(Padding::new(1, 1, 1, 1)),
         );
     frame.render_widget(popup, area);
+}
+
+fn mask_secret_preview(value: &str) -> String {
+    if value.is_empty() {
+        return "(empty)".to_string();
+    }
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= 4 {
+        return "•".repeat(chars.len());
+    }
+    let tail: String = chars[chars.len().saturating_sub(4)..].iter().collect();
+    format!("{}{}", "•".repeat(chars.len().saturating_sub(4)), tail)
+}
+
+fn draw_api_key_editor(frame: &mut Frame, app: &App) {
+    let Some(editor) = app.api_key_editor.as_ref() else {
+        return;
+    };
+
+    let mode = app.theme_mode;
+    let area = centered_rect(78, 68, frame.area());
+    render_popup_surface(frame, area, mode);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(8),
+            Constraint::Min(8),
+            Constraint::Length(6),
+        ])
+        .split(area);
+
+    let mut header_lines = vec![
+        Line::from(vec![
+            Span::styled(
+                " Setup Credentials ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                if editor.env_exists {
+                    " editing existing .env"
+                } else {
+                    " creating .env from template"
+                },
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
+        ]),
+        Line::from(Span::styled(
+            format!("env: {}", ellipsize_middle(&editor.env_path, 64)),
+            Style::default().fg(theme::base_fg(mode)),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "template: {}",
+                ellipsize_middle(&editor.template_path, 59)
+            ),
+            Style::default().fg(theme::muted_fg(mode)),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "active provider: {} / {}",
+                editor.target_provider, editor.target_model
+            ),
+            Style::default().fg(theme::muted_fg(mode)),
+        )),
+    ];
+
+    if !editor.init_error.trim().is_empty() {
+        header_lines.push(Line::from(Span::styled(
+            format!("last error: {}", ellipsize_middle(&editor.init_error, 68)),
+            Style::default().fg(theme::error(mode)),
+        )));
+    }
+
+    if !editor.status.trim().is_empty() {
+        header_lines.push(Line::from(Span::styled(
+            editor.status.clone(),
+            Style::default().fg(theme::success(mode)),
+        )));
+    } else if !editor.error.trim().is_empty() {
+        header_lines.push(Line::from(Span::styled(
+            editor.error.clone(),
+            Style::default().fg(theme::error(mode)),
+        )));
+    }
+
+    let header = Paragraph::new(header_lines).block(
+        Block::default()
+            .title(Span::styled(
+                " Setup ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(header, chunks[0]);
+
+    let items: Vec<ListItem> = editor
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(idx, field)| {
+            let is_selected = idx == editor.selected_index;
+            let marker = if is_selected { "▸ " } else { "  " };
+            let provider_tag = field
+                .provider
+                .as_deref()
+                .filter(|provider| *provider == editor.target_provider)
+                .map(|_| " [active]")
+                .unwrap_or("");
+            let display_value = if is_selected {
+                format!("{}_", field.value)
+            } else {
+                mask_secret_preview(&field.value)
+            };
+            let style = if is_selected {
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::base_fg(mode))
+            };
+            let meta_style = if is_selected {
+                Style::default().fg(theme::base_fg(mode))
+            } else {
+                Style::default().fg(theme::muted_fg(mode))
+            };
+
+            ListItem::new(Line::from(vec![
+                Span::styled(marker.to_string(), style),
+                Span::styled(format!("{:<12}", field.label), style),
+                Span::styled(
+                    format!("{}{}", field.env_var, provider_tag),
+                    meta_style,
+                ),
+                Span::styled("  ".to_string(), meta_style),
+                Span::styled(display_value, style),
+            ]))
+        })
+        .collect();
+
+    let fields = List::new(items).block(
+        Block::default()
+            .title(Span::styled(
+                " Managed Keys ",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 0, 0)),
+    );
+    frame.render_widget(fields, chunks[1]);
+
+    let footer_text = editor
+        .fields
+        .get(editor.selected_index)
+        .map(|field| {
+            format!(
+                "{}\nSaving writes `{}` and retries backend initialization.",
+                field.help, field.env_var
+            )
+        })
+        .unwrap_or_else(|| "Select a field to edit.".to_string());
+    let footer = Paragraph::new(footer_text)
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Guidance ",
+                    Style::default()
+                        .fg(theme::accent(mode))
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme::accent(mode)))
+                .padding(Padding::new(1, 1, 0, 0)),
+        )
+        .style(Style::default().fg(theme::muted_fg(mode)));
+    frame.render_widget(footer, chunks[2]);
 }
 
 // ── Permission prompt overlay ────────────────────────────────────────

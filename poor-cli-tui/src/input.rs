@@ -29,6 +29,8 @@ pub enum InputAction {
     CopyToClipboard(String),
     /// Join wizard completed with (url, room, token).
     JoinWizardComplete(String, String, String),
+    /// Save the API key/.env editor.
+    SaveApiKeyEditor,
     /// Open the backend-owned context inspector.
     OpenContextInspector,
     /// Open the combined quick-open palette.
@@ -242,6 +244,9 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
             KeyCode::Char('f') => {
                 return InputAction::OpenTranscriptSearch;
             }
+            KeyCode::Char('s') if app.mode == AppMode::ApiKeyEditor => {
+                return InputAction::SaveApiKeyEditor;
+            }
             _ => {}
         }
     }
@@ -252,6 +257,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         AppMode::ProviderSelect => handle_key_provider_select(app, key),
         AppMode::CompactSelect => handle_key_compact_select(app, key),
         AppMode::InfoPopup => handle_key_info_popup(app, key),
+        AppMode::ApiKeyEditor => handle_key_api_key_editor(app, key),
         AppMode::PermissionPrompt => handle_key_permission(app, key),
         AppMode::MutationReview => handle_key_mutation_review(app, key),
         AppMode::ContextInspector => handle_key_context_inspector(app, key),
@@ -499,6 +505,121 @@ fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
         }
         KeyCode::Home => {
             app.info_popup_scroll = 0;
+            InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}
+
+fn api_key_editor_prev_boundary(text: &str, cursor: usize) -> usize {
+    if cursor == 0 {
+        return 0;
+    }
+    text[..cursor]
+        .char_indices()
+        .last()
+        .map(|(idx, _)| idx)
+        .unwrap_or(0)
+}
+
+fn api_key_editor_next_boundary(text: &str, cursor: usize) -> usize {
+    if cursor >= text.len() {
+        return text.len();
+    }
+    text[cursor..]
+        .char_indices()
+        .nth(1)
+        .map(|(idx, _)| cursor + idx)
+        .unwrap_or(text.len())
+}
+
+fn handle_key_api_key_editor(app: &mut App, key: KeyEvent) -> InputAction {
+    let Some(state) = app.api_key_editor.as_mut() else {
+        app.mode = AppMode::Normal;
+        return InputAction::Redraw;
+    };
+
+    let field_count = state.fields.len();
+    if field_count == 0 {
+        app.close_api_key_editor();
+        return InputAction::Redraw;
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.close_api_key_editor();
+            InputAction::Redraw
+        }
+        KeyCode::Up | KeyCode::BackTab => {
+            if state.selected_index > 0 {
+                state.selected_index -= 1;
+            }
+            state.cursor = state.fields[state.selected_index].value.len();
+            state.error.clear();
+            InputAction::Redraw
+        }
+        KeyCode::Down | KeyCode::Tab => {
+            if state.selected_index + 1 < field_count {
+                state.selected_index += 1;
+            }
+            state.cursor = state.fields[state.selected_index].value.len();
+            state.error.clear();
+            InputAction::Redraw
+        }
+        KeyCode::Left => {
+            let field = &state.fields[state.selected_index];
+            state.cursor = api_key_editor_prev_boundary(&field.value, state.cursor);
+            InputAction::Redraw
+        }
+        KeyCode::Right => {
+            let field = &state.fields[state.selected_index];
+            state.cursor = api_key_editor_next_boundary(&field.value, state.cursor);
+            InputAction::Redraw
+        }
+        KeyCode::Home => {
+            state.cursor = 0;
+            InputAction::Redraw
+        }
+        KeyCode::End => {
+            state.cursor = state.fields[state.selected_index].value.len();
+            InputAction::Redraw
+        }
+        KeyCode::Backspace => {
+            let field = &mut state.fields[state.selected_index];
+            if state.cursor > 0 {
+                let prev = api_key_editor_prev_boundary(&field.value, state.cursor);
+                field.value.drain(prev..state.cursor);
+                state.cursor = prev;
+            }
+            state.error.clear();
+            state.status.clear();
+            InputAction::Redraw
+        }
+        KeyCode::Delete => {
+            let field = &mut state.fields[state.selected_index];
+            if state.cursor < field.value.len() {
+                let next = api_key_editor_next_boundary(&field.value, state.cursor);
+                field.value.drain(state.cursor..next);
+            }
+            state.error.clear();
+            state.status.clear();
+            InputAction::Redraw
+        }
+        KeyCode::Enter => {
+            if state.selected_index + 1 < field_count {
+                state.selected_index += 1;
+                state.cursor = state.fields[state.selected_index].value.len();
+                InputAction::Redraw
+            } else {
+                InputAction::SaveApiKeyEditor
+            }
+        }
+        KeyCode::Char(c) => {
+            let field = &mut state.fields[state.selected_index];
+            field.value.insert(state.cursor, c);
+            state.cursor += c.len_utf8();
+            state.error.clear();
+            state.status.clear();
             InputAction::Redraw
         }
         _ => InputAction::None,
