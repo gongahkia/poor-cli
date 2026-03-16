@@ -1209,6 +1209,99 @@ fn handle_key_quick_open(app: &mut App, key: KeyEvent) -> InputAction {
     }
 }
 
+fn handle_key_queue_manager(app: &mut App, key: KeyEvent) -> InputAction {
+    if app.prompt_queue.is_empty() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                app.close_queue_manager();
+                InputAction::Redraw
+            }
+            _ => InputAction::None,
+        }
+    } else {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                app.close_queue_manager();
+                InputAction::Redraw
+            }
+            KeyCode::Up => {
+                if app.queue_manager.selected_index > 0 {
+                    app.queue_manager.selected_index -= 1;
+                }
+                InputAction::Redraw
+            }
+            KeyCode::Down => {
+                if app.queue_manager.selected_index + 1 < app.prompt_queue.len() {
+                    app.queue_manager.selected_index += 1;
+                }
+                InputAction::Redraw
+            }
+            KeyCode::Char('u') | KeyCode::Char('k') => {
+                let selected = app.queue_manager.selected_index;
+                if selected > 0 {
+                    app.prompt_queue.swap(selected - 1, selected);
+                    app.queue_manager.selected_index -= 1;
+                    app.set_status("Moved queued prompt up");
+                }
+                InputAction::Redraw
+            }
+            KeyCode::Char('j') => {
+                let selected = app.queue_manager.selected_index;
+                if selected + 1 < app.prompt_queue.len() {
+                    app.prompt_queue.swap(selected, selected + 1);
+                    app.queue_manager.selected_index += 1;
+                    app.set_status("Moved queued prompt down");
+                }
+                InputAction::Redraw
+            }
+            KeyCode::Char('d') | KeyCode::Delete | KeyCode::Backspace => {
+                let selected = app.queue_manager.selected_index;
+                if let Some(prompt) = app.prompt_queue.remove(selected) {
+                    app.set_status(format!("Dropped queued {} prompt", prompt.source));
+                }
+                app.sync_queue_selection();
+                InputAction::Redraw
+            }
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                let count = app.prompt_queue.len();
+                app.prompt_queue.clear();
+                app.queue_paused = false;
+                app.sync_queue_selection();
+                app.set_status(format!("Cleared {count} queued prompt(s)"));
+                InputAction::Redraw
+            }
+            KeyCode::Char('e') | KeyCode::Char('E') => {
+                let selected = app.queue_manager.selected_index;
+                if let Some(prompt) = app.prompt_queue.remove(selected) {
+                    app.close_queue_manager();
+                    app.input_buffer = prompt.backend;
+                    app.input_cursor = app.input_buffer.len();
+                    sync_text_input_state(app);
+                    app.sync_queue_selection();
+                    app.set_status("Loaded queued prompt into composer");
+                }
+                InputAction::Redraw
+            }
+            KeyCode::Enter | KeyCode::Char('s') | KeyCode::Char('S') => {
+                if app.waiting {
+                    app.set_status("Wait for the active request before sending queued prompts");
+                    return InputAction::Redraw;
+                }
+
+                let selected = app.queue_manager.selected_index;
+                if let Some(prompt) = app.prompt_queue.remove(selected) {
+                    app.queue_paused = false;
+                    app.sync_queue_selection();
+                    app.close_queue_manager();
+                    return InputAction::QueueSendSelected(prompt);
+                }
+                InputAction::None
+            }
+            _ => InputAction::None,
+        }
+    }
+}
+
 fn handle_key_timeline(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => {
