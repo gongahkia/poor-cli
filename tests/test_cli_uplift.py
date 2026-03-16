@@ -222,3 +222,88 @@ def test_github_task_create_json(monkeypatch, capsys, tmp_path: Path):
         "contextFiles": ["README.md"],
     }
     assert result["context"]["kind"] == "pull_request"
+
+
+def test_task_create_respects_repo_auto_start_config(monkeypatch, capsys, tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_git_repo(repo_root)
+    (repo_root / ".poor-cli").mkdir()
+    (repo_root / ".poor-cli" / "config.yaml").write_text(
+        "tasks:\n  auto_start_read_only: false\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "poor-cli",
+            "task",
+            "create",
+            "--title",
+            "Read-only review",
+            "--prompt",
+            "Review the repository",
+            "--preset",
+            "review-only",
+            "--json",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main.main()
+
+    assert exc.value.code == 0
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["status"] == "queued"
+    assert payload["workerPid"] is None
+
+
+def test_github_task_create_respects_repo_auto_start_config(monkeypatch, capsys, tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    _init_git_repo(repo_root)
+    (repo_root / ".poor-cli").mkdir()
+    (repo_root / ".poor-cli" / "config.yaml").write_text(
+        "tasks:\n  auto_start_read_only: false\n",
+        encoding="utf-8",
+    )
+
+    payload = {
+        "repository": {"full_name": "acme/poor-cli"},
+        "pull_request": {
+            "number": 3,
+            "title": "Tighten help docs",
+            "body": "Sync command docs.",
+            "html_url": "https://github.com/acme/poor-cli/pull/3",
+            "user": {"login": "octocat"},
+            "base": {"ref": "main"},
+            "head": {"ref": "docs/help"},
+        },
+    }
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "poor-cli",
+            "github-task",
+            "create",
+            "--event-path",
+            str(event_path),
+            "--json",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli_main.main()
+
+    assert exc.value.code == 0
+    result = json.loads(capsys.readouterr().out.strip())
+    assert result["task"]["status"] == "queued"
+    assert result["task"]["workerPid"] is None

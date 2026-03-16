@@ -83,6 +83,33 @@ class TestAdditionalConfigFeatures:
         assert loaded.ui.show_token_count is False
         assert loaded.mcp_servers["demo"]["command"] == "demo-mcp"
 
+    def test_repo_overrides_support_tasks_and_sandbox_sections(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "global-config.yaml"
+        config_file.write_text(
+            "tasks:\n"
+            "  auto_start_read_only: true\n"
+            "sandbox:\n"
+            "  default_preset: workspace-write\n",
+            encoding="utf-8",
+        )
+
+        repo_cfg_dir = tmp_path / ".poor-cli"
+        repo_cfg_dir.mkdir(parents=True)
+        (repo_cfg_dir / "config.yaml").write_text(
+            "tasks:\n"
+            "  auto_start_read_only: false\n"
+            "sandbox:\n"
+            "  default_preset: review-only\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(tmp_path)
+        manager = ConfigManager(config_path=Path(config_file))
+        loaded = manager.load()
+
+        assert loaded.tasks.auto_start_read_only is False
+        assert loaded.sandbox.default_preset == "review-only"
+
     def test_get_api_key_falls_back_to_secure_store(self, monkeypatch, tmp_path):
         manager = ConfigManager(config_path=tmp_path / "config.yaml")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)

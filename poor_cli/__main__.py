@@ -20,7 +20,7 @@ from .automation_manager import (
     parse_weekly_schedule,
     schedule_interval,
 )
-from .config import PermissionMode
+from .config import Config, ConfigManager, PermissionMode
 from .core import PoorCLICore
 from .custom_commands import CustomCommandRegistry
 from .github_task import create_task_from_context, default_mode_for_context, load_github_context
@@ -698,19 +698,49 @@ def _build_execution_metadata_from_args(args: argparse.Namespace) -> dict[str, A
     return execution
 
 
-def _task_default_auto_start(preset: str) -> bool:
-    return preset not in APPROVAL_REQUIRED_PRESETS
+def _load_cli_config(config_path_hint: Optional[str] = None) -> Config:
+    if config_path_hint:
+        hinted_path = Path(config_path_hint).expanduser()
+        if not hinted_path.is_absolute():
+            hinted_path = Path.cwd() / hinted_path
+        manager = ConfigManager(hinted_path.resolve())
+        if manager.config_path.exists():
+            return manager.load()
+        return Config()
+
+    manager = ConfigManager()
+    if manager.config_path.exists():
+        return manager.load()
+
+    manager.config = Config()
+    manager._apply_repo_overrides()
+    return manager.config
+
+
+def _task_default_auto_start(preset: str, config: Config) -> bool:
+    tasks_config = getattr(config, "tasks", None)
+    if tasks_config is None:
+        return preset not in APPROVAL_REQUIRED_PRESETS
+
+    if preset in {"read-only", "review-only"}:
+        return bool(tasks_config.auto_start_read_only)
+    if preset == "workspace-write":
+        return bool(tasks_config.auto_start_workspace_write)
+    return False
 
 
 def _resolve_task_create_behavior(
     *,
     preset: str,
+    config: Config,
     auto_start: Optional[bool],
     auto_approve: bool,
     requires_approval: bool,
     wait: bool,
 ) -> tuple[bool, bool]:
-    effective_auto_start = _task_default_auto_start(preset) if auto_start is None else bool(auto_start)
+    effective_auto_start = (
+        _task_default_auto_start(preset, config) if auto_start is None else bool(auto_start)
+    )
     approval_required = bool(requires_approval or (preset in APPROVAL_REQUIRED_PRESETS and not auto_approve))
     if wait:
         if approval_required:
@@ -873,8 +903,10 @@ def _run_task_mode(argv: Sequence[str]) -> int:
         if not prompt:
             raise SystemExit("Prompt cannot be empty.")
         preset = normalize_preset(args.preset)
+        cli_config = _load_cli_config(getattr(args, "config", None))
         auto_start, requires_approval = _resolve_task_create_behavior(
             preset=preset,
+            config=cli_config,
             auto_start=args.auto_start,
             auto_approve=bool(args.auto_approve),
             requires_approval=bool(args.requires_approval),
@@ -1355,7 +1387,10 @@ def _build_github_task_parser() -> argparse.ArgumentParser:
     create = subparsers.add_parser("create")
     create.add_argument("--event-path")
     create.add_argument("--mode", choices=("read-only", "review-only"))
-    create.add_argument("--no-auto-start", action="store_true")
+    auto_start_group = create.add_mutually_exclusive_group()
+    auto_start_group.add_argument("--auto-start", dest="auto_start", action="store_true")
+    auto_start_group.add_argument("--no-auto-start", dest="auto_start", action="store_false")
+    create.set_defaults(auto_start=None)
     create.add_argument("--provider")
     create.add_argument("--model")
     create.add_argument("--config")
@@ -1376,6 +1411,12 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
     if args.subcommand == "create":
         context = load_github_context(Path(args.event_path).expanduser() if args.event_path else None, env=os.environ)
         mode = args.mode or default_mode_for_context(context)
+        cli_config = _load_cli_config(getattr(args, "config", None))
+        auto_start = (
+            _task_default_auto_start(mode, cli_config)
+            if args.auto_start is None
+            else bool(args.auto_start)
+        )
         metadata: dict[str, Any] = {}
         execution = _build_execution_metadata_from_args(args)
         if execution:
@@ -1384,12 +1425,12 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
             manager,
             context,
             mode=mode,
-            auto_start=not args.no_auto_start,
+            auto_start=auto_start,
             metadata=metadata,
         )
         payload = task.to_dict()
         if args.wait:
-            if args.no_auto_start:
+            if not auto_start:
                 raise SystemExit("`poor-cli github-task create --wait` requires auto-start.")
             payload = _wait_for_task_completion(
                 manager,
