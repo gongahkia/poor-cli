@@ -143,8 +143,7 @@ pub(super) fn handle_server_message(
         }
         ServerMsg::Providers { providers } => {
             app.providers = providers;
-            app.provider_select_idx = 0;
-            app.mode = poor_cli_tui::app::AppMode::ProviderSelect;
+            app.open_provider_select();
         }
         ServerMsg::ProviderSwitched { provider, model } => {
             app.provider_name = provider;

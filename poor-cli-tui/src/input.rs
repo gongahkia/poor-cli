@@ -1,5 +1,5 @@
 /// Input handling: keyboard events, slash-command completion, etc.
-use crate::app::{App, AppMode, QueuedPrompt, QuickOpenItem};
+use crate::app::{App, AppMode, ProviderSelectPane, QueuedPrompt, QuickOpenItem};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -433,16 +433,42 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
 fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Up => {
-            if app.provider_select_idx > 0 {
-                app.provider_select_idx -= 1;
+            let moved = if app.provider_select_pane == ProviderSelectPane::Models {
+                app.move_provider_model_selection(false)
+            } else {
+                app.move_provider_selection(false)
+            };
+            if moved {
+                InputAction::Redraw
+            } else {
+                InputAction::None
             }
-            InputAction::Redraw
         }
         KeyCode::Down => {
-            if app.provider_select_idx + 1 < app.providers.len() {
-                app.provider_select_idx += 1;
+            let moved = if app.provider_select_pane == ProviderSelectPane::Models {
+                app.move_provider_model_selection(true)
+            } else {
+                app.move_provider_selection(true)
+            };
+            if moved {
+                InputAction::Redraw
+            } else {
+                InputAction::None
             }
-            InputAction::Redraw
+        }
+        KeyCode::Left => {
+            if app.focus_provider_list() {
+                InputAction::Redraw
+            } else {
+                InputAction::None
+            }
+        }
+        KeyCode::Right => {
+            if app.focus_provider_models() {
+                InputAction::Redraw
+            } else {
+                InputAction::None
+            }
         }
         KeyCode::Enter => {
             let idx = app.provider_select_idx;

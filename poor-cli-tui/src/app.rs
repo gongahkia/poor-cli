@@ -956,6 +956,12 @@ pub struct ProviderEntry {
     pub models: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderSelectPane {
+    Providers,
+    Models,
+}
+
 pub struct App {
     // ── Chat state ───
     pub messages: Vec<ChatMessage>,
@@ -974,6 +980,8 @@ pub struct App {
     pub capabilities: Vec<String>,
     pub providers: Vec<ProviderEntry>,
     pub provider_select_idx: usize,
+    pub provider_select_pane: ProviderSelectPane,
+    pub provider_model_select_indices: HashMap<String, usize>,
     pub info_popup_title: String,
     pub info_popup_content: String,
     pub info_popup_scroll: u16,
@@ -1135,6 +1143,8 @@ impl Default for App {
             capabilities: Vec::new(),
             providers: Vec::new(),
             provider_select_idx: 0,
+            provider_select_pane: ProviderSelectPane::Providers,
+            provider_model_select_indices: HashMap::new(),
             info_popup_title: String::new(),
             info_popup_content: String::new(),
             info_popup_scroll: 0,
@@ -1315,6 +1325,151 @@ impl App {
             }
         }
         self.scroll_offset = 0;
+    }
+
+    pub fn open_provider_select(&mut self) {
+        self.provider_select_pane = ProviderSelectPane::Providers;
+        self.provider_select_idx = self
+            .providers
+            .iter()
+            .position(|provider| provider.name.eq_ignore_ascii_case(&self.provider_name))
+            .unwrap_or(0)
+            .min(self.providers.len().saturating_sub(1));
+        self.ensure_provider_model_selection();
+        self.mode = AppMode::ProviderSelect;
+    }
+
+    pub fn selected_provider(&self) -> Option<&ProviderEntry> {
+        self.providers.get(self.provider_select_idx)
+    }
+
+    pub fn selected_provider_model_index(&self) -> Option<usize> {
+        let provider = self.selected_provider()?;
+        if provider.models.is_empty() {
+            return None;
+        }
+        let selected = self
+            .provider_model_select_indices
+            .get(&provider.name)
+            .copied()
+            .unwrap_or_else(|| self.default_provider_model_index(provider));
+        Some(selected.min(provider.models.len().saturating_sub(1)))
+    }
+
+    pub fn selected_provider_model(&self) -> Option<String> {
+        let provider = self.selected_provider()?;
+        if provider.models.is_empty() {
+            if provider.name.eq_ignore_ascii_case(&self.provider_name)
+                && !self.model_name.trim().is_empty()
+                && self.model_name != "unknown"
+            {
+                return Some(self.model_name.clone());
+            }
+            return None;
+        }
+        let idx = self.selected_provider_model_index()?;
+        provider.models.get(idx).cloned()
+    }
+
+    pub fn selected_provider_switch_model(&self) -> Option<String> {
+        let provider = self.selected_provider()?;
+        if provider.models.is_empty() {
+            return None;
+        }
+        self.selected_provider_model()
+    }
+
+    pub fn move_provider_selection(&mut self, forward: bool) -> bool {
+        if self.providers.is_empty() {
+            return false;
+        }
+        let next_idx = if forward {
+            (self.provider_select_idx + 1).min(self.providers.len().saturating_sub(1))
+        } else {
+            self.provider_select_idx.saturating_sub(1)
+        };
+        if next_idx == self.provider_select_idx {
+            return false;
+        }
+        self.provider_select_idx = next_idx;
+        self.ensure_provider_model_selection();
+        if self.selected_provider().is_some_and(|provider| provider.models.is_empty())
+            && self.provider_select_pane == ProviderSelectPane::Models
+        {
+            self.provider_select_pane = ProviderSelectPane::Providers;
+        }
+        true
+    }
+
+    pub fn move_provider_model_selection(&mut self, forward: bool) -> bool {
+        let provider = match self.selected_provider() {
+            Some(provider) if !provider.models.is_empty() => provider,
+            _ => return false,
+        };
+        let provider_name = provider.name.clone();
+        let models_len = provider.models.len();
+        let current = self
+            .selected_provider_model_index()
+            .unwrap_or_else(|| self.default_provider_model_index(provider));
+        let next = if forward {
+            (current + 1).min(models_len.saturating_sub(1))
+        } else {
+            current.saturating_sub(1)
+        };
+        if next == current {
+            return false;
+        }
+        self.provider_model_select_indices
+            .insert(provider_name, next);
+        true
+    }
+
+    pub fn focus_provider_models(&mut self) -> bool {
+        if self.selected_provider().is_some_and(|provider| !provider.models.is_empty()) {
+            self.ensure_provider_model_selection();
+            self.provider_select_pane = ProviderSelectPane::Models;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn focus_provider_list(&mut self) -> bool {
+        if self.provider_select_pane == ProviderSelectPane::Providers {
+            return false;
+        }
+        self.provider_select_pane = ProviderSelectPane::Providers;
+        true
+    }
+
+    fn ensure_provider_model_selection(&mut self) {
+        let provider = match self.selected_provider() {
+            Some(provider) if !provider.models.is_empty() => provider,
+            _ => return,
+        };
+        let provider_name = provider.name.clone();
+        let max_index = provider.models.len().saturating_sub(1);
+        let default_idx = self.default_provider_model_index(provider);
+        let entry = self
+            .provider_model_select_indices
+            .entry(provider_name)
+            .or_insert(default_idx);
+        *entry = (*entry).min(max_index);
+    }
+
+    fn default_provider_model_index(&self, provider: &ProviderEntry) -> usize {
+        if provider.name.eq_ignore_ascii_case(&self.provider_name)
+            && !self.model_name.trim().is_empty()
+            && self.model_name != "unknown"
+        {
+            provider
+                .models
+                .iter()
+                .position(|model| model == &self.model_name)
+                .unwrap_or(0)
+        } else {
+            0
+        }
     }
 
     /// Push a message and auto-scroll to bottom.

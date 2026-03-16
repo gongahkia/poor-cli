@@ -949,7 +949,11 @@ fn run_app(
                 InputAction::ProviderSelected(idx) => {
                     if let Some(provider) = app.providers.get(idx) {
                         let name = provider.name.clone();
-                        let model = provider.models.first().cloned();
+                        let model = if idx == app.provider_select_idx {
+                            app.selected_provider_switch_model()
+                        } else {
+                            provider.models.first().cloned()
+                        };
                         write_session_log(
                             session_log.as_ref(),
                             &format!(
