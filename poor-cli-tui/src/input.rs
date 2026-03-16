@@ -273,12 +273,57 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
     }
 }
 
+fn sync_text_input_state(app: &mut App) {
+    if app.input_buffer.starts_with('/') {
+        app.mode = AppMode::Command;
+        app.command_match_index = 0;
+    } else {
+        app.mode = AppMode::Normal;
+        app.command_match_index = 0;
+    }
+    app.refresh_at_path_completion();
+    clamp_command_match_index(app);
+}
+
 fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
     // While waiting, Esc still cancels the active request, but normal input remains editable so
     // plain-text prompts can be queued for auto-send once the current request finishes.
     if app.waiting {
         if key.code == KeyCode::Esc {
             return InputAction::Cancel;
+        }
+    }
+
+    if app.at_path_completion.active {
+        match key.code {
+            KeyCode::Up => {
+                if app.move_at_path_selection(false) {
+                    return InputAction::Redraw;
+                }
+            }
+            KeyCode::Down => {
+                if app.move_at_path_selection(true) {
+                    return InputAction::Redraw;
+                }
+            }
+            KeyCode::Tab => {
+                if app.accept_at_path_completion() {
+                    return InputAction::Redraw;
+                }
+            }
+            KeyCode::Enter
+                if !key.modifiers.contains(KeyModifiers::ALT)
+                    && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+            {
+                if app.accept_at_path_completion() {
+                    return InputAction::Redraw;
+                }
+            }
+            KeyCode::Esc => {
+                app.clear_at_path_completion();
+                return InputAction::Redraw;
+            }
+            _ => {}
         }
     }
 
@@ -294,6 +339,7 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
 
             // If a slash command token is still being typed, prioritize completion over submit.
             if should_autocomplete_on_enter(app) && autocomplete_command(app) {
+                app.refresh_at_path_completion();
                 return InputAction::Redraw;
             }
 
@@ -305,37 +351,32 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
         }
         KeyCode::Backspace => {
             app.backspace();
-            // Check mode switch
-            if app.input_buffer.starts_with('/') {
-                app.mode = AppMode::Command;
-                app.command_match_index = 0;
-            } else {
-                app.mode = AppMode::Normal;
-                app.command_match_index = 0;
-            }
-            clamp_command_match_index(app);
+            sync_text_input_state(app);
             InputAction::Redraw
         }
         KeyCode::Delete => {
             app.delete_char();
-            app.command_match_index = 0;
-            clamp_command_match_index(app);
+            sync_text_input_state(app);
             InputAction::Redraw
         }
         KeyCode::Left => {
             app.cursor_left();
+            app.refresh_at_path_completion();
             InputAction::Redraw
         }
         KeyCode::Right => {
             app.cursor_right();
+            app.refresh_at_path_completion();
             InputAction::Redraw
         }
         KeyCode::Home => {
             app.cursor_home();
+            app.refresh_at_path_completion();
             InputAction::Redraw
         }
         KeyCode::End => {
             app.cursor_end();
+            app.refresh_at_path_completion();
             InputAction::Redraw
         }
         KeyCode::Up => {
@@ -343,6 +384,7 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
                 return InputAction::Redraw;
             }
             app.history_prev();
+            sync_text_input_state(app);
             InputAction::Redraw
         }
         KeyCode::Down => {
@@ -350,6 +392,7 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
                 return InputAction::Redraw;
             }
             app.history_next();
+            sync_text_input_state(app);
             InputAction::Redraw
         }
         KeyCode::PageUp => {
@@ -365,7 +408,7 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
             if app.input_buffer.starts_with('/') {
                 autocomplete_command(app);
             }
-            clamp_command_match_index(app);
+            sync_text_input_state(app);
             InputAction::Redraw
         }
         KeyCode::Esc => {
@@ -375,19 +418,12 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
                 app.mode = AppMode::Normal;
             }
             app.command_match_index = 0;
+            app.clear_at_path_completion();
             InputAction::Redraw
         }
         KeyCode::Char(c) => {
             app.insert_char(c);
-            // Check if entering command mode
-            if app.input_buffer.starts_with('/') {
-                app.mode = AppMode::Command;
-                app.command_match_index = 0;
-            } else {
-                app.mode = AppMode::Normal;
-                app.command_match_index = 0;
-            }
-            clamp_command_match_index(app);
+            sync_text_input_state(app);
             InputAction::Redraw
         }
         _ => InputAction::None,
