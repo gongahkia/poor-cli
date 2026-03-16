@@ -5,6 +5,7 @@ Comprehensive logging of all file operations, bash commands, and API calls
 for security and compliance purposes.
 """
 
+import re
 import json
 import sqlite3
 from datetime import datetime
@@ -258,6 +259,24 @@ class AuditLogger:
             success=success
         )
 
+    _SECRET_PATTERNS = [
+        re.compile(r'sk-proj-[A-Za-z0-9_-]+'),  # OpenAI project keys
+        re.compile(r'sk-[A-Za-z0-9]{20,}'),  # OpenAI legacy keys
+        re.compile(r'sk-ant-[A-Za-z0-9_-]+'),  # Anthropic keys
+        re.compile(r'AIzaSy[A-Za-z0-9_-]+'),  # Google API keys
+        re.compile(r'Bearer\s+[A-Za-z0-9._\-/+=]+', re.IGNORECASE),  # bearer tokens
+        re.compile(r'(?:api_key|password|secret|token)\s*[=:]\s*\S+', re.IGNORECASE),  # generic assignments
+    ]
+
+    @staticmethod
+    def _redact_secrets(text: str) -> str:
+        """Redact known credential patterns from text"""
+        if not text:
+            return text
+        for pat in AuditLogger._SECRET_PATTERNS:
+            text = pat.sub("[REDACTED]", text)
+        return text
+
     def log_bash_command(
         self,
         command: str,
@@ -271,8 +290,8 @@ class AuditLogger:
             exit_code: Exit code from command
             output: Command output (truncated if long)
         """
-        # Truncate output if too long
-        truncated_output = output[:500] if output else None
+        command = self._redact_secrets(command)
+        truncated_output = self._redact_secrets(output[:500]) if output else None
 
         self.log_event(
             event_type=AuditEventType.BASH_COMMAND,
