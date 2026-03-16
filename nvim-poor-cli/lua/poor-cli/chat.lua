@@ -299,6 +299,7 @@ function M._start_streaming_block()
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "## 🤖 Assistant", "" })
     M.streaming_buf_line = line_count + 2
     M.streaming_response_text = ""
+    M._thinking_buffer = ""
 end
 
 function M._append_streaming_chunk(chunk)
@@ -350,8 +351,39 @@ function M._finalize_streaming_block(request_id)
     M.active_stream = nil
 end
 
+M._thinking_buffer = ""
+
 function M.setup_streaming_autocmds()
     local group = vim.api.nvim_create_augroup("PoorCliChatStreaming", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliThinkingChunk",
+        callback = function(ev)
+            local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
+            if data.chunk and data.chunk ~= "" then
+                vim.schedule(function()
+                    M._thinking_buffer = M._thinking_buffer .. data.chunk
+                    -- Update the streaming block with thinking content
+                    if M.streaming_buf_line and M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+                        local lines = vim.split(M._thinking_buffer, "\n", { plain = true })
+                        local display = { "💭 *Thinking* (" .. #lines .. " lines):" }
+                        -- Show last 15 lines max
+                        local start = math.max(1, #lines - 14)
+                        for i = start, #lines do
+                            table.insert(display, "> " .. (lines[i] or ""))
+                        end
+                        if start > 1 then
+                            table.insert(display, 2, string.format("> ... (%d lines hidden)", start - 1))
+                        end
+                        vim.api.nvim_buf_set_lines(M.buf, M.streaming_buf_line - 1, -1, false, display)
+                    end
+                end)
+            end
+        end,
+    })
     vim.api.nvim_create_autocmd("User", {
         group = group,
         pattern = "PoorCliStreamChunk",

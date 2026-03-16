@@ -298,6 +298,9 @@ class OpenAIProvider(BaseProvider):
             # Extract content
             content = message.content or ""
 
+            # Extract reasoning/thinking content (o-series models)
+            thinking_content = getattr(message, 'reasoning_content', None) or ""
+
             # Extract function calls
             function_calls = None
             if hasattr(message, 'tool_calls') and message.tool_calls:
@@ -351,7 +354,8 @@ class OpenAIProvider(BaseProvider):
                         "completion_tokens": response.usage.completion_tokens,
                         "total_tokens": response.usage.total_tokens
                     } if hasattr(response, 'usage') else None
-                }
+                },
+                thinking_content=thinking_content or None,
             )
 
         except Exception as e:

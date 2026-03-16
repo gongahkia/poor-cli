@@ -2089,22 +2089,13 @@ impl App {
     pub fn append_thinking_chunk(&mut self, chunk: &str) {
         self.thinking_active = true;
         self.thinking_buffer.push_str(chunk);
-        // Render thinking inline as a dimmed block in the streaming message
         if self.streaming_message.is_none() {
             self.start_streaming_message();
         }
+        let thinking_display = self.format_thinking_display();
         if let Some(idx) = self.streaming_message {
             if let Some(msg) = self.messages.get_mut(idx) {
-                // Rebuild the message: thinking block (dimmed via marker) + any content after
-                let thinking_display = self.format_thinking_display();
-                let content_after = msg.content.split("\n\n---\n\n").last()
-                    .and_then(|s| if s.starts_with("💭") { None } else { Some(s.to_string()) })
-                    .unwrap_or_default();
-                msg.content = if content_after.is_empty() {
-                    thinking_display
-                } else {
-                    format!("{thinking_display}\n\n---\n\n{content_after}")
-                };
+                msg.content = thinking_display;
             }
         }
         if self.scroll_offset <= 1 {
@@ -2135,10 +2126,11 @@ impl App {
         // If we were in thinking mode, transition to response mode
         if self.thinking_active {
             self.thinking_active = false;
+            let thinking_display = self.format_thinking_display();
+            let separator = format!("{thinking_display}\n\n---\n\n");
             if let Some(idx) = self.streaming_message {
                 if let Some(msg) = self.messages.get_mut(idx) {
-                    let thinking_display = self.format_thinking_display();
-                    msg.content = format!("{thinking_display}\n\n---\n\n");
+                    msg.content = separator;
                 }
             }
         }

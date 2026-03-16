@@ -240,9 +240,15 @@ fn draw_activity_bar(frame: &mut Frame, app: &App, area: Rect) {
             ),
         )
     } else if app.streaming_message.is_some() {
+        let label = if app.thinking_active {
+            let line_count = app.thinking_buffer.lines().count();
+            format!("{} reasoning ({} lines)", app.thinking_frame(), line_count)
+        } else {
+            format!("{} responding", app.thinking_frame())
+        };
         (
-            format!("{} responding", app.thinking_frame()),
-            format!("  {}  ·  Ctrl+C cancel", app.wait_elapsed()),
+            label,
+            format!("  {}  ·  Esc cancel", app.wait_elapsed()),
         )
     } else {
         let queue_detail = if app.prompt_queue.is_empty() {
@@ -253,7 +259,7 @@ fn draw_activity_bar(frame: &mut Frame, app: &App, area: Rect) {
         (
             format!("{} thinking", app.thinking_frame()),
             format!(
-                "  {}  ·  {}  ·  Ctrl+C cancel",
+                "  {}  ·  {}  ·  Esc cancel",
                 app.wait_elapsed(),
                 queue_detail
             ),
