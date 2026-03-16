@@ -701,9 +701,7 @@ fn server_msg_from_init_result(
         (provider, model)
     } else {
         (
-            provider_fallback
-                .clone()
-                .unwrap_or_else(|| "gemini".into()),
+            provider_fallback.clone().unwrap_or_else(|| "gemini".into()),
             model_fallback
                 .clone()
                 .unwrap_or_else(|| "gemini-2.0-flash".into()),
@@ -1185,24 +1183,26 @@ fn run_app(
                         &token,
                     );
                 }
-                InputAction::SaveApiKeyEditor => match save_api_key_editor(app, &tx, &rpc_cmd_tx.borrow()) {
-                    Ok(message) => {
-                        if let Some(editor) = app.api_key_editor.as_mut() {
-                            editor.status = message;
-                            editor.error.clear();
-                        } else {
-                            app.set_status("Saved API key configuration");
+                InputAction::SaveApiKeyEditor => {
+                    match save_api_key_editor(app, &tx, &rpc_cmd_tx.borrow()) {
+                        Ok(message) => {
+                            if let Some(editor) = app.api_key_editor.as_mut() {
+                                editor.status = message;
+                                editor.error.clear();
+                            } else {
+                                app.set_status("Saved API key configuration");
+                            }
+                        }
+                        Err(error) => {
+                            if let Some(editor) = app.api_key_editor.as_mut() {
+                                editor.error = error;
+                                editor.status.clear();
+                            } else {
+                                app.push_message(ChatMessage::error(error));
+                            }
                         }
                     }
-                    Err(error) => {
-                        if let Some(editor) = app.api_key_editor.as_mut() {
-                            editor.error = error;
-                            editor.status.clear();
-                        } else {
-                            app.push_message(ChatMessage::error(error));
-                        }
-                    }
-                },
+                }
                 InputAction::CopyToClipboard(text) => match copy_to_clipboard(&text) {
                     Ok(()) => {
                         let preview = if text.len() > 40 {
@@ -4279,16 +4279,13 @@ fn parse_env_line_key(line: &str) -> Option<String> {
     let (key, _) = trimmed.split_once('=')?;
     let key = key.trim();
     if key.is_empty()
-        || !key
-            .chars()
-            .enumerate()
-            .all(|(idx, ch)| {
-                if idx == 0 {
-                    ch == '_' || ch.is_ascii_alphabetic()
-                } else {
-                    ch == '_' || ch.is_ascii_alphanumeric()
-                }
-            })
+        || !key.chars().enumerate().all(|(idx, ch)| {
+            if idx == 0 {
+                ch == '_' || ch.is_ascii_alphabetic()
+            } else {
+                ch == '_' || ch.is_ascii_alphanumeric()
+            }
+        })
     {
         return None;
     }
@@ -4336,10 +4333,7 @@ fn format_env_value(value: &str) -> String {
     {
         return value.to_string();
     }
-    format!(
-        "\"{}\"",
-        value.replace('\\', "\\\\").replace('"', "\\\"")
-    )
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 fn update_env_file_contents(base: &str, updates: &HashMap<String, String>) -> String {
@@ -4361,11 +4355,7 @@ fn update_env_file_contents(base: &str, updates: &HashMap<String, String>) -> St
             continue;
         }
         if let Some(value) = updates.get(spec.env_var) {
-            rendered.push(format!(
-                "{}={}",
-                spec.env_var,
-                format_env_value(value)
-            ));
+            rendered.push(format!("{}={}", spec.env_var, format_env_value(value)));
         }
     }
 
@@ -4523,7 +4513,10 @@ fn save_api_key_editor(
                 continue;
             }
             rpc_set_api_key_blocking(rpc_cmd_tx, provider, value, true).map_err(|e| {
-                format!("Saved .env but failed to store `{}` in backend: {e}", field.env_var)
+                format!(
+                    "Saved .env but failed to store `{}` in backend: {e}",
+                    field.env_var
+                )
             })?;
         }
     }

@@ -62,7 +62,10 @@ fn render_help_markdown() -> String {
 
     for category in categories {
         lines.push(format!("**{category}:**"));
-        for command in SLASH_COMMANDS.iter().filter(|entry| entry.category == category) {
+        for command in SLASH_COMMANDS
+            .iter()
+            .filter(|entry| entry.category == category)
+        {
             lines.push(format!("- `{}` - {}", command.command, command.description));
         }
         lines.push(String::new());
@@ -78,7 +81,10 @@ mod tests {
 
     #[test]
     fn slash_commands_are_unique() {
-        let unique: HashSet<_> = SLASH_COMMANDS.iter().map(|spec| spec.command.as_str()).collect();
+        let unique: HashSet<_> = SLASH_COMMANDS
+            .iter()
+            .map(|spec| spec.command.as_str())
+            .collect();
         assert_eq!(unique.len(), SLASH_COMMANDS.len());
     }
 

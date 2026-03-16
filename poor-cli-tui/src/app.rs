@@ -1605,7 +1605,10 @@ impl App {
             self.at_path_completion.quote_char,
         );
         let token_start = self.at_path_completion.token_start;
-        let token_end = self.at_path_completion.token_end.min(self.input_buffer.len());
+        let token_end = self
+            .at_path_completion
+            .token_end
+            .min(self.input_buffer.len());
         let suffix_char = self.input_buffer[token_end..].chars().next();
         let needs_space = suffix_char.is_none_or(|ch| {
             !ch.is_whitespace() && !matches!(ch, ',' | ';' | ':' | ')' | ']' | '}')
@@ -2155,6 +2158,16 @@ fn detect_at_path_token(buffer: &str, cursor: usize) -> Option<AtPathTokenMatch>
     }
 
     let after_at = &buffer[at_index + 1..];
+    if after_at.is_empty() {
+        return Some(AtPathTokenMatch {
+            query: String::new(),
+            token_start: at_index,
+            token_end: cursor,
+            quoted: false,
+            quote_char: '"',
+        });
+    }
+
     let first_after = after_at.chars().next()?;
     if first_after.is_whitespace() {
         return None;
@@ -2224,23 +2237,24 @@ fn build_at_path_completion_items(
     let mut scored: Vec<(usize, usize, AtPathCompletionItem)> = Vec::new();
     let mut seen = HashSet::new();
 
-    let mut push_candidate = |path: String,
-                              detail: &str,
-                              score: usize,
-                              scored: &mut Vec<(usize, usize, AtPathCompletionItem)>| {
-        let normalized_path = path.trim().trim_start_matches("./").to_string();
-        if normalized_path.is_empty() || !seen.insert(normalized_path.clone()) {
-            return;
-        }
-        scored.push((
-            score,
-            normalized_path.len(),
-            AtPathCompletionItem {
-                path: normalized_path,
-                detail: detail.to_string(),
-            },
-        ));
-    };
+    let mut push_candidate =
+        |path: String,
+         detail: &str,
+         score: usize,
+         scored: &mut Vec<(usize, usize, AtPathCompletionItem)>| {
+            let normalized_path = path.trim().trim_start_matches("./").to_string();
+            if normalized_path.is_empty() || !seen.insert(normalized_path.clone()) {
+                return;
+            }
+            scored.push((
+                score,
+                normalized_path.len(),
+                AtPathCompletionItem {
+                    path: normalized_path,
+                    detail: detail.to_string(),
+                },
+            ));
+        };
 
     if normalized_query.is_empty() {
         for path in &app.pinned_context_files {
@@ -2341,11 +2355,7 @@ fn score_path_candidate(path: &str, normalized_query: &str) -> Option<usize> {
     }
 
     let path_lower = path.to_ascii_lowercase();
-    let file_name = path
-        .rsplit('/')
-        .next()
-        .unwrap_or(path)
-        .to_ascii_lowercase();
+    let file_name = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
 
     if path_lower == normalized_query {
         Some(0)

@@ -1,5 +1,5 @@
 /// Input handling: keyboard events, slash-command completion, etc.
-use crate::app::{App, AppMode, QuickOpenItem, QueuedPrompt};
+use crate::app::{App, AppMode, QueuedPrompt, QuickOpenItem};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -1509,6 +1509,9 @@ mod tests {
     use crate::app::{
         ChatMessage, MutationReviewState, QuickOpenItemKind, TimelineEntry, TimelineEntryKind,
     };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn key_enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
@@ -1520,6 +1523,16 @@ mod tests {
 
     fn key_down() -> KeyEvent {
         KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)
+    }
+
+    fn create_temp_workspace(prefix: &str) -> PathBuf {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("poor-cli-input-{prefix}-{ts}"));
+        fs::create_dir_all(&root).expect("temp workspace should be created");
+        root
     }
 
     #[test]
@@ -1626,6 +1639,56 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.input_buffer, expected);
+    }
+
+    #[test]
+    fn tab_accepts_at_path_completion() {
+        let root = create_temp_workspace("at-path");
+        fs::create_dir_all(root.join("src")).expect("src dir");
+        fs::write(root.join("src").join("main.rs"), "fn main() {}\n").expect("main file");
+
+        let mut app = App::new();
+        app.cwd = root.to_string_lossy().to_string();
+        app.input_buffer = "@src/ma".to_string();
+        app.input_cursor = app.input_buffer.len();
+        app.mode = AppMode::Normal;
+        app.refresh_at_path_completion();
+
+        let action = handle_key_normal(&mut app, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.input_buffer, "@src/main.rs ");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn queue_manager_enter_dispatches_selected_prompt() {
+        let mut app = App::new();
+        app.prompt_queue
+            .push_back(QueuedPrompt::user("first prompt"));
+        app.prompt_queue
+            .push_back(QueuedPrompt::user("second prompt"));
+        app.queue_manager.selected_index = 1;
+        app.mode = AppMode::QueueManager;
+        app.queue_paused = true;
+
+        let action = handle_key_queue_manager(&mut app, key_enter());
+
+        match action {
+            InputAction::QueueSendSelected(prompt) => {
+                assert_eq!(prompt.display, "second prompt");
+            }
+            _ => panic!("expected queued prompt dispatch"),
+        }
+        assert_eq!(app.prompt_queue.len(), 1);
+        assert_eq!(
+            app.prompt_queue
+                .front()
+                .map(|prompt| prompt.display.as_str()),
+            Some("first prompt")
+        );
+        assert!(!app.queue_paused);
     }
 
     #[test]

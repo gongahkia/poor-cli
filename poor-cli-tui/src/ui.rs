@@ -623,7 +623,10 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else if app.mode == AppMode::ApiKeyEditor {
         vec![
             Span::styled("  ↑↓/Tab", Style::default().fg(theme::accent(mode))),
-            Span::styled(": switch field  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                ": switch field  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
             Span::styled("Enter", Style::default().fg(theme::success(mode))),
             Span::styled(": next/save  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Ctrl+S", Style::default().fg(theme::success(mode))),
@@ -646,11 +649,15 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("c", Style::default().fg(theme::accent(mode))),
             Span::styled(": clear", Style::default().fg(theme::muted_fg(mode))),
         ]
-    } else if app.at_path_completion.active && matches!(app.mode, AppMode::Normal | AppMode::Command)
+    } else if app.at_path_completion.active
+        && matches!(app.mode, AppMode::Normal | AppMode::Command)
     {
         vec![
             Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": select file  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                ": select file  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
             Span::styled("Tab/Enter", Style::default().fg(theme::success(mode))),
             Span::styled(": attach  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
@@ -974,11 +981,7 @@ fn draw_at_path_completion(frame: &mut Frame, app: &App) {
 
     let width = frame.area().width.min(78);
     let x = 2.min(frame.area().width.saturating_sub(width));
-    let y = frame
-        .area()
-        .height
-        .saturating_sub(popup_height + 4)
-        .max(1);
+    let y = frame.area().height.saturating_sub(popup_height + 4).max(1);
     let area = Rect::new(x, y, width, popup_height);
     render_popup_surface(frame, area, mode);
 
@@ -1207,10 +1210,7 @@ fn draw_api_key_editor(frame: &mut Frame, app: &App) {
             Style::default().fg(theme::base_fg(mode)),
         )),
         Line::from(Span::styled(
-            format!(
-                "template: {}",
-                ellipsize_middle(&editor.template_path, 59)
-            ),
+            format!("template: {}", ellipsize_middle(&editor.template_path, 59)),
             Style::default().fg(theme::muted_fg(mode)),
         )),
         Line::from(Span::styled(
@@ -1289,10 +1289,7 @@ fn draw_api_key_editor(frame: &mut Frame, app: &App) {
             ListItem::new(Line::from(vec![
                 Span::styled(marker.to_string(), style),
                 Span::styled(format!("{:<12}", field.label), style),
-                Span::styled(
-                    format!("{}{}", field.env_var, provider_tag),
-                    meta_style,
-                ),
+                Span::styled(format!("{}{}", field.env_var, provider_tag), meta_style),
                 Span::styled("  ".to_string(), meta_style),
                 Span::styled(display_value, style),
             ]))
@@ -1450,10 +1447,7 @@ fn draw_queue_manager(frame: &mut Frame, app: &App) {
             if prompt.backend == prompt.display {
                 prompt.backend.clone()
             } else {
-                format!(
-                    "Display\n{}\n\nBackend\n{}",
-                    prompt.display, prompt.backend
-                )
+                format!("Display\n{}\n\nBackend\n{}", prompt.display, prompt.backend)
             }
         })
         .unwrap_or_else(|| "No queued prompts.".to_string());

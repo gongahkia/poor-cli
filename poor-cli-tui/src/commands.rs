@@ -721,7 +721,11 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/setup" || lowered == "/env" || lowered == "/api-key" || lowered == "/api-key edit" {
+    if lowered == "/setup"
+        || lowered == "/env"
+        || lowered == "/api-key"
+        || lowered == "/api-key edit"
+    {
         match open_api_key_setup_editor(app, None) {
             Ok(()) => {}
             Err(error) => app.push_message(ChatMessage::error(format!(
@@ -801,7 +805,9 @@ pub(super) fn handle_slash_command(
 
                 lines.push(String::new());
                 lines.push("Edit with `/setup` or `/api-key`.".to_string());
-                lines.push("Direct set still works with `/api-key <provider> <api-key>`.".to_string());
+                lines.push(
+                    "Direct set still works with `/api-key <provider> <api-key>`.".to_string(),
+                );
                 show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -2462,7 +2468,9 @@ Context Window: {max_context} tokens\n\n\
                     }
                     show_command_info_popup(app, raw, lines.join("\n"));
                 }
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to list skills: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to list skills: {error}"))
+                }
             }
             return false;
         }
@@ -2481,10 +2489,15 @@ Context Window: {max_context} tokens\n\n\
                     show_command_info_popup(
                         app,
                         raw,
-                        format!("**Skill** `{name}`\n\n```markdown\n{}\n```", truncate_block(content, 6000)),
+                        format!(
+                            "**Skill** `{name}`\n\n```markdown\n{}\n```",
+                            truncate_block(content, 6000)
+                        ),
                     );
                 }
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to load skill: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to load skill: {error}"))
+                }
             }
             return false;
         }
@@ -2494,7 +2507,11 @@ Context Window: {max_context} tokens\n\n\
             let name = parts.next().unwrap_or("").trim();
             let request = parts.next().unwrap_or("").trim();
             if name.is_empty() {
-                show_command_info_popup(app, raw, "Usage: /skills run <name> [request]".to_string());
+                show_command_info_popup(
+                    app,
+                    raw,
+                    "Usage: /skills run <name> [request]".to_string(),
+                );
                 return false;
             }
             match rpc_get_skill_blocking(rpc_cmd_tx, name) {
@@ -2515,14 +2532,17 @@ Context Window: {max_context} tokens\n\n\
                         ));
                     app.set_status(format!("Queued skill `{name}`"));
                 }
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to run skill: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to run skill: {error}"))
+                }
             }
             return false;
         }
         show_command_info_popup(
             app,
             raw,
-            "Usage: /skills list\n       /skills show <name>\n       /skills run <name> [request]".to_string(),
+            "Usage: /skills list\n       /skills show <name>\n       /skills run <name> [request]"
+                .to_string(),
         );
         return false;
     }
@@ -2565,9 +2585,11 @@ Context Window: {max_context} tokens\n\n\
                     }
                     show_command_info_popup(app, raw, lines.join("\n"));
                 }
-                Err(error) => {
-                    show_command_info_popup(app, raw, format!("Failed to list custom commands: {error}"))
-                }
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to list custom commands: {error}"),
+                ),
             }
             return false;
         }
@@ -2592,9 +2614,11 @@ Context Window: {max_context} tokens\n\n\
                         ),
                     );
                 }
-                Err(error) => {
-                    show_command_info_popup(app, raw, format!("Failed to load custom command: {error}"))
-                }
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to load custom command: {error}"),
+                ),
             }
             return false;
         }
@@ -2615,9 +2639,11 @@ Context Window: {max_context} tokens\n\n\
                         .unwrap_or("");
                     app.push_message(ChatMessage::assistant(content.to_string()));
                 }
-                Err(error) => {
-                    show_command_info_popup(app, raw, format!("Failed to run custom command: {error}"))
-                }
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to run custom command: {error}"),
+                ),
             }
             return false;
         }
@@ -2631,8 +2657,12 @@ Context Window: {max_context} tokens\n\n\
 
     if lowered == "/inbox" {
         match rpc_list_tasks_blocking(rpc_cmd_tx, true) {
-            Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "**Inbox**")),
-            Err(error) => show_command_info_popup(app, raw, format!("Failed to load inbox: {error}")),
+            Ok(payload) => {
+                show_command_info_popup(app, raw, format_task_list(&payload, "**Inbox**"))
+            }
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to load inbox: {error}"))
+            }
         }
         return false;
     }
@@ -2651,8 +2681,12 @@ Context Window: {max_context} tokens\n\n\
             .to_ascii_lowercase();
         if subcommand == "list" {
             match rpc_list_tasks_blocking(rpc_cmd_tx, false) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "**Tasks**")),
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to list tasks: {error}")),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_task_list(&payload, "**Tasks**"))
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to list tasks: {error}"))
+                }
             }
             return false;
         }
@@ -2664,7 +2698,9 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_get_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to load task: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to load task: {error}"))
+                }
             }
             return false;
         }
@@ -2683,10 +2719,8 @@ Context Window: {max_context} tokens\n\n\
                         .map(|value| value.to_string())
                 })
                 .unwrap_or_else(|| "workspace-write".to_string());
-            let requires_approval = matches!(
-                sandbox_preset.as_str(),
-                "workspace-write" | "full-access"
-            );
+            let requires_approval =
+                matches!(sandbox_preset.as_str(), "workspace-write" | "full-access");
             let auto_start = !requires_approval;
             match rpc_create_task_blocking(
                 rpc_cmd_tx,
@@ -2698,7 +2732,9 @@ Context Window: {max_context} tokens\n\n\
                 requires_approval,
             ) {
                 Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to create task: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to create task: {error}"))
+                }
             }
             return false;
         }
@@ -2710,7 +2746,9 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_approve_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to approve task: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to approve task: {error}"))
+                }
             }
             return false;
         }
@@ -2722,7 +2760,9 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_cancel_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
-                Err(error) => show_command_info_popup(app, raw, format!("Failed to cancel task: {error}")),
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to cancel task: {error}"))
+                }
             }
             return false;
         }

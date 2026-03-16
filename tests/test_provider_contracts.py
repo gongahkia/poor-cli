@@ -311,6 +311,40 @@ async def test_ollama_stream_chunk_contract(monkeypatch):
     assert all(chunk.metadata["is_chunk"] is True for chunk in yielded)
 
 
+@pytest.mark.asyncio
+async def test_ollama_stream_error_preserves_underlying_exception(monkeypatch):
+    provider = _make_ollama_provider()
+
+    class _BrokenPostContext:
+        async def __aenter__(self):
+            raise RuntimeError("model 'llama3' not found")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return _BrokenPostContext()
+
+    fake_aiohttp = SimpleNamespace(
+        ClientSession=_FakeSession,
+        ClientTimeout=lambda total: None,
+    )
+    monkeypatch.setattr(ollama_module, "aiohttp", fake_aiohttp, raising=False)
+
+    with pytest.raises(Exception) as exc_info:
+        async for _chunk in provider.send_message_stream("hello"):
+            pass
+
+    assert "Ollama streaming error: model 'llama3' not found" in str(exc_info.value)
+
+
 def test_gemini_function_call_parse_contract():
     provider = _make_gemini_provider()
 
