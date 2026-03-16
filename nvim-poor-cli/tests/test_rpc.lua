@@ -13,9 +13,16 @@ describe("poor-cli.rpc", function()
         rpc.request_id = 0
         rpc.pending = {}
         rpc.pending_timers = {}
+        rpc.pending_meta = {}
         rpc.buffer = ""
         rpc.manual_stop = false
         rpc.restart_attempt = 0
+        rpc.server_state = "stopped"
+        rpc.last_error = nil
+        rpc.last_error_message = ""
+        rpc.server_log_path = nil
+        rpc.last_stderr_excerpt = ""
+        rpc.recent_stderr = {}
         rpc.reset_session_state()
         if rpc.restart_timer then
             rpc.restart_timer:stop()
@@ -136,7 +143,7 @@ describe("poor-cli.rpc", function()
             assert.are.equal("second", message2.result)
         end)
     end)
-    
+
     describe("request handling", function()
         it("should increment request_id for each request", function()
             -- Mock job_id to allow request
@@ -249,6 +256,42 @@ describe("poor-cli.rpc", function()
 
             vim.defer_fn = original_defer_fn
             vim.fn.chansend = original_chansend
+            rpc.job_id = nil
+        end)
+
+        it("should propagate cancellation to the backend using logical request ids", function()
+            rpc.job_id = 1
+
+            local original_send_message = rpc.send_message
+            local original_timeout = config.config.request_timeout
+            local sent_messages = {}
+            local cancelled_error = nil
+
+            config.config.request_timeout = 0
+            rpc.send_message = function(message)
+                table.insert(sent_messages, message)
+            end
+
+            local request_id = rpc.request("poor-cli/inlineComplete", {
+                requestId = "inline-123",
+            }, function(_result, err)
+                cancelled_error = err
+            end)
+
+            local cancelled = rpc.cancel_request(request_id, {
+                code = -32800,
+                message = "Request cancelled",
+            })
+
+            assert.is_true(cancelled)
+            assert.are.equal(2, #sent_messages)
+            assert.are.equal("poor-cli/inlineComplete", sent_messages[1].method)
+            assert.are.equal("poor-cli/cancelRequest", sent_messages[2].method)
+            assert.are.same({ requestId = "inline-123" }, sent_messages[2].params)
+            assert.are.equal(-32800, cancelled_error.code)
+
+            rpc.send_message = original_send_message
+            config.config.request_timeout = original_timeout
             rpc.job_id = nil
         end)
     end)
@@ -370,6 +413,34 @@ describe("poor-cli.rpc", function()
             assert.is_not_nil(state.last_suggestion)
             assert.are.equal("navigator", state.last_suggestion.sender)
             assert.are.equal("check the test output", state.last_suggestion.text)
+        end)
+
+        it("should emit inline chunk user events with request ids", function()
+            local captured = nil
+            local group = vim.api.nvim_create_augroup("PoorCliRpcInlineChunkTest", { clear = true })
+
+            vim.api.nvim_create_autocmd("User", {
+                group = group,
+                pattern = "PoorCliInlineChunk",
+                callback = function(ev)
+                    captured = ev.data
+                end,
+            })
+
+            rpc.handle_notification({
+                method = "poor-cli/inlineChunk",
+                params = {
+                    requestId = "inline-777",
+                    chunk = "return value",
+                    done = false,
+                },
+            })
+
+            assert.are.same({
+                request_id = "inline-777",
+                chunk = "return value",
+                done = false,
+            }, captured)
         end)
     end)
 end)

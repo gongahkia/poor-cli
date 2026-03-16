@@ -3,19 +3,22 @@
 [![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-green.svg)](https://neovim.io/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**AI-powered inline code completion and chat for Neovim** - like Windsurf/Copilot but with your own API keys (BYOK).
+**AI-powered inline code completion and chat for Neovim** with BYOK, explicit failure reporting, and request-scoped cancellation.
 
 ## ✨ Features
 
 - 🪄 **Inline Ghost Text Completion** - Windsurf-style inline suggestions
+- 🧠 **Completion Controls** - manual-only mode, filetype/buftype gating, context budgets, and partial streaming
 - 💬 **Chat Panel** - Conversational AI with markdown rendering
 - 🔄 **Multi-Provider Support** - Gemini, OpenAI, Claude, Ollama
+- 🔌 **nvim-cmp Integration** - registers a `poor-cli` completion source when `nvim-cmp` is installed
 - 🛠️ **AI Commands** - Explain, Refactor, Generate Tests, Generate Docs
 - ⚡ **Streaming Responses** - Real-time AI output
 - 🎯 **Context-Aware** - Uses open buffers as context
 - 🩺 **Inline Diagnostics** - Optional file:line suggestions as Neovim diagnostics
 - ✅ **Guarded Plan Review** - Approve or reject backend execution plans from Neovim
 - 🤝 **Remote Multiplayer Bridge** - Pair-session status, role updates, room events, and driver suggestions
+- 🧾 **Fail-Open Debugging** - managed server log, doctor report, copyable debug bundle, and minimal repro init generation
 - 🔐 **BYOK** - Bring Your Own Key, no subscription needed
 
 ## 📦 Installation
@@ -77,24 +80,30 @@ cp -r nvim-poor-cli ~/.local/share/nvim/site/pack/poor-cli/start/
 ```lua
 require("poor-cli").setup({
     -- Server settings
-    server_cmd = "poor-cli-server --stdio",  -- Server command
-    auto_start = true,                        -- Auto-start on setup
+    server_cmd = "poor-cli-server --stdio",
+    server_log_file = nil,                   -- default: stdpath("state")/poor-cli/server.log
+    auto_start = true,
+    auto_restart = true,
     
     -- Keymaps
-    trigger_key = "<C-Space>",  -- Trigger completion in insert mode
-    accept_key = "<Tab>",       -- Accept completion (falls back to Tab if no completion)
-    dismiss_key = "<Esc>",      -- Dismiss completion (falls back to Esc if no completion)
-    chat_key = "<leader>pc",    -- Toggle chat panel
-    checkpoints_key = nil,      -- Optional keymap for checkpoint picker
+    trigger_key = "<C-Space>",
+    accept_key = "<Tab>",
+    dismiss_key = "<Esc>",
+    chat_key = "<leader>pc",
+    checkpoints_key = nil,
     
     -- Appearance
-    ghost_text_hl = "Comment",  -- Highlight group for ghost text
-    chat_width = 60,            -- Chat panel width
-    chat_position = "right",    -- "right" or "left"
+    ghost_text_hl = "Comment",
+    chat_width = 60,
+    chat_position = "right",
     
-    -- AI Provider (nil = auto-detect from environment)
-    provider = nil,     -- "gemini", "openai", "anthropic", "ollama"
-    model = nil,        -- Specific model name
+    -- Default chat provider (nil = auto-detect from environment)
+    provider = nil,
+    model = nil,
+
+    -- Optional completion-specific provider/model overrides
+    completion_provider = nil,
+    completion_model = nil,
 
     -- Optional remote multiplayer bridge
     multiplayer = {
@@ -104,13 +113,28 @@ require("poor-cli").setup({
         token = nil,
     },
     
-    -- Auto-completion
-    auto_trigger = false,   -- Auto-trigger on CursorHoldI
-    trigger_delay = 500,    -- Delay in ms for auto-trigger
-    diagnostics_enabled = false, -- Show assistant file:line hints as diagnostics
+    -- Completion behavior
+    completion_enabled = true,
+    completion_manual_only = false,
+    completion_min_prefix = 0,
+    completion_stream_partial = true,
+    completion_max_lines_before = 80,
+    completion_max_lines_after = 80,
+    completion_max_chars = 16000,
+    completion_lsp_context_max_chars = 4000,
+    completion_filetype_allowlist = {},
+    completion_filetype_blocklist = {},
+    completion_buftype_blocklist = { "nofile", "prompt", "quickfix", "terminal" },
+
+    -- Auto-triggered completion
+    auto_trigger = false,
+    trigger_delay = 500,
+
+    -- Diagnostics
+    diagnostics_enabled = false,
     
     -- Debug
-    debug = false,          -- Enable debug logging
+    debug = false,
 })
 ```
 
@@ -136,15 +160,24 @@ require("poor-cli").setup({
 |---------|-------------|
 | `:PoorCliStart` | Start the AI server |
 | `:PoorCliStop` | Stop the AI server |
-| `:PoorCliStatus` | Show provider info, guarded-flow support, trusted-workspace status, and room state |
+| `:PoorCliRestart` | Restart the AI server and re-initialize the session |
+| `:PoorCliCancel` | Cancel the active inline/chat request |
+| `:PoorCliStatus` | Show server state, provider info, completion state, trusted-workspace status, stderr excerpt, and room state |
 | `:PoorCliChat` | Toggle chat panel |
 | `:PoorCliSend [message]` | Send message to chat |
 | `:PoorCliClear` | Clear chat history |
+| `:PoorCliDoctor` | Open a diagnostic report with status, config, and recent stderr |
+| `:PoorCliCopyDebugInfo` | Copy a bug-report bundle to the clipboard |
+| `:PoorCliOpenLog` | Open the managed poor-cli server log |
+| `:PoorCliOpenStateDir` | Open the plugin state directory |
+| `:PoorCliWriteMinInit [path]` | Generate a minimal Neovim config for reproduction |
 | `:PoorCliDiagnostics` | Toggle assistant diagnostics integration |
 | `:PoorCliCheckpoints` | Browse and restore checkpoints (Telescope) |
 | `:PoorCliComplete` | Trigger inline completion |
 | `:PoorCliAccept` | Accept current completion |
 | `:PoorCliDismiss` | Dismiss current completion |
+| `:PoorCliAcceptLine` | Accept the current completion line |
+| `:PoorCliAcceptWord` | Accept the next completion word |
 | `:PoorCliSwitchProvider [provider]` | Switch AI provider |
 | `:'<,'>PoorCliExplain` | Explain selected code |
 | `:'<,'>PoorCliRefactor` | Refactor selected code |
@@ -153,7 +186,14 @@ require("poor-cli").setup({
 
 ### Health Check
 
-Run `:checkhealth poor-cli` to verify your setup.
+Run `:checkhealth poor-cli` to verify:
+
+- the configured `server_cmd`
+- server log path creation
+- Python availability
+- detected API keys
+- active provider/session state
+- optional `nvim-cmp` attachment
 
 ## Guarded Execution
 
@@ -214,19 +254,22 @@ poor_cli.send("Hello!")  -- Send message to chat
 1. Check that `poor-cli-server` is in your PATH: `which poor-cli-server`
 2. Install if missing: `pip install poor-cli`
 3. Check Python version: `python3 --version` (needs 3.8+)
+4. Open the managed log with `:PoorCliOpenLog`
+5. Capture a full report with `:PoorCliDoctor` or `:PoorCliCopyDebugInfo`
 
 ### No completions appearing
 
 1. Verify API key is set: `echo $GEMINI_API_KEY`
 2. Check server status: `:PoorCliStatus`
-3. Enable debug mode: `require("poor-cli").setup({ debug = true })`
-4. Check `:messages` for errors
+3. Check whether completion is disabled for the current buffer/filetype in `:PoorCliStatus`
+4. If you use `nvim-cmp`, run `:checkhealth poor-cli` to confirm the `poor-cli` source is registered
+5. Open the server log with `:PoorCliOpenLog`
 
 ### Plan review prompt not appearing
 
 1. Check that the server initialized successfully with `:PoorCliStatus`
 2. Ensure your `vim.ui.select()` provider is working
-3. Open the chat panel and inspect `:messages` for RPC errors
+3. Open the chat panel and inspect `:PoorCliDoctor` for RPC errors and stderr
 
 ### Multiplayer room state missing
 
@@ -238,6 +281,15 @@ poor_cli.send("Hello!")  -- Send message to chat
 
 1. Try a different highlight group: `ghost_text_hl = "NonText"`
 2. Ensure your colorscheme has the highlight defined
+3. If suggestions flash and disappear, use `:PoorCliCancel` and inspect the log for request cancellations or provider errors
+
+### Reporting bugs
+
+When reporting a Neovim-side issue, include:
+
+1. `:PoorCliCopyDebugInfo`
+2. the contents of `:PoorCliOpenLog`
+3. a minimal repro generated by `:PoorCliWriteMinInit`
 
 ## 📄 License
 

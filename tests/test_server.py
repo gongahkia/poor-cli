@@ -1591,6 +1591,37 @@ class TestPoorCLIServer:
         assert result["capabilities"]["security"]["trustedRoots"] == [str(tmp_path.resolve())]
 
     @pytest.mark.asyncio
+    async def test_initialize_reports_completion_streaming_and_log_path(self, server):
+        server.core.initialize = AsyncMock()
+        server.core.get_provider_info = MagicMock(
+            return_value={"name": "gemini", "model": "gemini-2.5-pro"}
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"POOR_CLI_SERVER_LOG_FILE": "/tmp/poor-cli-server.log"},
+            clear=False,
+        ):
+            result = await server.handle_initialize(
+                {
+                    "clientCapabilities": {
+                        "completion": {
+                            "partialStreaming": True,
+                        }
+                    }
+                }
+            )
+
+        capabilities = result["capabilities"]
+        assert capabilities["completionStreamingProvider"] is True
+        assert capabilities["serverLogPath"] == "/tmp/poor-cli-server.log"
+        assert server._client_capabilities == {
+            "completion": {
+                "partialStreaming": True,
+            }
+        }
+
+    @pytest.mark.asyncio
     async def test_initialize_rejects_invalid_permission_mode(self, server):
         """Test invalid initialize permissionMode returns INVALID_PARAMS."""
         server.core.initialize = AsyncMock()
@@ -1722,6 +1753,69 @@ class TestPoorCLIServer:
         assert providers["anthropic"]["source"] == "session"
         assert providers["gemini"]["source"] == "secure-store"
         assert providers["gemini"]["persisted"] is True
+
+    @pytest.mark.asyncio
+    async def test_handle_inline_complete_streams_partial_chunks(self, server):
+        server.initialized = True
+        captured = {}
+
+        async def _inline_complete(**kwargs):
+            captured.update(kwargs)
+            for chunk in ("return ", "value"):
+                yield chunk
+
+        server.core.inline_complete = _inline_complete
+        server.write_message_stdio = AsyncMock()
+
+        result = await server.handle_inline_complete(
+            {
+                "codeBefore": "def demo():\n    ",
+                "codeAfter": "\n",
+                "instruction": "",
+                "filePath": "/tmp/demo.py",
+                "language": "python",
+                "requestId": "inline-123",
+                "provider": "openai",
+                "model": "gpt-5-codex",
+                "streamPartial": True,
+            }
+        )
+
+        assert result == {"completion": "return value", "isPartial": False}
+        assert captured["request_id"] == "inline-123"
+        assert captured["provider_name"] == "openai"
+        assert captured["model_name"] == "gpt-5-codex"
+
+        notifications = [call.args[0] for call in server.write_message_stdio.await_args_list]
+        assert [message.method for message in notifications] == [
+            "poor-cli/inlineChunk",
+            "poor-cli/inlineChunk",
+            "poor-cli/inlineChunk",
+        ]
+        assert notifications[0].params == {
+            "requestId": "inline-123",
+            "chunk": "return ",
+            "done": False,
+        }
+        assert notifications[1].params == {
+            "requestId": "inline-123",
+            "chunk": "value",
+            "done": False,
+        }
+        assert notifications[2].params == {
+            "requestId": "inline-123",
+            "chunk": "",
+            "done": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_handle_cancel_request_passes_request_id_to_core(self, server):
+        server.core.cancel_request = MagicMock()
+
+        result = await server.handle_cancel_request({"requestId": "req-42"})
+
+        assert result == {"success": True, "requestId": "req-42"}
+        server.core.cancel_request.assert_called_once_with("req-42")
 
 
 class TestServerMain:

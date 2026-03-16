@@ -11,8 +11,10 @@ conversational AI interactions.
 
 Features:
 - Inline ghost text completion with multi-line support
+- Completion controls: manual-only mode, filetype/buftype gating, context budgets
 - Chat panel with markdown rendering
 - Multi-provider support (Gemini, OpenAI, Claude, Ollama)
+- Managed log file and diagnostic report commands
 - AI-powered code commands (explain, refactor, test, docs)
 
 REQUIREMENTS                                            *poor-cli-requirements*
@@ -38,10 +40,21 @@ server_cmd ~
     Default: "poor-cli-server --stdio"
     Command to start the server.
 
+                                                        *poor-cli-config.server_log_file*
+server_log_file ~
+    Default: nil
+    Optional log file path. When unset, poor-cli writes logs to
+    stdpath("state") .. "/poor-cli/server.log".
+
                                                         *poor-cli-config.auto_start*
 auto_start ~
     Default: true
     Auto-start server when setup() is called.
+
+                                                        *poor-cli-config.auto_restart*
+auto_restart ~
+    Default: true
+    Restart the backend automatically after unexpected exits.
 
                                                         *poor-cli-config.ghost_text_hl*
 ghost_text_hl ~
@@ -83,10 +96,75 @@ model ~
     Default: nil (provider default)
     Specific model name to use.
 
+                                                        *poor-cli-config.completion_provider*
+completion_provider ~
+    Default: nil
+    Optional completion-only provider override.
+
+                                                        *poor-cli-config.completion_model*
+completion_model ~
+    Default: nil
+    Optional completion-only model override.
+
                                                         *poor-cli-config.auto_trigger*
 auto_trigger ~
     Default: false
     Automatically trigger completion on CursorHoldI.
+
+                                                        *poor-cli-config.completion_enabled*
+completion_enabled ~
+    Default: true
+    Enable inline completion for supported buffers.
+
+                                                        *poor-cli-config.completion_manual_only*
+completion_manual_only ~
+    Default: false
+    Disable auto-triggered completion and allow manual requests only.
+
+                                                        *poor-cli-config.completion_min_prefix*
+completion_min_prefix ~
+    Default: 0
+    Minimum prefix length required before auto-triggered completion runs.
+
+                                                        *poor-cli-config.completion_stream_partial*
+completion_stream_partial ~
+    Default: true
+    Render partial inline completion chunks while the backend is streaming.
+
+                                                        *poor-cli-config.completion_max_lines_before*
+completion_max_lines_before ~
+    Default: 80
+    Maximum number of lines of prefix context sent to the backend.
+
+                                                        *poor-cli-config.completion_max_lines_after*
+completion_max_lines_after ~
+    Default: 80
+    Maximum number of lines of suffix context sent to the backend.
+
+                                                        *poor-cli-config.completion_max_chars*
+completion_max_chars ~
+    Default: 16000
+    Total character budget for inline completion context.
+
+                                                        *poor-cli-config.completion_lsp_context_max_chars*
+completion_lsp_context_max_chars ~
+    Default: 4000
+    Character cap applied to any LSP-derived context.
+
+                                                        *poor-cli-config.completion_filetype_allowlist*
+completion_filetype_allowlist ~
+    Default: {}
+    If non-empty, completion runs only for filetypes in this list.
+
+                                                        *poor-cli-config.completion_filetype_blocklist*
+completion_filetype_blocklist ~
+    Default: {}
+    Filetypes where completion should never attach.
+
+                                                        *poor-cli-config.completion_buftype_blocklist*
+completion_buftype_blocklist ~
+    Default: { "nofile", "prompt", "quickfix", "terminal" }
+    Buffer types where completion should never attach.
 
                                                         *poor-cli-config.diagnostics_enabled*
 diagnostics_enabled ~
@@ -101,8 +179,30 @@ COMMANDS                                                *poor-cli-commands*
 :PoorCliStop                                            *:PoorCliStop*
     Stop the AI server.
 
+:PoorCliRestart                                         *:PoorCliRestart*
+    Restart the AI server and re-initialize the session.
+
+:PoorCliCancel                                          *:PoorCliCancel*
+    Cancel the active inline or chat request.
+
 :PoorCliStatus                                          *:PoorCliStatus*
-    Show server status and current provider info.
+    Show server state, provider info, completion state, log path, and recent
+    stderr excerpt.
+
+:PoorCliDoctor                                          *:PoorCliDoctor*
+    Open a diagnostic report buffer with RPC state, config, and stderr.
+
+:PoorCliCopyDebugInfo                                   *:PoorCliCopyDebugInfo*
+    Copy the diagnostic report to the clipboard/register.
+
+:PoorCliOpenLog                                         *:PoorCliOpenLog*
+    Open the poor-cli server log file.
+
+:PoorCliOpenStateDir                                    *:PoorCliOpenStateDir*
+    Open the poor-cli state directory.
+
+:PoorCliWriteMinInit [path]                             *:PoorCliWriteMinInit*
+    Generate a minimal init.lua for reproducible bug reports.
 
 :PoorCliChat                                            *:PoorCliChat*
     Toggle the chat panel.
@@ -127,6 +227,12 @@ COMMANDS                                                *poor-cli-commands*
 
 :PoorCliDismiss                                         *:PoorCliDismiss*
     Dismiss the current inline completion.
+
+:PoorCliAcceptLine                                      *:PoorCliAcceptLine*
+    Accept the current completion line.
+
+:PoorCliAcceptWord                                      *:PoorCliAcceptWord*
+    Accept the next completion word.
 
 :PoorCliSwitchProvider [provider] [model]               *:PoorCliSwitchProvider*
     Switch to a different AI provider. If no provider given, shows picker.
@@ -178,7 +284,9 @@ Lua API for custom integrations:
 
 HEALTH CHECK                                            *poor-cli-health*
 
-Run `:checkhealth poor-cli` to verify your setup.
+Run `:checkhealth poor-cli` to verify your configured server command, log path,
+Python availability, detected API keys, active provider state, and optional
+nvim-cmp integration.
 
 TROUBLESHOOTING                                         *poor-cli-troubleshooting*
 
@@ -186,11 +294,20 @@ Server won't start:
 1. Check `poor-cli-server` is in PATH: `which poor-cli-server`
 2. Install if missing: `pip install poor-cli`
 3. Check Python version: `python3 --version` (needs 3.8+)
+4. Open the log with `:PoorCliOpenLog`
+5. Capture a report with `:PoorCliDoctor`
 
 No completions:
 1. Verify API key: `echo $GEMINI_API_KEY`
 2. Check status: `:PoorCliStatus`
-3. Enable debug: `setup({ debug = true })`
-4. Check `:messages` for errors
+3. Confirm the current buffer is not blocked by filetype/buftype/manual-only
+   completion settings
+4. If you use nvim-cmp, run `:checkhealth poor-cli`
+5. Open the server log with `:PoorCliOpenLog`
+
+Bug reports:
+1. Run `:PoorCliCopyDebugInfo`
+2. Include the log from `:PoorCliOpenLog`
+3. Generate a minimal repro config with `:PoorCliWriteMinInit`
 
 vim:tw=78:ts=8:ft=help:norl:
