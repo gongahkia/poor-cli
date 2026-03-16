@@ -285,6 +285,132 @@ fn sync_text_input_state(app: &mut App) {
     clamp_command_match_index(app);
 }
 
+fn open_shortcuts_help(app: &mut App) -> InputAction {
+    app.open_info_popup_with_return(
+        "Shortcuts",
+        help_markdown().to_string(),
+        Some(AppMode::Normal),
+    );
+    InputAction::Redraw
+}
+
+fn open_permission_help(app: &mut App) -> InputAction {
+    let mut lines = vec![
+        "# Approval Help".to_string(),
+        "PoorCLI paused because this request needs explicit approval before it can continue."
+            .to_string(),
+        String::new(),
+        "## Pending request".to_string(),
+    ];
+
+    if app.permission_message.trim().is_empty() {
+        lines.push("No additional request details were provided.".to_string());
+    } else {
+        lines.push("```text".to_string());
+        lines.push(app.permission_message.clone());
+        lines.push("```".to_string());
+    }
+
+    lines.push(String::new());
+    lines.push("## Keys".to_string());
+    lines.push("- `y` or `Enter`: allow this request once".to_string());
+    lines.push("- `n` or `Esc`: deny this request".to_string());
+    lines.push("- `?`: reopen this help".to_string());
+
+    app.open_info_popup_with_return(
+        "Approval Help",
+        lines.join("\n"),
+        Some(AppMode::PermissionPrompt),
+    );
+    InputAction::Redraw
+}
+
+fn open_mutation_review_help(app: &mut App) -> InputAction {
+    let Some(review) = app.mutation_review.as_ref() else {
+        return InputAction::None;
+    };
+
+    let mut lines = vec![
+        "# Mutation Review Help".to_string(),
+        "PoorCLI is showing the exact file changes before it applies them.".to_string(),
+        String::new(),
+        "## Pending mutation".to_string(),
+        format!("- Tool: `{}`", review.tool_name),
+        format!("- Operation: `{}`", review.operation),
+    ];
+
+    if !review.paths.is_empty() {
+        lines.push(format!("- Files: {}", review.paths.join(", ")));
+    }
+    if let Some(checkpoint_id) = review
+        .checkpoint_id
+        .as_ref()
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("- Checkpoint: `{checkpoint_id}`"));
+    }
+
+    lines.push(String::new());
+    lines.push("## Keys".to_string());
+    lines.push("- `y` or `Enter`: approve the current review selection".to_string());
+    lines.push("- `n` or `Esc`: reject the mutation".to_string());
+    if review.supports_chunk_approval() {
+        lines.push("- `Space`: toggle the current hunk".to_string());
+        lines.push("- `h`: approve the selected hunks".to_string());
+        lines.push("- `f`: approve all hunks in the current file".to_string());
+    }
+    lines.push("- `o`: open the selected file in your editor".to_string());
+    lines.push("- `u`: restore the last mutation checkpoint".to_string());
+    lines.push("- `?`: reopen this help".to_string());
+
+    app.open_info_popup_with_return(
+        "Mutation Review Help",
+        lines.join("\n"),
+        Some(AppMode::MutationReview),
+    );
+    InputAction::Redraw
+}
+
+fn open_plan_review_help(app: &mut App) -> InputAction {
+    let mut lines = vec![
+        "# Plan Review Help".to_string(),
+        "PoorCLI pauses here so you can inspect the plan before it executes the next stage."
+            .to_string(),
+    ];
+
+    if !app.plan_summary.trim().is_empty() {
+        lines.push(String::new());
+        lines.push("## Summary".to_string());
+        lines.push(app.plan_summary.clone());
+    }
+
+    if !app.plan_original_request.trim().is_empty() {
+        lines.push(String::new());
+        lines.push(format!("Request: `{}`", app.plan_original_request));
+    }
+
+    lines.push(String::new());
+    lines.push("## Keys".to_string());
+    if app.plan_review_read_only {
+        lines.push("- `Enter`: close this review".to_string());
+        lines.push("- `Esc`: dismiss this review".to_string());
+    } else if app.plan_is_execution_gate {
+        lines.push("- `Enter`: approve the plan".to_string());
+        lines.push("- `Esc`: reject the plan".to_string());
+    } else {
+        lines.push("- `Enter`: execute the plan".to_string());
+        lines.push("- `Esc`: cancel execution".to_string());
+    }
+    lines.push("- `?`: reopen this help".to_string());
+
+    app.open_info_popup_with_return(
+        "Plan Review Help",
+        lines.join("\n"),
+        Some(AppMode::PlanReview),
+    );
+    InputAction::Redraw
+}
+
 fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
     // While waiting, Esc still cancels the active request, but normal input remains editable so
     // plain-text prompts can be queued for auto-send once the current request finishes.
@@ -422,6 +548,9 @@ fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
             InputAction::Redraw
         }
         KeyCode::Char(c) => {
+            if c == '?' && app.input_buffer.trim().is_empty() && !app.waiting {
+                return open_shortcuts_help(app);
+            }
             app.insert_char(c);
             sync_text_input_state(app);
             InputAction::Redraw
@@ -804,6 +933,7 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
 
 fn handle_key_permission(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
+        KeyCode::Char('?') => open_permission_help(app),
         KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
             app.permission_approved_paths.clear();
             app.permission_answer = Some(true);
@@ -827,6 +957,7 @@ fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputAction {
     }
 
     match key.code {
+        KeyCode::Char('?') => open_mutation_review_help(app),
         KeyCode::Tab | KeyCode::Right => {
             let review = app
                 .mutation_review
@@ -1399,6 +1530,7 @@ fn handle_key_transcript_search(app: &mut App, key: KeyEvent) -> InputAction {
 
 fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
+        KeyCode::Char('?') => open_plan_review_help(app),
         KeyCode::Enter => {
             app.mode = AppMode::Normal;
             if app.plan_review_read_only {
@@ -1533,7 +1665,8 @@ fn navigate_command_matches(app: &mut App, forward: bool) -> bool {
 mod tests {
     use super::*;
     use crate::app::{
-        ChatMessage, MutationReviewState, QuickOpenItemKind, TimelineEntry, TimelineEntryKind,
+        ChatMessage, MutationReviewState, ProviderEntry, ProviderSelectPane, QuickOpenItemKind,
+        TimelineEntry, TimelineEntryKind,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1549,6 +1682,22 @@ mod tests {
 
     fn key_down() -> KeyEvent {
         KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)
+    }
+
+    fn key_left() -> KeyEvent {
+        KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)
+    }
+
+    fn key_right() -> KeyEvent {
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)
+    }
+
+    fn key_esc() -> KeyEvent {
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+    }
+
+    fn key_question() -> KeyEvent {
+        KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)
     }
 
     fn create_temp_workspace(prefix: &str) -> PathBuf {
@@ -1648,6 +1797,154 @@ mod tests {
         let up = handle_key_normal(&mut app, key_up());
         assert!(matches!(up, InputAction::Redraw));
         assert_eq!(app.command_match_index, 0);
+    }
+
+    #[test]
+    fn provider_select_right_focuses_model_pane() {
+        let mut app = App::new();
+        app.mode = AppMode::ProviderSelect;
+        app.providers = vec![ProviderEntry {
+            name: "openai".to_string(),
+            available: true,
+            ready: true,
+            status_label: "API key configured".to_string(),
+            models: vec!["gpt-4o".to_string(), "gpt-4-turbo".to_string()],
+        }];
+        app.open_provider_select();
+
+        let action = handle_key_provider_select(&mut app, key_right());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.provider_select_pane, ProviderSelectPane::Models);
+        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-4o"));
+    }
+
+    #[test]
+    fn provider_select_up_down_navigate_models_when_model_pane_is_focused() {
+        let mut app = App::new();
+        app.providers = vec![ProviderEntry {
+            name: "openai".to_string(),
+            available: true,
+            ready: true,
+            status_label: "API key configured".to_string(),
+            models: vec![
+                "gpt-4o".to_string(),
+                "gpt-4-turbo".to_string(),
+                "gpt-3.5-turbo".to_string(),
+            ],
+        }];
+        app.open_provider_select();
+        app.provider_select_pane = ProviderSelectPane::Models;
+
+        let down = handle_key_provider_select(&mut app, key_down());
+        assert!(matches!(down, InputAction::Redraw));
+        assert_eq!(
+            app.selected_provider_model().as_deref(),
+            Some("gpt-4-turbo")
+        );
+
+        let up = handle_key_provider_select(&mut app, key_up());
+        assert!(matches!(up, InputAction::Redraw));
+        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-4o"));
+    }
+
+    #[test]
+    fn provider_select_left_returns_to_provider_pane() {
+        let mut app = App::new();
+        app.providers = vec![ProviderEntry {
+            name: "openai".to_string(),
+            available: true,
+            ready: true,
+            status_label: "API key configured".to_string(),
+            models: vec!["gpt-4o".to_string()],
+        }];
+        app.open_provider_select();
+        app.provider_select_pane = ProviderSelectPane::Models;
+
+        let action = handle_key_provider_select(&mut app, key_left());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.provider_select_pane, ProviderSelectPane::Providers);
+    }
+
+    #[test]
+    fn question_mark_opens_shortcuts_when_input_is_empty() {
+        let mut app = App::new();
+
+        let action = handle_key_normal(&mut app, key_question());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.info_popup_title, "Shortcuts");
+        assert_eq!(app.info_popup_return_mode, Some(AppMode::Normal));
+    }
+
+    #[test]
+    fn permission_prompt_question_mark_opens_help_and_returns() {
+        let mut app = App::new();
+        app.mode = AppMode::PermissionPrompt;
+        app.permission_message = "write_file: {\"file_path\":\"/tmp/demo.txt\"}".to_string();
+
+        let action = handle_key_permission(&mut app, key_question());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.info_popup_title, "Approval Help");
+
+        let close = handle_key_info_popup(&mut app, key_esc());
+
+        assert!(matches!(close, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::PermissionPrompt);
+    }
+
+    #[test]
+    fn mutation_review_question_mark_opens_help_and_returns() {
+        let mut app = App::new();
+        app.open_mutation_review(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "write_file".to_string(),
+            operation: "write_file".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.txt".to_string()],
+            diff: "@@ -0,0 +1 @@\n+hello".to_string(),
+            checkpoint_id: Some("cp-1".to_string()),
+            changed: Some(true),
+            message: "Preview write".to_string(),
+            selected_path_index: 0,
+            chunks: Vec::new(),
+            selected_chunk_index: 0,
+        });
+
+        let action = handle_key_mutation_review(&mut app, key_question());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.info_popup_title, "Mutation Review Help");
+
+        let close = handle_key_info_popup(&mut app, key_esc());
+
+        assert!(matches!(close, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::MutationReview);
+    }
+
+    #[test]
+    fn plan_review_question_mark_opens_help_and_returns() {
+        let mut app = App::new();
+        app.mode = AppMode::PlanReview;
+        app.plan_summary = "Need approval before mutating files.".to_string();
+        app.plan_original_request = "Update the config".to_string();
+        app.plan_is_execution_gate = true;
+
+        let action = handle_key_plan_review(&mut app, key_question());
+
+        assert!(matches!(action, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.info_popup_title, "Plan Review Help");
+
+        let close = handle_key_info_popup(&mut app, key_esc());
+
+        assert!(matches!(close, InputAction::Redraw));
+        assert_eq!(app.mode, AppMode::PlanReview);
     }
 
     #[test]

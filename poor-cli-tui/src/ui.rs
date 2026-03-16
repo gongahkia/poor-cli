@@ -20,8 +20,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::app::{
-    App, AppMode, MessageRole, ReviewDecisionState, ThemeMode, TimelineEntryKind,
-    TranscriptSearchItemKind,
+    App, AppMode, MessageRole, ProviderSelectPane, ReviewDecisionState, ThemeMode,
+    TimelineEntryKind, TranscriptSearchItemKind,
 };
 use crate::input::{command_palette_matches, SlashCommandSpec};
 use crate::markdown;
@@ -840,15 +840,32 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
         ]
     } else if app.mode == AppMode::ProviderSelect {
         vec![
-            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled("  ←→", Style::default().fg(theme::accent(mode))),
             Span::styled(
-                ": choose provider  ",
+                ": switch pane  ",
                 Style::default().fg(theme::muted_fg(mode)),
             ),
+            Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
+            Span::styled(": navigate  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": switch  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                ": switch provider/model  ",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::PermissionPrompt {
+        vec![
+            Span::styled("  y/Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": allow  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("n/Esc", Style::default().fg(theme::error(mode))),
+            Span::styled(": deny  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("?", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": explain request",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
         ]
     } else if app.mode == AppMode::QueueManager {
         vec![
@@ -950,7 +967,12 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("u", Style::default().fg(theme::accent(mode))),
             Span::styled(": undo  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("o", Style::default().fg(theme::accent(mode))),
-            Span::styled(": open file", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(": open file  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("?", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": explain review",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
         ]
     } else if app.mode == AppMode::QuickOpen {
         vec![
@@ -987,6 +1009,18 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             ),
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+        ]
+    } else if app.mode == AppMode::PlanReview {
+        vec![
+            Span::styled("  Enter", Style::default().fg(theme::success(mode))),
+            Span::styled(": continue  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("Esc", Style::default().fg(theme::error(mode))),
+            Span::styled(": back  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("?", Style::default().fg(theme::accent(mode))),
+            Span::styled(
+                ": explain plan gate",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
         ]
     } else if app.mode == AppMode::Command {
         // Show matching commands
@@ -1266,6 +1300,9 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
         .split(area);
 
+    let provider_pane_focused = app.provider_select_pane == ProviderSelectPane::Providers;
+    let model_pane_focused = app.provider_select_pane == ProviderSelectPane::Models;
+
     let items: Vec<ListItem> = app
         .providers
         .iter()
@@ -1277,9 +1314,12 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                 "  "
             };
             let style = if i == app.provider_select_idx {
-                Style::default()
-                    .fg(theme::accent(mode))
-                    .add_modifier(Modifier::BOLD)
+                let base = if provider_pane_focused {
+                    theme::accent(mode)
+                } else {
+                    theme::base_fg(mode)
+                };
+                Style::default().fg(base).add_modifier(Modifier::BOLD)
             } else if p.available {
                 Style::default().fg(theme::base_fg(mode))
             } else {
@@ -1326,7 +1366,11 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme::accent(mode)))
+            .border_style(if provider_pane_focused {
+                Style::default().fg(theme::accent(mode))
+            } else {
+                Style::default().fg(theme::muted_fg(mode))
+            })
             .padding(Padding::new(1, 1, 1, 1)),
     );
     frame.render_widget(list, chunks[0]);
@@ -1335,18 +1379,17 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
     let selected_provider_name = selected
         .map(|provider| provider.name.as_str())
         .unwrap_or("unknown");
-    let selected_model = selected
-        .and_then(|provider| {
-            if provider.name.eq_ignore_ascii_case(&app.provider_name)
-                && !app.model_name.trim().is_empty()
-                && app.model_name != "unknown"
-            {
-                Some(app.model_name.clone())
-            } else {
-                provider.models.first().cloned()
-            }
-        })
-        .unwrap_or_else(|| "default".to_string());
+    let selected_model = app.selected_provider_model().unwrap_or_else(|| {
+        if selected_provider_name.eq_ignore_ascii_case(&app.provider_name)
+            && !app.model_name.trim().is_empty()
+            && app.model_name != "unknown"
+        {
+            app.model_name.clone()
+        } else {
+            "default".to_string()
+        }
+    });
+    let selected_model_idx = app.selected_provider_model_index();
     let provider_note = match selected_provider_name.to_ascii_lowercase().as_str() {
         "gemini" => "Fast inference with a broad free-tier path and strong coding output.",
         "openai" => "Strong general reasoning with broad tool-calling support.",
@@ -1411,11 +1454,16 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
         )));
     } else {
         detail_lines.push(Line::from(Span::styled(
-            "Press Enter to switch to this provider using the selected model below.",
+            "Press Enter to switch to this provider using the highlighted model below.",
             Style::default().fg(theme::muted_fg(mode)),
         )));
     }
 
+    detail_lines.push(Line::from(""));
+    detail_lines.push(Line::from(Span::styled(
+        "Use ←/→ to switch panes. Use ↑/↓ to change the active provider or model.",
+        Style::default().fg(theme::muted_fg(mode)),
+    )));
     detail_lines.push(Line::from(""));
     detail_lines.push(Line::from(Span::styled(
         "Available models",
@@ -1431,13 +1479,39 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                 Style::default().fg(theme::muted_fg(mode)),
             )));
         } else {
-            for model in provider.models.iter().take(8) {
-                let is_selected_model = model == &selected_model;
+            let selected_idx = selected_model_idx.unwrap_or(0);
+            let max_visible = 8usize;
+            let start = if provider.models.len() <= max_visible {
+                0
+            } else {
+                selected_idx
+                    .saturating_sub(3)
+                    .min(provider.models.len() - max_visible)
+            };
+            let end = (start + max_visible).min(provider.models.len());
+            if start > 0 {
+                detail_lines.push(Line::from(Span::styled(
+                    format!("… {} earlier model(s)", start),
+                    Style::default().fg(theme::muted_fg(mode)),
+                )));
+            }
+            for (index, model) in provider
+                .models
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(end - start)
+            {
+                let is_selected_model = Some(index) == selected_model_idx;
                 detail_lines.push(Line::from(vec![
                     Span::styled(
                         if is_selected_model { "▸ " } else { "  " },
                         if is_selected_model {
-                            Style::default().fg(theme::accent(mode))
+                            Style::default().fg(if model_pane_focused {
+                                theme::accent(mode)
+                            } else {
+                                theme::muted_fg(mode)
+                            })
                         } else {
                             Style::default().fg(theme::muted_fg(mode))
                         },
@@ -1446,7 +1520,11 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                         model.clone(),
                         if is_selected_model {
                             Style::default()
-                                .fg(theme::base_fg(mode))
+                                .fg(if model_pane_focused {
+                                    theme::accent(mode)
+                                } else {
+                                    theme::base_fg(mode)
+                                })
                                 .add_modifier(Modifier::BOLD)
                         } else {
                             Style::default().fg(theme::base_fg(mode))
@@ -1454,9 +1532,9 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                     ),
                 ]));
             }
-            if provider.models.len() > 8 {
+            if end < provider.models.len() {
                 detail_lines.push(Line::from(Span::styled(
-                    format!("… {} more model(s)", provider.models.len() - 8),
+                    format!("… {} more model(s)", provider.models.len() - end),
                     Style::default().fg(theme::muted_fg(mode)),
                 )));
             }
@@ -1479,7 +1557,11 @@ fn draw_provider_select(frame: &mut Frame, app: &App) {
                         .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::input_border_color(mode)))
+                .border_style(if model_pane_focused {
+                    Style::default().fg(theme::accent(mode))
+                } else {
+                    Style::default().fg(theme::muted_fg(mode))
+                })
                 .padding(Padding::new(1, 1, 1, 1)),
         );
     frame.render_widget(details, chunks[1]);
@@ -1892,6 +1974,20 @@ fn draw_permission_prompt(frame: &mut Frame, app: &App) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(" to deny", Style::default().fg(theme::muted_fg(mode))),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Press ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(
+                "?",
+                Style::default()
+                    .fg(theme::accent(mode))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " to inspect why this request needs approval",
+                Style::default().fg(theme::muted_fg(mode)),
+            ),
         ]),
         Line::from(""),
     ];
@@ -2737,6 +2833,19 @@ fn draw_plan_review(frame: &mut Frame, app: &App) {
             } else {
                 " to cancel"
             },
+            Style::default().fg(theme::muted_fg(mode)),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Press ", Style::default().fg(theme::muted_fg(mode))),
+        Span::styled(
+            "?",
+            Style::default()
+                .fg(theme::accent(mode))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " to inspect what this approval gate means",
             Style::default().fg(theme::muted_fg(mode)),
         ),
     ]));

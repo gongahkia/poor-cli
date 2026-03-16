@@ -985,6 +985,7 @@ pub struct App {
     pub info_popup_title: String,
     pub info_popup_content: String,
     pub info_popup_scroll: u16,
+    pub info_popup_return_mode: Option<AppMode>,
     pub api_key_editor: Option<ApiKeyEditorState>,
 
     // ── Session info ───
@@ -1148,6 +1149,7 @@ impl Default for App {
             info_popup_title: String::new(),
             info_popup_content: String::new(),
             info_popup_scroll: 0,
+            info_popup_return_mode: None,
             api_key_editor: None,
             streaming_enabled: true,
             version: "0.4.0".into(),
@@ -1393,7 +1395,9 @@ impl App {
         }
         self.provider_select_idx = next_idx;
         self.ensure_provider_model_selection();
-        if self.selected_provider().is_some_and(|provider| provider.models.is_empty())
+        if self
+            .selected_provider()
+            .is_some_and(|provider| provider.models.is_empty())
             && self.provider_select_pane == ProviderSelectPane::Models
         {
             self.provider_select_pane = ProviderSelectPane::Providers;
@@ -1425,7 +1429,10 @@ impl App {
     }
 
     pub fn focus_provider_models(&mut self) -> bool {
-        if self.selected_provider().is_some_and(|provider| !provider.models.is_empty()) {
+        if self
+            .selected_provider()
+            .is_some_and(|provider| !provider.models.is_empty())
+        {
             self.ensure_provider_model_selection();
             self.provider_select_pane = ProviderSelectPane::Models;
             true
@@ -2000,9 +2007,19 @@ impl App {
     }
 
     pub fn open_info_popup(&mut self, title: impl Into<String>, content: impl Into<String>) {
+        self.open_info_popup_with_return(title, content, None);
+    }
+
+    pub fn open_info_popup_with_return(
+        &mut self,
+        title: impl Into<String>,
+        content: impl Into<String>,
+        return_mode: Option<AppMode>,
+    ) {
         self.info_popup_title = title.into();
         self.info_popup_content = content.into();
         self.info_popup_scroll = 0;
+        self.info_popup_return_mode = return_mode;
         self.mode = AppMode::InfoPopup;
     }
 
@@ -2010,7 +2027,10 @@ impl App {
         self.info_popup_title.clear();
         self.info_popup_content.clear();
         self.info_popup_scroll = 0;
-        self.mode = AppMode::Normal;
+        self.mode = self
+            .info_popup_return_mode
+            .take()
+            .unwrap_or(AppMode::Normal);
     }
 
     pub fn open_api_key_editor(&mut self, mut state: ApiKeyEditorState) {
@@ -2588,7 +2608,7 @@ fn redact_sensitive_history_command(raw: &str) -> String {
 mod tests {
     use super::{
         parse_mutation_review_chunks, ApprovedReviewChunk, MutationReviewChunk,
-        MutationReviewState, ReviewDecisionState, ThemeMode,
+        MutationReviewState, ProviderEntry, ReviewDecisionState, ThemeMode,
     };
 
     #[test]
@@ -2754,6 +2774,38 @@ diff --git a/src/other.rs b/src/other.rs
         assert_eq!(
             summary.files[1].summary_line(),
             "/tmp/src/other.rs: rejected hunks h1"
+        );
+    }
+
+    #[test]
+    fn provider_select_defaults_to_active_provider_and_model() {
+        let mut app = super::App::new();
+        app.provider_name = "openai".to_string();
+        app.model_name = "gpt-4-turbo".to_string();
+        app.providers = vec![
+            ProviderEntry {
+                name: "anthropic".to_string(),
+                available: true,
+                ready: true,
+                status_label: "API key configured".to_string(),
+                models: vec!["claude-sonnet".to_string()],
+            },
+            ProviderEntry {
+                name: "openai".to_string(),
+                available: true,
+                ready: true,
+                status_label: "API key configured".to_string(),
+                models: vec!["gpt-4o".to_string(), "gpt-4-turbo".to_string()],
+            },
+        ];
+
+        app.open_provider_select();
+
+        assert_eq!(app.provider_select_idx, 1);
+        assert_eq!(app.selected_provider_model_index(), Some(1));
+        assert_eq!(
+            app.selected_provider_model().as_deref(),
+            Some("gpt-4-turbo")
         );
     }
 }
