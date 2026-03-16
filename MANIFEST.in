@@ -1,21 +1,22 @@
 # Include important files in source distribution
 include README.md
-include LICENSE
-include requirements.txt
-include requirements-dev.txt
-include pytest.ini
 include pyproject.toml
-include .ruff.toml
+include requirements.txt
+include install.sh
+include run.sh
+include run_tui.sh
+include uninstall.sh
 
 # Include configuration examples
 include .env.example
 
-# Include asset files
-recursive-include asset *.png *.jpg *.jpeg
+# Include product assets and source surfaces
+recursive-include completions *
+recursive-include asset *.png
 recursive-include poor_cli *.json
-
-# Include test files
-recursive-include tests *.py
+graft poor-cli-tui
+graft nvim-poor-cli
+prune poor-cli-tui/target
 
 # Exclude unwanted files
 global-exclude __pycache__

@@ -30,9 +30,9 @@ if [ -n "$VIRTUAL_ENV" ]; then
     fi
 fi
 
-# Install in editable mode for development
+# Install the runtime package with all provider SDKs
 echo "📦 Installing poor-cli..."
-pip install -e .
+pip install '.[all]'
 
 echo ""
 echo "✅ Installation complete!"

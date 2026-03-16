@@ -17,7 +17,7 @@
 * *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
 * *Dependencies*: [ratatui](https://crates.io/crates/ratatui), [crossterm](https://crates.io/crates/crossterm), [tokio](https://crates.io/crates/tokio), [clap](https://crates.io/crates/clap), [serde](https://crates.io/crates/serde), [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
 * *Optional SDKs*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
-* *CI/CD*: [black](https://black.readthedocs.io/), [ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy.readthedocs.io/), [pytest](https://docs.pytest.org/), [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
+* *Distribution*: [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
 
 ## Screenshots
 
@@ -26,7 +26,7 @@
 
 ## Usage
 
-The below instructions are for locally hosting `poor-cli`.
+The below instructions are for installing and running `poor-cli` from this repository.
 
 1. Bootstrap the project.
 
@@ -34,7 +34,7 @@ The below instructions are for locally hosting `poor-cli`.
 $ git clone https://github.com/gongahkia/poor-cli.git
 $ cd poor-cli
 $ python3 -m venv .venv && source .venv/bin/activate
-$ pip install -e ".[dev]"
+$ pip install ".[all]"
 ```
 
 2. Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
