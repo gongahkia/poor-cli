@@ -27,9 +27,22 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from .automation_manager import AutomationManager
 from .command_validator import CommandRisk, get_command_validator
 from .config import PermissionMode
 from .core import PoorCLICore, CoreEvent
+from .custom_commands import CustomCommandRegistry
+from .sandbox import (
+    PRESET_DESCRIPTION,
+    evaluate_tool_access,
+    normalize_preset,
+    permission_mode_from_preset,
+    preset_from_permission_mode,
+    raise_for_denial,
+    summarize_capabilities,
+)
+from .skills import SkillRegistry
+from .task_manager import TaskManager
 
 def _encode_invite(raw: str) -> str:
     """Base64url-encode a pipe-delimited invite code for compact sharing."""
@@ -95,6 +108,9 @@ class PoorCLIServer:
         self._service_lock: Optional[asyncio.Lock] = None
         self._managed_services: Dict[str, ManagedServiceRuntime] = {}
         self._service_logs_dir = Path.home() / ".poor-cli" / "services"
+        self._task_manager: Optional[TaskManager] = None
+        self._automation_manager: Optional[AutomationManager] = None
+        self._sandbox_preset: str = "workspace-write"
 
         self._register_handlers()
 
@@ -161,6 +177,104 @@ class PoorCLIServer:
             seen.add(key)
             deduped.append(root)
         return deduped
+
+    def _current_sandbox_preset(self) -> str:
+        config = getattr(self.core, "config", None)
+        if config is not None and getattr(config, "sandbox", None) is not None:
+            configured = str(getattr(config.sandbox, "default_preset", "")).strip()
+            if configured:
+                self._sandbox_preset = normalize_preset(
+                    configured,
+                    fallback_permission_mode=self.permission_mode,
+                )
+        else:
+            self._sandbox_preset = preset_from_permission_mode(self.permission_mode)
+        return self._sandbox_preset
+
+    def _task_manager_instance(self) -> TaskManager:
+        if self._task_manager is None:
+            self._task_manager = TaskManager(Path.cwd())
+        return self._task_manager
+
+    def _automation_manager_instance(self) -> AutomationManager:
+        if self._automation_manager is None:
+            self._automation_manager = AutomationManager(
+                Path.cwd(),
+                task_manager=self._task_manager_instance(),
+            )
+        return self._automation_manager
+
+    @staticmethod
+    def _normalize_string_list(raw_values: Any, *, field_name: str) -> List[str]:
+        if raw_values is None:
+            return []
+        if not isinstance(raw_values, list):
+            raise InvalidParamsError(f"{field_name} must be an array")
+
+        values: List[str] = []
+        for raw_value in raw_values:
+            value = str(raw_value or "").strip()
+            if value:
+                values.append(value)
+        return values
+
+    def _coerce_task_execution_metadata(self, raw_execution: Any) -> Dict[str, Any]:
+        if raw_execution is None:
+            return {}
+        if not isinstance(raw_execution, dict):
+            raise InvalidParamsError("execution must be an object")
+
+        execution: Dict[str, Any] = {}
+
+        provider = str(raw_execution.get("provider", "") or "").strip()
+        if provider:
+            execution["provider"] = provider
+
+        model = str(raw_execution.get("model", "") or "").strip()
+        if model:
+            execution["model"] = model
+
+        config_path = str(raw_execution.get("configPath", "") or "").strip()
+        if config_path:
+            execution["configPath"] = config_path
+
+        context_files = self._normalize_string_list(
+            raw_execution.get("contextFiles"),
+            field_name="execution.contextFiles",
+        )
+        if context_files:
+            execution["contextFiles"] = context_files
+
+        pinned_context_files = self._normalize_string_list(
+            raw_execution.get("pinnedContextFiles"),
+            field_name="execution.pinnedContextFiles",
+        )
+        if pinned_context_files:
+            execution["pinnedContextFiles"] = pinned_context_files
+
+        raw_context_budget = raw_execution.get("contextBudgetTokens")
+        if raw_context_budget is not None:
+            try:
+                context_budget = int(raw_context_budget)
+            except (TypeError, ValueError) as error:
+                raise InvalidParamsError("execution.contextBudgetTokens must be an integer") from error
+            if context_budget <= 0:
+                raise InvalidParamsError("execution.contextBudgetTokens must be greater than zero")
+            execution["contextBudgetTokens"] = context_budget
+
+        return execution
+
+    def _skill_registry(self) -> SkillRegistry:
+        search_paths: List[str] = []
+        config = getattr(self.core, "config", None)
+        if config is not None and getattr(config, "skills", None) is not None:
+            raw_paths = getattr(config.skills, "search_paths", [])
+            if isinstance(raw_paths, list):
+                search_paths = [str(path) for path in raw_paths if str(path).strip()]
+        return SkillRegistry(Path.cwd(), search_paths=search_paths)
+
+    def _command_registry(self) -> CustomCommandRegistry:
+        return CustomCommandRegistry(Path.cwd())
 
     @staticmethod
     def _path_is_within_root(candidate: Path, root: Path) -> bool:
@@ -232,6 +346,55 @@ class PoorCLIServer:
                     reason=self._trusted_workspace_reason(),
                 )
 
+    def _tool_capabilities(self, tool_name: str) -> List[str]:
+        registry = getattr(self.core, "tool_registry", None)
+        if registry is None:
+            from .tools_async import DEFAULT_TOOL_CAPABILITIES
+
+            return list(DEFAULT_TOOL_CAPABILITIES.get(tool_name, []))
+        try:
+            return registry.get_tool_capabilities(tool_name)
+        except Exception:
+            from .tools_async import DEFAULT_TOOL_CAPABILITIES
+
+            return list(DEFAULT_TOOL_CAPABILITIES.get(tool_name, []))
+
+    def _evaluate_tool_access(
+        self,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        preview: Optional[Dict[str, Any]] = None,
+    ):
+        mutation_paths = list(preview.get("paths") or []) if isinstance(preview, dict) else []
+        if not mutation_paths:
+            mutation_paths = self._mutation_paths_for_tool(tool_name, tool_args, preview)
+        decision = evaluate_tool_access(
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_capabilities=self._tool_capabilities(tool_name),
+            permission_mode=self.permission_mode,
+            sandbox_preset=self._current_sandbox_preset(),
+            trusted_roots=self._trusted_workspace_roots(),
+            mutation_paths=mutation_paths,
+            enforce_trusted_workspace=self._trusted_workspace_enabled(),
+            safe_process_commands=getattr(
+                getattr(getattr(self.core, "config", None), "security", None),
+                "safe_commands",
+                None,
+            ),
+        )
+        if preview is not None and isinstance(preview, dict):
+            preview["capabilities"] = decision.capabilities
+            preview["sandboxPreset"] = self._current_sandbox_preset()
+            if not preview.get("message"):
+                capability_text = summarize_capabilities(decision.capabilities)
+                preview["message"] = (
+                    decision.reason
+                    if decision.reason
+                    else f"Requires {capability_text} under `{self._current_sandbox_preset()}`"
+                )
+        return decision
+
     def _auto_safe_bash_allowed(self, tool_args: Dict[str, Any]) -> bool:
         command = str(tool_args.get("command", "")).strip()
         if not command:
@@ -277,42 +440,12 @@ class PoorCLIServer:
         preview: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Server-side permission callback for core tool execution."""
-        try:
-            permission_mode = PermissionMode(self.permission_mode)
-        except ValueError:
-            permission_mode = PermissionMode.PROMPT
-
-        if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
-            return True
-
-        if tool_name in {
-            "write_file",
-            "edit_file",
-            "delete_file",
-            "apply_patch_unified",
-            "json_yaml_edit",
-            "format_and_lint",
-            "copy_file",
-            "move_file",
-            "create_directory",
-        }:
-            self._ensure_tool_paths_are_trusted(tool_name, tool_args, preview)
-
-        if permission_mode == PermissionMode.AUTO_SAFE and tool_name == "bash":
-            return self._auto_safe_bash_allowed(tool_args)
-
-        if permission_mode == PermissionMode.PROMPT and tool_name in {
-            "write_file",
-            "edit_file",
-            "delete_file",
-            "bash",
-            "apply_patch_unified",
-            "json_yaml_edit",
-            "format_and_lint",
-        }:
+        decision = self._evaluate_tool_access(tool_name, tool_args, preview)
+        if not decision.allowed:
+            if "outside trusted workspace roots" in decision.reason:
+                raise_for_denial(tool_name, self.permission_mode, decision)
             return False
-
-        return True
+        return not decision.requires_approval
 
     def _register_handlers(self) -> None:
         """Register JSON-RPC method handlers."""
@@ -340,6 +473,7 @@ class PoorCLIServer:
             "poor-cli/getProviderInfo": self.handle_get_provider_info,
             "poor-cli/getInstructionStack": self.handle_get_instruction_stack,
             "poor-cli/getPolicyStatus": self.handle_get_policy_status,
+            "poor-cli/getSandboxStatus": self.handle_get_sandbox_status,
             "poor-cli/getMcpStatus": self.handle_get_mcp_status,
             "poor-cli/clearHistory": self.handle_clear_history,
             "poor-cli/compactContext": self.handle_compact_context,
@@ -354,6 +488,23 @@ class PoorCLIServer:
             "poor-cli/listSessions": self.handle_list_sessions,
             "poor-cli/listHistory": self.handle_list_history,
             "poor-cli/searchHistory": self.handle_search_history,
+            "poor-cli/listSkills": self.handle_list_skills,
+            "poor-cli/getSkill": self.handle_get_skill,
+            "poor-cli/listCustomCommands": self.handle_list_custom_commands,
+            "poor-cli/getCustomCommand": self.handle_get_custom_command,
+            "poor-cli/runCustomCommand": self.handle_run_custom_command,
+            "poor-cli/createTask": self.handle_create_task,
+            "poor-cli/listTasks": self.handle_list_tasks,
+            "poor-cli/getTask": self.handle_get_task,
+            "poor-cli/startTask": self.handle_start_task,
+            "poor-cli/approveTask": self.handle_approve_task,
+            "poor-cli/cancelTask": self.handle_cancel_task,
+            "poor-cli/createAutomation": self.handle_create_automation,
+            "poor-cli/listAutomations": self.handle_list_automations,
+            "poor-cli/getAutomation": self.handle_get_automation,
+            "poor-cli/setAutomationEnabled": self.handle_set_automation_enabled,
+            "poor-cli/runAutomationNow": self.handle_run_automation_now,
+            "poor-cli/runDueAutomations": self.handle_run_due_automations,
             "poor-cli/listCheckpoints": self.handle_list_checkpoints,
             "poor-cli/createCheckpoint": self.handle_create_checkpoint,
             "poor-cli/restoreCheckpoint": self.handle_restore_checkpoint,
@@ -416,6 +567,13 @@ class PoorCLIServer:
                         "Invalid permissionMode. "
                         "Expected one of: prompt, auto-safe, danger-full-access."
                     ) from e
+            requested_sandbox_preset = params.get("sandboxPreset")
+            if requested_sandbox_preset is not None:
+                self._sandbox_preset = normalize_preset(
+                    requested_sandbox_preset,
+                    fallback_permission_mode=self.permission_mode,
+                )
+                self.permission_mode = permission_mode_from_preset(self._sandbox_preset)
 
             # Client declares streaming support
             if params.get("streaming"):
@@ -430,7 +588,24 @@ class PoorCLIServer:
                 api_key=params.get("apiKey"),
             )
             self.initialized = True
+            if self.core.config is not None:
+                mode = self.core.config.security.permission_mode
+                if isinstance(mode, PermissionMode):
+                    self.permission_mode = mode.value
+                else:
+                    self.permission_mode = str(mode)
+                self._sandbox_preset = normalize_preset(
+                    getattr(self.core.config.sandbox, "default_preset", self._sandbox_preset),
+                    fallback_permission_mode=self.permission_mode,
+                )
+            if requested_sandbox_preset is not None:
+                self._sandbox_preset = normalize_preset(
+                    requested_sandbox_preset,
+                    fallback_permission_mode=self.permission_mode,
+                )
+                self.permission_mode = permission_mode_from_preset(self._sandbox_preset)
             provider_info = self.core.get_provider_info()
+            self._sandbox_preset = self._current_sandbox_preset()
             set_log_context(provider=provider_info.get("name"))
 
             return {
@@ -441,6 +616,7 @@ class PoorCLIServer:
                     "chatStreamingProvider": True,
                     "fileOperations": True,
                     "permissionMode": self.permission_mode,
+                    "sandboxPreset": self._sandbox_preset,
                     "providerInfo": provider_info,
                     "guardedFlow": {
                         "permissionRequests": True,
@@ -731,6 +907,18 @@ class PoorCLIServer:
         self._ensure_initialized()
         return self.core.get_policy_status()
 
+    async def handle_get_sandbox_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return sandbox preset and capability summary."""
+        del params
+        self._ensure_initialized()
+        preset = self._current_sandbox_preset()
+        return {
+            "sandboxPreset": preset,
+            "permissionMode": self.permission_mode,
+            "description": PRESET_DESCRIPTION.get(preset, ""),
+            "trustedRoots": [str(root) for root in self._trusted_workspace_roots()],
+        }
+
     async def handle_get_mcp_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return MCP connectivity and registered tool status."""
         del params
@@ -856,6 +1044,7 @@ class PoorCLIServer:
             "checkpointing": config.checkpoint.enabled,
             "version": getattr(self.core, "_version", "0.4.0"),
             "permissionMode": self.permission_mode,
+            "sandboxPreset": self._current_sandbox_preset(),
             "configFile": config_path,
         }
 
@@ -925,6 +1114,13 @@ class PoorCLIServer:
                     self.permission_mode = mode.value
                 else:
                     self.permission_mode = str(mode)
+                self._sandbox_preset = preset_from_permission_mode(self.permission_mode)
+            if key_path == "sandbox.default_preset":
+                self._sandbox_preset = normalize_preset(
+                    self.core.config.sandbox.default_preset,
+                    fallback_permission_mode=self.permission_mode,
+                )
+                self.permission_mode = permission_mode_from_preset(self._sandbox_preset)
 
             self.core._config_manager.config = self.core.config
             self.core._config_manager.validate()
@@ -934,6 +1130,12 @@ class PoorCLIServer:
             if key_path == "security.permission_mode":
                 mode = self.core.config.security.permission_mode
                 self.permission_mode = mode.value if isinstance(mode, PermissionMode) else str(mode)
+                self._sandbox_preset = preset_from_permission_mode(self.permission_mode)
+            if key_path == "sandbox.default_preset":
+                self._sandbox_preset = normalize_preset(
+                    self.core.config.sandbox.default_preset,
+                    fallback_permission_mode=self.permission_mode,
+                )
             raise
 
         return {
@@ -1212,6 +1414,249 @@ class PoorCLIServer:
             "totalMatches": len(matches),
             "matches": matches[:limit],
         }
+
+    async def handle_list_skills(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List repo-local and user-global skills."""
+        del params
+        self._ensure_initialized()
+        registry = self._skill_registry()
+        return {"skills": [skill.to_dict() for skill in registry.list_skills()]}
+
+    async def handle_get_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return details for a single skill."""
+        self._ensure_initialized()
+        name = str(params.get("name", "")).strip()
+        if not name:
+            raise InvalidParamsError("Missing skill name")
+        registry = self._skill_registry()
+        skill = registry.get_skill(name)
+        if skill is None:
+            raise InvalidParamsError(f"Unknown skill: {name}")
+        payload = skill.to_dict()
+        payload["content"] = skill.skill_file.read_text(encoding="utf-8")
+        return payload
+
+    async def handle_list_custom_commands(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List repo-local and user-global custom command wrappers."""
+        del params
+        self._ensure_initialized()
+        registry = self._command_registry()
+        return {"commands": [command.to_dict() for command in registry.list_commands()]}
+
+    async def handle_get_custom_command(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return details for a single command wrapper."""
+        self._ensure_initialized()
+        name = str(params.get("name", "")).strip()
+        if not name:
+            raise InvalidParamsError("Missing command name")
+        registry = self._command_registry()
+        command = registry.get_command(name)
+        if command is None:
+            raise InvalidParamsError(f"Unknown command wrapper: {name}")
+        payload = command.to_dict()
+        payload["template"] = command.template
+        return payload
+
+    async def handle_run_custom_command(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Render and execute a custom command wrapper through the shared core."""
+        self._ensure_initialized()
+        name = str(params.get("name", "")).strip()
+        if not name:
+            raise InvalidParamsError("Missing command name")
+        args_text = str(params.get("argsText", "") or "")
+        registry = self._command_registry()
+        prompt = registry.render_prompt(name, args_text=args_text)
+        response = await self.core.send_message_sync(prompt)
+        return {"name": name, "prompt": prompt, "content": response}
+
+    async def handle_create_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a durable task and optionally start a background worker."""
+        self._ensure_initialized()
+        prompt = str(params.get("prompt", "") or "").strip()
+        if not prompt:
+            raise InvalidParamsError("Missing prompt")
+        title = str(params.get("title", "") or "").strip()
+        source = str(params.get("source", "manual") or "manual")
+        metadata = params.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata = dict(metadata)
+        base_execution = metadata.get("execution")
+        if base_execution is not None and not isinstance(base_execution, dict):
+            raise InvalidParamsError("metadata.execution must be an object")
+        execution = dict(base_execution) if isinstance(base_execution, dict) else {}
+        execution.update(self._coerce_task_execution_metadata(params.get("execution")))
+        if execution:
+            metadata["execution"] = execution
+        sandbox_preset = normalize_preset(
+            params.get("sandboxPreset"),
+            fallback_permission_mode=self.permission_mode,
+        )
+        auto_start = bool(params.get("autoStart", False))
+        requires_approval = bool(params.get("requiresApproval", False))
+        auto_approve = bool(params.get("autoApprove", False))
+        if self.core.config is not None and getattr(self.core.config, "tasks", None) is not None:
+            if sandbox_preset in {"read-only", "review-only"} and "autoStart" not in params:
+                auto_start = bool(self.core.config.tasks.auto_start_read_only)
+            if sandbox_preset == "workspace-write" and "autoStart" not in params:
+                auto_start = bool(self.core.config.tasks.auto_start_workspace_write)
+        task = self._task_manager_instance().create_task(
+            title=title or prompt.splitlines()[0][:80],
+            prompt=prompt,
+            sandbox_preset=sandbox_preset,
+            source=source,
+            metadata=metadata,
+            auto_start=auto_start and not requires_approval,
+            requires_approval=requires_approval,
+            auto_approve=auto_approve,
+        )
+        return {"task": task.to_dict()}
+
+    async def handle_list_tasks(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List durable task records or inbox items."""
+        self._ensure_initialized()
+        statuses = params.get("statuses")
+        if not isinstance(statuses, list):
+            statuses = None
+        limit = self._clamp_count(params.get("limit"), default=50, min_value=1, max_value=500)
+        inbox_only = bool(params.get("inboxOnly", False))
+        tasks = self._task_manager_instance().list_tasks(
+            statuses=[str(status) for status in statuses] if statuses else None,
+            limit=limit,
+            inbox_only=inbox_only,
+        )
+        return {"tasks": [task.to_dict() for task in tasks]}
+
+    async def handle_get_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a single task record."""
+        self._ensure_initialized()
+        task_id = str(params.get("taskId", "")).strip()
+        if not task_id:
+            raise InvalidParamsError("Missing taskId")
+        task = self._task_manager_instance().get_task(task_id)
+        if task is None:
+            raise InvalidParamsError(f"Unknown task: {task_id}")
+        return {"task": task.to_dict()}
+
+    async def handle_start_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start a queued or approved task worker."""
+        self._ensure_initialized()
+        task_id = str(params.get("taskId", "")).strip()
+        if not task_id:
+            raise InvalidParamsError("Missing taskId")
+        task = self._task_manager_instance().start_task_process(task_id)
+        return {"task": task.to_dict()}
+
+    async def handle_approve_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Approve a queued task and optionally start it."""
+        self._ensure_initialized()
+        task_id = str(params.get("taskId", "")).strip()
+        if not task_id:
+            raise InvalidParamsError("Missing taskId")
+        auto_start = bool(params.get("autoStart", True))
+        task = self._task_manager_instance().approve_task(task_id, auto_start=auto_start)
+        return {"task": task.to_dict()}
+
+    async def handle_cancel_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Cancel a task."""
+        self._ensure_initialized()
+        task_id = str(params.get("taskId", "")).strip()
+        if not task_id:
+            raise InvalidParamsError("Missing taskId")
+        task = self._task_manager_instance().cancel_task(task_id)
+        return {"task": task.to_dict()}
+
+    async def handle_create_automation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a durable scheduled automation backed by the task runner."""
+        self._ensure_initialized()
+        prompt = str(params.get("prompt", "") or "").strip()
+        if not prompt:
+            raise InvalidParamsError("Missing prompt")
+        schedule = params.get("schedule")
+        if not isinstance(schedule, dict):
+            raise InvalidParamsError("schedule must be an object")
+
+        name = str(params.get("name", "") or "").strip()
+        metadata = params.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata = dict(metadata)
+        base_execution = metadata.get("execution")
+        if base_execution is not None and not isinstance(base_execution, dict):
+            raise InvalidParamsError("metadata.execution must be an object")
+        execution = dict(base_execution) if isinstance(base_execution, dict) else {}
+        execution.update(self._coerce_task_execution_metadata(params.get("execution")))
+        if execution:
+            metadata["execution"] = execution
+
+        sandbox_preset = normalize_preset(
+            params.get("sandboxPreset"),
+            fallback_permission_mode=self.permission_mode,
+        )
+        automation = self._automation_manager_instance().create_automation(
+            name=name or prompt.splitlines()[0][:80],
+            prompt=prompt,
+            schedule=schedule,
+            sandbox_preset=sandbox_preset,
+            enabled=bool(params.get("enabled", True)),
+            requires_approval=bool(params.get("requiresApproval", False)),
+            metadata=metadata,
+            auto_approve=bool(params.get("autoApprove", False)),
+        )
+        return {"automation": automation.to_dict()}
+
+    async def handle_list_automations(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List scheduled automations."""
+        self._ensure_initialized()
+        enabled_param = params.get("enabled")
+        enabled = None if enabled_param is None else bool(enabled_param)
+        limit = self._clamp_count(params.get("limit"), default=100, min_value=1, max_value=500)
+        automations = self._automation_manager_instance().list_automations(
+            enabled=enabled,
+            limit=limit,
+        )
+        return {"automations": [automation.to_dict() for automation in automations]}
+
+    async def handle_get_automation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return one automation record."""
+        self._ensure_initialized()
+        automation_id = str(params.get("automationId", "")).strip()
+        if not automation_id:
+            raise InvalidParamsError("Missing automationId")
+        automation = self._automation_manager_instance().get_automation(automation_id)
+        if automation is None:
+            raise InvalidParamsError(f"Unknown automation: {automation_id}")
+        return {"automation": automation.to_dict()}
+
+    async def handle_set_automation_enabled(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Enable or disable an automation."""
+        self._ensure_initialized()
+        automation_id = str(params.get("automationId", "")).strip()
+        if not automation_id:
+            raise InvalidParamsError("Missing automationId")
+        if "enabled" not in params:
+            raise InvalidParamsError("Missing enabled")
+        automation = self._automation_manager_instance().set_enabled(
+            automation_id,
+            bool(params.get("enabled")),
+        )
+        return {"automation": automation.to_dict()}
+
+    async def handle_run_automation_now(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Launch one automation immediately and return the resulting task."""
+        self._ensure_initialized()
+        automation_id = str(params.get("automationId", "")).strip()
+        if not automation_id:
+            raise InvalidParamsError("Missing automationId")
+        task = self._automation_manager_instance().run_now(automation_id)
+        return {"task": task.to_dict()}
+
+    async def handle_run_due_automations(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run all automations currently due."""
+        self._ensure_initialized()
+        limit = self._clamp_count(params.get("limit"), default=20, min_value=1, max_value=200)
+        tasks = self._automation_manager_instance().run_due(limit=limit)
+        return {"tasks": [task.to_dict() for task in tasks]}
 
     async def handle_list_checkpoints(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List available checkpoints with storage metadata."""
@@ -3240,34 +3685,12 @@ class PoorCLIServer:
     ) -> Dict[str, Any]:
         """Interactive permission callback used during streaming chat.
         Sends permissionReq notification and waits for permissionRes."""
-        try:
-            permission_mode = PermissionMode(self.permission_mode)
-        except ValueError:
-            permission_mode = PermissionMode.PROMPT
-
-        if permission_mode == PermissionMode.DANGER_FULL_ACCESS:
-            return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
-
-        if tool_name in {
-            "write_file",
-            "edit_file",
-            "delete_file",
-            "apply_patch_unified",
-            "json_yaml_edit",
-            "format_and_lint",
-            "copy_file",
-            "move_file",
-            "create_directory",
-        }:
-            self._ensure_tool_paths_are_trusted(tool_name, tool_args, preview)
-
-        if permission_mode == PermissionMode.AUTO_SAFE:
-            if tool_name == "bash":
-                return {
-                    "allowed": self._auto_safe_bash_allowed(tool_args),
-                    "approvedPaths": [],
-                    "approvedChunks": [],
-                }
+        decision = self._evaluate_tool_access(tool_name, tool_args, preview)
+        if not decision.allowed:
+            if "outside trusted workspace roots" in decision.reason:
+                raise_for_denial(tool_name, self.permission_mode, decision)
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+        if not decision.requires_approval:
             return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
 
         if not self._client_supports("reviewFlows", "permissionRequests", default=True):
@@ -3291,6 +3714,8 @@ class PoorCLIServer:
                 "checkpointId": preview.get("checkpointId"),
                 "changed": preview.get("changed"),
                 "message": str(preview.get("message", "")),
+                "capabilities": preview.get("capabilities") or decision.capabilities,
+                "sandboxPreset": preview.get("sandboxPreset") or self._current_sandbox_preset(),
             },
         )
         await self.write_message_stdio(notification)
@@ -3528,7 +3953,12 @@ class PoorCLIServer:
         if callback is None:
             return
 
-        permitted = await callback(tool_name, tool_args)
+        permission_result = await callback(tool_name, tool_args)
+        if isinstance(permission_result, dict):
+            permitted = bool(permission_result.get("allowed", False))
+        else:
+            permitted = bool(permission_result)
+
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
 
@@ -3625,6 +4055,18 @@ class PoorCLIServer:
                 await self.write_message_stdio(response)
         except Exception as e:
             self.logger.exception(f"Error in background dispatch for {message.method}")
+            if message.id is None:
+                return
+            error_response = JsonRpcMessage(
+                id=message.id,
+                error=JsonRpcError.make_error(
+                    JsonRpcError.INTERNAL_ERROR,
+                    _sanitize_exception_message(e),
+                    {"error_code": get_error_code(e)},
+                ),
+            )
+            with contextlib.suppress(Exception):
+                await self.write_message_stdio(error_response)
 
     async def run_stdio(self) -> None:
         """

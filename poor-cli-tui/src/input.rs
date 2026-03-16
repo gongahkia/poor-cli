@@ -1,5 +1,6 @@
 /// Input handling: keyboard events, slash-command completion, etc.
 use crate::app::{App, AppMode, QuickOpenItem};
+pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 /// Outcome of processing one input event.
@@ -43,453 +44,6 @@ pub enum InputAction {
     /// Open a file in the user's editor.
     OpenFileInEditor(String),
 }
-
-/// Metadata for slash-command completion and palette rendering.
-#[derive(Clone, Copy)]
-pub struct SlashCommandSpec {
-    pub command: &'static str,
-    pub description: &'static str,
-    pub recommended: bool,
-}
-
-/// Slash commands available in the Rust TUI.
-pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
-    SlashCommandSpec {
-        command: "/help",
-        description: "Show all available commands",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/onboarding",
-        description: "Start guided CLI onboarding",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/review",
-        description: "Review code or staged diff",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/test",
-        description: "Generate tests for a file",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/provider",
-        description: "Show active provider",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/switch",
-        description: "Switch provider/model",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/history",
-        description: "Show recent messages",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/sessions",
-        description: "List recent sessions",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/files",
-        description: "List pinned context files",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/new-session",
-        description: "Start a fresh session",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/queue",
-        description: "Manage prompt queue (add/list/clear/drop)",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/compact",
-        description: "Manage context (compact/compress/handoff)",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/permission-mode",
-        description: "Show permission mode",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/collab",
-        description: "Start, join, and manage collaboration sessions",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/pair",
-        description: "Legacy pair alias for collaboration sessions",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/pass",
-        description: "Hand driver role to the next collaborator",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/suggest",
-        description: "Send suggestion to the active driver",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/leave",
-        description: "Disconnect from collaboration session",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/host-server",
-        description: "Legacy advanced host controls for collaboration",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/join-server",
-        description: "Legacy join alias for invite/manual room entry",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/doctor",
-        description: "Run environment and service health checks",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/mcp",
-        description: "Inspect or control MCP servers and tools",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/instructions",
-        description: "Inspect the active instruction stack",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/memory",
-        description: "Show or update repo-local memory",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/policy",
-        description: "Inspect repo-local hooks and audit status",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/focus",
-        description: "Manage persistent coding focus state",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/resume",
-        description: "Resume with branch/checkpoint/session summary",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/workspace-map",
-        description: "Summarize repository layout and hotspots",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/bootstrap",
-        description: "Detect project type and suggest quickstart commands",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/context-budget",
-        description: "Rank context files against a token budget",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/context",
-        description: "Open backend context inspector",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/timeline",
-        description: "Open agent timeline and diffs",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/search",
-        description: "Search transcript, tools, and diffs",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/autopilot",
-        description: "Toggle bounded autonomous execution mode",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/qa",
-        description: "Run background QA watch for lint/tests",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/profile",
-        description: "Set execution profile (speed|safe|deep-review)",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/tasks",
-        description: "Manage local task board",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/explain-diff",
-        description: "Explain behavior and risk in current diff",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/fix-failures",
-        description: "Analyze latest test/lint failure output",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/service",
-        description: "Manage local background services",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/ollama",
-        description: "Manage Ollama service and models",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/broke",
-        description: "Set poor mode (terse responses)",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/my-treat",
-        description: "Set rich mode (comprehensive responses)",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/settings",
-        description: "List editable config settings",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/api-key",
-        description: "Set or inspect provider API keys",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/quit",
-        description: "Exit the TUI",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/exit",
-        description: "Exit the TUI (alias)",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/clear",
-        description: "Clear conversation history",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/clear-output",
-        description: "Clear screen output only",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/providers",
-        description: "List providers and models",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/config",
-        description: "Show active configuration",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/model-info",
-        description: "Show model capabilities",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/cost",
-        description: "Show usage and cost estimate",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/verbose",
-        description: "Toggle verbose logging",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/plan-mode",
-        description: "Toggle plan-first execution guidance",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/toggle",
-        description: "Toggle boolean config value",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/set",
-        description: "Set config key to a value",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/theme",
-        description: "Show or set UI theme (dark/light)",
-        recommended: true,
-    },
-    SlashCommandSpec {
-        command: "/tools",
-        description: "List backend tools",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/retry",
-        description: "Retry last request",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/search",
-        description: "Search session messages",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/edit-last",
-        description: "Edit and resend last prompt",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/copy",
-        description: "Copy last assistant response",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/add",
-        description: "Pin file/directory for context",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/drop",
-        description: "Unpin context file",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/clear-files",
-        description: "Clear all pinned context files",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/commit",
-        description: "Create commit message from staged diff",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/checkpoints",
-        description: "List available checkpoints",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/checkpoint",
-        description: "Create manual checkpoint",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/save",
-        description: "Quick checkpoint alias",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/rewind",
-        description: "Restore checkpoint by id or latest",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/restore",
-        description: "Restore latest checkpoint",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/diff",
-        description: "Compare two files",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/export",
-        description: "Export conversation history",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/image",
-        description: "Queue image for next message",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/watch",
-        description: "Watch directory for changes",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/unwatch",
-        description: "Stop watch mode",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/save-prompt",
-        description: "Save reusable prompt",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/use",
-        description: "Load and run saved prompt",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/prompts",
-        description: "List saved prompts",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/run",
-        description: "Run shell command via backend",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/read",
-        description: "Read file through backend",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/pwd",
-        description: "Show current working directory",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/ls",
-        description: "List files in directory",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/status",
-        description: "Show session status summary",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/undo",
-        description: "Undo last file change (checkpoint)",
-        recommended: false,
-    },
-    SlashCommandSpec {
-        command: "/plan",
-        description: "Generate a plan before executing",
-        recommended: true,
-    },
-];
 
 pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
     let trimmed = prefix.trim();
@@ -537,8 +91,9 @@ pub fn closest_slash_command(token: &str) -> Option<&'static str> {
     let mut best: Option<(&'static str, usize, usize)> = None;
     let mut second_best_distance: Option<usize> = None;
 
-    for spec in SLASH_COMMANDS {
-        let distance = levenshtein_distance(&normalized, spec.command);
+    for spec in SLASH_COMMANDS.iter() {
+        let command = spec.command.as_str();
+        let distance = levenshtein_distance(&normalized, command);
         let max_len = normalized.chars().count().max(spec.command.chars().count());
         let allowed_distance = match max_len {
             0..=4 => 1,
@@ -550,11 +105,11 @@ pub fn closest_slash_command(token: &str) -> Option<&'static str> {
         }
 
         match best {
-            None => best = Some((spec.command, distance, max_len)),
+            None => best = Some((command, distance, max_len)),
             Some((_, best_distance, best_len)) => {
                 if (distance, max_len) < (best_distance, best_len) {
                     second_best_distance = Some(best_distance);
-                    best = Some((spec.command, distance, max_len));
+                    best = Some((command, distance, max_len));
                 } else if second_best_distance.is_none_or(|current| distance < current) {
                     second_best_distance = Some(distance);
                 }
@@ -710,12 +265,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
 }
 
 fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
-    // While waiting, only Esc cancels — everything else is ignored
+    // While waiting, Esc still cancels the active request, but normal input remains editable so
+    // plain-text prompts can be queued for auto-send once the current request finishes.
     if app.waiting {
         if key.code == KeyCode::Esc {
             return InputAction::Cancel;
         }
-        return InputAction::None;
     }
 
     match key.code {
@@ -1818,6 +1373,26 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.input_buffer, expected);
+    }
+
+    #[test]
+    fn waiting_state_still_allows_typing_and_submit() {
+        let mut app = App::new();
+        app.waiting = true;
+        app.mode = AppMode::Normal;
+
+        let typed = handle_key_normal(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+        );
+        assert!(matches!(typed, InputAction::Redraw));
+        assert_eq!(app.input_buffer, "q");
+
+        let action = handle_key_normal(&mut app, key_enter());
+        match action {
+            InputAction::Submit(text) => assert_eq!(text, "q"),
+            _ => panic!("expected submit action while waiting"),
+        }
     }
 
     #[test]

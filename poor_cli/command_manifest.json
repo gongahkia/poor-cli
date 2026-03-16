@@ -1,0 +1,567 @@
+{
+  "notes": [
+    "Type `@path/to/file` in any message to attach file context.",
+    "Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.",
+    "Run `!<command> [| optional question]` to execute local shell output and optionally ask the model about it."
+  ],
+  "commands": [
+    {
+      "command": "/help",
+      "description": "Show all available commands",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/onboarding",
+      "description": "Start guided CLI onboarding",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/plan",
+      "description": "Generate a plan before executing",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/history",
+      "description": "Show recent messages",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/sessions",
+      "description": "List recent sessions",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/new-session",
+      "description": "Start a fresh session",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/queue",
+      "description": "Manage prompt queue (add/list/clear/drop)",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/compact",
+      "description": "Manage context (compact/compress/handoff)",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/search",
+      "description": "Search transcript, tools, and diffs",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/status",
+      "description": "Show session status summary",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/export",
+      "description": "Export conversation history",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/retry",
+      "description": "Retry last request",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/edit-last",
+      "description": "Edit and resend last prompt",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/copy",
+      "description": "Copy last assistant response",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/quit",
+      "description": "Exit the TUI",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/exit",
+      "description": "Exit the TUI (alias)",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/clear",
+      "description": "Clear conversation history",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/clear-output",
+      "description": "Clear screen output only",
+      "recommended": false,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/review",
+      "description": "Review code or staged diff",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/test",
+      "description": "Generate tests for a file",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/permission-mode",
+      "description": "Show permission mode",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/sandbox",
+      "description": "Show or set sandbox preset",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/instructions",
+      "description": "Inspect the active instruction stack",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/memory",
+      "description": "Show or update repo-local memory",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/policy",
+      "description": "Inspect repo-local hooks and audit status",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/context",
+      "description": "Open backend context inspector",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/timeline",
+      "description": "Open agent timeline and diffs",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/explain-diff",
+      "description": "Explain behavior and risk in current diff",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/fix-failures",
+      "description": "Analyze latest test/lint failure output",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/checkpoints",
+      "description": "List available checkpoints",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/checkpoint",
+      "description": "Create manual checkpoint",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/save",
+      "description": "Quick checkpoint alias",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/rewind",
+      "description": "Restore checkpoint by id or latest",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/restore",
+      "description": "Restore latest checkpoint",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/diff",
+      "description": "Compare two files",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/undo",
+      "description": "Undo last file change (checkpoint)",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/plan-mode",
+      "description": "Toggle plan-first execution guidance",
+      "recommended": false,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/provider",
+      "description": "Show active provider",
+      "recommended": true,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/switch",
+      "description": "Switch provider/model",
+      "recommended": true,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/providers",
+      "description": "List providers and models",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/config",
+      "description": "Show active configuration",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/model-info",
+      "description": "Show model capabilities",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/profile",
+      "description": "Set execution profile (speed|safe|deep-review)",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/broke",
+      "description": "Set poor mode (terse responses)",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/my-treat",
+      "description": "Set rich mode (comprehensive responses)",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/settings",
+      "description": "List editable config settings",
+      "recommended": true,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/api-key",
+      "description": "Set or inspect provider API keys",
+      "recommended": true,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/verbose",
+      "description": "Toggle verbose logging",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/toggle",
+      "description": "Toggle boolean config value",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/set",
+      "description": "Set config key to a value",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/theme",
+      "description": "Show or set UI theme (dark/light)",
+      "recommended": true,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/tools",
+      "description": "List backend tools",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/mcp",
+      "description": "Inspect or control MCP servers and tools",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/files",
+      "description": "List pinned context files",
+      "recommended": true,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/add",
+      "description": "Pin file/directory for context",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/drop",
+      "description": "Unpin context file",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/clear-files",
+      "description": "Clear all pinned context files",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/focus",
+      "description": "Manage persistent coding focus state",
+      "recommended": true,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/resume",
+      "description": "Resume with branch/checkpoint/session summary",
+      "recommended": true,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/workspace-map",
+      "description": "Summarize repository layout and hotspots",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/bootstrap",
+      "description": "Detect project type and suggest quickstart commands",
+      "recommended": true,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/context-budget",
+      "description": "Rank context files against a token budget",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/image",
+      "description": "Queue image for next message",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/save-prompt",
+      "description": "Save reusable prompt",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/use",
+      "description": "Load and run saved prompt",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/prompts",
+      "description": "List saved prompts",
+      "recommended": false,
+      "category": "Context & Reuse"
+    },
+    {
+      "command": "/autopilot",
+      "description": "Toggle bounded autonomous execution mode",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/qa",
+      "description": "Run background QA watch for lint/tests",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/task",
+      "description": "Manage durable background tasks",
+      "recommended": true,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/inbox",
+      "description": "Show pending and actionable tasks",
+      "recommended": true,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/tasks",
+      "description": "Legacy alias for /task",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/skills",
+      "description": "Inspect or run repo and user skills",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/commands",
+      "description": "Inspect or run repo and user commands",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/watch",
+      "description": "Watch directory for changes",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/unwatch",
+      "description": "Stop watch mode",
+      "recommended": false,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/doctor",
+      "description": "Run environment and service health checks",
+      "recommended": true,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/service",
+      "description": "Manage local background services",
+      "recommended": true,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/ollama",
+      "description": "Manage Ollama service and models",
+      "recommended": true,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/run",
+      "description": "Run shell command via backend",
+      "recommended": false,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/read",
+      "description": "Read file through backend",
+      "recommended": false,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/pwd",
+      "description": "Show current working directory",
+      "recommended": false,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/ls",
+      "description": "List files in directory",
+      "recommended": false,
+      "category": "Services & Shell"
+    },
+    {
+      "command": "/commit",
+      "description": "Create commit message from staged diff",
+      "recommended": false,
+      "category": "Git & Workspace"
+    },
+    {
+      "command": "/collab",
+      "description": "Start, join, and manage collaboration sessions",
+      "recommended": true,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/pair",
+      "description": "Legacy pair alias for collaboration sessions",
+      "recommended": false,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/pass",
+      "description": "Hand driver role to the next collaborator",
+      "recommended": true,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/suggest",
+      "description": "Send suggestion to the active driver",
+      "recommended": true,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/leave",
+      "description": "Disconnect from collaboration session",
+      "recommended": true,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/host-server",
+      "description": "Legacy advanced host controls for collaboration",
+      "recommended": false,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/join-server",
+      "description": "Legacy join alias for invite/manual room entry",
+      "recommended": false,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/kick",
+      "description": "Remove a room member from collaboration",
+      "recommended": false,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/who",
+      "description": "Show room members and roles",
+      "recommended": false,
+      "category": "Collaboration"
+    },
+    {
+      "command": "/members",
+      "description": "Alias for /who",
+      "recommended": false,
+      "category": "Collaboration"
+    }
+  ]
+}

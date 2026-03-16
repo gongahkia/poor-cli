@@ -1088,8 +1088,91 @@ impl RpcClient {
         )
     }
 
+    pub fn get_sandbox_status(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getSandboxStatus",
+            Value::Object(Default::default()),
+        )
+    }
+
     pub fn get_mcp_status(&self) -> Result<Value, String> {
         self.call("poor-cli/getMcpStatus", Value::Object(Default::default()))
+    }
+
+    pub fn list_skills(&self) -> Result<Value, String> {
+        self.call("poor-cli/listSkills", Value::Object(Default::default()))
+    }
+
+    pub fn get_skill(&self, name: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        self.call("poor-cli/getSkill", Value::Object(params))
+    }
+
+    pub fn list_custom_commands(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/listCustomCommands",
+            Value::Object(Default::default()),
+        )
+    }
+
+    pub fn get_custom_command(&self, name: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        self.call("poor-cli/getCustomCommand", Value::Object(params))
+    }
+
+    pub fn run_custom_command(&self, name: &str, args_text: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        params.insert("argsText".into(), Value::String(args_text.to_string()));
+        self.call("poor-cli/runCustomCommand", Value::Object(params))
+    }
+
+    pub fn create_task(
+        &self,
+        title: &str,
+        prompt: &str,
+        sandbox_preset: &str,
+        source: &str,
+        auto_start: bool,
+        requires_approval: bool,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("title".into(), Value::String(title.to_string()));
+        params.insert("prompt".into(), Value::String(prompt.to_string()));
+        params.insert(
+            "sandboxPreset".into(),
+            Value::String(sandbox_preset.to_string()),
+        );
+        params.insert("source".into(), Value::String(source.to_string()));
+        params.insert("autoStart".into(), Value::Bool(auto_start));
+        params.insert("requiresApproval".into(), Value::Bool(requires_approval));
+        self.call("poor-cli/createTask", Value::Object(params))
+    }
+
+    pub fn list_tasks(&self, inbox_only: bool) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("inboxOnly".into(), Value::Bool(inbox_only));
+        self.call("poor-cli/listTasks", Value::Object(params))
+    }
+
+    pub fn get_task(&self, task_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("taskId".into(), Value::String(task_id.to_string()));
+        self.call("poor-cli/getTask", Value::Object(params))
+    }
+
+    pub fn approve_task(&self, task_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("taskId".into(), Value::String(task_id.to_string()));
+        self.call("poor-cli/approveTask", Value::Object(params))
+    }
+
+    pub fn cancel_task(&self, task_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("taskId".into(), Value::String(task_id.to_string()));
+        self.call("poor-cli/cancelTask", Value::Object(params))
     }
 
     pub fn list_config_options(&self) -> Result<Value, String> {
@@ -1640,7 +1723,29 @@ pub enum RpcCommand {
     GetPolicyStatus {
         reply: SyncSender<Result<Value, String>>,
     },
+    GetSandboxStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
     GetMcpStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListSkills {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetSkill {
+        name: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListCustomCommands {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetCustomCommand {
+        name: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    RunCustomCommand {
+        name: String,
+        args_text: String,
         reply: SyncSender<Result<Value, String>>,
     },
     ListConfigOptions {
@@ -1682,6 +1787,31 @@ pub enum RpcCommand {
     },
     SearchHistory {
         term: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    CreateTask {
+        title: String,
+        prompt: String,
+        sandbox_preset: String,
+        source: String,
+        auto_start: bool,
+        requires_approval: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListTasks {
+        inbox_only: bool,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetTask {
+        task_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ApproveTask {
+        task_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    CancelTask {
+        task_id: String,
         reply: SyncSender<Result<Value, String>>,
     },
     ListCheckpoints {
@@ -1951,8 +2081,30 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::GetPolicyStatus { reply }) => {
                 let _ = reply.send(client.get_policy_status());
             }
+            Ok(RpcCommand::GetSandboxStatus { reply }) => {
+                let _ = reply.send(client.get_sandbox_status());
+            }
             Ok(RpcCommand::GetMcpStatus { reply }) => {
                 let _ = reply.send(client.get_mcp_status());
+            }
+            Ok(RpcCommand::ListSkills { reply }) => {
+                let _ = reply.send(client.list_skills());
+            }
+            Ok(RpcCommand::GetSkill { name, reply }) => {
+                let _ = reply.send(client.get_skill(&name));
+            }
+            Ok(RpcCommand::ListCustomCommands { reply }) => {
+                let _ = reply.send(client.list_custom_commands());
+            }
+            Ok(RpcCommand::GetCustomCommand { name, reply }) => {
+                let _ = reply.send(client.get_custom_command(&name));
+            }
+            Ok(RpcCommand::RunCustomCommand {
+                name,
+                args_text,
+                reply,
+            }) => {
+                let _ = reply.send(client.run_custom_command(&name, &args_text));
             }
             Ok(RpcCommand::ListConfigOptions { reply }) => {
                 let _ = reply.send(client.list_config_options());
@@ -1992,6 +2144,36 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::SearchHistory { term, reply }) => {
                 let _ = reply.send(client.search_history(&term));
+            }
+            Ok(RpcCommand::CreateTask {
+                title,
+                prompt,
+                sandbox_preset,
+                source,
+                auto_start,
+                requires_approval,
+                reply,
+            }) => {
+                let _ = reply.send(client.create_task(
+                    &title,
+                    &prompt,
+                    &sandbox_preset,
+                    &source,
+                    auto_start,
+                    requires_approval,
+                ));
+            }
+            Ok(RpcCommand::ListTasks { inbox_only, reply }) => {
+                let _ = reply.send(client.list_tasks(inbox_only));
+            }
+            Ok(RpcCommand::GetTask { task_id, reply }) => {
+                let _ = reply.send(client.get_task(&task_id));
+            }
+            Ok(RpcCommand::ApproveTask { task_id, reply }) => {
+                let _ = reply.send(client.approve_task(&task_id));
+            }
+            Ok(RpcCommand::CancelTask { task_id, reply }) => {
+                let _ = reply.send(client.cancel_task(&task_id));
             }
             Ok(RpcCommand::ListCheckpoints { limit, reply }) => {
                 let _ = reply.send(client.list_checkpoints(limit));

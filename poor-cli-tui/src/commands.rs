@@ -248,6 +248,103 @@ fn format_policy_status(payload: &Value) -> String {
     lines.join("\n")
 }
 
+fn format_task_list(payload: &Value, title: &str) -> String {
+    let tasks = payload
+        .get("tasks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if tasks.is_empty() {
+        return format!("{title}\n\nNo tasks found.");
+    }
+
+    let mut lines = vec![format!("{title}\n")];
+    for task in tasks {
+        let task_id = task
+            .get("taskId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(unknown)");
+        let status = task
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let summary = task
+            .get("summary")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let title = task
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(untitled)");
+        lines.push(format!("- `{task_id}` [{status}] {title}"));
+        if !summary.is_empty() {
+            lines.push(format!("  {}", truncate_line(summary, 160)));
+        }
+    }
+    lines.join("\n")
+}
+
+fn format_task_detail(payload: &Value) -> String {
+    let task = payload.get("task").unwrap_or(payload);
+    let task_id = task
+        .get("taskId")
+        .and_then(|value| value.as_str())
+        .unwrap_or("(unknown)");
+    let status = task
+        .get("status")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let title = task
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or("(untitled)");
+    let preset = task
+        .get("sandboxPreset")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let source = task
+        .get("source")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let worktree = task
+        .get("worktreePath")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let artifact_dir = task
+        .get("artifactDir")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let summary = task
+        .get("summary")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let error_message = task
+        .get("errorMessage")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+
+    let mut lines = vec![
+        format!("**Task** `{task_id}`"),
+        format!("- Status: `{status}`"),
+        format!("- Title: {title}"),
+        format!("- Sandbox: `{preset}`"),
+        format!("- Source: `{source}`"),
+    ];
+    if !worktree.is_empty() {
+        lines.push(format!("- Worktree: `{worktree}`"));
+    }
+    if !artifact_dir.is_empty() {
+        lines.push(format!("- Artifacts: `{artifact_dir}`"));
+    }
+    if !summary.is_empty() {
+        lines.push(format!("- Summary: {}", truncate_line(summary, 180)));
+    }
+    if !error_message.is_empty() {
+        lines.push(format!("- Error: {}", truncate_line(error_message, 180)));
+    }
+    lines.join("\n")
+}
+
 fn resolve_close_slash_command(raw: &str) -> Option<(String, String, String)> {
     let command_end = raw
         .char_indices()
@@ -294,128 +391,7 @@ pub(super) fn handle_slash_command(
     }
 
     if lowered == "/help" {
-        let help = "\
-**Available Commands:**\n\n\
-Type `@path/to/file` in any message to attach file context.\n\
-Use quoted refs for spaces: `@\"docs/My File.md\"` or `@'docs/My File.md'`.\n\
-\n\
-**Core Workflow:**\n\
-  /help                Show this help message\n\
-  /onboarding ...      Start interactive onboarding (`next`, `prev`, `<step>`, `exit`)\n\
-  /quit, /exit         Exit poor-cli and print session summary\n\
-  /clear               Clear conversation history\n\
-  /clear-output        Clear visible output, keep backend history\n\
-  /history [N]         Show recent session messages\n\
-  /sessions            List recent sessions\n\
-  /new-session         Start a fresh session\n\
-  /compact             Manage context window (compact/compress/handoff)\n\
-  /queue ...           Manage prompt queue (`add|list|clear|drop`)\n\
-  /export [format]     Export active session (json|md|txt)\n\
-  /retry               Retry your last message\n\
-  /search <term>       Search messages in this session\n\
-  /edit-last           Put last message back into input\n\n\
-**Review & Safety:**\n\
-  /checkpoints         List checkpoints\n\
-  /checkpoint          Create manual checkpoint\n\
-  /save                Quick checkpoint alias\n\
-  /rewind [id|last]    Restore checkpoint by id (default: last)\n\
-  /restore             Restore latest checkpoint\n\
-  /undo                Restore latest checkpoint (alias)\n\
-  /diff <f1> <f2>      Compare two files\n\n\
-**Provider Management:**\n\
-  /provider            Show current provider capabilities\n\
-  /providers           List available providers\n\
-  /switch              Switch provider/model\n\
-  /api-key             Show or set provider API keys\n\
-  /model-info          Show provider-specific model notes\n\
-  /mcp ...             Inspect or control MCP servers (`status|enable|disable|allow|deny|clear-allow|clear-deny`)\n\
-  /permission-mode [mode]  Show or set backend permission mode\n\n\
-**Review & Safety Config:**\n\
-  /config              Show backend config snapshot\n\
-  /settings            List editable config settings\n\
-  /toggle <key>        Toggle a boolean config option\n\
-  /set <key> <value>   Set a config option value\n\
-  /instructions ...    Inspect the active instruction stack\n\
-  /memory ...          Show or update `.poor-cli/memory.md`\n\
-  /policy              Show repo-local hook and audit status\n\
-  /theme [dark|light]  Show or set UI + code-block theme\n\
-  /broke               Set response mode to terse, token-minimal output\n\
-  /my-treat            Set response mode to rich, comprehensive output\n\
-  /verbose             Toggle verbose logging\n\
-  /plan-mode           Toggle plan-first execution guidance in the shared agent loop\n\n\
-**Git Integration:**\n\
-  /commit              Generate commit message from staged diff\n\
-  /review [file]       Review a file or staged diff\n\n\
-**Automation:**\n\
-  /test <file>         Generate tests for a file\n\
-  /fix-failures [cmd]  Analyze latest (or fresh) test/lint failures\n\
-  /explain-diff [file] Explain behavior/risk/test gaps in git diff\n\
-  /image <path>        Queue image for next prompt\n\
-  /watch <dir>         Watch directory and analyze changes via the guarded agent loop\n\
-  /unwatch             Stop active watch mode\n\
-  /tools               List backend tool declarations\n\
-  /cost                Show token and estimated cost usage\n\n\
-**Context Files:**\n\
-  /add <path>          Pin file/directory as persistent context\n\
-  /drop <path>         Remove pinned context file\n\
-  /files               List currently pinned context files\n\
-  /clear-files         Remove all pinned context files\n\n\
-**Prompt Library:**\n\
-  /save-prompt <name> <text>  Save reusable prompt text immediately\n\
-  /save-prompt <name>         Capture next input as prompt text\n\
-  /use <name>                 Load and send saved prompt\n\
-  /prompts                    List saved prompts\n\n\
-**Utilities:**\n\
-  !<command> [| question]  Run local bash and optionally ask about output\n\
-  /doctor              Run environment/provider/service diagnostics\n\
-  /bootstrap           Detect project type and show solo quickstart\n\
-  /focus ...           Manage persistent focus goal (`start|status|done`)\n\
-  /resume              Summarize last session + branch/checkpoint state\n\
-  /workspace-map [path] Build repository file/entrypoint map\n\
-  /context-budget [tokens] Rank and preview auto-selected context files\n\
-  /autopilot ...       Toggle bounded autonomous execution mode on the shared guarded engine\n\
-  /qa ...              Background incremental QA watch (`start|stop|status`) on the shared guarded engine\n\
-  /profile ...         Apply execution profile (`speed|safe|deep-review`)\n\
-  /tasks ...           Manage local task board (`add|done|drop|clear`)\n\
-  /copy                Copy last assistant response to clipboard\n\
-  /onboarding ...      Guided walkthrough of core commands\n\
-**Collaboration:**\n\
-  /collab start <pair|mob|review>  Start a collaboration room\n\
-  /collab join <invite-code>       Join with an invite code\n\
-  /collab members                  Show room members and roles\n\
-  /collab share [driver|viewer]    Show invite payloads for the current room\n\
-  /collab handoff [next|#N|@name]  Pass driver to the next or named member\n\
-  /collab agenda add <text>        Add a shared agenda item\n\
-  /collab hand raise|lower         Join or leave the hand-raise queue\n\
-  /suggest <text>                  Send a suggestion to the active driver\n\
-  /leave                           Disconnect from collaboration session\n\
-  /who [room]                      Show connected users and roles\n\
-  /host-server ...                 Start/share/manage host session (advanced)\n\
-  /kick <connection-id|#N|@name> [room]  Remove a member from the current/target room\n\
-  /members [room]      Alias for /who\n\
-  /pair                Legacy pair alias (quick host / invite join)\n\
-  /host-server share [viewer|prompter] [room]  Print role-specific join payloads\n\
-  /host-server members [room]               List connected room members\n\
-  /host-server kick <connection-id> [room]  Remove a connected member\n\
-  /host-server role <id> <viewer|prompter> [room]  Change member role\n\
-  /host-server lobby <on|off> [room]        Toggle lobby approval mode\n\
-  /host-server approve <id> [room]           Approve pending member\n\
-  /host-server deny <id> [room]              Deny pending member\n\
-  /host-server rotate-token <viewer|prompter> [room] [expiry-seconds]  Rotate invite token\n\
-  /host-server revoke <token|id> [room]      Revoke token or disconnect member\n\
-  /host-server handoff <id> [room]           Transfer prompter role\n\
-  /host-server preset <pairing|mob|review> [room]  Apply room collaboration preset\n\
-  /host-server activity [room] [limit] [event-type]  Show room activity log\n\
-  /join-server <code>  Legacy join alias using invite code or url/room/token\n\
-  /join-server         Launch invite-first join wizard\n\
-  /service ...         Manage local background services (start/stop/status/logs)\n\
-  /ollama ...          Convenience wrapper for Ollama lifecycle/model commands\n\
-  /run <command>       Run shell command through backend\n\
-  /read <file>         Read a file from backend\n\
-  /pwd                 Show current working directory\n\
-  /ls [path]           List files (default: current directory)\n\
-  /status              Show quick session status";
-        show_command_info_popup(app, raw, help);
+        show_command_info_popup(app, raw, input::help_markdown().to_string());
         return false;
     }
 
@@ -2404,7 +2380,50 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
-    if lowered == "/tasks" || lowered.starts_with("/tasks ") {
+    if lowered == "/sandbox" || lowered.starts_with("/sandbox ") {
+        let selected = raw.split_whitespace().nth(1).unwrap_or("").trim();
+        if selected.is_empty() {
+            match rpc_get_sandbox_status_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let preset = payload
+                        .get("sandboxPreset")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("workspace-write");
+                    let description = payload
+                        .get("description")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!(
+                            "**Sandbox**\n- Active preset: `{preset}`\n- {description}\n\nAvailable: `read-only`, `review-only`, `workspace-write`, `full-access`"
+                        ),
+                    );
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Sandbox status failed: {error}"))
+                }
+            }
+            return false;
+        }
+        match rpc_set_config_blocking(
+            rpc_cmd_tx,
+            "sandbox.default_preset",
+            Value::String(selected.to_string()),
+        ) {
+            Ok(_) => {
+                app.permission_mode_label = selected.to_string();
+                app.set_status(format!("Sandbox preset set to `{selected}`"));
+            }
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to set sandbox preset: {error}"))
+            }
+        }
+        return false;
+    }
+
+    if lowered == "/skills" || lowered.starts_with("/skills ") {
         let args: Vec<&str> = raw.splitn(3, ' ').collect();
         let subcommand = args
             .get(1)
@@ -2412,123 +2431,304 @@ Context Window: {max_context} tokens\n\n\
             .unwrap_or("list")
             .trim()
             .to_ascii_lowercase();
-        let mut tasks = match load_tasks(app) {
-            Ok(tasks) => tasks,
-            Err(e) => {
-                app.push_message(ChatMessage::error(e));
-                return false;
-            }
-        };
-
         if subcommand == "list" {
-            if tasks.is_empty() {
-                show_command_info_popup(
-                    app,
-                    raw,
-                    "No tasks.\nUse `/tasks add <title>`.".to_string(),
-                );
-                return false;
-            }
-            let mut lines = vec![format!("**Tasks ({})**", tasks.len()), String::new()];
-            tasks.sort_by_key(|task| task.id);
-            for task in tasks {
-                lines.push(format!(
-                    "- [{}] #{} {}",
-                    if task.done { "x" } else { " " },
-                    task.id,
-                    task.title
-                ));
-            }
-            show_command_info_popup(app, raw, lines.join("\n"));
-            return false;
-        }
-
-        if subcommand == "add" {
-            let title = args.get(2).copied().unwrap_or("").trim();
-            if title.is_empty() {
-                show_command_info_popup(app, raw, "Usage: /tasks add <title>".to_string());
-                return false;
-            }
-            let next_id = tasks.iter().map(|task| task.id).max().unwrap_or(0) + 1;
-            tasks.push(TaskItem {
-                id: next_id,
-                title: title.to_string(),
-                done: false,
-                created_at: format!("{}", unix_ts_millis()),
-            });
-            if let Err(e) = save_tasks(app, &tasks) {
-                app.push_message(ChatMessage::error(e));
-                return false;
-            }
-            app.set_status(format!("Task #{next_id} added"));
-            return false;
-        }
-
-        if subcommand == "done" {
-            let id = args
-                .get(2)
-                .and_then(|raw| raw.trim().parse::<u64>().ok())
-                .unwrap_or(0);
-            if id == 0 {
-                show_command_info_popup(app, raw, "Usage: /tasks done <id>".to_string());
-                return false;
-            }
-            let mut found = false;
-            for task in &mut tasks {
-                if task.id == id {
-                    task.done = true;
-                    found = true;
-                    break;
+            match rpc_list_skills_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let skills = payload
+                        .get("skills")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    if skills.is_empty() {
+                        show_command_info_popup(app, raw, "No skills found.".to_string());
+                        return false;
+                    }
+                    let mut lines = vec!["**Skills**".to_string(), String::new()];
+                    for skill in skills {
+                        let name = skill
+                            .get("name")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("(unknown)");
+                        let description = skill
+                            .get("description")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
+                        let scope = skill
+                            .get("scope")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("user");
+                        lines.push(format!("- `{name}` ({scope}) {description}"));
+                    }
+                    show_command_info_popup(app, raw, lines.join("\n"));
                 }
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to list skills: {error}")),
             }
-            if !found {
-                show_command_info_popup(app, raw, format!("Task #{id} not found."));
-                return false;
-            }
-            if let Err(e) = save_tasks(app, &tasks) {
-                app.push_message(ChatMessage::error(e));
-                return false;
-            }
-            app.set_status(format!("Task #{id} marked done"));
             return false;
         }
-
-        if subcommand == "drop" {
-            let id = args
-                .get(2)
-                .and_then(|raw| raw.trim().parse::<u64>().ok())
-                .unwrap_or(0);
-            if id == 0 {
-                show_command_info_popup(app, raw, "Usage: /tasks drop <id>".to_string());
+        if subcommand == "show" {
+            let name = args.get(2).copied().unwrap_or("").trim();
+            if name.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /skills show <name>".to_string());
                 return false;
             }
-            let before = tasks.len();
-            tasks.retain(|task| task.id != id);
-            if tasks.len() == before {
-                show_command_info_popup(app, raw, format!("Task #{id} not found."));
-                return false;
+            match rpc_get_skill_blocking(rpc_cmd_tx, name) {
+                Ok(payload) => {
+                    let content = payload
+                        .get("content")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!("**Skill** `{name}`\n\n```markdown\n{}\n```", truncate_block(content, 6000)),
+                    );
+                }
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to load skill: {error}")),
             }
-            if let Err(e) = save_tasks(app, &tasks) {
-                app.push_message(ChatMessage::error(e));
-                return false;
-            }
-            app.set_status(format!("Task #{id} removed"));
             return false;
         }
-
-        if subcommand == "clear" {
-            if let Err(e) = save_tasks(app, &[]) {
-                app.push_message(ChatMessage::error(e));
+        if subcommand == "run" {
+            let tail = args.get(2).copied().unwrap_or("").trim();
+            let mut parts = tail.splitn(2, ' ');
+            let name = parts.next().unwrap_or("").trim();
+            let request = parts.next().unwrap_or("").trim();
+            if name.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /skills run <name> [request]".to_string());
                 return false;
             }
-            app.set_status("Cleared task list");
+            match rpc_get_skill_blocking(rpc_cmd_tx, name) {
+                Ok(payload) => {
+                    let content = payload
+                        .get("content")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    let prompt = if request.is_empty() {
+                        format!("[Skill: {name}]\n\n{content}")
+                    } else {
+                        format!("[Skill: {name}]\n\n{content}\n\n[User request]\n{request}")
+                    };
+                    app.prompt_queue
+                        .push_back(poor_cli_tui::app::QueuedPrompt::automation(
+                            format!("[skill] {name}"),
+                            prompt,
+                        ));
+                    app.set_status(format!("Queued skill `{name}`"));
+                }
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to run skill: {error}")),
+            }
             return false;
         }
-
         show_command_info_popup(
             app,
             raw,
-            "Usage: /tasks [list]\n       /tasks add <title>\n       /tasks done <id>\n       /tasks drop <id>\n       /tasks clear".to_string(),
+            "Usage: /skills list\n       /skills show <name>\n       /skills run <name> [request]".to_string(),
+        );
+        return false;
+    }
+
+    if lowered == "/commands" || lowered.starts_with("/commands ") {
+        let args: Vec<&str> = raw.splitn(3, ' ').collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("list")
+            .trim()
+            .to_ascii_lowercase();
+        if subcommand == "list" {
+            match rpc_list_custom_commands_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let commands = payload
+                        .get("commands")
+                        .and_then(|value| value.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    if commands.is_empty() {
+                        show_command_info_popup(app, raw, "No custom commands found.".to_string());
+                        return false;
+                    }
+                    let mut lines = vec!["**Custom Commands**".to_string(), String::new()];
+                    for command in commands {
+                        let name = command
+                            .get("name")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("(unknown)");
+                        let description = command
+                            .get("description")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
+                        let scope = command
+                            .get("scope")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("user");
+                        lines.push(format!("- `{name}` ({scope}) {description}"));
+                    }
+                    show_command_info_popup(app, raw, lines.join("\n"));
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to list custom commands: {error}"))
+                }
+            }
+            return false;
+        }
+        if subcommand == "show" {
+            let name = args.get(2).copied().unwrap_or("").trim();
+            if name.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /commands show <name>".to_string());
+                return false;
+            }
+            match rpc_get_custom_command_blocking(rpc_cmd_tx, name) {
+                Ok(payload) => {
+                    let template = payload
+                        .get("template")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    show_command_info_popup(
+                        app,
+                        raw,
+                        format!(
+                            "**Command** `{name}`\n\n```markdown\n{}\n```",
+                            truncate_block(template, 6000)
+                        ),
+                    );
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to load custom command: {error}"))
+                }
+            }
+            return false;
+        }
+        if subcommand == "run" {
+            let tail = args.get(2).copied().unwrap_or("").trim();
+            let mut parts = tail.splitn(2, ' ');
+            let name = parts.next().unwrap_or("").trim();
+            let args_text = parts.next().unwrap_or("").trim();
+            if name.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /commands run <name> [args]".to_string());
+                return false;
+            }
+            match rpc_run_custom_command_blocking(rpc_cmd_tx, name, args_text) {
+                Ok(payload) => {
+                    let content = payload
+                        .get("content")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    app.push_message(ChatMessage::assistant(content.to_string()));
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to run custom command: {error}"))
+                }
+            }
+            return false;
+        }
+        show_command_info_popup(
+            app,
+            raw,
+            "Usage: /commands list\n       /commands show <name>\n       /commands run <name> [args]".to_string(),
+        );
+        return false;
+    }
+
+    if lowered == "/inbox" {
+        match rpc_list_tasks_blocking(rpc_cmd_tx, true) {
+            Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "**Inbox**")),
+            Err(error) => show_command_info_popup(app, raw, format!("Failed to load inbox: {error}")),
+        }
+        return false;
+    }
+
+    if lowered == "/task"
+        || lowered.starts_with("/task ")
+        || lowered == "/tasks"
+        || lowered.starts_with("/tasks ")
+    {
+        let args: Vec<&str> = raw.splitn(3, ' ').collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("list")
+            .trim()
+            .to_ascii_lowercase();
+        if subcommand == "list" {
+            match rpc_list_tasks_blocking(rpc_cmd_tx, false) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "**Tasks**")),
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to list tasks: {error}")),
+            }
+            return false;
+        }
+        if subcommand == "open" || subcommand == "show" {
+            let task_id = args.get(2).copied().unwrap_or("").trim();
+            if task_id.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /task open <task-id>".to_string());
+                return false;
+            }
+            match rpc_get_task_blocking(rpc_cmd_tx, task_id) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to load task: {error}")),
+            }
+            return false;
+        }
+        if subcommand == "create" || subcommand == "add" {
+            let prompt = args.get(2).copied().unwrap_or("").trim();
+            if prompt.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /task create <prompt>".to_string());
+                return false;
+            }
+            let sandbox_preset = rpc_get_sandbox_status_blocking(rpc_cmd_tx)
+                .ok()
+                .and_then(|payload| {
+                    payload
+                        .get("sandboxPreset")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string())
+                })
+                .unwrap_or_else(|| "workspace-write".to_string());
+            let requires_approval = matches!(
+                sandbox_preset.as_str(),
+                "workspace-write" | "full-access"
+            );
+            let auto_start = !requires_approval;
+            match rpc_create_task_blocking(
+                rpc_cmd_tx,
+                &truncate_line(prompt, 80),
+                prompt,
+                &sandbox_preset,
+                "manual",
+                auto_start,
+                requires_approval,
+            ) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to create task: {error}")),
+            }
+            return false;
+        }
+        if subcommand == "approve" || subcommand == "done" {
+            let task_id = args.get(2).copied().unwrap_or("").trim();
+            if task_id.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /task approve <task-id>".to_string());
+                return false;
+            }
+            match rpc_approve_task_blocking(rpc_cmd_tx, task_id) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to approve task: {error}")),
+            }
+            return false;
+        }
+        if subcommand == "cancel" || subcommand == "drop" {
+            let task_id = args.get(2).copied().unwrap_or("").trim();
+            if task_id.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /task cancel <task-id>".to_string());
+                return false;
+            }
+            match rpc_cancel_task_blocking(rpc_cmd_tx, task_id) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to cancel task: {error}")),
+            }
+            return false;
+        }
+        show_command_info_popup(
+            app,
+            raw,
+            "Usage: /task list\n       /task create <prompt>\n       /task open <task-id>\n       /task approve <task-id>\n       /task cancel <task-id>".to_string(),
         );
         return false;
     }

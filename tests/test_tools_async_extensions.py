@@ -4,8 +4,49 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import poor_cli.web_search as web_search_module
-from poor_cli.exceptions import FileOperationError, ValidationError
+from poor_cli.exceptions import FileOperationError, ToolExecutionError, ValidationError
 from poor_cli.tools_async import ToolRegistryAsync
+
+
+class _FakeAioHttpStream:
+    def __init__(self, chunks):
+        self._chunks = list(chunks)
+
+    async def iter_chunked(self, _size):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeAioHttpResponse:
+    def __init__(self, *, status, url, headers=None, body_chunks=None):
+        self.status = status
+        self.url = url
+        self.headers = headers or {}
+        self.content = _FakeAioHttpStream(body_chunks or [b""])
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeClientSession:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.requests = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, url, allow_redirects=False):
+        self.requests.append({"url": url, "allow_redirects": allow_redirects})
+        if not self._responses:
+            raise AssertionError("No fake HTTP responses remaining")
+        return self._responses.pop(0)
 
 
 def test_github_tools_registered_only_when_gh_exists():
@@ -230,6 +271,24 @@ async def test_apply_patch_unified_check_only_returns_structured_outcome(tmp_pat
     assert result.metadata["paths"] == [str((tmp_path / "demo.txt").resolve())]
 
 
+@pytest.mark.asyncio
+async def test_apply_patch_unified_rejects_targets_outside_worktree(tmp_path):
+    registry = ToolRegistryAsync()
+    patch_text = """diff --git a/../../outside.txt b/../../outside.txt
+--- a/../../outside.txt
++++ b/../../outside.txt
+@@ -0,0 +1 @@
++oops
+"""
+
+    with pytest.raises(ValidationError, match="escapes working directory"):
+        await registry.apply_patch_unified(
+            patch=patch_text,
+            path=str(tmp_path),
+            check_only=True,
+        )
+
+
 def test_narrow_mutation_arguments_filters_patch_to_selected_file(tmp_path):
     registry = ToolRegistryAsync()
     patch_text = """diff --git a/demo.txt b/demo.txt
@@ -323,6 +382,30 @@ async def test_run_tests_returns_structured_payload():
 
 
 @pytest.mark.asyncio
+async def test_run_tests_reports_truncation_flags():
+    registry = ToolRegistryAsync()
+    with patch.object(
+        registry,
+        "_run_command_capture",
+        AsyncMock(
+            return_value={
+                "stdout": "x" * 20,
+                "stderr": "",
+                "exit_code": 0,
+                "timed_out": False,
+                "stdout_truncated": True,
+                "stderr_truncated": False,
+            }
+        ),
+    ):
+        payload = json.loads(await registry.run_tests(command="pytest -q"))
+
+    assert payload["ok"] is True
+    assert payload["stdout_truncated"] is True
+    assert payload["output_truncated"] is True
+
+
+@pytest.mark.asyncio
 async def test_git_status_diff_returns_risk_hints():
     registry = ToolRegistryAsync()
     sequence = [
@@ -353,6 +436,59 @@ async def test_git_status_diff_returns_risk_hints():
 
     assert payload["repository_root"] == "/repo"
     assert payload["risk_hints"]
+
+
+@pytest.mark.asyncio
+async def test_git_status_diff_raises_on_failed_git_subcommand():
+    registry = ToolRegistryAsync()
+    sequence = [
+        {
+            "stdout": "/repo\n",
+            "stderr": "",
+            "exit_code": 0,
+            "timed_out": False,
+            "stdout_truncated": False,
+            "stderr_truncated": False,
+        },
+        {
+            "stdout": "",
+            "stderr": "git status failed",
+            "exit_code": 1,
+            "timed_out": False,
+            "stdout_truncated": False,
+            "stderr_truncated": False,
+        },
+        {"stdout": "", "stderr": "", "exit_code": 0, "timed_out": False, "stdout_truncated": False, "stderr_truncated": False},
+        {"stdout": "", "stderr": "", "exit_code": 0, "timed_out": False, "stdout_truncated": False, "stderr_truncated": False},
+        {"stdout": "", "stderr": "", "exit_code": 0, "timed_out": False, "stdout_truncated": False, "stderr_truncated": False},
+        {"stdout": "", "stderr": "", "exit_code": 0, "timed_out": False, "stdout_truncated": False, "stderr_truncated": False},
+    ]
+
+    with patch.object(registry, "_run_command_capture", AsyncMock(side_effect=sequence)):
+        with pytest.raises(ToolExecutionError, match="git status failed"):
+            await registry.git_status_diff()
+
+
+@pytest.mark.asyncio
+async def test_format_and_lint_reports_truncation_flags(tmp_path):
+    registry = ToolRegistryAsync()
+    result_payload = {
+        "stdout": "formatted\n",
+        "stderr": "",
+        "exit_code": 0,
+        "timed_out": False,
+        "stdout_truncated": True,
+        "stderr_truncated": False,
+    }
+
+    with (
+        patch("poor_cli.tools_async.shutil.which", side_effect=lambda name: f"/usr/bin/{name}" if name in {"black", "ruff"} else None),
+        patch.object(registry, "_run_command_capture", AsyncMock(return_value=result_payload)),
+    ):
+        payload = json.loads(await registry.format_and_lint(path=str(tmp_path), fix=False))
+
+    assert payload["ok"] is True
+    assert payload["results"][0]["stdout_truncated"] is True
 
 
 @pytest.mark.asyncio
@@ -414,3 +550,55 @@ async def test_fetch_url_blocks_private_hosts():
     registry = ToolRegistryAsync()
     with pytest.raises(ValidationError):
         await registry.fetch_url("http://127.0.0.1:8080")
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_rejects_embedded_credentials():
+    registry = ToolRegistryAsync()
+    with pytest.raises(ValidationError, match="embedded credentials"):
+        await registry.fetch_url("https://user:pass@example.com/secret")
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_blocks_redirect_to_private_host():
+    registry = ToolRegistryAsync()
+    fake_session = _FakeClientSession(
+        [
+            _FakeAioHttpResponse(
+                status=302,
+                url="https://example.com/start",
+                headers={"Location": "http://127.0.0.1:8080/admin"},
+            )
+        ]
+    )
+
+    with patch("poor_cli.tools_async.aiohttp.ClientSession", return_value=fake_session):
+        with pytest.raises(ValidationError, match="local/private network"):
+            await registry.fetch_url("https://example.com/start")
+
+    assert fake_session.requests == [
+        {"url": "https://example.com/start", "allow_redirects": False}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_reports_truncated_content():
+    registry = ToolRegistryAsync()
+    oversized_body = [b"a" * 70000]
+    fake_session = _FakeClientSession(
+        [
+            _FakeAioHttpResponse(
+                status=200,
+                url="https://example.com/article",
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+                body_chunks=oversized_body,
+            )
+        ]
+    )
+
+    with patch("poor_cli.tools_async.aiohttp.ClientSession", return_value=fake_session):
+        payload = json.loads(await registry.fetch_url("https://example.com/article", max_chars=250))
+
+    assert payload["url"] == "https://example.com/article"
+    assert payload["content_truncated"] is True
+    assert len(payload["content_excerpt"]) == 250

@@ -513,6 +513,57 @@ class TestPoorCLICoreWithMocks:
         assert preview_payload["diff"].startswith("--- /tmp/demo.py")
 
     @pytest.mark.asyncio
+    async def test_permission_callback_error_denies_tool_in_event_loop(self, core_with_mocks):
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value="Tool executed")
+        core_with_mocks.permission_callback = AsyncMock(side_effect=RuntimeError("boom"))
+
+        response = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    id="call-1",
+                    name="read_file",
+                    arguments={"file_path": "/tmp/demo.py"},
+                )
+            ]
+        )
+
+        result = await core_with_mocks._handle_function_calls_events(
+            response,
+            iteration=1,
+            max_iterations=5,
+            request_id="req-1",
+        )
+
+        assert result == "formatted"
+        core_with_mocks.tool_registry.execute_tool_raw.assert_not_awaited()
+        tool_event = next(
+            event for event in core_with_mocks._pending_events if event.type == "tool_result"
+        )
+        assert tool_event.data["toolResult"] == "Operation denied: permission callback failed"
+
+    @pytest.mark.asyncio
+    async def test_permission_callback_error_denies_tool_in_legacy_handler(self, core_with_mocks):
+        core_with_mocks.provider.format_tool_results = MagicMock(return_value="formatted")
+        core_with_mocks.tool_registry.execute_tool_raw = AsyncMock(return_value="Tool executed")
+        core_with_mocks.permission_callback = AsyncMock(side_effect=RuntimeError("boom"))
+
+        response = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    id="call-1",
+                    name="read_file",
+                    arguments={"file_path": "/tmp/demo.py"},
+                )
+            ]
+        )
+
+        result = await core_with_mocks._handle_function_calls(response)
+
+        assert result == "formatted"
+        core_with_mocks.tool_registry.execute_tool_raw.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_permission_callback_can_scope_patch_execution_to_selected_paths(self, core_with_mocks):
         preview = ToolOutcome(
             ok=True,

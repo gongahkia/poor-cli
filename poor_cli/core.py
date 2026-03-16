@@ -1302,6 +1302,29 @@ class PoorCLICore:
                             continue
                 except Exception as e:
                     logger.error(f"Permission callback error: {e}")
+                    self._audit_permission_decision(
+                        tool_name,
+                        tool_args,
+                        allowed=False,
+                        source="permission-callback-error",
+                        preview=preview_payload,
+                    )
+                    result = "Operation denied: permission callback failed"
+                    self._pending_events.append(
+                        CoreEvent.tool_result(
+                            tool_name,
+                            result,
+                            fc.id,
+                            iteration,
+                            max_iterations,
+                            diff=(preview_payload or {}).get("diff", ""),
+                            paths=tool_paths,
+                            changed=False,
+                            message=str(e),
+                        )
+                    )
+                    tool_results.append({"id": fc.id, "name": tool_name, "result": result})
+                    continue
             elif auto is True:
                 self._audit_permission_decision(
                     tool_name,
@@ -1551,6 +1574,19 @@ class PoorCLICore:
                             continue
                 except Exception as e:
                     logger.error(f"Permission callback error: {e}")
+                    self._audit_permission_decision(
+                        tool_name,
+                        tool_args,
+                        allowed=False,
+                        source="permission-callback-error",
+                    )
+                    result = "Operation denied: permission callback failed"
+                    tool_results.append({
+                        "id": fc.id,
+                        "name": tool_name,
+                        "result": result,
+                    })
+                    continue
             
             # Execute the tool
             try:

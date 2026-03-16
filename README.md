@@ -50,8 +50,9 @@ Set at least one API key in `.env` (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROP
 ```console
 $ ./run.sh                   # checks .env, then launches Rust TUI
 $ ./run_tui.sh               # direct Rust TUI launcher
-$ python -m poor_cli         # Python wrapper -> Rust TUI if a Rust binary is available
+$ python3 -m poor_cli        # Python wrapper -> Rust TUI if a Rust binary is available
 $ poor-cli                   # requires repo launcher or `poor-cli-tui` already in PATH
+$ poor-cli help              # show the full Python/TUI surface overview without launching the TUI
 ```
 
 The Python package always provides `poor-cli-server`.
@@ -70,17 +71,29 @@ $ poor-cli --remote-url ws://127.0.0.1:8765/rpc --remote-room dev --remote-token
 
 ```console
 $ poor-cli-server --stdio
+$ poor-cli server --stdio
 $ poor-cli-server --host --bind 0.0.0.0 --port 8765 --room dev
 ```
 
-6. You can also run `poor-cli` with [Docker](https://www.docker.com/).
+6. The Python entrypoint also exposes headless and automation surfaces.
+
+```console
+$ poor-cli exec --prompt "Summarize this repository" --plan-only
+$ poor-cli task --help
+$ poor-cli automation --help
+$ poor-cli github-task --help
+$ poor-cli skills --help
+$ poor-cli commands --help
+```
+
+7. You can also run `poor-cli` with [Docker](https://www.docker.com/).
 
 ```console
 $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
 
-7. Finally, you can also use `poor-cli` directly through a [Neovim plugin](https://neovim.io/), where it provides inline ghost text completion and a chat panel similar to [Windsurf](https://windsurf.com/) or [Copilot](https://copilot.microsoft.com/). The easiest way to install this is through the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
+8. Finally, you can also use `poor-cli` directly through a [Neovim plugin](https://neovim.io/), where it provides inline ghost text completion and a chat panel similar to [Windsurf](https://windsurf.com/) or [Copilot](https://copilot.microsoft.com/). The easiest way to install this is through the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
 
 ```lua
 {
@@ -166,6 +179,7 @@ to `--remote-url` / `multiplayer.url`.
 Current install status:
 - `poor-cli-server` ships with the Python package.
 - Interactive `poor-cli` still requires either a repo checkout launcher or a separately installed `poor-cli-tui` binary.
+- `poor-cli help` shows the full Python CLI surface, including `exec`, `task`, `automation`, `skills`, `commands`, `github-task`, and the `server` alias.
 - In `auto-safe`, mutating tools are limited to trusted workspace roots and `bash` is restricted to allowlisted safe commands.
 
 ## Model support
@@ -185,148 +199,118 @@ Current install status:
 
 ## Available Commands
 
-Type `@path/to/file` in any prompt to attach local file context.  
-Use quoted refs for spaces, e.g. `@"docs/My File.md"` or `@'docs/My File.md'`.
-Run `!<shell command> [| optional question]` to execute shell output and optionally ask the model about it.
+Type `@path/to/file` in any message to attach file context.  
+Use quoted refs for spaces: `@"docs/My File.md"` or `@'docs/My File.md'`.  
+Run `!<command> [| optional question]` to execute local shell output and optionally ask the model about it.  
 
-**Session Management:**
-- `/help` - Show help message
-- `/onboarding` - Guided walkthrough (`start|next|prev|<step>|show|exit`)
-- `/quit`, `/exit` - Exit and print session summary
-- `/clear` - Clear current conversation
-- `/clear-output` - Clear visible output
-- `/history [N]` - Show recent messages (default: 10)
+**Core Workflow:**
+- `/help` - Show all available commands
+- `/onboarding` - Start guided CLI onboarding
+- `/plan` - Generate a plan before executing
+- `/history` - Show recent messages
 - `/sessions` - List recent sessions
-- `/new-session` - Start fresh session
-- `/status` - Show quick session + provider status
-- `/export [json|md|txt]` - Export active session history
+- `/new-session` - Start a fresh session
+- `/queue` - Manage prompt queue (add/list/clear/drop)
+- `/compact` - Manage context (compact/compress/handoff)
+- `/search` - Search transcript, tools, and diffs
+- `/status` - Show session status summary
+- `/export` - Export conversation history
 - `/retry` - Retry last request
-- `/search <term>` - Search session messages
-- `/edit-last` - Load previous message into input
+- `/edit-last` - Edit and resend last prompt
 - `/copy` - Copy last assistant response
-- `/cost` - Show token/cost estimate
+- `/quit` - Exit the TUI
+- `/exit` - Exit the TUI (alias)
+- `/clear` - Clear conversation history
+- `/clear-output` - Clear screen output only
 
-**Checkpoints & Undo:**
-- `/checkpoints [N]` - List checkpoints
+**Review & Safety:**
+- `/review` - Review code or staged diff
+- `/test` - Generate tests for a file
+- `/permission-mode` - Show permission mode
+- `/sandbox` - Show or set sandbox preset
+- `/instructions` - Inspect the active instruction stack
+- `/memory` - Show or update repo-local memory
+- `/policy` - Inspect repo-local hooks and audit status
+- `/context` - Open backend context inspector
+- `/timeline` - Open agent timeline and diffs
+- `/explain-diff` - Explain behavior and risk in current diff
+- `/fix-failures` - Analyze latest test/lint failure output
+- `/checkpoints` - List available checkpoints
 - `/checkpoint` - Create manual checkpoint
 - `/save` - Quick checkpoint alias
-- `/rewind [id|last]` - Restore checkpoint by ID or latest
+- `/rewind` - Restore checkpoint by id or latest
 - `/restore` - Restore latest checkpoint
-- `/undo` - Restore latest checkpoint (alias)
-- `/diff <file1> <file2>` - Compare two files
+- `/diff` - Compare two files
+- `/undo` - Undo last file change (checkpoint)
+- `/plan-mode` - Toggle plan-first execution guidance
 
-**Git Integration:**
-- `/commit` - Generate commit message from staged diff
-- `/commit --apply <message>` - Commit with explicit message
-- `/commit --apply-last` - Commit with latest assistant response
-- `/review [file]` - Review a file or staged diff
-- `/test <file>` - Generate tests for a file
-- `/explain-diff [file]` - Analyze behavior/risk from diff
-- `/fix-failures [command]` - Analyze latest failure output (or run command first)
-
-**Provider Management:**
-- `/provider` - Show current provider info
-- `/providers` - List all available providers and models
-- `/switch` - Switch AI provider
-- `/api-key` - Show or set provider API keys (`/api-key <provider> <key>`)
-- `/model-info` - Show provider model notes
-- `/permission-mode [prompt|auto-safe|danger-full-access]` - Show or set permission mode
-
-**Configuration & Profiles:**
-- `/config` - Show current configuration
-- `/settings` - List editable config keys
-- `/toggle <key>` - Toggle boolean config value
-- `/set <key> <value>` - Set config value
-- `/theme [dark|light]` - Show or set UI/code-block theme
-- `/broke` - Set poor mode (terse output)
-- `/my-treat` - Set rich mode (comprehensive output)
+**Providers & Config:**
+- `/provider` - Show active provider
+- `/switch` - Switch provider/model
+- `/providers` - List providers and models
+- `/config` - Show active configuration
+- `/model-info` - Show model capabilities
+- `/profile` - Set execution profile (speed|safe|deep-review)
+- `/broke` - Set poor mode (terse responses)
+- `/my-treat` - Set rich mode (comprehensive responses)
+- `/settings` - List editable config settings
+- `/api-key` - Set or inspect provider API keys
 - `/verbose` - Toggle verbose logging
-- `/plan-mode` - Toggle plan-first execution guidance in the shared guarded agent loop
-- `/profile [speed|safe|deep-review]` - Execution profile control
+- `/toggle` - Toggle boolean config value
+- `/set` - Set config key to a value
+- `/theme` - Show or set UI theme (dark/light)
+- `/tools` - List backend tools
+- `/mcp` - Inspect or control MCP servers and tools
 
-**Prompt Library, Context & Planning:**
-- `/add <path>` - Pin file/directory as persistent context
-- `/drop <path>` - Unpin context file
+**Context & Reuse:**
 - `/files` - List pinned context files
-- `/clear-files` - Clear pinned context files
-- `/save-prompt <name> <text>` - Save reusable prompt text immediately
-- `/save-prompt <name>` - Capture next input as reusable prompt text
-- `/use <name>` - Load and run saved prompt
+- `/add` - Pin file/directory for context
+- `/drop` - Unpin context file
+- `/clear-files` - Clear all pinned context files
+- `/focus` - Manage persistent coding focus state
+- `/resume` - Resume with branch/checkpoint/session summary
+- `/workspace-map` - Summarize repository layout and hotspots
+- `/bootstrap` - Detect project type and suggest quickstart commands
+- `/context-budget` - Rank context files against a token budget
+- `/image` - Queue image for next message
+- `/save-prompt` - Save reusable prompt
+- `/use` - Load and run saved prompt
 - `/prompts` - List saved prompts
-- `/image <path>` - Queue image for next request
-- `/plan <task>` - Generate an explicit step plan for the task
 
-**Automation, QA & Workspace Ops:**
-- `/doctor` - Run environment/provider/service diagnostics
-- `/bootstrap [path]` - Detect project type and suggest quickstart
-- `/resume` - Snapshot of session/branch/checkpoint state
-- `/focus start|status|done` - Persistent focus goal workflow
-- `/tasks [list|add|done|drop|clear]` - Lightweight local task board
-- `/workspace-map [path]` - File/entrypoint map of workspace
-- `/context-budget [tokens]` - Rank context files by token budget
-- `/autopilot start|stop|status [cap]` - Bounded autonomous loop control
-- `/qa start|stop|status [dir] [command]` - Background incremental QA watch
-- `/watch <dir>` - Watch directory and auto-analyze changes
+**Automation & Tasks:**
+- `/autopilot` - Toggle bounded autonomous execution mode
+- `/qa` - Run background QA watch for lint/tests
+- `/task` - Manage durable background tasks
+- `/inbox` - Show pending and actionable tasks
+- `/tasks` - Legacy alias for /task
+- `/skills` - Inspect or run repo and user skills
+- `/commands` - Inspect or run repo and user commands
+- `/watch` - Watch directory for changes
 - `/unwatch` - Stop watch mode
 
-**Service & Shell Utilities:**
-- `/service status [name]` - Show managed service status
-- `/service start <name> [command...]` - Start managed service
-- `/service stop <name>` - Stop managed service
-- `/service logs <name> [lines]` - Tail managed service logs
-- `/ollama start|stop|status` - Ollama lifecycle shortcuts
-- `/ollama logs [lines]` - Tail Ollama logs
-- `/ollama pull <model>` - Pull local Ollama model
-- `/ollama list-models` - List locally installed Ollama models
-- `/ollama ps` - Show running Ollama model sessions
-- `/run <command>` - Run shell command via backend
-- `/read <file>` - Read file via backend
-- `/pwd` - Print current working directory
-- `/ls [path]` - List directory contents
-- `/tools` - List backend tool declarations
+**Services & Shell:**
+- `/doctor` - Run environment and service health checks
+- `/service` - Manage local background services
+- `/ollama` - Manage Ollama service and models
+- `/run` - Run shell command via backend
+- `/read` - Read file through backend
+- `/pwd` - Show current working directory
+- `/ls` - List files in directory
 
-**Multiplayer Commands:**
-- `/pair` - Start a host pair session or show current pair state
-- `/pair <invite-code>` - Join a pair session from a shareable invite code
-- `/pass`, `/pass @name` - Hand driver role to the next or named eligible participant
-- `/suggest <text>` - Send a suggestion visible to the active driver
-- `/leave` - Leave the active pair session or stop the hosted pair session
-- `/host-server [room]` - Start host (or room-scoped host context)
-- `/host-server status|stop|share [viewer|prompter] [room]` - Host lifecycle/share payloads
-- `/host-server members [room]` - List host-connected members
-- `/host-server kick <connection-id> [room]` - Remove host member
-- `/host-server role <id> <viewer|prompter> [room]` - Set role (`promote`/`demote` aliases)
-- `/host-server lobby <on|off> [room]` - Toggle lobby approvals
-- `/host-server approve|deny <id> [room]` - Resolve pending lobby requests
-- `/host-server rotate-token <viewer|prompter> [room] [expiry-seconds]` - Rotate invite tokens
-- `/host-server revoke <token|connection-id> [room]` - Revoke invite or member
-- `/host-server handoff <id> [room]` - Transfer prompter role
-- `/host-server preset <pairing|mob|review> [room]` - Apply room collaboration preset
-- `/host-server activity [room] [limit] [event-type]` - Host room activity log
-- `/join-server` - Interactive join wizard
-- `/join-server <invite-code|ws-url room token>` - Direct join
-- `/kick <connection-id> [room]` - Kick room member
-- `/who [room]`, `/members [room]` - List room members
-- Each TUI run writes session logs under `.poor-cli/logs/` (TUI + backend files)
+**Git & Workspace:**
+- `/commit` - Create commit message from staged diff
 
-**Neovim Commands:**
-- `:PoorCliStart`: Start the AI server
-- `:PoorCliStop`: Stop the AI server
-- `:PoorCliStatus`: Show provider, guarded-flow support, trusted-workspace status, and room status when multiplayer is enabled
-- `:PoorCliChat`: Toggle chat panel
-- `:PoorCliSend [message]`: Send message to chat
-- `:PoorCliClear`: Clear chat history
-- `:PoorCliDiagnostics`: Toggle assistant diagnostics integration
-- `:PoorCliCheckpoints`: Browse + restore checkpoints (Telescope)
-- `:PoorCliComplete`: Trigger inline completion
-- `:PoorCliAccept`: Accept current completion
-- `:PoorCliDismiss`: Dismiss current completion
-- `:PoorCliSwitchProvider [provider]`: Switch provider
-- `:'<,'>PoorCliExplain`: Explain selected code
-- `:'<,'>PoorCliRefactor`: Refactor selected code
-- `:PoorCliTest`: Generate tests for current function
-- `:PoorCliDoc`: Generate docs for current function
-- `:checkhealth poor-cli`: Verify your Neovim setup
+**Collaboration:**
+- `/collab` - Start, join, and manage collaboration sessions
+- `/pair` - Legacy pair alias for collaboration sessions
+- `/pass` - Hand driver role to the next collaborator
+- `/suggest` - Send suggestion to the active driver
+- `/leave` - Disconnect from collaboration session
+- `/host-server` - Legacy advanced host controls for collaboration
+- `/join-server` - Legacy join alias for invite/manual room entry
+- `/kick` - Remove a room member from collaboration
+- `/who` - Show room members and roles
+- `/members` - Alias for /who
 
 ## Available Tools
 

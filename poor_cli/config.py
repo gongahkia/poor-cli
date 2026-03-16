@@ -211,6 +211,31 @@ class ToolConfig:
 
 
 @dataclass
+class SandboxConfig:
+    """Capability-based sandbox defaults."""
+
+    default_preset: str = "workspace-write"
+    persistent_allow_capabilities: list = field(default_factory=list)
+
+
+@dataclass
+class TasksConfig:
+    """Background task runner settings."""
+
+    enabled: bool = True
+    auto_start_read_only: bool = True
+    auto_start_workspace_write: bool = False
+    inbox_limit: int = 20
+
+
+@dataclass
+class SkillsConfig:
+    """Skill discovery settings."""
+
+    search_paths: list = field(default_factory=list)
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -218,6 +243,9 @@ class Config:
     ui: UIConfig = field(default_factory=UIConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
+    sandbox: SandboxConfig = field(default_factory=SandboxConfig)
+    tasks: TasksConfig = field(default_factory=TasksConfig)
+    skills: SkillsConfig = field(default_factory=SkillsConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
@@ -234,6 +262,9 @@ class Config:
             "ui": asdict(self.ui),
             "security": self.security.to_dict(),
             "tools": asdict(self.tools),
+            "sandbox": asdict(self.sandbox),
+            "tasks": asdict(self.tasks),
+            "skills": asdict(self.skills),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
             "agentic": asdict(self.agentic),
@@ -250,6 +281,9 @@ class Config:
             ui=UIConfig(**data.get("ui", {})),
             security=SecurityConfig.from_dict(data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
+            sandbox=SandboxConfig(**data.get("sandbox", {})),
+            tasks=TasksConfig(**data.get("tasks", {})),
+            skills=SkillsConfig(**data.get("skills", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
             agentic=AgenticConfig(**data.get("agentic", {})),

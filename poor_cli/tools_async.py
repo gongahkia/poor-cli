@@ -20,7 +20,7 @@ import aiofiles
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from collections import Counter
 
 try:
@@ -57,9 +57,57 @@ from .exceptions import (
     PathTraversalError,
 )
 from .command_validator import get_command_validator
+from .sandbox import ToolCapability, declaration_capabilities, tool_capability_metadata
 
 # Setup logger
 logger = setup_logger(__name__)
+
+DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
+    "read_file": [ToolCapability.FILESYSTEM_READ.value],
+    "write_file": [ToolCapability.FILESYSTEM_WRITE.value],
+    "edit_file": [ToolCapability.FILESYSTEM_WRITE.value],
+    "glob_files": [ToolCapability.FILESYSTEM_READ.value],
+    "grep_files": [ToolCapability.FILESYSTEM_READ.value],
+    "bash": [ToolCapability.PROCESS_EXECUTE.value],
+    "list_directory": [ToolCapability.FILESYSTEM_READ.value],
+    "copy_file": [ToolCapability.FILESYSTEM_WRITE.value],
+    "move_file": [ToolCapability.FILESYSTEM_WRITE.value],
+    "delete_file": [ToolCapability.FILESYSTEM_WRITE.value],
+    "diff_files": [ToolCapability.FILESYSTEM_READ.value],
+    "git_status": [ToolCapability.GIT_READ.value],
+    "git_diff": [ToolCapability.GIT_READ.value],
+    "create_directory": [ToolCapability.FILESYSTEM_WRITE.value],
+    "run_tests": [ToolCapability.PROCESS_EXECUTE.value],
+    "git_status_diff": [ToolCapability.GIT_READ.value],
+    "apply_patch_unified": [ToolCapability.FILESYSTEM_WRITE.value],
+    "format_and_lint": [
+        ToolCapability.FILESYSTEM_WRITE.value,
+        ToolCapability.PROCESS_EXECUTE.value,
+    ],
+    "dependency_inspect": [ToolCapability.PROCESS_EXECUTE.value],
+    "fetch_url": [ToolCapability.NETWORK_ACCESS.value],
+    "json_yaml_edit": [ToolCapability.FILESYSTEM_WRITE.value],
+    "process_logs": [ToolCapability.FILESYSTEM_READ.value],
+    "gh_pr_list": [ToolCapability.NETWORK_ACCESS.value],
+    "gh_pr_view": [ToolCapability.NETWORK_ACCESS.value],
+    "gh_issue_list": [ToolCapability.NETWORK_ACCESS.value],
+    "gh_issue_view": [ToolCapability.NETWORK_ACCESS.value],
+    "gh_pr_create": [ToolCapability.NETWORK_ACCESS.value],
+    "gh_pr_comment": [ToolCapability.NETWORK_ACCESS.value],
+    "web_search": [ToolCapability.NETWORK_ACCESS.value],
+}
+
+DEFAULT_MUTATING_TOOLS = {
+    "write_file",
+    "edit_file",
+    "copy_file",
+    "move_file",
+    "delete_file",
+    "create_directory",
+    "apply_patch_unified",
+    "format_and_lint",
+    "json_yaml_edit",
+}
 
 
 @dataclass
@@ -730,9 +778,31 @@ class ToolRegistryAsync:
             }
         }
 
+        for name, tool in self.tools.items():
+            capabilities = DEFAULT_TOOL_CAPABILITIES.get(name, [])
+            tool["capabilities"] = list(capabilities)
+            tool["declaration"].update(
+                tool_capability_metadata(
+                    capabilities,
+                    mutating=name in DEFAULT_MUTATING_TOOLS,
+                )
+            )
+
     def get_tool_declarations(self) -> List[Dict[str, Any]]:
         """Get tool declarations for API"""
         return [tool["declaration"] for tool in self.tools.values()]
+
+    def get_tool_capabilities(self, tool_name: str) -> List[str]:
+        tool = self.tools.get(tool_name)
+        if not tool:
+            return []
+        capabilities = tool.get("capabilities")
+        if isinstance(capabilities, list):
+            return [str(capability) for capability in capabilities if str(capability).strip()]
+        declaration = tool.get("declaration")
+        if isinstance(declaration, dict):
+            return declaration_capabilities(declaration)
+        return []
 
     def register_external_tool(
         self,
@@ -741,9 +811,13 @@ class ToolRegistryAsync:
         declaration: Dict[str, Any]
     ) -> None:
         """Register an externally provided async tool function."""
+        capabilities = declaration_capabilities(declaration)
+        if not capabilities:
+            capabilities = [ToolCapability.PROCESS_EXECUTE.value]
         self.tools[name] = {
             "function": function,
             "declaration": declaration,
+            "capabilities": capabilities,
         }
 
     async def execute_tool_raw(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
@@ -1170,9 +1244,18 @@ class ToolRegistryAsync:
         raise ValidationError(f"preview_mutation does not support tool `{tool_name}`")
 
     @staticmethod
+    def _path_is_within_root(candidate: Path, root: Path) -> bool:
+        try:
+            candidate.relative_to(root)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
     def _extract_patch_targets(patch: str, work_dir: Path) -> List[str]:
         targets: List[str] = []
         seen: set[str] = set()
+        resolved_root = work_dir.resolve()
         for line in patch.splitlines():
             candidate: Optional[str] = None
             if line.startswith("diff --git "):
@@ -1188,7 +1271,12 @@ class ToolRegistryAsync:
             if candidate.startswith("a/") or candidate.startswith("b/"):
                 candidate = candidate[2:]
 
-            resolved = str((work_dir / candidate).resolve())
+            resolved_path = (resolved_root / candidate).resolve()
+            if not ToolRegistryAsync._path_is_within_root(resolved_path, resolved_root):
+                raise ValidationError(
+                    f"Patch target escapes working directory: {candidate}"
+                )
+            resolved = str(resolved_path)
             if resolved not in seen:
                 seen.add(resolved)
                 targets.append(resolved)
@@ -1802,6 +1890,18 @@ class ToolRegistryAsync:
             "stderr_truncated": stderr_truncated,
         }
 
+    @staticmethod
+    def _raise_for_capture_failure(tool_name: str, label: str, result: Dict[str, Any]) -> None:
+        if result.get("timed_out"):
+            raise ToolExecutionError(tool_name, f"{label} timed out")
+        if int(result.get("exit_code", 0)) != 0:
+            details = (
+                str(result.get("stderr", "") or "").strip()
+                or str(result.get("stdout", "") or "").strip()
+                or f"{label} failed"
+            )
+            raise ToolExecutionError(tool_name, details)
+
     def _infer_test_command(self, work_dir: Path) -> Optional[List[str]]:
         """Infer a suitable default test command for a project directory."""
         pyproject = work_dir / "pyproject.toml"
@@ -1937,6 +2037,42 @@ class ToolRegistryAsync:
             ):
                 return False
         return True
+
+    def _validate_fetch_target(self, url: str) -> None:
+        """Validate an outbound fetch target before making a network request."""
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValidationError("Only http and https URLs are allowed")
+        if not parsed.hostname:
+            raise ValidationError("URL must include a valid hostname")
+        if parsed.username or parsed.password:
+            raise ValidationError("URLs with embedded credentials are not allowed")
+        if not self._is_host_public(parsed.hostname):
+            raise ValidationError("Refusing to fetch local/private network addresses")
+
+    async def _read_http_body_with_limit(
+        self,
+        response: Any,
+        max_bytes: int,
+    ) -> Tuple[str, bool]:
+        """Read an HTTP response body up to a byte limit."""
+        chunks: List[bytes] = []
+        captured = 0
+        truncated = False
+
+        async for chunk in response.content.iter_chunked(4096):
+            if captured < max_bytes:
+                remaining = max_bytes - captured
+                if len(chunk) > remaining:
+                    truncated = True
+                to_store = chunk[:remaining]
+                chunks.append(to_store)
+                captured += len(to_store)
+            else:
+                truncated = True
+                break
+
+        return b"".join(chunks).decode("utf-8", errors="replace"), truncated
 
     async def bash(self, command: str, timeout: int = 60) -> str:
         """Execute bash command asynchronously
@@ -2384,6 +2520,11 @@ class ToolRegistryAsync:
                 "duration_seconds": duration,
                 "timed_out": result["timed_out"],
                 "exit_code": result["exit_code"],
+                "stdout_truncated": result["stdout_truncated"],
+                "stderr_truncated": result["stderr_truncated"],
+                "output_truncated": bool(
+                    result["stdout_truncated"] or result["stderr_truncated"]
+                ),
                 "failing_locations": self._extract_failure_locations(combined_output),
                 "output_excerpt": combined_output[:6000],
             }
@@ -2407,11 +2548,7 @@ class ToolRegistryAsync:
                 timeout=15,
                 cwd=str(work_dir),
             )
-            if root_check["exit_code"] != 0:
-                raise ToolExecutionError(
-                    "git_status_diff",
-                    root_check["stderr"].strip() or "Not a git repository"
-                )
+            self._raise_for_capture_failure("git_status_diff", "Git root check", root_check)
             repo_root = root_check["stdout"].strip()
 
             status_args = ["git", "status", "--short"]
@@ -2441,6 +2578,15 @@ class ToolRegistryAsync:
                 ["git", "diff", "--cached", "--shortstat"],
                 timeout=20,
                 cwd=str(work_dir),
+            )
+            self._raise_for_capture_failure("git_status_diff", "git status", status_result)
+            self._raise_for_capture_failure("git_status_diff", "git diff --stat", unstaged_stat)
+            self._raise_for_capture_failure("git_status_diff", "git diff --cached --stat", staged_stat)
+            self._raise_for_capture_failure("git_status_diff", "git diff --shortstat", shortstat_unstaged)
+            self._raise_for_capture_failure(
+                "git_status_diff",
+                "git diff --cached --shortstat",
+                shortstat_staged,
             )
 
             status_lines = [
@@ -2636,6 +2782,8 @@ class ToolRegistryAsync:
                         "ok": ok,
                         "exit_code": command_result["exit_code"],
                         "timed_out": command_result["timed_out"],
+                        "stdout_truncated": command_result["stdout_truncated"],
+                        "stderr_truncated": command_result["stderr_truncated"],
                         "stdout_excerpt": command_result["stdout"][:3000],
                         "stderr_excerpt": command_result["stderr"][:3000],
                     }
@@ -2743,55 +2891,73 @@ class ToolRegistryAsync:
 
     async def fetch_url(self, url: str, timeout: int = 20, max_chars: int = 12000) -> str:
         """Fetch and summarize content from an HTTP(S) URL."""
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"}:
-            raise ValidationError("Only http and https URLs are allowed")
-        if not parsed.hostname:
-            raise ValidationError("URL must include a valid hostname")
-        if not self._is_host_public(parsed.hostname):
-            raise ValidationError("Refusing to fetch local/private network addresses")
+        self._validate_fetch_target(url)
         if not AIOHTTP_AVAILABLE:
             raise ToolExecutionError("fetch_url", "fetch_url requires aiohttp")
 
         timeout = max(timeout, 1)
         max_chars = max(max_chars, 200)
+        max_redirects = 5
+        max_body_bytes = min(max(max_chars * 8, 65536), self.MAX_CAPTURED_OUTPUT_BYTES)
 
         try:
             client_timeout = aiohttp.ClientTimeout(total=timeout)
             async with aiohttp.ClientSession(timeout=client_timeout) as session:
-                async with session.get(url, allow_redirects=True) as response:
-                    body = await response.text(errors="replace")
-                    if response.status >= 400:
-                        excerpt = body[:500].replace("\n", " ")
-                        raise ToolExecutionError(
-                            "fetch_url",
-                            f"HTTP {response.status} fetching {url}: {excerpt}"
+                current_url = url
+                for _ in range(max_redirects + 1):
+                    self._validate_fetch_target(current_url)
+                    async with session.get(current_url, allow_redirects=False) as response:
+                        if response.status in {301, 302, 303, 307, 308}:
+                            location = str(response.headers.get("Location", "")).strip()
+                            if not location:
+                                raise ToolExecutionError(
+                                    "fetch_url",
+                                    f"Redirect response from {current_url} missing Location header",
+                                )
+                            current_url = urljoin(str(response.url), location)
+                            continue
+
+                        body, body_truncated = await self._read_http_body_with_limit(
+                            response,
+                            max_body_bytes,
                         )
+                        if response.status >= 400:
+                            excerpt = body[:500].replace("\n", " ")
+                            raise ToolExecutionError(
+                                "fetch_url",
+                                f"HTTP {response.status} fetching {current_url}: {excerpt}",
+                            )
 
-                    content_type = response.headers.get("Content-Type", "")
-                    lowered_ct = content_type.lower()
-                    title = ""
-                    excerpt = body
+                        content_type = response.headers.get("Content-Type", "")
+                        lowered_ct = content_type.lower()
+                        title = ""
+                        excerpt = body
 
-                    if "html" in lowered_ct:
-                        title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", body)
-                        if title_match:
-                            title = re.sub(r"\s+", " ", title_match.group(1)).strip()
-                        excerpt = self._strip_html(body)
-                    elif "json" in lowered_ct:
-                        try:
-                            excerpt = json.dumps(json.loads(body), indent=2)
-                        except Exception:
-                            excerpt = body
+                        if "html" in lowered_ct:
+                            title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", body)
+                            if title_match:
+                                title = re.sub(r"\s+", " ", title_match.group(1)).strip()
+                            excerpt = self._strip_html(body)
+                        elif "json" in lowered_ct:
+                            try:
+                                excerpt = json.dumps(json.loads(body), indent=2)
+                            except Exception:
+                                excerpt = body
 
-                    payload = {
-                        "url": str(response.url),
-                        "status": response.status,
-                        "content_type": content_type,
-                        "title": title,
-                        "content_excerpt": excerpt[:max_chars],
-                    }
-                    return json.dumps(payload, indent=2)
+                        payload = {
+                            "url": str(response.url),
+                            "status": response.status,
+                            "content_type": content_type,
+                            "title": title,
+                            "content_excerpt": excerpt[:max_chars],
+                            "content_truncated": body_truncated or len(excerpt) > max_chars,
+                        }
+                        return json.dumps(payload, indent=2)
+
+                raise ToolExecutionError(
+                    "fetch_url",
+                    f"Too many redirects fetching URL: {url}",
+                )
         except asyncio.TimeoutError:
             raise ToolExecutionError("fetch_url", f"Timed out fetching URL after {timeout}s")
         except aiohttp.ClientError as e:

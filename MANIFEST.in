@@ -12,6 +12,7 @@ include .env.example
 
 # Include asset files
 recursive-include asset *.png *.jpg *.jpeg
+recursive-include poor_cli *.json
 
 # Include test files
 recursive-include tests *.py

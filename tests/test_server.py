@@ -4,6 +4,7 @@ Tests for the JSON-RPC server.
 
 import json
 import os
+import subprocess
 import sys
 import pytest
 from collections import deque
@@ -11,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from poor_cli.automation_manager import AutomationManager
 from poor_cli.config import Config
 from poor_cli.exceptions import PermissionDeniedError
 from poor_cli.server import (
@@ -21,7 +23,35 @@ from poor_cli.server import (
     _sanitize_exception_message,
     main,
 )
+from poor_cli.task_manager import TaskManager
 from poor_cli.tools_async import ToolOutcome
+
+
+def _init_git_repo(repo_root: Path) -> None:
+    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Poor CLI Tests"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "tests@example.com"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    (repo_root / "README.md").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo_root, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 class _FragmentedStdin:
@@ -361,6 +391,211 @@ class TestPoorCLIServer:
 
         assert "trusted workspace" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_enforce_server_tool_permission_denies_dict_result(self, server):
+        async def _deny_with_payload(tool_name, tool_args):
+            del tool_name, tool_args
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+
+        server.core.permission_callback = _deny_with_payload
+
+        with pytest.raises(PermissionDeniedError):
+            await server._enforce_server_tool_permission("bash", {"command": "pwd"})
+
+    @pytest.mark.asyncio
+    async def test_dispatch_and_respond_returns_internal_error_when_dispatch_raises(self, server):
+        server.write_message_stdio = AsyncMock()
+        message = JsonRpcMessage(id=7, method="poor-cli/chat", params={})
+
+        with patch.object(server, "dispatch", AsyncMock(side_effect=RuntimeError("boom"))):
+            await server._dispatch_and_respond(message)
+
+        server.write_message_stdio.assert_awaited_once()
+        response = server.write_message_stdio.await_args.args[0]
+        assert response.id == 7
+        assert response.error is not None
+        assert response.error["code"] == JsonRpcError.INTERNAL_ERROR
+        assert response.error["data"]["error_code"] == "INTERNAL_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_handle_create_task_supports_execution_metadata_and_auto_approve(
+        self,
+        server,
+        tmp_path,
+        monkeypatch,
+    ):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        _init_git_repo(repo_root)
+        monkeypatch.chdir(repo_root)
+
+        server.initialized = True
+        server.core.config = Config()
+
+        result = await server.handle_create_task(
+            {
+                "title": "Review repo",
+                "prompt": "Review the repository",
+                "sandboxPreset": "workspace-write",
+                "autoStart": False,
+                "autoApprove": True,
+                "execution": {
+                    "provider": "openai",
+                    "model": "gpt-5",
+                    "configPath": ".poor-cli/task-config.yaml",
+                    "contextFiles": ["README.md"],
+                    "pinnedContextFiles": ["docs/PLAN.md"],
+                    "contextBudgetTokens": 4096,
+                },
+            }
+        )
+
+        task = result["task"]
+        assert task["status"] == "queued"
+        assert task["approvedAt"] is not None
+        assert task["metadata"]["execution"] == {
+            "provider": "openai",
+            "model": "gpt-5",
+            "configPath": ".poor-cli/task-config.yaml",
+            "contextFiles": ["README.md"],
+            "pinnedContextFiles": ["docs/PLAN.md"],
+            "contextBudgetTokens": 4096,
+        }
+
+    @pytest.mark.asyncio
+    async def test_handle_start_task_starts_queued_task(self, server, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        _init_git_repo(repo_root)
+
+        manager = TaskManager(repo_root)
+        task = manager.create_task(
+            title="Review repo",
+            prompt="Review the repository",
+            sandbox_preset="review-only",
+            source="manual",
+        )
+
+        running = manager.mark_running(task.task_id, worker_pid=321)
+        server.initialized = True
+        server._task_manager = manager
+
+        with patch.object(manager, "start_task_process", return_value=running) as start_mock:
+            result = await server.handle_start_task({"taskId": task.task_id})
+
+        start_mock.assert_called_once_with(task.task_id)
+        assert result["task"]["status"] == "running"
+        assert result["task"]["workerPid"] == 321
+
+    @pytest.mark.asyncio
+    async def test_handle_approve_task_respects_auto_start_flag(self, server, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        _init_git_repo(repo_root)
+
+        manager = TaskManager(repo_root)
+        task = manager.create_task(
+            title="Apply patch",
+            prompt="Apply the requested patch",
+            sandbox_preset="workspace-write",
+            source="manual",
+            requires_approval=True,
+        )
+
+        server.initialized = True
+        server._task_manager = manager
+
+        result = await server.handle_approve_task({"taskId": task.task_id, "autoStart": False})
+
+        assert result["task"]["status"] == "queued"
+        assert result["task"]["approvedAt"] is not None
+
+    @pytest.mark.asyncio
+    async def test_handle_create_automation_supports_execution_metadata(
+        self,
+        server,
+        tmp_path,
+        monkeypatch,
+    ):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        _init_git_repo(repo_root)
+        monkeypatch.chdir(repo_root)
+
+        server.initialized = True
+
+        created = await server.handle_create_automation(
+            {
+                "name": "Daily QA",
+                "prompt": "Run the QA checklist",
+                "schedule": {"kind": "daily", "hour": 9, "minute": 30},
+                "sandboxPreset": "workspace-write",
+                "autoApprove": True,
+                "execution": {
+                    "provider": "openai",
+                    "model": "gpt-5",
+                    "contextFiles": ["README.md"],
+                },
+            }
+        )
+        automation_id = created["automation"]["automationId"]
+        listed = await server.handle_list_automations({})
+        fetched = await server.handle_get_automation({"automationId": automation_id})
+
+        assert created["automation"]["requiresApproval"] is False
+        assert created["automation"]["metadata"]["autoApprove"] is True
+        assert created["automation"]["metadata"]["execution"] == {
+            "provider": "openai",
+            "model": "gpt-5",
+            "contextFiles": ["README.md"],
+        }
+        assert any(item["automationId"] == automation_id for item in listed["automations"])
+        assert fetched["automation"]["automationId"] == automation_id
+
+    @pytest.mark.asyncio
+    async def test_handle_set_automation_enabled_and_run_handlers(self, server, tmp_path):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        _init_git_repo(repo_root)
+
+        task_manager = TaskManager(repo_root)
+        automation_manager = AutomationManager(repo_root, task_manager=task_manager)
+        automation = automation_manager.create_automation(
+            name="Repo review",
+            prompt="Inspect the repository",
+            schedule={"kind": "interval", "minutes": 60},
+            sandbox_preset="review-only",
+            requires_approval=True,
+        )
+
+        server.initialized = True
+        server._task_manager = task_manager
+        server._automation_manager = automation_manager
+
+        disabled = await server.handle_set_automation_enabled(
+            {"automationId": automation.automation_id, "enabled": False}
+        )
+        enabled = await server.handle_set_automation_enabled(
+            {"automationId": automation.automation_id, "enabled": True}
+        )
+        run_now = await server.handle_run_automation_now({"automationId": automation.automation_id})
+
+        due_task = task_manager.create_task(
+            title="Due task",
+            prompt="Summarize the repo",
+            sandbox_preset="review-only",
+            source="automation",
+            requires_approval=True,
+        )
+        with patch.object(automation_manager, "run_due", return_value=[due_task]) as run_due_mock:
+            run_due = await server.handle_run_due_automations({"limit": 5})
+
+        run_due_mock.assert_called_once_with(limit=5)
+        assert disabled["automation"]["enabled"] is False
+        assert enabled["automation"]["enabled"] is True
+        assert run_now["task"]["source"] == "automation"
+        assert run_due["tasks"][0]["taskId"] == due_task.task_id
+
     def test_has_required_handlers(self, server):
         """Test that required handlers are registered."""
         required = [
@@ -375,6 +610,13 @@ class TestPoorCLIServer:
             "poor-cli/listSessions",
             "poor-cli/listCheckpoints",
             "poor-cli/exportConversation",
+            "poor-cli/startTask",
+            "poor-cli/createAutomation",
+            "poor-cli/listAutomations",
+            "poor-cli/getAutomation",
+            "poor-cli/setAutomationEnabled",
+            "poor-cli/runAutomationNow",
+            "poor-cli/runDueAutomations",
             "poor-cli/startHostServer",
             "poor-cli/getHostServerStatus",
             "poor-cli/stopHostServer",

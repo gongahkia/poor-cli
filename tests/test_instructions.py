@@ -42,11 +42,13 @@ def test_instruction_stack_merge_order(tmp_path: Path):
     assert [source.label for source in snapshot.sources] == [
         "Plan Mode",
         "Repo Root AGENTS.md",
-        "Repo Root CLAUDE.md",
+        "Compatibility CLAUDE.md",
         "Path Local AGENTS.md",
         "Repo Memory",
         "Active Focus",
     ]
+    assert snapshot.sources[1].metadata["canonical"] is True
+    assert snapshot.sources[2].metadata["canonical"] is False
     rendered = snapshot.render_prompt_prefix()
     assert rendered.index("repo agents") < rendered.index("local agents")
     assert rendered.index("local agents") < rendered.index("repo memory")

@@ -65,6 +65,9 @@ Issues = "https://github.com/gongahkia/poor-cli/issues"
 [tool.setuptools]
 packages = ["poor_cli", "poor_cli.server", "poor_cli.providers"]
 
+[tool.setuptools.package-data]
+poor_cli = ["*.json"]
+
 [tool.setuptools.dynamic]
 version = {attr = "poor_cli.__version__"}
 

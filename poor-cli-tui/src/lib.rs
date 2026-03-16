@@ -1,4 +1,5 @@
 pub mod app;
+pub mod command_manifest;
 #[path = "commands_lib.rs"]
 pub mod commands;
 pub mod event;

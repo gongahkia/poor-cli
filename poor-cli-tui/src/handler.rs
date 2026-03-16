@@ -63,6 +63,9 @@ pub(super) fn handle_server_message(
                 if let Some(raw_theme) = cfg.get("theme").and_then(|v| v.as_str()) {
                     app.theme_mode = ThemeMode::from_ui_theme(raw_theme);
                 }
+                if let Some(sandbox_preset) = cfg.get("sandboxPreset").and_then(|v| v.as_str()) {
+                    app.permission_mode_label = sandbox_preset.to_string();
+                }
             }
             refresh_workspace_status(app);
             refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
@@ -105,15 +108,37 @@ pub(super) fn handle_server_message(
             }
         }
         ServerMsg::AutomationPrompt { display, prompt } => {
-            app.prompt_queue
-                .push_back(poor_cli_tui::app::QueuedPrompt::automation(
-                    display.clone(),
-                    prompt,
-                ));
-            let queued = app.prompt_queue.len();
-            app.push_message(ChatMessage::system(format!(
-                "Queued automation task: {display} ({queued} queued)"
-            )));
+            match rpc_create_task_blocking(
+                &rpc_cmd_tx.borrow(),
+                &display,
+                &prompt,
+                "read-only",
+                "automation",
+                true,
+                false,
+            ) {
+                Ok(payload) => {
+                    let task_id = payload
+                        .get("task")
+                        .and_then(|task| task.get("taskId"))
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("(unknown)");
+                    app.push_message(ChatMessage::system(format!(
+                        "Created automation task `{task_id}` for {display}"
+                    )));
+                }
+                Err(error) => {
+                    app.prompt_queue
+                        .push_back(poor_cli_tui::app::QueuedPrompt::automation(
+                            display.clone(),
+                            prompt,
+                        ));
+                    let queued = app.prompt_queue.len();
+                    app.push_message(ChatMessage::system(format!(
+                        "Queued automation task: {display} ({queued} queued) [{error}]"
+                    )));
+                }
+            }
         }
         ServerMsg::Providers { providers } => {
             app.providers = providers;

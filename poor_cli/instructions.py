@@ -114,12 +114,18 @@ class InstructionManager:
             content = self._read_text(path)
             if not content:
                 continue
+            label = (
+                f"Repo Root {file_name}"
+                if file_name == "AGENTS.md"
+                else f"Compatibility {file_name}"
+            )
             sources.append(
                 InstructionSource(
                     kind="repo_root",
-                    label=f"Repo Root {file_name}",
+                    label=label,
                     content=content,
                     path=self._relative_or_absolute(path),
+                    metadata={"canonical": file_name == "AGENTS.md"},
                 )
             )
         return sources
@@ -143,12 +149,18 @@ class InstructionManager:
             content = self._read_text(path)
             if not content:
                 continue
+            label = (
+                f"Path Local {path.name}"
+                if path.name == "AGENTS.md"
+                else f"Compatibility {path.name}"
+            )
             sources.append(
                 InstructionSource(
                     kind="path_local",
-                    label=f"Path Local {path.name}",
+                    label=label,
                     content=content,
                     path=self._relative_or_absolute(path),
+                    metadata={"canonical": path.name == "AGENTS.md"},
                 )
             )
         return sources

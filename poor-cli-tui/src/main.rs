@@ -214,14 +214,6 @@ struct FocusState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct TaskItem {
-    id: u64,
-    title: String,
-    done: bool,
-    created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProfileState {
     name: String,
 }
@@ -3657,30 +3649,6 @@ fn save_focus_state(app: &App, state: &FocusState) -> Result<(), String> {
     fs::write(path, serialized).map_err(|e| format!("Failed to persist focus state: {e}"))
 }
 
-fn tasks_state_path(app: &App) -> PathBuf {
-    command_data_dir(app).join("tasks.json")
-}
-
-fn load_tasks(app: &App) -> Result<Vec<TaskItem>, String> {
-    let path = tasks_state_path(app);
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read tasks: {e}"))?;
-    let tasks: Vec<TaskItem> =
-        serde_json::from_str(&content).map_err(|e| format!("Invalid tasks file: {e}"))?;
-    Ok(tasks)
-}
-
-fn save_tasks(app: &App, tasks: &[TaskItem]) -> Result<(), String> {
-    let root = command_data_dir(app);
-    fs::create_dir_all(&root).map_err(|e| format!("Failed to create data directory: {e}"))?;
-    let path = tasks_state_path(app);
-    let serialized = serde_json::to_string_pretty(tasks)
-        .map_err(|e| format!("Failed to serialize tasks: {e}"))?;
-    fs::write(path, serialized).map_err(|e| format!("Failed to write tasks file: {e}"))
-}
-
 fn profile_state_path(app: &App) -> PathBuf {
     command_data_dir(app).join("profile.json")
 }
@@ -3973,6 +3941,17 @@ fn rpc_get_policy_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Resu
         .map_err(|_| "Timed out waiting for policy status".to_string())?
 }
 
+fn rpc_get_sandbox_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetSandboxStatus { reply: reply_tx })
+        .map_err(|e| format!("Failed to request sandbox status: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for sandbox status".to_string())?
+}
+
 fn rpc_get_mcp_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
@@ -3982,6 +3961,83 @@ fn rpc_get_mcp_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for MCP status".to_string())?
+}
+
+fn rpc_list_skills_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListSkills { reply: reply_tx })
+        .map_err(|e| format!("Failed to request skills: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for skills".to_string())?
+}
+
+fn rpc_get_skill_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetSkill {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request skill: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for skill".to_string())?
+}
+
+fn rpc_list_custom_commands_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListCustomCommands { reply: reply_tx })
+        .map_err(|e| format!("Failed to request custom commands: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for custom commands".to_string())?
+}
+
+fn rpc_get_custom_command_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetCustomCommand {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request custom command: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for custom command".to_string())?
+}
+
+fn rpc_run_custom_command_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+    args_text: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RunCustomCommand {
+            name: name.to_string(),
+            args_text: args_text.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to run custom command: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(120))
+        .map_err(|_| "Timed out waiting for custom command".to_string())?
 }
 
 fn rpc_preview_context_blocking(
@@ -4154,6 +4210,101 @@ fn rpc_search_history_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for search response".to_string())?
+}
+
+fn rpc_create_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    title: &str,
+    prompt: &str,
+    sandbox_preset: &str,
+    source: &str,
+    auto_start: bool,
+    requires_approval: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::CreateTask {
+            title: title.to_string(),
+            prompt: prompt.to_string(),
+            sandbox_preset: sandbox_preset.to_string(),
+            source: source.to_string(),
+            auto_start,
+            requires_approval,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to create task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task creation".to_string())?
+}
+
+fn rpc_list_tasks_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    inbox_only: bool,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListTasks {
+            inbox_only,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to list tasks: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task list".to_string())?
+}
+
+fn rpc_get_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to get task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task".to_string())?
+}
+
+fn rpc_approve_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ApproveTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to approve task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task approval".to_string())?
+}
+
+fn rpc_cancel_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::CancelTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to cancel task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task cancel".to_string())?
 }
 
 fn rpc_list_checkpoints_blocking(

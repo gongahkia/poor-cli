@@ -1,4 +1,4 @@
-"""Launch poor-cli TUI by default or run headless exec mode."""
+"""Launch poor-cli TUI by default or expose headless/automation subcommands."""
 
 from __future__ import annotations
 
@@ -6,18 +6,78 @@ import argparse
 import asyncio
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from .automation_manager import (
+    AutomationManager,
+    parse_daily_schedule,
+    parse_weekly_schedule,
+    schedule_interval,
+)
+from .config import PermissionMode
 from .core import PoorCLICore
+from .custom_commands import CustomCommandRegistry
+from .github_task import create_task_from_context, default_mode_for_context, load_github_context
 from .repo_config import get_repo_config
+from .sandbox import PRESET_DESCRIPTION, evaluate_tool_access, normalize_preset
+from .skills import SkillRegistry
+from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
+from . import __version__
+
+
+def _render_root_help() -> str:
+    return (
+        "usage: poor-cli [subcommand] [options]\n\n"
+        "Interactive surface:\n"
+        "  poor-cli, poor-cli tui      Launch the Rust TUI (requires `poor-cli-tui`)\n"
+        "  poor-cli install-info       Inspect which TUI launcher the current install can use\n\n"
+        "Headless and automation:\n"
+        "  poor-cli exec              Run one shared-core request from the terminal or CI\n"
+        "  poor-cli task              Manage durable background tasks and worktrees\n"
+        "  poor-cli automation        Manage scheduled local automations\n"
+        "  poor-cli github-task       Create a task from a GitHub event payload\n\n"
+        "Reuse and integration:\n"
+        "  poor-cli skills            List, inspect, or run repo/user skills\n"
+        "  poor-cli commands          List, inspect, or run repo/user custom commands\n"
+        "  poor-cli server            Run the JSON-RPC server (alias for `poor-cli-server`)\n\n"
+        "Examples:\n"
+        "  poor-cli\n"
+        "  poor-cli exec --prompt \"Summarize this repository\" --plan-only\n"
+        "  poor-cli task create --title \"Review docs\" --preset review-only --prompt \"Review README\"\n"
+        "  poor-cli automation create --name \"Daily QA\" --every-minutes 60 --prompt \"Run QA checklist\"\n"
+        "  poor-cli server --stdio\n\n"
+        "Notes:\n"
+        "  - The Python package always provides `poor-cli-server`.\n"
+        "  - The interactive TUI can be launched from a repo build, a packaged binary, PATH, or POOR_CLI_TUI_BIN.\n"
+        "  - Run `poor-cli help` or `poor-cli --help` to show this overview.\n"
+    )
+
+
+def _tui_executable_name() -> str:
+    return "poor-cli-tui.exe" if os.name == "nt" else "poor-cli-tui"
+
+
+def _is_usable_binary(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _repo_tui_binary_path(repo_root: Optional[Path] = None) -> Path:
+    root = repo_root or _repo_root()
+    return root / "poor-cli-tui" / "target" / "release" / _tui_executable_name()
 
 
 def _repo_binary_is_fresh(repo_root: Path, binary: Path) -> bool:
-    if not binary.is_file() or not os.access(binary, os.X_OK):
+    if not _is_usable_binary(binary):
         return False
 
     try:
@@ -38,44 +98,246 @@ def _repo_binary_is_fresh(repo_root: Path, binary: Path) -> bool:
         return False
 
 
-def _run_repo_tui_binary(argv: list[str]) -> int:
-    repo_root = Path(__file__).resolve().parent.parent
-    binary = repo_root / "poor-cli-tui" / "target" / "release" / "poor-cli-tui"
-    if not _repo_binary_is_fresh(repo_root, binary):
-        return 1
-    os.execv(str(binary), [str(binary), *argv])
-    return 1
-
-
 def _run_tui_from_repo(argv: list[str]) -> int:
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = _repo_root()
     script = repo_root / "run_tui.sh"
     if not script.is_file():
         return 1
     return subprocess.call([str(script), *argv], cwd=str(repo_root))
 
 
+def _iter_packaged_tui_candidates() -> list[Path]:
+    package_root = Path(__file__).resolve().parent
+    executable_name = _tui_executable_name()
+    machine = platform.machine().lower().replace("amd64", "x86_64")
+    platform_key = sys.platform.lower()
+    platform_tags = [platform_key, f"{platform_key}-{machine}"]
+
+    if sys.platform == "darwin":
+        platform_tags.extend(["macos", f"macos-{machine}"])
+    elif sys.platform.startswith("linux"):
+        platform_tags.extend(["linux", f"linux-{machine}"])
+    elif os.name == "nt":
+        platform_tags.extend(["windows", f"windows-{machine}"])
+
+    candidates = [package_root / "bin" / executable_name]
+    candidates.extend(package_root / "bin" / tag / executable_name for tag in platform_tags)
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def _resolve_env_tui_binary() -> Optional[Path]:
+    raw_value = os.environ.get("POOR_CLI_TUI_BIN", "").strip()
+    if not raw_value:
+        return None
+    candidate = Path(raw_value).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    candidate = candidate.resolve()
+    if not _is_usable_binary(candidate):
+        return None
+    return candidate
+
+
+def _resolve_packaged_tui_binary() -> Optional[Path]:
+    for candidate in _iter_packaged_tui_candidates():
+        if _is_usable_binary(candidate):
+            return candidate
+    return None
+
+
+def _resolve_path_tui_binary() -> Optional[Path]:
+    binary = shutil.which(_tui_executable_name())
+    if binary is None:
+        return None
+    return Path(binary).resolve()
+
+
+def _resolve_tui_binary() -> tuple[Optional[Path], Optional[str]]:
+    env_binary = _resolve_env_tui_binary()
+    if env_binary is not None:
+        return env_binary, "env"
+
+    repo_root = _repo_root()
+    repo_binary = _repo_tui_binary_path(repo_root)
+    if _repo_binary_is_fresh(repo_root, repo_binary):
+        return repo_binary, "repo"
+
+    packaged_binary = _resolve_packaged_tui_binary()
+    if packaged_binary is not None:
+        return packaged_binary, "package"
+
+    path_binary = _resolve_path_tui_binary()
+    if path_binary is not None:
+        return path_binary, "path"
+
+    return None, None
+
+
 def _run_tui_binary(argv: list[str]) -> int:
-    binary = shutil.which("poor-cli-tui")
+    binary, _source = _resolve_tui_binary()
     if binary is None:
         return 1
-    os.execvp(binary, [binary, *argv])
+    os.execv(str(binary), [str(binary), *argv])
     return 1
 
 
+def _inspect_tui_installation() -> dict[str, Any]:
+    repo_root = _repo_root()
+    repo_binary = _repo_tui_binary_path(repo_root)
+    env_override = os.environ.get("POOR_CLI_TUI_BIN", "").strip()
+    env_binary = _resolve_env_tui_binary()
+    path_binary = _resolve_path_tui_binary()
+    selected_binary, selected_source = _resolve_tui_binary()
+    packaged_candidates = _iter_packaged_tui_candidates()
+    run_tui_script = repo_root / "run_tui.sh"
+
+    return {
+        "version": __version__,
+        "platform": sys.platform,
+        "machine": platform.machine(),
+        "tuiExecutableName": _tui_executable_name(),
+        "selectedLauncher": {
+            "source": selected_source,
+            "path": str(selected_binary),
+        }
+        if selected_binary is not None and selected_source is not None
+        else None,
+        "envOverride": {
+            "configured": bool(env_override),
+            "path": env_override or None,
+            "usable": env_binary is not None,
+        },
+        "repoBinary": {
+            "path": str(repo_binary),
+            "exists": repo_binary.is_file(),
+            "usable": _is_usable_binary(repo_binary),
+            "fresh": _repo_binary_is_fresh(repo_root, repo_binary),
+        },
+        "packagedCandidates": [
+            {
+                "path": str(candidate),
+                "exists": candidate.is_file(),
+                "usable": _is_usable_binary(candidate),
+            }
+            for candidate in packaged_candidates
+        ],
+        "pathBinary": {
+            "path": str(path_binary) if path_binary is not None else None,
+            "usable": path_binary is not None and _is_usable_binary(path_binary),
+        },
+        "repoLauncherScript": {
+            "path": str(run_tui_script),
+            "exists": run_tui_script.is_file(),
+        },
+    }
+
+
+def _render_install_info(payload: dict[str, Any]) -> str:
+    lines = [
+        f"poor-cli {payload['version']}",
+        f"Platform: {payload['platform']} ({payload['machine']})",
+        f"TUI executable: {payload['tuiExecutableName']}",
+    ]
+
+    selected = payload.get("selectedLauncher")
+    if isinstance(selected, dict):
+        lines.append(f"Resolved launcher: {selected['source']} -> {selected['path']}")
+    else:
+        lines.append("Resolved launcher: not found")
+
+    env_override = payload["envOverride"]
+    if env_override["configured"]:
+        status = "usable" if env_override["usable"] else "missing or not executable"
+        lines.append(f"POOR_CLI_TUI_BIN: {env_override['path']} [{status}]")
+    else:
+        lines.append("POOR_CLI_TUI_BIN: not set")
+
+    repo_binary = payload["repoBinary"]
+    repo_status = "fresh" if repo_binary["fresh"] else "missing or stale"
+    lines.append(f"Repo release binary: {repo_binary['path']} [{repo_status}]")
+
+    path_binary = payload["pathBinary"]
+    if path_binary["path"]:
+        lines.append(f"PATH binary: {path_binary['path']}")
+    else:
+        lines.append("PATH binary: not found")
+
+    repo_script = payload["repoLauncherScript"]
+    lines.append(
+        "Repo launcher script: "
+        f"{repo_script['path']} [{'available' if repo_script['exists'] else 'missing'}]"
+    )
+
+    packaged_candidates = payload["packagedCandidates"]
+    if packaged_candidates:
+        lines.append("Packaged TUI candidates:")
+        for candidate in packaged_candidates:
+            status = "usable" if candidate["usable"] else "missing"
+            lines.append(f"  {candidate['path']} [{status}]")
+
+    lines.append("Tip: set POOR_CLI_TUI_BIN to force a specific TUI binary.")
+    return "\n".join(lines)
+
+
+def _build_install_info_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="poor-cli install-info")
+    parser.add_argument("--json", action="store_true")
+    return parser
+
+
+def _run_install_info_mode(argv: Sequence[str]) -> int:
+    parser = _build_install_info_parser()
+    args = parser.parse_args(list(argv))
+    payload = _inspect_tui_installation()
+    if args.json:
+        _print_json(payload)
+    else:
+        print(_render_install_info(payload))
+    return 0
+
+
 def _launch_tui(argv: list[str]) -> int:
-    if _run_repo_tui_binary(argv) == 0:
-        return 0
     if _run_tui_binary(argv) == 0:
         return 0
     if _run_tui_from_repo(argv) == 0:
         return 0
     raise SystemExit(
-        "Rust TUI launcher not found. Run ./run_tui.sh from the repo root "
-        "or install the `poor-cli-tui` binary. The Python package always "
-        "provides `poor-cli-server`, but `poor-cli` requires a repo checkout "
-        "or a preinstalled Rust TUI binary."
+        "Rust TUI launcher not found.\n\n"
+        "Interactive options:\n"
+        "  - Run ./run_tui.sh from a repo checkout\n"
+        "  - Install or place a `poor-cli-tui` binary in PATH\n"
+        "  - Set POOR_CLI_TUI_BIN=/path/to/poor-cli-tui\n"
+        "  - Run `poor-cli install-info` to inspect launcher paths\n\n"
+        "Python surfaces still available:\n"
+        "  - `poor-cli exec --help`\n"
+        "  - `poor-cli task --help`\n"
+        "  - `poor-cli automation --help`\n"
+        "  - `poor-cli skills --help`\n"
+        "  - `poor-cli commands --help`\n"
+        "  - `poor-cli server --help`\n\n"
+        "Run `poor-cli help` for a full overview."
     )
+
+
+def _run_server_mode(argv: Sequence[str]) -> int:
+    from .server import main as server_main
+
+    original_argv = sys.argv[:]
+    try:
+        sys.argv = ["poor-cli server", *argv]
+        server_main()
+    finally:
+        sys.argv = original_argv
+    return 0
 
 
 def _build_exec_parser() -> argparse.ArgumentParser:
@@ -106,6 +368,21 @@ def _build_exec_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-key", help="Override API key for this execution")
     parser.add_argument("--config", help="Path to config file")
     parser.add_argument("--cwd", help="Working directory for this execution")
+    parser.add_argument(
+        "--sandbox-preset",
+        choices=tuple(PRESET_DESCRIPTION.keys()),
+        help="Capability sandbox preset for this execution",
+    )
+    parser.add_argument(
+        "--permission-mode",
+        choices=tuple(mode.value for mode in PermissionMode),
+        help="Permission mode for this execution",
+    )
+    parser.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help="Auto-approve operations that would otherwise require interactive approval",
+    )
     parser.add_argument(
         "--context-file",
         action="append",
@@ -157,22 +434,79 @@ def _build_resume_prefix() -> str:
 
 
 def _build_exec_permission_callback(
+    core: PoorCLICore,
     allow_tools: set[str],
     deny_tools: set[str],
     *,
     plan_only: bool,
+    permission_mode: str,
+    sandbox_preset: str,
+    auto_approve: bool,
 ):
     async def _callback(tool_name: str, tool_args: dict[str, Any], preview: Optional[dict[str, Any]] = None):
-        del tool_args, preview
         if plan_only:
             return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
         if tool_name in deny_tools:
             return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
         if allow_tools and tool_name not in allow_tools:
             return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+        if not core.tool_registry:
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+
+        mutation_paths = list(preview.get("paths") or []) if isinstance(preview, dict) else []
+        if not mutation_paths:
+            mutation_paths = core.tool_registry.inspect_mutation_targets(tool_name, tool_args)
+
+        security_cfg = getattr(core.config, "security", None)
+        trusted_roots = _trusted_workspace_roots(security_cfg)
+        enforce_trusted_workspace = bool(
+            getattr(security_cfg, "enforce_trusted_workspace", True)
+        ) if security_cfg is not None else True
+        safe_commands = getattr(security_cfg, "safe_commands", None) if security_cfg is not None else None
+
+        decision = evaluate_tool_access(
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_capabilities=core.tool_registry.get_tool_capabilities(tool_name),
+            permission_mode=permission_mode,
+            sandbox_preset=sandbox_preset,
+            trusted_roots=trusted_roots,
+            mutation_paths=mutation_paths,
+            enforce_trusted_workspace=enforce_trusted_workspace,
+            safe_process_commands=safe_commands,
+        )
+        if not decision.allowed:
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
+        if decision.requires_approval and not auto_approve:
+            return {"allowed": False, "approvedPaths": [], "approvedChunks": []}
         return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
 
     return _callback
+
+
+def _trusted_workspace_roots(security_cfg: Any) -> list[Path]:
+    roots: list[Path] = []
+    raw_roots = getattr(security_cfg, "trusted_roots", []) if security_cfg is not None else []
+    if isinstance(raw_roots, list):
+        for raw_root in raw_roots:
+            if not isinstance(raw_root, str) or not raw_root.strip():
+                continue
+            root_path = Path(raw_root).expanduser()
+            if not root_path.is_absolute():
+                root_path = Path.cwd() / root_path
+            roots.append(root_path.resolve())
+    if not roots:
+        roots.append(Path.cwd().resolve())
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(root)
+    return deduped
 
 
 async def _run_exec_mode_async(args: argparse.Namespace) -> int:
@@ -196,15 +530,37 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
 
     config_path = Path(args.config).expanduser() if args.config else None
     core = PoorCLICore(config_path=config_path)
-    core.permission_callback = _build_exec_permission_callback(
-        set(args.allow_tool or []),
-        set(args.deny_tool or []),
-        plan_only=bool(args.plan_only),
-    )
     await core.initialize(
         provider_name=args.provider,
         model_name=args.model,
         api_key=args.api_key,
+    )
+    if core.config is not None:
+        if args.permission_mode:
+            core.config.security.permission_mode = PermissionMode(args.permission_mode)
+        effective_permission_mode = (
+            args.permission_mode
+            or getattr(core.config.security.permission_mode, "value", str(core.config.security.permission_mode))
+        )
+        effective_sandbox_preset = normalize_preset(
+            args.sandbox_preset or getattr(core.config.sandbox, "default_preset", ""),
+            fallback_permission_mode=effective_permission_mode,
+        )
+        core.config.sandbox.default_preset = effective_sandbox_preset
+    else:
+        effective_permission_mode = args.permission_mode or PermissionMode.PROMPT.value
+        effective_sandbox_preset = normalize_preset(
+            args.sandbox_preset,
+            fallback_permission_mode=effective_permission_mode,
+        )
+    core.permission_callback = _build_exec_permission_callback(
+        core,
+        set(args.allow_tool or []),
+        set(args.deny_tool or []),
+        plan_only=bool(args.plan_only),
+        permission_mode=effective_permission_mode,
+        sandbox_preset=effective_sandbox_preset,
+        auto_approve=bool(args.auto_approve),
     )
 
     try:
@@ -239,6 +595,9 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                     {
                         "content": response_text,
                         "provider": core.get_provider_info(),
+                        "permissionMode": effective_permission_mode,
+                        "sandboxPreset": effective_sandbox_preset,
+                        "autoApprove": bool(args.auto_approve),
                         "instructionStack": core.inspect_instruction_stack(
                             list(args.context_file or []) + list(args.pinned_context_file or [])
                         ),
@@ -260,10 +619,819 @@ def _run_exec_mode(argv: Sequence[str]) -> int:
     return asyncio.run(_run_exec_mode_async(args))
 
 
+def _print_json(payload: Any) -> None:
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+async def _run_skill_async(name: str, request: str) -> int:
+    registry = SkillRegistry(Path.cwd())
+    prompt = registry.render_skill_prompt(name, request)
+    core = PoorCLICore()
+    await core.initialize()
+    try:
+        print(await core.send_message_sync(prompt))
+        return 0
+    finally:
+        await core.shutdown()
+
+
+async def _run_custom_command_async(name: str, args_text: str) -> int:
+    registry = CustomCommandRegistry(Path.cwd())
+    prompt = registry.render_prompt(name, args_text=args_text)
+    core = PoorCLICore()
+    await core.initialize()
+    try:
+        print(await core.send_message_sync(prompt))
+        return 0
+    finally:
+        await core.shutdown()
+
+
+def _collect_string_values(raw_values: Any) -> list[str]:
+    if not isinstance(raw_values, list):
+        return []
+    values: list[str] = []
+    for raw_value in raw_values:
+        if raw_value is None:
+            continue
+        value = str(raw_value).strip()
+        if value:
+            values.append(value)
+    return values
+
+
+def _build_execution_metadata_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    execution: dict[str, Any] = {}
+
+    provider = str(getattr(args, "provider", "") or "").strip()
+    if provider:
+        execution["provider"] = provider
+
+    model = str(getattr(args, "model", "") or "").strip()
+    if model:
+        execution["model"] = model
+
+    config_path = str(getattr(args, "config", "") or "").strip()
+    if config_path:
+        execution["configPath"] = config_path
+
+    context_files = _collect_string_values(getattr(args, "context_file", []))
+    if context_files:
+        execution["contextFiles"] = context_files
+
+    pinned_context_files = _collect_string_values(
+        getattr(args, "pinned_context_file", [])
+    )
+    if pinned_context_files:
+        execution["pinnedContextFiles"] = pinned_context_files
+
+    raw_context_budget = getattr(args, "context_budget_tokens", None)
+    if raw_context_budget is not None:
+        try:
+            context_budget = int(raw_context_budget)
+        except (TypeError, ValueError) as error:
+            raise SystemExit("`--context-budget-tokens` must be an integer.") from error
+        if context_budget <= 0:
+            raise SystemExit("`--context-budget-tokens` must be greater than zero.")
+        execution["contextBudgetTokens"] = context_budget
+
+    return execution
+
+
+def _task_default_auto_start(preset: str) -> bool:
+    return preset not in APPROVAL_REQUIRED_PRESETS
+
+
+def _resolve_task_create_behavior(
+    *,
+    preset: str,
+    auto_start: Optional[bool],
+    auto_approve: bool,
+    requires_approval: bool,
+    wait: bool,
+) -> tuple[bool, bool]:
+    effective_auto_start = _task_default_auto_start(preset) if auto_start is None else bool(auto_start)
+    approval_required = bool(requires_approval or (preset in APPROVAL_REQUIRED_PRESETS and not auto_approve))
+    if wait:
+        if approval_required:
+            raise SystemExit(
+                "`--wait` requires a task that can start immediately. Use `--auto-approve` "
+                "or approve the task in a separate step."
+            )
+        effective_auto_start = True
+    return effective_auto_start, approval_required
+
+
+def _task_payload_with_wait(
+    manager: TaskManager,
+    task,
+    *,
+    wait: bool,
+    timeout_seconds: int,
+    command_label: str,
+) -> dict[str, Any]:
+    payload = task.to_dict()
+    if not wait:
+        return payload
+    if payload["status"] in {"queued", "awaiting_approval"}:
+        raise SystemExit(
+            f"`{command_label} --wait` requires a running or terminal task; "
+            f"current status is {payload['status']}."
+        )
+    return _wait_for_task_completion(
+        manager,
+        payload["taskId"],
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _read_text_if_present(path: str) -> str:
+    candidate = Path(path)
+    if not candidate.exists() or candidate.is_dir():
+        return ""
+    return candidate.read_text(encoding="utf-8", errors="replace")
+
+
+def _build_task_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="poor-cli task")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    create = subparsers.add_parser("create")
+    create.add_argument("--title")
+    create.add_argument("--prompt")
+    create.add_argument("--preset", default="workspace-write", choices=tuple(PRESET_DESCRIPTION.keys()))
+    create.add_argument("--source", default="manual")
+    create.add_argument("--requires-approval", action="store_true")
+    create.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help="Approve immediately instead of leaving the task awaiting approval.",
+    )
+    create.add_argument(
+        "--approve",
+        dest="auto_approve",
+        action="store_true",
+        help="Alias for --auto-approve.",
+    )
+    auto_start_group = create.add_mutually_exclusive_group()
+    auto_start_group.add_argument("--auto-start", dest="auto_start", action="store_true")
+    auto_start_group.add_argument("--no-auto-start", dest="auto_start", action="store_false")
+    create.set_defaults(auto_start=None)
+    create.add_argument("--provider")
+    create.add_argument("--model")
+    create.add_argument("--config")
+    create.add_argument("--context-file", action="append", default=[])
+    create.add_argument("--pinned-context-file", action="append", default=[])
+    create.add_argument("--context-budget-tokens", type=int)
+    create.add_argument("--wait", action="store_true")
+    create.add_argument("--wait-timeout-seconds", type=int, default=900)
+    create.add_argument("--json", action="store_true")
+
+    list_parser = subparsers.add_parser("list")
+    list_parser.add_argument("--status", action="append", default=[])
+    list_parser.add_argument("--inbox", action="store_true")
+    list_parser.add_argument("--json", action="store_true")
+
+    show = subparsers.add_parser("show")
+    show.add_argument("task_id")
+    show.add_argument("--response", action="store_true")
+    show.add_argument("--events", action="store_true")
+    show.add_argument("--log", action="store_true")
+    show.add_argument("--json", action="store_true")
+
+    start = subparsers.add_parser("start")
+    start.add_argument("task_id")
+    start.add_argument("--wait", action="store_true")
+    start.add_argument("--wait-timeout-seconds", type=int, default=900)
+    start.add_argument("--json", action="store_true")
+
+    wait_parser = subparsers.add_parser("wait")
+    wait_parser.add_argument("task_id")
+    wait_parser.add_argument("--timeout-seconds", type=int, default=900)
+    wait_parser.add_argument("--json", action="store_true")
+
+    approve = subparsers.add_parser("approve")
+    approve.add_argument("task_id")
+    approve.add_argument("--no-auto-start", action="store_true")
+    approve.add_argument("--wait", action="store_true")
+    approve.add_argument("--wait-timeout-seconds", type=int, default=900)
+    approve.add_argument("--json", action="store_true")
+
+    cancel = subparsers.add_parser("cancel")
+    cancel.add_argument("task_id")
+    cancel.add_argument("--json", action="store_true")
+
+    run = subparsers.add_parser("run")
+    run.add_argument("--task-id", required=True)
+    run.add_argument("--repo-root", required=True)
+    run.add_argument("--config")
+    return parser
+
+
+def _coerce_task_prompt(args: argparse.Namespace) -> str:
+    if args.prompt:
+        return str(args.prompt)
+    if not sys.stdin.isatty():
+        return sys.stdin.read()
+    raise SystemExit("`poor-cli task create` requires --prompt or piped stdin.")
+
+
+def _format_task(task: dict) -> str:
+    lines = [
+        f"Task: {task['taskId']} [{task['status']}]",
+        f"Title: {task['title']}",
+        f"Preset: {task['sandboxPreset']}",
+        f"Source: {task['source']}",
+        f"Worktree: {task['worktreePath']}",
+        f"Artifacts: {task['artifactDir']}",
+    ]
+    if task.get("summary"):
+        lines.append(f"Summary: {task['summary']}")
+    if task.get("errorMessage"):
+        lines.append(f"Error: {task['errorMessage']}")
+    return "\n".join(lines)
+
+
+def _wait_for_task_completion(manager: TaskManager, task_id: str, *, timeout_seconds: int) -> dict:
+    deadline = time.time() + max(1, int(timeout_seconds))
+    terminal_statuses = {"completed", "failed", "cancelled"}
+    while time.time() <= deadline:
+        task = manager.get_task(task_id)
+        if task is not None and task.status in terminal_statuses:
+            return task.to_dict()
+        time.sleep(1)
+    raise SystemExit(f"Timed out waiting for task {task_id} to finish.")
+
+
+def _run_task_mode(argv: Sequence[str]) -> int:
+    parser = _build_task_parser()
+    args = parser.parse_args(list(argv))
+    manager = TaskManager(Path.cwd())
+
+    if args.subcommand == "create":
+        prompt = _coerce_task_prompt(args).strip()
+        if not prompt:
+            raise SystemExit("Prompt cannot be empty.")
+        preset = normalize_preset(args.preset)
+        auto_start, requires_approval = _resolve_task_create_behavior(
+            preset=preset,
+            auto_start=args.auto_start,
+            auto_approve=bool(args.auto_approve),
+            requires_approval=bool(args.requires_approval),
+            wait=bool(args.wait),
+        )
+        metadata: dict[str, Any] = {}
+        execution = _build_execution_metadata_from_args(args)
+        if execution:
+            metadata["execution"] = execution
+        task = manager.create_task(
+            title=(args.title or prompt.splitlines()[0][:80]).strip(),
+            prompt=prompt,
+            sandbox_preset=preset,
+            source=str(args.source or "manual"),
+            metadata=metadata,
+            auto_start=auto_start and not requires_approval,
+            requires_approval=requires_approval,
+            auto_approve=bool(args.auto_approve),
+        )
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task create",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "list":
+        tasks = manager.list_tasks(
+            statuses=args.status or None,
+            inbox_only=bool(args.inbox),
+        )
+        payload = [task.to_dict() for task in tasks]
+        if args.json:
+            _print_json(payload)
+        else:
+            for task in payload:
+                print(_format_task(task))
+                print()
+        return 0
+
+    if args.subcommand == "show":
+        task = manager.get_task(args.task_id)
+        if task is None:
+            raise SystemExit(f"Unknown task: {args.task_id}")
+        payload = task.to_dict()
+        extras = {}
+        if args.response:
+            extras["response"] = _read_text_if_present(task.response_path)
+        if args.events:
+            extras["events"] = _read_text_if_present(task.events_path)
+        if args.log:
+            extras["log"] = _read_text_if_present(task.log_path)
+        if args.json:
+            if extras:
+                _print_json({"task": payload, **extras})
+            else:
+                _print_json(payload)
+        else:
+            print(_format_task(payload))
+            if extras:
+                for name, content in extras.items():
+                    print()
+                    print(f"{name.upper()}:")
+                    print(content.rstrip())
+        return 0
+
+    if args.subcommand == "start":
+        task = manager.start_task_process(args.task_id)
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task start",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "wait":
+        task = manager.get_task(args.task_id)
+        if task is None:
+            raise SystemExit(f"Unknown task: {args.task_id}")
+        payload = _wait_for_task_completion(
+            manager,
+            args.task_id,
+            timeout_seconds=args.timeout_seconds,
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "approve":
+        if args.wait and args.no_auto_start:
+            raise SystemExit("`poor-cli task approve --wait` requires auto-start.")
+        task = manager.approve_task(args.task_id, auto_start=not args.no_auto_start)
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task approve",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "cancel":
+        task = manager.cancel_task(args.task_id)
+        if args.json:
+            _print_json(task.to_dict())
+        else:
+            print(_format_task(task.to_dict()))
+        return 0
+
+    if args.subcommand == "run":
+        repo_root = Path(args.repo_root).expanduser().resolve()
+        config_path = Path(args.config).expanduser() if args.config else None
+        return asyncio.run(
+            run_task_worker(
+                repo_root=repo_root,
+                task_id=str(args.task_id),
+                config_path=config_path,
+            )
+        )
+
+    raise SystemExit(f"Unknown task subcommand: {args.subcommand}")
+
+
+def _build_skill_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="poor-cli skills")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    list_parser = subparsers.add_parser("list")
+    list_parser.add_argument("--json", action="store_true")
+    show = subparsers.add_parser("show")
+    show.add_argument("name")
+    run = subparsers.add_parser("run")
+    run.add_argument("name")
+    run.add_argument("request", nargs="*")
+    return parser
+
+
+def _run_skills_mode(argv: Sequence[str]) -> int:
+    parser = _build_skill_parser()
+    args = parser.parse_args(list(argv))
+    registry = SkillRegistry(Path.cwd())
+    if args.subcommand == "list":
+        skills = [skill.to_dict() for skill in registry.list_skills()]
+        if args.json:
+            _print_json(skills)
+        else:
+            for skill in skills:
+                print(f"{skill['name']}: {skill['description']} ({skill['scope']})")
+        return 0
+    if args.subcommand == "show":
+        skill = registry.get_skill(args.name)
+        if skill is None:
+            raise SystemExit(f"Unknown skill: {args.name}")
+        print(skill.skill_file.read_text(encoding="utf-8"))
+        return 0
+    if args.subcommand == "run":
+        return asyncio.run(_run_skill_async(args.name, " ".join(args.request)))
+    raise SystemExit(f"Unknown skills subcommand: {args.subcommand}")
+
+
+def _build_commands_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="poor-cli commands")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    list_parser = subparsers.add_parser("list")
+    list_parser.add_argument("--json", action="store_true")
+    show = subparsers.add_parser("show")
+    show.add_argument("name")
+    run = subparsers.add_parser("run")
+    run.add_argument("name")
+    run.add_argument("args_text", nargs="*")
+    return parser
+
+
+def _run_commands_mode(argv: Sequence[str]) -> int:
+    parser = _build_commands_parser()
+    args = parser.parse_args(list(argv))
+    registry = CustomCommandRegistry(Path.cwd())
+    if args.subcommand == "list":
+        commands = [command.to_dict() for command in registry.list_commands()]
+        if args.json:
+            _print_json(commands)
+        else:
+            for command in commands:
+                print(f"{command['name']}: {command['description']} ({command['scope']})")
+        return 0
+    if args.subcommand == "show":
+        command = registry.get_command(args.name)
+        if command is None:
+            raise SystemExit(f"Unknown command wrapper: {args.name}")
+        print(command.template)
+        return 0
+    if args.subcommand == "run":
+        return asyncio.run(_run_custom_command_async(args.name, " ".join(args.args_text)))
+    raise SystemExit(f"Unknown commands subcommand: {args.subcommand}")
+
+
+def _build_automation_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="poor-cli automation")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    create = subparsers.add_parser("create")
+    create.add_argument("--name")
+    create.add_argument("--prompt")
+    schedule_group = create.add_mutually_exclusive_group(required=True)
+    schedule_group.add_argument("--every-minutes", type=int)
+    schedule_group.add_argument("--daily")
+    schedule_group.add_argument("--weekly")
+    create.add_argument("--preset", default="read-only", choices=tuple(PRESET_DESCRIPTION.keys()))
+    create.add_argument("--requires-approval", action="store_true")
+    create.add_argument("--auto-approve", action="store_true")
+    create.add_argument("--disabled", action="store_true")
+    create.add_argument("--provider")
+    create.add_argument("--model")
+    create.add_argument("--config")
+    create.add_argument("--context-file", action="append", default=[])
+    create.add_argument("--pinned-context-file", action="append", default=[])
+    create.add_argument("--context-budget-tokens", type=int)
+    create.add_argument("--run-now", action="store_true")
+    create.add_argument("--wait", action="store_true")
+    create.add_argument("--wait-timeout-seconds", type=int, default=900)
+    create.add_argument("--json", action="store_true")
+
+    list_parser = subparsers.add_parser("list")
+    state_group = list_parser.add_mutually_exclusive_group()
+    state_group.add_argument("--enabled", action="store_true")
+    state_group.add_argument("--disabled", action="store_true")
+    list_parser.add_argument("--json", action="store_true")
+
+    show = subparsers.add_parser("show")
+    show.add_argument("automation_id")
+    show.add_argument("--json", action="store_true")
+
+    enable = subparsers.add_parser("enable")
+    enable.add_argument("automation_id")
+    enable.add_argument("--json", action="store_true")
+
+    disable = subparsers.add_parser("disable")
+    disable.add_argument("automation_id")
+    disable.add_argument("--json", action="store_true")
+
+    run_now = subparsers.add_parser("run-now")
+    run_now.add_argument("automation_id")
+    run_now.add_argument("--wait", action="store_true")
+    run_now.add_argument("--wait-timeout-seconds", type=int, default=900)
+    run_now.add_argument("--json", action="store_true")
+
+    run_due = subparsers.add_parser("run-due")
+    run_due.add_argument("--limit", type=int, default=20)
+    run_due.add_argument("--wait", action="store_true")
+    run_due.add_argument("--wait-timeout-seconds", type=int, default=900)
+    run_due.add_argument("--json", action="store_true")
+
+    serve = subparsers.add_parser("serve")
+    serve.add_argument("--poll-seconds", type=int, default=30)
+    return parser
+
+
+def _coerce_automation_prompt(args: argparse.Namespace) -> str:
+    if args.prompt:
+        return str(args.prompt)
+    if not sys.stdin.isatty():
+        return sys.stdin.read()
+    raise SystemExit("`poor-cli automation create` requires --prompt or piped stdin.")
+
+
+def _automation_schedule_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    if args.every_minutes is not None:
+        return schedule_interval(args.every_minutes)
+    if args.daily:
+        return parse_daily_schedule(args.daily)
+    if args.weekly:
+        return parse_weekly_schedule(args.weekly)
+    raise SystemExit("Missing automation schedule.")
+
+
+def _format_automation(automation: dict) -> str:
+    lines = [
+        f"Automation: {automation['automationId']} [{'enabled' if automation['enabled'] else 'disabled'}]",
+        f"Name: {automation['name']}",
+        f"Preset: {automation['sandboxPreset']}",
+        f"Schedule: {automation['scheduleSummary']}",
+    ]
+    if automation.get("nextRunAt"):
+        lines.append(f"Next run: {automation['nextRunAt']}")
+    if automation.get("lastRunAt"):
+        lines.append(f"Last run: {automation['lastRunAt']}")
+    if automation.get("lastTaskId"):
+        lines.append(f"Last task: {automation['lastTaskId']}")
+    return "\n".join(lines)
+
+
+def _wait_for_tasks_completion(
+    manager: TaskManager,
+    tasks: Sequence[Any],
+    *,
+    timeout_seconds: int,
+    action: str,
+) -> list[dict[str, Any]]:
+    waiting_ids = []
+    terminal_payloads: list[dict[str, Any]] = []
+    for task in tasks:
+        payload = task.to_dict()
+        if payload["status"] in {"queued", "awaiting_approval"}:
+            raise SystemExit(
+                f"`poor-cli automation {action} --wait` requires tasks that are already running "
+                f"or terminal; {payload['taskId']} is {payload['status']}."
+            )
+        if payload["status"] in {"completed", "failed", "cancelled"}:
+            terminal_payloads.append(payload)
+        else:
+            waiting_ids.append(payload["taskId"])
+
+    completed = terminal_payloads[:]
+    for task_id in waiting_ids:
+        completed.append(
+            _wait_for_task_completion(
+                manager,
+                task_id,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+    return completed
+
+
+def _run_automation_mode(argv: Sequence[str]) -> int:
+    parser = _build_automation_parser()
+    args = parser.parse_args(list(argv))
+    manager = AutomationManager(Path.cwd())
+
+    if args.subcommand == "create":
+        prompt = _coerce_automation_prompt(args).strip()
+        if not prompt:
+            raise SystemExit("Prompt cannot be empty.")
+        if args.wait and not args.run_now:
+            raise SystemExit("`poor-cli automation create --wait` requires `--run-now`.")
+        metadata: dict[str, Any] = {}
+        execution = _build_execution_metadata_from_args(args)
+        if execution:
+            metadata["execution"] = execution
+        automation = manager.create_automation(
+            name=(args.name or prompt.splitlines()[0][:80]).strip(),
+            prompt=prompt,
+            schedule=_automation_schedule_from_args(args),
+            sandbox_preset=normalize_preset(args.preset),
+            enabled=not args.disabled,
+            requires_approval=bool(args.requires_approval),
+            metadata=metadata,
+            auto_approve=bool(args.auto_approve),
+        )
+        payload: Any = automation.to_dict()
+        if args.run_now:
+            if args.wait and payload["requiresApproval"]:
+                raise SystemExit(
+                    "`poor-cli automation create --wait` requires an automation that can start "
+                    "without manual approval. Use `--auto-approve` or remove `--wait`."
+                )
+            task = manager.run_now(automation.automation_id)
+            task_payload = task.to_dict()
+            if args.wait:
+                task_payload = _task_payload_with_wait(
+                    manager.task_manager,
+                    task,
+                    wait=True,
+                    timeout_seconds=args.wait_timeout_seconds,
+                    command_label="poor-cli automation create",
+                )
+            payload = {"automation": payload, "task": task_payload}
+        if args.json:
+            _print_json(payload)
+        else:
+            if isinstance(payload, dict) and "automation" in payload and "task" in payload:
+                print(_format_automation(payload["automation"]))
+                print()
+                print(_format_task(payload["task"]))
+            else:
+                print(_format_automation(payload))
+        return 0
+
+    if args.subcommand == "list":
+        enabled_filter = True if args.enabled else False if args.disabled else None
+        automations = [record.to_dict() for record in manager.list_automations(enabled=enabled_filter)]
+        if args.json:
+            _print_json(automations)
+        else:
+            for automation in automations:
+                print(_format_automation(automation))
+                print()
+        return 0
+
+    if args.subcommand == "show":
+        automation = manager.get_automation(args.automation_id)
+        if automation is None:
+            raise SystemExit(f"Unknown automation: {args.automation_id}")
+        payload = automation.to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_automation(payload))
+        return 0
+
+    if args.subcommand == "enable":
+        payload = manager.set_enabled(args.automation_id, True).to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_automation(payload))
+        return 0
+
+    if args.subcommand == "disable":
+        payload = manager.set_enabled(args.automation_id, False).to_dict()
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_automation(payload))
+        return 0
+
+    if args.subcommand == "run-now":
+        task = manager.run_now(args.automation_id)
+        payload = _task_payload_with_wait(
+            manager.task_manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli automation run-now",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "run-due":
+        tasks = manager.run_due(limit=args.limit)
+        payload = [task.to_dict() for task in tasks]
+        if args.wait and tasks:
+            payload = _wait_for_tasks_completion(
+                manager.task_manager,
+                tasks,
+                timeout_seconds=args.wait_timeout_seconds,
+                action="run-due",
+            )
+        if args.json:
+            _print_json(payload)
+        else:
+            for task in payload:
+                print(_format_task(task))
+                print()
+        return 0
+
+    if args.subcommand == "serve":
+        manager.serve_forever(poll_seconds=args.poll_seconds)
+        return 0
+
+    raise SystemExit(f"Unknown automation subcommand: {args.subcommand}")
+
+
+def _build_github_task_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="poor-cli github-task")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    create = subparsers.add_parser("create")
+    create.add_argument("--event-path")
+    create.add_argument("--mode", choices=("read-only", "review-only"))
+    create.add_argument("--no-auto-start", action="store_true")
+    create.add_argument("--provider")
+    create.add_argument("--model")
+    create.add_argument("--config")
+    create.add_argument("--context-file", action="append", default=[])
+    create.add_argument("--pinned-context-file", action="append", default=[])
+    create.add_argument("--context-budget-tokens", type=int)
+    create.add_argument("--wait", action="store_true")
+    create.add_argument("--wait-timeout-seconds", type=int, default=900)
+    create.add_argument("--json", action="store_true")
+    return parser
+
+
+def _run_github_task_mode(argv: Sequence[str]) -> int:
+    parser = _build_github_task_parser()
+    args = parser.parse_args(list(argv))
+    manager = TaskManager(Path.cwd())
+
+    if args.subcommand == "create":
+        context = load_github_context(Path(args.event_path).expanduser() if args.event_path else None, env=os.environ)
+        mode = args.mode or default_mode_for_context(context)
+        metadata: dict[str, Any] = {}
+        execution = _build_execution_metadata_from_args(args)
+        if execution:
+            metadata["execution"] = execution
+        task = create_task_from_context(
+            manager,
+            context,
+            mode=mode,
+            auto_start=not args.no_auto_start,
+            metadata=metadata,
+        )
+        payload = task.to_dict()
+        if args.wait:
+            if args.no_auto_start:
+                raise SystemExit("`poor-cli github-task create --wait` requires auto-start.")
+            payload = _wait_for_task_completion(
+                manager,
+                task.task_id,
+                timeout_seconds=args.wait_timeout_seconds,
+            )
+        if args.json:
+            _print_json({"task": payload, "context": context.to_dict()})
+        else:
+            print(_format_task(payload))
+            print(f"GitHub: {context.kind} #{context.number} {context.url}")
+        return 0
+
+    raise SystemExit(f"Unknown github-task subcommand: {args.subcommand}")
+
+
 def main() -> None:
     argv = sys.argv[1:]
+    if not argv:
+        raise SystemExit(_launch_tui(argv))
+    if argv[0] in {"help", "--help", "-h"}:
+        print(_render_root_help())
+        raise SystemExit(0)
+    if argv[0] in {"version", "--version", "-V"}:
+        print(__version__)
+        raise SystemExit(0)
     if argv and argv[0] == "exec":
         raise SystemExit(_run_exec_mode(argv[1:]))
+    if argv and argv[0] == "task":
+        raise SystemExit(_run_task_mode(argv[1:]))
+    if argv and argv[0] == "skills":
+        raise SystemExit(_run_skills_mode(argv[1:]))
+    if argv and argv[0] == "commands":
+        raise SystemExit(_run_commands_mode(argv[1:]))
+    if argv and argv[0] == "automation":
+        raise SystemExit(_run_automation_mode(argv[1:]))
+    if argv and argv[0] == "github-task":
+        raise SystemExit(_run_github_task_mode(argv[1:]))
+    if argv and argv[0] == "server":
+        raise SystemExit(_run_server_mode(argv[1:]))
+    if argv and argv[0] == "install-info":
+        raise SystemExit(_run_install_info_mode(argv[1:]))
     if argv and argv[0] == "tui":
         raise SystemExit(_launch_tui(argv[1:]))
     raise SystemExit(_launch_tui(argv))
