@@ -8,6 +8,7 @@ import os
 import json
 import base64
 import hashlib
+import getpass
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -54,10 +55,19 @@ class APIKeyManager:
                 salt = f.read()
             return self._derive_key(salt)
 
-        # Check for legacy raw keyfile (backward compat)
+        # Check for legacy raw keyfile — migrate to PBKDF2
         if self.key_file.exists():
             with open(self.key_file, 'rb') as f:
-                return f.read()
+                legacy_key = f.read()
+            salt = os.urandom(16)
+            salt_file.touch(mode=0o600)
+            with open(salt_file, 'wb') as f:
+                f.write(salt)
+            new_key = self._derive_key(salt)
+            self._migrate_keys(legacy_key, new_key)
+            self.key_file.unlink()
+            logger.info("Migrated legacy raw keyfile to PBKDF2 and deleted keyfile")
+            return new_key
 
         # Generate new salt and derive key
         salt = os.urandom(16)
@@ -70,7 +80,11 @@ class APIKeyManager:
     def _derive_key(self, salt: bytes) -> bytes:
         """Derive Fernet key from machine-specific passphrase using PBKDF2"""
         # Use a machine-specific passphrase from username + home dir
-        passphrase = f"{os.getlogin()}:{str(Path.home())}:poor-cli".encode()
+        try:
+            username = os.getlogin()
+        except OSError:
+            username = getpass.getuser()
+        passphrase = f"{username}:{str(Path.home())}:poor-cli".encode()
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -79,6 +93,27 @@ class APIKeyManager:
         )
         key = base64.urlsafe_b64encode(kdf.derive(passphrase))
         return key
+
+    def _migrate_keys(self, old_key: bytes, new_key: bytes):
+        """Re-encrypt all stored keys from old_key to new_key"""
+        if not self.keys_file.exists():
+            return
+        try:
+            old_cipher = Fernet(old_key)
+            new_cipher = Fernet(new_key)
+            with open(self.keys_file, 'r') as f:
+                keys_data = json.load(f)
+            for provider, data in keys_data.items():
+                encrypted = base64.b64decode(data["encrypted_key"])
+                plaintext = old_cipher.decrypt(encrypted)
+                re_encrypted = new_cipher.encrypt(plaintext)
+                data["encrypted_key"] = base64.b64encode(re_encrypted).decode()
+            self.keys_file.touch(mode=0o600)
+            with open(self.keys_file, 'w') as f:
+                json.dump(keys_data, f, indent=2)
+            logger.info("Re-encrypted stored keys with new PBKDF2-derived key")
+        except Exception as e:
+            logger.error(f"Failed to migrate keys: {e}")
 
     def store_key(
         self,
