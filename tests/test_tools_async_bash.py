@@ -1,6 +1,7 @@
 """Unit tests for ToolRegistryAsync.bash()."""
 
 import asyncio
+import signal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -23,12 +24,17 @@ class _FakeProcess:
             self._cursor += len(chunk)
             return chunk
 
-    def __init__(self, *, returncode: int, stdout: bytes, stderr: bytes):
+    def __init__(self, *, returncode: int, stdout: bytes, stderr: bytes, pid: int = 0):
         self.returncode = returncode
         self.stdout = self._FakeStream(stdout)
         self.stderr = self._FakeStream(stderr)
+        self.pid = pid
+        self.terminated = False
         self.killed = False
         self.waited = False
+
+    def terminate(self):
+        self.terminated = True
 
     def kill(self):
         self.killed = True
@@ -74,6 +80,34 @@ async def test_bash_timeout_kills_process_and_raises():
 
     assert running_process.killed is True
     assert running_process.waited is True
+
+
+@pytest.mark.asyncio
+async def test_run_command_capture_timeout_terminates_process_group():
+    registry = ToolRegistryAsync()
+    running_process = _FakeProcess(returncode=0, stdout=b"", stderr=b"", pid=3210)
+
+    async def _raise_timeout(awaitable, timeout):
+        awaitable.close()
+        raise asyncio.TimeoutError
+
+    with (
+        patch(
+            "poor_cli.tools_async.asyncio.create_subprocess_exec",
+            AsyncMock(return_value=running_process),
+        ) as spawn_mock,
+        patch(
+            "poor_cli.tools_async.asyncio.wait_for",
+            AsyncMock(side_effect=_raise_timeout),
+        ),
+        patch("poor_cli.tools_async.os.killpg", return_value=None, create=True) as killpg_mock,
+    ):
+        result = await registry._run_command_capture(["sleep", "10"], timeout=1)
+
+    assert result["timed_out"] is True
+    assert running_process.waited is True
+    killpg_mock.assert_called_once_with(3210, signal.SIGKILL)
+    assert spawn_mock.await_args.kwargs["start_new_session"] is True
 
 
 @pytest.mark.asyncio

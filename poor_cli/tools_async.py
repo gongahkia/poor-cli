@@ -4,6 +4,7 @@ Async tool implementations for poor-cli
 
 import os
 import asyncio
+import signal
 import subprocess
 import shlex
 import glob as glob_module
@@ -1833,6 +1834,34 @@ class ToolRegistryAsync:
             return validate_file_path(path, must_exist=True, must_be_dir=True)
         return Path.cwd()
 
+    @staticmethod
+    def _subprocess_spawn_kwargs() -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {}
+        if hasattr(os, "killpg"):
+            kwargs["start_new_session"] = True
+        return kwargs
+
+    @staticmethod
+    def _signal_async_process(process: Any, sig: int) -> bool:
+        pid = getattr(process, "pid", None)
+        if pid is not None and int(pid) > 0 and hasattr(os, "killpg"):
+            try:
+                os.killpg(int(pid), sig)
+                return True
+            except PermissionError:
+                return True
+            except OSError:
+                pass
+
+        try:
+            if sig == signal.SIGTERM and hasattr(process, "terminate"):
+                process.terminate()
+            else:
+                process.kill()
+        except ProcessLookupError:
+            return False
+        return True
+
     async def _run_command_capture(
         self,
         argv: List[str],
@@ -1850,6 +1879,7 @@ class ToolRegistryAsync:
             stdin=asyncio.subprocess.PIPE if stdin_text is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **self._subprocess_spawn_kwargs(),
         )
 
         if stdin_text is not None and process.stdin is not None:
@@ -1875,7 +1905,7 @@ class ToolRegistryAsync:
             await asyncio.wait_for(process.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             timed_out = True
-            process.kill()
+            self._signal_async_process(process, signal.SIGKILL)
             await process.wait()
 
         stdout_bytes, stdout_truncated = await stdout_task
@@ -2127,6 +2157,7 @@ class ToolRegistryAsync:
                 *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **self._subprocess_spawn_kwargs(),
             )
 
             stdout_task = asyncio.create_task(
@@ -2145,7 +2176,7 @@ class ToolRegistryAsync:
             try:
                 await asyncio.wait_for(process.wait(), timeout=timeout)
             except asyncio.TimeoutError:
-                process.kill()
+                self._signal_async_process(process, signal.SIGKILL)
                 await process.wait()
                 await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
                 raise CommandExecutionError(
