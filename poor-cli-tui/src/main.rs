@@ -21,9 +21,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use poor_cli_tui::app::{
-    App, AppMode, ChatMessage, ContextInspectorFile, ContextInspectorState, MessageRole,
-    ProviderEntry, QueuedPrompt, QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode,
-    TimelineEntry, TimelineEntryKind,
+    ApiKeyEditorField, ApiKeyEditorState, App, AppMode, ChatMessage, ContextInspectorFile,
+    ContextInspectorState, MessageRole, ProviderEntry, QueuedPrompt, QuickOpenItem,
+    QuickOpenItemKind, ResponseMode, ThemeMode, TimelineEntry, TimelineEntryKind,
 };
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;
@@ -32,7 +32,7 @@ use poor_cli_tui::helpers::{
     truncate_line,
 };
 use poor_cli_tui::input::{self, InputAction};
-use poor_cli_tui::rpc::{run_rpc_worker, RpcClient, RpcCommand, ServerNotification};
+use poor_cli_tui::rpc::{run_rpc_worker, InitResult, RpcClient, RpcCommand, ServerNotification};
 use poor_cli_tui::watcher::{self, QaWatchState, WatchMsg, WatchState};
 
 mod commands;
@@ -186,6 +186,46 @@ enum ServerMsg {
         text: String,
     },
 }
+
+#[derive(Clone, Copy)]
+struct ManagedEnvField {
+    label: &'static str,
+    provider: Option<&'static str>,
+    env_var: &'static str,
+    default_model: &'static str,
+    help: &'static str,
+}
+
+const MANAGED_ENV_FIELDS: &[ManagedEnvField] = &[
+    ManagedEnvField {
+        label: "Gemini",
+        provider: Some("gemini"),
+        env_var: "GEMINI_API_KEY",
+        default_model: "gemini-2.0-flash",
+        help: "Gemini is the default provider. Paste a Google AI Studio or Vertex-backed Gemini key here.",
+    },
+    ManagedEnvField {
+        label: "OpenAI",
+        provider: Some("openai"),
+        env_var: "OPENAI_API_KEY",
+        default_model: "gpt-4-turbo",
+        help: "Use an OpenAI API key if you want GPT models available in `/switch` and the TUI.",
+    },
+    ManagedEnvField {
+        label: "Anthropic",
+        provider: Some("anthropic"),
+        env_var: "ANTHROPIC_API_KEY",
+        default_model: "claude-3-5-sonnet-20241022",
+        help: "Anthropic powers Claude models. Saving here keeps the key available for later provider switches.",
+    },
+    ManagedEnvField {
+        label: "Brave",
+        provider: None,
+        env_var: "BRAVE_SEARCH_API_KEY",
+        default_model: "",
+        help: "Optional. Enables Brave-backed web search tooling when configured.",
+    },
+];
 
 type SessionLogWriter = Arc<Mutex<fs::File>>;
 
@@ -611,82 +651,7 @@ fn spawn_backend_worker(
                 ) {
                     Ok(init) => {
                         write_session_log(log_ctx.as_ref(), "backend_initialize_ok");
-                        let (prov, mdl) = if let Some(caps) = &init.capabilities {
-                            let prov = caps
-                                .pointer("/providerInfo/name")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| {
-                                    provider.clone().unwrap_or_else(|| "gemini".into())
-                                });
-                            let mdl = caps
-                                .pointer("/providerInfo/model")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| {
-                                    model.clone().unwrap_or_else(|| "gemini-2.0-flash".into())
-                                });
-                            (prov, mdl)
-                        } else {
-                            (
-                                provider.clone().unwrap_or_else(|| "gemini".into()),
-                                model.clone().unwrap_or_else(|| "gemini-2.0-flash".into()),
-                            )
-                        };
-                        let multiplayer_room = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/room"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let multiplayer_role = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/role"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let multiplayer_ui_role = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/uiRole"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let multiplayer_mode = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/mode"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let multiplayer_connection_id = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/connectionId"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let multiplayer_display_name = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/displayName"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let multiplayer_approval_state = init
-                            .capabilities
-                            .as_ref()
-                            .and_then(|caps| caps.pointer("/multiplayer/approvalState"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let _ = tx_init.send(ServerMsg::Initialized {
-                            provider: prov,
-                            model: mdl,
-                            version: init.version.unwrap_or_else(|| "0.4.0".into()),
-                            multiplayer_room,
-                            multiplayer_role,
-                            multiplayer_ui_role,
-                            multiplayer_mode,
-                            multiplayer_connection_id,
-                            multiplayer_display_name,
-                            multiplayer_approval_state,
-                        });
+                        let _ = tx_init.send(server_msg_from_init_result(init, &provider, &model));
                         run_rpc_worker(client, rpc_cmd_rx);
                     }
                     Err(e) => {
@@ -697,6 +662,7 @@ fn spawn_backend_worker(
                         let _ = tx_init.send(ServerMsg::Error {
                             message: format!("Initialization failed: {e}"),
                         });
+                        run_rpc_worker(client, rpc_cmd_rx);
                     }
                 }
             }
@@ -710,6 +676,87 @@ fn spawn_backend_worker(
     });
 
     rpc_cmd_tx
+}
+
+fn server_msg_from_init_result(
+    init: InitResult,
+    provider_fallback: &Option<String>,
+    model_fallback: &Option<String>,
+) -> ServerMsg {
+    let (provider, model) = if let Some(caps) = &init.capabilities {
+        let provider = caps
+            .pointer("/providerInfo/name")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| provider_fallback.clone().unwrap_or_else(|| "gemini".into()));
+        let model = caps
+            .pointer("/providerInfo/model")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| {
+                model_fallback
+                    .clone()
+                    .unwrap_or_else(|| "gemini-2.0-flash".into())
+            });
+        (provider, model)
+    } else {
+        (
+            provider_fallback
+                .clone()
+                .unwrap_or_else(|| "gemini".into()),
+            model_fallback
+                .clone()
+                .unwrap_or_else(|| "gemini-2.0-flash".into()),
+        )
+    };
+
+    ServerMsg::Initialized {
+        provider,
+        model,
+        version: init.version.unwrap_or_else(|| "0.4.0".into()),
+        multiplayer_room: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/room"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        multiplayer_role: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/role"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        multiplayer_ui_role: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/uiRole"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        multiplayer_mode: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/mode"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        multiplayer_connection_id: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/connectionId"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        multiplayer_display_name: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/displayName"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        multiplayer_approval_state: init
+            .capabilities
+            .as_ref()
+            .and_then(|caps| caps.pointer("/multiplayer/approvalState"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+    }
 }
 
 fn run_app(
@@ -1134,6 +1181,24 @@ fn run_app(
                         &token,
                     );
                 }
+                InputAction::SaveApiKeyEditor => match save_api_key_editor(app, &tx, &rpc_cmd_tx.borrow()) {
+                    Ok(message) => {
+                        if let Some(editor) = app.api_key_editor.as_mut() {
+                            editor.status = message;
+                            editor.error.clear();
+                        } else {
+                            app.set_status("Saved API key configuration");
+                        }
+                    }
+                    Err(error) => {
+                        if let Some(editor) = app.api_key_editor.as_mut() {
+                            editor.error = error;
+                            editor.status.clear();
+                        } else {
+                            app.push_message(ChatMessage::error(error));
+                        }
+                    }
+                },
                 InputAction::CopyToClipboard(text) => match copy_to_clipboard(&text) {
                     Ok(()) => {
                         let preview = if text.len() > 40 {
@@ -2037,9 +2102,9 @@ const ONBOARDING_STEPS: &[OnboardingStep] = &[
     },
     OnboardingStep {
         title: "Choose Provider + Model",
-        objective: "Inspect your active model, switch when needed, and configure provider auth.",
-        commands: &["/provider", "/providers", "/switch", "/api-key"],
-        try_now: "/provider",
+        objective: "Inspect your active model, switch when needed, and configure provider auth without leaving the TUI.",
+        commands: &["/setup", "/provider", "/providers", "/switch", "/api-key status"],
+        try_now: "/setup",
     },
     OnboardingStep {
         title: "Run Local Services",
@@ -4148,6 +4213,320 @@ fn rpc_get_api_key_status_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(45))
         .map_err(|_| "Timed out waiting for API key status".to_string())?
+}
+
+fn rpc_initialize_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> Result<InitResult, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::Initialize {
+            provider: provider.map(|value| value.to_string()),
+            model: model.map(|value| value.to_string()),
+            permission_mode: None,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request backend initialization: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(45))
+        .map_err(|_| "Timed out waiting for backend initialization".to_string())?
+}
+
+fn workspace_env_paths(app: &App) -> (PathBuf, PathBuf) {
+    let root = if app.cwd.trim().is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    } else {
+        PathBuf::from(&app.cwd)
+    };
+    (root.join(".env"), root.join(".env.example"))
+}
+
+fn parse_env_line_key(line: &str) -> Option<String> {
+    let mut trimmed = line.trim_start();
+    if let Some(rest) = trimmed.strip_prefix('#') {
+        trimmed = rest.trim_start();
+    }
+    if let Some(rest) = trimmed.strip_prefix("export ") {
+        trimmed = rest.trim_start();
+    }
+    let (key, _) = trimmed.split_once('=')?;
+    let key = key.trim();
+    if key.is_empty()
+        || !key
+            .chars()
+            .enumerate()
+            .all(|(idx, ch)| {
+                if idx == 0 {
+                    ch == '_' || ch.is_ascii_alphabetic()
+                } else {
+                    ch == '_' || ch.is_ascii_alphanumeric()
+                }
+            })
+    {
+        return None;
+    }
+    Some(key.to_string())
+}
+
+fn parse_env_assignments(contents: &str) -> HashMap<String, String> {
+    let mut values = HashMap::new();
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut working = trimmed;
+        if let Some(rest) = working.strip_prefix("export ") {
+            working = rest.trim_start();
+        }
+        let Some((key, raw_value)) = working.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        let mut value = raw_value.trim().to_string();
+        if value.len() >= 2 {
+            let quoted = (value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\''));
+            if quoted {
+                value = value[1..value.len() - 1].to_string();
+            }
+        }
+        values.insert(key.to_string(), value);
+    }
+    values
+}
+
+fn format_env_value(value: &str) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':' | '+'))
+    {
+        return value.to_string();
+    }
+    format!(
+        "\"{}\"",
+        value.replace('\\', "\\\\").replace('"', "\\\"")
+    )
+}
+
+fn update_env_file_contents(base: &str, updates: &HashMap<String, String>) -> String {
+    let mut seen = HashSet::new();
+    let mut rendered = Vec::new();
+    for line in base.lines() {
+        if let Some(key) = parse_env_line_key(line) {
+            if let Some(value) = updates.get(&key) {
+                rendered.push(format!("{key}={}", format_env_value(value)));
+                seen.insert(key);
+                continue;
+            }
+        }
+        rendered.push(line.to_string());
+    }
+
+    for spec in MANAGED_ENV_FIELDS {
+        if seen.contains(spec.env_var) {
+            continue;
+        }
+        if let Some(value) = updates.get(spec.env_var) {
+            rendered.push(format!(
+                "{}={}",
+                spec.env_var,
+                format_env_value(value)
+            ));
+        }
+    }
+
+    let mut output = rendered.join("\n");
+    if !output.ends_with('\n') {
+        output.push('\n');
+    }
+    output
+}
+
+fn build_api_key_editor_state(
+    app: &App,
+    init_error: Option<&str>,
+) -> Result<ApiKeyEditorState, String> {
+    let (env_path, template_path) = workspace_env_paths(app);
+    let env_exists = env_path.exists();
+
+    let env_values = if env_exists {
+        let content = fs::read_to_string(&env_path)
+            .map_err(|e| format!("Failed to read {}: {e}", env_path.display()))?;
+        parse_env_assignments(&content)
+    } else {
+        HashMap::new()
+    };
+
+    let mut fields = Vec::new();
+    let mut selected_index = 0usize;
+    for (idx, spec) in MANAGED_ENV_FIELDS.iter().enumerate() {
+        let value = env_values
+            .get(spec.env_var)
+            .cloned()
+            .or_else(|| std::env::var(spec.env_var).ok())
+            .unwrap_or_default();
+        if spec.provider == Some(app.provider_name.as_str()) {
+            selected_index = idx;
+        }
+        fields.push(ApiKeyEditorField {
+            label: spec.label.to_string(),
+            provider: spec.provider.map(str::to_string),
+            env_var: spec.env_var.to_string(),
+            help: spec.help.to_string(),
+            value,
+        });
+    }
+
+    Ok(ApiKeyEditorState {
+        env_path: env_path.display().to_string(),
+        template_path: template_path.display().to_string(),
+        env_exists,
+        selected_index,
+        cursor: fields
+            .get(selected_index)
+            .map(|field| field.value.len())
+            .unwrap_or(0),
+        fields,
+        status: if env_exists {
+            "Edit keys and press Ctrl+S to save.".to_string()
+        } else {
+            "No .env found. Saving will create one from .env.example.".to_string()
+        },
+        error: String::new(),
+        init_error: init_error.unwrap_or("").to_string(),
+        target_provider: app.provider_name.clone(),
+        target_model: app.model_name.clone(),
+    })
+}
+
+fn open_api_key_setup_editor(app: &mut App, init_error: Option<&str>) -> Result<(), String> {
+    let state = build_api_key_editor_state(app, init_error)?;
+    app.open_api_key_editor(state);
+    Ok(())
+}
+
+fn select_setup_provider_model(editor: &ApiKeyEditorState) -> (String, String) {
+    let active_has_key = MANAGED_ENV_FIELDS.iter().any(|spec| {
+        spec.provider == Some(editor.target_provider.as_str())
+            && editor
+                .fields
+                .iter()
+                .find(|field| field.env_var == spec.env_var)
+                .map(|field| !field.value.trim().is_empty())
+                .unwrap_or(false)
+    });
+
+    if editor.target_provider.eq_ignore_ascii_case("ollama") || active_has_key {
+        return (editor.target_provider.clone(), editor.target_model.clone());
+    }
+
+    for spec in MANAGED_ENV_FIELDS {
+        let Some(provider) = spec.provider else {
+            continue;
+        };
+        let has_value = editor
+            .fields
+            .iter()
+            .find(|field| field.env_var == spec.env_var)
+            .map(|field| !field.value.trim().is_empty())
+            .unwrap_or(false);
+        if has_value {
+            return (provider.to_string(), spec.default_model.to_string());
+        }
+    }
+
+    (editor.target_provider.clone(), editor.target_model.clone())
+}
+
+fn save_api_key_editor(
+    app: &mut App,
+    tx: &mpsc::Sender<ServerMsg>,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<String, String> {
+    let editor = app
+        .api_key_editor
+        .clone()
+        .ok_or_else(|| "Setup editor is not open.".to_string())?;
+    let env_path = PathBuf::from(&editor.env_path);
+    let template_path = PathBuf::from(&editor.template_path);
+
+    let base = if env_path.exists() {
+        fs::read_to_string(&env_path)
+            .map_err(|e| format!("Failed to read {}: {e}", env_path.display()))?
+    } else if template_path.exists() {
+        fs::read_to_string(&template_path)
+            .map_err(|e| format!("Failed to read {}: {e}", template_path.display()))?
+    } else {
+        "# Generated by poor-cli /setup\n".to_string()
+    };
+
+    let mut updates = HashMap::new();
+    for field in &editor.fields {
+        updates.insert(field.env_var.clone(), field.value.trim().to_string());
+    }
+
+    let rendered = update_env_file_contents(&base, &updates);
+    if let Some(parent) = env_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to prepare {}: {e}", parent.display()))?;
+    }
+    fs::write(&env_path, rendered)
+        .map_err(|e| format!("Failed to write {}: {e}", env_path.display()))?;
+
+    for field in &editor.fields {
+        let value = field.value.trim();
+        if value.is_empty() {
+            std::env::remove_var(&field.env_var);
+        } else {
+            std::env::set_var(&field.env_var, value);
+        }
+    }
+
+    for field in &editor.fields {
+        if let Some(provider) = field.provider.as_deref() {
+            let value = field.value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            rpc_set_api_key_blocking(rpc_cmd_tx, provider, value, true).map_err(|e| {
+                format!("Saved .env but failed to store `{}` in backend: {e}", field.env_var)
+            })?;
+        }
+    }
+
+    let (provider, model) = select_setup_provider_model(&editor);
+    let init = rpc_initialize_blocking(rpc_cmd_tx, Some(&provider), Some(&model))
+        .map_err(|e| format!("Saved .env but backend initialization still failed: {e}"))?;
+    tx.send(server_msg_from_init_result(
+        init,
+        &Some(provider.clone()),
+        &Some(model.clone()),
+    ))
+    .map_err(|e| format!("Saved .env but failed to apply initialization result: {e}"))?;
+
+    Ok(format!(
+        "Saved {} and retried backend initialization.",
+        env_path.display()
+    ))
+}
+
+fn should_offer_api_key_setup(message: &str) -> bool {
+    let lowered = message.to_ascii_lowercase();
+    lowered.contains("api key")
+        || lowered.contains("set environment variable")
+        || lowered.contains("no api key found")
+        || lowered.contains("initialization failed")
+        || lowered.contains("auth")
 }
 
 fn rpc_clear_history_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<(), String> {

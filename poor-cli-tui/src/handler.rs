@@ -36,6 +36,7 @@ pub(super) fn handle_server_message(
             app.version = version;
             app.server_connected = true;
             app.is_local_provider = app.provider_name == "ollama";
+            app.close_api_key_editor();
             app.multiplayer_enabled = multiplayer_room.is_some();
             if let Some(room_name) = multiplayer_room {
                 app.multiplayer_room = room_name;
@@ -217,6 +218,11 @@ pub(super) fn handle_server_message(
             if app.provider_name.eq_ignore_ascii_case("ollama") {
                 if let Some((title, content)) = ollama_recovery_popup(&message, &app.model_name) {
                     app.open_info_popup(title, content);
+                }
+            }
+            if !app.server_connected && should_offer_api_key_setup(&message) {
+                if let Err(error) = open_api_key_setup_editor(app, Some(&message)) {
+                    app.set_status(format!("Setup editor unavailable: {error}"));
                 }
             }
             app.push_message(ChatMessage::error(message));

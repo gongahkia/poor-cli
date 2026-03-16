@@ -43,12 +43,12 @@ $ pip install -e ".[dev]"
 $ cp .env.example .env
 ```
 
-Set at least one API key in `.env` (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) or use local [Ollama](https://ollama.com/) with `ollama serve` and `ollama pull <model>`.
+You can still pre-create `.env` yourself, but it is no longer required before launch. `poor-cli` can now open a guided `/setup` editor in-chat, create `.env` from `.env.example`, and save API keys there for you. Local [Ollama](https://ollama.com/) still works with `ollama serve` and `ollama pull <model>`.
 
 3. Start the CLI/TUI.
 
 ```console
-$ ./run.sh                   # checks .env, then launches Rust TUI
+$ ./run.sh                   # launches Rust TUI; use /setup if you need credentials
 $ ./run_tui.sh               # direct Rust TUI launcher
 $ python3 -m poor_cli        # Python wrapper -> Rust TUI if a Rust binary is available
 $ poor-cli                   # requires repo launcher or `poor-cli-tui` already in PATH
@@ -254,7 +254,10 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/broke` - Set poor mode (terse responses)
 - `/my-treat` - Set rich mode (comprehensive responses)
 - `/settings` - List editable config settings
-- `/api-key` - Set or inspect provider API keys
+- `/setup` - Open the guided API key and `.env` editor
+- `/env` - Alias for the guided API key and `.env` editor
+- `/api-key` - Open the API key editor
+- `/api-key status` - Inspect provider API key status
 - `/verbose` - Toggle verbose logging
 - `/toggle` - Toggle boolean config value
 - `/set` - Set config key to a value

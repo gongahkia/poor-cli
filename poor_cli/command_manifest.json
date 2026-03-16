@@ -282,8 +282,20 @@
       "category": "Providers & Config"
     },
     {
+      "command": "/setup",
+      "description": "Open the guided API key and .env editor",
+      "recommended": true,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/env",
+      "description": "Open the guided API key and .env editor",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
       "command": "/api-key",
-      "description": "Set or inspect provider API keys",
+      "description": "Open the API key editor or use `/api-key status`",
       "recommended": true,
       "category": "Providers & Config"
     },

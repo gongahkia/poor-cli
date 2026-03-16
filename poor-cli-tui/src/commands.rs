@@ -731,7 +731,17 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/api-key" {
+    if lowered == "/setup" || lowered == "/env" || lowered == "/api-key" || lowered == "/api-key edit" {
+        match open_api_key_setup_editor(app, None) {
+            Ok(()) => {}
+            Err(error) => app.push_message(ChatMessage::error(format!(
+                "Failed to open setup editor: {error}"
+            ))),
+        }
+        return false;
+    }
+
+    if lowered == "/api-key status" {
         match rpc_get_api_key_status_blocking(rpc_cmd_tx, None) {
             Ok(payload) => {
                 let providers = payload
@@ -800,7 +810,8 @@ pub(super) fn handle_slash_command(
                 }
 
                 lines.push(String::new());
-                lines.push("Set or rotate with `/api-key <provider> <api-key>`".to_string());
+                lines.push("Edit with `/setup` or `/api-key`.".to_string());
+                lines.push("Direct set still works with `/api-key <provider> <api-key>`.".to_string());
                 show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -820,7 +831,7 @@ pub(super) fn handle_slash_command(
             show_command_info_popup(
                 app,
                 raw,
-                "Usage: /api-key <provider> <api-key>\nInspect status only: /api-key".to_string(),
+                "Usage: /setup\n       /env\n       /api-key\n       /api-key status\n       /api-key <provider> <api-key>".to_string(),
             );
             return false;
         }
