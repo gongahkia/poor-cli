@@ -14,6 +14,7 @@ function M.setup()
         group = augroup,
         callback = function()
             inline.cancel_auto_trigger()
+            inline.cancel_active_request()
             inline.clear_ghost_text()
         end,
         desc = "Clear poor-cli ghost text on insert leave",

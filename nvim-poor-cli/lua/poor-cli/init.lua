@@ -13,14 +13,14 @@ M.keymaps = nil
 M.autocmds = nil
 M.diagnostics = nil
 M.telescope = nil
+M.cmp = nil
+M._setup_complete = false
 
 -- Setup function - call this from your Neovim config
 function M.setup(opts)
-    -- Load config first
     M.config = require("poor-cli.config")
     M.config.setup(opts)
-    
-    -- Load other modules
+
     M.rpc = require("poor-cli.rpc")
     M.inline = require("poor-cli.inline")
     M.chat = require("poor-cli.chat")
@@ -29,48 +29,34 @@ function M.setup(opts)
     M.autocmds = require("poor-cli.autocmds")
     M.diagnostics = require("poor-cli.diagnostics")
     M.telescope = require("poor-cli.telescope")
-    
-    -- Setup components
+    M.cmp = require("poor-cli.cmp")
+
     M.commands.setup()
     M.keymaps.setup()
     M.autocmds.setup()
     M.chat.setup_streaming_autocmds()
-    
-    -- Health check on setup if requested
+    M.cmp.setup()
+    M._setup_complete = true
+
     if M.config.get("check_health_on_setup") then
         vim.defer_fn(function()
             vim.cmd("checkhealth poor-cli")
         end, 1000)
     end
-    
-    -- Auto-start server if enabled
+
     if M.config.get("auto_start") then
-        vim.defer_fn(function()
-            M.rpc.start()
-            
-            -- Initialize after server starts
-            vim.defer_fn(function()
-                if M.rpc.is_running() then
-                    M.rpc.request("initialize", {
-                        provider = M.config.get("provider"),
-                        model = M.config.get("model"),
-                        streaming = true,
-                        clientCapabilities = M.rpc.client_capabilities(),
-                    }, function(result, err)
-                        if err then
-                            vim.notify("[poor-cli] Init failed: " .. vim.inspect(err), vim.log.levels.ERROR)
-                        else
-                            M.rpc.capture_initialize_result(result)
-                            if M.config.is_debug() then
-                                vim.notify("[poor-cli] Initialized: " .. vim.inspect(result), vim.log.levels.DEBUG)
-                            end
-                        end
-                    end)
-                end
-            end, 500)
-        end, 100)
+        vim.schedule(function()
+            if not M.rpc.is_running() then
+                M.rpc.start()
+            end
+            if M.rpc.is_running() then
+                M.rpc.initialize()
+            end
+        end)
+    elseif M.rpc.is_running() then
+        M.rpc.initialize()
     end
-    
+
     if M.config.is_debug() then
         vim.notify("[poor-cli] Setup complete", vim.log.levels.DEBUG)
     end
@@ -78,7 +64,7 @@ end
 
 -- Convenience exports for direct access
 M.start = function()
-    if M.rpc then M.rpc.start() end
+    if M.rpc and M.rpc.start() then M.rpc.initialize() end
 end
 
 M.stop = function()
@@ -90,7 +76,7 @@ M.is_running = function()
 end
 
 M.complete = function()
-    if M.inline then M.inline.trigger() end
+    if M.inline then M.inline.trigger({ manual = true }) end
 end
 
 M.accept = function()
@@ -107,6 +93,13 @@ end
 
 M.send = function(message)
     if M.chat then M.chat.send(message) end
+end
+
+M.get_status = function()
+    if M.rpc then
+        return M.rpc.get_status()
+    end
+    return nil
 end
 
 return M

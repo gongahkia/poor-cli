@@ -7,6 +7,7 @@ local M = {}
 M.defaults = {
     -- Server command to spawn
     server_cmd = "poor-cli-server --stdio",
+    server_log_file = nil,
     
     -- Auto-start server on setup
     auto_start = true,
@@ -29,6 +30,8 @@ M.defaults = {
     provider = nil,
     model = nil,
     api_key_env = nil,
+    completion_provider = nil,
+    completion_model = nil,
 
     -- Multiplayer remote bridge mode
     multiplayer = {
@@ -49,6 +52,17 @@ M.defaults = {
     request_timeout = 15000, -- RPC request timeout in ms
     auto_fix_diagnostics = false, -- Auto-suggest fix for error diagnostics
     diagnostics_enabled = false, -- Show assistant file:line suggestions as diagnostics
+    completion_enabled = true,
+    completion_manual_only = false,
+    completion_min_prefix = 0,
+    completion_stream_partial = true,
+    completion_max_lines_before = 80,
+    completion_max_lines_after = 80,
+    completion_max_chars = 16000,
+    completion_lsp_context_max_chars = 4000,
+    completion_filetype_allowlist = {},
+    completion_filetype_blocklist = {},
+    completion_buftype_blocklist = { "nofile", "prompt", "quickfix", "terminal" },
 
     -- Keymaps for partial acceptance
     accept_line_key = "<Tab>",   -- Accept current line of ghost text
@@ -94,6 +108,34 @@ end
 -- Check if debug mode is enabled
 function M.is_debug()
     return M.config.debug
+end
+
+function M.get_state_dir()
+    local dir = vim.fs.joinpath(vim.fn.stdpath("state"), "poor-cli")
+    vim.fn.mkdir(dir, "p")
+    return dir
+end
+
+function M.get_server_log_file()
+    local configured = M.get("server_log_file")
+    if configured and configured ~= "" then
+        local absolute = vim.fn.fnamemodify(configured, ":p")
+        local parent = vim.fn.fnamemodify(absolute, ":h")
+        vim.fn.mkdir(parent, "p")
+        return absolute
+    end
+
+    return vim.fs.joinpath(M.get_state_dir(), "server.log")
+end
+
+function M.sanitized_for_debug()
+    local debug_config = vim.deepcopy(M.config)
+    debug_config.api_key_env = nil
+    local multiplayer = debug_config.multiplayer
+    if type(multiplayer) == "table" and multiplayer.token then
+        multiplayer.token = "<redacted>"
+    end
+    return debug_config
 end
 
 return M

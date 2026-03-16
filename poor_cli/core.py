@@ -28,6 +28,7 @@ from .policy_hooks import HookExecutionResult, PolicyHookManager
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
     build_tool_calling_system_instruction,
+    get_system_instruction,
 )
 from .exceptions import (
     PoorCLIError,
@@ -233,8 +234,9 @@ class PoorCLICore:
         # Context manager for intelligent context gathering
         self._context_manager: Optional[ContextManager] = None
 
-        # Cancel event for mid-loop cancellation
+        # Cancel events for in-flight request cancellation.
         self._cancel_event: threading.Event = threading.Event()
+        self._cancel_events: Dict[str, threading.Event] = {}
 
         logger.info("PoorCLICore instance created")
     
@@ -402,9 +404,95 @@ class PoorCLICore:
             logger.exception("Failed to initialize PoorCLICore")
             raise ConfigurationError(f"Initialization failed: {e}")
     
-    def cancel_request(self) -> None:
+    def cancel_request(self, request_id: str = "") -> None:
         """Signal cancellation of the current agentic loop."""
+        if request_id:
+            event = self._cancel_events.get(request_id)
+            if event is None:
+                event = threading.Event()
+                self._cancel_events[request_id] = event
+            event.set()
+            return
         self._cancel_event.set()
+
+    def _prepare_cancel_event(self, request_id: str = "") -> threading.Event:
+        if request_id:
+            event = self._cancel_events.get(request_id)
+            if event is None:
+                event = threading.Event()
+                self._cancel_events[request_id] = event
+            event.clear()
+            return event
+
+        self._cancel_event.clear()
+        return self._cancel_event
+
+    def _clear_cancel_event(self, request_id: str = "") -> None:
+        if request_id:
+            self._cancel_events.pop(request_id, None)
+            return
+        self._cancel_event.clear()
+
+    def _resolve_provider_config(
+        self,
+        provider_name: Optional[str],
+        model_name: Optional[str],
+        api_key: Optional[str] = None,
+    ) -> Tuple[str, str, str, Dict[str, Any]]:
+        if not self.config or not self._config_manager:
+            raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
+
+        resolved_provider = provider_name or self.config.model.provider
+        resolved_model = model_name or self.config.model.model_name
+        if not resolved_model:
+            provider_config = self.config.model.providers.get(resolved_provider)
+            if provider_config:
+                resolved_model = provider_config.default_model
+
+        resolved_api_key = api_key
+        if not resolved_api_key:
+            resolved_api_key = self._config_manager.get_api_key(resolved_provider)
+
+        if not resolved_api_key and resolved_provider != "ollama":
+            raise ConfigurationError(
+                f"No API key found for provider: {resolved_provider}. "
+                f"Set environment variable: "
+                f"{self.config.model.providers[resolved_provider].api_key_env_var}"
+            )
+
+        provider_config = self._config_manager.get_provider_config(resolved_provider)
+        extra_kwargs: Dict[str, Any] = {}
+        if provider_config and provider_config.base_url:
+            extra_kwargs["base_url"] = provider_config.base_url
+
+        return resolved_provider, resolved_model, resolved_api_key or "", extra_kwargs
+
+    async def _create_provider_instance(
+        self,
+        provider_name: Optional[str],
+        model_name: Optional[str],
+        *,
+        api_key: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system_instruction: Optional[str] = None,
+    ) -> BaseProvider:
+        resolved_provider, resolved_model, resolved_api_key, extra_kwargs = self._resolve_provider_config(
+            provider_name,
+            model_name,
+            api_key,
+        )
+
+        candidate_provider = ProviderFactory.create(
+            provider_name=resolved_provider,
+            api_key=resolved_api_key,
+            model_name=resolved_model,
+            **extra_kwargs,
+        )
+        await candidate_provider.initialize(
+            tools=tools or [],
+            system_instruction=system_instruction,
+        )
+        return candidate_provider
 
     @staticmethod
     def _stringify_tool_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -992,7 +1080,7 @@ class PoorCLICore:
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
-        self._cancel_event.clear()
+        cancel_event = self._prepare_cancel_event(request_id)
         max_iterations = self.config.agentic.max_iterations if self.config else 25
         iteration = 0
 
@@ -1018,7 +1106,7 @@ class PoorCLICore:
             accumulated_text = ""
 
             async for chunk in self.provider.send_message_stream(full_message):
-                if self._cancel_event.is_set():
+                if cancel_event.is_set():
                     yield CoreEvent.done(reason="cancelled")
                     return
 
@@ -1049,7 +1137,7 @@ class PoorCLICore:
 
                     while response.function_calls:
                         iteration += 1
-                        if self._cancel_event.is_set():
+                        if cancel_event.is_set():
                             yield CoreEvent.done(reason="cancelled")
                             return
                         if iteration >= max_iterations:
@@ -1101,6 +1189,8 @@ class PoorCLICore:
         except Exception as e:
             logger.exception("Error sending message (events)")
             raise PoorCLIError(f"Failed to send message: {e}")
+        finally:
+            self._clear_cancel_event(request_id)
 
     def _check_auto_permission(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[bool]:
         """Check auto-approve/deny from AgenticConfig. Returns True/False/None."""
@@ -1778,7 +1868,11 @@ class PoorCLICore:
         code_after: str,
         instruction: str,
         file_path: str,
-        language: str
+        language: str,
+        *,
+        request_id: str = "",
+        provider_name: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """
         Generate inline code completion (FIM - Fill in Middle).
@@ -1800,10 +1894,10 @@ class PoorCLICore:
         """
         if not self._initialized or not self.provider:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
-        
+
+        cancel_event = self._prepare_cancel_event(request_id)
         logger.info(f"Inline complete for {file_path} ({language})")
-        
-        # Build FIM prompt
+
         prompt = self.build_fim_prompt(
             code_before=code_before,
             code_after=code_after,
@@ -1811,18 +1905,30 @@ class PoorCLICore:
             file_path=file_path,
             language=language
         )
-        
+
+        completion_provider = self.provider
         try:
-            # Stream the completion
-            async for chunk in self.provider.send_message_stream(prompt):
+            if provider_name or model_name:
+                completion_provider = await self._create_provider_instance(
+                    provider_name,
+                    model_name,
+                    tools=[],
+                    system_instruction=get_system_instruction("inline"),
+                )
+
+            async for chunk in completion_provider.send_message_stream(prompt):
+                if cancel_event.is_set():
+                    return
                 if chunk.content:
                     yield chunk.content
-            
+
             logger.info("Inline completion finished")
-            
+
         except Exception as e:
             logger.exception("Error in inline completion")
             raise PoorCLIError(f"Inline completion failed: {e}")
+        finally:
+            self._clear_cancel_event(request_id)
 
     @property
     def permission_callback(self) -> Optional[Callable[..., Any]]:

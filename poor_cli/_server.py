@@ -651,11 +651,13 @@ class PoorCLIServer:
                 "capabilities": {
                     "completionProvider": True,
                     "inlineCompletionProvider": True,
+                    "completionStreamingProvider": True,
                     "chatProvider": True,
                     "chatStreamingProvider": True,
                     "fileOperations": True,
                     "permissionMode": self.permission_mode,
                     "sandboxPreset": self._sandbox_preset,
+                    "serverLogPath": os.environ.get("POOR_CLI_SERVER_LOG_FILE", ""),
                     "providerInfo": provider_info,
                     "guardedFlow": {
                         "permissionRequests": True,
@@ -765,6 +767,10 @@ class PoorCLIServer:
         instruction = params.get("instruction", "")
         file_path = params.get("filePath", "")
         language = params.get("language", "")
+        request_id = str(params.get("requestId", "")).strip()
+        provider_name = params.get("provider")
+        model_name = params.get("model")
+        stream_partial = bool(params.get("streamPartial", False))
 
         # Collect all chunks
         chunks = []
@@ -774,8 +780,34 @@ class PoorCLIServer:
             instruction=instruction,
             file_path=file_path,
             language=language,
+            request_id=request_id,
+            provider_name=provider_name,
+            model_name=model_name,
         ):
             chunks.append(chunk)
+            if stream_partial and request_id:
+                await self.write_message_stdio(
+                    JsonRpcMessage(
+                        method="poor-cli/inlineChunk",
+                        params={
+                            "requestId": request_id,
+                            "chunk": chunk,
+                            "done": False,
+                        },
+                    )
+                )
+
+        if stream_partial and request_id:
+            await self.write_message_stdio(
+                JsonRpcMessage(
+                    method="poor-cli/inlineChunk",
+                    params={
+                        "requestId": request_id,
+                        "chunk": "",
+                        "done": True,
+                    },
+                )
+            )
 
         return {"completion": "".join(chunks), "isPartial": False}
 
@@ -3790,8 +3822,9 @@ class PoorCLIServer:
 
     async def handle_cancel_request(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Cancel an in-flight agentic loop."""
-        self.core.cancel_request()
-        return {"success": True}
+        request_id = str(params.get("requestId", "")).strip()
+        self.core.cancel_request(request_id)
+        return {"success": True, "requestId": request_id}
 
     async def _streaming_permission_callback(
         self,

@@ -6,25 +6,34 @@ local M = {}
 -- Component function for lualine
 function M.component()
     local rpc = require("poor-cli.rpc")
-    
-    if not rpc.is_running() then
+    local status = rpc.get_status()
+    if not status.running then
         return ""
     end
-    
-    -- Return provider icon + status
-    return "🤖"
+
+    local state = status.state or "idle"
+    if state == "error" then
+        return "!"
+    end
+    if state == "restarting" or state == "starting" or state == "initializing" then
+        return "…"
+    end
+    return "●"
 end
 
 -- Extended component with provider name
 function M.component_extended()
     local rpc = require("poor-cli.rpc")
-    
-    if not rpc.is_running() then
+    local inline = require("poor-cli.inline")
+    local status = rpc.get_status()
+    if not status.running then
         return ""
     end
-    
+
     local provider = M._cached_provider or "AI"
-    return "🤖 " .. provider
+    local inline_state = inline.get_status().state
+    local marker = M.component()
+    return string.format("%s %s [%s]", marker, provider, inline_state)
 end
 
 -- Cache for provider info (avoid too many requests)
@@ -33,7 +42,7 @@ M._last_refresh = 0
 
 function M.refresh_provider()
     local rpc = require("poor-cli.rpc")
-    
+
     if not rpc.is_running() then
         M._cached_provider = nil
         return

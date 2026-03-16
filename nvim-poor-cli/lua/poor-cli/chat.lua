@@ -7,7 +7,6 @@ local diagnostics = require("poor-cli.diagnostics")
 
 local M = {}
 
--- State
 M.buf = nil
 M.win = nil
 M.history = {}
@@ -15,18 +14,60 @@ M.input_buf = nil
 M.input_win = nil
 M.loading_ns = vim.api.nvim_create_namespace("poor-cli-chat-loading")
 M.loading_marker = nil
-M.streaming_buf_line = nil -- line where current streaming response starts
+M.streaming_buf_line = nil
 M.streaming_request_id = nil
 M.streaming_response_text = nil
+M.active_stream = nil -- { request_id, rpc_request_id }
 
--- Open chat panel
+local function is_active_request(request_id)
+    return M.active_stream and M.active_stream.request_id ~= "" and M.active_stream.request_id == request_id
+end
+
+local function emit_debug_note(lines)
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(M.buf)
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+end
+
+local function scan_workspace_files(root, depth, results)
+    results = results or {}
+    depth = depth or 0
+    if depth > 3 or #results >= 50 then
+        return results
+    end
+
+    local handle = vim.loop.fs_scandir(root)
+    if not handle then
+        return results
+    end
+
+    while #results < 50 do
+        local name, entry_type = vim.loop.fs_scandir_next(handle)
+        if not name then
+            break
+        end
+
+        if name ~= ".git" and name ~= "node_modules" and name ~= "__pycache__" and name ~= "target" then
+            local path = vim.fs.joinpath(root, name)
+            if entry_type == "file" then
+                table.insert(results, path)
+            elseif entry_type == "directory" then
+                scan_workspace_files(path, depth + 1, results)
+            end
+        end
+    end
+
+    return results
+end
+
 function M.open()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_set_current_win(M.win)
         return
     end
-    
-    -- Create buffer if needed
+
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         M.buf = vim.api.nvim_create_buf(false, true)
         vim.bo[M.buf].buftype = "nofile"
@@ -34,47 +75,35 @@ function M.open()
         vim.bo[M.buf].swapfile = false
         vim.bo[M.buf].filetype = "markdown"
         vim.api.nvim_buf_set_name(M.buf, "[poor-cli chat]")
-        
-        -- Add welcome message
-        local welcome = {
+        vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, {
             "# poor-cli Chat",
             "",
             "Use `:PoorCliSend` or press `<CR>` at the bottom to send a message.",
             "",
             "---",
             "",
-        }
-        vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, welcome)
+        })
     end
-    
-    -- Open window
+
     local width = config.get("chat_width")
     local position = config.get("chat_position")
-    
     if position == "right" then
         vim.cmd("botright " .. width .. "vsplit")
     else
         vim.cmd("topleft " .. width .. "vsplit")
     end
-    
+
     M.win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(M.win, M.buf)
-    
-    -- Window options
     vim.wo[M.win].wrap = true
     vim.wo[M.win].linebreak = true
     vim.wo[M.win].number = false
     vim.wo[M.win].relativenumber = false
     vim.wo[M.win].signcolumn = "no"
-    
-    -- Move to end of buffer
     vim.cmd("normal! G")
-    
-    -- Setup keymaps for chat buffer
     M.setup_buffer_keymaps()
 end
 
--- Close chat panel
 function M.close()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         vim.api.nvim_win_close(M.win, true)
@@ -82,7 +111,6 @@ function M.close()
     end
 end
 
--- Toggle chat panel
 function M.toggle()
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         M.close()
@@ -91,44 +119,35 @@ function M.toggle()
     end
 end
 
--- Append a message to the chat buffer
 function M.append_message(role, content)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    
+
     local lines = {}
-    
     if role == "user" then
         table.insert(lines, "## 👤 You")
     else
         table.insert(lines, "## 🤖 Assistant")
     end
-    
+
     table.insert(lines, "")
-    
-    -- Add content lines
     for _, line in ipairs(vim.split(content, "\n", { plain = true })) do
         table.insert(lines, line)
     end
-    
     table.insert(lines, "")
     table.insert(lines, "---")
     table.insert(lines, "")
-    
-    -- Append to buffer
+
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
-    
-    -- Scroll to bottom if window is open
+
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         local new_count = vim.api.nvim_buf_line_count(M.buf)
         vim.api.nvim_win_set_cursor(M.win, { new_count, 0 })
     end
-    
-    -- Store in history
-    table.insert(M.history, { role = role, content = content })
 
+    table.insert(M.history, { role = role, content = content })
     if role == "assistant" then
         diagnostics.apply_from_text(content)
     end
@@ -155,10 +174,8 @@ function M.append_system_note(content)
     end
 end
 
--- Resolve @file:path and @workspace mentions, returns expanded message + extra context files
 function M._resolve_mentions(message)
     local extra_files = {}
-    -- @file:path — read and inline the file content
     local resolved = message:gsub("@file:([%w%._/%-~]+)", function(path)
         local abs = vim.fn.fnamemodify(path, ":p")
         if vim.fn.filereadable(abs) == 1 then
@@ -168,25 +185,46 @@ function M._resolve_mentions(message)
             local lang = vim.filetype.match({ filename = abs }) or ""
             return "```" .. lang .. "\n-- " .. path .. "\n" .. content .. "\n```"
         end
-        return "@file:" .. path -- leave unchanged if unreadable
+        return "@file:" .. path
     end)
-    -- @workspace — project structure summary
+
     resolved = resolved:gsub("@workspace", function()
         local cwd = vim.fn.getcwd()
-        local handle = io.popen("find " .. vim.fn.shellescape(cwd) ..
-            " -maxdepth 3 -not -path '*/.git/*' -not -path '*/node_modules/*'" ..
-            " -not -path '*/__pycache__/*' -not -path '*/target/*' -type f | head -50")
-        if handle then
-            local result = handle:read("*a")
-            handle:close()
-            return "```\n-- Project files:\n" .. result .. "```"
+        local files = scan_workspace_files(cwd, 0, {})
+        if #files == 0 then
+            return "@workspace"
         end
-        return "@workspace"
+        return "```\n-- Project files:\n" .. table.concat(files, "\n") .. "\n```"
     end)
+
     return resolved, extra_files
 end
 
--- Send a message (uses streaming endpoint when available)
+function M.cancel_active_stream(reason)
+    if not M.active_stream then
+        return false
+    end
+
+    local active = vim.deepcopy(M.active_stream)
+    M.active_stream = nil
+    M.streaming_request_id = nil
+    M.streaming_response_text = nil
+    M.streaming_buf_line = nil
+    if active.rpc_request_id then
+        rpc.cancel_request(active.rpc_request_id, {
+            code = -32800,
+            message = reason or "Request cancelled",
+            data = {
+                request_id = active.request_id,
+            },
+        })
+    end
+    if reason then
+        M.append_system_note(reason)
+    end
+    return true
+end
+
 function M.send(message)
     if not message or message == "" then
         return
@@ -197,86 +235,93 @@ function M.send(message)
         return
     end
 
-    -- Resolve @ mentions
-    local resolved_msg, mention_files = M._resolve_mentions(message)
-
-    diagnostics.clear()
-    M.append_message("user", message) -- show original in chat
-    local context_files = M.get_context_files()
-    for _, f in ipairs(mention_files) do
-        table.insert(context_files, f)
+    M.open()
+    if M.active_stream then
+        M.cancel_active_stream("Cancelled previous chat request.")
     end
 
-    -- Use streaming endpoint
-    M.streaming_request_id = tostring(os.time()) .. "-" .. tostring(math.random(1000, 9999))
+    local resolved_msg, mention_files = M._resolve_mentions(message)
+    diagnostics.clear()
+    M.append_message("user", message)
+
+    local context_files = M.get_context_files()
+    for _, file_path in ipairs(mention_files) do
+        table.insert(context_files, file_path)
+    end
+
+    local request_id = string.format("chat-%d-%d", os.time(), math.random(1000, 9999))
+    M.active_stream = {
+        request_id = request_id,
+        rpc_request_id = nil,
+    }
+    M.streaming_request_id = request_id
     M._start_streaming_block()
 
-    rpc.request("poor-cli/chatStreaming", {
+    local rpc_request_id = rpc.request("poor-cli/chatStreaming", {
         message = resolved_msg,
         contextFiles = context_files,
-        requestId = M.streaming_request_id,
-    }, function(result, err)
+        requestId = request_id,
+    }, function(_result, err)
         vim.schedule(function()
-            M._finalize_streaming_block()
-            if err then
+            if not is_active_request(request_id) then
+                return
+            end
+
+            M._finalize_streaming_block(request_id)
+            if err and err.code ~= -32800 then
                 M.append_message("assistant", "Error: " .. vim.inspect(err))
             end
         end)
     end)
+
+    M.active_stream.rpc_request_id = rpc_request_id
 end
 
--- Start a streaming assistant message block
 function M._start_streaming_block()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
-    local header = { "## 🤖 Assistant", "" }
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, header)
-    M.streaming_buf_line = line_count + #header -- 0-indexed line where text goes
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, { "## 🤖 Assistant", "" })
+    M.streaming_buf_line = line_count + 2
     M.streaming_response_text = ""
 end
 
--- Append a streaming chunk to the current block
 function M._append_streaming_chunk(chunk)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    if not M.streaming_buf_line then
+    if not M.streaming_buf_line or not chunk or chunk == "" then
         return
     end
-    if not chunk or chunk == "" then
-        return
-    end
-    M.streaming_response_text = (M.streaming_response_text or "") .. chunk
 
-    -- Get current last line of the streaming block
+    M.streaming_response_text = (M.streaming_response_text or "") .. chunk
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local last_line_idx = line_count - 1
     local last_line = vim.api.nvim_buf_get_lines(M.buf, last_line_idx, line_count, false)[1] or ""
 
-    -- Normalize CRLF to LF before splitting
     chunk = chunk:gsub("\r\n", "\n"):gsub("\r", "\n")
     local parts = vim.split(chunk, "\n", { plain = true })
     if #parts == 1 then
         vim.api.nvim_buf_set_lines(M.buf, last_line_idx, line_count, false, { last_line .. parts[1] })
     else
         local lines = { last_line .. parts[1] }
-        for i = 2, #parts do
-            table.insert(lines, parts[i])
+        for index = 2, #parts do
+            table.insert(lines, parts[index])
         end
         vim.api.nvim_buf_set_lines(M.buf, last_line_idx, line_count, false, lines)
     end
 
-    -- Scroll to bottom
     if M.win and vim.api.nvim_win_is_valid(M.win) then
         local new_count = vim.api.nvim_buf_line_count(M.buf)
         pcall(vim.api.nvim_win_set_cursor, M.win, { new_count, 0 })
     end
 end
 
--- Finalize streaming block
-function M._finalize_streaming_block()
+function M._finalize_streaming_block(request_id)
+    if request_id and not is_active_request(request_id) then
+        return
+    end
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
@@ -286,11 +331,11 @@ function M._finalize_streaming_block()
     end
     diagnostics.apply_from_text(M.streaming_response_text or "")
     M.streaming_buf_line = nil
-    M.streaming_request_id = nil
     M.streaming_response_text = nil
+    M.streaming_request_id = nil
+    M.active_stream = nil
 end
 
--- Setup streaming autocmds
 function M.setup_streaming_autocmds()
     local group = vim.api.nvim_create_augroup("PoorCliChatStreaming", { clear = true })
     vim.api.nvim_create_autocmd("User", {
@@ -298,9 +343,12 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCliStreamChunk",
         callback = function(ev)
             local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
             if data.done then
                 vim.schedule(function()
-                    M._finalize_streaming_block()
+                    M._finalize_streaming_block(data.request_id)
                 end)
             elseif data.chunk and data.chunk ~= "" then
                 vim.schedule(function()
@@ -314,6 +362,9 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCliToolEvent",
         callback = function(ev)
             local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
             vim.schedule(function()
                 if data.event_type == "tool_call_start" then
                     M._append_tool_call(data.tool_name, data.tool_args)
@@ -333,6 +384,9 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCliPermissionReq",
         callback = function(ev)
             local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
             vim.schedule(function()
                 M._handle_permission_request(data.tool_name, data.tool_args, data.prompt_id)
             end)
@@ -343,13 +397,47 @@ function M.setup_streaming_autocmds()
         pattern = "PoorCliPlanReq",
         callback = function(ev)
             local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
             vim.schedule(function()
-                M._handle_plan_request(
-                    data.summary,
-                    data.original_request,
-                    data.steps,
-                    data.prompt_id
-                )
+                M._handle_plan_request(data.summary, data.original_request, data.steps, data.prompt_id)
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliProgress",
+        callback = function(ev)
+            local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
+            vim.schedule(function()
+                if data.message and data.message ~= "" then
+                    emit_debug_note({ "_" .. tostring(data.message) .. "_", "" })
+                end
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "PoorCliCostUpdate",
+        callback = function(ev)
+            local data = ev.data or {}
+            if not is_active_request(data.request_id or "") then
+                return
+            end
+            vim.schedule(function()
+                emit_debug_note({
+                    string.format(
+                        "_tokens in=%s out=%s cost=%s_",
+                        tostring(data.input_tokens or 0),
+                        tostring(data.output_tokens or 0),
+                        tostring(data.estimated_cost or 0)
+                    ),
+                    "",
+                })
             end)
         end,
     })
@@ -385,7 +473,6 @@ function M.setup_streaming_autocmds()
     })
 end
 
--- Handle interactive permission request from server
 function M._handle_permission_request(tool_name, tool_args, prompt_id)
     local args_str = type(tool_args) == "table" and vim.inspect(tool_args) or tostring(tool_args or "")
     local msg = string.format("Allow %s?\n%s", tool_name or "tool", args_str)
@@ -493,18 +580,21 @@ function M._handle_suggestion(data)
     M.append_system_note(summary)
 end
 
--- Append a tool call block to the chat buffer
 function M._append_tool_call(name, args)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local args_str = type(args) == "table" and vim.inspect(args) or tostring(args or "")
-    local lines = { "**🔧 " .. (name or "tool") .. "**", "```", args_str, "```", "" }
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
+        "**🔧 " .. (name or "tool") .. "**",
+        "```",
+        args_str,
+        "```",
+        "",
+    })
 end
 
--- Append a tool result block
 function M._append_tool_result(name, result)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
@@ -514,11 +604,15 @@ function M._append_tool_result(name, result)
     if #result_str > 500 then
         result_str = result_str:sub(1, 500) .. "…"
     end
-    local lines = { "**✓ " .. (name or "tool") .. " result**", "```", result_str, "```", "" }
-    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
+    vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, {
+        "**✓ " .. (name or "tool") .. " result**",
+        "```",
+        result_str,
+        "```",
+        "",
+    })
 end
 
--- Append a diff view block
 function M._append_diff_view(name, diff_text)
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
@@ -533,23 +627,20 @@ function M._append_diff_view(name, diff_text)
     vim.api.nvim_buf_set_lines(M.buf, line_count, line_count, false, lines)
 end
 
--- Get list of open buffer file paths for context
 function M.get_context_files()
     local files = {}
     local seen = {}
     local max_context_files = tonumber(config.get("max_context_files")) or 20
     local should_cap = max_context_files > 0
-    
+
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_loaded(bufnr) then
             local name = vim.api.nvim_buf_get_name(bufnr)
             if name ~= "" and vim.fn.filereadable(name) == 1 then
-                -- Only include code files
                 local ft = vim.bo[bufnr].filetype
                 if ft ~= "" and ft ~= "help" and ft ~= "markdown" then
                     local absolute = vim.fn.fnamemodify(name, ":p")
                     local canonical = vim.loop.fs_realpath(absolute) or absolute
-
                     if canonical ~= "" and not seen[canonical] then
                         seen[canonical] = true
                         table.insert(files, canonical)
@@ -561,29 +652,26 @@ function M.get_context_files()
             end
         end
     end
-    
+
     return files
 end
 
--- Setup keymaps for chat buffer
 function M.setup_buffer_keymaps()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
-    
-    -- q to close
+
     vim.keymap.set("n", "q", function()
         M.close()
     end, { buffer = M.buf, desc = "Close chat" })
-    
-    -- <CR> to prompt for message
+
     vim.keymap.set("n", "<CR>", function()
         M.prompt_and_send()
     end, { buffer = M.buf, desc = "Send message" })
 end
 
--- Prompt for message and send
 function M.prompt_and_send()
+    M.open()
     vim.ui.input({ prompt = "Message: " }, function(input)
         if input and input ~= "" then
             M.send(input)
@@ -591,15 +679,12 @@ function M.prompt_and_send()
     end)
 end
 
--- Append loading indicator
 function M.append_loading()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
         return
     end
 
-    -- Keep only one loading block at a time.
     M.remove_loading()
-
     local line_count = vim.api.nvim_buf_line_count(M.buf)
     local loading_lines = {
         "## 🤖 Assistant",
@@ -616,23 +701,14 @@ function M.append_loading()
     })
 end
 
--- Remove loading indicator
 function M.remove_loading()
-    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
+    if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) or not M.loading_marker then
         return
     end
 
-    if not M.loading_marker then
-        return
-    end
-
-    local marker = vim.api.nvim_buf_get_extmark_by_id(
-        M.buf,
-        M.loading_ns,
-        M.loading_marker,
-        { details = true }
-    )
-
+    local marker = vim.api.nvim_buf_get_extmark_by_id(M.buf, M.loading_ns, M.loading_marker, {
+        details = true,
+    })
     if marker and #marker >= 3 then
         local start_row = marker[1]
         local details = marker[3] or {}
@@ -646,56 +722,48 @@ function M.remove_loading()
     M.loading_marker = nil
 end
 
--- Send with current visual selection
 function M.send_with_selection()
     local mode = vim.fn.mode()
     if mode ~= "v" and mode ~= "V" then
         vim.notify("[poor-cli] Select text first", vim.log.levels.WARN)
         return
     end
-    
-    -- Get selection
+
     vim.cmd('normal! "xy')
     local selected_text = vim.fn.getreg("x")
-    
     if not selected_text or selected_text == "" then
         return
     end
-    
-    -- Open chat if not open
+
     M.open()
-    
-    -- Prompt for question about the selection
     vim.ui.input({ prompt = "Ask about selection: " }, function(question)
         if not question or question == "" then
             question = "Please explain this code."
         end
-        
+
         local message = question .. "\n\n```\n" .. selected_text .. "\n```"
         M.send(message)
     end)
 end
 
--- Clear chat history
 function M.clear()
     if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
-        local welcome = {
+        vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, {
             "# poor-cli Chat",
             "",
             "Use `:PoorCliSend` or press `<CR>` at the bottom to send a message.",
             "",
             "---",
             "",
-        }
-        vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, welcome)
+        })
     end
     M.history = {}
+    M.active_stream = nil
     M.streaming_buf_line = nil
     M.streaming_request_id = nil
     M.streaming_response_text = nil
     diagnostics.clear()
 
-    -- Also clear server history
     if rpc.is_running() then
         rpc.request("poor-cli/clearHistory", {}, function() end)
     end
