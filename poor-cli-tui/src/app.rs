@@ -610,6 +610,30 @@ pub struct QuickOpenState {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct ApiKeyEditorField {
+    pub label: String,
+    pub provider: Option<String>,
+    pub env_var: String,
+    pub help: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ApiKeyEditorState {
+    pub env_path: String,
+    pub template_path: String,
+    pub env_exists: bool,
+    pub selected_index: usize,
+    pub cursor: usize,
+    pub fields: Vec<ApiKeyEditorField>,
+    pub status: String,
+    pub error: String,
+    pub init_error: String,
+    pub target_provider: String,
+    pub target_model: String,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct ResumeDashboardState {
     pub last_session_summary: String,
     pub recent_checkpoints: Vec<String>,
@@ -803,6 +827,7 @@ pub enum AppMode {
     Command,
     ProviderSelect,
     InfoPopup,
+    ApiKeyEditor,
     PermissionPrompt,
     MutationReview,
     ContextInspector,
@@ -923,6 +948,7 @@ pub struct App {
     pub info_popup_title: String,
     pub info_popup_content: String,
     pub info_popup_scroll: u16,
+    pub api_key_editor: Option<ApiKeyEditorState>,
 
     // ── Session info ───
     pub streaming_enabled: bool,
@@ -1080,6 +1106,7 @@ impl Default for App {
             info_popup_title: String::new(),
             info_popup_content: String::new(),
             info_popup_scroll: 0,
+            api_key_editor: None,
             streaming_enabled: true,
             version: "0.4.0".into(),
             waiting: false,
@@ -1217,16 +1244,22 @@ impl App {
                 self.resume_dashboard.last_session_summary
             )
         };
+        let setup_line = if self.server_connected {
+            String::new()
+        } else {
+            "\n/setup configures API keys and creates .env".to_string()
+        };
         format!(
             "poor-cli (v{version})\n\
             {model_display} · {provider} · {permission_mode}\n\
             {workspace}\n\n\
-            ? for shortcuts{last_session_line}",
+            ? for shortcuts{setup_line}{last_session_line}",
             version = self.version,
             model_display = model_display,
             provider = self.provider_name,
             permission_mode = self.permission_mode_label,
             workspace = workspace,
+            setup_line = setup_line,
             last_session_line = last_session_line,
         )
     }
@@ -1680,6 +1713,21 @@ impl App {
         self.info_popup_title.clear();
         self.info_popup_content.clear();
         self.info_popup_scroll = 0;
+        self.mode = AppMode::Normal;
+    }
+
+    pub fn open_api_key_editor(&mut self, mut state: ApiKeyEditorState) {
+        if !state.fields.is_empty() {
+            state.selected_index = state.selected_index.min(state.fields.len() - 1);
+            let max_cursor = state.fields[state.selected_index].value.len();
+            state.cursor = state.cursor.min(max_cursor);
+        }
+        self.api_key_editor = Some(state);
+        self.mode = AppMode::ApiKeyEditor;
+    }
+
+    pub fn close_api_key_editor(&mut self) {
+        self.api_key_editor = None;
         self.mode = AppMode::Normal;
     }
 
