@@ -1313,8 +1313,9 @@ class PoorCLICore:
                     break
 
                 else:
-                    if chunk.thinking_content:
-                        yield CoreEvent.thinking_chunk(chunk.thinking_content, request_id)
+                    thinking = getattr(chunk, "thinking_content", None)
+                    if thinking:
+                        yield CoreEvent.thinking_chunk(thinking, request_id)
                     if chunk.content:
                         accumulated_text += chunk.content
                         yield CoreEvent.text_chunk(chunk.content, request_id)
