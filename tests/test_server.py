@@ -1424,6 +1424,47 @@ class TestPoorCLIServer:
         message = await server.read_message_stdio()
 
         assert message is None
+        assert isinstance(server._transport.last_error, EOFError)
+
+    @pytest.mark.asyncio
+    async def test_read_message_stdio_records_invalid_json_parse_error(self, server, monkeypatch):
+        body = '{"jsonrpc": "2.0", "id": 1, "method": '
+        fragments = [f"Content-Length: {len(body)}\r\n\r\n", body]
+
+        monkeypatch.setattr("poor_cli._server.sys.stdin", _FragmentedStdin(fragments))
+        monkeypatch.setattr("poor_cli._server.asyncio.get_event_loop", lambda: _InlineEventLoop())
+
+        message = await server.read_message_stdio()
+
+        assert message is None
+        assert isinstance(server._transport.last_error, json.JSONDecodeError)
+
+    @pytest.mark.asyncio
+    async def test_run_stdio_skips_malformed_message_and_continues(self, server):
+        valid_message = JsonRpcMessage(id=11, method="shutdown")
+        sequence = [("error", None), ("message", valid_message), ("eof", None)]
+
+        async def _fake_read():
+            kind, payload = sequence.pop(0)
+            if kind == "error":
+                server._transport.last_error = ValueError("bad json payload")
+                return None
+            server._transport.last_error = None
+            return payload
+
+        response = JsonRpcMessage(id=11, result={"ok": True})
+        server.write_message_stdio = AsyncMock()
+
+        with (
+            patch.object(server, "read_message_stdio", _fake_read),
+            patch.object(server, "dispatch", AsyncMock(return_value=response)) as dispatch_mock,
+            patch.object(server.logger, "warning") as warning_mock,
+        ):
+            await server.run_stdio()
+
+        dispatch_mock.assert_awaited_once_with(valid_message)
+        server.write_message_stdio.assert_awaited_once_with(response)
+        warning_mock.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_initialize_accepts_permission_mode_param(self, server):

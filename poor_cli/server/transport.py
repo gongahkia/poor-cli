@@ -16,6 +16,7 @@ class StdioTransport:
 
     def __init__(self) -> None:
         self.logger = setup_logger("poor_cli.server.transport")
+        self.last_error: Optional[Exception] = None
 
     async def read_message(self) -> Optional[JsonRpcMessage]:
         """Read a JSON-RPC message from stdin using Content-Length headers.
@@ -23,6 +24,7 @@ class StdioTransport:
         Returns:
             Parsed message or None on EOF.
         """
+        self.last_error = None
         try:
             loop = asyncio.get_event_loop()
             stdin_reader = getattr(sys.stdin, "buffer", sys.stdin)
@@ -32,6 +34,8 @@ class StdioTransport:
             while header_delimiter is None:
                 chunk = await loop.run_in_executor(None, lambda: stdin_reader.read(1))
                 if not chunk:
+                    if header_buffer:
+                        self.last_error = EOFError("Incomplete JSON-RPC header")
                     return None
                 if isinstance(chunk, str):
                     chunk = chunk.encode("utf-8")
@@ -53,6 +57,7 @@ class StdioTransport:
                     break
 
             if content_length <= 0:
+                self.last_error = ValueError("Missing or invalid Content-Length header")
                 return None
 
             body = body_prefix
@@ -62,6 +67,7 @@ class StdioTransport:
                     None, lambda size=remaining: stdin_reader.read(size)
                 )
                 if not chunk:
+                    self.last_error = EOFError("Incomplete JSON-RPC body")
                     return None
                 if isinstance(chunk, str):
                     chunk = chunk.encode("utf-8")
@@ -71,9 +77,11 @@ class StdioTransport:
             return JsonRpcMessage.from_json(body.decode("utf-8"))
 
         except json.JSONDecodeError as e:
+            self.last_error = e
             self.logger.error(f"JSON parse error: {e}")
             return None
         except Exception as e:
+            self.last_error = e
             self.logger.error(f"Read error: {e}")
             return None
 

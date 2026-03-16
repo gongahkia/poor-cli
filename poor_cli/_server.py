@@ -4158,8 +4158,15 @@ class PoorCLIServer:
         while self._running:
             try:
                 message = await self.read_message_stdio()
+                transport_error = getattr(self._transport, "last_error", None)
 
                 if message is None:
+                    if transport_error is not None:
+                        self.logger.warning(
+                            "Skipping malformed stdio message: %s",
+                            transport_error,
+                        )
+                        continue
                     self.logger.info("EOF received, shutting down")
                     break
 
