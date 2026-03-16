@@ -5484,6 +5484,93 @@ mod tests {
     }
 
     #[test]
+    fn update_env_file_contents_rewrites_template_and_preserves_other_entries() {
+        let base = "\
+# example\n\
+GEMINI_API_KEY=old-gemini\n\
+# OPENAI_API_KEY=your-openai-key-here\n\
+CUSTOM_FLAG=yes\n";
+        let updates = HashMap::from([
+            ("GEMINI_API_KEY".to_string(), "new-gemini".to_string()),
+            ("OPENAI_API_KEY".to_string(), "sk-openai".to_string()),
+        ]);
+
+        let rendered = update_env_file_contents(base, &updates);
+
+        assert!(rendered.contains("GEMINI_API_KEY=new-gemini"));
+        assert!(rendered.contains("OPENAI_API_KEY=sk-openai"));
+        assert!(rendered.contains("CUSTOM_FLAG=yes"));
+    }
+
+    #[test]
+    fn select_setup_provider_model_falls_back_to_first_configured_provider() {
+        let editor = ApiKeyEditorState {
+            target_provider: "gemini".to_string(),
+            target_model: "gemini-2.0-flash".to_string(),
+            fields: vec![
+                ApiKeyEditorField {
+                    label: "Gemini".to_string(),
+                    provider: Some("gemini".to_string()),
+                    env_var: "GEMINI_API_KEY".to_string(),
+                    help: String::new(),
+                    value: String::new(),
+                },
+                ApiKeyEditorField {
+                    label: "OpenAI".to_string(),
+                    provider: Some("openai".to_string()),
+                    env_var: "OPENAI_API_KEY".to_string(),
+                    help: String::new(),
+                    value: "sk-openai".to_string(),
+                },
+            ],
+            ..ApiKeyEditorState::default()
+        };
+
+        let (provider, model) = select_setup_provider_model(&editor);
+
+        assert_eq!(provider, "openai");
+        assert_eq!(model, "gpt-4-turbo");
+    }
+
+    #[test]
+    fn build_api_key_editor_state_loads_existing_env_values() {
+        let root = create_temp_workspace("api-key-editor");
+        fs::write(
+            root.join(".env"),
+            "GEMINI_API_KEY=gm-live\nOPENAI_API_KEY=sk-live\n",
+        )
+        .expect(".env should be written");
+        fs::write(root.join(".env.example"), "# template\n").expect("template should be written");
+
+        let mut app = build_app_for_root(&root);
+        app.provider_name = "openai".to_string();
+        app.model_name = "gpt-4-turbo".to_string();
+
+        let state = build_api_key_editor_state(&app, Some("Initialization failed"))
+            .expect("editor state should build");
+
+        assert!(state.env_exists);
+        assert_eq!(state.init_error, "Initialization failed");
+        assert_eq!(
+            state
+                .fields
+                .iter()
+                .find(|field| field.env_var == "GEMINI_API_KEY")
+                .map(|field| field.value.as_str()),
+            Some("gm-live")
+        );
+        assert_eq!(
+            state
+                .fields
+                .iter()
+                .find(|field| field.env_var == "OPENAI_API_KEY")
+                .map(|field| field.value.as_str()),
+            Some("sk-live")
+        );
+        assert_eq!(state.selected_index, 1);
+    }
+
+    #[test]
     fn parse_bang_command_extracts_command_text() {
         assert_eq!(
             parse_bang_command("!cat README.md"),

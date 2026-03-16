@@ -1755,6 +1755,53 @@ class TestPoorCLIServer:
         assert providers["gemini"]["persisted"] is True
 
     @pytest.mark.asyncio
+    async def test_handle_set_api_key_bootstraps_config_before_initialize(self, server):
+        server.initialized = False
+        server.core.switch_provider = AsyncMock()
+
+        fake_store = MagicMock()
+        with (
+            patch("poor_cli.api_key_manager.get_api_key_manager", return_value=fake_store),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            result = await server.handle_set_api_key(
+                {"provider": "gemini", "apiKey": "gm-test-key", "persist": False}
+            )
+            assert os.environ["GEMINI_API_KEY"] == "gm-test-key"
+
+        assert result["success"] is True
+        assert result["provider"] == "gemini"
+        assert result["activeProviderReloaded"] is False
+        assert server.core.config is not None
+        assert server.core._config_manager is not None
+        assert server.core.config.api_keys["gemini"] == "gm-test-key"
+        fake_store.store_key.assert_not_called()
+        server.core.switch_provider.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_get_api_key_status_works_before_initialize(self, server):
+        server.initialized = False
+
+        fake_store = MagicMock()
+        fake_store.list_providers.return_value = {"openai": {"created_at": "now"}}
+        fake_store.get_key.side_effect = lambda provider: (
+            "secure-openai-key" if provider == "openai" else None
+        )
+
+        with (
+            patch("poor_cli.api_key_manager.get_api_key_manager", return_value=fake_store),
+            patch.dict("os.environ", {"GEMINI_API_KEY": "env-gemini-key"}, clear=True),
+        ):
+            result = await server.handle_get_api_key_status({})
+
+        providers = result["providers"]
+        assert providers["gemini"]["source"] == "environment"
+        assert providers["gemini"]["configured"] is True
+        assert providers["gemini"]["active"] is True
+        assert providers["openai"]["source"] == "secure-store"
+        assert providers["openai"]["persisted"] is True
+
+    @pytest.mark.asyncio
     async def test_handle_inline_complete_streams_partial_chunks(self, server):
         server.initialized = True
         captured = {}
