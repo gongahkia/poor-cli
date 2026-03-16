@@ -57,28 +57,12 @@ pub fn render_markdown(text: &str, theme_mode: ThemeMode) -> Vec<Line<'static>> 
         }
 
         // Headings
-        if raw_line.starts_with("### ") {
-            lines.push(Line::from(Span::styled(
-                raw_line[4..].to_string(),
-                theme::heading_style(theme_mode)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            )));
-            continue;
-        }
-        if raw_line.starts_with("## ") {
-            lines.push(Line::from(Span::styled(
-                raw_line[3..].to_string(),
-                theme::heading_style(theme_mode)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            )));
-            continue;
-        }
-        if raw_line.starts_with("# ") {
-            lines.push(Line::from(Span::styled(
-                raw_line[2..].to_string(),
-                theme::heading_style(theme_mode)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            )));
+        if let Some((level, heading_text)) = strip_heading_prefix(raw_line) {
+            let mut style = theme::heading_style(theme_mode).add_modifier(Modifier::BOLD);
+            if level <= 3 {
+                style = style.add_modifier(Modifier::UNDERLINED);
+            }
+            lines.push(Line::from(Span::styled(heading_text.to_string(), style)));
             continue;
         }
 
@@ -291,6 +275,28 @@ fn strip_ordered_list_prefix(line: &str) -> Option<&str> {
     }
 }
 
+/// Strip an ATX heading prefix like "#### title" and return the level plus content.
+fn strip_heading_prefix(line: &str) -> Option<(usize, &str)> {
+    let trimmed = line.trim_start();
+    let level = trimmed.chars().take_while(|c| *c == '#').count();
+    if level == 0 || level > 6 {
+        return None;
+    }
+
+    let after_hashes = trimmed.get(level..)?;
+    if !after_hashes.starts_with(' ') {
+        return None;
+    }
+
+    let content = after_hashes[1..].trim_end();
+    let content = match content.rfind(" #") {
+        Some(idx) if content[idx + 1..].chars().all(|c| c == '#') => &content[..idx],
+        _ => content,
+    };
+
+    Some((level, content.trim_end()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,6 +305,27 @@ mod tests {
     fn test_render_heading() {
         let lines = render_markdown("# Hello", ThemeMode::Dark);
         assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_render_level_four_heading() {
+        let lines = render_markdown("#### Step 1: Run Tests", ThemeMode::Dark);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].content.as_ref(), "Step 1: Run Tests");
+    }
+
+    #[test]
+    fn test_render_level_six_heading_with_closing_hashes() {
+        let lines = render_markdown("###### Tiny Heading ######", ThemeMode::Dark);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].content.as_ref(), "Tiny Heading");
+    }
+
+    #[test]
+    fn test_reject_invalid_heading_without_space() {
+        let lines = render_markdown("####Not a heading", ThemeMode::Dark);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].content.as_ref(), "####Not a heading");
     }
 
     #[test]
