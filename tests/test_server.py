@@ -2,6 +2,7 @@
 Tests for the JSON-RPC server.
 """
 
+import asyncio
 import json
 import os
 import subprocess
@@ -510,6 +511,37 @@ class TestPoorCLIServer:
 
         assert result["task"]["status"] == "queued"
         assert result["task"]["approvedAt"] is not None
+
+    @pytest.mark.asyncio
+    async def test_handle_shutdown_resolves_pending_reviews_and_shuts_core(self, server):
+        server._running = True
+        loop = asyncio.get_event_loop()
+        permission_future = loop.create_future()
+        plan_future = loop.create_future()
+        server._pending_permissions["perm-1"] = permission_future
+        server._pending_plans["plan-1"] = plan_future
+        server.core.shutdown = AsyncMock()
+
+        with (
+            patch.object(server, "_shutdown_background_tasks", AsyncMock()) as bg_mock,
+            patch.object(server, "_shutdown_host_server_locked", AsyncMock()) as host_mock,
+            patch.object(server, "_shutdown_managed_services_locked", AsyncMock()) as svc_mock,
+        ):
+            await server.handle_shutdown({})
+
+        assert permission_future.result() == {
+            "allowed": False,
+            "approvedPaths": [],
+            "approvedChunks": [],
+        }
+        assert plan_future.result() is False
+        assert server._pending_permissions == {}
+        assert server._pending_plans == {}
+        bg_mock.assert_awaited_once()
+        host_mock.assert_awaited_once()
+        svc_mock.assert_awaited_once()
+        server.core.shutdown.assert_awaited_once()
+        assert server._running is False
 
     @pytest.mark.asyncio
     async def test_handle_create_automation_supports_execution_metadata(
@@ -1376,6 +1408,71 @@ class TestPoorCLIServer:
 
         # Shutdown returns None result
         assert response.error is None
+
+    @pytest.mark.asyncio
+    async def test_run_stdio_eof_resolves_pending_reviews_and_shuts_core(self, server):
+        loop = asyncio.get_event_loop()
+        permission_future = loop.create_future()
+        plan_future = loop.create_future()
+        server._pending_permissions["perm-1"] = permission_future
+        server._pending_plans["plan-1"] = plan_future
+        server.core.shutdown = AsyncMock()
+
+        async def _read_eof():
+            server._transport.last_error = None
+            return None
+
+        with (
+            patch.object(server, "read_message_stdio", _read_eof),
+            patch.object(server, "_shutdown_background_tasks", AsyncMock()) as bg_mock,
+            patch.object(server, "_shutdown_host_server_locked", AsyncMock()) as host_mock,
+            patch.object(server, "_shutdown_managed_services_locked", AsyncMock()) as svc_mock,
+        ):
+            await server.run_stdio()
+
+        assert permission_future.result() == {
+            "allowed": False,
+            "approvedPaths": [],
+            "approvedChunks": [],
+        }
+        assert plan_future.result() is False
+        bg_mock.assert_awaited_once()
+        host_mock.assert_awaited_once()
+        svc_mock.assert_awaited_once()
+        server.core.shutdown.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_stdio_cancels_background_stream_tasks_on_exit(self, server):
+        cancelled = asyncio.Event()
+        sequence = [JsonRpcMessage(id=5, method="poor-cli/chatStreaming"), None]
+
+        async def _read_messages():
+            if len(sequence) == 1:
+                await asyncio.sleep(0)
+            message = sequence.pop(0)
+            server._transport.last_error = None
+            return message
+
+        async def _dispatch_and_block(_message):
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        server.core.shutdown = AsyncMock()
+
+        with (
+            patch.object(server, "read_message_stdio", _read_messages),
+            patch.object(server, "_dispatch_and_respond", _dispatch_and_block),
+            patch.object(server, "_shutdown_host_server_locked", AsyncMock()),
+            patch.object(server, "_shutdown_managed_services_locked", AsyncMock()),
+        ):
+            await server.run_stdio()
+
+        assert cancelled.is_set()
+        assert server._background_tasks == set()
+        server.core.shutdown.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_read_message_stdio_handles_fragmented_header_and_body(self, server, monkeypatch):

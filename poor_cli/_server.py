@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -95,6 +95,7 @@ class PoorCLIServer:
         self._client_capabilities: Dict[str, Any] = {}
         self._pending_permissions: Dict[str, asyncio.Future] = {}  # promptId → Future[bool]
         self._pending_plans: Dict[str, asyncio.Future] = {}  # promptId -> Future[bool]
+        self._background_tasks: Set[asyncio.Task[Any]] = set()
         self._embedded_multiplayer_room = False
         self._host_server_lock: Optional[asyncio.Lock] = None
         self._host_server: Optional[Any] = None
@@ -434,6 +435,43 @@ class PoorCLIServer:
             self._service_lock = asyncio.Lock()
         return self._service_lock
 
+    def _track_background_task(self, task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+        self._background_tasks.add(task)
+
+        def _discard(done_task: asyncio.Task[Any]) -> None:
+            self._background_tasks.discard(done_task)
+
+        task.add_done_callback(_discard)
+        return task
+
+    def _resolve_pending_review_requests(self) -> None:
+        denied_permission = {
+            "allowed": False,
+            "approvedPaths": [],
+            "approvedChunks": [],
+        }
+        for future in list(self._pending_permissions.values()):
+            if not future.done():
+                future.set_result(dict(denied_permission))
+        self._pending_permissions.clear()
+
+        for future in list(self._pending_plans.values()):
+            if not future.done():
+                future.set_result(False)
+        self._pending_plans.clear()
+
+    async def _shutdown_background_tasks(self) -> None:
+        tasks = [task for task in self._background_tasks if not task.done()]
+        if not tasks:
+            self._background_tasks.clear()
+            return
+
+        for task in tasks:
+            task.cancel()
+        with contextlib.suppress(Exception):
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._background_tasks.clear()
+
     async def _server_permission_callback(
         self,
         tool_name: str,
@@ -636,6 +674,8 @@ class PoorCLIServer:
         """Shutdown the server."""
         del params
         self.logger.info("Shutdown requested")
+        self._resolve_pending_review_requests()
+        await self._shutdown_background_tasks()
         async with self._get_host_server_lock():
             await self._shutdown_host_server_locked()
         async with self._get_service_lock():
@@ -4177,7 +4217,9 @@ class PoorCLIServer:
 
                 # Streaming requests run concurrently so permission flow works
                 if message.method == "poor-cli/chatStreaming":
-                    asyncio.ensure_future(self._dispatch_and_respond(message))
+                    self._track_background_task(
+                        asyncio.create_task(self._dispatch_and_respond(message))
+                    )
                 else:
                     response = await self.dispatch(message)
                     if message.id is not None:
@@ -4186,12 +4228,16 @@ class PoorCLIServer:
             except Exception as e:
                 self.logger.exception("Error in main loop")
 
+        self._resolve_pending_review_requests()
+        await self._shutdown_background_tasks()
         async with self._get_host_server_lock():
             with contextlib.suppress(Exception):
                 await self._shutdown_host_server_locked()
         async with self._get_service_lock():
             with contextlib.suppress(Exception):
                 await self._shutdown_managed_services_locked()
+        with contextlib.suppress(Exception):
+            await self.core.shutdown()
         self.logger.info("Stdio server stopped")
 
 
