@@ -9,18 +9,25 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+import contextlib
 import json
 from pathlib import Path
 import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Deque, Dict, List, Optional
 
 from aiohttp import WSMsgType, web
 
 from .exceptions import setup_logger
+from .multiplayer_invites import (
+    build_owner_fingerprint,
+    build_signed_invite,
+    encode_legacy_invite,
+    verify_signed_invite,
+)
 from .multiplayer_session import AgendaItem, CollaborationSession, InviteToken
 
 logger = setup_logger(__name__)
@@ -31,7 +38,7 @@ class ConnectionState:
     """Connected websocket client state."""
 
     connection_id: str
-    ws: web.WebSocketResponse
+    ws: Any
     role: Optional[str] = None
     room_name: Optional[str] = None
     initialized: bool = False
@@ -44,6 +51,31 @@ class ConnectionState:
     last_active: float = field(default_factory=time.time)
     last_pong: float = field(default_factory=time.monotonic)
     request_timestamps: Deque[float] = field(default_factory=deque)
+    heartbeat_enabled: bool = True
+
+
+class DataChannelTransport:
+    """A minimal send/close wrapper over a WebRTC data channel."""
+
+    def __init__(self, channel: Any):
+        self._channel = channel
+
+    @property
+    def closed(self) -> bool:
+        return str(getattr(self._channel, "readyState", "closed")) != "open"
+
+    async def send_str(self, payload: str) -> None:
+        if self.closed:
+            raise ConnectionError("data channel is not open")
+        self._channel.send(payload)
+
+    async def close(self, code: int = 1000, message: bytes = b"") -> None:
+        del code, message
+        if not self.closed:
+            self._channel.close()
+
+    async def ping(self) -> None:
+        return
 
 @dataclass
 class QueuedRequest:
@@ -173,6 +205,10 @@ class MultiplayerHost:
         heartbeat_interval_seconds: float = 30.0,
         pong_timeout_seconds: float = 60.0,
         requests_per_minute: int = 10,
+        invite_secret: Optional[str] = None,
+        invite_ttl_seconds: int = 900,
+        owner_name: str = "",
+        ice_servers: Optional[List[Dict[str, Any]]] = None,
     ):
         self.bind_host = bind_host
         self.port = port
@@ -183,6 +219,12 @@ class MultiplayerHost:
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.pong_timeout_seconds = pong_timeout_seconds
         self.requests_per_minute = max(1, requests_per_minute)
+        self.invite_secret = invite_secret or secrets.token_urlsafe(32)
+        self.invite_ttl_seconds = max(1, invite_ttl_seconds)
+        self.owner_name = owner_name.strip() or "owner"
+        self.owner_id = f"owner-{uuid.uuid4().hex[:12]}"
+        self.owner_fingerprint = build_owner_fingerprint(self.invite_secret)
+        self.ice_servers = [dict(entry) for entry in (ice_servers or [])]
 
         self.rooms: Dict[str, RoomState] = {}
         self.connections: Dict[str, ConnectionState] = {}
@@ -191,6 +233,7 @@ class MultiplayerHost:
         self._app: Optional[web.Application] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._stopped = False
+        self._peer_connections: Dict[str, Any] = {}
 
         normalized_rooms = [name.strip() for name in room_names if name and name.strip()]
         if not normalized_rooms:
@@ -198,6 +241,102 @@ class MultiplayerHost:
 
         for room_name in normalized_rooms:
             self.rooms[room_name] = self._create_room(room_name)
+
+    def build_room_share_payload(
+        self,
+        room_name: str,
+        role: str,
+        *,
+        signaling_url: str,
+        expires_in_seconds: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        normalized_role = role.strip().lower()
+        if normalized_role not in {"viewer", "prompter"}:
+            raise ValueError("role must be viewer or prompter")
+
+        active_tokens = room.session.active_tokens()
+        token = str(active_tokens.get(normalized_role, "")).strip()
+        if not token:
+            return None
+
+        ttl_seconds = expires_in_seconds
+        if ttl_seconds is None or ttl_seconds <= 0:
+            ttl_seconds = self.invite_ttl_seconds
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        ).replace(microsecond=0).isoformat()
+
+        payload = {
+            "signalingUrl": signaling_url,
+            "sessionId": room_name,
+            "role": normalized_role,
+            "token": token,
+            "expiresAt": expires_at,
+            "ownerId": self.owner_id,
+            "ownerName": self.owner_name,
+            "ownerFingerprint": self.owner_fingerprint,
+            "iceServers": self.ice_servers,
+        }
+
+    @staticmethod
+    async def _wait_for_ice_gathering_complete(peer_connection: Any, *, timeout: float = 5.0) -> None:
+        if str(getattr(peer_connection, "iceGatheringState", "")) == "complete":
+            return
+
+        loop = asyncio.get_running_loop()
+        done = loop.create_future()
+
+        @peer_connection.on("icegatheringstatechange")
+        def _on_ice_gathering_state_change() -> None:
+            if str(getattr(peer_connection, "iceGatheringState", "")) == "complete":
+                if not done.done():
+                    done.set_result(None)
+
+        await asyncio.wait_for(done, timeout=timeout)
+
+    def _build_rtc_configuration(self) -> Any:
+        try:
+            from aiortc import RTCConfiguration, RTCIceServer
+        except ImportError as error:
+            raise RuntimeError(
+                "P2P multiplayer requires aiortc. Install dependencies with: pip install -r requirements.txt"
+            ) from error
+
+        ice_servers = []
+        for entry in self.ice_servers:
+            urls = entry.get("urls", [])
+            if isinstance(urls, str):
+                urls = [urls]
+            if not isinstance(urls, list) or not urls:
+                continue
+            kwargs: Dict[str, Any] = {"urls": urls}
+            username = str(entry.get("username", "")).strip()
+            credential = str(entry.get("credential", "")).strip()
+            if username:
+                kwargs["username"] = username
+            if credential:
+                kwargs["credential"] = credential
+            ice_servers.append(RTCIceServer(**kwargs))
+        return RTCConfiguration(iceServers=ice_servers)
+        invite_code = build_signed_invite(payload, secret=self.invite_secret)
+        legacy_invite_code = encode_legacy_invite(f"{signaling_url}|{room_name}|{token}")
+        return {
+            "role": normalized_role,
+            "token": token,
+            "inviteCode": invite_code,
+            "legacyInviteCode": legacy_invite_code,
+            "expiresAt": expires_at,
+            "signalingUrl": signaling_url,
+            "sessionId": room_name,
+            "ownerId": self.owner_id,
+            "ownerName": self.owner_name,
+            "ownerFingerprint": self.owner_fingerprint,
+            "iceServers": self.ice_servers,
+        }
 
     def _create_room(self, room_name: str) -> RoomState:
         server = self.server_factory()
@@ -651,6 +790,7 @@ class MultiplayerHost:
     async def start(self) -> None:
         """Start the HTTP/WebSocket host."""
         app = web.Application()
+        app.router.add_post("/rpc", self._handle_signaling_rpc)
         app.router.add_get("/rpc", self._handle_ws)
         app.router.add_get("/health", self._handle_health)
 
@@ -663,6 +803,235 @@ class MultiplayerHost:
             self._heartbeat_loop(), name="poor-cli-multiplayer-heartbeat"
         )
         logger.info("Multiplayer host listening on ws://%s:%s/rpc", self.bind_host, self.port)
+
+    async def _handle_signaling_rpc(self, request: web.Request) -> web.Response:
+        """Handle owner-side signaling/bootstrap requests."""
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response(
+                {"ok": False, "error": "invalid_json"},
+                status=400,
+            )
+
+        if not isinstance(payload, dict):
+            return web.json_response(
+                {"ok": False, "error": "invalid_payload"},
+                status=400,
+            )
+
+        action = str(payload.get("action", "")).strip().lower()
+        if action == "connect":
+            return await self._handle_signaling_connect(payload)
+        if action != "describe":
+            return web.json_response(
+                {
+                    "ok": False,
+                    "error": "unsupported_action",
+                    "supportedActions": ["describe", "connect"],
+                },
+                status=400,
+            )
+
+        room_name = str(payload.get("room", "")).strip()
+        token = str(payload.get("token", "")).strip()
+        room = self.rooms.get(room_name)
+        invite = room.tokens.get(token) if room else None
+        if room is None or invite is None or self._is_token_expired(invite):
+            return web.json_response(
+                {"ok": False, "error": "invalid_multiplayer_auth"},
+                status=403,
+            )
+
+        return web.json_response(
+            {
+                "ok": True,
+                "room": room_name,
+                "role": invite.role,
+                "ownerId": self.owner_id,
+                "ownerName": self.owner_name,
+                "ownerFingerprint": self.owner_fingerprint,
+                "signaling": True,
+                "transport": "webrtc-datachannel",
+                "iceServers": self.ice_servers,
+            }
+        )
+
+    async def _handle_signaling_connect(self, payload: Dict[str, Any]) -> web.Response:
+        room_name = str(payload.get("room", "")).strip()
+        token = str(payload.get("token", "")).strip()
+        invite_code = str(payload.get("invite", "")).strip()
+        client_name = str(payload.get("clientName", "")).strip()
+        offer_payload = payload.get("offer")
+
+        if invite_code:
+            try:
+                invite_payload = verify_signed_invite(invite_code, secret=self.invite_secret)
+            except ValueError as error:
+                return web.json_response(
+                    {"ok": False, "error": "invalid_invite", "message": str(error)},
+                    status=403,
+                )
+            room_name = str(invite_payload.get("sessionId", "")).strip()
+            token = str(invite_payload.get("token", "")).strip()
+
+        if not room_name or not token:
+            return web.json_response(
+                {"ok": False, "error": "invalid_multiplayer_auth"},
+                status=403,
+            )
+
+        room = self.rooms.get(room_name)
+        invite = room.tokens.get(token) if room else None
+        if room is None or invite is None or self._is_token_expired(invite):
+            if room is not None and invite is not None and self._is_token_expired(invite):
+                room.tokens.pop(token, None)
+            return web.json_response(
+                {"ok": False, "error": "invalid_multiplayer_auth"},
+                status=403,
+            )
+
+        if not isinstance(offer_payload, dict):
+            return web.json_response(
+                {"ok": False, "error": "invalid_offer"},
+                status=400,
+            )
+
+        offer_type = str(offer_payload.get("type", "")).strip()
+        offer_sdp = str(offer_payload.get("sdp", "")).strip()
+        if offer_type != "offer" or not offer_sdp:
+            return web.json_response(
+                {"ok": False, "error": "invalid_offer"},
+                status=400,
+            )
+
+        try:
+            from aiortc import RTCPeerConnection, RTCSessionDescription
+        except ImportError as error:
+            return web.json_response(
+                {
+                    "ok": False,
+                    "error": "missing_aiortc",
+                    "message": str(error),
+                },
+                status=500,
+            )
+
+        peer_connection = RTCPeerConnection(configuration=self._build_rtc_configuration())
+        peer_key = f"peer-{uuid.uuid4().hex[:12]}"
+        self._peer_connections[peer_key] = peer_connection
+        connection_ref: Dict[str, ConnectionState] = {}
+
+        @peer_connection.on("datachannel")
+        def _on_datachannel(channel: Any) -> None:
+            connection_id = uuid.uuid4().hex[:12]
+            conn = ConnectionState(
+                connection_id=connection_id,
+                ws=DataChannelTransport(channel),
+                client_name=client_name,
+                heartbeat_enabled=False,
+            )
+            self.connections[connection_id] = conn
+            connection_ref["conn"] = conn
+
+            @channel.on("message")
+            def _on_message(data: Any) -> None:
+                asyncio.create_task(self._handle_datachannel_message(conn, data))
+
+            @channel.on("close")
+            def _on_close() -> None:
+                asyncio.create_task(self._cleanup_connection(conn))
+
+        @peer_connection.on("connectionstatechange")
+        async def _on_connection_state_change() -> None:
+            if str(getattr(peer_connection, "connectionState", "")) in {
+                "failed",
+                "closed",
+                "disconnected",
+            }:
+                conn = connection_ref.get("conn")
+                if conn is not None:
+                    await self._cleanup_connection(conn)
+                self._peer_connections.pop(peer_key, None)
+                with contextlib.suppress(Exception):
+                    await peer_connection.close()
+
+        try:
+            await peer_connection.setRemoteDescription(
+                RTCSessionDescription(sdp=offer_sdp, type=offer_type)
+            )
+            answer = await peer_connection.createAnswer()
+            await peer_connection.setLocalDescription(answer)
+            await self._wait_for_ice_gathering_complete(peer_connection)
+        except Exception as error:
+            self._peer_connections.pop(peer_key, None)
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
+            logger.exception("Failed to establish P2P signaling for room %s", room_name)
+            return web.json_response(
+                {"ok": False, "error": "signaling_failed", "message": str(error)},
+                status=500,
+            )
+
+        local_description = getattr(peer_connection, "localDescription", None)
+        if local_description is None:
+            self._peer_connections.pop(peer_key, None)
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
+            return web.json_response(
+                {"ok": False, "error": "signaling_failed"},
+                status=500,
+            )
+
+        return web.json_response(
+            {
+                "ok": True,
+                "room": room_name,
+                "role": invite.role,
+                "transport": "webrtc-datachannel",
+                "answer": {
+                    "type": str(getattr(local_description, "type", "answer")),
+                    "sdp": str(getattr(local_description, "sdp", "")),
+                },
+                "ownerId": self.owner_id,
+                "ownerName": self.owner_name,
+                "ownerFingerprint": self.owner_fingerprint,
+                "iceServers": self.ice_servers,
+            }
+        )
+
+    async def _handle_datachannel_message(self, conn: ConnectionState, payload: Any) -> None:
+        if payload is None:
+            return
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8", errors="ignore")
+        if not isinstance(payload, str):
+            return
+
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError:
+            await self._send_error_response(
+                conn.ws,
+                request_id=None,
+                code=self.rpc_error_cls.PARSE_ERROR,
+                message="Invalid JSON",
+                data={"error_code": "PARSE_ERROR"},
+            )
+            return
+
+        if not isinstance(decoded, dict):
+            await self._send_error_response(
+                conn.ws,
+                request_id=None,
+                code=self.rpc_error_cls.INVALID_REQUEST,
+                message="JSON-RPC payload must be an object",
+                data={"error_code": "INVALID_REQUEST"},
+            )
+            return
+
+        message = self.message_cls.from_dict(decoded)
+        await self._handle_message(conn, message)
 
     async def stop(self) -> None:
         """Stop host and workers."""
@@ -693,6 +1062,11 @@ class MultiplayerHost:
                 await conn.ws.close()
             except Exception:
                 pass
+
+        for peer_connection in list(self._peer_connections.values()):
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
+        self._peer_connections.clear()
 
         if self._runner:
             await self._runner.cleanup()
@@ -1660,6 +2034,8 @@ class MultiplayerHost:
             for conn in list(self.connections.values()):
                 if conn.ws.closed:
                     stale_connections.append(conn)
+                    continue
+                if not conn.heartbeat_enabled:
                     continue
                 if now - conn.last_pong > self.pong_timeout_seconds:
                     stale_connections.append(conn)

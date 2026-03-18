@@ -44,10 +44,6 @@ from .sandbox import (
 )
 from .skills import SkillRegistry
 from .task_manager import TaskManager
-
-def _encode_invite(raw: str) -> str:
-    """Base64url-encode a pipe-delimited invite code for compact sharing."""
-    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
 from .exceptions import (
     ConfigurationError,
     PoorCLIError,
@@ -57,6 +53,7 @@ from .exceptions import (
     set_log_context,
     setup_logger,
 )
+from .multiplayer_invites import decode_invite_code, encode_legacy_invite
 from .server.types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
 from .server.error_formatter import _sanitize_exception_message
 from .server.transport import StdioTransport
@@ -2700,6 +2697,32 @@ class PoorCLIServer:
         return "127.0.0.1"
 
     @staticmethod
+    def _build_multiplayer_ice_servers(config: Config) -> List[Dict[str, Any]]:
+        """Build ICE server configuration from loaded config and env-backed TURN creds."""
+        multiplayer = config.multiplayer
+        ice_servers = [dict(entry) for entry in (multiplayer.ice_servers or [])]
+
+        turn_urls = [str(url).strip() for url in (multiplayer.turn_urls or []) if str(url).strip()]
+        if not turn_urls:
+            return ice_servers
+
+        username = os.environ.get(multiplayer.turn_username_env, "").strip()
+        credential = os.environ.get(multiplayer.turn_credential_env, "").strip()
+        if not username or not credential:
+            return ice_servers
+
+        turn_entry: Dict[str, Any] = {
+            "urls": turn_urls,
+            "username": username,
+            "credential": credential,
+        }
+        if multiplayer.turn_realm.strip():
+            turn_entry["credentialType"] = "password"
+            turn_entry["realm"] = multiplayer.turn_realm.strip()
+        ice_servers.append(turn_entry)
+        return ice_servers
+
+    @staticmethod
     def _is_port_bindable(bind_host: str, port: int) -> bool:
         """Return True when the given host/port pair can be bound."""
         try:
@@ -2788,30 +2811,80 @@ class PoorCLIServer:
             prompter_join_command = ""
             viewer_invite_code = ""
             prompter_invite_code = ""
+            viewer_legacy_invite_code = ""
+            prompter_legacy_invite_code = ""
+            viewer_legacy_join_command = ""
+            prompter_legacy_join_command = ""
+            signaling_url = join_ws_url
             if join_ws_url:
+                if viewer_token and hasattr(self._host_server, "build_room_share_payload"):
+                    viewer_share = self._host_server.build_room_share_payload(
+                        room_name,
+                        "viewer",
+                        signaling_url=join_ws_url,
+                    )
+                    if isinstance(viewer_share, dict):
+                        viewer_invite_code = str(viewer_share.get("inviteCode", "")).strip()
+                        viewer_legacy_invite_code = str(
+                            viewer_share.get("legacyInviteCode", "")
+                        ).strip()
+                        viewer_join_command = (
+                            f"poor-cli --remote-invite {viewer_invite_code}"
+                            if viewer_invite_code
+                            else ""
+                        )
                 if viewer_token:
-                    viewer_join_command = (
+                    viewer_legacy_join_command = (
                         f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
                         f"--remote-token {viewer_token}"
                     )
-                    viewer_invite_code = _encode_invite(f"{join_ws_url}|{room_name}|{viewer_token}")
+                    if not viewer_legacy_invite_code:
+                        viewer_legacy_invite_code = encode_legacy_invite(
+                            f"{join_ws_url}|{room_name}|{viewer_token}"
+                        )
+                if prompter_token and hasattr(self._host_server, "build_room_share_payload"):
+                    prompter_share = self._host_server.build_room_share_payload(
+                        room_name,
+                        "prompter",
+                        signaling_url=join_ws_url,
+                    )
+                    if isinstance(prompter_share, dict):
+                        prompter_invite_code = str(
+                            prompter_share.get("inviteCode", "")
+                        ).strip()
+                        prompter_legacy_invite_code = str(
+                            prompter_share.get("legacyInviteCode", "")
+                        ).strip()
+                        prompter_join_command = (
+                            f"poor-cli --remote-invite {prompter_invite_code}"
+                            if prompter_invite_code
+                            else ""
+                        )
                 if prompter_token:
-                    prompter_join_command = (
+                    prompter_legacy_join_command = (
                         f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
                         f"--remote-token {prompter_token}"
                     )
-                    prompter_invite_code = _encode_invite(f"{join_ws_url}|{room_name}|{prompter_token}")
+                    if not prompter_legacy_invite_code:
+                        prompter_legacy_invite_code = encode_legacy_invite(
+                            f"{join_ws_url}|{room_name}|{prompter_token}"
+                        )
 
             rooms.append(
                 {
                     "name": room_name,
                     "joinWsUrl": join_ws_url,
+                    "signalingUrl": signaling_url,
                     "viewerToken": viewer_token,
                     "prompterToken": prompter_token,
                     "viewerJoinCommand": viewer_join_command,
                     "prompterJoinCommand": prompter_join_command,
                     "viewerInviteCode": viewer_invite_code,
                     "prompterInviteCode": prompter_invite_code,
+                    "viewerLegacyJoinCommand": viewer_legacy_join_command,
+                    "prompterLegacyJoinCommand": prompter_legacy_join_command,
+                    "viewerLegacyInviteCode": viewer_legacy_invite_code,
+                    "prompterLegacyInviteCode": prompter_legacy_invite_code,
                     "memberCount": member_count_by_room.get(room_name, 0),
                     "lobbyEnabled": lobby_by_room.get(room_name, False),
                     "preset": preset_by_room.get(room_name, "pairing"),
@@ -2831,6 +2904,7 @@ class PoorCLIServer:
             "shareWsUrl": self._host_share_ws_url,
             "publicWsUrl": self._host_public_ws_url,
             "joinWsUrl": join_ws_url,
+            "signalingUrl": join_ws_url,
             "permissionMode": self.permission_mode,
             "ngrokEnabled": self._host_ngrok_enabled,
             "rooms": rooms,
@@ -2882,8 +2956,10 @@ class PoorCLIServer:
         """
         self._ensure_initialized()
         self._ensure_host_controls_available()
+        _, config = self._ensure_config_loaded()
 
-        bind_host = str(params.get("bindHost", "0.0.0.0")).strip() or "0.0.0.0"
+        default_bind_host = str(config.multiplayer.signaling_bind_host or "0.0.0.0").strip()
+        bind_host = str(params.get("bindHost", default_bind_host)).strip() or default_bind_host
         room_hint = str(params.get("room", "")).strip()
         rooms = self._normalize_multiplayer_room_names(params.get("rooms"), room_hint)
 
@@ -2913,6 +2989,9 @@ class PoorCLIServer:
                 message_cls=JsonRpcMessage,
                 rpc_error_cls=JsonRpcError,
                 default_permission_mode=self.permission_mode,
+                invite_ttl_seconds=config.multiplayer.invite_ttl_seconds,
+                owner_name=config.multiplayer.owner_name,
+                ice_servers=self._build_multiplayer_ice_servers(config),
             )
             try:
                 await host.start()
@@ -2933,7 +3012,9 @@ class PoorCLIServer:
                     self.logger.warning(f"ngrok helper failed while starting host: {error}")
 
             local_host = "127.0.0.1" if bind_host in {"0.0.0.0", "::"} else bind_host
-            share_host = self._resolve_multiplayer_share_host(bind_host)
+            share_host = str(config.multiplayer.share_host or "").strip()
+            if not share_host:
+                share_host = self._resolve_multiplayer_share_host(bind_host)
 
             self._host_server = host
             self._host_tunnel = tunnel
@@ -3291,16 +3372,36 @@ class PoorCLIServer:
             join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
             join_command = ""
             invite_code = ""
+            legacy_invite_code = ""
+            legacy_join_command = ""
             expires_at = ""
             if ttl_seconds is not None:
                 expires_at = (
                     datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
                 ).isoformat()
             if join_ws_url:
-                join_command = (
+                if hasattr(host, "build_room_share_payload"):
+                    share_payload = host.build_room_share_payload(
+                        room_name,
+                        role_name,
+                        signaling_url=join_ws_url,
+                        expires_in_seconds=ttl_seconds,
+                    )
+                    if isinstance(share_payload, dict):
+                        invite_code = str(share_payload.get("inviteCode", "")).strip()
+                        legacy_invite_code = str(
+                            share_payload.get("legacyInviteCode", "")
+                        ).strip()
+                        join_command = (
+                            f"poor-cli --remote-invite {invite_code}"
+                            if invite_code
+                            else ""
+                        )
+                legacy_join_command = (
                     f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} --remote-token {token}"
                 )
-                invite_code = _encode_invite(f"{join_ws_url}|{room_name}|{token}")
+                if not legacy_invite_code:
+                    legacy_invite_code = encode_legacy_invite(f"{join_ws_url}|{room_name}|{token}")
 
             return {
                 "success": True,
@@ -3309,6 +3410,8 @@ class PoorCLIServer:
                 "token": token,
                 "joinCommand": join_command,
                 "inviteCode": invite_code,
+                "legacyJoinCommand": legacy_join_command,
+                "legacyInviteCode": legacy_invite_code,
                 "expiresAt": expires_at,
             }
 
@@ -4543,109 +4646,282 @@ class NgrokTunnel:
 
 def _print_multiplayer_join_hints(
     ws_url: str,
-    tokens: Dict[str, Dict[str, str]],
+    share_payloads: Dict[str, Dict[str, Any]],
 ) -> None:
     """Print host-local room/token join instructions."""
     print("\npoor-cli multiplayer host is ready.", file=sys.stderr)
-    print(f"WebSocket endpoint: {ws_url}", file=sys.stderr)
+    print(f"Signaling endpoint: {ws_url}", file=sys.stderr)
     print("", file=sys.stderr)
-    for room_name in sorted(tokens.keys()):
-        viewer_token = tokens[room_name].get("viewer", "")
-        prompter_token = tokens[room_name].get("prompter", "")
+    for room_name in sorted(share_payloads.keys()):
+        room_payload = share_payloads[room_name]
+        viewer_token = str(room_payload.get("viewerToken", ""))
+        prompter_token = str(room_payload.get("prompterToken", ""))
+        viewer_invite = str(room_payload.get("viewerInviteCode", ""))
+        prompter_invite = str(room_payload.get("prompterInviteCode", ""))
+        viewer_legacy = str(room_payload.get("viewerLegacyInviteCode", ""))
+        prompter_legacy = str(room_payload.get("prompterLegacyInviteCode", ""))
         print(f"Room: {room_name}", file=sys.stderr)
         print(f"  viewer token:   {viewer_token}", file=sys.stderr)
         print(f"  prompter token: {prompter_token}", file=sys.stderr)
+        if viewer_invite:
+            print(f"  viewer invite:   {viewer_invite}", file=sys.stderr)
+        if prompter_invite:
+            print(f"  prompter invite: {prompter_invite}", file=sys.stderr)
         print(
-            f"  TUI join: poor-cli --remote-url {ws_url} --remote-room {room_name} --remote-token {prompter_token}",
+            f"  TUI join: poor-cli --remote-invite {prompter_invite or viewer_invite}",
             file=sys.stderr,
         )
         print(
-            f"  Neovim: multiplayer={{ enabled=true, url='{ws_url}', room='{room_name}', token='{prompter_token}' }}",
+            f"  Legacy join: poor-cli --remote-url {ws_url} --remote-room {room_name} --remote-token {prompter_token}",
             file=sys.stderr,
         )
+        print(
+            "  Neovim: multiplayer={ enabled=true, invite='"
+            + (prompter_invite or viewer_invite)
+            + f"', url='{ws_url}', room='{room_name}', token='{prompter_token}' }}",
+            file=sys.stderr,
+        )
+        if viewer_legacy or prompter_legacy:
+            print(
+                f"  Legacy codes: viewer={viewer_legacy} prompter={prompter_legacy}",
+                file=sys.stderr,
+            )
         print("", file=sys.stderr)
 
 
+def _normalize_signaling_http_url(url: str) -> str:
+    if url.startswith("ws://"):
+        return "http://" + url[len("ws://"):]
+    if url.startswith("wss://"):
+        return "https://" + url[len("wss://"):]
+    return url
+
+
+def _decode_bridge_invite(
+    invite_code: str,
+) -> Dict[str, Any]:
+    invite = str(invite_code or "").strip()
+    if not invite:
+        raise RuntimeError("Invite code is required")
+
+    try:
+        decoded = decode_invite_code(invite)
+        payload = dict(decoded.get("payload", {}) or {})
+        return {
+            "invite": invite,
+            "signaling_url": str(payload.get("signalingUrl", "")).strip(),
+            "room": str(payload.get("sessionId", "")).strip(),
+            "token": str(payload.get("token", "")).strip(),
+            "role": str(payload.get("role", "")).strip(),
+            "ice_servers": list(payload.get("iceServers", []) or []),
+        }
+    except ValueError:
+        pass
+
+    padded = invite
+    while len(padded) % 4 != 0:
+        padded += "="
+
+    try:
+        decoded = base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
+    except Exception as error:
+        raise RuntimeError("Invalid invite code") from error
+
+    parts = [part.strip() for part in decoded.split("|")]
+    if len(parts) != 3:
+        raise RuntimeError("Invalid invite code")
+
+    return {
+        "invite": "",
+        "signaling_url": parts[0],
+        "room": parts[1],
+        "token": parts[2],
+        "role": "",
+        "ice_servers": [],
+    }
+
+
 async def _run_stdio_bridge(
-    url: str,
-    room: str,
-    token: str,
+    url: str = "",
+    room: str = "",
+    token: str = "",
+    invite_code: str = "",
 ) -> None:
-    """Run a stdio <-> WebSocket JSON-RPC bridge."""
+    """Run a stdio <-> P2P DataChannel JSON-RPC bridge."""
     try:
         import aiohttp
     except ImportError as e:
         raise RuntimeError(
             "Bridge mode requires aiohttp. Install dependencies with: pip install -r requirements.txt"
         ) from e
+    try:
+        from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
+    except ImportError as e:
+        raise RuntimeError(
+            "Bridge mode requires aiortc. Install dependencies with: pip install -r requirements.txt"
+        ) from e
+
+    if invite_code:
+        bootstrap = _decode_bridge_invite(invite_code)
+        url = bootstrap["signaling_url"]
+        room = bootstrap["room"]
+        token = bootstrap["token"]
+        bootstrap_invite = bootstrap["invite"]
+        ice_server_payloads = bootstrap["ice_servers"]
+    else:
+        bootstrap_invite = ""
+        ice_server_payloads = []
+
+    if not url or not room or not token:
+        raise RuntimeError("Bridge mode requires signaling url, room, and token")
 
     io_server = PoorCLIServer()
-    logger.info(f"Starting stdio bridge to {url} (room={room})")
+    signaling_url = _normalize_signaling_http_url(url)
+    logger.info(f"Starting stdio P2P bridge via {signaling_url} (room={room})")
+
+    rtc_ice_servers = []
+    for entry in ice_server_payloads:
+        if not isinstance(entry, dict):
+            continue
+        urls = entry.get("urls", [])
+        if isinstance(urls, str):
+            urls = [urls]
+        if not isinstance(urls, list) or not urls:
+            continue
+        kwargs: Dict[str, Any] = {"urls": urls}
+        username = str(entry.get("username", "")).strip()
+        credential = str(entry.get("credential", "")).strip()
+        if username:
+            kwargs["username"] = username
+        if credential:
+            kwargs["credential"] = credential
+        rtc_ice_servers.append(RTCIceServer(**kwargs))
+
+    peer_connection = RTCPeerConnection(
+        configuration=RTCConfiguration(iceServers=rtc_ice_servers)
+    )
+    data_channel = peer_connection.createDataChannel("poor-cli", ordered=True)
+    channel_open = asyncio.Event()
+    stdin_eof = asyncio.Event()
+
+    async def _wait_for_ice_complete() -> None:
+        if str(getattr(peer_connection, "iceGatheringState", "")) == "complete":
+            return
+        done = asyncio.get_running_loop().create_future()
+
+        @peer_connection.on("icegatheringstatechange")
+        def _on_ice_state_change() -> None:
+            if str(getattr(peer_connection, "iceGatheringState", "")) == "complete":
+                if not done.done():
+                    done.set_result(None)
+
+        await asyncio.wait_for(done, timeout=5.0)
+
+    @data_channel.on("open")
+    def _on_channel_open() -> None:
+        channel_open.set()
+
+    @data_channel.on("message")
+    def _on_channel_message(raw: Any) -> None:
+        async def _forward() -> None:
+            text = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else raw
+            if not isinstance(text, str):
+                return
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                logger.warning("Bridge received non-JSON datachannel payload")
+                return
+            if not isinstance(payload, dict):
+                logger.warning("Bridge received non-object datachannel payload")
+                return
+            rpc_msg = JsonRpcMessage.from_dict(payload)
+            await io_server.write_message_stdio(rpc_msg)
+
+        asyncio.create_task(_forward())
+
+    @peer_connection.on("connectionstatechange")
+    async def _on_connection_state_change() -> None:
+        if str(getattr(peer_connection, "connectionState", "")) in {"failed", "closed", "disconnected"}:
+            if not stdin_eof.is_set():
+                logger.info("P2P bridge connection state changed to %s", peer_connection.connectionState)
+
+    offer = await peer_connection.createOffer()
+    await peer_connection.setLocalDescription(offer)
+    await _wait_for_ice_complete()
 
     async with aiohttp.ClientSession() as session:
-        async with session.ws_connect(url, heartbeat=30) as ws:
-            stdin_eof = asyncio.Event()
+        async with session.post(
+            signaling_url,
+            json={
+                "action": "connect",
+                "room": room,
+                "token": token,
+                "invite": bootstrap_invite,
+                "clientName": "stdio-bridge",
+                "offer": {
+                    "type": str(getattr(peer_connection.localDescription, "type", "offer")),
+                    "sdp": str(getattr(peer_connection.localDescription, "sdp", "")),
+                },
+            },
+        ) as response:
+            if response.status >= 400:
+                text = await response.text()
+                raise RuntimeError(f"Signaling request failed ({response.status}): {text}")
+            data = await response.json()
 
-            async def _ws_to_stdio() -> None:
-                async for message in ws:
-                    if message.type != aiohttp.WSMsgType.TEXT:
-                        if message.type in {
-                            aiohttp.WSMsgType.CLOSE,
-                            aiohttp.WSMsgType.CLOSING,
-                            aiohttp.WSMsgType.CLOSED,
-                        }:
-                            break
-                        continue
+        if not isinstance(data, dict) or not data.get("ok"):
+            raise RuntimeError(f"Signaling request failed: {data}")
 
-                    try:
-                        payload = json.loads(message.data)
-                    except json.JSONDecodeError:
-                        logger.warning("Bridge received non-JSON websocket payload")
-                        continue
+        answer = data.get("answer")
+        if not isinstance(answer, dict):
+            raise RuntimeError("Signaling response did not include an answer")
 
-                    if not isinstance(payload, dict):
-                        logger.warning("Bridge received non-object websocket payload")
-                        continue
+        await peer_connection.setRemoteDescription(
+            RTCSessionDescription(
+                sdp=str(answer.get("sdp", "")),
+                type=str(answer.get("type", "answer")),
+            )
+        )
 
-                    rpc_msg = JsonRpcMessage.from_dict(payload)
-                    await io_server.write_message_stdio(rpc_msg)
+        await asyncio.wait_for(channel_open.wait(), timeout=10.0)
 
-            async def _stdio_to_ws() -> None:
-                while True:
-                    rpc_msg = await io_server.read_message_stdio()
-                    if rpc_msg is None:
-                        stdin_eof.set()
-                        break
+        async def _stdio_to_channel() -> None:
+            while True:
+                rpc_msg = await io_server.read_message_stdio()
+                if rpc_msg is None:
+                    stdin_eof.set()
+                    break
 
-                    if rpc_msg.method == "initialize":
-                        params = dict(rpc_msg.params or {})
-                        params.setdefault("room", room)
-                        params.setdefault("inviteToken", token)
-                        params.setdefault("clientName", "stdio-bridge")
-                        rpc_msg.params = params
+                if rpc_msg.method == "initialize":
+                    params = dict(rpc_msg.params or {})
+                    params.setdefault("room", room)
+                    params.setdefault("inviteToken", token)
+                    params.setdefault("clientName", "stdio-bridge")
+                    rpc_msg.params = params
 
-                    await ws.send_str(rpc_msg.to_json())
+                data_channel.send(rpc_msg.to_json())
 
-            ws_reader = asyncio.create_task(_ws_to_stdio(), name="poor-cli-bridge-ws-reader")
-            stdio_reader = asyncio.create_task(_stdio_to_ws(), name="poor-cli-bridge-stdio-reader")
+        stdio_reader = asyncio.create_task(
+            _stdio_to_channel(),
+            name="poor-cli-bridge-stdio-reader",
+        )
 
-            try:
-                await stdio_reader
-
-                # Drain in-flight websocket responses/notifications briefly before shutdown.
-                if stdin_eof.is_set():
-                    drain_deadline = asyncio.get_event_loop().time() + 0.25
-                    while not ws_reader.done() and asyncio.get_event_loop().time() < drain_deadline:
-                        await asyncio.sleep(0.01)
-                    await ws.close()
-
-                await ws_reader
-            finally:
-                for task in (stdio_reader, ws_reader):
-                    if not task.done():
-                        task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await task
+        try:
+            await stdio_reader
+            if stdin_eof.is_set():
+                drain_deadline = asyncio.get_event_loop().time() + 0.25
+                while str(getattr(data_channel, "readyState", "closed")) == "open" and asyncio.get_event_loop().time() < drain_deadline:
+                    await asyncio.sleep(0.01)
+        finally:
+            if not stdio_reader.done():
+                stdio_reader.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stdio_reader
+            with contextlib.suppress(Exception):
+                data_channel.close()
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
 
 
 async def _run_multiplayer_host(
@@ -4658,6 +4934,10 @@ async def _run_multiplayer_host(
     """Run multiplayer WebSocket host mode."""
     from .multiplayer import MultiplayerHost
 
+    config = ConfigManager().load()
+    share_host = str(config.multiplayer.share_host or "").strip()
+    if not share_host:
+        share_host = PoorCLIServer._resolve_multiplayer_share_host(bind_host)
     host = MultiplayerHost(
         bind_host=bind_host,
         port=port,
@@ -4666,19 +4946,111 @@ async def _run_multiplayer_host(
         message_cls=JsonRpcMessage,
         rpc_error_cls=JsonRpcError,
         default_permission_mode=permission_mode,
+        invite_ttl_seconds=config.multiplayer.invite_ttl_seconds,
+        owner_name=config.multiplayer.owner_name,
+        ice_servers=PoorCLIServer._build_multiplayer_ice_servers(config),
     )
 
     tunnel: Optional[NgrokTunnel] = None
     await host.start()
     base_ws_url = f"ws://{bind_host}:{port}/rpc"
-    _print_multiplayer_join_hints(base_ws_url, host.get_room_tokens())
+    share_ws_url = f"ws://{share_host}:{port}/rpc"
+    initial_payload = {
+        "rooms": [
+            {
+                "name": room_name,
+                "viewerToken": role_map.get("viewer", ""),
+                "prompterToken": role_map.get("prompter", ""),
+                **(
+                    {
+                        "viewerInviteCode": (
+                            host.build_room_share_payload(
+                                room_name,
+                                "viewer",
+                                signaling_url=share_ws_url,
+                            )
+                            or {}
+                        ).get("inviteCode", ""),
+                        "prompterInviteCode": (
+                            host.build_room_share_payload(
+                                room_name,
+                                "prompter",
+                                signaling_url=share_ws_url,
+                            )
+                            or {}
+                        ).get("inviteCode", ""),
+                        "viewerLegacyInviteCode": (
+                            host.build_room_share_payload(
+                                room_name,
+                                "viewer",
+                                signaling_url=share_ws_url,
+                            )
+                            or {}
+                        ).get("legacyInviteCode", ""),
+                        "prompterLegacyInviteCode": (
+                            host.build_room_share_payload(
+                                room_name,
+                                "prompter",
+                                signaling_url=share_ws_url,
+                            )
+                            or {}
+                        ).get("legacyInviteCode", ""),
+                    }
+                ),
+            }
+            for room_name, role_map in host.get_room_tokens().items()
+        ]
+    }
+    _print_multiplayer_join_hints(
+        share_ws_url,
+        {str(room.get("name", "")): dict(room) for room in initial_payload["rooms"]},
+    )
 
     if enable_ngrok:
         tunnel = NgrokTunnel(f"{bind_host}:{port}")
         public_https = await tunnel.start()
         if public_https:
             public_ws = public_https.replace("https://", "wss://", 1) + "/rpc"
-            _print_multiplayer_join_hints(public_ws, host.get_room_tokens())
+            public_payload = {
+                str(room_name): {
+                    "viewerToken": role_map.get("viewer", ""),
+                    "prompterToken": role_map.get("prompter", ""),
+                    "viewerInviteCode": (
+                        host.build_room_share_payload(
+                            room_name,
+                            "viewer",
+                            signaling_url=public_ws,
+                        )
+                        or {}
+                    ).get("inviteCode", ""),
+                    "prompterInviteCode": (
+                        host.build_room_share_payload(
+                            room_name,
+                            "prompter",
+                            signaling_url=public_ws,
+                        )
+                        or {}
+                    ).get("inviteCode", ""),
+                    "viewerLegacyInviteCode": (
+                        host.build_room_share_payload(
+                            room_name,
+                            "viewer",
+                            signaling_url=public_ws,
+                        )
+                        or {}
+                    ).get("legacyInviteCode", ""),
+                    "prompterLegacyInviteCode": (
+                        host.build_room_share_payload(
+                            room_name,
+                            "prompter",
+                            signaling_url=public_ws,
+                        )
+                        or {}
+                    ).get("legacyInviteCode", ""),
+                }
+                for room_name, role_map in host.get_room_tokens().items()
+            }
+            _print_multiplayer_join_hints(public_ws, public_payload)
         else:
             logger.warning("ngrok helper failed; host is still running on local interface")
 
@@ -4716,8 +5088,9 @@ def main() -> None:
         help="Default permission mode for multiplayer room engines",
     )
     parser.add_argument("--ngrok", action="store_true", help="Launch ngrok helper in --host mode")
-    parser.add_argument("--bridge", action="store_true", help="Run stdio <-> WebSocket bridge mode")
-    parser.add_argument("--url", help="WebSocket URL for --bridge mode (ws:// or wss://)")
+    parser.add_argument("--bridge", action="store_true", help="Run stdio <-> P2P bridge mode")
+    parser.add_argument("--invite", help="Invite code for --bridge mode")
+    parser.add_argument("--url", help="Signaling URL for --bridge mode (ws:// or wss://)")
     parser.add_argument("--token", help="Invite token for --bridge mode")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
@@ -4747,14 +5120,17 @@ def main() -> None:
         raise SystemExit("Choose exactly one mode: either --host or --bridge (not both).")
 
     if args.bridge:
+        if args.invite:
+            asyncio.run(_run_stdio_bridge(invite_code=args.invite))
+            return
         if not args.url:
-            raise SystemExit("--bridge requires --url")
+            raise SystemExit("--bridge requires --url or --invite")
         bridge_room = args.room[0] if args.room else ""
         if not bridge_room:
-            raise SystemExit("--bridge requires --room <name>")
+            raise SystemExit("--bridge requires --room <name> when --invite is not used")
         if not args.token:
-            raise SystemExit("--bridge requires --token")
-        asyncio.run(_run_stdio_bridge(args.url, bridge_room, args.token))
+            raise SystemExit("--bridge requires --token when --invite is not used")
+        asyncio.run(_run_stdio_bridge(url=args.url, room=bridge_room, token=args.token))
         return
 
     if args.host:
