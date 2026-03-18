@@ -23,11 +23,6 @@ def _b64url_decode_bytes(value: str) -> bytes:
     return base64.urlsafe_b64decode(padded.encode("utf-8"))
 
 
-def encode_legacy_invite(raw: str) -> str:
-    """Base64url-encode the legacy url|room|token invite."""
-    return _b64url_encode_bytes(raw.encode("utf-8"))
-
-
 def build_owner_fingerprint(secret: str) -> str:
     """Create a short stable owner fingerprint from the host secret."""
     digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()

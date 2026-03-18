@@ -6,7 +6,6 @@ This module is the internal implementation. Import from `poor_cli.server` instea
 
 import argparse
 import asyncio
-import base64
 from collections import deque
 import contextlib
 import copy
@@ -53,7 +52,7 @@ from .exceptions import (
     set_log_context,
     setup_logger,
 )
-from .multiplayer_invites import decode_invite_code, encode_legacy_invite
+from .multiplayer_invites import decode_invite_code
 from .server.types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
 from .server.error_formatter import _sanitize_exception_message
 from .server.transport import StdioTransport
@@ -99,9 +98,9 @@ class PoorCLIServer:
         self._host_tunnel: Optional["NgrokTunnel"] = None
         self._host_bind_host = ""
         self._host_port = 0
-        self._host_local_ws_url = ""
-        self._host_share_ws_url = ""
-        self._host_public_ws_url: Optional[str] = None
+        self._host_local_signaling_url = ""
+        self._host_share_signaling_url = ""
+        self._host_public_signaling_url: Optional[str] = None
         self._host_rooms: List[str] = []
         self._host_ngrok_enabled = False
         self._service_lock: Optional[asyncio.Lock] = None
@@ -2769,7 +2768,11 @@ class PoorCLIServer:
             }
 
         tokens: Dict[str, Dict[str, str]] = self._host_server.get_room_tokens()
-        join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
+        signaling_url = (
+            self._host_public_signaling_url
+            or self._host_share_signaling_url
+            or self._host_local_signaling_url
+        )
         member_count_by_room: Dict[str, int] = {}
         lobby_by_room: Dict[str, bool] = {}
         preset_by_room: Dict[str, str] = {}
@@ -2804,87 +2807,47 @@ class PoorCLIServer:
         rooms: List[Dict[str, Any]] = []
         for room_name in sorted(tokens.keys()):
             role_map = tokens.get(room_name, {})
-            viewer_token = str(role_map.get("viewer", ""))
-            prompter_token = str(role_map.get("prompter", ""))
-
             viewer_join_command = ""
             prompter_join_command = ""
             viewer_invite_code = ""
             prompter_invite_code = ""
-            viewer_legacy_invite_code = ""
-            prompter_legacy_invite_code = ""
-            viewer_legacy_join_command = ""
-            prompter_legacy_join_command = ""
-            signaling_url = join_ws_url
-            if join_ws_url:
-                if viewer_token and hasattr(self._host_server, "build_room_share_payload"):
+            if signaling_url:
+                if hasattr(self._host_server, "build_room_share_payload"):
                     viewer_share = self._host_server.build_room_share_payload(
                         room_name,
                         "viewer",
-                        signaling_url=join_ws_url,
+                        signaling_url=signaling_url,
                     )
                     if isinstance(viewer_share, dict):
                         viewer_invite_code = str(viewer_share.get("inviteCode", "")).strip()
-                        viewer_legacy_invite_code = str(
-                            viewer_share.get("legacyInviteCode", "")
-                        ).strip()
                         viewer_join_command = (
                             f"poor-cli --remote-invite {viewer_invite_code}"
                             if viewer_invite_code
                             else ""
                         )
-                if viewer_token:
-                    viewer_legacy_join_command = (
-                        f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
-                        f"--remote-token {viewer_token}"
-                    )
-                    if not viewer_legacy_invite_code:
-                        viewer_legacy_invite_code = encode_legacy_invite(
-                            f"{join_ws_url}|{room_name}|{viewer_token}"
-                        )
-                if prompter_token and hasattr(self._host_server, "build_room_share_payload"):
                     prompter_share = self._host_server.build_room_share_payload(
                         room_name,
                         "prompter",
-                        signaling_url=join_ws_url,
+                        signaling_url=signaling_url,
                     )
                     if isinstance(prompter_share, dict):
                         prompter_invite_code = str(
                             prompter_share.get("inviteCode", "")
-                        ).strip()
-                        prompter_legacy_invite_code = str(
-                            prompter_share.get("legacyInviteCode", "")
                         ).strip()
                         prompter_join_command = (
                             f"poor-cli --remote-invite {prompter_invite_code}"
                             if prompter_invite_code
                             else ""
                         )
-                if prompter_token:
-                    prompter_legacy_join_command = (
-                        f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} "
-                        f"--remote-token {prompter_token}"
-                    )
-                    if not prompter_legacy_invite_code:
-                        prompter_legacy_invite_code = encode_legacy_invite(
-                            f"{join_ws_url}|{room_name}|{prompter_token}"
-                        )
 
             rooms.append(
                 {
                     "name": room_name,
-                    "joinWsUrl": join_ws_url,
                     "signalingUrl": signaling_url,
-                    "viewerToken": viewer_token,
-                    "prompterToken": prompter_token,
                     "viewerJoinCommand": viewer_join_command,
                     "prompterJoinCommand": prompter_join_command,
                     "viewerInviteCode": viewer_invite_code,
                     "prompterInviteCode": prompter_invite_code,
-                    "viewerLegacyJoinCommand": viewer_legacy_join_command,
-                    "prompterLegacyJoinCommand": prompter_legacy_join_command,
-                    "viewerLegacyInviteCode": viewer_legacy_invite_code,
-                    "prompterLegacyInviteCode": prompter_legacy_invite_code,
                     "memberCount": member_count_by_room.get(room_name, 0),
                     "lobbyEnabled": lobby_by_room.get(room_name, False),
                     "preset": preset_by_room.get(room_name, "pairing"),
@@ -2900,11 +2863,10 @@ class PoorCLIServer:
             "stopped": stopped,
             "bindHost": self._host_bind_host,
             "port": self._host_port,
-            "localWsUrl": self._host_local_ws_url,
-            "shareWsUrl": self._host_share_ws_url,
-            "publicWsUrl": self._host_public_ws_url,
-            "joinWsUrl": join_ws_url,
-            "signalingUrl": join_ws_url,
+            "localSignalingUrl": self._host_local_signaling_url,
+            "shareSignalingUrl": self._host_share_signaling_url,
+            "publicSignalingUrl": self._host_public_signaling_url,
+            "signalingUrl": signaling_url,
             "permissionMode": self.permission_mode,
             "ngrokEnabled": self._host_ngrok_enabled,
             "rooms": rooms,
@@ -2930,9 +2892,9 @@ class PoorCLIServer:
         self._host_tunnel = None
         self._host_bind_host = ""
         self._host_port = 0
-        self._host_local_ws_url = ""
-        self._host_share_ws_url = ""
-        self._host_public_ws_url = None
+        self._host_local_signaling_url = ""
+        self._host_share_signaling_url = ""
+        self._host_public_signaling_url = None
         self._host_rooms = []
         self._host_ngrok_enabled = False
 
@@ -3007,7 +2969,7 @@ class PoorCLIServer:
                 try:
                     public_https = await tunnel.start()
                     if public_https:
-                        public_ws_url = public_https.replace("https://", "wss://", 1) + "/rpc"
+                        public_ws_url = public_https + "/rpc"
                 except Exception as error:
                     self.logger.warning(f"ngrok helper failed while starting host: {error}")
 
@@ -3020,9 +2982,9 @@ class PoorCLIServer:
             self._host_tunnel = tunnel
             self._host_bind_host = bind_host
             self._host_port = port
-            self._host_local_ws_url = f"ws://{local_host}:{port}/rpc"
-            self._host_share_ws_url = f"ws://{share_host}:{port}/rpc"
-            self._host_public_ws_url = public_ws_url
+            self._host_local_signaling_url = f"http://{local_host}:{port}/rpc"
+            self._host_share_signaling_url = f"http://{share_host}:{port}/rpc"
+            self._host_public_signaling_url = public_ws_url
             self._host_rooms = rooms
             self._host_ngrok_enabled = enable_ngrok
 
@@ -3369,49 +3331,40 @@ class PoorCLIServer:
             if not token:
                 raise InvalidParamsError(f"Unable to rotate token for room `{room_name}`")
 
-            join_ws_url = self._host_public_ws_url or self._host_share_ws_url or self._host_local_ws_url
+            signaling_url = (
+                self._host_public_signaling_url
+                or self._host_share_signaling_url
+                or self._host_local_signaling_url
+            )
             join_command = ""
             invite_code = ""
-            legacy_invite_code = ""
-            legacy_join_command = ""
             expires_at = ""
             if ttl_seconds is not None:
                 expires_at = (
                     datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
                 ).isoformat()
-            if join_ws_url:
+            if signaling_url:
                 if hasattr(host, "build_room_share_payload"):
                     share_payload = host.build_room_share_payload(
                         room_name,
                         role_name,
-                        signaling_url=join_ws_url,
+                        signaling_url=signaling_url,
                         expires_in_seconds=ttl_seconds,
                     )
                     if isinstance(share_payload, dict):
                         invite_code = str(share_payload.get("inviteCode", "")).strip()
-                        legacy_invite_code = str(
-                            share_payload.get("legacyInviteCode", "")
-                        ).strip()
                         join_command = (
                             f"poor-cli --remote-invite {invite_code}"
                             if invite_code
                             else ""
                         )
-                legacy_join_command = (
-                    f"poor-cli --remote-url {join_ws_url} --remote-room {room_name} --remote-token {token}"
-                )
-                if not legacy_invite_code:
-                    legacy_invite_code = encode_legacy_invite(f"{join_ws_url}|{room_name}|{token}")
 
             return {
                 "success": True,
                 "room": room_name,
                 "role": role_name,
-                "token": token,
                 "joinCommand": join_command,
                 "inviteCode": invite_code,
-                "legacyJoinCommand": legacy_join_command,
-                "legacyInviteCode": legacy_invite_code,
                 "expiresAt": expires_at,
             }
 
@@ -3519,17 +3472,16 @@ class PoorCLIServer:
         if room_payload is None:
             raise RuntimeError("Host started without returning canonical pair room details")
 
-        viewer_token = str(room_payload.get("viewerToken", "")).strip()
         invite_code = str(room_payload.get("viewerInviteCode", "")).strip()
-        ws_url = str(
-            room_payload.get("joinWsUrl")
-            or host_result.get("joinWsUrl")
-            or host_result.get("shareWsUrl")
-            or host_result.get("publicWsUrl")
+        signaling_url = str(
+            room_payload.get("signalingUrl")
+            or host_result.get("signalingUrl")
+            or host_result.get("shareSignalingUrl")
+            or host_result.get("publicSignalingUrl")
             or ""
         ).strip()
-        if not viewer_token or not invite_code or not ws_url:
-            raise RuntimeError("Pair session is missing viewer token or shareable invite details")
+        if not invite_code or not signaling_url:
+            raise RuntimeError("Pair session is missing shareable invite details")
         if lobby:
             try:
                 await self.handle_set_host_lobby({"enabled": True, "room": short_code})
@@ -3538,8 +3490,7 @@ class PoorCLIServer:
         return {
             "shortCode": short_code,
             "inviteCode": invite_code,
-            "wsUrl": ws_url,
-            "viewerToken": viewer_token,
+            "signalingUrl": signaling_url,
             "room": room_payload,
             **host_result,
         }
@@ -4645,24 +4596,18 @@ class NgrokTunnel:
 
 
 def _print_multiplayer_join_hints(
-    ws_url: str,
+    signaling_url: str,
     share_payloads: Dict[str, Dict[str, Any]],
 ) -> None:
-    """Print host-local room/token join instructions."""
+    """Print host-local invite-based join instructions."""
     print("\npoor-cli multiplayer host is ready.", file=sys.stderr)
-    print(f"Signaling endpoint: {ws_url}", file=sys.stderr)
+    print(f"Signaling endpoint: {signaling_url}", file=sys.stderr)
     print("", file=sys.stderr)
     for room_name in sorted(share_payloads.keys()):
         room_payload = share_payloads[room_name]
-        viewer_token = str(room_payload.get("viewerToken", ""))
-        prompter_token = str(room_payload.get("prompterToken", ""))
         viewer_invite = str(room_payload.get("viewerInviteCode", ""))
         prompter_invite = str(room_payload.get("prompterInviteCode", ""))
-        viewer_legacy = str(room_payload.get("viewerLegacyInviteCode", ""))
-        prompter_legacy = str(room_payload.get("prompterLegacyInviteCode", ""))
         print(f"Room: {room_name}", file=sys.stderr)
-        print(f"  viewer token:   {viewer_token}", file=sys.stderr)
-        print(f"  prompter token: {prompter_token}", file=sys.stderr)
         if viewer_invite:
             print(f"  viewer invite:   {viewer_invite}", file=sys.stderr)
         if prompter_invite:
@@ -4672,20 +4617,11 @@ def _print_multiplayer_join_hints(
             file=sys.stderr,
         )
         print(
-            f"  Legacy join: poor-cli --remote-url {ws_url} --remote-room {room_name} --remote-token {prompter_token}",
-            file=sys.stderr,
-        )
-        print(
             "  Neovim: multiplayer={ enabled=true, invite='"
             + (prompter_invite or viewer_invite)
-            + f"', url='{ws_url}', room='{room_name}', token='{prompter_token}' }}",
+            + "' }",
             file=sys.stderr,
         )
-        if viewer_legacy or prompter_legacy:
-            print(
-                f"  Legacy codes: viewer={viewer_legacy} prompter={prompter_legacy}",
-                file=sys.stderr,
-            )
         print("", file=sys.stderr)
 
 
@@ -4707,44 +4643,20 @@ def _decode_bridge_invite(
     try:
         decoded = decode_invite_code(invite)
         payload = dict(decoded.get("payload", {}) or {})
-        return {
-            "invite": invite,
-            "signaling_url": str(payload.get("signalingUrl", "")).strip(),
-            "room": str(payload.get("sessionId", "")).strip(),
-            "token": str(payload.get("token", "")).strip(),
-            "role": str(payload.get("role", "")).strip(),
-            "ice_servers": list(payload.get("iceServers", []) or []),
-        }
-    except ValueError:
-        pass
-
-    padded = invite
-    while len(padded) % 4 != 0:
-        padded += "="
-
-    try:
-        decoded = base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
-    except Exception as error:
+    except ValueError as error:
         raise RuntimeError("Invalid invite code") from error
 
-    parts = [part.strip() for part in decoded.split("|")]
-    if len(parts) != 3:
-        raise RuntimeError("Invalid invite code")
-
     return {
-        "invite": "",
-        "signaling_url": parts[0],
-        "room": parts[1],
-        "token": parts[2],
-        "role": "",
-        "ice_servers": [],
+        "invite": invite,
+        "signaling_url": str(payload.get("signalingUrl", "")).strip(),
+        "room": str(payload.get("sessionId", "")).strip(),
+        "token": str(payload.get("token", "")).strip(),
+        "role": str(payload.get("role", "")).strip(),
+        "ice_servers": list(payload.get("iceServers", []) or []),
     }
 
 
 async def _run_stdio_bridge(
-    url: str = "",
-    room: str = "",
-    token: str = "",
     invite_code: str = "",
 ) -> None:
     """Run a stdio <-> P2P DataChannel JSON-RPC bridge."""
@@ -4761,19 +4673,14 @@ async def _run_stdio_bridge(
             "Bridge mode requires aiortc. Install dependencies with: pip install -r requirements.txt"
         ) from e
 
-    if invite_code:
-        bootstrap = _decode_bridge_invite(invite_code)
-        url = bootstrap["signaling_url"]
-        room = bootstrap["room"]
-        token = bootstrap["token"]
-        bootstrap_invite = bootstrap["invite"]
-        ice_server_payloads = bootstrap["ice_servers"]
-    else:
-        bootstrap_invite = ""
-        ice_server_payloads = []
-
+    bootstrap = _decode_bridge_invite(invite_code)
+    url = bootstrap["signaling_url"]
+    room = bootstrap["room"]
+    token = bootstrap["token"]
+    bootstrap_invite = bootstrap["invite"]
+    ice_server_payloads = bootstrap["ice_servers"]
     if not url or not room or not token:
-        raise RuntimeError("Bridge mode requires signaling url, room, and token")
+        raise RuntimeError("Invite code is missing signaling url, room, or token")
 
     io_server = PoorCLIServer()
     signaling_url = _normalize_signaling_http_url(url)
@@ -4931,7 +4838,7 @@ async def _run_multiplayer_host(
     permission_mode: str,
     enable_ngrok: bool,
 ) -> None:
-    """Run multiplayer WebSocket host mode."""
+    """Run multiplayer signaling host mode."""
     from .multiplayer import MultiplayerHost
 
     config = ConfigManager().load()
@@ -4953,56 +4860,33 @@ async def _run_multiplayer_host(
 
     tunnel: Optional[NgrokTunnel] = None
     await host.start()
-    base_ws_url = f"ws://{bind_host}:{port}/rpc"
-    share_ws_url = f"ws://{share_host}:{port}/rpc"
+    share_signaling_url = f"http://{share_host}:{port}/rpc"
     initial_payload = {
         "rooms": [
             {
                 "name": room_name,
-                "viewerToken": role_map.get("viewer", ""),
-                "prompterToken": role_map.get("prompter", ""),
-                **(
-                    {
-                        "viewerInviteCode": (
-                            host.build_room_share_payload(
-                                room_name,
-                                "viewer",
-                                signaling_url=share_ws_url,
-                            )
-                            or {}
-                        ).get("inviteCode", ""),
-                        "prompterInviteCode": (
-                            host.build_room_share_payload(
-                                room_name,
-                                "prompter",
-                                signaling_url=share_ws_url,
-                            )
-                            or {}
-                        ).get("inviteCode", ""),
-                        "viewerLegacyInviteCode": (
-                            host.build_room_share_payload(
-                                room_name,
-                                "viewer",
-                                signaling_url=share_ws_url,
-                            )
-                            or {}
-                        ).get("legacyInviteCode", ""),
-                        "prompterLegacyInviteCode": (
-                            host.build_room_share_payload(
-                                room_name,
-                                "prompter",
-                                signaling_url=share_ws_url,
-                            )
-                            or {}
-                        ).get("legacyInviteCode", ""),
-                    }
-                ),
+                "viewerInviteCode": (
+                    host.build_room_share_payload(
+                        room_name,
+                        "viewer",
+                        signaling_url=share_signaling_url,
+                    )
+                    or {}
+                ).get("inviteCode", ""),
+                "prompterInviteCode": (
+                    host.build_room_share_payload(
+                        room_name,
+                        "prompter",
+                        signaling_url=share_signaling_url,
+                    )
+                    or {}
+                ).get("inviteCode", ""),
             }
             for room_name, role_map in host.get_room_tokens().items()
         ]
     }
     _print_multiplayer_join_hints(
-        share_ws_url,
+        share_signaling_url,
         {str(room.get("name", "")): dict(room) for room in initial_payload["rooms"]},
     )
 
@@ -5010,16 +4894,14 @@ async def _run_multiplayer_host(
         tunnel = NgrokTunnel(f"{bind_host}:{port}")
         public_https = await tunnel.start()
         if public_https:
-            public_ws = public_https.replace("https://", "wss://", 1) + "/rpc"
+            public_signaling_url = public_https + "/rpc"
             public_payload = {
                 str(room_name): {
-                    "viewerToken": role_map.get("viewer", ""),
-                    "prompterToken": role_map.get("prompter", ""),
                     "viewerInviteCode": (
                         host.build_room_share_payload(
                             room_name,
                             "viewer",
-                            signaling_url=public_ws,
+                            signaling_url=public_signaling_url,
                         )
                         or {}
                     ).get("inviteCode", ""),
@@ -5027,30 +4909,14 @@ async def _run_multiplayer_host(
                         host.build_room_share_payload(
                             room_name,
                             "prompter",
-                            signaling_url=public_ws,
+                            signaling_url=public_signaling_url,
                         )
                         or {}
                     ).get("inviteCode", ""),
-                    "viewerLegacyInviteCode": (
-                        host.build_room_share_payload(
-                            room_name,
-                            "viewer",
-                            signaling_url=public_ws,
-                        )
-                        or {}
-                    ).get("legacyInviteCode", ""),
-                    "prompterLegacyInviteCode": (
-                        host.build_room_share_payload(
-                            room_name,
-                            "prompter",
-                            signaling_url=public_ws,
-                        )
-                        or {}
-                    ).get("legacyInviteCode", ""),
                 }
                 for room_name, role_map in host.get_room_tokens().items()
             }
-            _print_multiplayer_join_hints(public_ws, public_payload)
+            _print_multiplayer_join_hints(public_signaling_url, public_payload)
         else:
             logger.warning("ngrok helper failed; host is still running on local interface")
 
@@ -5067,7 +4933,7 @@ def main() -> None:
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="PoorCLI JSON-RPC Server for editor integration")
     parser.add_argument("--stdio", action="store_true", help="Use stdio transport (for Neovim)")
-    parser.add_argument("--host", action="store_true", help="Run multiplayer WebSocket host mode")
+    parser.add_argument("--host", action="store_true", help="Run multiplayer signaling host mode")
     parser.add_argument("--bind", default="127.0.0.1", help="Host bind address for --host mode")
     parser.add_argument(
         "--port",
@@ -5090,8 +4956,6 @@ def main() -> None:
     parser.add_argument("--ngrok", action="store_true", help="Launch ngrok helper in --host mode")
     parser.add_argument("--bridge", action="store_true", help="Run stdio <-> P2P bridge mode")
     parser.add_argument("--invite", help="Invite code for --bridge mode")
-    parser.add_argument("--url", help="Signaling URL for --bridge mode (ws:// or wss://)")
-    parser.add_argument("--token", help="Invite token for --bridge mode")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
@@ -5120,17 +4984,9 @@ def main() -> None:
         raise SystemExit("Choose exactly one mode: either --host or --bridge (not both).")
 
     if args.bridge:
-        if args.invite:
-            asyncio.run(_run_stdio_bridge(invite_code=args.invite))
-            return
-        if not args.url:
-            raise SystemExit("--bridge requires --url or --invite")
-        bridge_room = args.room[0] if args.room else ""
-        if not bridge_room:
-            raise SystemExit("--bridge requires --room <name> when --invite is not used")
-        if not args.token:
-            raise SystemExit("--bridge requires --token when --invite is not used")
-        asyncio.run(_run_stdio_bridge(url=args.url, room=bridge_room, token=args.token))
+        if not args.invite:
+            raise SystemExit("--bridge requires --invite")
+        asyncio.run(_run_stdio_bridge(invite_code=args.invite))
         return
 
     if args.host:

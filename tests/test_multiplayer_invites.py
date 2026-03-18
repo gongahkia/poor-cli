@@ -7,7 +7,7 @@ class MultiplayerInviteTests(unittest.TestCase):
     def test_signed_invite_round_trip(self) -> None:
         invite = build_signed_invite(
             {
-                "signalingUrl": "wss://host.test/rpc",
+                "signalingUrl": "https://host.test/rpc",
                 "sessionId": "dev",
                 "role": "prompter",
                 "token": "tok-123",
@@ -17,7 +17,7 @@ class MultiplayerInviteTests(unittest.TestCase):
         )
 
         payload = verify_signed_invite(invite, secret="secret-123")
-        self.assertEqual(payload["signalingUrl"], "wss://host.test/rpc")
+        self.assertEqual(payload["signalingUrl"], "https://host.test/rpc")
         self.assertEqual(payload["sessionId"], "dev")
         self.assertEqual(payload["role"], "prompter")
         self.assertEqual(payload["token"], "tok-123")
@@ -25,7 +25,7 @@ class MultiplayerInviteTests(unittest.TestCase):
     def test_signed_invite_rejects_wrong_secret(self) -> None:
         invite = build_signed_invite(
             {
-                "signalingUrl": "wss://host.test/rpc",
+                "signalingUrl": "https://host.test/rpc",
                 "sessionId": "dev",
                 "role": "viewer",
                 "token": "tok-456",

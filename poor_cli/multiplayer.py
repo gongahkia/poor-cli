@@ -1,8 +1,8 @@
-"""Multiplayer WebSocket host runtime for poor-cli.
+"""Owner-authoritative multiplayer runtime for poor-cli.
 
-This module hosts room-scoped JSON-RPC sessions over WebSocket. Each room has
-shared chat state, serialized prompt execution, role-based access control, and
-room lifecycle notifications.
+This module hosts room-scoped JSON-RPC sessions over WebRTC DataChannels.
+Each room has shared chat state, serialized prompt execution, role-based
+access control, and room lifecycle notifications.
 """
 
 from __future__ import annotations
@@ -19,13 +19,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Deque, Dict, List, Optional
 
-from aiohttp import WSMsgType, web
+from aiohttp import web
 
 from .exceptions import setup_logger
 from .multiplayer_invites import (
     build_owner_fingerprint,
     build_signed_invite,
-    encode_legacy_invite,
     verify_signed_invite,
 )
 from .multiplayer_session import AgendaItem, CollaborationSession, InviteToken
@@ -35,7 +34,7 @@ logger = setup_logger(__name__)
 
 @dataclass
 class ConnectionState:
-    """Connected websocket client state."""
+    """Connected remote client state."""
 
     connection_id: str
     ws: Any
@@ -47,11 +46,10 @@ class ConnectionState:
     joined_at: Optional[str] = None
     approved: bool = True
     hand_raised: bool = False
+    peer_key: Optional[str] = None
     connected_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
-    last_pong: float = field(default_factory=time.monotonic)
     request_timestamps: Deque[float] = field(default_factory=deque)
-    heartbeat_enabled: bool = True
 
 
 class DataChannelTransport:
@@ -73,9 +71,6 @@ class DataChannelTransport:
         del code, message
         if not self.closed:
             self._channel.close()
-
-    async def ping(self) -> None:
-        return
 
 @dataclass
 class QueuedRequest:
@@ -154,7 +149,7 @@ class RoomPersistence:
 
 
 class MultiplayerHost:
-    """WebSocket host for multiplayer poor-cli sessions."""
+    """Owner signaling host for multiplayer poor-cli sessions."""
 
     _QUEUE_METHODS = {
         "chat",
@@ -202,8 +197,6 @@ class MultiplayerHost:
         message_cls: Any,
         rpc_error_cls: Any,
         default_permission_mode: str = "prompt",
-        heartbeat_interval_seconds: float = 30.0,
-        pong_timeout_seconds: float = 60.0,
         requests_per_minute: int = 10,
         invite_secret: Optional[str] = None,
         invite_ttl_seconds: int = 900,
@@ -216,8 +209,6 @@ class MultiplayerHost:
         self.message_cls = message_cls
         self.rpc_error_cls = rpc_error_cls
         self.default_permission_mode = default_permission_mode
-        self.heartbeat_interval_seconds = heartbeat_interval_seconds
-        self.pong_timeout_seconds = pong_timeout_seconds
         self.requests_per_minute = max(1, requests_per_minute)
         self.invite_secret = invite_secret or secrets.token_urlsafe(32)
         self.invite_ttl_seconds = max(1, invite_ttl_seconds)
@@ -231,7 +222,6 @@ class MultiplayerHost:
         self._runner: Optional[web.AppRunner] = None
         self._site: Optional[web.TCPSite] = None
         self._app: Optional[web.Application] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
         self._stopped = False
         self._peer_connections: Dict[str, Any] = {}
 
@@ -281,6 +271,19 @@ class MultiplayerHost:
             "ownerFingerprint": self.owner_fingerprint,
             "iceServers": self.ice_servers,
         }
+        invite_code = build_signed_invite(payload, secret=self.invite_secret)
+        return {
+            "role": normalized_role,
+            "token": token,
+            "inviteCode": invite_code,
+            "expiresAt": expires_at,
+            "signalingUrl": signaling_url,
+            "sessionId": room_name,
+            "ownerId": self.owner_id,
+            "ownerName": self.owner_name,
+            "ownerFingerprint": self.owner_fingerprint,
+            "iceServers": self.ice_servers,
+        }
 
     @staticmethod
     async def _wait_for_ice_gathering_complete(peer_connection: Any, *, timeout: float = 5.0) -> None:
@@ -322,21 +325,6 @@ class MultiplayerHost:
                 kwargs["credential"] = credential
             ice_servers.append(RTCIceServer(**kwargs))
         return RTCConfiguration(iceServers=ice_servers)
-        invite_code = build_signed_invite(payload, secret=self.invite_secret)
-        legacy_invite_code = encode_legacy_invite(f"{signaling_url}|{room_name}|{token}")
-        return {
-            "role": normalized_role,
-            "token": token,
-            "inviteCode": invite_code,
-            "legacyInviteCode": legacy_invite_code,
-            "expiresAt": expires_at,
-            "signalingUrl": signaling_url,
-            "sessionId": room_name,
-            "ownerId": self.owner_id,
-            "ownerName": self.owner_name,
-            "ownerFingerprint": self.owner_fingerprint,
-            "iceServers": self.ice_servers,
-        }
 
     def _create_room(self, room_name: str) -> RoomState:
         server = self.server_factory()
@@ -788,10 +776,9 @@ class MultiplayerHost:
         return True
 
     async def start(self) -> None:
-        """Start the HTTP/WebSocket host."""
+        """Start the HTTP signaling host."""
         app = web.Application()
         app.router.add_post("/rpc", self._handle_signaling_rpc)
-        app.router.add_get("/rpc", self._handle_ws)
         app.router.add_get("/health", self._handle_health)
 
         self._app = app
@@ -799,10 +786,7 @@ class MultiplayerHost:
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, host=self.bind_host, port=self.port)
         await self._site.start()
-        self._heartbeat_task = asyncio.create_task(
-            self._heartbeat_loop(), name="poor-cli-multiplayer-heartbeat"
-        )
-        logger.info("Multiplayer host listening on ws://%s:%s/rpc", self.bind_host, self.port)
+        logger.info("Multiplayer signaling host listening on http://%s:%s/rpc", self.bind_host, self.port)
 
     async def _handle_signaling_rpc(self, request: web.Request) -> web.Response:
         """Handle owner-side signaling/bootstrap requests."""
@@ -823,38 +807,13 @@ class MultiplayerHost:
         action = str(payload.get("action", "")).strip().lower()
         if action == "connect":
             return await self._handle_signaling_connect(payload)
-        if action != "describe":
-            return web.json_response(
-                {
-                    "ok": False,
-                    "error": "unsupported_action",
-                    "supportedActions": ["describe", "connect"],
-                },
-                status=400,
-            )
-
-        room_name = str(payload.get("room", "")).strip()
-        token = str(payload.get("token", "")).strip()
-        room = self.rooms.get(room_name)
-        invite = room.tokens.get(token) if room else None
-        if room is None or invite is None or self._is_token_expired(invite):
-            return web.json_response(
-                {"ok": False, "error": "invalid_multiplayer_auth"},
-                status=403,
-            )
-
         return web.json_response(
             {
-                "ok": True,
-                "room": room_name,
-                "role": invite.role,
-                "ownerId": self.owner_id,
-                "ownerName": self.owner_name,
-                "ownerFingerprint": self.owner_fingerprint,
-                "signaling": True,
-                "transport": "webrtc-datachannel",
-                "iceServers": self.ice_servers,
-            }
+                "ok": False,
+                "error": "unsupported_action",
+                "supportedActions": ["connect"],
+            },
+            status=400,
         )
 
     async def _handle_signaling_connect(self, payload: Dict[str, Any]) -> web.Response:
@@ -929,7 +888,7 @@ class MultiplayerHost:
                 connection_id=connection_id,
                 ws=DataChannelTransport(channel),
                 client_name=client_name,
-                heartbeat_enabled=False,
+                peer_key=peer_key,
             )
             self.connections[connection_id] = conn
             connection_ref["conn"] = conn
@@ -1042,8 +1001,6 @@ class MultiplayerHost:
         for room in self.rooms.values():
             if room.worker_task:
                 room.worker_task.cancel()
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
 
         for room in self.rooms.values():
             if room.worker_task:
@@ -1051,11 +1008,6 @@ class MultiplayerHost:
                     await room.worker_task
                 except asyncio.CancelledError:
                     pass
-        if self._heartbeat_task:
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
 
         for conn in list(self.connections.values()):
             try:
@@ -1087,59 +1039,12 @@ class MultiplayerHost:
                 "ok": True,
                 "rooms": sorted(self.rooms.keys()),
                 "connections": len(self.connections),
+                "transport": "webrtc-datachannel",
+                "signaling": True,
             }
         )
 
-    async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(heartbeat=30)
-        await ws.prepare(request)
-
-        conn = ConnectionState(connection_id=uuid.uuid4().hex[:12], ws=ws)
-        self.connections[conn.connection_id] = conn
-
-        try:
-            async for incoming in ws:
-                if incoming.type == WSMsgType.PONG:
-                    conn.last_pong = time.monotonic()
-                    conn.last_active = time.time()
-                    continue
-                if incoming.type != WSMsgType.TEXT:
-                    if incoming.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED}:
-                        break
-                    continue
-
-                try:
-                    payload = json.loads(incoming.data)
-                except json.JSONDecodeError:
-                    await self._send_error_response(
-                        ws,
-                        request_id=None,
-                        code=self.rpc_error_cls.PARSE_ERROR,
-                        message="Invalid JSON",
-                        data={"error_code": "PARSE_ERROR"},
-                    )
-                    continue
-
-                if not isinstance(payload, dict):
-                    await self._send_error_response(
-                        ws,
-                        request_id=None,
-                        code=self.rpc_error_cls.INVALID_REQUEST,
-                        message="JSON-RPC payload must be an object",
-                        data={"error_code": "INVALID_REQUEST"},
-                    )
-                    continue
-
-                message = self.message_cls.from_dict(payload)
-                await self._handle_message(conn, message)
-
-        finally:
-            await self._cleanup_connection(conn)
-
-        return ws
-
     async def _handle_message(self, conn: ConnectionState, message: Any) -> None:
-        conn.last_pong = time.monotonic()
         conn.last_active = time.time()
 
         if not conn.initialized:
@@ -1599,7 +1504,10 @@ class MultiplayerHost:
             )
             return
 
-        member = room.members.pop(target_connection_id, None)
+        member, promoted_connection_id = room.session.pop_room_member(
+            target_connection_id,
+            promote_fallback=True,
+        )
         if member is None:
             await self._send_error_response(
                 conn.ws,
@@ -1611,14 +1519,6 @@ class MultiplayerHost:
             return
 
         self.connections.pop(target_connection_id, None)
-        if room.active_connection_id == target_connection_id:
-            room.active_connection_id = None
-        room.hand_raise_queue = [
-            queued_id for queued_id in room.hand_raise_queue if queued_id != target_connection_id
-        ]
-        promoted_connection_id = None
-        if member.role == "prompter":
-            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4001, message=b"Kicked by host")
@@ -2005,57 +1905,38 @@ class MultiplayerHost:
 
     async def _cleanup_connection(self, conn: ConnectionState) -> None:
         self.connections.pop(conn.connection_id, None)
+        if conn.peer_key:
+            peer_connection = self._peer_connections.pop(conn.peer_key, None)
+            if peer_connection is not None:
+                with contextlib.suppress(Exception):
+                    await peer_connection.close()
 
-        if conn.room_name:
-            room = self.rooms.get(conn.room_name)
-            if room and conn.connection_id in room.members:
-                room.members.pop(conn.connection_id, None)
-                room.hand_raise_queue = [
-                    queued_id for queued_id in room.hand_raise_queue if queued_id != conn.connection_id
-                ]
-                promoted_connection_id = None
-                if conn.role == "prompter":
-                    promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
-                self._prune_hand_raise_queue(room)
-                if promoted_connection_id is not None:
-                    await self._broadcast_member_role_updates(room)
-                await self._broadcast_room_event(
-                    room,
-                    "member_left",
-                    actor=conn.connection_id,
-                    queue_depth=room.request_queue.qsize(),
-                )
+        if not conn.room_name:
+            return
 
-    async def _heartbeat_loop(self) -> None:
-        while not self._stopped:
-            await asyncio.sleep(self.heartbeat_interval_seconds)
-            now = time.monotonic()
-            stale_connections: List[ConnectionState] = []
-            for conn in list(self.connections.values()):
-                if conn.ws.closed:
-                    stale_connections.append(conn)
-                    continue
-                if not conn.heartbeat_enabled:
-                    continue
-                if now - conn.last_pong > self.pong_timeout_seconds:
-                    stale_connections.append(conn)
-                    continue
-                try:
-                    await conn.ws.ping()
-                except Exception:
-                    stale_connections.append(conn)
+        room = self.rooms.get(conn.room_name)
+        if room is None:
+            return
 
-            for conn in stale_connections:
-                if not conn.ws.closed:
-                    try:
-                        await conn.ws.close(code=4000, message=b"Heartbeat timeout")
-                    except Exception:
-                        pass
-                await self._cleanup_connection(conn)
+        member, promoted_connection_id = room.session.pop_room_member(
+            conn.connection_id,
+            promote_fallback=True,
+        )
+        if member is None:
+            return
+
+        if promoted_connection_id is not None:
+            await self._broadcast_member_role_updates(room)
+        await self._broadcast_room_event(
+            room,
+            "member_left",
+            actor=conn.connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
 
     async def _broadcast_rpc(self, room: RoomState, message: Any) -> None:
         dead_members: List[str] = []
-        for connection_id, member in room.members.items():
+        for connection_id, member in list(room.members.items()):
             if member.ws.closed:
                 dead_members.append(connection_id)
                 continue
@@ -2064,11 +1945,11 @@ class MultiplayerHost:
             except Exception:
                 dead_members.append(connection_id)
 
-        for connection_id in dead_members:
-            room.members.pop(connection_id, None)
-            self.connections.pop(connection_id, None)
-        if dead_members:
-            self._prune_hand_raise_queue(room)
+        for connection_id in dict.fromkeys(dead_members):
+            member = room.members.get(connection_id) or self.connections.get(connection_id)
+            if member is None:
+                continue
+            await self._cleanup_connection(member)
 
     async def _broadcast_streaming_chunk(
         self,
@@ -2088,7 +1969,7 @@ class MultiplayerHost:
             },
         )
         dead_members: List[str] = []
-        for connection_id, member in room.members.items():
+        for connection_id, member in list(room.members.items()):
             if member.ws.closed:
                 dead_members.append(connection_id)
                 continue
@@ -2100,11 +1981,11 @@ class MultiplayerHost:
             except Exception:
                 dead_members.append(connection_id)
 
-        for connection_id in dead_members:
-            room.members.pop(connection_id, None)
-            self.connections.pop(connection_id, None)
-        if dead_members:
-            self._prune_hand_raise_queue(room)
+        for connection_id in dict.fromkeys(dead_members):
+            member = room.members.get(connection_id) or self.connections.get(connection_id)
+            if member is None:
+                continue
+            await self._cleanup_connection(member)
 
     async def _broadcast_room_event(
         self,
@@ -2144,12 +2025,12 @@ class MultiplayerHost:
         )
         await self._broadcast_rpc(room, notification)
 
-    async def _send_rpc(self, ws: web.WebSocketResponse, message: Any) -> None:
+    async def _send_rpc(self, ws: Any, message: Any) -> None:
         await ws.send_str(message.to_json())
 
     async def _send_error_response(
         self,
-        ws: web.WebSocketResponse,
+        ws: Any,
         request_id: Any,
         code: int,
         message: str,
