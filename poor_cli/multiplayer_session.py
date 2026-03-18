@@ -193,7 +193,10 @@ class CollaborationSession:
         for connection_id, member in self.state.members.items():
             if not member.approved or self._is_member_closed(member):
                 continue
-            member.role = "prompter" if connection_id == promoted_connection_id else "viewer"
+            is_prompter = connection_id == promoted_connection_id
+            member.role = "prompter" if is_prompter else "viewer"
+            if is_prompter:
+                member.hand_raised = False
         return promoted_connection_id
 
     def record_activity(

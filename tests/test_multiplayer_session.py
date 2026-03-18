@@ -66,6 +66,65 @@ class MultiplayerSessionTests(unittest.TestCase):
         self.assertEqual(tokens["prompter"], "tok-prompter")
         self.assertNotIn("expired", session.state.tokens)
 
+    def test_approve_room_member_promotes_pending_prompter(self) -> None:
+        session = self.make_session()
+        session.state.members["host"].role = "viewer"
+        session.state.members["guest"].role = "prompter"
+        session.state.members["guest"].approved = False
+
+        approved, promoted = session.approve_room_member("guest")
+
+        self.assertTrue(approved)
+        self.assertEqual(promoted, "guest")
+        self.assertTrue(session.state.members["guest"].approved)
+        self.assertEqual(session.state.members["guest"].role, "prompter")
+        self.assertEqual(session.state.members["host"].role, "viewer")
+
+    def test_pop_room_member_promotes_fallback_and_clears_queue(self) -> None:
+        session = self.make_session()
+        session.state.members["guest"].hand_raised = True
+        session.state.hand_raise_queue = ["guest"]
+
+        member, promoted = session.pop_room_member("host", promote_fallback=True)
+
+        self.assertIsNotNone(member)
+        self.assertEqual(promoted, "guest")
+        self.assertIsNone(session.state.active_connection_id)
+        self.assertEqual(session.state.hand_raise_queue, [])
+        self.assertEqual(session.state.members["guest"].role, "prompter")
+        self.assertFalse(session.state.members["guest"].hand_raised)
+
+    def test_rotate_room_token_replaces_role_token_and_revoke_removes_it(self) -> None:
+        session = self.make_session()
+        old_viewer_token = session.active_tokens()["viewer"]
+
+        new_viewer_token = session.rotate_room_token("viewer", expires_in_seconds=60)
+
+        self.assertNotEqual(new_viewer_token, old_viewer_token)
+        self.assertNotIn(old_viewer_token, session.state.tokens)
+        self.assertIn(new_viewer_token, session.state.tokens)
+        self.assertEqual(session.state.tokens[new_viewer_token].role, "viewer")
+        self.assertIsNotNone(session.state.tokens[new_viewer_token].expires_at)
+
+        revoked = session.revoke_room_token(new_viewer_token)
+
+        self.assertIsNotNone(revoked)
+        self.assertEqual(revoked.token, new_viewer_token)
+        self.assertNotIn(new_viewer_token, session.state.tokens)
+
+    def test_set_room_lobby_off_approves_pending_members(self) -> None:
+        session = self.make_session()
+        session.state.members["guest"].approved = False
+        session.state.members["guest"].role = "prompter"
+
+        roles_rebalanced = session.set_room_lobby(False)
+
+        self.assertTrue(roles_rebalanced)
+        self.assertFalse(session.state.lobby_enabled)
+        self.assertTrue(session.state.members["guest"].approved)
+        self.assertEqual(session.state.members["host"].role, "prompter")
+        self.assertEqual(session.state.members["guest"].role, "viewer")
+
 
 if __name__ == "__main__":
     unittest.main()
