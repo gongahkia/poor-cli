@@ -106,6 +106,27 @@ function M.get(key)
     return M.config[key]
 end
 
+function M.set_multiplayer_bootstrap(opts)
+    local multiplayer = vim.deepcopy(M.config.multiplayer or {})
+    multiplayer.enabled = opts and opts.enabled == true or false
+    multiplayer.invite = opts and opts.invite or nil
+    multiplayer.url = opts and opts.url or nil
+    multiplayer.room = opts and opts.room or nil
+    multiplayer.token = opts and opts.token or nil
+    M.config.multiplayer = multiplayer
+    return multiplayer
+end
+
+function M.clear_multiplayer_bootstrap()
+    return M.set_multiplayer_bootstrap({
+        enabled = false,
+        invite = nil,
+        url = nil,
+        room = nil,
+        token = nil,
+    })
+end
+
 -- Check if debug mode is enabled
 function M.is_debug()
     return M.config.debug

@@ -28,6 +28,11 @@ M.multiplayer_state = {
     enabled = false,
     room = "",
     role = "",
+    ui_role = "",
+    display_name = "",
+    approval_state = "",
+    hand_raised = false,
+    queue_position = 0,
     local_connection_id = "",
     member_count = 0,
     queue_depth = 0,
@@ -122,6 +127,11 @@ local function fresh_multiplayer_state()
         enabled = false,
         room = "",
         role = "",
+        ui_role = "",
+        display_name = "",
+        approval_state = "",
+        hand_raised = false,
+        queue_position = 0,
         local_connection_id = "",
         member_count = 0,
         queue_depth = 0,
@@ -252,6 +262,11 @@ function M.capture_initialize_result(result)
         M.multiplayer_state.enabled = multiplayer.enabled == true
         M.multiplayer_state.room = multiplayer.room or ""
         M.multiplayer_state.role = multiplayer.role or ""
+        M.multiplayer_state.ui_role = multiplayer.uiRole or ""
+        M.multiplayer_state.display_name = multiplayer.displayName or ""
+        M.multiplayer_state.approval_state = multiplayer.approvalState or ""
+        M.multiplayer_state.hand_raised = multiplayer.handRaised == true
+        M.multiplayer_state.queue_position = multiplayer.queuePosition or 0
         M.multiplayer_state.local_connection_id = multiplayer.connectionId or ""
         M.multiplayer_state.lobby_enabled = multiplayer.lobbyEnabled == true
         M.multiplayer_state.preset = multiplayer.preset or ""
@@ -352,6 +367,11 @@ function M.apply_room_event(params)
         for _, member in ipairs(M.multiplayer_state.members) do
             if type(member) == "table" and member.connectionId == local_connection_id then
                 M.multiplayer_state.role = member.role or M.multiplayer_state.role
+                M.multiplayer_state.ui_role = member.uiRole or M.multiplayer_state.ui_role
+                M.multiplayer_state.display_name = member.displayName or M.multiplayer_state.display_name
+                M.multiplayer_state.approval_state = member.approvalState or M.multiplayer_state.approval_state
+                M.multiplayer_state.hand_raised = member.handRaised == true
+                M.multiplayer_state.queue_position = tonumber(member.queuePosition) or 0
                 break
             end
         end
@@ -366,6 +386,7 @@ function M.apply_member_role_update(params)
 
     local connection_id = params.connectionId or ""
     local role = params.role or ""
+    local ui_role = params.uiRole or ""
     local members = M.multiplayer_state.members
     if type(members) ~= "table" then
         members = {}
@@ -376,6 +397,7 @@ function M.apply_member_role_update(params)
     for _, member in ipairs(members) do
         if type(member) == "table" and member.connectionId == connection_id then
             member.role = role
+            member.uiRole = ui_role
             updated = true
             break
         end
@@ -385,11 +407,15 @@ function M.apply_member_role_update(params)
         table.insert(members, {
             connectionId = connection_id,
             role = role,
+            uiRole = ui_role,
         })
     end
 
     if connection_id ~= "" and connection_id == M.multiplayer_state.local_connection_id then
         M.multiplayer_state.role = role
+        if ui_role ~= "" then
+            M.multiplayer_state.ui_role = ui_role
+        end
     end
     emit_status_changed()
 end
@@ -397,11 +423,20 @@ end
 function M.resolve_server_command()
     local multiplayer = config.get("multiplayer") or {}
     if type(multiplayer) == "table" and multiplayer.enabled then
+        local invite = multiplayer.invite
+        if invite and invite ~= "" then
+            return {
+                "poor-cli-server",
+                "--bridge",
+                "--invite",
+                invite,
+            }, nil
+        end
         local url = multiplayer.url
         local room = multiplayer.room
         local token = multiplayer.token
         if not url or url == "" or not room or room == "" or not token or token == "" then
-            return nil, "multiplayer.enabled requires multiplayer.url, multiplayer.room, and multiplayer.token"
+            return nil, "multiplayer.enabled requires multiplayer.invite or multiplayer.url, multiplayer.room, and multiplayer.token"
         end
         return {
             "poor-cli-server",
@@ -519,6 +554,15 @@ function M.restart(callback)
     return M.initialize(callback)
 end
 
+function M.restart_with_bootstrap(bootstrap, callback)
+    if type(bootstrap) ~= "table" then
+        config.clear_multiplayer_bootstrap()
+    else
+        config.set_multiplayer_bootstrap(bootstrap)
+    end
+    return M.restart(callback)
+end
+
 function M.stop()
     M.manual_stop = true
     clear_restart_timer()
@@ -620,6 +664,61 @@ function M.notify(method, params)
         params = params or {},
     }
     M.send_message(message)
+end
+
+function M.start_collab(opts, callback)
+    return M.request("poor-cli/startHostServer", opts or {}, callback)
+end
+
+function M.get_collab_status(callback)
+    return M.request("poor-cli/getHostServerStatus", {}, callback)
+end
+
+function M.leave_collab(callback)
+    return M.restart_with_bootstrap({
+        enabled = false,
+    }, callback)
+end
+
+function M.pass_driver(target, callback)
+    local params = {}
+    if target and target ~= "" then
+        params.connectionId = target
+    end
+    local room = M.multiplayer_state.room or ""
+    if room ~= "" then
+        params.room = room
+    end
+    return M.request("poor-cli/passDriver", params, callback)
+end
+
+function M.suggest_text(text, callback)
+    local params = {
+        text = text,
+    }
+    local room = M.multiplayer_state.room or ""
+    if room ~= "" then
+        params.room = room
+    end
+    return M.request("poor-cli/suggestText", params, callback)
+end
+
+function M.list_joined_room_members(room, callback)
+    local params = {}
+    if room and room ~= "" then
+        params.room = room
+    elseif M.multiplayer_state.room ~= "" then
+        params.room = M.multiplayer_state.room
+    end
+    return M.request("poor-cli/listRoomMembers", params, callback)
+end
+
+function M.list_host_room_members(room, callback)
+    local params = {}
+    if room and room ~= "" then
+        params.room = room
+    end
+    return M.request("poor-cli/listHostMembers", params, callback)
 end
 
 function M.cancel_request(id, err)

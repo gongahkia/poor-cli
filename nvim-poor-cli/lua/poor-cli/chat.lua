@@ -580,6 +580,13 @@ function M._handle_room_event(data)
         role_handoff = true,
         lobby_updated = true,
         preset_updated = true,
+        agenda_added = true,
+        agenda_resolved = true,
+        hand_raised = true,
+        hand_lowered = true,
+        next_driver_selected = true,
+        token_rotated = true,
+        token_revoked = true,
     }
     if not notable_events[event_type] then
         return
