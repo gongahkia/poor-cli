@@ -97,7 +97,6 @@ local function collab_usage()
     return table.concat({
         "Usage: :PoorCliCollab start [pairing|mob|review]",
         "       :PoorCliCollab join <invite>",
-        "       :PoorCliCollab join <url> <room> <token>",
         "       :PoorCliCollab share [viewer|prompter] [room]",
         "       :PoorCliCollab leave",
         "       :PoorCliCollab pass [connection-id|display-name]",
@@ -137,13 +136,10 @@ local function extract_share_payload(payload, role, room_name)
     end
     local normalized_role = (role == "viewer") and "viewer" or "prompter"
     local invite_key = normalized_role == "viewer" and "viewerInviteCode" or "prompterInviteCode"
-    local legacy_key = normalized_role == "viewer" and "viewerLegacyInviteCode" or "prompterLegacyInviteCode"
     local invite = room[invite_key] or ""
-    local legacy_invite = room[legacy_key] or ""
     return {
         room = room.name or room_name or "",
         invite = invite,
-        legacy_invite = legacy_invite,
         role = normalized_role,
     }
 end
@@ -297,34 +293,12 @@ function M.setup()
                 rpc.restart_with_bootstrap({
                     enabled = true,
                     invite = args[2],
-                    url = nil,
-                    room = nil,
-                    token = nil,
                 }, function(_result, err)
                     vim.schedule(function()
                         if err then
                             vim.notify("[poor-cli] Join failed: " .. vim.inspect(err), vim.log.levels.ERROR)
                         else
                             vim.notify("[poor-cli] Joined collaboration via invite", vim.log.levels.INFO)
-                        end
-                    end)
-                end)
-                return
-            end
-
-            if #args == 4 then
-                rpc.restart_with_bootstrap({
-                    enabled = true,
-                    invite = nil,
-                    url = args[2],
-                    room = args[3],
-                    token = args[4],
-                }, function(_result, err)
-                    vim.schedule(function()
-                        if err then
-                            vim.notify("[poor-cli] Join failed: " .. vim.inspect(err), vim.log.levels.ERROR)
-                        else
-                            vim.notify("[poor-cli] Joined collaboration room " .. args[3], vim.log.levels.INFO)
                         end
                     end)
                 end)

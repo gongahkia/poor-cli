@@ -424,29 +424,14 @@ function M.resolve_server_command()
     local multiplayer = config.get("multiplayer") or {}
     if type(multiplayer) == "table" and multiplayer.enabled then
         local invite = multiplayer.invite
-        if invite and invite ~= "" then
-            return {
-                "poor-cli-server",
-                "--bridge",
-                "--invite",
-                invite,
-            }, nil
-        end
-        local url = multiplayer.url
-        local room = multiplayer.room
-        local token = multiplayer.token
-        if not url or url == "" or not room or room == "" or not token or token == "" then
-            return nil, "multiplayer.enabled requires multiplayer.invite or multiplayer.url, multiplayer.room, and multiplayer.token"
+        if not invite or invite == "" then
+            return nil, "multiplayer.enabled requires multiplayer.invite"
         end
         return {
             "poor-cli-server",
             "--bridge",
-            "--url",
-            url,
-            "--room",
-            room,
-            "--token",
-            token,
+            "--invite",
+            invite,
         }, nil
     end
     return config.get("server_cmd"), nil
