@@ -790,6 +790,15 @@ fn run_app(
     if let Some(url) = cli.remote_url.as_ref() {
         app.multiplayer_remote_url = url.clone();
     }
+    if let Some(invite) = cli.remote_invite.as_ref() {
+        app.multiplayer_remote_invite = invite.clone();
+        if let Ok(bootstrap) = multiplayer::decode_invite_code(invite) {
+            app.multiplayer_remote_url = bootstrap.signaling_url;
+            app.multiplayer_remote_token = bootstrap.token;
+            app.multiplayer_room = bootstrap.room;
+            app.multiplayer_enabled = true;
+        }
+    }
     if let Some(token) = cli.remote_token.as_ref() {
         app.multiplayer_remote_token = token.clone();
     }
@@ -874,20 +883,27 @@ fn run_app(
                 if std::time::Instant::now() >= deadline {
                     state.1 = None;
                     let attempt_label = state.0;
-                    let url = app.multiplayer_remote_url.clone();
-                    let room = app.multiplayer_room.clone();
-                    let token = app.multiplayer_remote_token.clone();
+                    let bootstrap = multiplayer::RemoteBootstrap {
+                        invite: app.multiplayer_remote_invite.clone(),
+                        signaling_url: app.multiplayer_remote_url.clone(),
+                        room: app.multiplayer_room.clone(),
+                        token: app.multiplayer_remote_token.clone(),
+                    };
                     app.push_message(ChatMessage::system(format!(
-                        "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{url}` room `{room}`..."
+                        "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{}` room `{}`...",
+                        if bootstrap.invite.is_empty() {
+                            bootstrap.signaling_url.as_str()
+                        } else {
+                            bootstrap.room.as_str()
+                        },
+                        bootstrap.room
                     )));
                     multiplayer::reconnect_to_remote_server(
                         app,
                         &tx,
                         &mut rpc_cmd_tx.borrow_mut(),
                         &launch,
-                        &url,
-                        &room,
-                        &token,
+                        &bootstrap,
                     );
                 }
             }
@@ -1190,15 +1206,13 @@ fn run_app(
                         }
                     });
                 }
-                InputAction::JoinWizardComplete(url, room, token) => {
+                InputAction::JoinWizardComplete(bootstrap) => {
                     multiplayer::reconnect_to_remote_server(
                         app,
                         &tx,
                         &mut rpc_cmd_tx.borrow_mut(),
                         &launch,
-                        &url,
-                        &room,
-                        &token,
+                        &bootstrap,
                     );
                 }
                 InputAction::SaveApiKeyEditor => {
@@ -5451,15 +5465,22 @@ mod tests {
     }
 
     #[test]
-    fn backend_server_args_reject_remote_invite_until_p2p_transport_lands() {
+    fn backend_server_args_support_remote_invite() {
         let cli = Cli::parse_from([
             "poor-cli-tui",
             "--remote-invite",
-            "peer://placeholder",
+            "invite-code",
         ]);
-        let err = multiplayer::build_backend_server_args(&cli)
-            .expect_err("remote invite should fail until transport is implemented");
-        assert!(err.contains("P2P transport rollout"));
+        let args = multiplayer::build_backend_server_args(&cli)
+            .expect("remote invite args should build");
+        assert_eq!(
+            args,
+            vec![
+                "--bridge".to_string(),
+                "--invite".to_string(),
+                "invite-code".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -5469,10 +5490,10 @@ mod tests {
                 .expect("invite code should parse");
         assert_eq!(
             parsed,
-            (
-                "ws://127.0.0.1:8765/rpc".to_string(),
-                "dev".to_string(),
-                "tok-abc".to_string(),
+            multiplayer::RemoteBootstrap::from_triplet(
+                "ws://127.0.0.1:8765/rpc",
+                "dev",
+                "tok-abc",
             )
         );
     }
@@ -5485,11 +5506,28 @@ mod tests {
         .expect("base64 invite code should parse");
         assert_eq!(
             parsed,
-            (
-                "ws://127.0.0.1:8765/rpc".to_string(),
-                "dev".to_string(),
-                "tok-abc".to_string(),
+            multiplayer::RemoteBootstrap::from_triplet(
+                "ws://127.0.0.1:8765/rpc",
+                "dev",
+                "tok-abc",
             )
+        );
+    }
+
+    #[test]
+    fn join_server_parser_accepts_signed_invite_code() {
+        let parsed = multiplayer::parse_join_server_args(
+            "/join-server eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0",
+        )
+        .expect("signed invite should parse");
+        assert_eq!(
+            parsed,
+            multiplayer::RemoteBootstrap {
+                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0".to_string(),
+                signaling_url: "wss://host.test/rpc".to_string(),
+                room: "docs".to_string(),
+                token: "tok-xyz".to_string(),
+            }
         );
     }
 
@@ -5500,10 +5538,10 @@ mod tests {
                 .expect("triplet should parse");
         assert_eq!(
             parsed,
-            (
-                "wss://host.test/rpc".to_string(),
-                "docs".to_string(),
-                "tok-xyz".to_string(),
+            multiplayer::RemoteBootstrap::from_triplet(
+                "wss://host.test/rpc",
+                "docs",
+                "tok-xyz",
             )
         );
     }
@@ -5513,6 +5551,16 @@ mod tests {
         let err = multiplayer::parse_join_server_args("/join-server checkpoint")
             .expect_err("single non-code arg should fail");
         assert!(err.contains("Usage"));
+    }
+
+    #[test]
+    fn remote_reconnect_classifier_accepts_signaling_and_datachannel_errors() {
+        assert!(multiplayer::should_attempt_remote_reconnect(
+            "Signaling request failed (500): owner unavailable"
+        ));
+        assert!(multiplayer::should_attempt_remote_reconnect(
+            "data channel is not open"
+        ));
     }
 
     #[test]

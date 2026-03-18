@@ -3553,8 +3553,8 @@ Context Window: {max_context} tokens\n\n\
         }
         // join mode: /pair <invite-code>
         let invite = args[1];
-        let (url, room, token) = match multiplayer::decode_invite_code(invite) {
-            Ok((u, r, t)) => (u, r, t),
+        let bootstrap = match multiplayer::decode_invite_code(invite) {
+            Ok(bootstrap) => bootstrap,
             Err(e) => {
                 show_command_info_popup(
                     app,
@@ -3565,7 +3565,7 @@ Context Window: {max_context} tokens\n\n\
             }
         };
         app.set_status("Connecting to endpoint...");
-        if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
+        if let Err(e) = multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
             app.push_message(ChatMessage::error(format!(
                 "Join preflight failed: {e}\nCheck the invite code and try again."
             )));
@@ -3573,11 +3573,14 @@ Context Window: {max_context} tokens\n\n\
         }
         app.pair_mode_active = true;
         app.pair_is_host = false;
-        app.pair_short_code = room.clone();
-        app.multiplayer_room = room.clone();
+        app.pair_short_code = bootstrap.room.clone();
+        app.multiplayer_room = bootstrap.room.clone();
         app.multiplayer_role = "viewer".to_string();
-        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
-        app.push_message(ChatMessage::system(format!("Joining pair session: {room}")));
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &bootstrap);
+        app.push_message(ChatMessage::system(format!(
+            "Joining pair session: {}",
+            bootstrap.room
+        )));
         return false;
     }
 
@@ -3722,7 +3725,7 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
-        let (url, room, token) = match multiplayer::parse_join_server_args(raw) {
+        let bootstrap = match multiplayer::parse_join_server_args(raw) {
             Ok(values) => values,
             Err(error_message) => {
                 show_command_info_popup(app, raw, error_message);
@@ -3731,14 +3734,14 @@ Context Window: {max_context} tokens\n\n\
         };
 
         app.set_status("Connecting to endpoint...");
-        if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
+        if let Err(e) = multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
             app.push_message(ChatMessage::error(format!(
                 "Join preflight failed: {e}\nUse `/collab join manual` for the guided join flow."
             )));
             return false;
         }
 
-        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &bootstrap);
         return false;
     }
 

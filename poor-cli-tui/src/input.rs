@@ -27,8 +27,8 @@ pub enum InputAction {
     CompactStrategySelected(String),
     /// Copy text to clipboard.
     CopyToClipboard(String),
-    /// Join wizard completed with (url, room, token).
-    JoinWizardComplete(String, String, String),
+    /// Join wizard completed with a resolved remote bootstrap.
+    JoinWizardComplete(crate::multiplayer::RemoteBootstrap),
     /// Save the API key/.env editor.
     SaveApiKeyEditor,
     /// Open the backend-owned context inspector.
@@ -852,8 +852,8 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
                         return InputAction::Redraw;
                     }
 
-                    if let Ok((url, room, token)) = crate::multiplayer::decode_invite_code(&input) {
-                        match crate::multiplayer::preflight_join_endpoint(&url) {
+                    if let Ok(bootstrap) = crate::multiplayer::decode_invite_code(&input) {
+                        match crate::multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
                             Ok(_) => {
                                 app.join_wizard_active = false;
                                 app.join_wizard_step = 0;
@@ -862,7 +862,7 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
                                 app.join_wizard_input.clear();
                                 app.join_wizard_error.clear();
                                 app.mode = AppMode::Normal;
-                                return InputAction::JoinWizardComplete(url, room, token);
+                                return InputAction::JoinWizardComplete(bootstrap);
                             }
                             Err(e) => {
                                 app.join_wizard_error = format!("Preflight failed: {e}");
@@ -919,7 +919,9 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
                     app.join_wizard_input.clear();
                     app.join_wizard_error.clear();
                     app.mode = AppMode::Normal;
-                    InputAction::JoinWizardComplete(url, room, token)
+                    InputAction::JoinWizardComplete(
+                        crate::multiplayer::RemoteBootstrap::from_triplet(&url, &room, &token),
+                    )
                 }
                 _ => {
                     app.mode = AppMode::Normal;

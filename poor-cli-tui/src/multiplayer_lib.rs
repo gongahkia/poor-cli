@@ -1,40 +1,95 @@
 /// Shared multiplayer helpers for the TUI library crate.
+use serde_json::Value;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-/// Decode a base64url invite code, or fall back to raw `url|room|token` format.
-pub fn decode_invite_code(input: &str) -> Result<(String, String, String), String> {
-    let parts: Vec<&str> = input.split('|').collect();
-    if parts.len() == 3 && parts[0].starts_with("ws") {
-        return Ok((
-            parts[0].trim().to_string(),
-            parts[1].trim().to_string(),
-            parts[2].trim().to_string(),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteBootstrap {
+    pub invite: String,
+    pub signaling_url: String,
+    pub room: String,
+    pub token: String,
+}
+
+impl RemoteBootstrap {
+    pub fn from_triplet(url: &str, room: &str, token: &str) -> Self {
+        Self {
+            invite: String::new(),
+            signaling_url: url.to_string(),
+            room: room.to_string(),
+            token: token.to_string(),
+        }
+    }
+}
+
+pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
+    let trimmed = input.trim();
+    let parts: Vec<&str> = trimmed.split('|').collect();
+    if parts.len() == 3 && is_supported_endpoint_scheme(parts[0].trim()) {
+        return Ok(RemoteBootstrap::from_triplet(
+            parts[0].trim(),
+            parts[1].trim(),
+            parts[2].trim(),
         ));
     }
 
-    let mut padded = input.to_string();
+    let mut padded = trimmed.to_string();
     while padded.len() % 4 != 0 {
         padded.push('=');
     }
     let decoded = base64_url_decode(&padded).map_err(|_| {
         "Invalid invite code: not a valid base64 or pipe-delimited format.".to_string()
     })?;
+
+    if let Ok(envelope) = serde_json::from_slice::<Value>(&decoded) {
+        let payload = envelope
+            .get("payload")
+            .and_then(Value::as_object)
+            .ok_or_else(|| "Invalid invite code: missing payload envelope.".to_string())?;
+        let signaling_url = payload
+            .get("signalingUrl")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let room = payload
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let token = payload
+            .get("token")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if signaling_url.is_empty() || room.is_empty() || token.is_empty() {
+            return Err("Invalid invite code: missing signalingUrl, sessionId, or token.".to_string());
+        }
+        return Ok(RemoteBootstrap {
+            invite: trimmed.to_string(),
+            signaling_url,
+            room,
+            token,
+        });
+    }
+
     let text = String::from_utf8(decoded)
         .map_err(|_| "Invalid invite code: decoded bytes are not valid UTF-8.".to_string())?;
     let parts: Vec<&str> = text.split('|').collect();
     if parts.len() != 3 {
-        return Err("Invalid invite code: expected url|room|token after decoding.".to_string());
+        return Err("Invalid invite code: expected either a signed invite payload or url|room|token after decoding.".to_string());
     }
-    Ok((
-        parts[0].trim().to_string(),
-        parts[1].trim().to_string(),
-        parts[2].trim().to_string(),
+    Ok(RemoteBootstrap::from_triplet(
+        parts[0].trim(),
+        parts[1].trim(),
+        parts[2].trim(),
     ))
 }
 
 pub fn preflight_join_endpoint(url: &str) -> Result<String, String> {
-    let (host, port) = ws_url_host_port(url)?;
+    let (host, port) = endpoint_host_port(url)?;
     let addr_text = format!("{host}:{port}");
     let mut addrs = addr_text
         .to_socket_addrs()
@@ -75,47 +130,25 @@ fn base64_url_decode(input: &str) -> Result<Vec<u8>, ()> {
     Ok(out)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::decode_invite_code;
-
-    #[test]
-    fn decode_invite_code_accepts_pipe_delimited_values() {
-        let decoded = decode_invite_code("ws://127.0.0.1:8765/rpc|dev|tok-abc")
-            .expect("pipe-delimited invite should decode");
-        assert_eq!(
-            decoded,
-            (
-                "ws://127.0.0.1:8765/rpc".to_string(),
-                "dev".to_string(),
-                "tok-abc".to_string(),
-            )
-        );
-    }
-
-    #[test]
-    fn decode_invite_code_accepts_base64_values() {
-        let decoded = decode_invite_code("d3M6Ly8xMjcuMC4wLjE6ODc2NS9ycGN8ZGV2fHRvay1hYmM")
-            .expect("base64 invite should decode");
-        assert_eq!(
-            decoded,
-            (
-                "ws://127.0.0.1:8765/rpc".to_string(),
-                "dev".to_string(),
-                "tok-abc".to_string(),
-            )
-        );
-    }
+fn is_supported_endpoint_scheme(url: &str) -> bool {
+    url.starts_with("ws://")
+        || url.starts_with("wss://")
+        || url.starts_with("http://")
+        || url.starts_with("https://")
 }
 
-fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
+fn endpoint_host_port(url: &str) -> Result<(String, u16), String> {
     let trimmed = url.trim();
     let (without_scheme, default_port) = if let Some(rest) = trimmed.strip_prefix("ws://") {
         (rest, 80u16)
     } else if let Some(rest) = trimmed.strip_prefix("wss://") {
         (rest, 443u16)
+    } else if let Some(rest) = trimmed.strip_prefix("http://") {
+        (rest, 80u16)
+    } else if let Some(rest) = trimmed.strip_prefix("https://") {
+        (rest, 443u16)
     } else {
-        return Err("URL must start with ws:// or wss://".to_string());
+        return Err("URL must start with ws://, wss://, http://, or https://".to_string());
     };
     let authority = without_scheme.split('/').next().unwrap_or("").trim();
     if authority.is_empty() {
@@ -146,4 +179,46 @@ fn ws_url_host_port(url: &str) -> Result<(String, u16), String> {
         return Ok((host.to_string(), port));
     }
     Ok((authority.to_string(), default_port))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_invite_code, RemoteBootstrap};
+
+    #[test]
+    fn decode_invite_code_accepts_pipe_delimited_values() {
+        let decoded = decode_invite_code("ws://127.0.0.1:8765/rpc|dev|tok-abc")
+            .expect("pipe-delimited invite should decode");
+        assert_eq!(
+            decoded,
+            RemoteBootstrap::from_triplet("ws://127.0.0.1:8765/rpc", "dev", "tok-abc")
+        );
+    }
+
+    #[test]
+    fn decode_invite_code_accepts_base64_values() {
+        let decoded = decode_invite_code("d3M6Ly8xMjcuMC4wLjE6ODc2NS9ycGN8ZGV2fHRvay1hYmM")
+            .expect("base64 invite should decode");
+        assert_eq!(
+            decoded,
+            RemoteBootstrap::from_triplet("ws://127.0.0.1:8765/rpc", "dev", "tok-abc")
+        );
+    }
+
+    #[test]
+    fn decode_invite_code_accepts_signed_values() {
+        let decoded = decode_invite_code(
+            "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0",
+        )
+        .expect("signed invite should decode");
+        assert_eq!(
+            decoded,
+            RemoteBootstrap {
+                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0".to_string(),
+                signaling_url: "wss://host.test/rpc".to_string(),
+                room: "docs".to_string(),
+                token: "tok-xyz".to_string(),
+            }
+        );
+    }
 }

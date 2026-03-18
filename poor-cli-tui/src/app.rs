@@ -1080,6 +1080,7 @@ pub struct App {
     pub multiplayer_approval_state: String,
     pub multiplayer_hand_raised: bool,
     pub multiplayer_queue_position: u64,
+    pub multiplayer_remote_invite: String,
     pub multiplayer_remote_url: String,
     pub multiplayer_remote_token: String,
     pub multiplayer_queue_depth: u64,
@@ -1226,6 +1227,7 @@ impl Default for App {
             multiplayer_approval_state: String::new(),
             multiplayer_hand_raised: false,
             multiplayer_queue_position: 0,
+            multiplayer_remote_invite: String::new(),
             multiplayer_remote_url: String::new(),
             multiplayer_remote_token: String::new(),
             multiplayer_queue_depth: 0,
@@ -2266,6 +2268,9 @@ impl App {
         self.multiplayer_approval_state.clear();
         self.multiplayer_hand_raised = false;
         self.multiplayer_queue_position = 0;
+        self.multiplayer_remote_invite.clear();
+        self.multiplayer_remote_url.clear();
+        self.multiplayer_remote_token.clear();
     }
 
     pub fn can_control_multiplayer_reviews(&self) -> bool {

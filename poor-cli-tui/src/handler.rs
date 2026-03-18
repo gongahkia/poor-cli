@@ -180,8 +180,9 @@ pub(super) fn handle_server_message(
             app.finalize_streaming();
             app.active_tool = None;
             app.stop_waiting();
-            let remote_reconnect_configured = !app.multiplayer_remote_url.is_empty()
-                && !app.multiplayer_remote_token.is_empty()
+            let remote_reconnect_configured = (!app.multiplayer_remote_invite.is_empty()
+                || (!app.multiplayer_remote_url.is_empty()
+                    && !app.multiplayer_remote_token.is_empty()))
                 && !app.multiplayer_room.is_empty();
             let mut state = remote_reconnect_state.borrow_mut();
             if remote_reconnect_configured
