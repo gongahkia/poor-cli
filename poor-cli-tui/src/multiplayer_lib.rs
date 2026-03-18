@@ -11,34 +11,14 @@ pub struct RemoteBootstrap {
     pub token: String,
 }
 
-impl RemoteBootstrap {
-    pub fn from_triplet(url: &str, room: &str, token: &str) -> Self {
-        Self {
-            invite: String::new(),
-            signaling_url: url.to_string(),
-            room: room.to_string(),
-            token: token.to_string(),
-        }
-    }
-}
-
 pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
     let trimmed = input.trim();
-    let parts: Vec<&str> = trimmed.split('|').collect();
-    if parts.len() == 3 && is_supported_endpoint_scheme(parts[0].trim()) {
-        return Ok(RemoteBootstrap::from_triplet(
-            parts[0].trim(),
-            parts[1].trim(),
-            parts[2].trim(),
-        ));
-    }
-
     let mut padded = trimmed.to_string();
     while padded.len() % 4 != 0 {
         padded.push('=');
     }
     let decoded = base64_url_decode(&padded).map_err(|_| {
-        "Invalid invite code: not a valid base64 or pipe-delimited format.".to_string()
+        "Invalid invite code: not a valid signed invite envelope.".to_string()
     })?;
 
     if let Ok(envelope) = serde_json::from_slice::<Value>(&decoded) {
@@ -75,17 +55,9 @@ pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
         });
     }
 
-    let text = String::from_utf8(decoded)
+    let _ = String::from_utf8(decoded)
         .map_err(|_| "Invalid invite code: decoded bytes are not valid UTF-8.".to_string())?;
-    let parts: Vec<&str> = text.split('|').collect();
-    if parts.len() != 3 {
-        return Err("Invalid invite code: expected either a signed invite payload or url|room|token after decoding.".to_string());
-    }
-    Ok(RemoteBootstrap::from_triplet(
-        parts[0].trim(),
-        parts[1].trim(),
-        parts[2].trim(),
-    ))
+    Err("Invalid invite code: expected a signed P2P invite payload.".to_string())
 }
 
 pub fn preflight_join_endpoint(url: &str) -> Result<String, String> {
@@ -130,25 +102,18 @@ fn base64_url_decode(input: &str) -> Result<Vec<u8>, ()> {
     Ok(out)
 }
 
-fn is_supported_endpoint_scheme(url: &str) -> bool {
-    url.starts_with("ws://")
-        || url.starts_with("wss://")
-        || url.starts_with("http://")
-        || url.starts_with("https://")
+pub fn is_supported_endpoint_scheme(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
 }
 
 fn endpoint_host_port(url: &str) -> Result<(String, u16), String> {
     let trimmed = url.trim();
-    let (without_scheme, default_port) = if let Some(rest) = trimmed.strip_prefix("ws://") {
-        (rest, 80u16)
-    } else if let Some(rest) = trimmed.strip_prefix("wss://") {
-        (rest, 443u16)
-    } else if let Some(rest) = trimmed.strip_prefix("http://") {
+    let (without_scheme, default_port) = if let Some(rest) = trimmed.strip_prefix("http://") {
         (rest, 80u16)
     } else if let Some(rest) = trimmed.strip_prefix("https://") {
         (rest, 443u16)
     } else {
-        return Err("URL must start with ws://, wss://, http://, or https://".to_string());
+        return Err("URL must start with http:// or https://".to_string());
     };
     let authority = without_scheme.split('/').next().unwrap_or("").trim();
     if authority.is_empty() {
@@ -186,36 +151,16 @@ mod tests {
     use super::{decode_invite_code, RemoteBootstrap};
 
     #[test]
-    fn decode_invite_code_accepts_pipe_delimited_values() {
-        let decoded = decode_invite_code("ws://127.0.0.1:8765/rpc|dev|tok-abc")
-            .expect("pipe-delimited invite should decode");
-        assert_eq!(
-            decoded,
-            RemoteBootstrap::from_triplet("ws://127.0.0.1:8765/rpc", "dev", "tok-abc")
-        );
-    }
-
-    #[test]
-    fn decode_invite_code_accepts_base64_values() {
-        let decoded = decode_invite_code("d3M6Ly8xMjcuMC4wLjE6ODc2NS9ycGN8ZGV2fHRvay1hYmM")
-            .expect("base64 invite should decode");
-        assert_eq!(
-            decoded,
-            RemoteBootstrap::from_triplet("ws://127.0.0.1:8765/rpc", "dev", "tok-abc")
-        );
-    }
-
-    #[test]
     fn decode_invite_code_accepts_signed_values() {
         let decoded = decode_invite_code(
-            "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0",
+            "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJodHRwczovL2hvc3QudGVzdC9ycGMiLCJzZXNzaW9uSWQiOiJkb2NzIiwidG9rZW4iOiJ0b2steHl6Iiwicm9sZSI6InZpZXdlciJ9LCJzaWciOiJzaWcifQ",
         )
         .expect("signed invite should decode");
         assert_eq!(
             decoded,
             RemoteBootstrap {
-                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0".to_string(),
-                signaling_url: "wss://host.test/rpc".to_string(),
+                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJodHRwczovL2hvc3QudGVzdC9ycGMiLCJzZXNzaW9uSWQiOiJkb2NzIiwidG9rZW4iOiJ0b2steHl6Iiwicm9sZSI6InZpZXdlciJ9LCJzaWciOiJzaWcifQ".to_string(),
+                signaling_url: "https://host.test/rpc".to_string(),
                 room: "docs".to_string(),
                 token: "tok-xyz".to_string(),
             }

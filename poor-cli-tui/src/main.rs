@@ -62,18 +62,9 @@ struct Cli {
     /// Python binary to use (default: python3)
     #[arg(long, default_value = "python3")]
     python: String,
-    /// Remote multiplayer websocket URL (bridge mode)
-    #[arg(long)]
-    remote_url: Option<String>,
-    /// Remote multiplayer invite code (reserved for invite-first P2P bootstrap)
+    /// Remote multiplayer invite code
     #[arg(long)]
     remote_invite: Option<String>,
-    /// Remote multiplayer room name (requires --remote-url and --remote-token)
-    #[arg(long)]
-    remote_room: Option<String>,
-    /// Remote multiplayer invite token (requires --remote-url and --remote-room)
-    #[arg(long)]
-    remote_token: Option<String>,
 }
 
 // ── Background message from server thread ────────────────────────────
@@ -787,24 +778,12 @@ fn run_app(
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_else(|| ".".into())
     });
-    if let Some(url) = cli.remote_url.as_ref() {
-        app.multiplayer_remote_url = url.clone();
-    }
     if let Some(invite) = cli.remote_invite.as_ref() {
         app.multiplayer_remote_invite = invite.clone();
         if let Ok(bootstrap) = multiplayer::decode_invite_code(invite) {
-            app.multiplayer_remote_url = bootstrap.signaling_url;
-            app.multiplayer_remote_token = bootstrap.token;
             app.multiplayer_room = bootstrap.room;
             app.multiplayer_enabled = true;
         }
-    }
-    if let Some(token) = cli.remote_token.as_ref() {
-        app.multiplayer_remote_token = token.clone();
-    }
-    if let Some(room) = cli.remote_room.as_ref() {
-        app.multiplayer_room = room.clone();
-        app.multiplayer_enabled = true;
     }
     let (session_log, tui_log_path, backend_log_path) = setup_session_logs(&app.cwd);
     write_session_log(
@@ -878,34 +857,36 @@ fn run_app(
         &mut app,
         &rx,
         |app| {
+            let mut reconnect: Option<(u32, multiplayer::RemoteBootstrap)> = None;
             let mut state = remote_reconnect_state.borrow_mut();
             if let Some(deadline) = state.1 {
                 if std::time::Instant::now() >= deadline {
                     state.1 = None;
                     let attempt_label = state.0;
-                    let bootstrap = multiplayer::RemoteBootstrap {
-                        invite: app.multiplayer_remote_invite.clone(),
-                        signaling_url: app.multiplayer_remote_url.clone(),
-                        room: app.multiplayer_room.clone(),
-                        token: app.multiplayer_remote_token.clone(),
-                    };
-                    app.push_message(ChatMessage::system(format!(
-                        "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{}` room `{}`...",
-                        if bootstrap.invite.is_empty() {
-                            bootstrap.signaling_url.as_str()
-                        } else {
-                            bootstrap.room.as_str()
-                        },
-                        bootstrap.room
-                    )));
-                    multiplayer::reconnect_to_remote_server(
-                        app,
-                        &tx,
-                        &mut rpc_cmd_tx.borrow_mut(),
-                        &launch,
-                        &bootstrap,
-                    );
+                    match multiplayer::decode_invite_code(&app.multiplayer_remote_invite) {
+                        Ok(bootstrap) => reconnect = Some((attempt_label, bootstrap)),
+                        Err(error) => {
+                            state.2 = false;
+                            app.push_message(ChatMessage::error(format!(
+                                "Multiplayer reconnect cancelled: {error}"
+                            )));
+                        }
+                    }
                 }
+            }
+            drop(state);
+            if let Some((attempt_label, bootstrap)) = reconnect {
+                app.push_message(ChatMessage::system(format!(
+                    "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to session `{}`...",
+                    bootstrap.room
+                )));
+                multiplayer::reconnect_to_remote_server(
+                    app,
+                    &tx,
+                    &mut rpc_cmd_tx.borrow_mut(),
+                    &launch,
+                    &bootstrap,
+                );
             }
             Ok(LoopControl::Continue)
         },
@@ -2371,16 +2352,16 @@ fn format_host_server_payload(payload: &Value) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0.0");
     let port = payload.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
-    let local_ws = payload
-        .get("localWsUrl")
+    let local_signaling = payload
+        .get("localSignalingUrl")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let share_ws = payload
-        .get("shareWsUrl")
+    let share_signaling = payload
+        .get("shareSignalingUrl")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let public_ws = payload
-        .get("publicWsUrl")
+    let public_signaling = payload
+        .get("publicSignalingUrl")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -2393,20 +2374,20 @@ fn format_host_server_payload(payload: &Value) -> String {
         format!("Bind: `{bind_host}:{port}`"),
     ];
 
-    if !local_ws.is_empty() {
-        lines.push(format!("Local URL: `{local_ws}`"));
+    if !local_signaling.is_empty() {
+        lines.push(format!("Local signaling: `{local_signaling}`"));
     }
-    if !share_ws.is_empty() {
-        lines.push(format!("LAN share URL: `{share_ws}`"));
-        if bind_host == "0.0.0.0" && share_ws.contains("127.0.0.1") {
+    if !share_signaling.is_empty() {
+        lines.push(format!("LAN signaling: `{share_signaling}`"));
+        if bind_host == "0.0.0.0" && share_signaling.contains("127.0.0.1") {
             lines.push(
                 "**⚠ ACTION REQUIRED:** LAN IP detection fell back to localhost. Replace `127.0.0.1` with your actual LAN IP before sharing."
                     .to_string(),
             );
         }
     }
-    if !public_ws.is_empty() {
-        lines.push(format!("Public URL: `{public_ws}`"));
+    if !public_signaling.is_empty() {
+        lines.push(format!("Public signaling: `{public_signaling}`"));
     }
 
     let rooms = payload
@@ -2426,14 +2407,6 @@ fn format_host_server_payload(payload: &Value) -> String {
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let viewer_token = room
-            .get("viewerToken")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let prompter_token = room
-            .get("prompterToken")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
         let viewer_join = room
             .get("viewerJoinCommand")
             .and_then(|v| v.as_str())
@@ -2442,8 +2415,16 @@ fn format_host_server_payload(payload: &Value) -> String {
             .get("prompterJoinCommand")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let signaling_url = room
+            .get("signalingUrl")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let viewer_code = room
             .get("viewerInviteCode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let prompter_code = room
+            .get("prompterInviteCode")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let member_count = room
@@ -2464,8 +2445,9 @@ fn format_host_server_payload(payload: &Value) -> String {
             "**Room `{name}`** ({member_count} member(s), lobby: {}, preset: `{preset}`)",
             if lobby_enabled { "on" } else { "off" }
         ));
-        lines.push(format!("- Viewer token: `{viewer_token}`"));
-        lines.push(format!("- Prompter token: `{prompter_token}`"));
+        if !signaling_url.is_empty() {
+            lines.push(format!("- Signaling endpoint: `{signaling_url}`"));
+        }
         if !viewer_join.is_empty() {
             lines.push(format!("- Share viewer command: `{viewer_join}`"));
         }
@@ -2474,6 +2456,9 @@ fn format_host_server_payload(payload: &Value) -> String {
         }
         if !viewer_code.is_empty() {
             lines.push(format!("- Viewer invite code: `{viewer_code}`"));
+        }
+        if !prompter_code.is_empty() {
+            lines.push(format!("- Prompter invite code: `{prompter_code}`"));
         }
     }
 
@@ -5434,34 +5419,18 @@ mod tests {
     fn backend_server_args_for_remote_mode() {
         let cli = Cli::parse_from([
             "poor-cli-tui",
-            "--remote-url",
-            "wss://example.test/rpc",
-            "--remote-room",
-            "dev",
-            "--remote-token",
-            "tok-123",
+            "--remote-invite",
+            "invite-code",
         ]);
         let args = multiplayer::build_backend_server_args(&cli).expect("remote args should build");
         assert_eq!(
             args,
             vec![
                 "--bridge".to_string(),
-                "--url".to_string(),
-                "wss://example.test/rpc".to_string(),
-                "--room".to_string(),
-                "dev".to_string(),
-                "--token".to_string(),
-                "tok-123".to_string(),
+                "--invite".to_string(),
+                "invite-code".to_string(),
             ]
         );
-    }
-
-    #[test]
-    fn backend_server_args_require_complete_remote_triplet() {
-        let cli = Cli::parse_from(["poor-cli-tui", "--remote-url", "wss://example.test/rpc"]);
-        let err = multiplayer::build_backend_server_args(&cli)
-            .expect_err("should fail for partial remote args");
-        assert!(err.contains("--remote-url"));
     }
 
     #[test]
@@ -5484,47 +5453,16 @@ mod tests {
     }
 
     #[test]
-    fn join_server_parser_accepts_invite_code() {
-        let parsed =
-            multiplayer::parse_join_server_args("/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc")
-                .expect("invite code should parse");
-        assert_eq!(
-            parsed,
-            multiplayer::RemoteBootstrap::from_triplet(
-                "ws://127.0.0.1:8765/rpc",
-                "dev",
-                "tok-abc",
-            )
-        );
-    }
-
-    #[test]
-    fn join_server_parser_accepts_base64_invite_code() {
-        let parsed = multiplayer::parse_join_server_args(
-            "/join-server d3M6Ly8xMjcuMC4wLjE6ODc2NS9ycGN8ZGV2fHRvay1hYmM",
-        )
-        .expect("base64 invite code should parse");
-        assert_eq!(
-            parsed,
-            multiplayer::RemoteBootstrap::from_triplet(
-                "ws://127.0.0.1:8765/rpc",
-                "dev",
-                "tok-abc",
-            )
-        );
-    }
-
-    #[test]
     fn join_server_parser_accepts_signed_invite_code() {
         let parsed = multiplayer::parse_join_server_args(
-            "/join-server eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0",
+            "/join-server eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJodHRwczovL2hvc3QudGVzdC9ycGMiLCJzZXNzaW9uSWQiOiJkb2NzIiwidG9rZW4iOiJ0b2steHl6Iiwicm9sZSI6InZpZXdlciJ9LCJzaWciOiJzaWcifQ",
         )
         .expect("signed invite should parse");
         assert_eq!(
             parsed,
             multiplayer::RemoteBootstrap {
-                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJ3c3M6Ly9ob3N0LnRlc3QvcnBjIiwic2Vzc2lvbklkIjoiZG9jcyIsInRva2VuIjoidG9rLXh5eiIsInJvbGUiOiJ2aWV3ZXIifSwic2lnIjoic2lnIn0".to_string(),
-                signaling_url: "wss://host.test/rpc".to_string(),
+                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJodHRwczovL2hvc3QudGVzdC9ycGMiLCJzZXNzaW9uSWQiOiJkb2NzIiwidG9rZW4iOiJ0b2steHl6Iiwicm9sZSI6InZpZXdlciJ9LCJzaWciOiJzaWcifQ".to_string(),
+                signaling_url: "https://host.test/rpc".to_string(),
                 room: "docs".to_string(),
                 token: "tok-xyz".to_string(),
             }
@@ -5532,18 +5470,10 @@ mod tests {
     }
 
     #[test]
-    fn join_server_parser_accepts_explicit_triplet() {
-        let parsed =
-            multiplayer::parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")
-                .expect("triplet should parse");
-        assert_eq!(
-            parsed,
-            multiplayer::RemoteBootstrap::from_triplet(
-                "wss://host.test/rpc",
-                "docs",
-                "tok-xyz",
-            )
-        );
+    fn join_server_parser_rejects_legacy_triplet() {
+        let err = multiplayer::parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")
+            .expect_err("legacy triplet should fail");
+        assert!(err.contains("Usage"));
     }
 
     #[test]

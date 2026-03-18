@@ -825,8 +825,6 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
         KeyCode::Esc => {
             app.join_wizard_active = false;
             app.join_wizard_step = 0;
-            app.join_wizard_url.clear();
-            app.join_wizard_room.clear();
             app.join_wizard_input.clear();
             app.join_wizard_error.clear();
             app.mode = AppMode::Normal;
@@ -843,88 +841,30 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
         }
         KeyCode::Enter => {
             let input = app.join_wizard_input.trim().to_string();
-            match app.join_wizard_step {
-                0 => {
-                    // Invite-first step. A raw ws:// URL falls back to manual room/token entry.
-                    if input.is_empty() {
-                        app.join_wizard_error =
-                            "Paste an invite code or enter a ws:// / wss:// URL.".to_string();
-                        return InputAction::Redraw;
-                    }
+            if input.is_empty() {
+                app.join_wizard_error = "Paste a collaboration invite code.".to_string();
+                return InputAction::Redraw;
+            }
 
-                    if let Ok(bootstrap) = crate::multiplayer::decode_invite_code(&input) {
-                        match crate::multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
-                            Ok(_) => {
-                                app.join_wizard_active = false;
-                                app.join_wizard_step = 0;
-                                app.join_wizard_url.clear();
-                                app.join_wizard_room.clear();
-                                app.join_wizard_input.clear();
-                                app.join_wizard_error.clear();
-                                app.mode = AppMode::Normal;
-                                return InputAction::JoinWizardComplete(bootstrap);
-                            }
-                            Err(e) => {
-                                app.join_wizard_error = format!("Preflight failed: {e}");
-                                return InputAction::Redraw;
-                            }
-                        }
-                    }
-
-                    if !(input.starts_with("ws://") || input.starts_with("wss://")) {
-                        app.join_wizard_error =
-                            "Enter an invite code or a URL starting with ws:// or wss://."
-                                .to_string();
-                        return InputAction::Redraw;
-                    }
-
-                    match crate::multiplayer::preflight_join_endpoint(&input) {
-                        Ok(_) => {
-                            app.join_wizard_url = input;
-                            app.join_wizard_input.clear();
-                            app.join_wizard_error.clear();
-                            app.join_wizard_step = 1;
-                        }
-                        Err(e) => {
-                            app.join_wizard_error = format!("Preflight failed: {e}");
-                        }
-                    }
-                    InputAction::Redraw
+            let bootstrap = match crate::multiplayer::decode_invite_code(&input) {
+                Ok(bootstrap) => bootstrap,
+                Err(error) => {
+                    app.join_wizard_error = error;
+                    return InputAction::Redraw;
                 }
-                1 => {
-                    // room step
-                    if input.is_empty() {
-                        app.join_wizard_error = "Room name cannot be empty.".to_string();
-                        return InputAction::Redraw;
-                    }
-                    app.join_wizard_room = input;
-                    app.join_wizard_input.clear();
-                    app.join_wizard_error.clear();
-                    app.join_wizard_step = 2;
-                    InputAction::Redraw
-                }
-                2 => {
-                    // token step
-                    if input.is_empty() {
-                        app.join_wizard_error = "Token cannot be empty.".to_string();
-                        return InputAction::Redraw;
-                    }
-                    let url = app.join_wizard_url.clone();
-                    let room = app.join_wizard_room.clone();
-                    let token = input;
+            };
+
+            match crate::multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
+                Ok(_) => {
                     app.join_wizard_active = false;
                     app.join_wizard_step = 0;
-                    app.join_wizard_url.clear();
-                    app.join_wizard_room.clear();
                     app.join_wizard_input.clear();
                     app.join_wizard_error.clear();
                     app.mode = AppMode::Normal;
-                    InputAction::JoinWizardComplete(
-                        crate::multiplayer::RemoteBootstrap::from_triplet(&url, &room, &token),
-                    )
+                    InputAction::JoinWizardComplete(bootstrap)
                 }
-                _ => {
-                    app.mode = AppMode::Normal;
+                Err(e) => {
+                    app.join_wizard_error = format!("Preflight failed: {e}");
                     InputAction::Redraw
                 }
             }

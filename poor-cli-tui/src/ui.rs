@@ -2932,16 +2932,9 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
     let area = centered_rect(55, 30, frame.area());
     render_popup_surface(frame, area, mode);
-    let step = app.join_wizard_step;
-    let (step_label, prompt, hint) = match step {
-        0 => (
-            "1/1",
-            "Invite code or WebSocket URL",
-            "Paste a full invite code to join now, or enter ws://host:port/rpc for manual room + token entry.",
-        ),
-        1 => ("2/3", "Room name", "Manual join mode"),
-        _ => ("3/3", "Invite token", "Manual join mode"),
-    };
+    let step_label = "1/1";
+    let prompt = "Invite code";
+    let hint = "Paste a signed collaboration invite to join this session.";
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -2971,21 +2964,6 @@ fn draw_join_wizard(frame: &mut Frame, app: &App) {
             format!("  ⚠ {}", app.join_wizard_error),
             Style::default().fg(theme::error(mode)),
         )));
-    }
-    if step > 0 {
-        lines.push(Line::from(""));
-        if !app.join_wizard_url.is_empty() {
-            lines.push(Line::from(Span::styled(
-                format!("  URL: {}", app.join_wizard_url),
-                Style::default().fg(theme::muted_fg(mode)),
-            )));
-        }
-        if step > 1 && !app.join_wizard_room.is_empty() {
-            lines.push(Line::from(Span::styled(
-                format!("  Room: {}", app.join_wizard_room),
-                Style::default().fg(theme::muted_fg(mode)),
-            )));
-        }
     }
     lines.push(Line::from(""));
     let popup = Paragraph::new(lines).block(

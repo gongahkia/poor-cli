@@ -1050,8 +1050,6 @@ pub struct App {
     pub onboarding_step: usize,
     pub join_wizard_active: bool,
     pub join_wizard_step: u8,
-    pub join_wizard_url: String,
-    pub join_wizard_room: String,
     pub join_wizard_input: String,
     pub join_wizard_error: String,
     pub autopilot_enabled: bool,
@@ -1081,8 +1079,6 @@ pub struct App {
     pub multiplayer_hand_raised: bool,
     pub multiplayer_queue_position: u64,
     pub multiplayer_remote_invite: String,
-    pub multiplayer_remote_url: String,
-    pub multiplayer_remote_token: String,
     pub multiplayer_queue_depth: u64,
     pub multiplayer_member_count: u64,
     pub multiplayer_active_connection_id: String,
@@ -1197,8 +1193,6 @@ impl Default for App {
             onboarding_step: 0,
             join_wizard_active: false,
             join_wizard_step: 0,
-            join_wizard_url: String::new(),
-            join_wizard_room: String::new(),
             join_wizard_input: String::new(),
             join_wizard_error: String::new(),
             autopilot_enabled: false,
@@ -1228,8 +1222,6 @@ impl Default for App {
             multiplayer_hand_raised: false,
             multiplayer_queue_position: 0,
             multiplayer_remote_invite: String::new(),
-            multiplayer_remote_url: String::new(),
-            multiplayer_remote_token: String::new(),
             multiplayer_queue_depth: 0,
             multiplayer_member_count: 0,
             multiplayer_active_connection_id: String::new(),
@@ -2269,8 +2261,6 @@ impl App {
         self.multiplayer_hand_raised = false;
         self.multiplayer_queue_position = 0;
         self.multiplayer_remote_invite.clear();
-        self.multiplayer_remote_url.clear();
-        self.multiplayer_remote_token.clear();
     }
 
     pub fn can_control_multiplayer_reviews(&self) -> bool {

@@ -619,8 +619,8 @@ pub(super) fn handle_slash_command(
         app.onboarding_step = 0;
         app.join_wizard_active = false;
         app.join_wizard_step = 0;
-        app.join_wizard_url.clear();
-        app.join_wizard_room.clear();
+        app.join_wizard_input.clear();
+        app.join_wizard_error.clear();
         if qa_watch_state.is_running() {
             qa_watch_state.stop();
             app.qa_mode_enabled = false;
@@ -650,8 +650,8 @@ pub(super) fn handle_slash_command(
         app.onboarding_step = 0;
         app.join_wizard_active = false;
         app.join_wizard_step = 0;
-        app.join_wizard_url.clear();
-        app.join_wizard_room.clear();
+        app.join_wizard_input.clear();
+        app.join_wizard_error.clear();
         if qa_watch_state.is_running() {
             qa_watch_state.stop();
             app.qa_mode_enabled = false;
@@ -3044,18 +3044,6 @@ Context Window: {max_context} tokens\n\n\
                 }
             }
             "join" => {
-                if args.len() == 2 && matches!(args[1], "manual" | "wizard") {
-                    return handle_slash_command(
-                        app,
-                        tx,
-                        rpc_cmd_tx,
-                        launch,
-                        cancel_token,
-                        watch_state,
-                        qa_watch_state,
-                        "/join-server",
-                    );
-                }
                 if args.len() == 2 {
                     let join_command = format!("/join-server {}", args[1]);
                     return handle_slash_command(
@@ -3073,7 +3061,7 @@ Context Window: {max_context} tokens\n\n\
                     show_command_info_popup(
                         app,
                         raw,
-                        "Usage: /collab join <invite-code>\n       /collab join manual".to_string(),
+                        "Usage: /collab join\n       /collab join <invite-code>".to_string(),
                     );
                     return false;
                 }
@@ -3703,8 +3691,6 @@ Context Window: {max_context} tokens\n\n\
         if args.len() == 1 {
             app.join_wizard_active = true;
             app.join_wizard_step = 0;
-            app.join_wizard_url.clear();
-            app.join_wizard_room.clear();
             app.join_wizard_input.clear();
             app.join_wizard_error.clear();
             app.mode = AppMode::JoinWizard;
@@ -3719,8 +3705,8 @@ Context Window: {max_context} tokens\n\n\
         {
             app.join_wizard_active = false;
             app.join_wizard_step = 0;
-            app.join_wizard_url.clear();
-            app.join_wizard_room.clear();
+            app.join_wizard_input.clear();
+            app.join_wizard_error.clear();
             show_command_info_popup(app, raw, "Join wizard cancelled.".to_string());
             return false;
         }
@@ -3736,7 +3722,7 @@ Context Window: {max_context} tokens\n\n\
         app.set_status("Connecting to endpoint...");
         if let Err(e) = multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
             app.push_message(ChatMessage::error(format!(
-                "Join preflight failed: {e}\nUse `/collab join manual` for the guided join flow."
+                "Join preflight failed: {e}\nUse `/collab join` for the invite prompt."
             )));
             return false;
         }

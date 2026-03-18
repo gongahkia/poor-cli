@@ -2756,12 +2756,8 @@ mod tests {
     fn build_server_command_includes_extra_args() {
         let args = vec![
             "--bridge".to_string(),
-            "--url".to_string(),
-            "wss://example.test/rpc".to_string(),
-            "--room".to_string(),
-            "dev".to_string(),
-            "--token".to_string(),
-            "tok".to_string(),
+            "--invite".to_string(),
+            "invite-code".to_string(),
         ];
         let cmd = RpcClient::build_server_command("python3", Some("/tmp"), &args, None);
         let collected = cmd
@@ -2774,12 +2770,8 @@ mod tests {
                 "-m",
                 "poor_cli.server",
                 "--bridge",
-                "--url",
-                "wss://example.test/rpc",
-                "--room",
-                "dev",
-                "--token",
-                "tok",
+                "--invite",
+                "invite-code",
             ]
         );
     }
