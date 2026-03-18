@@ -52,7 +52,7 @@ from .exceptions import (
     set_log_context,
     setup_logger,
 )
-from .multiplayer_invites import decode_invite_code
+from .multiplayer_invites import decode_bridge_invite_payload
 from .server.types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
 from .server.error_formatter import _sanitize_exception_message
 from .server.transport import StdioTransport
@@ -4625,14 +4625,6 @@ def _print_multiplayer_join_hints(
         print("", file=sys.stderr)
 
 
-def _normalize_signaling_http_url(url: str) -> str:
-    if url.startswith("ws://"):
-        return "http://" + url[len("ws://"):]
-    if url.startswith("wss://"):
-        return "https://" + url[len("wss://"):]
-    return url
-
-
 def _decode_bridge_invite(
     invite_code: str,
 ) -> Dict[str, Any]:
@@ -4641,19 +4633,12 @@ def _decode_bridge_invite(
         raise RuntimeError("Invite code is required")
 
     try:
-        decoded = decode_invite_code(invite)
-        payload = dict(decoded.get("payload", {}) or {})
+        return decode_bridge_invite_payload(invite)
     except ValueError as error:
+        message = str(error).strip()
+        if message == "Invite signaling URL must start with http:// or https://":
+            raise RuntimeError(message) from error
         raise RuntimeError("Invalid invite code") from error
-
-    return {
-        "invite": invite,
-        "signaling_url": str(payload.get("signalingUrl", "")).strip(),
-        "room": str(payload.get("sessionId", "")).strip(),
-        "token": str(payload.get("token", "")).strip(),
-        "role": str(payload.get("role", "")).strip(),
-        "ice_servers": list(payload.get("iceServers", []) or []),
-    }
 
 
 async def _run_stdio_bridge(
@@ -4683,7 +4668,7 @@ async def _run_stdio_bridge(
         raise RuntimeError("Invite code is missing signaling url, room, or token")
 
     io_server = PoorCLIServer()
-    signaling_url = _normalize_signaling_http_url(url)
+    signaling_url = url
     logger.info(f"Starting stdio P2P bridge via {signaling_url} (room={room})")
 
     rtc_ice_servers = []

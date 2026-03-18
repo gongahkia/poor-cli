@@ -1,6 +1,10 @@
 import unittest
 
-from poor_cli.multiplayer_invites import build_signed_invite, verify_signed_invite
+from poor_cli.multiplayer_invites import (
+    build_signed_invite,
+    decode_bridge_invite_payload,
+    verify_signed_invite,
+)
 
 
 class MultiplayerInviteTests(unittest.TestCase):
@@ -36,6 +40,23 @@ class MultiplayerInviteTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "signature"):
             verify_signed_invite(invite, secret="wrong-secret")
+
+    def test_bridge_invite_requires_http_signaling_url(self) -> None:
+        invite = build_signed_invite(
+            {
+                "signalingUrl": "wss://host.test/rpc",
+                "sessionId": "dev",
+                "role": "viewer",
+                "token": "tok-789",
+                "expiresAt": "2099-01-01T00:00:00+00:00",
+            },
+            secret="secret-123",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError, "Invite signaling URL must start with http:// or https://"
+        ):
+            decode_bridge_invite_payload(invite)
 
 
 if __name__ == "__main__":

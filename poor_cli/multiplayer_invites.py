@@ -112,3 +112,23 @@ def verify_signed_invite(
     if expected_role and str(payload.get("role", "")) != expected_role:
         raise ValueError("invite role mismatch")
     return payload
+
+
+def decode_bridge_invite_payload(code: str) -> Dict[str, Any]:
+    """Decode bridge bootstrap data from a signed invite."""
+    decoded = decode_invite_code(code)
+    payload = dict(decoded.get("payload", {}) or {})
+    signaling_url = str(payload.get("signalingUrl", "")).strip()
+    if signaling_url and not (
+        signaling_url.startswith("http://") or signaling_url.startswith("https://")
+    ):
+        raise ValueError("Invite signaling URL must start with http:// or https://")
+
+    return {
+        "invite": str(code or "").strip(),
+        "signaling_url": signaling_url,
+        "room": str(payload.get("sessionId", "")).strip(),
+        "token": str(payload.get("token", "")).strip(),
+        "role": str(payload.get("role", "")).strip(),
+        "ice_servers": list(payload.get("iceServers", []) or []),
+    }
