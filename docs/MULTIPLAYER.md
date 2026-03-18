@@ -1,67 +1,44 @@
 # Multiplayer
 
 This document is the source of truth for multiplayer behavior in this repository.
-`README.md` intentionally remains unchanged during this migration.
+`README.md` is intentionally unchanged.
 
 ## Status
 
-- Current transport target: owner-authoritative P2P over WebRTC DataChannels
-- Signaling/bootstrap surface: `aiohttp` owner endpoint on `/rpc`
-- Compatibility bootstrap kept: `--url --room --token`
-- Preferred bootstrap now: signed invite codes and `--remote-invite` / `--invite`
+- Multiplayer is owner-authoritative P2P over WebRTC DataChannels.
+- The owner exposes an HTTP signaling endpoint at `POST /rpc`.
+- Direct WebSocket room transport is removed.
+- Join bootstrap is invite-only.
 
 ## Architecture
 
-Multiplayer remains owner-authoritative.
+One owner process hosts the shared `PoorCLIServer` state for each room.
 
-- One owner process hosts the shared `PoorCLIServer` state.
-- Joiners do not execute the shared backend themselves.
-- Shared JSON-RPC traffic now targets a reliable ordered WebRTC DataChannel.
-- `POST /rpc` is used for signaling/bootstrap.
-- Existing room/session logic is transport-agnostic and lives in `poor_cli/multiplayer_session.py`.
+- The owner is responsible for shared chat state, tool execution, approvals, queueing, lobby decisions, agenda state, and role updates.
+- Joiners connect to the owner by exchanging a WebRTC offer and answer through `POST /rpc`.
+- After signaling completes, all room JSON-RPC traffic runs over one reliable ordered DataChannel.
+- Passing driver changes which approved participant may act. It does not migrate owner authority or the shared backend process.
 
-The owner still controls:
+The transport-agnostic session layer lives in `poor_cli/multiplayer_session.py` and owns:
 
-- queue serialization
-- room permissions
-- lobby approval
+- role balancing
+- lobby approval state
 - agenda state
-- hand-raise queue
-- driver handoff
-- shared chat/tool execution
+- hand-raise queue state
+- room activity snapshots
+- room event payload shaping
+- internal invite token rotation and revocation
 
-Passing driver changes who may act inside the room. It does not migrate ownership of the shared backend process.
+## Invite Format
 
-## Session Model
-
-The extracted session layer owns:
-
-- role rebalancing between `viewer` and `prompter`
-- room mode/preset mapping
-- agenda creation and resolution
-- hand raise state and next-driver selection
-- room activity log shaping
-- room event payloads
-- token rotation and revocation
-
-This state is used by both host-admin RPCs and live room notifications.
-
-## Invites
-
-The old invite shape was base64url of:
-
-```text
-url|room|token
-```
-
-The new primary invite shape is a signed base64url JSON envelope:
+Invites are signed base64url JSON envelopes. They are the only supported join bootstrap format.
 
 ```json
 {
   "payload": {
     "v": 1,
     "kind": "poor-cli-p2p",
-    "signalingUrl": "wss://host.example/rpc",
+    "signalingUrl": "https://host.example/rpc",
     "sessionId": "dev",
     "role": "prompter",
     "token": "tok-...",
@@ -79,86 +56,90 @@ The new primary invite shape is a signed base64url JSON envelope:
 
 Notes:
 
-- invites are signed with an owner-local secret
-- invites can expire independently of the raw compatibility token
-- legacy base64 `url|room|token` codes are still accepted by the Rust TUI and backend bridge
-- host/share payloads now expose both signed and legacy invite forms
+- `signalingUrl` is an HTTP endpoint, not a WebSocket endpoint.
+- The embedded `token` is an internal room grant consumed by the owner after signaling succeeds.
+- `rotateHostToken` and related host RPC names remain for compatibility, but they now issue or revoke invite-backed room grants rather than exposing a raw end-user join flow.
 
-## Backend Transport
+## Backend Interfaces
 
-Backend files:
+Files:
 
 - `poor_cli/multiplayer.py`
 - `poor_cli/multiplayer_session.py`
 - `poor_cli/multiplayer_invites.py`
 - `poor_cli/_server.py`
 
-Owner host behavior:
+Current backend behavior:
 
-- `GET /rpc` still serves the existing WebSocket runtime
-- `POST /rpc` is now the signaling/bootstrap endpoint
-- signaling currently supports:
-  - `describe`
-  - `connect`
+- `POST /rpc` supports signaling `connect`.
+- `GET /rpc` does not exist anymore.
+- `poor-cli-server --host` starts the owner signaling service.
+- `poor-cli-server --bridge --invite <code>` starts the stdio bridge joiner.
+- `poor-cli-server --bridge --url ... --room ... --token ...` is removed.
 
-Join bridge behavior:
+Room notifications kept stable:
 
-- `poor-cli-server --bridge --invite <code>` is the preferred path
-- `poor-cli-server --bridge --url <url> --room <room> --token <token>` is still supported
-- the bridge now:
-  - decodes invite/bootstrap data
-  - creates a WebRTC peer connection
-  - negotiates over owner signaling
-  - forwards JSON-RPC over one ordered DataChannel
-  - still injects `room` and `inviteToken` into `initialize`
+- `poor-cli/roomEvent`
+- `poor-cli/memberRoleUpdated`
+- `poor-cli/suggestion`
+- `poor-cli/streamingChunk`
 
-Important runtime note:
+Host/admin RPC names kept stable:
 
-- this workspace did not have `aiortc` installed during verification
-- syntax and unit coverage passed, but an end-to-end WebRTC handshake was not executed locally in this thread
+- `poor-cli/startHostServer`
+- `poor-cli/getHostServerStatus`
+- `poor-cli/stopHostServer`
+- `poor-cli/rotateHostToken`
+- `poor-cli/revokeHostToken`
+- `poor-cli/pairStart`
+
+Their payloads are now invite-first and signaling-first.
 
 ## TUI Workflows
-
-The Rust TUI now treats invites as first-class.
 
 CLI bootstrap:
 
 - `poor-cli-tui --remote-invite <invite>`
-- legacy: `poor-cli-tui --remote-url <url> --remote-room <room> --remote-token <token>`
 
 Interactive flows:
 
-- `/pair` still hosts
-- `/pair <invite>` joins
-- `/join-server <invite>` joins
-- `/join-server <url> <room> <token>` still works
-- reconnect now uses stored invite bootstrap when available
+- `/pair` starts a hosted session
+- `/pair <invite>` joins a session
+- `/join-server` opens the invite prompt
+- `/join-server <invite>` joins directly
+- `/collab join`
+- `/collab join <invite>`
+- `/pass`
+- `/suggest`
+- `/leave`
 
-Internals:
+The join prompt is invite-only. Manual `url/room/token` entry is removed.
 
-- join/reconnect parsing is centralized in `poor-cli-tui/src/multiplayer.rs`
-- shared library helpers in `poor-cli-tui/src/multiplayer_lib.rs` understand signed invites too
+Host status and share flows now expose:
+
+- signaling endpoints
+- viewer invite codes
+- prompter invite codes
+- invite-based join commands
+
+They no longer expose raw viewer or prompter join tokens.
 
 ## Neovim Workflows
 
-The plugin config now supports:
+Plugin bootstrap:
 
 ```lua
 multiplayer = {
   enabled = true,
-  invite = "...", -- preferred
-  url = "...",    -- compatibility
-  room = "...",   -- compatibility
-  token = "...",  -- compatibility
+  invite = "...",
 }
 ```
 
-New command:
+Supported command surface:
 
 ```vim
 :PoorCliCollab start [pairing|mob|review]
 :PoorCliCollab join <invite>
-:PoorCliCollab join <url> <room> <token>
 :PoorCliCollab share [viewer|prompter] [room]
 :PoorCliCollab leave
 :PoorCliCollab pass [connection-id|display-name]
@@ -167,15 +148,13 @@ New command:
 :PoorCliCollab status
 ```
 
-Plugin behavior:
-
-- invite bootstrap now starts `poor-cli-server --bridge --invite ...`
-- join/leave uses restart-based bootstrap switching
-- room notifications now surface agenda and hand-raise events in chat/status
+The plugin restarts the local server with `poor-cli-server --bridge --invite ...` when joining a remote session.
 
 ## STUN and TURN
 
-Config lives under `multiplayer` in `poor-cli` config:
+Multiplayer config lives under `multiplayer` in the Python config.
+
+Relevant fields:
 
 - `signaling_bind_host`
 - `signaling_port`
@@ -192,38 +171,43 @@ Config lives under `multiplayer` in `poor-cli` config:
 
 Default behavior:
 
-- public Google STUN is enabled by default
-- TURN entries are appended only when configured URLs and env-backed credentials are both present
+- public STUN is enabled by default
+- TURN entries are appended only when URLs and credentials are configured
 
-## Compatibility
+## Failure Behavior
 
-Kept stable:
+- If signaling fails, the joiner never opens the room DataChannel.
+- If a DataChannel send fails, the owner now tears the member down through the shared session cleanup path instead of silently deleting transport state.
+- If a peer disconnects, the owner removes the room member, clears active requester state, prunes the hand-raise queue, and rebalances driver roles when needed.
+- If the active driver disconnects, fallback role promotion is handled by the session layer.
 
-- host/admin RPC names such as `poor-cli/startHostServer`, `poor-cli/getHostServerStatus`, `poor-cli/rotateHostToken`, `poor-cli/revokeHostToken`, `poor-cli/pairStart`
-- room notifications:
-  - `poor-cli/roomEvent`
-  - `poor-cli/memberRoleUpdated`
-  - `poor-cli/suggestion`
-  - `poor-cli/streamingChunk`
-- TUI slash commands:
-  - `/pair`
-  - `/collab`
-  - `/join-server`
-  - `/pass`
-  - `/suggest`
-  - `/leave`
+## Compatibility Matrix
 
-Changed semantics:
+Still stable:
 
-- `url/room/token` is now signaling/bootstrap input, not the preferred direct room transport
-- signed invite codes are the primary share format
+- owner-authoritative room semantics
+- one active driver at a time
+- queue-serialized shared requests
+- slash command names in the TUI
+- notification method names for the TUI and Neovim plugin
+- host/admin RPC method names
+
+Removed:
+
+- direct WebSocket room transport
+- `GET /rpc`
+- legacy `url|room|token` invite parsing
+- `--url --room --token` bridge bootstrap
+- `--remote-url --remote-room --remote-token` TUI bootstrap
+- Neovim `multiplayer.url`, `multiplayer.room`, and `multiplayer.token`
+- `:PoorCliCollab join <url> <room> <token>`
+- manual URL and token join wizard flow
 
 ## Verification
 
-Executed in this thread:
+Verified during this migration:
 
 - `python3 -m compileall poor_cli`
-- `python3 -m unittest tests.test_multiplayer_invites tests.test_multiplayer_session`
 - `cargo test --manifest-path poor-cli-tui/Cargo.toml backend_server_args_`
 - `cargo test --manifest-path poor-cli-tui/Cargo.toml join_server_parser_`
 - `cargo test --manifest-path poor-cli-tui/Cargo.toml remote_reconnect_classifier_`
@@ -231,19 +215,11 @@ Executed in this thread:
 - `luac -p nvim-poor-cli/lua/poor-cli/rpc.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/commands.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/chat.lua`
-
-Not executed here:
-
-- end-to-end owner/joiner WebRTC handshake
-- full Neovim interactive smoke test
-
-Blocked reason:
-
-- `aiortc` was not installed in the active workspace runtime
+- `python -m unittest tests.test_multiplayer_invites tests.test_multiplayer_session tests.test_multiplayer_runtime` inside a Python 3.12 venv with `ffmpeg@7`, `aiohttp`, and `aiortc>=1.13,<1.14`
 
 ## Troubleshooting
 
-- If `--bridge` fails with `missing_aiortc` or `ModuleNotFoundError: aiortc`, install Python dependencies from `requirements.txt`.
-- If invite join fails at preflight, verify the signaling host/port is reachable, not just the room token.
-- If TURN is configured but not used, check both `turn_urls` and the env vars referenced by `turn_username_env` and `turn_credential_env`.
-- If Neovim join/leave appears to do nothing, inspect `:PoorCliStatus` and the server log path reported there; the plugin uses a restart-based bootstrap switch.
+- If bridge startup fails with `missing_aiortc` or `ModuleNotFoundError: aiortc`, install Python dependencies from `requirements.txt`.
+- If invite preflight fails, verify the HTTP signaling endpoint in the invite is reachable.
+- If internet peers cannot connect reliably, configure TURN and verify the referenced TURN credential env vars are present.
+- If Neovim join or leave appears stuck, inspect `:PoorCliStatus` and the reported server log path.
