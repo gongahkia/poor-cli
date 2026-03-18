@@ -10,6 +10,32 @@ permissions:
   contents: write
 
 jobs:
+  python-multiplayer-tests:
+    name: Multiplayer Python Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install multimedia dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg pkg-config libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
+
+      - name: Install Python package and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run multiplayer Python tests
+        run: |
+          python -m unittest tests.test_multiplayer_invites tests.test_multiplayer_host tests.test_multiplayer_session tests.test_multiplayer_runtime
+
   python-dist:
     name: Build Python Distribution
     runs-on: ubuntu-latest
@@ -136,6 +162,7 @@ jobs:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
     needs:
+      - python-multiplayer-tests
       - python-dist
       - tui-binaries
     runs-on: ubuntu-latest
