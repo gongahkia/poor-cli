@@ -65,6 +65,9 @@ struct Cli {
     /// Remote multiplayer websocket URL (bridge mode)
     #[arg(long)]
     remote_url: Option<String>,
+    /// Remote multiplayer invite code (reserved for invite-first P2P bootstrap)
+    #[arg(long)]
+    remote_invite: Option<String>,
     /// Remote multiplayer room name (requires --remote-url and --remote-token)
     #[arg(long)]
     remote_room: Option<String>,
@@ -5445,6 +5448,18 @@ mod tests {
         let err = multiplayer::build_backend_server_args(&cli)
             .expect_err("should fail for partial remote args");
         assert!(err.contains("--remote-url"));
+    }
+
+    #[test]
+    fn backend_server_args_reject_remote_invite_until_p2p_transport_lands() {
+        let cli = Cli::parse_from([
+            "poor-cli-tui",
+            "--remote-invite",
+            "peer://placeholder",
+        ]);
+        let err = multiplayer::build_backend_server_args(&cli)
+            .expect_err("remote invite should fail until transport is implemented");
+        assert!(err.contains("P2P transport rollout"));
     }
 
     #[test]

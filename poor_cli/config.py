@@ -7,7 +7,7 @@ Handles loading, saving, and validating user configuration from YAML files.
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
@@ -259,6 +259,28 @@ class SandboxConfig:
 
 
 @dataclass
+class MultiplayerConfig:
+    """Configuration for owner-authoritative P2P multiplayer."""
+
+    signaling_bind_host: str = "0.0.0.0"
+    signaling_port: int = 8765
+    signaling_path: str = "/rpc"
+    share_host: str = ""
+    invite_ttl_seconds: int = 86400
+    owner_name: str = "host"
+    reconnect_grace_seconds: int = 30
+    ice_servers: List[Dict[str, Any]] = field(
+        default_factory=lambda: [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+        ]
+    )
+    turn_urls: List[str] = field(default_factory=list)
+    turn_username_env: str = "POOR_CLI_TURN_USERNAME"
+    turn_credential_env: str = "POOR_CLI_TURN_CREDENTIAL"
+    turn_realm: str = ""
+
+
+@dataclass
 class TasksConfig:
     """Background task runner settings."""
 
@@ -284,6 +306,7 @@ class Config:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
+    multiplayer: MultiplayerConfig = field(default_factory=MultiplayerConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
@@ -307,6 +330,7 @@ class Config:
             "security": self.security.to_dict(),
             "tools": asdict(self.tools),
             "sandbox": asdict(self.sandbox),
+            "multiplayer": asdict(self.multiplayer),
             "tasks": asdict(self.tasks),
             "skills": asdict(self.skills),
             "plan_mode": asdict(self.plan_mode),
@@ -330,6 +354,7 @@ class Config:
             security=SecurityConfig.from_dict(data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
             sandbox=SandboxConfig(**data.get("sandbox", {})),
+            multiplayer=MultiplayerConfig(**data.get("multiplayer", {})),
             tasks=TasksConfig(**data.get("tasks", {})),
             skills=SkillsConfig(**data.get("skills", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
@@ -426,6 +451,7 @@ class ConfigManager:
             "security",
             "tools",
             "sandbox",
+            "multiplayer",
             "tasks",
             "skills",
             "plan_mode",
@@ -604,6 +630,16 @@ class ConfigManager:
             raise ConfigurationError("max_file_size_mb must be at least 1")
         if self.config.security.max_bash_timeout_seconds < 1:
             raise ConfigurationError("max_bash_timeout_seconds must be at least 1")
+
+        # Validate multiplayer config
+        if self.config.multiplayer.signaling_port < 1:
+            raise ConfigurationError("multiplayer.signaling_port must be at least 1")
+        if self.config.multiplayer.invite_ttl_seconds < 1:
+            raise ConfigurationError("multiplayer.invite_ttl_seconds must be at least 1")
+        if self.config.multiplayer.reconnect_grace_seconds < 1:
+            raise ConfigurationError("multiplayer.reconnect_grace_seconds must be at least 1")
+        if not self.config.multiplayer.signaling_path.startswith("/"):
+            raise ConfigurationError("multiplayer.signaling_path must start with '/'")
 
         logger.info("Configuration validated successfully")
         return True

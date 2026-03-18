@@ -3,6 +3,13 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 pub(super) fn build_backend_server_args(cli: &Cli) -> Result<Vec<String>, String> {
+    if cli.remote_invite.is_some() {
+        return Err(
+            "Remote invite bootstrap is reserved for the P2P transport rollout and is not available in this build yet."
+                .to_string(),
+        );
+    }
+
     match (&cli.remote_url, &cli.remote_room, &cli.remote_token) {
         (None, None, None) => Ok(vec![]),
         (Some(url), Some(room), Some(token)) => Ok(build_bridge_server_args(url, room, token)),

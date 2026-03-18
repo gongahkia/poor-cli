@@ -36,6 +36,7 @@ M.defaults = {
     -- Multiplayer remote bridge mode
     multiplayer = {
         enabled = false,
+        invite = nil,
         url = nil,
         room = nil,
         token = nil,
@@ -132,8 +133,13 @@ function M.sanitized_for_debug()
     local debug_config = vim.deepcopy(M.config)
     debug_config.api_key_env = nil
     local multiplayer = debug_config.multiplayer
-    if type(multiplayer) == "table" and multiplayer.token then
-        multiplayer.token = "<redacted>"
+    if type(multiplayer) == "table" then
+        if multiplayer.token then
+            multiplayer.token = "<redacted>"
+        end
+        if multiplayer.invite then
+            multiplayer.invite = "<redacted>"
+        end
     end
     return debug_config
 end
