@@ -6,7 +6,7 @@
 
 # `poor-cli`
 
-[Multiplayer](#multiplayer) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface) and [Neovim](https://neovim.io/) Coding [Agent](#available-tools) *(optimised for the [poor man](#available-commands))*.
+[Multiplayer](#multiplayer) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface), [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/) Coding [Agent](#available-tools) *(optimised for the [poor man](#available-commands))*.
 
 <div align="center">
     <img src="./asset/logo/1.png" width="30%">
@@ -14,7 +14,7 @@
 
 ## Stack
 
-* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
+* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/elisp/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
 * *Dependencies*: [ratatui](https://crates.io/crates/ratatui), [crossterm](https://crates.io/crates/crossterm), [tokio](https://crates.io/crates/tokio), [clap](https://crates.io/crates/clap), [serde](https://crates.io/crates/serde), [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
 * *Optional SDKs*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
 * *Distribution*: [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
@@ -70,6 +70,20 @@ $ docker run -it --env-file .env poor-cli
         })
     end,
 }
+```
+
+5. Vanilla Emacs 29+ is also supported through the first-party package in `emacs-poor-cli/`.
+
+```elisp
+(require 'package)
+(package-initialize)
+(package-vc-install
+ '(poor-cli
+   :url "https://github.com/gongahkia/poor-cli"
+   :lisp-dir "emacs-poor-cli"))
+
+(require 'poor-cli)
+(global-poor-cli-mode 1)
 ```
 
 ## Multiplayer

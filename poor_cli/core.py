@@ -213,7 +213,7 @@ class PoorCLICore:
         checkpoint_manager: File checkpoint/undo system
         config: Configuration object
     """
-    SUPPORTED_CLIENTS: Tuple[str, str] = ("cli", "neovim")
+    SUPPORTED_CLIENTS: Tuple[str, ...] = ("cli", "neovim", "emacs")
     
     def __init__(
         self,
