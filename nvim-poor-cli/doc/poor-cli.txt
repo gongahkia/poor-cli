@@ -21,7 +21,7 @@ Features:
 REQUIREMENTS                                            *poor-cli-requirements*
 
 - Neovim 0.9+
-- Python 3.8+
+- Python 3.9+
 - poor-cli installed: `pip install poor-cli`
 - API key for at least one provider
 
@@ -187,11 +187,24 @@ COMMANDS                                                *poor-cli-commands*
     Cancel the active inline or chat request.
 
 :PoorCliStatus                                          *:PoorCliStatus*
-    Show server state, provider info, completion state, log path, and recent
-    stderr excerpt.
+    Show the shared session status summary with routing, context, and
+    collaboration state.
+
+:PoorCliTrust                                           *:PoorCliTrust*
+    Open the trust center for provider, sandbox, rollback, policy, and
+    privacy posture.
+
+:PoorCliRuns                                            *:PoorCliRuns*
+    Open recent shared run history.
+
+:PoorCliWorkflow [name]                                 *:PoorCliWorkflow*
+    List workflow templates or inspect one starter scaffold.
+
+:PoorCliContext                                         *:PoorCliContext*
+    Open the backend context explanation for the current editing session.
 
 :PoorCliDoctor                                          *:PoorCliDoctor*
-    Open a diagnostic report buffer with RPC state, config, and stderr.
+    Open a structured diagnostic report buffer with actionable remediation.
 
 :PoorCliCopyDebugInfo                                   *:PoorCliCopyDebugInfo*
     Copy the diagnostic report to the clipboard/register.
@@ -311,17 +324,18 @@ TROUBLESHOOTING                                         *poor-cli-troubleshootin
 Server won't start:
 1. Check `poor-cli-server` is in PATH: `which poor-cli-server`
 2. Install if missing: `pip install poor-cli`
-3. Check Python version: `python3 --version` (needs 3.8+)
+3. Check Python version: `python3 --version` (needs 3.9+)
 4. Open the log with `:PoorCliOpenLog`
-5. Capture a report with `:PoorCliDoctor`
+5. Capture a report with `:PoorCliDoctor` or `:PoorCliTrust`
 
 No completions:
 1. Verify API key: `echo $GEMINI_API_KEY`
 2. Check status: `:PoorCliStatus`
 3. Confirm the current buffer is not blocked by filetype/buftype/manual-only
    completion settings
-4. If you use nvim-cmp, run `:checkhealth poor-cli`
-5. Open the server log with `:PoorCliOpenLog`
+4. Inspect provider, sandbox, and rollback posture in `:PoorCliTrust`
+5. If you use nvim-cmp, run `:checkhealth poor-cli`
+6. Open the server log with `:PoorCliOpenLog`
 
 blink.cmp source missing:
 1. Confirm blink.cmp is installed
