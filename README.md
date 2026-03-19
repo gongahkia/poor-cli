@@ -74,8 +74,9 @@ $ docker run -it --env-file .env poor-cli
 
 ## Multiplayer
 
-`poor-cli-server` can run in multiplayer WebSocket host mode with room-scoped
-invite tokens and role permissions *(`viewer` or `prompter`)*.
+`poor-cli-server` runs multiplayer as an invite-only, owner-authoritative P2P
+session over WebRTC DataChannels. The host prints signed viewer and prompter
+invite codes for each room it serves.
 
 ### Start host
 
@@ -92,7 +93,7 @@ $ poor-cli-server --host --bind 127.0.0.1 --port 8765 --room dev --ngrok
 ### Join from TUI
 
 ```console
-$ poor-cli --remote-url ws://HOST:8765/rpc --remote-room dev --remote-token <prompter-or-viewer-token>
+$ poor-cli --remote-invite <signed-viewer-or-prompter-invite>
 ```
 
 ### Join from Neovim
@@ -101,12 +102,13 @@ $ poor-cli --remote-url ws://HOST:8765/rpc --remote-room dev --remote-token <pro
 require("poor-cli").setup({
     multiplayer = {
         enabled = true,
-        url = "ws://HOST:8765/rpc",
-        room = "dev",
-        token = "<prompter-or-viewer-token>",
+        invite = "<signed-viewer-or-prompter-invite>",
     },
 })
 ```
+
+Full protocol details, failure behavior, and compatibility notes live in
+[`docs/MULTIPLAYER.md`](./docs/MULTIPLAYER.md).
 
 ## Model support
 
@@ -139,7 +141,9 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/queue` - Manage prompt queue (add/list/clear/drop)
 - `/compact` - Manage context (compact/compress/handoff)
 - `/search` - Search transcript, tools, and diffs
-- `/status` - Show session status summary
+- `/status` - Show canonical session status summary
+- `/runs` - Inspect recent shared run history
+- `/workflow` - Inspect guided workflow templates and starter scaffolds
 - `/export` - Export conversation history
 - `/retry` - Retry last request
 - `/edit-last` - Edit and resend last prompt
@@ -160,7 +164,8 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/instructions` - Inspect the active instruction stack
 - `/memory` - Show or update repo-local memory
 - `/policy` - Inspect repo-local hooks and audit status
-- `/context` - Open backend context inspector
+- `/context` - Open backend context inspector or `/context explain`
+- `/trust` - Open the trust center for provider, sandbox, rollback, and policy state
 - `/timeline` - Open agent timeline and diffs
 - `/explain-diff` - Explain behavior and risk in current diff
 - `/fix-failures` - Analyze latest test/lint failure output
@@ -183,7 +188,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/broke` - Set poor mode (terse responses)
 - `/my-treat` - Set rich mode (comprehensive responses)
 - `/settings` - List editable config settings
-- `/setup` - Open the guided API key and .env editor
+- `/setup` - Open the guided setup summary and recommended first workflow
 - `/env` - Open the guided API key and .env editor
 - `/api-key` - Open the API key editor or use `/api-key status`
 - `/verbose` - Toggle verbose logging
@@ -213,7 +218,8 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 **Automation & Tasks:**
 - `/autopilot` - Toggle bounded autonomous execution mode
 - `/qa` - Run background QA watch for lint/tests
-- `/task` - Manage durable background tasks
+- `/task` - Manage durable background tasks, including retry and replay
+- `/automation` - Inspect automation run history and replay automations
 - `/inbox` - Show pending and actionable tasks
 - `/tasks` - Legacy alias for /task
 - `/skills` - Inspect or run repo and user skills
@@ -222,7 +228,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/unwatch` - Stop watch mode
 
 **Services & Shell:**
-- `/doctor` - Run environment and service health checks
+- `/doctor` - Open structured diagnostics with remediation guidance
 - `/service` - Manage local background services
 - `/ollama` - Manage Ollama service and models
 - `/run` - Run shell command via backend
@@ -234,7 +240,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/commit` - Create commit message from staged diff
 
 **Collaboration:**
-- `/collab` - Start, join, and manage collaboration sessions
+- `/collab` - Start, join, summarize, and manage collaboration sessions
 - `/pair` - Legacy pair alias for collaboration sessions
 - `/pass` - Hand driver role to the next collaborator
 - `/suggest` - Send suggestion to the active driver
@@ -247,7 +253,6 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 
 **Safety & Undo:**
 - `/gc` - Run checkpoint garbage collection
-
 ## Available Tools
 
 `poor-cli` can currently use these tools.
