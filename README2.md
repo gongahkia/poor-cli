@@ -1,6 +1,7 @@
 # README2
 
-This file records project updates that were intentionally not merged into `README.md`.
+This file records migration notes and historical updates that complement
+`README.md`.
 
 ## Multiplayer
 
@@ -15,4 +16,4 @@ This file records project updates that were intentionally not merged into `READM
 
 - Multiplayer session coverage now includes token rotation and revocation, pending-member approval, lobby disable approval, and fallback driver promotion.
 - Multiplayer runtime coverage now includes stale invite rejection, pending approval plus driver handoff across two peers, and reconnecting with the same invite after disconnect.
-- GitHub Actions now runs the multiplayer Python test suite so the P2P path is exercised in CI.
+- GitHub Actions now also runs Python backend smoke checks, Rust TUI tests, and Lua syntax validation in addition to the multiplayer Python suite.
