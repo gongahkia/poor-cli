@@ -45,10 +45,18 @@ jobs:
           python -m unittest tests.test_multiplayer_invites tests.test_multiplayer_host tests.test_multiplayer_session tests.test_multiplayer_runtime tests.test_product_contracts
 
   python-package:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: macos-13
+            python-version: "3.11"
+          - os: macos-14
+            python-version: "3.11"
+          - os: windows-latest
+            python-version: "3.11"
 
     steps:
       - uses: actions/checkout@v4
@@ -58,30 +66,86 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
           pip install build twine
 
-      - name: Build Python package
-        run: python -m build
+      - name: Build Rust TUI
+        run: cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
+
+      - name: Build Python wheel
+        run: python -m build --wheel
 
       - name: Wheel install smoke test
         run: |
-          python -m venv /tmp/poor-cli-wheel-smoke
-          /tmp/poor-cli-wheel-smoke/bin/pip install --upgrade pip
-          /tmp/poor-cli-wheel-smoke/bin/pip install dist/*.whl
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli --help
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli exec --help
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli task --help
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli automation --help
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli skills --help
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli commands --help
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli install-info
-          /tmp/poor-cli-wheel-smoke/bin/poor-cli-server --help
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import tempfile
+          import venv
+
+          venv_dir = pathlib.Path("wheel-smoke-venv")
+          venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
+          scripts_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
+          pip = scripts_dir / ("pip.exe" if os.name == "nt" else "pip")
+          poor_cli = scripts_dir / ("poor-cli.exe" if os.name == "nt" else "poor-cli")
+          poor_cli_server = scripts_dir / ("poor-cli-server.exe" if os.name == "nt" else "poor-cli-server")
+          wheel_path = next(pathlib.Path("dist").glob("*.whl"))
+
+          subprocess.check_call([str(pip), "install", "--upgrade", "pip"])
+          subprocess.check_call([str(pip), "install", str(wheel_path)])
+
+          with tempfile.TemporaryDirectory() as tmpdir:
+              subprocess.check_call([str(poor_cli), "--help"], cwd=tmpdir)
+              subprocess.check_call([str(poor_cli), "exec", "--help"], cwd=tmpdir)
+              subprocess.check_call([str(poor_cli), "task", "--help"], cwd=tmpdir)
+              subprocess.check_call([str(poor_cli), "automation", "--help"], cwd=tmpdir)
+              subprocess.check_call([str(poor_cli), "skills", "--help"], cwd=tmpdir)
+              subprocess.check_call([str(poor_cli), "commands", "--help"], cwd=tmpdir)
+              payload = json.loads(
+                  subprocess.check_output(
+                      [str(poor_cli), "install-info", "--json"],
+                      cwd=tmpdir,
+                      text=True,
+                  )
+              )
+              selected = payload.get("selectedLauncher") or {}
+              if selected.get("source") != "package":
+                  raise SystemExit(f"expected packaged launcher, got {selected!r}")
+              subprocess.check_call([str(poor_cli), "tui", "--help"], cwd=tmpdir)
+              subprocess.check_call([str(poor_cli_server), "--help"], cwd=tmpdir)
+          PY
 
       - name: Validate Python distributions
-        run: twine check dist/*
+        run: twine check dist/*.whl
+
+  python-sdist:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build Python source distribution
+        run: python -m build --sdist
+
+      - name: Validate source distribution
+        run: twine check dist/*.tar.gz
 
   rust-tui-tests:
     runs-on: ubuntu-latest
