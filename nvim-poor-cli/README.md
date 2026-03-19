@@ -27,7 +27,7 @@
 ### Requirements
 
 - Neovim 0.9+
-- Python 3.8+
+- Python 3.9+
 - `poor-cli` Python package installed: `pip install poor-cli` (provides `poor-cli-server`)
 - At least one API key: `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 - Optional: `telescope.nvim` for `:PoorCliCheckpoints`
@@ -106,12 +106,10 @@ require("poor-cli").setup({
     completion_provider = nil,
     completion_model = nil,
 
-    -- Optional remote multiplayer bridge
+    -- Optional invite-only remote multiplayer bridge
     multiplayer = {
         enabled = false,
-        url = nil,
-        room = nil,
-        token = nil,
+        invite = nil,
     },
     
     -- Completion behavior
@@ -180,11 +178,15 @@ This reuses the same enablement rules and completion request shaping as the inli
 | `:PoorCliStop` | Stop the AI server |
 | `:PoorCliRestart` | Restart the AI server and re-initialize the session |
 | `:PoorCliCancel` | Cancel the active inline/chat request |
-| `:PoorCliStatus` | Show server state, provider info, completion state, trusted-workspace status, stderr excerpt, and room state |
+| `:PoorCliStatus` | Show the shared session status summary with routing, context, and collaboration state |
+| `:PoorCliTrust` | Open the trust center for provider, sandbox, rollback, policy, and privacy posture |
+| `:PoorCliRuns` | Open recent shared run history |
+| `:PoorCliWorkflow [name]` | List workflow templates or inspect one starter scaffold |
+| `:PoorCliContext` | Open the backend context explanation for the current editing session |
 | `:PoorCliChat` | Toggle chat panel |
 | `:PoorCliSend [message]` | Send message to chat |
 | `:PoorCliClear` | Clear chat history |
-| `:PoorCliDoctor` | Open a diagnostic report with status, config, and recent stderr |
+| `:PoorCliDoctor` | Open a structured diagnostic report with actionable remediation |
 | `:PoorCliCopyDebugInfo` | Copy a bug-report bundle to the clipboard |
 | `:PoorCliOpenLog` | Open the managed poor-cli server log |
 | `:PoorCliOpenStateDir` | Open the plugin state directory |
@@ -226,9 +228,7 @@ Configure the plugin to attach to an existing host room:
 require("poor-cli").setup({
     multiplayer = {
         enabled = true,
-        url = "ws://HOST:8765/rpc",
-        room = "dev",
-        token = "<viewer-or-prompter-token>",
+        invite = "<signed-viewer-or-prompter-invite>",
     },
 })
 ```
@@ -236,7 +236,7 @@ require("poor-cli").setup({
 What Neovim currently supports:
 - joining an existing room through the stdio bridge
 - room/member state updates in `:PoorCliStatus`
-- trusted-workspace boundary visibility in `:PoorCliStatus`
+- trust-center visibility in `:PoorCliTrust`
 - plan review prompts, room events, and suggestions in the chat panel
 
 What remains TUI-first:
@@ -272,17 +272,18 @@ poor_cli.send("Hello!")  -- Send message to chat
 
 1. Check that `poor-cli-server` is in your PATH: `which poor-cli-server`
 2. Install if missing: `pip install poor-cli`
-3. Check Python version: `python3 --version` (needs 3.8+)
+3. Check Python version: `python3 --version` (needs 3.9+)
 4. Open the managed log with `:PoorCliOpenLog`
-5. Capture a full report with `:PoorCliDoctor` or `:PoorCliCopyDebugInfo`
+5. Capture a full report with `:PoorCliDoctor`, `:PoorCliTrust`, or `:PoorCliCopyDebugInfo`
 
 ### No completions appearing
 
 1. Verify API key is set: `echo $GEMINI_API_KEY`
 2. Check server status: `:PoorCliStatus`
 3. Check whether completion is disabled for the current buffer/filetype in `:PoorCliStatus`
-4. If you use `nvim-cmp`, run `:checkhealth poor-cli` to confirm the `poor-cli` source is registered
-5. Open the server log with `:PoorCliOpenLog`
+4. Inspect provider, sandbox, and rollback posture in `:PoorCliTrust`
+5. If you use `nvim-cmp`, run `:checkhealth poor-cli` to confirm the `poor-cli` source is registered
+6. Open the server log with `:PoorCliOpenLog`
 
 ### blink.cmp source not appearing
 
@@ -295,12 +296,12 @@ poor_cli.send("Hello!")  -- Send message to chat
 
 1. Check that the server initialized successfully with `:PoorCliStatus`
 2. Ensure your `vim.ui.select()` provider is working
-3. Open the chat panel and inspect `:PoorCliDoctor` for RPC errors and stderr
+3. Open the chat panel and inspect `:PoorCliDoctor` for RPC errors and remediation guidance
 
 ### Multiplayer room state missing
 
-1. Confirm `multiplayer.enabled = true` and that `url`, `room`, and `token` are all set
-2. Check `:PoorCliStatus` for room, role, and member count
+1. Confirm `multiplayer.enabled = true` and that `invite` is set
+2. Check `:PoorCliStatus` or `:PoorCliCollab summary` for room, role, and member count
 3. Verify the remote host `/rpc` endpoint is reachable from Neovim
 
 ### Ghost text not visible
