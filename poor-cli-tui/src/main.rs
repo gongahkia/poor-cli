@@ -3530,7 +3530,7 @@ fn open_context_inspector_for_message(
     message: String,
 ) -> Result<(), String> {
     let prepared = prepare_context_request(app, &message)?;
-    let preview = rpc_preview_context_blocking(
+    let preview = rpc_get_context_explain_blocking(
         rpc_cmd_tx,
         &prepared.message,
         &prepared.explicit_files,
@@ -4036,6 +4036,41 @@ fn rpc_get_instruction_stack_blocking(
         .map_err(|_| "Timed out waiting for instruction stack".to_string())?
 }
 
+fn rpc_get_status_view_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetStatusView { reply: reply_tx })
+        .map_err(|e| format!("Failed to request status view: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for status view".to_string())?
+}
+
+fn rpc_get_trust_view_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetTrustView { reply: reply_tx })
+        .map_err(|e| format!("Failed to request trust view: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for trust view".to_string())?
+}
+
+fn rpc_get_doctor_report_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetDoctorReport { reply: reply_tx })
+        .map_err(|e| format!("Failed to request doctor report: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for doctor report".to_string())?
+}
+
 fn rpc_get_policy_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
@@ -4146,7 +4181,7 @@ fn rpc_run_custom_command_blocking(
         .map_err(|_| "Timed out waiting for custom command".to_string())?
 }
 
-fn rpc_preview_context_blocking(
+fn rpc_get_context_explain_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     message: &str,
     context_files: &[String],
@@ -4155,18 +4190,67 @@ fn rpc_preview_context_blocking(
 ) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
-        .send(RpcCommand::PreviewContext {
+        .send(RpcCommand::GetContextExplain {
             message: message.to_string(),
             context_files: context_files.to_vec(),
             pinned_context_files: pinned_context_files.to_vec(),
             context_budget_tokens,
             reply: reply_tx,
         })
-        .map_err(|e| format!("Failed to request context preview: {e}"))?;
+        .map_err(|e| format!("Failed to request context explanation: {e}"))?;
 
     reply_rx
         .recv_timeout(Duration::from_secs(30))
-        .map_err(|_| "Timed out waiting for context preview".to_string())?
+        .map_err(|_| "Timed out waiting for context explanation".to_string())?
+}
+
+fn rpc_list_runs_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    source_kind: Option<&str>,
+    source_id: Option<&str>,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListRuns {
+            source_kind: source_kind.map(|value| value.to_string()),
+            source_id: source_id.map(|value| value.to_string()),
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request runs: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for runs".to_string())?
+}
+
+fn rpc_list_workflows_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListWorkflows { reply: reply_tx })
+        .map_err(|e| format!("Failed to request workflows: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for workflows".to_string())?
+}
+
+fn rpc_get_workflow_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetWorkflow {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request workflow: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for workflow".to_string())?
 }
 
 fn rpc_list_config_options_blocking(
@@ -4720,6 +4804,76 @@ fn rpc_cancel_task_blocking(
         .map_err(|_| "Timed out waiting for task cancel".to_string())?
 }
 
+fn rpc_retry_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RetryTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to retry task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task retry".to_string())?
+}
+
+fn rpc_replay_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ReplayTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to replay task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task replay".to_string())?
+}
+
+fn rpc_get_automation_history_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    automation_id: &str,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetAutomationHistory {
+            automation_id: automation_id.to_string(),
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request automation history: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for automation history".to_string())?
+}
+
+fn rpc_replay_automation_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    automation_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ReplayAutomation {
+            automation_id: automation_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to replay automation: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for automation replay".to_string())?
+}
+
 fn rpc_list_checkpoints_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     limit: u64,
@@ -4837,6 +4991,19 @@ fn rpc_get_host_server_status_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for host server status response".to_string())?
+}
+
+fn rpc_get_collab_summary_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetCollabSummary { reply: reply_tx })
+        .map_err(|e| format!("Failed to request collaboration summary: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for collaboration summary".to_string())?
 }
 
 fn rpc_stop_host_server_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
