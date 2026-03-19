@@ -11,6 +11,7 @@ from datetime import datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from .run_history import RunHistoryManager
 from .sandbox import normalize_preset
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, TaskRecord
 
@@ -185,6 +186,7 @@ class AutomationManager:
         self.task_manager = task_manager or TaskManager(self.repo_root)
         self.tasks_dir = self.repo_root / ".poor-cli" / "tasks"
         self.db_path = self.tasks_dir / "automations.db"
+        self.run_history = RunHistoryManager(self.repo_root)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -345,14 +347,49 @@ class AutomationManager:
             tasks.append(self._launch_task(self._row_to_record(row), now=current))
         return tasks
 
+    def history(self, automation_id: str, *, limit: int = 25) -> List[Dict[str, Any]]:
+        matches: List[Dict[str, Any]] = []
+        scan_limit = max(limit * 6, 50)
+        for record in self.run_history.list_runs(source_kind="task", limit=scan_limit):
+            metadata = record.metadata
+            if str(metadata.get("automationId", "")).strip() != str(automation_id).strip():
+                continue
+            matches.append(record.to_dict())
+            if len(matches) >= limit:
+                break
+        return matches
+
+    def replay(self, automation_id: str) -> TaskRecord:
+        record = self._require_automation(automation_id)
+        history = self.history(automation_id, limit=25)
+        replay_of_run_id = ""
+        for entry in history:
+            if entry.get("status") == "completed":
+                replay_of_run_id = str(entry.get("runId", "")).strip()
+                break
+        if not replay_of_run_id and history:
+            replay_of_run_id = str(history[0].get("runId", "")).strip()
+
+        metadata = dict(record.metadata)
+        if replay_of_run_id:
+            metadata["replayOfRunId"] = replay_of_run_id
+        metadata["automationReplay"] = True
+        return self._launch_task(record, now=_utc_now_dt(), metadata_override=metadata)
+
     def serve_forever(self, *, poll_seconds: int = 30) -> None:
         interval = max(5, int(poll_seconds))
         while True:
             self.run_due()
             time.sleep(interval)
 
-    def _launch_task(self, record: AutomationRecord, *, now: datetime) -> TaskRecord:
-        metadata = dict(record.metadata)
+    def _launch_task(
+        self,
+        record: AutomationRecord,
+        *,
+        now: datetime,
+        metadata_override: Optional[Dict[str, Any]] = None,
+    ) -> TaskRecord:
+        metadata = dict(metadata_override or record.metadata)
         metadata.update(
             {
                 "automationId": record.automation_id,
