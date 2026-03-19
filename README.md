@@ -28,6 +28,10 @@
 
 The below instructions are for installing and running `poor-cli` from this repository.
 
+Supported Python versions are `3.11` and `3.12`.
+
+Published wheels are platform-specific and bundle the Rust `poor-cli-tui` binary for supported targets. After `pip install poor-cli`, bare `poor-cli` should launch the TUI directly, and `poor-cli install-info` will show which packaged launcher was selected.
+
 1. Bootstrap the project.
 
 ```console
@@ -46,6 +50,7 @@ $ cp .env.example .env
 3. Finally run any of the below to begin using `poor-cli`'s TUI.
 
 ```console
+$ poor-cli                 
 $ ./run.sh                   
 $ ./run_tui.sh               
 
@@ -54,6 +59,8 @@ $ python3 -m poor_cli
 $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
+
+For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
 
 4. Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
 

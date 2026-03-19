@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  python-multiplayer-tests:
-    name: Multiplayer Python Tests
+  python-tests:
+    name: Python Test Suite
     runs-on: ubuntu-latest
 
     steps:
@@ -32,9 +32,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Run multiplayer Python tests
+      - name: Run Python test suite
         run: |
-          python -m unittest tests.test_multiplayer_invites tests.test_multiplayer_host tests.test_multiplayer_session tests.test_multiplayer_runtime
+          python -m unittest discover -s tests
 
   python-sdist:
     name: Build Python Source Distribution
@@ -210,7 +210,7 @@ jobs:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
     needs:
-      - python-multiplayer-tests
+      - python-tests
       - python-sdist
       - python-wheels
       - tui-binaries
