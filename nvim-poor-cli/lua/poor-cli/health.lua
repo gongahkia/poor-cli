@@ -59,10 +59,10 @@ function M.check()
         local version = python_version:match("Python (%d+%.%d+)")
         if version then
             local major, minor = version:match("(%d+)%.(%d+)")
-            if tonumber(major) >= 3 and tonumber(minor) >= 8 then
+            if tonumber(major) > 3 or (tonumber(major) == 3 and tonumber(minor) >= 9) then
                 ok("Python version: " .. version)
             else
-                warn("Python 3.8+ recommended, found: " .. version)
+                warn("Python 3.9+ required, found: " .. version)
             end
         end
     else
