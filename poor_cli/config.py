@@ -38,6 +38,7 @@ class ModelConfig:
     """Configuration for AI model settings"""
     provider: str = "gemini"  # Active provider: gemini, openai, anthropic, ollama
     model_name: str = "gemini-2.0-flash"
+    routing_mode: str = "manual"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
     top_p: float = 0.95
@@ -298,6 +299,14 @@ class SkillsConfig:
 
 
 @dataclass
+class WorkflowConfig:
+    """Workflow template defaults and overrides."""
+
+    default_workflow: str = "implement"
+    defaults: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -309,6 +318,7 @@ class Config:
     multiplayer: MultiplayerConfig = field(default_factory=MultiplayerConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
@@ -333,6 +343,7 @@ class Config:
             "multiplayer": asdict(self.multiplayer),
             "tasks": asdict(self.tasks),
             "skills": asdict(self.skills),
+            "workflow": asdict(self.workflow),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
             "agentic": asdict(self.agentic),
@@ -357,6 +368,7 @@ class Config:
             multiplayer=MultiplayerConfig(**data.get("multiplayer", {})),
             tasks=TasksConfig(**data.get("tasks", {})),
             skills=SkillsConfig(**data.get("skills", {})),
+            workflow=WorkflowConfig(**data.get("workflow", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
             agentic=AgenticConfig(**data.get("agentic", {})),
@@ -454,6 +466,7 @@ class ConfigManager:
             "multiplayer",
             "tasks",
             "skills",
+            "workflow",
             "plan_mode",
             "checkpoint",
             "agentic",
