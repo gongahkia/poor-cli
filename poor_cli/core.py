@@ -9,6 +9,7 @@ import asyncio
 import subprocess
 import re
 import threading
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
@@ -16,9 +17,16 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol,
 from .audit_log import AuditEventType, AuditLogger, AuditSeverity
 from .config import ConfigManager, Config
 from .context_compressor import ContextCompressor
+from .provider_probe import (
+    normalize_routing_mode,
+    probe_providers,
+    resolve_routing_mode,
+    suggested_privacy_posture,
+)
 from .provider_fallback import ProviderFallbackManager
 from .providers.base import BaseProvider, ProviderResponse, FunctionCall
 from .providers.provider_factory import ProviderFactory
+from .run_history import RunHistoryManager, classify_error
 from .tools_async import ToolRegistryAsync, ToolOutcome
 from .checkpoint import CheckpointManager
 from .repo_config import RepoConfig, get_repo_config
@@ -32,6 +40,7 @@ from .prompts import (
     build_tool_calling_system_instruction,
     get_system_instruction,
 )
+from .workflow_templates import get_workflow_template, list_workflow_templates
 from .exceptions import (
     PoorCLIError,
     ConfigurationError,
@@ -256,6 +265,13 @@ class PoorCLICore:
 
         # Provider fallback manager (initialized after config load)
         self._fallback_manager: Optional[ProviderFallbackManager] = None
+        self._run_history: Optional[RunHistoryManager] = None
+        self._last_context_preview: Dict[str, Any] = {}
+        self._last_mutation_summary: Dict[str, Any] = {}
+        self._last_fallback_summary: Dict[str, Any] = {}
+        self._last_provider_error: str = ""
+        self._last_run_id: Optional[str] = None
+        self._resolved_routing_mode: str = "manual"
 
         logger.info("PoorCLICore instance created")
     
@@ -290,6 +306,9 @@ class PoorCLICore:
                 self.config.model.provider = provider_name
             if model_name:
                 self.config.model.model_name = model_name
+            self.config.model.routing_mode = normalize_routing_mode(
+                getattr(self.config.model, "routing_mode", "manual")
+            )
             
             # Get API key
             resolved_api_key = api_key
@@ -335,6 +354,7 @@ class PoorCLICore:
                 self._fallback_manager = ProviderFallbackManager(
                     self.config.fallback, self._config_manager
                 )
+            self._run_history = RunHistoryManager(repo_root)
             self._instruction_manager = InstructionManager(repo_root)
             self._hook_manager = PolicyHookManager(repo_root)
             self._audit_logger = AuditLogger(audit_dir=repo_root / ".poor-cli" / "audit")
@@ -410,12 +430,18 @@ class PoorCLICore:
             # Initialize context manager
             self._context_manager = get_context_manager()
             logger.info("Context manager initialized")
+            provider_status = self.get_provider_readiness()
+            self._resolved_routing_mode = resolve_routing_mode(
+                self.config.model.routing_mode,
+                provider_status,
+            )
 
             await self._emit_policy_hooks(
                 "session_start",
                 {
                     "provider": self.config.model.provider,
                     "model": self.config.model.model_name,
+                    "routingMode": self._resolved_routing_mode,
                     "repoRoot": str(repo_root),
                 },
             )
@@ -676,6 +702,115 @@ class PoorCLICore:
         }
         await self._emit_policy_hooks("user_prompt_submitted", payload)
 
+    def _record_context_preview(self, preview: Dict[str, Any]) -> None:
+        self._last_context_preview = dict(preview or {})
+
+    def _record_mutation_summary(
+        self,
+        *,
+        tool_name: str,
+        result: Dict[str, Any],
+    ) -> None:
+        paths = result.get("paths") or []
+        changed = result.get("changed")
+        checkpoint_id = result.get("checkpointId")
+        if not changed and not checkpoint_id:
+            return
+        active_provider = self.get_provider_info() if self._initialized else {}
+        self._last_mutation_summary = {
+            "intent": tool_name,
+            "paths": paths,
+            "checkpointId": checkpoint_id,
+            "rollbackHint": f"/restore {checkpoint_id}" if checkpoint_id else "",
+            "provider": {
+                "name": active_provider.get("name", ""),
+                "model": active_provider.get("model", ""),
+                "routingMode": self.get_routing_mode() if self.config else "manual",
+            },
+            "fallback": dict(self._last_fallback_summary),
+            "nextSuggestedAction": "/review" if paths else "/status",
+        }
+
+    def _provider_summary(self) -> Dict[str, Any]:
+        if not self._initialized:
+            return {}
+        provider_info = self.get_provider_info()
+        return {
+            "name": provider_info.get("name", ""),
+            "model": provider_info.get("model", ""),
+            "routingMode": provider_info.get("routingMode", self.get_routing_mode()),
+            "fallback": dict(self._last_fallback_summary),
+            "lastError": self._last_provider_error,
+        }
+
+    @staticmethod
+    def _cost_delta(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "input_tokens": max(0, int(after.get("input_tokens", 0)) - int(before.get("input_tokens", 0))),
+            "output_tokens": max(0, int(after.get("output_tokens", 0)) - int(before.get("output_tokens", 0))),
+            "total_tokens": max(0, int(after.get("total_tokens", 0)) - int(before.get("total_tokens", 0))),
+            "estimated_cost_usd": round(
+                max(
+                    0.0,
+                    float(after.get("estimated_cost_usd", 0.0))
+                    - float(before.get("estimated_cost_usd", 0.0)),
+                ),
+                6,
+            ),
+        }
+
+    def _start_run_record(
+        self,
+        *,
+        source_kind: str,
+        source_id: str,
+        artifact_dir: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._run_history:
+            return None
+        metadata = dict(metadata or {})
+        retry_of_run_id = str(metadata.get("retryOfRunId", "")).strip() or None
+        replay_of_run_id = str(metadata.get("replayOfRunId", "")).strip() or None
+        record = self._run_history.start_run(
+            source_kind=source_kind,
+            source_id=source_id,
+            artifact_dir=artifact_dir,
+            metadata=metadata,
+            retry_of_run_id=retry_of_run_id,
+            replay_of_run_id=replay_of_run_id,
+        )
+        self._last_run_id = record.run_id
+        return {"record": record, "cost_before": self.get_session_cost_summary()}
+
+    def _finish_run_record(
+        self,
+        run_state: Optional[Dict[str, Any]],
+        *,
+        status: str,
+        summary: str = "",
+        error_message: str = "",
+        checkpoint_id: Optional[str] = None,
+        artifact_dir: str = "",
+        metadata_updates: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not run_state or not self._run_history:
+            return
+        record = run_state["record"]
+        cost_before = run_state["cost_before"]
+        cost_after = self.get_session_cost_summary()
+        self._run_history.finish_run(
+            record.run_id,
+            status=status,
+            error_class=classify_error(error_message),
+            artifact_dir=artifact_dir or record.artifact_dir,
+            checkpoint_id=checkpoint_id,
+            provider_summary=self._provider_summary(),
+            cost_summary=self._cost_delta(cost_before, cost_after),
+            summary=summary,
+            metadata_updates=metadata_updates,
+        )
+
     def _inspect_tool_targets(self, tool_name: str, tool_args: Dict[str, Any]) -> List[str]:
         if not self.tool_registry:
             return []
@@ -768,6 +903,16 @@ class PoorCLICore:
             )
             if context_result is not None:
                 referenced_files.extend(file_ctx.path for file_ctx in context_result.files)
+                self._record_context_preview(
+                    {
+                        "selected": list(context_result.selected),
+                        "excluded": list(context_result.excluded),
+                        "totalTokens": context_result.total_tokens,
+                        "truncated": context_result.truncated,
+                        "message": context_result.message,
+                        "budgetTokens": context_budget_tokens or getattr(self._context_manager, "max_tokens", 0),
+                    }
+                )
 
         instruction_snapshot = self._inspect_instruction_snapshot(referenced_files)
         instruction_prefix = instruction_snapshot.render_prompt_prefix()
@@ -799,7 +944,7 @@ class PoorCLICore:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
         if not self._context_manager:
             return {"files": [], "totalTokens": 0, "truncated": False, "message": "Context manager unavailable"}
-        return await self._context_manager.preview_context(
+        preview = await self._context_manager.preview_context(
             message=message,
             explicit_files=context_files or [],
             pinned_files=pinned_context_files or [],
@@ -807,6 +952,8 @@ class PoorCLICore:
             max_tokens=context_budget_tokens,
             max_files=12,
         )
+        self._record_context_preview(preview)
+        return preview
 
     async def preview_mutation(
         self,
@@ -1182,6 +1329,10 @@ class PoorCLICore:
         pinned_context_files: Optional[List[str]] = None,
         context_budget_tokens: Optional[int] = None,
         request_id: str = "",
+        source_kind: str = "session",
+        source_id: str = "",
+        artifact_dir: str = "",
+        run_metadata: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[CoreEvent]:
         """
         Send a message and yield CoreEvent objects (structured agentic events).
@@ -1202,6 +1353,14 @@ class PoorCLICore:
         cancel_event = self._prepare_cancel_event(request_id)
         max_iterations = self.config.agentic.max_iterations if self.config else 25
         iteration = 0
+        resolved_source_id = str(source_id or request_id or "session").strip() or "session"
+        run_state = self._start_run_record(
+            source_kind=source_kind,
+            source_id=resolved_source_id,
+            artifact_dir=artifact_dir,
+            metadata=run_metadata,
+        )
+        last_checkpoint_id: Optional[str] = None
 
         logger.info(f"Sending message (events): {message[:100]}...")
         await self._record_user_prompt_submission(
@@ -1236,8 +1395,28 @@ class PoorCLICore:
         try:
             accumulated_text = ""
 
+            def _observe_event(event: CoreEvent) -> None:
+                nonlocal last_checkpoint_id
+                if event.type != "tool_result":
+                    return
+                checkpoint_id = event.data.get("checkpointId")
+                if checkpoint_id:
+                    last_checkpoint_id = str(checkpoint_id)
+                self._record_mutation_summary(
+                    tool_name=str(event.data.get("toolName", "")),
+                    result=event.data,
+                )
+
             async for chunk in self.provider.send_message_stream(full_message):
                 if cancel_event.is_set():
+                    self._finish_run_record(
+                        run_state,
+                        status="cancelled",
+                        summary="cancelled",
+                        error_message="cancelled",
+                        checkpoint_id=last_checkpoint_id,
+                        artifact_dir=artifact_dir,
+                    )
                     yield CoreEvent.done(reason="cancelled")
                     return
 
@@ -1259,11 +1438,13 @@ class PoorCLICore:
                         message,
                     )
                     for ev in self._pending_events:
+                        _observe_event(ev)
                         yield ev
                     self._pending_events = []
 
                     response, stream_events = await self._stream_and_collect(tool_results, request_id)
                     for ev in stream_events:
+                        _observe_event(ev)
                         yield ev
                         if ev.type == "text_chunk":
                             accumulated_text += ev.data["chunk"]
@@ -1271,9 +1452,25 @@ class PoorCLICore:
                     while response.function_calls:
                         iteration += 1
                         if cancel_event.is_set():
+                            self._finish_run_record(
+                                run_state,
+                                status="cancelled",
+                                summary="cancelled",
+                                error_message="cancelled",
+                                checkpoint_id=last_checkpoint_id,
+                                artifact_dir=artifact_dir,
+                            )
                             yield CoreEvent.done(reason="cancelled")
                             return
                         if iteration >= max_iterations:
+                            self._finish_run_record(
+                                run_state,
+                                status="failed",
+                                summary="iteration cap reached",
+                                error_message="iteration cap reached",
+                                checkpoint_id=last_checkpoint_id,
+                                artifact_dir=artifact_dir,
+                            )
                             yield CoreEvent.done(reason="iteration_cap")
                             return
 
@@ -1287,11 +1484,13 @@ class PoorCLICore:
                             message,
                         )
                         for ev in self._pending_events:
+                            _observe_event(ev)
                             yield ev
                         self._pending_events = []
 
                         response, stream_events = await self._stream_and_collect(tool_results, request_id)
                         for ev in stream_events:
+                            _observe_event(ev)
                             yield ev
                             if ev.type == "text_chunk":
                                 accumulated_text += ev.data["chunk"]
@@ -1299,6 +1498,14 @@ class PoorCLICore:
                         # Check cost guardrails mid-loop
                         cost_reason = self._check_cost_guardrails()
                         if cost_reason:
+                            self._finish_run_record(
+                                run_state,
+                                status="failed",
+                                summary=cost_reason,
+                                error_message=cost_reason,
+                                checkpoint_id=last_checkpoint_id,
+                                artifact_dir=artifact_dir,
+                            )
                             yield CoreEvent.text_chunk(f"\n[Cost guardrail] {cost_reason}", request_id)
                             yield CoreEvent.done(reason="cost_limit")
                             return
@@ -1320,19 +1527,35 @@ class PoorCLICore:
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
 
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary=accumulated_text or "completed",
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+                metadata_updates={"requestId": request_id},
+            )
+
             yield CoreEvent.done(reason="complete")
             logger.info(f"Message complete (events), {len(accumulated_text)} chars")
 
         except (APIRateLimitError, APIError) as e:
+            self._last_provider_error = str(e)
             # Attempt provider fallback on rate-limit / server errors
             if self._fallback_manager and self.provider:
+                previous_provider = self.config.model.provider if self.config else ""
                 fallback_provider = await self._fallback_manager.try_fallback(
-                    self.config.model.provider if self.config else "",
+                    previous_provider,
                     e,
                     tools=self.tool_registry.get_tool_declarations() if self.tool_registry else [],
                     system_instruction=self._system_instruction,
                 )
                 if fallback_provider:
+                    self._last_fallback_summary = {
+                        "from": previous_provider,
+                        "to": fallback_provider.get_provider_name(),
+                        "reason": str(e),
+                    }
                     logger.info("Falling back to %s", fallback_provider.get_provider_name())
                     yield CoreEvent.text_chunk(
                         f"[Fallback] Switching to {fallback_provider.get_provider_name()}\n", request_id
@@ -1344,13 +1567,41 @@ class PoorCLICore:
                             if chunk.content:
                                 accumulated_text += chunk.content
                                 yield CoreEvent.text_chunk(chunk.content, request_id)
+                        self._finish_run_record(
+                            run_state,
+                            status="completed",
+                            summary=accumulated_text or "completed",
+                            checkpoint_id=last_checkpoint_id,
+                            artifact_dir=artifact_dir,
+                            metadata_updates={"requestId": request_id},
+                        )
                         yield CoreEvent.done(reason="complete")
                         return
                     except Exception as fallback_err:
+                        self._last_provider_error = str(fallback_err)
                         logger.error("Fallback provider also failed: %s", fallback_err)
+            self._finish_run_record(
+                run_state,
+                status="failed",
+                summary=str(e),
+                error_message=str(e),
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+                metadata_updates={"requestId": request_id},
+            )
             raise PoorCLIError(f"Failed to send message: {e}")
         except Exception as e:
             logger.exception("Error sending message (events)")
+            self._last_provider_error = str(e)
+            self._finish_run_record(
+                run_state,
+                status="failed",
+                summary=str(e),
+                error_message=str(e),
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+                metadata_updates={"requestId": request_id},
+            )
             raise PoorCLIError(f"Failed to send message: {e}")
         finally:
             self._clear_cancel_event(request_id)
@@ -1654,6 +1905,10 @@ class PoorCLICore:
         context_files: Optional[List[str]] = None,
         pinned_context_files: Optional[List[str]] = None,
         context_budget_tokens: Optional[int] = None,
+        source_kind: str = "session",
+        source_id: str = "",
+        artifact_dir: str = "",
+        run_metadata: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
         """
         Send a message and yield streaming text chunks.
@@ -1665,6 +1920,12 @@ class PoorCLICore:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
 
         logger.info(f"Sending message: {message[:100]}...")
+        run_state = self._start_run_record(
+            source_kind=source_kind,
+            source_id=str(source_id or "session").strip() or "session",
+            artifact_dir=artifact_dir,
+            metadata=run_metadata,
+        )
         await self._record_user_prompt_submission(
             message,
             context_files=context_files,
@@ -1685,6 +1946,7 @@ class PoorCLICore:
             accumulated_text = ""
             max_iterations = self.config.agentic.max_iterations if self.config else 25
             iteration = 0
+            last_checkpoint_id: Optional[str] = None
 
             async for chunk in self.provider.send_message_stream(full_message):
                 if chunk.function_calls:
@@ -1695,6 +1957,16 @@ class PoorCLICore:
                         request_id="",
                         user_request=message,
                     )
+                    for ev in self._pending_events:
+                        if ev.type == "tool_result":
+                            checkpoint_id = ev.data.get("checkpointId")
+                            if checkpoint_id:
+                                last_checkpoint_id = str(checkpoint_id)
+                            self._record_mutation_summary(
+                                tool_name=str(ev.data.get("toolName", "")),
+                                result=ev.data,
+                            )
+                    self._pending_events = []
                     response = await self.provider.send_message(tool_results)
                     if response.content:
                         accumulated_text += response.content
@@ -1710,6 +1982,16 @@ class PoorCLICore:
                             request_id="",
                             user_request=message,
                         )
+                        for ev in self._pending_events:
+                            if ev.type == "tool_result":
+                                checkpoint_id = ev.data.get("checkpointId")
+                                if checkpoint_id:
+                                    last_checkpoint_id = str(checkpoint_id)
+                                self._record_mutation_summary(
+                                    tool_name=str(ev.data.get("toolName", "")),
+                                    result=ev.data,
+                                )
+                        self._pending_events = []
                         response = await self.provider.send_message(tool_results)
                         if response.content:
                             accumulated_text += response.content
@@ -1726,10 +2008,26 @@ class PoorCLICore:
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
 
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary=accumulated_text or "completed",
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+            )
+
             logger.info(f"Message complete, {len(accumulated_text)} chars")
 
         except Exception as e:
             logger.exception("Error sending message")
+            self._last_provider_error = str(e)
+            self._finish_run_record(
+                run_state,
+                status="failed",
+                summary=str(e),
+                error_message=str(e),
+                artifact_dir=artifact_dir,
+            )
             raise PoorCLIError(f"Failed to send message: {e}")
 
     async def _handle_function_calls(
@@ -1838,6 +2136,10 @@ class PoorCLICore:
         context_files: Optional[List[str]] = None,
         pinned_context_files: Optional[List[str]] = None,
         context_budget_tokens: Optional[int] = None,
+        source_kind: str = "session",
+        source_id: str = "",
+        artifact_dir: str = "",
+        run_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Send a message and return complete response text.
@@ -1859,6 +2161,12 @@ class PoorCLICore:
             raise PoorCLIError("PoorCLICore not initialized. Call initialize() first.")
         
         logger.info(f"Sending message (sync): {message[:100]}...")
+        run_state = self._start_run_record(
+            source_kind=source_kind,
+            source_id=str(source_id or "session").strip() or "session",
+            artifact_dir=artifact_dir,
+            metadata=run_metadata,
+        )
         await self._record_user_prompt_submission(
             message,
             context_files=context_files,
@@ -1882,6 +2190,7 @@ class PoorCLICore:
             accumulated_text = response.content or ""
             max_iterations = self.config.agentic.max_iterations if self.config else 25
             iteration = 0
+            last_checkpoint_id: Optional[str] = None
             
             # Handle function calls
             while response.function_calls:
@@ -1894,6 +2203,16 @@ class PoorCLICore:
                     request_id="",
                     user_request=message,
                 )
+                for ev in self._pending_events:
+                    if ev.type == "tool_result":
+                        checkpoint_id = ev.data.get("checkpointId")
+                        if checkpoint_id:
+                            last_checkpoint_id = str(checkpoint_id)
+                        self._record_mutation_summary(
+                            tool_name=str(ev.data.get("toolName", "")),
+                            result=ev.data,
+                        )
+                self._pending_events = []
                 response = await self.provider.send_message(tool_results)
                 if response.content:
                     accumulated_text += response.content
@@ -1904,12 +2223,28 @@ class PoorCLICore:
             # Save assistant response to history
             if self.history_adapter and accumulated_text:
                 self.history_adapter.add_message("model", accumulated_text)
+
+            self._finish_run_record(
+                run_state,
+                status="completed",
+                summary=accumulated_text or "completed",
+                checkpoint_id=last_checkpoint_id,
+                artifact_dir=artifact_dir,
+            )
             
             logger.info(f"Message complete (sync), {len(accumulated_text)} chars")
             return accumulated_text
             
         except Exception as e:
             logger.exception("Error sending message (sync)")
+            self._last_provider_error = str(e)
+            self._finish_run_record(
+                run_state,
+                status="failed",
+                summary=str(e),
+                error_message=str(e),
+                artifact_dir=artifact_dir,
+            )
             raise PoorCLIError(f"Failed to send message: {e}")
 
     async def execute_tool(
@@ -2269,8 +2604,204 @@ class PoorCLICore:
         return {
             "name": self.config.model.provider,
             "model": self.config.model.model_name,
+            "routingMode": self.get_routing_mode(),
             "capabilities": capabilities,
             "supported_clients": list(self.SUPPORTED_CLIENTS),
+        }
+
+    def get_provider_readiness(self) -> Dict[str, Dict[str, Any]]:
+        if not self._config_manager or not self.config:
+            return {}
+        return probe_providers(self._config_manager, self.config)
+
+    def get_routing_mode(self) -> str:
+        if not self.config:
+            return normalize_routing_mode(self._resolved_routing_mode)
+        provider_status = self.get_provider_readiness()
+        self._resolved_routing_mode = resolve_routing_mode(
+            getattr(self.config.model, "routing_mode", "manual"),
+            provider_status,
+        )
+        return self._resolved_routing_mode
+
+    def set_routing_mode(self, routing_mode: str) -> str:
+        normalized = normalize_routing_mode(routing_mode)
+        if self.config is not None:
+            self.config.model.routing_mode = normalized
+        self._resolved_routing_mode = normalized
+        return normalized
+
+    def list_workflow_templates(self) -> List[Dict[str, Any]]:
+        if not self.config:
+            return list_workflow_templates()
+        templates = list_workflow_templates()
+        defaults = getattr(getattr(self.config, "workflow", None), "defaults", {}) or {}
+        if not isinstance(defaults, dict):
+            return templates
+        merged: List[Dict[str, Any]] = []
+        for template in templates:
+            override = defaults.get(template["name"], {})
+            if isinstance(override, dict):
+                merged.append({**template, **override})
+            else:
+                merged.append(template)
+        return merged
+
+    def get_workflow_template(self, name: str) -> Optional[Dict[str, Any]]:
+        template = get_workflow_template(name)
+        if template is None:
+            return None
+        defaults = getattr(getattr(self.config, "workflow", None), "defaults", {}) if self.config else {}
+        override = defaults.get(template["name"], {}) if isinstance(defaults, dict) else {}
+        if isinstance(override, dict):
+            template = {**template, **override}
+        return template
+
+    def get_last_run_id(self) -> Optional[str]:
+        return self._last_run_id
+
+    def list_runs(
+        self,
+        *,
+        source_kind: Optional[str] = None,
+        source_id: Optional[str] = None,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
+        if not self._run_history:
+            return []
+        return [
+            record.to_dict()
+            for record in self._run_history.list_runs(
+                source_kind=source_kind,
+                source_id=source_id,
+                limit=limit,
+            )
+        ]
+
+    def build_status_view(self) -> Dict[str, Any]:
+        provider_info = self.get_provider_info() if self._initialized else {}
+        provider_status = self.get_provider_readiness()
+        recent_runs = self.list_runs(limit=5)
+        active_runs = [run for run in recent_runs if run.get("status") == "running"]
+        last_run = recent_runs[0] if recent_runs else None
+        last_mutation = dict(self._last_mutation_summary)
+        last_context = dict(self._last_context_preview)
+        trusted_security = {
+            "trustedWorkspaceBoundary": bool(
+                getattr(getattr(self.config, "security", None), "enforce_trusted_workspace", True)
+            ),
+            "trustedRoots": list(
+                getattr(getattr(self.config, "security", None), "trusted_roots", []) or []
+            ),
+        }
+        return {
+            "session": {
+                "initialized": bool(self._initialized),
+                "provider": provider_info.get("name", ""),
+                "model": provider_info.get("model", ""),
+                "routingMode": self.get_routing_mode(),
+                "permissionMode": getattr(
+                    getattr(getattr(self.config, "security", None), "permission_mode", None),
+                    "value",
+                    str(getattr(getattr(self.config, "security", None), "permission_mode", "")),
+                ),
+            },
+            "trust": {
+                "sandboxPreset": getattr(getattr(self.config, "sandbox", None), "default_preset", ""),
+                "policy": self.get_policy_status(),
+                "audit": self.get_policy_status().get("audit", {}),
+                "mcp": self.get_mcp_status(),
+                "security": trusted_security,
+                "checkpointing": bool(getattr(getattr(self.config, "checkpoint", None), "enabled", False)),
+            },
+            "provider": {
+                "active": provider_info,
+                "readiness": provider_status,
+                "fallback": dict(self._last_fallback_summary),
+                "lastError": self._last_provider_error,
+                "privacyPosture": suggested_privacy_posture(provider_status),
+            },
+            "context": {
+                "lastPreview": last_context,
+            },
+            "runs": {
+                "recent": recent_runs,
+                "activeCount": len(active_runs),
+                "lastRun": last_run,
+            },
+            "collaboration": {},
+            "recovery": {
+                "cost": self.get_session_cost_summary(),
+                "lastMutation": last_mutation,
+            },
+        }
+
+    def build_doctor_report(self) -> Dict[str, Any]:
+        status_view = self.build_status_view()
+        provider_status = status_view["provider"]["readiness"]
+        checks: List[Dict[str, Any]] = []
+        ready_provider_count = len([payload for payload in provider_status.values() if payload.get("ready")])
+        checks.append(
+            {
+                "id": "providers",
+                "title": "Provider readiness",
+                "status": "ok" if ready_provider_count else "degraded",
+                "message": f"{ready_provider_count} provider(s) ready",
+                "action": "Run `/setup`, `/api-key status`, or switch to `ollama` private mode.",
+            }
+        )
+        checks.append(
+            {
+                "id": "sandbox",
+                "title": "Execution safety",
+                "status": "warning"
+                if status_view["trust"]["sandboxPreset"] == "full-access"
+                else "ok",
+                "message": f"Sandbox preset `{status_view['trust']['sandboxPreset']}`",
+                "action": "Prefer `review-only` or `workspace-write` for normal coding sessions.",
+            }
+        )
+        checks.append(
+            {
+                "id": "routing",
+                "title": "Routing mode",
+                "status": "ok",
+                "message": f"Routing mode `{status_view['session']['routingMode']}`",
+                "action": "Use `private` to force Ollama-only routing when local privacy matters.",
+            }
+        )
+        checks.append(
+            {
+                "id": "context",
+                "title": "Context visibility",
+                "status": "ok" if status_view["context"]["lastPreview"] else "warning",
+                "message": "Context explanation available"
+                if status_view["context"]["lastPreview"]
+                else "No context preview captured yet",
+                "action": "Run `/context explain` or preview context before a large request.",
+            }
+        )
+        checks.append(
+            {
+                "id": "recovery",
+                "title": "Recovery state",
+                "status": "ok",
+                "message": "Checkpointing enabled"
+                if status_view["trust"]["checkpointing"]
+                else "Checkpointing disabled",
+                "action": "Enable checkpoints for safer mutation-heavy sessions.",
+            }
+        )
+        overall = "ok" if all(check["status"] == "ok" for check in checks) else "degraded"
+        return {
+            "summary": {
+                "overall": overall,
+                "routingMode": status_view["session"]["routingMode"],
+                "privacyPosture": status_view["provider"]["privacyPosture"],
+                "readyProviderCount": ready_provider_count,
+            },
+            "checks": checks,
+            "statusView": status_view,
         }
 
     def inspect_instruction_stack(
