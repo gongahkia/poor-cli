@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .core import PoorCLICore
+from .run_history import RunHistoryManager
 from .sandbox import (
     evaluate_tool_access,
     normalize_preset,
@@ -109,6 +110,7 @@ class TaskManager:
         self.tasks_dir = self.base_dir / "tasks"
         self.worktrees_dir = self.base_dir / "worktrees"
         self.db_path = self.tasks_dir / "tasks.db"
+        self.run_history = RunHistoryManager(self.repo_root)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -302,6 +304,96 @@ class TaskManager:
             worker_pid=None,
         )
         return self._require_task(task.task_id)
+
+    def retry_task(self, task_id: str, *, auto_start: Optional[bool] = None) -> TaskRecord:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        last_run = self.run_history.list_runs(
+            source_kind="task",
+            source_id=task.task_id,
+            limit=1,
+        )
+        metadata["retryOfTaskId"] = task.task_id
+        metadata.pop("replayOfRunId", None)
+        if metadata.get("lastRunId"):
+            metadata["retryOfRunId"] = str(metadata["lastRunId"])
+        elif last_run:
+            metadata["retryOfRunId"] = last_run[0].run_id
+
+        effective_auto_approve = bool(metadata.get("autoApprove", False))
+        requires_approval = bool(
+            task.sandbox_preset in APPROVAL_REQUIRED_PRESETS and not effective_auto_approve
+        )
+        effective_auto_start = (
+            not requires_approval if auto_start is None else bool(auto_start)
+        )
+        return self.create_task(
+            title=f"{task.title} (retry)",
+            prompt=task.prompt,
+            sandbox_preset=task.sandbox_preset,
+            source=task.source,
+            metadata=metadata,
+            auto_start=effective_auto_start and not requires_approval,
+            requires_approval=requires_approval,
+            auto_approve=effective_auto_approve,
+        )
+
+    def replay_task(self, task_id: str, *, auto_start: Optional[bool] = None) -> TaskRecord:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        replay_run = self.run_history.last_successful_run(
+            source_kind="task",
+            source_id=task.task_id,
+        )
+        if replay_run is None:
+            recent = self.run_history.list_runs(
+                source_kind="task",
+                source_id=task.task_id,
+                limit=1,
+            )
+            replay_run = recent[0] if recent else None
+        metadata["replayOfTaskId"] = task.task_id
+        metadata.pop("retryOfRunId", None)
+        if replay_run is not None:
+            metadata["replayOfRunId"] = replay_run.run_id
+
+        effective_auto_approve = bool(metadata.get("autoApprove", False))
+        requires_approval = bool(
+            task.sandbox_preset in APPROVAL_REQUIRED_PRESETS and not effective_auto_approve
+        )
+        effective_auto_start = (
+            not requires_approval if auto_start is None else bool(auto_start)
+        )
+        return self.create_task(
+            title=f"{task.title} (replay)",
+            prompt=task.prompt,
+            sandbox_preset=task.sandbox_preset,
+            source=task.source,
+            metadata=metadata,
+            auto_start=effective_auto_start and not requires_approval,
+            requires_approval=requires_approval,
+            auto_approve=effective_auto_approve,
+        )
+
+    def task_runs(self, task_id: str, *, limit: int = 25) -> List[Dict[str, Any]]:
+        return [
+            record.to_dict()
+            for record in self.run_history.list_runs(
+                source_kind="task",
+                source_id=str(task_id).strip(),
+                limit=limit,
+            )
+        ]
+
+    def attach_run(self, task_id: str, run_id: str) -> TaskRecord:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        metadata["lastRunId"] = str(run_id).strip()
+        self._update_task(
+            task_id,
+            metadata_json=json.dumps(metadata, ensure_ascii=False),
+        )
+        return self._require_task(task_id)
 
     def start_task_process(self, task_id: str) -> TaskRecord:
         task = self._require_task(task_id)
@@ -596,6 +688,9 @@ async def run_task_worker(
             model_name=str(execution.get("model", "")).strip() or None,
         )
         initialized = True
+        routing_mode = str(execution.get("routingMode", "")).strip()
+        if routing_mode:
+            core.set_routing_mode(routing_mode)
         context_files = [
             str(path)
             for path in execution.get("contextFiles", [])
@@ -608,6 +703,22 @@ async def run_task_worker(
         ]
         raw_context_budget = execution.get("contextBudgetTokens")
         context_budget_tokens = int(raw_context_budget) if isinstance(raw_context_budget, int) else None
+        run_metadata: Dict[str, Any] = {
+            "taskId": task.task_id,
+            "taskTitle": task.title,
+            "taskSource": task.source,
+        }
+        for key in (
+            "automationId",
+            "automationName",
+            "retryOfRunId",
+            "replayOfRunId",
+            "retryOfTaskId",
+            "replayOfTaskId",
+        ):
+            value = task.metadata.get(key)
+            if value:
+                run_metadata[key] = value
         with Path(task.events_path).open("w", encoding="utf-8") as event_handle:
             async for event in core.send_message_events(
                 task.prompt,
@@ -615,6 +726,10 @@ async def run_task_worker(
                 pinned_context_files=pinned_context_files,
                 context_budget_tokens=context_budget_tokens,
                 request_id=f"task-{task.task_id}",
+                source_kind="task",
+                source_id=task.task_id,
+                artifact_dir=task.artifact_dir,
+                run_metadata=run_metadata,
             ):
                 event_handle.write(
                     json.dumps(
@@ -627,6 +742,9 @@ async def run_task_worker(
                     chunk = str(event.data.get("chunk", ""))
                     if chunk:
                         response_chunks.append(chunk)
+        run_id = core.get_last_run_id()
+        if run_id:
+            manager.attach_run(task.task_id, run_id)
         response_text = "".join(response_chunks).strip()
         Path(task.response_path).write_text(response_text, encoding="utf-8")
         manager.mark_completed(
@@ -636,6 +754,9 @@ async def run_task_worker(
         return 0
     except Exception as error:
         message = str(error)
+        run_id = core.get_last_run_id()
+        if run_id:
+            manager.attach_run(task.task_id, run_id)
         Path(task.response_path).write_text(message, encoding="utf-8")
         manager.mark_failed(task.task_id, error_message=message)
         return 1
