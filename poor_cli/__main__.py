@@ -365,6 +365,11 @@ def _build_exec_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan-only", action="store_true", help="Return a plan without executing tools")
     parser.add_argument("--provider", help="Override provider for this execution")
     parser.add_argument("--model", help="Override model for this execution")
+    parser.add_argument(
+        "--routing-mode",
+        choices=("manual", "quality", "speed", "cheap", "private"),
+        help="Routing policy for provider selection and privacy posture",
+    )
     parser.add_argument("--api-key", help="Override API key for this execution")
     parser.add_argument("--config", help="Path to config file")
     parser.add_argument("--cwd", help="Working directory for this execution")
@@ -535,6 +540,8 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
         model_name=args.model,
         api_key=args.api_key,
     )
+    if args.routing_mode:
+        core.set_routing_mode(args.routing_mode)
     if core.config is not None:
         if args.permission_mode:
             core.config.security.permission_mode = PermissionMode(args.permission_mode)
@@ -570,6 +577,9 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                 context_files=list(args.context_file or []),
                 pinned_context_files=list(args.pinned_context_file or []),
                 context_budget_tokens=args.context_budget_tokens,
+                source_kind="exec",
+                source_id="cli-exec",
+                run_metadata={"cliCommand": "exec"},
             ):
                 print(
                     json.dumps(
@@ -588,6 +598,9 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
             context_files=list(args.context_file or []),
             pinned_context_files=list(args.pinned_context_file or []),
             context_budget_tokens=args.context_budget_tokens,
+            source_kind="exec",
+            source_id="cli-exec",
+            run_metadata={"cliCommand": "exec"},
         )
         if args.output_format == "json":
             print(
@@ -599,6 +612,7 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                         "sandboxPreset": effective_sandbox_preset,
                         "autoApprove": bool(args.auto_approve),
                         "cost": core.get_session_cost_summary(),
+                        "statusView": core.build_status_view(),
                         "instructionStack": core.inspect_instruction_stack(
                             list(args.context_file or []) + list(args.pinned_context_file or [])
                         ),
@@ -671,6 +685,10 @@ def _build_execution_metadata_from_args(args: argparse.Namespace) -> dict[str, A
     model = str(getattr(args, "model", "") or "").strip()
     if model:
         execution["model"] = model
+
+    routing_mode = str(getattr(args, "routing_mode", "") or "").strip()
+    if routing_mode:
+        execution["routingMode"] = routing_mode
 
     config_path = str(getattr(args, "config", "") or "").strip()
     if config_path:
@@ -810,6 +828,7 @@ def _build_task_parser() -> argparse.ArgumentParser:
     create.set_defaults(auto_start=None)
     create.add_argument("--provider")
     create.add_argument("--model")
+    create.add_argument("--routing-mode", choices=("manual", "quality", "speed", "cheap", "private"))
     create.add_argument("--config")
     create.add_argument("--context-file", action="append", default=[])
     create.add_argument("--pinned-context-file", action="append", default=[])
@@ -852,6 +871,20 @@ def _build_task_parser() -> argparse.ArgumentParser:
     cancel.add_argument("task_id")
     cancel.add_argument("--json", action="store_true")
 
+    retry = subparsers.add_parser("retry")
+    retry.add_argument("task_id")
+    retry.add_argument("--no-auto-start", action="store_true")
+    retry.add_argument("--wait", action="store_true")
+    retry.add_argument("--wait-timeout-seconds", type=int, default=900)
+    retry.add_argument("--json", action="store_true")
+
+    replay = subparsers.add_parser("replay")
+    replay.add_argument("task_id")
+    replay.add_argument("--no-auto-start", action="store_true")
+    replay.add_argument("--wait", action="store_true")
+    replay.add_argument("--wait-timeout-seconds", type=int, default=900)
+    replay.add_argument("--json", action="store_true")
+
     run = subparsers.add_parser("run")
     run.add_argument("--task-id", required=True)
     run.add_argument("--repo-root", required=True)
@@ -868,6 +901,7 @@ def _coerce_task_prompt(args: argparse.Namespace) -> str:
 
 
 def _format_task(task: dict) -> str:
+    metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
     lines = [
         f"Task: {task['taskId']} [{task['status']}]",
         f"Title: {task['title']}",
@@ -876,6 +910,9 @@ def _format_task(task: dict) -> str:
         f"Worktree: {task['worktreePath']}",
         f"Artifacts: {task['artifactDir']}",
     ]
+    last_run_id = str(metadata.get("lastRunId", "") or "").strip()
+    if last_run_id:
+        lines.append(f"Last run: {last_run_id}")
     if task.get("summary"):
         lines.append(f"Summary: {task['summary']}")
     if task.get("errorMessage"):
@@ -1035,6 +1072,40 @@ def _run_task_mode(argv: Sequence[str]) -> int:
             print(_format_task(task.to_dict()))
         return 0
 
+    if args.subcommand == "retry":
+        if args.wait and args.no_auto_start:
+            raise SystemExit("`poor-cli task retry --wait` requires auto-start.")
+        task = manager.retry_task(args.task_id, auto_start=not args.no_auto_start)
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task retry",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "replay":
+        if args.wait and args.no_auto_start:
+            raise SystemExit("`poor-cli task replay --wait` requires auto-start.")
+        task = manager.replay_task(args.task_id, auto_start=not args.no_auto_start)
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task replay",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
     if args.subcommand == "run":
         repo_root = Path(args.repo_root).expanduser().resolve()
         config_path = Path(args.config).expanduser() if args.config else None
@@ -1138,6 +1209,7 @@ def _build_automation_parser() -> argparse.ArgumentParser:
     create.add_argument("--disabled", action="store_true")
     create.add_argument("--provider")
     create.add_argument("--model")
+    create.add_argument("--routing-mode", choices=("manual", "quality", "speed", "cheap", "private"))
     create.add_argument("--config")
     create.add_argument("--context-file", action="append", default=[])
     create.add_argument("--pinned-context-file", action="append", default=[])
@@ -1179,6 +1251,17 @@ def _build_automation_parser() -> argparse.ArgumentParser:
 
     serve = subparsers.add_parser("serve")
     serve.add_argument("--poll-seconds", type=int, default=30)
+
+    history = subparsers.add_parser("history")
+    history.add_argument("automation_id")
+    history.add_argument("--limit", type=int, default=25)
+    history.add_argument("--json", action="store_true")
+
+    replay = subparsers.add_parser("replay")
+    replay.add_argument("automation_id")
+    replay.add_argument("--wait", action="store_true")
+    replay.add_argument("--wait-timeout-seconds", type=int, default=900)
+    replay.add_argument("--json", action="store_true")
     return parser
 
 
@@ -1213,6 +1296,28 @@ def _format_automation(automation: dict) -> str:
         lines.append(f"Last run: {automation['lastRunAt']}")
     if automation.get("lastTaskId"):
         lines.append(f"Last task: {automation['lastTaskId']}")
+    return "\n".join(lines)
+
+
+def _format_run(run: dict) -> str:
+    lines = [
+        f"Run: {run.get('runId', '')} [{run.get('status', 'unknown')}]",
+        f"Source: {run.get('sourceKind', 'unknown')}/{run.get('sourceId', 'unknown')}",
+        f"Started: {run.get('startedAt', '')}",
+    ]
+    if run.get("finishedAt"):
+        lines.append(f"Finished: {run['finishedAt']}")
+    if run.get("errorClass"):
+        lines.append(f"Error class: {run['errorClass']}")
+    if run.get("checkpointId"):
+        lines.append(f"Checkpoint: {run['checkpointId']}")
+    provider = run.get("providerSummary") if isinstance(run.get("providerSummary"), dict) else {}
+    provider_name = str(provider.get("name", "") or "").strip()
+    provider_model = str(provider.get("model", "") or "").strip()
+    if provider_name or provider_model:
+        lines.append(f"Provider: {provider_name}/{provider_model}")
+    if run.get("summary"):
+        lines.append(f"Summary: {run['summary']}")
     return "\n".join(lines)
 
 
@@ -1372,6 +1477,31 @@ def _run_automation_mode(argv: Sequence[str]) -> int:
             for task in payload:
                 print(_format_task(task))
                 print()
+        return 0
+
+    if args.subcommand == "history":
+        payload = manager.history(args.automation_id, limit=max(1, int(args.limit)))
+        if args.json:
+            _print_json(payload)
+        else:
+            for run in payload:
+                print(_format_run(run))
+                print()
+        return 0
+
+    if args.subcommand == "replay":
+        task = manager.replay(args.automation_id)
+        payload = _task_payload_with_wait(
+            manager.task_manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli automation replay",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
         return 0
 
     if args.subcommand == "serve":
