@@ -19,6 +19,7 @@ from .automation_manager import (
 )
 from .config import Config, ConfigManager, PermissionMode
 from .core import PoorCLICore
+from .cli_errors import run_with_cli_error_handling
 from .custom_commands import CustomCommandRegistry
 from .github_task import create_task_from_context, default_mode_for_context, load_github_context
 from .repo_config import get_repo_config
@@ -1306,7 +1307,7 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
     raise SystemExit(f"Unknown github-task subcommand: {args.subcommand}")
 
 
-def main() -> None:
+def _main() -> None:
     argv = sys.argv[1:]
     if not argv:
         raise SystemExit(launch_tui(argv))
@@ -1335,6 +1336,10 @@ def main() -> None:
     if argv and argv[0] == "tui":
         raise SystemExit(launch_tui(argv[1:]))
     raise SystemExit(launch_tui(argv))
+
+
+def main() -> None:
+    run_with_cli_error_handling(_main)
 
 
 if __name__ == "__main__":

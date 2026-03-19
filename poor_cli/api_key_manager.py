@@ -171,7 +171,11 @@ class APIKeyManager:
             decrypted_key = self.cipher.decrypt(encrypted_key).decode()
             return decrypted_key
         except Exception as e:
-            logger.error(f"Failed to decrypt API key for {provider}: {e}")
+            logger.info(
+                "Stored API key for %s could not be decrypted; falling back to env/config lookup",
+                provider,
+            )
+            logger.debug("API key decrypt failure for %s", provider, exc_info=True)
             return None
 
     def rotate_key(self, provider: str, new_api_key: str):

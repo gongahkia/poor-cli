@@ -10,12 +10,13 @@ import sys
 from pathlib import Path
 from typing import List
 
+from ..cli_errors import run_with_cli_error_handling
 from ..config import PermissionMode
 from .multiplayer_runtime import _run_multiplayer_host, _run_stdio_bridge
 from .runtime import PoorCLIServer
 
 
-def main() -> None:
+def _main() -> None:
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="PoorCLI JSON-RPC Server for editor integration")
     parser.add_argument("--stdio", action="store_true", help="Use stdio transport (for Neovim)")
@@ -88,3 +89,7 @@ def main() -> None:
 
     server = PoorCLIServer()
     asyncio.run(server.run_stdio())
+
+
+def main() -> None:
+    run_with_cli_error_handling(_main)
