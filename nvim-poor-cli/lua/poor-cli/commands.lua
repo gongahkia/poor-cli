@@ -25,63 +25,237 @@ local function build_status_text()
     local rpc = require("poor-cli.rpc")
     local inline = require("poor-cli.inline")
 
-    local rpc_status = rpc.get_status()
-    local inline_status = inline.get_status()
-    local enabled, reason = inline.is_enabled_for_buffer(0, { manual = false })
-    local provider_name = "unknown"
-    local provider_model = "unknown"
-    local provider_info = rpc_status.provider_info or {}
-    if type(provider_info) == "table" then
-        provider_name = provider_info.name or provider_name
-        provider_model = provider_info.model or provider_model
+    local status_view, err = rpc.get_status_view(15000)
+    if err or type(status_view) ~= "table" then
+        local rpc_status = rpc.get_status()
+        return table.concat({
+            "Server state: " .. tostring(rpc_status.state),
+            "Running: " .. tostring(rpc_status.running),
+            "Initialized: " .. tostring(rpc_status.initialized),
+            "Last error: " .. tostring(rpc_status.last_error_message or ""),
+        }, "\n")
     end
 
+    local inline_status = inline.get_status()
+    local enabled, reason = inline.is_enabled_for_buffer(0, { manual = false })
+    local session = type(status_view.session) == "table" and status_view.session or {}
+    local provider = type(status_view.provider) == "table" and status_view.provider or {}
+    local active = type(provider.active) == "table" and provider.active or {}
+    local context = type(status_view.context) == "table" and status_view.context or {}
+    local last_preview = type(context.lastPreview) == "table" and context.lastPreview or {}
+    local collaboration = type(status_view.collaboration) == "table" and status_view.collaboration or {}
+    local recovery = type(status_view.recovery) == "table" and status_view.recovery or {}
+    local last_mutation = type(recovery.lastMutation) == "table" and recovery.lastMutation or {}
+
     local lines = {
-        "Server state: " .. tostring(rpc_status.state),
-        "Running: " .. tostring(rpc_status.running),
-        "Initialized: " .. tostring(rpc_status.initialized),
-        "Provider: " .. provider_name,
-        "Model: " .. provider_model,
-        "Log path: " .. tostring(rpc_status.log_path or ""),
+        "Provider: " .. tostring(active.name or "unknown"),
+        "Model: " .. tostring(active.model or "unknown"),
+        "Routing mode: " .. tostring(session.routingMode or "manual"),
+        "Permission mode: " .. tostring(session.permissionMode or "prompt"),
         "Completion state: " .. tostring(inline_status.state),
         "Completion enabled in buffer: " .. tostring(enabled),
+        "Context selected: " .. tostring(type(last_preview.selected) == "table" and #last_preview.selected or 0),
+        "Context excluded: " .. tostring(type(last_preview.excluded) == "table" and #last_preview.excluded or 0),
+        "Context tokens: " .. tostring(last_preview.totalTokens or 0),
+        "Collaboration role: " .. tostring(collaboration.role or "solo"),
+        "Collaboration room: " .. tostring(collaboration.room or ""),
+        "Collaboration members: " .. tostring(collaboration.memberCount or 0),
+        "Last mutation: " .. tostring(last_mutation.intent or ""),
     }
 
     if not enabled and reason ~= "" then
         table.insert(lines, "Completion disabled reason: " .. reason)
     end
 
-    local multiplayer = rpc_status.multiplayer or {}
-    if multiplayer.enabled then
-        table.insert(lines, "Room: " .. tostring(multiplayer.room or ""))
-        table.insert(lines, "Role: " .. tostring(multiplayer.role or ""))
-        table.insert(lines, "Members: " .. tostring(multiplayer.member_count or 0))
-        table.insert(lines, "Queue: " .. tostring(multiplayer.queue_depth or 0))
-    end
-
-    local capabilities = rpc_status.capabilities
-    local guarded = capabilities and capabilities.guardedFlow or nil
-    if type(guarded) == "table" then
-        table.insert(lines, "Plan review: " .. tostring(guarded.planReview == true))
-        table.insert(lines, "Permission review: " .. tostring(guarded.permissionRequests == true))
-    end
-
-    local security = capabilities and capabilities.security or nil
-    if type(security) == "table" then
-        table.insert(lines, "Trusted workspace: " .. tostring(security.trustedWorkspaceBoundary == true))
-    end
-
-    if rpc_status.last_error_message and rpc_status.last_error_message ~= "" then
-        table.insert(lines, "Last error: " .. rpc_status.last_error_message)
-    end
-
-    if rpc_status.last_stderr_excerpt and rpc_status.last_stderr_excerpt ~= "" then
-        table.insert(lines, "")
-        table.insert(lines, "Recent stderr:")
-        table.insert(lines, rpc_status.last_stderr_excerpt)
+    local rollback = last_mutation.rollbackHint or ""
+    if rollback ~= "" then
+        table.insert(lines, "Rollback: " .. rollback)
     end
 
     return table.concat(lines, "\n")
+end
+
+local function build_trust_text()
+    local rpc = require("poor-cli.rpc")
+    local payload, err = rpc.get_trust_view(15000)
+    if err or type(payload) ~= "table" then
+        return "Failed to load trust view: " .. vim.inspect(err)
+    end
+
+    local trust = type(payload.trust) == "table" and payload.trust or {}
+    local provider = type(payload.provider) == "table" and payload.provider or {}
+    local active = type(provider.active) == "table" and provider.active or {}
+    local recovery = type(payload.recovery) == "table" and payload.recovery or {}
+    local last_mutation = type(recovery.lastMutation) == "table" and recovery.lastMutation or {}
+    local lines = {
+        "# poor-cli trust",
+        "",
+        "- Provider: `" .. tostring(active.name or "unknown") .. "/" .. tostring(active.model or "unknown") .. "`",
+        "- Routing mode: `" .. tostring(active.routingMode or "manual") .. "`",
+        "- Sandbox preset: `" .. tostring(trust.sandboxPreset or "") .. "`",
+        "- Privacy posture: `" .. tostring(provider.privacyPosture or "unknown") .. "`",
+        "- Checkpointing: `" .. tostring(trust.checkpointing == true) .. "`",
+        "- Trusted workspace boundary: `" .. tostring(((trust.security or {}).trustedWorkspaceBoundary) == true) .. "`",
+    }
+    if provider.lastError and provider.lastError ~= "" then
+        table.insert(lines, "- Last provider error: " .. tostring(provider.lastError))
+    end
+    if last_mutation.checkpointId and last_mutation.checkpointId ~= "" then
+        table.insert(lines, "- Last checkpoint: `" .. tostring(last_mutation.checkpointId) .. "`")
+    end
+    return table.concat(lines, "\n")
+end
+
+local function build_doctor_text()
+    local rpc = require("poor-cli.rpc")
+    local payload, err = rpc.get_doctor_report(15000)
+    if err or type(payload) ~= "table" then
+        return "Failed to load doctor report: " .. vim.inspect(err)
+    end
+
+    local summary = type(payload.summary) == "table" and payload.summary or {}
+    local lines = {
+        "# poor-cli doctor",
+        "",
+        "- Overall: `" .. tostring(summary.overall or "unknown") .. "`",
+        "- Ready providers: " .. tostring(summary.readyProviderCount or 0),
+        "- Routing mode: `" .. tostring(summary.routingMode or "manual") .. "`",
+        "- Privacy posture: `" .. tostring(summary.privacyPosture or "unknown") .. "`",
+        "",
+    }
+    for _, check in ipairs(payload.checks or {}) do
+        if type(check) == "table" then
+            table.insert(lines, "## " .. tostring(check.title or "Check"))
+            table.insert(lines, "- Status: `" .. tostring(check.status or "unknown") .. "`")
+            table.insert(lines, "- Message: " .. tostring(check.message or ""))
+            table.insert(lines, "- Action: " .. tostring(check.action or ""))
+            table.insert(lines, "")
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+local function build_runs_text()
+    local rpc = require("poor-cli.rpc")
+    local payload, err = rpc.list_runs({ limit = 20 }, 15000)
+    if err or type(payload) ~= "table" then
+        return "Failed to load runs: " .. vim.inspect(err)
+    end
+
+    local lines = { "# poor-cli runs", "" }
+    for _, run in ipairs(payload.runs or {}) do
+        if type(run) == "table" then
+            table.insert(lines, "- `" .. tostring(run.runId or "unknown") .. "` [" .. tostring(run.status or "unknown") .. "] `" .. tostring(run.sourceKind or "unknown") .. "/" .. tostring(run.sourceId or "unknown") .. "`")
+            if run.summary and run.summary ~= "" then
+                table.insert(lines, "  " .. tostring(run.summary))
+            end
+        end
+    end
+    if #lines == 2 then
+        table.insert(lines, "No runs found.")
+    end
+    return table.concat(lines, "\n")
+end
+
+local function build_workflow_text(name)
+    local rpc = require("poor-cli.rpc")
+    if name and name ~= "" then
+        local payload, err = rpc.get_workflow(name, 15000)
+        if err or type(payload) ~= "table" then
+            return "Failed to load workflow: " .. vim.inspect(err)
+        end
+        local workflow = type(payload.workflow) == "table" and payload.workflow or {}
+        local lines = {
+            "# workflow " .. tostring(workflow.name or name),
+            "",
+            tostring(workflow.description or ""),
+            "",
+            "- Sandbox: `" .. tostring(workflow.defaultSandboxPreset or workflow.sandboxPreset or "") .. "`",
+            "- Context strategy: " .. tostring(workflow.contextStrategy or workflow.suggestedContextStrategy or ""),
+            "",
+        }
+        if workflow.starterPrompt or workflow.promptScaffold then
+            table.insert(lines, "```text")
+            table.insert(lines, tostring(workflow.starterPrompt or workflow.promptScaffold))
+            table.insert(lines, "```")
+        end
+        return table.concat(lines, "\n")
+    end
+
+    local payload, err = rpc.list_workflows(15000)
+    if err or type(payload) ~= "table" then
+        return "Failed to load workflows: " .. vim.inspect(err)
+    end
+    local lines = { "# workflows", "" }
+    for _, workflow in ipairs(payload.workflows or {}) do
+        if type(workflow) == "table" then
+            local marker = workflow.name == payload.recommended and " (recommended)" or ""
+            table.insert(lines, "- `" .. tostring(workflow.name or "unknown") .. "`" .. marker .. ": " .. tostring(workflow.description or ""))
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+local function build_context_text()
+    local rpc = require("poor-cli.rpc")
+    local current = vim.api.nvim_buf_get_name(0)
+    local params = {
+        message = "Explain the current context plan for this editing session.",
+    }
+    if current ~= "" then
+        params.contextFiles = { current }
+    end
+    local payload, err = rpc.get_context_explain(params, 15000)
+    if err or type(payload) ~= "table" then
+        return "Failed to load context explanation: " .. vim.inspect(err)
+    end
+
+    local lines = {
+        "# context explain",
+        "",
+        "- Total tokens: " .. tostring(payload.totalTokens or 0),
+        "- Budget tokens: " .. tostring(payload.budgetTokens or 0),
+        "- Truncated: " .. tostring(payload.truncated == true),
+        "- Message: " .. tostring(payload.message or ""),
+        "",
+        "## Selected",
+    }
+    for _, item in ipairs(payload.selected or {}) do
+        if type(item) == "table" then
+            table.insert(lines, "- `" .. tostring(item.path or "") .. "` [" .. tostring(item.source or "auto") .. "] " .. tostring(item.reason or ""))
+        end
+    end
+    if type(payload.excluded) == "table" and #payload.excluded > 0 then
+        table.insert(lines, "")
+        table.insert(lines, "## Excluded")
+        for _, item in ipairs(payload.excluded) do
+            if type(item) == "table" then
+                table.insert(lines, "- `" .. tostring(item.path or "") .. "` [" .. tostring(item.excludedReason or "") .. "]")
+            end
+        end
+    end
+    return table.concat(lines, "\n")
+end
+
+local function build_collab_summary_text()
+    local rpc = require("poor-cli.rpc")
+    local payload, err = rpc.get_collab_summary(15000)
+    if err or type(payload) ~= "table" then
+        return "Failed to load collaboration summary: " .. vim.inspect(err)
+    end
+    local collab = type(payload.collaboration) == "table" and payload.collaboration or {}
+    return table.concat({
+        "# collaboration summary",
+        "",
+        "- Running: `" .. tostring(collab.running == true) .. "`",
+        "- Role: `" .. tostring(collab.role or "solo") .. "`",
+        "- Room: `" .. tostring(collab.room or "") .. "`",
+        "- Members: " .. tostring(collab.memberCount or 0),
+        "- Queue depth: " .. tostring(((collab.queueState or {}).depth) or 0),
+        "- Hands raised: " .. tostring(((collab.queueState or {}).handsRaised) or 0),
+        "- Health: `" .. tostring(collab.connectionHealth or "unknown") .. "`",
+        "- Summary: " .. tostring(collab.summary or ""),
+    }, "\n")
 end
 
 local function copy_to_clipboard(text)
@@ -103,6 +277,7 @@ local function collab_usage()
         "       :PoorCliCollab suggest <text>",
         "       :PoorCliCollab members [room]",
         "       :PoorCliCollab status",
+        "       :PoorCliCollab summary",
     }, "\n")
 end
 
@@ -279,12 +454,34 @@ function M.setup()
         vim.notify("[poor-cli]\n" .. build_status_text(), vim.log.levels.INFO)
     end, { desc = "Show poor-cli status" })
 
+    create_command("PoorCliTrust", function()
+        open_scratch("[poor-cli trust]", build_trust_text(), "markdown")
+    end, { desc = "Open poor-cli trust center" })
+
+    create_command("PoorCliRuns", function()
+        open_scratch("[poor-cli runs]", build_runs_text(), "markdown")
+    end, { desc = "Open poor-cli run history" })
+
+    create_command("PoorCliWorkflow", function(opts)
+        local name = (opts.args or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        open_scratch("[poor-cli workflow]", build_workflow_text(name ~= "" and name or nil), "markdown")
+    end, { nargs = "?", desc = "Inspect poor-cli workflow templates" })
+
+    create_command("PoorCliContext", function()
+        open_scratch("[poor-cli context]", build_context_text(), "markdown")
+    end, { desc = "Open poor-cli context explanation" })
+
     create_command("PoorCliCollab", function(opts)
         local args = vim.split(opts.args or "", " ", { trimempty = true })
         local subcommand = args[1] or "status"
 
         if subcommand == "status" then
             vim.notify("[poor-cli]\n" .. build_status_text(), vim.log.levels.INFO)
+            return
+        end
+
+        if subcommand == "summary" then
+            open_scratch("[poor-cli collab summary]", build_collab_summary_text(), "markdown")
             return
         end
 
@@ -428,13 +625,7 @@ function M.setup()
     end, { nargs = "*", desc = "Manage poor-cli collaboration sessions" })
 
     create_command("PoorCliDoctor", function()
-        local report = rpc.build_debug_report({
-            {
-                title = "Status",
-                body = build_status_text(),
-            },
-        })
-        open_scratch("[poor-cli doctor]", report, "markdown")
+        open_scratch("[poor-cli doctor]", build_doctor_text(), "markdown")
     end, { desc = "Open poor-cli diagnostic report" })
 
     create_command("PoorCliCopyDebugInfo", function()
