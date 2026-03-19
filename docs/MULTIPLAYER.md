@@ -1,7 +1,8 @@
 # Multiplayer
 
 This document is the source of truth for multiplayer behavior in this repository.
-`README.md` is intentionally unchanged.
+`README.md` now reflects the current invite-only bootstrap at a high level; this
+document remains canonical for protocol, operational, and compatibility detail.
 
 ## Status
 
