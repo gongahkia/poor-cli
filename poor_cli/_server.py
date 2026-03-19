@@ -202,6 +202,77 @@ class PoorCLIServer:
             )
         return self._automation_manager
 
+    def _collaboration_status_payload(self) -> Dict[str, Any]:
+        payload = {
+            "running": False,
+            "role": "solo",
+            "room": "",
+            "memberCount": 0,
+            "queueState": {"depth": 0, "handsRaised": 0},
+            "connectionHealth": "offline",
+            "recentRecoveryEvents": [],
+            "summary": "No active collaboration session.",
+        }
+        if self._host_server is None:
+            return payload
+
+        host_payload = self._compose_host_server_payload(created=False, stopped=False)
+        rooms = host_payload.get("rooms") if isinstance(host_payload, dict) else None
+        first_room = rooms[0] if isinstance(rooms, list) and rooms else {}
+        if not isinstance(first_room, dict):
+            first_room = {}
+        room_name = str(first_room.get("name", "")).strip()
+        member_count = int(first_room.get("memberCount", 0) or 0)
+        hands_raised = int(first_room.get("handsRaised", 0) or 0)
+        lobby_enabled = bool(first_room.get("lobbyEnabled", False))
+        payload.update(
+            {
+                "running": True,
+                "role": "host",
+                "room": room_name,
+                "memberCount": member_count,
+                "queueState": {"depth": member_count, "handsRaised": hands_raised},
+                "connectionHealth": "healthy",
+                "recentRecoveryEvents": [],
+                "summary": (
+                    f"Hosting `{room_name}` with {member_count} member(s)"
+                    if room_name
+                    else f"Hosting {member_count} member(s)"
+                ),
+                "lobbyEnabled": lobby_enabled,
+                "preset": str(first_room.get("preset", "") or ""),
+                "mode": str(first_room.get("mode", "") or ""),
+                "signalingUrl": str(host_payload.get("signalingUrl", "") or ""),
+            }
+        )
+        return payload
+
+    def _status_view_payload(self) -> Dict[str, Any]:
+        payload = self.core.build_status_view()
+        payload["collaboration"] = self._collaboration_status_payload()
+        trust = payload.get("trust")
+        if isinstance(trust, dict):
+            trust["mcp"] = self.core.get_mcp_status()
+            trust["audit"] = self.core.get_policy_status().get("audit", {})
+        return payload
+
+    def _doctor_report_payload(self) -> Dict[str, Any]:
+        payload = self.core.build_doctor_report()
+        payload["statusView"] = self._status_view_payload()
+        checks = payload.get("checks")
+        if isinstance(checks, list):
+            collab = payload["statusView"].get("collaboration", {})
+            checks.append(
+                {
+                    "id": "collaboration",
+                    "title": "Collaboration session",
+                    "status": "ok" if collab.get("running") else "warning",
+                    "message": collab.get("summary", "No active collaboration session."),
+                    "action": "Use `/collab start`, `/collab join`, or inspect `/collab summary`.",
+                }
+            )
+        return payload
+
     @staticmethod
     def _normalize_string_list(raw_values: Any, *, field_name: str) -> List[str]:
         if raw_values is None:
@@ -231,6 +302,10 @@ class PoorCLIServer:
         model = str(raw_execution.get("model", "") or "").strip()
         if model:
             execution["model"] = model
+
+        routing_mode = str(raw_execution.get("routingMode", "") or "").strip()
+        if routing_mode:
+            execution["routingMode"] = routing_mode
 
         config_path = str(raw_execution.get("configPath", "") or "").strip()
         if config_path:
@@ -507,14 +582,21 @@ class PoorCLIServer:
             "poor-cli/switchProvider": self.handle_switch_provider,
             "poor-cli/getProviderInfo": self.handle_get_provider_info,
             "poor-cli/getInstructionStack": self.handle_get_instruction_stack,
+            "poor-cli/getStatusView": self.handle_get_status_view,
+            "poor-cli/getTrustView": self.handle_get_trust_view,
+            "poor-cli/getDoctorReport": self.handle_get_doctor_report,
             "poor-cli/getPolicyStatus": self.handle_get_policy_status,
             "poor-cli/getSandboxStatus": self.handle_get_sandbox_status,
             "poor-cli/getMcpStatus": self.handle_get_mcp_status,
             "poor-cli/clearHistory": self.handle_clear_history,
             "poor-cli/compactContext": self.handle_compact_context,
             "poor-cli/previewContext": self.handle_preview_context,
+            "poor-cli/getContextExplain": self.handle_get_context_explain,
             "poor-cli/previewMutation": self.handle_preview_mutation,
             "poor-cli/exec": self.handle_exec,
+            "poor-cli/listRuns": self.handle_list_runs,
+            "poor-cli/listWorkflows": self.handle_list_workflows,
+            "poor-cli/getWorkflow": self.handle_get_workflow,
             "poor-cli/listConfigOptions": self.handle_list_config_options,
             "poor-cli/setConfig": self.handle_set_config,
             "poor-cli/toggleConfig": self.handle_toggle_config,
@@ -534,12 +616,16 @@ class PoorCLIServer:
             "poor-cli/startTask": self.handle_start_task,
             "poor-cli/approveTask": self.handle_approve_task,
             "poor-cli/cancelTask": self.handle_cancel_task,
+            "poor-cli/retryTask": self.handle_retry_task,
+            "poor-cli/replayTask": self.handle_replay_task,
             "poor-cli/createAutomation": self.handle_create_automation,
             "poor-cli/listAutomations": self.handle_list_automations,
             "poor-cli/getAutomation": self.handle_get_automation,
             "poor-cli/setAutomationEnabled": self.handle_set_automation_enabled,
             "poor-cli/runAutomationNow": self.handle_run_automation_now,
             "poor-cli/runDueAutomations": self.handle_run_due_automations,
+            "poor-cli/getAutomationHistory": self.handle_get_automation_history,
+            "poor-cli/replayAutomation": self.handle_replay_automation,
             "poor-cli/listCheckpoints": self.handle_list_checkpoints,
             "poor-cli/createCheckpoint": self.handle_create_checkpoint,
             "poor-cli/restoreCheckpoint": self.handle_restore_checkpoint,
@@ -547,6 +633,7 @@ class PoorCLIServer:
             "poor-cli/exportConversation": self.handle_export_conversation,
             "poor-cli/startHostServer": self.handle_start_host_server,
             "poor-cli/getHostServerStatus": self.handle_get_host_server_status,
+            "poor-cli/getCollabSummary": self.handle_get_collab_summary,
             "poor-cli/stopHostServer": self.handle_stop_host_server,
             "poor-cli/listHostMembers": self.handle_list_host_members,
             "poor-cli/removeHostMember": self.handle_remove_host_member,
@@ -987,6 +1074,26 @@ class PoorCLIServer:
         self._ensure_initialized()
         return self.core.get_policy_status()
 
+    async def handle_get_status_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the canonical session status payload shared across clients."""
+        del params
+        self._ensure_initialized()
+        return self._status_view_payload()
+
+    async def handle_get_trust_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the trust-center payload shared across clients."""
+        del params
+        self._ensure_initialized()
+        payload = self._status_view_payload()
+        payload["view"] = "trust"
+        return payload
+
+    async def handle_get_doctor_report(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return structured diagnostics with actionable remediation."""
+        del params
+        self._ensure_initialized()
+        return self._doctor_report_payload()
+
     async def handle_get_sandbox_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return sandbox preset and capability summary."""
         del params
@@ -1041,11 +1148,18 @@ class PoorCLIServer:
             except (TypeError, ValueError) as e:
                 raise InvalidParamsError("contextBudgetTokens must be an integer") from e
 
+        routing_mode = str(params.get("routingMode", "") or "").strip()
+        if routing_mode:
+            self.core.set_routing_mode(routing_mode)
+
         response_text = await self.core.send_message_sync(
             message=prompt,
             context_files=context_files,
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
+            source_kind="exec",
+            source_id="rpc-exec",
+            run_metadata={"rpcMethod": "poor-cli/exec"},
         )
         if output_format == "json":
             return {
@@ -1053,8 +1167,51 @@ class PoorCLIServer:
                 "provider": self.core.get_provider_info(),
                 "outputFormat": output_format,
                 "cost": self.core.get_session_cost_summary(),
+                "statusView": self._status_view_payload(),
             }
         return {"content": response_text, "outputFormat": output_format}
+
+    async def handle_list_runs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List recent run records from the shared run ledger."""
+        self._ensure_initialized()
+        source_kind = str(params.get("sourceKind", "") or "").strip() or None
+        source_id = str(params.get("sourceId", "") or "").strip() or None
+        limit = self._clamp_count(params.get("limit"), default=25, min_value=1, max_value=200)
+        return {
+            "runs": self.core.list_runs(
+                source_kind=source_kind,
+                source_id=source_id,
+                limit=limit,
+            )
+        }
+
+    async def handle_list_workflows(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List built-in workflow templates."""
+        del params
+        self._ensure_initialized()
+        workflows = self.core.list_workflow_templates()
+        recommended = next(
+            (
+                workflow.get("name", "")
+                for workflow in workflows
+                if workflow.get("recommended")
+            ),
+            "",
+        )
+        if not recommended and workflows:
+            recommended = str(workflows[0].get("name", "") or "")
+        return {"workflows": workflows, "recommended": recommended}
+
+    async def handle_get_workflow(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a single workflow template."""
+        self._ensure_initialized()
+        name = str(params.get("name", "") or "").strip()
+        if not name:
+            raise InvalidParamsError("Missing workflow name")
+        workflow = self.core.get_workflow_template(name)
+        if workflow is None:
+            raise InvalidParamsError(f"Unknown workflow: {name}")
+        return {"workflow": workflow}
 
     async def handle_compact_context(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Apply context management strategy.
@@ -1063,6 +1220,10 @@ class PoorCLIServer:
         self._ensure_initialized()
         strategy = params.get("strategy", "compact")
         return await self.core.compact_context(strategy)
+
+    async def handle_get_context_explain(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Alias for previewContext using context-explanation naming."""
+        return await self.handle_preview_context(params)
 
     async def handle_list_providers(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1677,6 +1838,38 @@ class PoorCLIServer:
         task = self._task_manager_instance().cancel_task(task_id)
         return {"task": task.to_dict()}
 
+    async def handle_retry_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create and optionally start a retry task."""
+        self._ensure_initialized()
+        task_id = str(params.get("taskId", "")).strip()
+        if not task_id:
+            raise InvalidParamsError("Missing taskId")
+        auto_start = params.get("autoStart")
+        task = self._task_manager_instance().retry_task(
+            task_id,
+            auto_start=None if auto_start is None else bool(auto_start),
+        )
+        return {
+            "task": task.to_dict(),
+            "runs": self._task_manager_instance().task_runs(task.task_id, limit=10),
+        }
+
+    async def handle_replay_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create and optionally start a replay task."""
+        self._ensure_initialized()
+        task_id = str(params.get("taskId", "")).strip()
+        if not task_id:
+            raise InvalidParamsError("Missing taskId")
+        auto_start = params.get("autoStart")
+        task = self._task_manager_instance().replay_task(
+            task_id,
+            auto_start=None if auto_start is None else bool(auto_start),
+        )
+        return {
+            "task": task.to_dict(),
+            "runs": self._task_manager_instance().task_runs(task.task_id, limit=10),
+        }
+
     async def handle_create_automation(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a durable scheduled automation backed by the task runner."""
         self._ensure_initialized()
@@ -1768,6 +1961,25 @@ class PoorCLIServer:
         limit = self._clamp_count(params.get("limit"), default=20, min_value=1, max_value=200)
         tasks = self._automation_manager_instance().run_due(limit=limit)
         return {"tasks": [task.to_dict() for task in tasks]}
+
+    async def handle_get_automation_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return recent run history for one automation."""
+        self._ensure_initialized()
+        automation_id = str(params.get("automationId", "")).strip()
+        if not automation_id:
+            raise InvalidParamsError("Missing automationId")
+        limit = self._clamp_count(params.get("limit"), default=25, min_value=1, max_value=200)
+        history = self._automation_manager_instance().history(automation_id, limit=limit)
+        return {"runs": history}
+
+    async def handle_replay_automation(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Launch an automation replay task."""
+        self._ensure_initialized()
+        automation_id = str(params.get("automationId", "")).strip()
+        if not automation_id:
+            raise InvalidParamsError("Missing automationId")
+        task = self._automation_manager_instance().replay(automation_id)
+        return {"task": task.to_dict()}
 
     async def handle_list_checkpoints(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List available checkpoints with storage metadata."""
@@ -2997,6 +3209,12 @@ class PoorCLIServer:
         self._ensure_host_controls_available()
         async with self._get_host_server_lock():
             return self._compose_host_server_payload(created=False, stopped=False)
+
+    async def handle_get_collab_summary(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a concise collaboration summary for shared status surfaces."""
+        del params
+        self._ensure_initialized()
+        return {"collaboration": self._collaboration_status_payload()}
 
     async def handle_stop_host_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Stop an active in-process multiplayer host if one is running."""
