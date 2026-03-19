@@ -65,6 +65,8 @@ class ContextResult:
     total_tokens: int
     truncated: bool
     message: str
+    selected: List[Dict[str, Any]] = field(default_factory=list)
+    excluded: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class ContextManager:
@@ -222,6 +224,11 @@ class ContextManager:
         files_to_include.sort(key=lambda f: (-f.priority, f.path))
 
         limited_files = files_to_include[:effective_max_files]
+        selected_entries = [self._context_entry(file_ctx) for file_ctx in limited_files]
+        excluded_entries = [
+            self._context_entry(file_ctx, excluded_reason="max_files")
+            for file_ctx in files_to_include[effective_max_files:]
+        ]
         total_tokens = sum(self._estimate_prompt_tokens(file_ctx, message) for file_ctx in limited_files)
         truncated = len(files_to_include) > len(limited_files)
         source_counts: Dict[str, int] = {}
@@ -239,6 +246,8 @@ class ContextManager:
             total_tokens=total_tokens,
             truncated=truncated,
             message=message_text,
+            selected=selected_entries,
+            excluded=excluded_entries,
         )
 
     async def build_context_message(
@@ -306,28 +315,50 @@ class ContextManager:
         files_payload = []
         total_tokens = 0
         truncated = selection.truncated
+        excluded_payload = list(selection.excluded)
         for file_ctx in selection.files:
             estimated_tokens = self._estimate_prompt_tokens(file_ctx, message)
             if total_tokens + estimated_tokens > token_budget:
                 truncated = True
+                excluded_payload.append(
+                    self._context_entry(
+                        file_ctx,
+                        excluded_reason="context_budget",
+                    )
+                )
                 break
-            files_payload.append(
-                {
-                    "path": file_ctx.path,
-                    "source": file_ctx.source,
-                    "estimatedTokens": estimated_tokens,
-                    "language": file_ctx.language,
-                    "reason": file_ctx.selection_reason,
-                    "includeFullContent": file_ctx.include_full_content,
-                }
-            )
+            payload = self._context_entry(file_ctx)
+            payload["tokenEstimate"] = estimated_tokens
+            payload["estimatedTokens"] = estimated_tokens
+            payload["language"] = file_ctx.language
+            payload["includeFullContent"] = file_ctx.include_full_content
+            files_payload.append(payload)
             total_tokens += estimated_tokens
         return {
             "files": files_payload,
+            "selected": files_payload,
+            "excluded": excluded_payload,
             "totalTokens": total_tokens,
+            "budgetTokens": token_budget,
             "truncated": truncated,
             "message": selection.message,
             "keywords": keywords[:10],
+        }
+
+    @staticmethod
+    def _context_entry(
+        file_ctx: FileContext,
+        *,
+        excluded_reason: str = "",
+    ) -> Dict[str, Any]:
+        return {
+            "path": file_ctx.path,
+            "reason": file_ctx.selection_reason,
+            "tokenEstimate": file_ctx.tokens_estimate,
+            "pinned": file_ctx.source == "pinned",
+            "source": file_ctx.source,
+            "priority": round(float(file_ctx.priority), 3),
+            "excludedReason": excluded_reason,
         }
     
     async def gather_context(
