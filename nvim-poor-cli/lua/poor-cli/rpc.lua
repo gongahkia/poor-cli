@@ -639,6 +639,76 @@ function M.request(method, params, callback)
     return id
 end
 
+function M.request_sync(method, params, timeout_ms)
+    local completed = false
+    local result = nil
+    local err = nil
+    local effective_timeout = timeout_ms or config.get("request_timeout") or 15000
+
+    local request_id = M.request(method, params or {}, function(res, rpc_err)
+        result = res
+        err = rpc_err
+        completed = true
+    end)
+
+    if request_id == nil and not completed then
+        return nil, build_request_error("Request failed to start", {
+            method = method,
+        })
+    end
+
+    if completed then
+        return result, err
+    end
+
+    local ok = vim.wait(effective_timeout, function()
+        return completed
+    end, 20)
+
+    if not ok then
+        return nil, build_request_error("Synchronous request timed out", {
+            method = method,
+            timeout_ms = effective_timeout,
+        })
+    end
+
+    return result, err
+end
+
+function M.get_status_view(timeout_ms)
+    return M.request_sync("poor-cli/getStatusView", {}, timeout_ms)
+end
+
+function M.get_trust_view(timeout_ms)
+    return M.request_sync("poor-cli/getTrustView", {}, timeout_ms)
+end
+
+function M.get_doctor_report(timeout_ms)
+    return M.request_sync("poor-cli/getDoctorReport", {}, timeout_ms)
+end
+
+function M.get_context_explain(params, timeout_ms)
+    return M.request_sync("poor-cli/getContextExplain", params or {}, timeout_ms)
+end
+
+function M.list_runs(params, timeout_ms)
+    return M.request_sync("poor-cli/listRuns", params or {}, timeout_ms)
+end
+
+function M.list_workflows(timeout_ms)
+    return M.request_sync("poor-cli/listWorkflows", {}, timeout_ms)
+end
+
+function M.get_workflow(name, timeout_ms)
+    return M.request_sync("poor-cli/getWorkflow", {
+        name = name,
+    }, timeout_ms)
+end
+
+function M.get_collab_summary(timeout_ms)
+    return M.request_sync("poor-cli/getCollabSummary", {}, timeout_ms)
+end
+
 function M.notify(method, params)
     if not M.job_id then
         return
