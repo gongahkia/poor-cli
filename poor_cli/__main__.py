@@ -6,13 +6,10 @@ import argparse
 import asyncio
 import json
 import os
-import platform
-import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 
 from .automation_manager import (
     AutomationManager,
@@ -28,6 +25,7 @@ from .repo_config import get_repo_config
 from .sandbox import PRESET_DESCRIPTION, evaluate_tool_access, normalize_preset
 from .skills import SkillRegistry
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
+from .tui_launcher import launch_tui, run_install_info_mode
 from . import __version__
 
 
@@ -57,276 +55,6 @@ def _render_root_help() -> str:
         "  - The interactive TUI can be launched from a repo build, a packaged binary, PATH, or POOR_CLI_TUI_BIN.\n"
         "  - Run `poor-cli help` or `poor-cli --help` to show this overview.\n"
     )
-
-
-def _tui_executable_name() -> str:
-    return "poor-cli-tui.exe" if os.name == "nt" else "poor-cli-tui"
-
-
-def _is_usable_binary(path: Path) -> bool:
-    return path.is_file() and os.access(path, os.X_OK)
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
-def _repo_tui_binary_path(repo_root: Optional[Path] = None) -> Path:
-    root = repo_root or _repo_root()
-    return root / "poor-cli-tui" / "target" / "release" / _tui_executable_name()
-
-
-def _repo_binary_is_fresh(repo_root: Path, binary: Path) -> bool:
-    if not _is_usable_binary(binary):
-        return False
-
-    try:
-        binary_mtime = binary.stat().st_mtime
-    except OSError:
-        return False
-
-    watched_paths = [
-        repo_root / "poor-cli-tui" / "Cargo.toml",
-        repo_root / "poor-cli-tui" / "Cargo.lock",
-    ]
-    src_dir = repo_root / "poor-cli-tui" / "src"
-    watched_paths.extend(path for path in src_dir.rglob("*") if path.is_file())
-
-    try:
-        return not any(path.stat().st_mtime > binary_mtime for path in watched_paths if path.exists())
-    except OSError:
-        return False
-
-
-def _run_tui_from_repo(argv: list[str]) -> int:
-    repo_root = _repo_root()
-    script = repo_root / "run_tui.sh"
-    if not script.is_file():
-        return 1
-    return subprocess.call([str(script), *argv], cwd=str(repo_root))
-
-
-def _iter_packaged_tui_candidates() -> list[Path]:
-    package_root = Path(__file__).resolve().parent
-    executable_name = _tui_executable_name()
-    machine = platform.machine().lower().replace("amd64", "x86_64")
-    platform_key = sys.platform.lower()
-    platform_tags = [platform_key, f"{platform_key}-{machine}"]
-
-    if sys.platform == "darwin":
-        platform_tags.extend(["macos", f"macos-{machine}"])
-    elif sys.platform.startswith("linux"):
-        platform_tags.extend(["linux", f"linux-{machine}"])
-    elif os.name == "nt":
-        platform_tags.extend(["windows", f"windows-{machine}"])
-
-    candidates = [package_root / "bin" / executable_name]
-    candidates.extend(package_root / "bin" / tag / executable_name for tag in platform_tags)
-
-    deduped: list[Path] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(candidate)
-    return deduped
-
-
-def _resolve_env_tui_binary() -> Optional[Path]:
-    raw_value = os.environ.get("POOR_CLI_TUI_BIN", "").strip()
-    if not raw_value:
-        return None
-    candidate = Path(raw_value).expanduser()
-    if not candidate.is_absolute():
-        candidate = Path.cwd() / candidate
-    candidate = candidate.resolve()
-    if not _is_usable_binary(candidate):
-        return None
-    return candidate
-
-
-def _resolve_packaged_tui_binary() -> Optional[Path]:
-    for candidate in _iter_packaged_tui_candidates():
-        if _is_usable_binary(candidate):
-            return candidate
-    return None
-
-
-def _resolve_path_tui_binary() -> Optional[Path]:
-    binary = shutil.which(_tui_executable_name())
-    if binary is None:
-        return None
-    return Path(binary).resolve()
-
-
-def _resolve_tui_binary() -> tuple[Optional[Path], Optional[str]]:
-    env_binary = _resolve_env_tui_binary()
-    if env_binary is not None:
-        return env_binary, "env"
-
-    repo_root = _repo_root()
-    repo_binary = _repo_tui_binary_path(repo_root)
-    if _repo_binary_is_fresh(repo_root, repo_binary):
-        return repo_binary, "repo"
-
-    packaged_binary = _resolve_packaged_tui_binary()
-    if packaged_binary is not None:
-        return packaged_binary, "package"
-
-    path_binary = _resolve_path_tui_binary()
-    if path_binary is not None:
-        return path_binary, "path"
-
-    return None, None
-
-
-def _run_tui_binary(argv: list[str]) -> int:
-    binary, _source = _resolve_tui_binary()
-    if binary is None:
-        return 1
-    os.execv(str(binary), [str(binary), *argv])
-    return 1
-
-
-def _inspect_tui_installation() -> dict[str, Any]:
-    repo_root = _repo_root()
-    repo_binary = _repo_tui_binary_path(repo_root)
-    env_override = os.environ.get("POOR_CLI_TUI_BIN", "").strip()
-    env_binary = _resolve_env_tui_binary()
-    path_binary = _resolve_path_tui_binary()
-    selected_binary, selected_source = _resolve_tui_binary()
-    packaged_candidates = _iter_packaged_tui_candidates()
-    run_tui_script = repo_root / "run_tui.sh"
-
-    return {
-        "version": __version__,
-        "platform": sys.platform,
-        "machine": platform.machine(),
-        "tuiExecutableName": _tui_executable_name(),
-        "selectedLauncher": {
-            "source": selected_source,
-            "path": str(selected_binary),
-        }
-        if selected_binary is not None and selected_source is not None
-        else None,
-        "envOverride": {
-            "configured": bool(env_override),
-            "path": env_override or None,
-            "usable": env_binary is not None,
-        },
-        "repoBinary": {
-            "path": str(repo_binary),
-            "exists": repo_binary.is_file(),
-            "usable": _is_usable_binary(repo_binary),
-            "fresh": _repo_binary_is_fresh(repo_root, repo_binary),
-        },
-        "packagedCandidates": [
-            {
-                "path": str(candidate),
-                "exists": candidate.is_file(),
-                "usable": _is_usable_binary(candidate),
-            }
-            for candidate in packaged_candidates
-        ],
-        "pathBinary": {
-            "path": str(path_binary) if path_binary is not None else None,
-            "usable": path_binary is not None and _is_usable_binary(path_binary),
-        },
-        "repoLauncherScript": {
-            "path": str(run_tui_script),
-            "exists": run_tui_script.is_file(),
-        },
-    }
-
-
-def _render_install_info(payload: dict[str, Any]) -> str:
-    lines = [
-        f"poor-cli {payload['version']}",
-        f"Platform: {payload['platform']} ({payload['machine']})",
-        f"TUI executable: {payload['tuiExecutableName']}",
-    ]
-
-    selected = payload.get("selectedLauncher")
-    if isinstance(selected, dict):
-        lines.append(f"Resolved launcher: {selected['source']} -> {selected['path']}")
-    else:
-        lines.append("Resolved launcher: not found")
-
-    env_override = payload["envOverride"]
-    if env_override["configured"]:
-        status = "usable" if env_override["usable"] else "missing or not executable"
-        lines.append(f"POOR_CLI_TUI_BIN: {env_override['path']} [{status}]")
-    else:
-        lines.append("POOR_CLI_TUI_BIN: not set")
-
-    repo_binary = payload["repoBinary"]
-    repo_status = "fresh" if repo_binary["fresh"] else "missing or stale"
-    lines.append(f"Repo release binary: {repo_binary['path']} [{repo_status}]")
-
-    path_binary = payload["pathBinary"]
-    if path_binary["path"]:
-        lines.append(f"PATH binary: {path_binary['path']}")
-    else:
-        lines.append("PATH binary: not found")
-
-    repo_script = payload["repoLauncherScript"]
-    lines.append(
-        "Repo launcher script: "
-        f"{repo_script['path']} [{'available' if repo_script['exists'] else 'missing'}]"
-    )
-
-    packaged_candidates = payload["packagedCandidates"]
-    if packaged_candidates:
-        lines.append("Packaged TUI candidates:")
-        for candidate in packaged_candidates:
-            status = "usable" if candidate["usable"] else "missing"
-            lines.append(f"  {candidate['path']} [{status}]")
-
-    lines.append("Tip: set POOR_CLI_TUI_BIN to force a specific TUI binary.")
-    return "\n".join(lines)
-
-
-def _build_install_info_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="poor-cli install-info")
-    parser.add_argument("--json", action="store_true")
-    return parser
-
-
-def _run_install_info_mode(argv: Sequence[str]) -> int:
-    parser = _build_install_info_parser()
-    args = parser.parse_args(list(argv))
-    payload = _inspect_tui_installation()
-    if args.json:
-        _print_json(payload)
-    else:
-        print(_render_install_info(payload))
-    return 0
-
-
-def _launch_tui(argv: list[str]) -> int:
-    if _run_tui_binary(argv) == 0:
-        return 0
-    if _run_tui_from_repo(argv) == 0:
-        return 0
-    raise SystemExit(
-        "Rust TUI launcher not found.\n\n"
-        "Interactive options:\n"
-        "  - Run ./run_tui.sh from a repo checkout\n"
-        "  - Install or place a `poor-cli-tui` binary in PATH\n"
-        "  - Set POOR_CLI_TUI_BIN=/path/to/poor-cli-tui\n"
-        "  - Run `poor-cli install-info` to inspect launcher paths\n\n"
-        "Python surfaces still available:\n"
-        "  - `poor-cli exec --help`\n"
-        "  - `poor-cli task --help`\n"
-        "  - `poor-cli automation --help`\n"
-        "  - `poor-cli skills --help`\n"
-        "  - `poor-cli commands --help`\n"
-        "  - `poor-cli server --help`\n\n"
-        "Run `poor-cli help` for a full overview."
-    )
-
 
 def _run_server_mode(argv: Sequence[str]) -> int:
     from .server import main as server_main
@@ -1581,7 +1309,7 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
 def main() -> None:
     argv = sys.argv[1:]
     if not argv:
-        raise SystemExit(_launch_tui(argv))
+        raise SystemExit(launch_tui(argv))
     if argv[0] in {"help", "--help", "-h"}:
         print(_render_root_help())
         raise SystemExit(0)
@@ -1603,10 +1331,10 @@ def main() -> None:
     if argv and argv[0] == "server":
         raise SystemExit(_run_server_mode(argv[1:]))
     if argv and argv[0] == "install-info":
-        raise SystemExit(_run_install_info_mode(argv[1:]))
+        raise SystemExit(run_install_info_mode(argv[1:]))
     if argv and argv[0] == "tui":
-        raise SystemExit(_launch_tui(argv[1:]))
-    raise SystemExit(_launch_tui(argv))
+        raise SystemExit(launch_tui(argv[1:]))
+    raise SystemExit(launch_tui(argv))
 
 
 if __name__ == "__main__":
