@@ -184,8 +184,8 @@ pub(crate) fn send_chat_request_with_context(
     app.record_user_input(&display_message);
     app.push_message(ChatMessage::user(display_message));
     app.start_waiting();
-    app.turn_input_tokens = 0;
-    app.turn_output_tokens = 0;
+    app.tokens.turn_input_tokens = 0;
+    app.tokens.turn_output_tokens = 0;
 
     // use streaming endpoint — notifications arrive via the notification channel
     let request_id = app.next_request_id();

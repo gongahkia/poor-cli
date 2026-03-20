@@ -79,6 +79,45 @@ pub(super) fn handle_server_message(
                 ),
             );
             app.set_status("Connected to Python backend");
+            if app.startup_first_launch {
+                match rpc_get_status_view_blocking(&rpc_cmd_tx.borrow()) {
+                    Ok(status_view) => {
+                        let unconfigured = status_view_has_unconfigured_provider(&status_view);
+                        let ready_provider_count =
+                            status_view_ready_provider_count(&status_view);
+                        if unconfigured {
+                            activate_workspace(app, &rpc_cmd_tx.borrow(), AppWorkspace::Setup);
+                            start_startup_onboarding_intro(app, true);
+                            app.set_status("Opened onboarding for first-launch setup");
+                        } else if ready_provider_count > 1 {
+                            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+                            let _ = rpc_cmd_tx
+                                .borrow()
+                                .send(RpcCommand::ListProviders { reply: reply_tx });
+                            if let Ok(Ok(providers)) = reply_rx.recv_timeout(Duration::from_secs(15))
+                            {
+                                app.providers = providers
+                                    .into_iter()
+                                    .map(|provider| ProviderEntry {
+                                        name: provider.name,
+                                        available: provider.available,
+                                        ready: provider.ready,
+                                        status_label: provider.status_label,
+                                        models: provider.models,
+                                    })
+                                    .collect();
+                                app.open_provider_select();
+                                app.set_status("Select a startup provider");
+                            }
+                        }
+                    }
+                    Err(error) => app.set_status(format!(
+                        "Connected, but failed to inspect startup readiness: {error}"
+                    )),
+                }
+                let _ = mark_startup_first_launch_seen(app);
+                app.startup_first_launch = false;
+            }
         }
         ServerMsg::ChatResponse { content } => {
             write_session_log(
@@ -221,6 +260,11 @@ pub(super) fn handle_server_message(
                 }
             }
             if !app.server_connected && should_offer_api_key_setup(&message) {
+                if app.startup_first_launch {
+                    start_startup_onboarding_intro(app, false);
+                    let _ = mark_startup_first_launch_seen(app);
+                    app.startup_first_launch = false;
+                }
                 if let Err(error) = open_api_key_setup_editor(app, Some(&message)) {
                     app.set_status(format!("Setup editor unavailable: {error}"));
                 }
@@ -531,10 +575,10 @@ pub(super) fn handle_server_message(
                     request_id, input_tokens, output_tokens
                 ),
             );
-            app.turn_input_tokens += input_tokens;
-            app.turn_output_tokens += output_tokens;
-            app.cumulative_input_tokens += input_tokens;
-            app.cumulative_output_tokens += output_tokens;
+            app.tokens.turn_input_tokens += input_tokens;
+            app.tokens.turn_output_tokens += output_tokens;
+            app.tokens.cumulative_input_tokens += input_tokens;
+            app.tokens.cumulative_output_tokens += output_tokens;
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Cost,
                 request_id,

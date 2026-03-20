@@ -51,6 +51,11 @@ fn render_help_markdown() -> String {
     for note in &MANIFEST.notes {
         lines.push(format!("{note}  "));
     }
+    lines.push("Workspace shortcuts: `F1`-`F6` or `Alt+1`-`Alt+6`.  ".to_string());
+    lines.push(
+        "Footer note: `ctx 40% left` means roughly 40% of the current context budget remains.  "
+            .to_string(),
+    );
     lines.push(String::new());
 
     let mut categories = Vec::new();

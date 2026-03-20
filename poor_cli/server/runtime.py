@@ -588,6 +588,7 @@ class PoorCLIServer:
             "shutdown": self.handle_shutdown,
             "chat": self.handle_chat,
             "listProviders": self.handle_list_providers,
+            "getStartupState": self.handle_get_startup_state,
             "switchProvider": self.handle_switch_provider,
             "getConfig": self.handle_get_config,
             "setConfig": self.handle_set_config,
@@ -1260,6 +1261,7 @@ class PoorCLIServer:
 
         config_manager, config = self._ensure_config_loaded()
         result: Dict[str, Any] = {}
+        seen_provider_keys: set[str] = set()
         ollama_models: List[str] = []
         ollama_base_url = self._ollama_base_url()
         ollama_ready = self._is_ollama_reachable(ollama_base_url)
@@ -1269,6 +1271,9 @@ class PoorCLIServer:
         for name, cls in ProviderFactory.list_providers().items():
             info = ProviderFactory.get_provider_info(name) or {}
             provider_key = self._normalize_provider_name(name)
+            if provider_key in seen_provider_keys:
+                continue
+            seen_provider_keys.add(provider_key)
             provider_cfg = config.model.providers.get(provider_key)
             dependency_available = bool(info.get("available", True))
             # Provide default model suggestions per provider
@@ -1303,6 +1308,15 @@ class PoorCLIServer:
                 "models": model_suggestions.get(name, []),
             }
         return result
+
+    async def handle_get_startup_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return configured provider/model before full backend initialization."""
+        del params
+        _, config = self._ensure_config_loaded()
+        return {
+            "provider": str(config.model.provider),
+            "model": str(config.model.model_name),
+        }
 
     async def handle_get_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

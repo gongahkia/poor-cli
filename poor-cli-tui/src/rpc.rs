@@ -212,6 +212,12 @@ pub struct ProviderInfo {
     pub models: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct StartupState {
+    pub provider: String,
+    pub model: String,
+}
+
 // ── Server notification types ────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -1061,6 +1067,12 @@ impl RpcClient {
         } else {
             Ok(vec![])
         }
+    }
+
+    /// Read configured provider/model before full provider initialization.
+    pub fn get_startup_state(&self) -> Result<StartupState, String> {
+        let val = self.call("getStartupState", Value::Object(Default::default()))?;
+        serde_json::from_value(val).map_err(|e| e.to_string())
     }
 
     /// Switch to a different provider/model.

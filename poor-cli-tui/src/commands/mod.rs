@@ -4632,10 +4632,10 @@ Context Window: {max_context} tokens\n\n\
 
         // Use real token counts if available, else estimates
         let (in_tokens, out_tokens) =
-            if app.cumulative_input_tokens > 0 || app.cumulative_output_tokens > 0 {
+            if app.tokens.cumulative_input_tokens > 0 || app.tokens.cumulative_output_tokens > 0 {
                 (
-                    app.cumulative_input_tokens as f64,
-                    app.cumulative_output_tokens as f64,
+                    app.tokens.cumulative_input_tokens as f64,
+                    app.tokens.cumulative_output_tokens as f64,
                 )
             } else {
                 (
@@ -4647,7 +4647,7 @@ Context Window: {max_context} tokens\n\n\
         let output_cost = (out_tokens / 1_000_000.0) * output_per_million;
         let total = input_cost + output_cost;
 
-        let real_label = if app.cumulative_input_tokens > 0 {
+        let real_label = if app.tokens.cumulative_input_tokens > 0 {
             ""
         } else {
             " (estimated)"

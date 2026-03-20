@@ -9,7 +9,7 @@
         "gemini-2.5-pro",
         "gemini-2.5-flash-lite"
       ],
-      "setupHelp": "Gemini is the default provider. Paste a Google AI Studio or Vertex-backed Gemini key here.",
+      "setupHelp": "Paste a Google AI Studio or Vertex-backed Gemini key here if you want Gemini models available.",
       "capabilitySummary": "Streaming, function calling, system instructions, vision, JSON mode"
     },
     "openai": {

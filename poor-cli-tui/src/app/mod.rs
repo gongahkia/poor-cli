@@ -522,6 +522,14 @@ pub enum ProviderSelectPane {
     Models,
 }
 
+#[derive(Default)]
+pub struct TokenTracking {
+    pub turn_input_tokens: u64,
+    pub turn_output_tokens: u64,
+    pub cumulative_input_tokens: u64,
+    pub cumulative_output_tokens: u64,
+}
+
 pub struct App {
     // ── Chat state ───
     pub messages: Vec<ChatMessage>,
@@ -677,10 +685,7 @@ pub struct App {
     pub plan_review_read_only: bool,
 
     // ── Real token tracking (from server) ───
-    pub turn_input_tokens: u64,
-    pub turn_output_tokens: u64,
-    pub cumulative_input_tokens: u64,
-    pub cumulative_output_tokens: u64,
+    pub tokens: TokenTracking,
     pub response_mode: ResponseMode,
     pub theme_mode: ThemeMode,
     pub compact_select_idx: usize,
@@ -821,10 +826,7 @@ impl Default for App {
             plan_prompt_id: String::new(),
             plan_is_execution_gate: false,
             plan_review_read_only: false,
-            turn_input_tokens: 0,
-            turn_output_tokens: 0,
-            cumulative_input_tokens: 0,
-            cumulative_output_tokens: 0,
+            tokens: TokenTracking::default(),
             response_mode: ResponseMode::Rich,
             theme_mode: ThemeMode::Dark,
             compact_select_idx: 0,
@@ -1696,8 +1698,8 @@ impl App {
         self.thinking_buffer.clear();
         self.thinking_active = false;
         self.current_iteration = 0;
-        self.turn_input_tokens = 0;
-        self.turn_output_tokens = 0;
+        self.tokens.turn_input_tokens = 0;
+        self.tokens.turn_output_tokens = 0;
         self.scroll_offset = 0;
     }
 
