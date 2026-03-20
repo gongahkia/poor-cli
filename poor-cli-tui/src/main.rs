@@ -33,12 +33,46 @@ use poor_cli_tui::helpers::{
 };
 use poor_cli_tui::input::{self, InputAction};
 use poor_cli_tui::provider_catalog;
-use poor_cli_tui::rpc::{run_rpc_worker, InitResult, RpcClient, RpcCommand, ServerNotification};
+use poor_cli_tui::rpc::{
+    run_rpc_worker, InitResult, ProviderInfo, RpcClient, RpcCommand, ServerNotification,
+    StartupState,
+};
 use poor_cli_tui::watcher::{self, QaWatchState, WatchMsg, WatchState};
 
+mod backend;
 mod commands;
 mod handler;
 mod multiplayer;
+mod session;
+mod submit;
+
+// re-export submodule items so `use super::*;` in commands/handler/multiplayer still finds them
+#[allow(unused_imports)]
+pub(crate) use session::{
+    BackendLaunchContext, FocusState, ManagedEnvField, PreparedContextRequest, ProfileState,
+    SessionLogWriter, StartupSelection,
+};
+#[allow(unused_imports)]
+pub(crate) use session::{
+    chat_display_kind, managed_env_fields, setup_session_logs, unix_ts_millis, write_session_log,
+};
+#[allow(unused_imports)]
+pub(crate) use backend::{
+    configured_startup_model, normalize_model_name, provider_default_model, provider_is_ready,
+    resolve_startup_selection, server_msg_from_init_result, spawn_backend_worker,
+};
+#[allow(unused_imports)]
+pub(crate) use submit::{
+    apply_response_mode_to_user_input, build_bang_command_prompt, collect_directory_files,
+    dispatch_next_queued_prompt, display_project_path, extract_at_references,
+    find_suffix_matches, format_onboarding_step, handle_submit, is_startup_first_launch,
+    mark_startup_first_launch_seen, onboarding_navigation_hint, onboarding_step_count,
+    parse_bang_command, prepare_context_request, resolve_context_spec, resolve_context_specs,
+    send_chat_request, send_chat_request_with_context, start_startup_onboarding_intro,
+    status_view_has_unconfigured_provider, status_view_ready_provider_count,
+    with_pending_images, BangCommandInput, OnboardingStep, ONBOARDING_STEPS,
+    BANG_COMMAND_MAX_OUTPUT_CHARS, BANG_COMMAND_TIMEOUT_SECS, BANG_COMMAND_RESPONSE_TIMEOUT_SECS,
+};
 
 // ── CLI arguments ────────────────────────────────────────────────────
 
@@ -186,146 +220,6 @@ enum ServerMsg {
     },
 }
 
-#[derive(Clone, Copy)]
-struct ManagedEnvField {
-    label: &'static str,
-    provider: Option<&'static str>,
-    env_var: &'static str,
-    default_model: &'static str,
-    help: &'static str,
-}
-
-fn managed_env_fields() -> [ManagedEnvField; 4] {
-    [
-        ManagedEnvField {
-            label: provider_catalog::display_name("gemini"),
-            provider: Some("gemini"),
-            env_var: provider_catalog::env_var("gemini"),
-            default_model: provider_catalog::default_model("gemini"),
-            help: provider_catalog::setup_help("gemini"),
-        },
-        ManagedEnvField {
-            label: provider_catalog::display_name("openai"),
-            provider: Some("openai"),
-            env_var: provider_catalog::env_var("openai"),
-            default_model: provider_catalog::default_model("openai"),
-            help: provider_catalog::setup_help("openai"),
-        },
-        ManagedEnvField {
-            label: provider_catalog::display_name("anthropic"),
-            provider: Some("anthropic"),
-            env_var: provider_catalog::env_var("anthropic"),
-            default_model: provider_catalog::default_model("anthropic"),
-            help: provider_catalog::setup_help("anthropic"),
-        },
-        ManagedEnvField {
-            label: "Brave",
-            provider: None,
-            env_var: "BRAVE_SEARCH_API_KEY",
-            default_model: "",
-            help: "Optional. Enables Brave-backed web search tooling when configured.",
-        },
-    ]
-}
-
-type SessionLogWriter = Arc<Mutex<fs::File>>;
-
-#[derive(Clone)]
-struct BackendLaunchContext {
-    python_bin: String,
-    cwd: Option<String>,
-    backend_log_path: Option<String>,
-    session_log: Option<SessionLogWriter>,
-}
-
-#[derive(Debug, Clone)]
-struct PreparedContextRequest {
-    message: String,
-    explicit_files: Vec<String>,
-    pinned_files: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct FocusState {
-    goal: String,
-    constraints: String,
-    definition_of_done: String,
-    started_at: String,
-    completed: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ProfileState {
-    name: String,
-}
-
-fn unix_ts_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
-}
-
-fn setup_session_logs(cwd: &str) -> (Option<SessionLogWriter>, Option<PathBuf>, Option<PathBuf>) {
-    let logs_dir = Path::new(cwd).join(".poor-cli").join("logs");
-    if fs::create_dir_all(&logs_dir).is_err() {
-        return (None, None, None);
-    }
-
-    let session_id = format!("{}-{}", unix_ts_millis(), std::process::id());
-    let tui_log_path = logs_dir.join(format!("tui-{session_id}.log"));
-    let backend_log_path = logs_dir.join(format!("backend-{session_id}.log"));
-
-    let writer = match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&tui_log_path)
-    {
-        Ok(file) => Some(Arc::new(Mutex::new(file))),
-        Err(_) => None,
-    };
-
-    // Best-effort touch so the backend log path always exists for discovery.
-    let _ = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&backend_log_path);
-
-    (writer, Some(tui_log_path), Some(backend_log_path))
-}
-
-fn write_session_log(log_writer: Option<&SessionLogWriter>, message: &str) {
-    let Some(writer) = log_writer else {
-        return;
-    };
-    let mut guard = match writer.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let _ = writeln!(&mut *guard, "{} {}", unix_ts_millis(), message);
-    let _ = guard.flush();
-}
-
-fn chat_display_kind(display_message: &str) -> String {
-    let trimmed = display_message.trim();
-    if trimmed.starts_with('/') {
-        let command = trimmed
-            .split_whitespace()
-            .next()
-            .unwrap_or("/unknown")
-            .trim_start_matches('/');
-        if command.is_empty() {
-            "slash:unknown".to_string()
-        } else {
-            format!("slash:{command}")
-        }
-    } else if trimmed.starts_with('!') {
-        "bang".to_string()
-    } else {
-        "chat".to_string()
-    }
-}
-
 // ── Main ─────────────────────────────────────────────────────────────
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -356,408 +250,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Error: {err}");
             std::process::exit(1);
         }
-    }
-}
-
-fn spawn_backend_worker(
-    tx: &mpsc::Sender<ServerMsg>,
-    launch: BackendLaunchContext,
-    server_args: Vec<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    permission_mode: Option<String>,
-) -> mpsc::Sender<RpcCommand> {
-    let (rpc_cmd_tx, rpc_cmd_rx) = mpsc::channel::<RpcCommand>();
-    let tx_init = tx.clone();
-    let tx_notif = tx.clone();
-    let log_ctx = launch.session_log.clone();
-    let mode_label = if server_args.is_empty() {
-        "local".to_string()
-    } else {
-        format!("bridge args={}", server_args.join(" "))
-    };
-
-    thread::spawn(move || {
-        write_session_log(
-            log_ctx.as_ref(),
-            &format!("backend_spawn_attempt mode={mode_label}"),
-        );
-        match RpcClient::spawn_with_notifications_args(
-            &launch.python_bin,
-            launch.cwd.as_deref(),
-            &server_args,
-            launch.backend_log_path.as_deref(),
-        ) {
-            Ok((client, notification_rx)) => {
-                write_session_log(log_ctx.as_ref(), "backend_spawn_ok");
-                let notification_log_ctx = log_ctx.clone();
-
-                thread::spawn(move || {
-                    while let Ok(notif) = notification_rx.recv() {
-                        let msg = match notif {
-                            ServerNotification::ThinkingChunk { request_id, chunk } => {
-                                ServerMsg::ThinkingChunk { request_id, chunk }
-                            }
-                            ServerNotification::StreamChunk {
-                                request_id,
-                                chunk,
-                                done,
-                                reason,
-                                ..
-                            } => {
-                                if done {
-                                    let reason_label = reason.as_deref().unwrap_or("complete");
-                                    write_session_log(
-                                        notification_log_ctx.as_ref(),
-                                        &format!(
-                                            "notif_stream_done request_id={} reason={reason_label}",
-                                            request_id
-                                        ),
-                                    );
-                                } else if !chunk.is_empty() {
-                                    write_session_log(
-                                        notification_log_ctx.as_ref(),
-                                        &format!(
-                                            "notif_stream_chunk request_id={} chars={}",
-                                            request_id,
-                                            chunk.chars().count()
-                                        ),
-                                    );
-                                }
-                                ServerMsg::StreamChunk {
-                                    request_id,
-                                    chunk,
-                                    done,
-                                    reason,
-                                }
-                            }
-                            ServerNotification::ToolEvent {
-                                request_id,
-                                event_type,
-                                tool_name,
-                                tool_args,
-                                tool_result,
-                                diff,
-                                paths,
-                                checkpoint_id,
-                                changed,
-                                message,
-                                iteration_index,
-                                iteration_cap,
-                                ..
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_tool_event request_id={} type={} tool={} iter={}/{}",
-                                        request_id,
-                                        event_type,
-                                        tool_name,
-                                        iteration_index,
-                                        iteration_cap
-                                    ),
-                                );
-                                ServerMsg::ToolEvent {
-                                    request_id,
-                                    event_type,
-                                    tool_name,
-                                    tool_args,
-                                    tool_result,
-                                    diff,
-                                    paths,
-                                    checkpoint_id,
-                                    changed,
-                                    message,
-                                    iteration_index,
-                                    iteration_cap,
-                                }
-                            }
-                            ServerNotification::PermissionRequest {
-                                request_id,
-                                tool_name,
-                                tool_args,
-                                prompt_id,
-                                operation,
-                                paths,
-                                diff,
-                                checkpoint_id,
-                                changed,
-                                message,
-                                ..
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_permission_request request_id={} tool={} prompt_id={}",
-                                        request_id, tool_name, prompt_id
-                                    ),
-                                );
-                                ServerMsg::PermissionRequest {
-                                    request_id,
-                                    tool_name,
-                                    tool_args,
-                                    prompt_id,
-                                    operation,
-                                    paths,
-                                    diff,
-                                    checkpoint_id,
-                                    changed,
-                                    message,
-                                }
-                            }
-                            ServerNotification::PlanRequest {
-                                request_id,
-                                prompt_id,
-                                summary,
-                                original_request,
-                                steps,
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_plan_request request_id={} prompt_id={} steps={}",
-                                        request_id,
-                                        prompt_id,
-                                        steps.len()
-                                    ),
-                                );
-                                ServerMsg::PlanRequest {
-                                    request_id,
-                                    prompt_id,
-                                    summary,
-                                    original_request,
-                                    steps,
-                                }
-                            }
-                            ServerNotification::Progress {
-                                request_id,
-                                phase,
-                                message,
-                                iteration_index,
-                                iteration_cap,
-                                ..
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_progress request_id={} phase={} iter={}/{}",
-                                        request_id, phase, iteration_index, iteration_cap
-                                    ),
-                                );
-                                ServerMsg::Progress {
-                                    request_id,
-                                    phase,
-                                    message,
-                                    iteration_index,
-                                    iteration_cap,
-                                }
-                            }
-                            ServerNotification::CostUpdate {
-                                request_id,
-                                input_tokens,
-                                output_tokens,
-                                ..
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_cost_update request_id={} input_tokens={} output_tokens={}",
-                                        request_id, input_tokens, output_tokens
-                                    ),
-                                );
-                                ServerMsg::CostUpdate {
-                                    request_id,
-                                    input_tokens,
-                                    output_tokens,
-                                }
-                            }
-                            ServerNotification::RoomEvent {
-                                room,
-                                mode,
-                                event_type,
-                                actor,
-                                request_id,
-                                queue_depth,
-                                member_count,
-                                active_connection_id,
-                                lobby_enabled,
-                                preset,
-                                agenda_summary,
-                                members,
-                                ..
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_room_event room={} type={} actor={} request_id={}",
-                                        room, event_type, actor, request_id
-                                    ),
-                                );
-                                ServerMsg::RoomEvent {
-                                    room,
-                                    mode,
-                                    event_type,
-                                    actor,
-                                    request_id,
-                                    queue_depth,
-                                    member_count,
-                                    active_connection_id,
-                                    lobby_enabled,
-                                    preset,
-                                    agenda_summary,
-                                    members,
-                                }
-                            }
-                            ServerNotification::MemberRoleUpdated {
-                                room,
-                                connection_id,
-                                role,
-                                ui_role,
-                            } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!(
-                                        "notif_member_role_updated room={} connection_id={} role={}",
-                                        room, connection_id, role
-                                    ),
-                                );
-                                ServerMsg::MemberRoleUpdated {
-                                    room,
-                                    connection_id,
-                                    role,
-                                    ui_role,
-                                }
-                            }
-                            ServerNotification::Suggestion { sender, text, .. } => {
-                                write_session_log(
-                                    notification_log_ctx.as_ref(),
-                                    &format!("notif_suggestion sender={}", sender),
-                                );
-                                ServerMsg::Suggestion { sender, text }
-                            }
-                        };
-                        if tx_notif.send(msg).is_err() {
-                            write_session_log(
-                                notification_log_ctx.as_ref(),
-                                "notification_forward_channel_closed",
-                            );
-                            break;
-                        }
-                    }
-                    write_session_log(notification_log_ctx.as_ref(), "notification_reader_stopped");
-                });
-
-                match client.initialize(
-                    provider.as_deref(),
-                    model.as_deref(),
-                    None,
-                    permission_mode.as_deref(),
-                ) {
-                    Ok(init) => {
-                        write_session_log(log_ctx.as_ref(), "backend_initialize_ok");
-                        let _ = tx_init.send(server_msg_from_init_result(init, &provider, &model));
-                        run_rpc_worker(client, rpc_cmd_rx);
-                    }
-                    Err(e) => {
-                        write_session_log(
-                            log_ctx.as_ref(),
-                            &format!("backend_initialize_error {e}"),
-                        );
-                        let _ = tx_init.send(ServerMsg::Error {
-                            message: format!("Initialization failed: {e}"),
-                        });
-                        run_rpc_worker(client, rpc_cmd_rx);
-                    }
-                }
-            }
-            Err(e) => {
-                write_session_log(log_ctx.as_ref(), &format!("backend_spawn_error {e}"));
-                let _ = tx_init.send(ServerMsg::Error {
-                    message: format!("Failed to start server: {e}"),
-                });
-            }
-        }
-    });
-
-    rpc_cmd_tx
-}
-
-fn server_msg_from_init_result(
-    init: InitResult,
-    provider_fallback: &Option<String>,
-    model_fallback: &Option<String>,
-) -> ServerMsg {
-    let (provider, model) = if let Some(caps) = &init.capabilities {
-        let provider = caps
-            .pointer("/providerInfo/name")
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| provider_fallback.clone().unwrap_or_else(|| "gemini".into()));
-        let model = caps
-            .pointer("/providerInfo/model")
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| {
-                model_fallback
-                    .clone()
-                    .unwrap_or_else(|| provider_catalog::default_model("gemini").into())
-            });
-        (provider, model)
-    } else {
-        (
-            provider_fallback.clone().unwrap_or_else(|| "gemini".into()),
-            model_fallback
-                .clone()
-                .unwrap_or_else(|| provider_catalog::default_model("gemini").into()),
-        )
-    };
-
-    ServerMsg::Initialized {
-        provider,
-        model,
-        version: init.version.unwrap_or_else(|| "0.4.0".into()),
-        multiplayer_room: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/room"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
-        multiplayer_role: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/role"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
-        multiplayer_ui_role: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/uiRole"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
-        multiplayer_mode: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/mode"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
-        multiplayer_connection_id: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/connectionId"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
-        multiplayer_display_name: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/displayName"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
-        multiplayer_approval_state: init
-            .capabilities
-            .as_ref()
-            .and_then(|caps| caps.pointer("/multiplayer/approvalState"))
-            .and_then(|value| value.as_str())
-            .map(|value| value.to_string()),
     }
 }
 
@@ -824,10 +316,9 @@ fn run_app(
         permission_mode.clone(),
     ));
 
-    app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
-    app.model_name = cli
-        .model
-        .unwrap_or_else(|| provider_catalog::default_model("gemini").into());
+    app.provider_name = cli.provider.unwrap_or_else(|| "select provider".into());
+    app.model_name = cli.model.unwrap_or_default();
+    app.startup_first_launch = is_startup_first_launch(&app);
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
         let _ = apply_execution_profile(&mut app, &rpc_cmd_tx.borrow(), &saved_profile.name, false);
@@ -1375,870 +866,6 @@ fn run_app(
     let _ = rpc_cmd_tx.borrow().send(RpcCommand::Shutdown);
     write_session_log(session_log.as_ref(), "tui_session_end");
     Ok(app.session_summary_text())
-}
-
-// ── Submit handler ───────────────────────────────────────────────────
-
-fn handle_submit(
-    app: &mut App,
-    tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mut mpsc::Sender<RpcCommand>,
-    launch: &BackendLaunchContext,
-    cancel_token: &Arc<AtomicBool>,
-    watch_state: &mut WatchState,
-    qa_watch_state: &mut QaWatchState,
-    text: &str,
-) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    // auto-queue non-slash input while AI is working
-    if app.waiting && !trimmed.starts_with('/') && !trimmed.starts_with('!') {
-        app.prompt_queue.push_back(QueuedPrompt::user(trimmed));
-        app.sync_queue_selection();
-        app.set_status(format!(
-            "Queued prompt ({} in queue)",
-            app.prompt_queue.len()
-        ));
-        return false;
-    }
-
-    let submit_kind = if trimmed.starts_with('/') {
-        "slash"
-    } else if trimmed.starts_with('!') {
-        "bang"
-    } else {
-        "chat"
-    };
-    write_session_log(
-        launch.session_log.as_ref(),
-        &format!("submit_dispatch kind={submit_kind} chars={}", trimmed.len()),
-    );
-
-    // join wizard is now handled via AppMode::JoinWizard popup (see input.rs)
-
-    if let Some(prompt_name) = app.pending_prompt_save_name.clone() {
-        if !trimmed.starts_with('/') {
-            app.pending_prompt_save_name = None;
-            match save_prompt(app, &prompt_name, trimmed) {
-                Ok(path) => app.set_status(format!("Saved prompt: {}", path.display())),
-                Err(e) => app.push_message(ChatMessage::error(e)),
-            }
-            return false;
-        }
-
-        app.pending_prompt_save_name = None;
-        app.set_status("Prompt capture cancelled");
-    }
-
-    if trimmed.starts_with('/') {
-        let slash_command = trimmed
-            .split_whitespace()
-            .next()
-            .unwrap_or("/unknown")
-            .trim_start_matches('/');
-        write_session_log(
-            launch.session_log.as_ref(),
-            &format!("slash_command_dispatch command={slash_command}"),
-        );
-        return commands::handle_slash_command(
-            app,
-            tx,
-            rpc_cmd_tx,
-            launch,
-            cancel_token,
-            watch_state,
-            qa_watch_state,
-            trimmed,
-        );
-    }
-
-    if let Some(bang_input) = parse_bang_command(trimmed) {
-        match rpc_execute_command_with_timeout_blocking(
-            rpc_cmd_tx,
-            &bang_input.command,
-            Some(BANG_COMMAND_TIMEOUT_SECS),
-            BANG_COMMAND_RESPONSE_TIMEOUT_SECS,
-        ) {
-            Ok(output) => {
-                app.last_command_output = Some(output.clone());
-                let command_preview = truncate_block(&output, 1200);
-                app.push_message(ChatMessage::system(format!(
-                    "**Bash command executed:** `{}`\n```text\n{command_preview}\n```",
-                    bang_input.command
-                )));
-
-                let prompt_from_bash = build_bang_command_prompt(
-                    &bang_input.command,
-                    &output,
-                    bang_input.question.as_deref(),
-                );
-                let backend_message = with_pending_images(app, &prompt_from_bash);
-                let backend_message =
-                    apply_response_mode_to_user_input(app.response_mode, &backend_message);
-                send_chat_request(
-                    app,
-                    tx,
-                    rpc_cmd_tx,
-                    cancel_token,
-                    backend_message,
-                    trimmed.to_string(),
-                    launch.session_log.as_ref(),
-                );
-            }
-            Err(e) => app.push_message(ChatMessage::error(format!(
-                "Bash command failed: {e}\nTip: use `!<command> | <question>` to ask about command output, or `/run <command>` for raw output only."
-            ))),
-        }
-        return false;
-    }
-
-    refresh_context_budget_state(app);
-    let prepared_request = match prepare_context_request(app, trimmed) {
-        Ok(request) => request,
-        Err(error_message) => {
-            app.push_message(ChatMessage::error(error_message));
-            return false;
-        }
-    };
-    let backend_message = with_pending_images(app, &prepared_request.message);
-    let backend_message = apply_response_mode_to_user_input(app.response_mode, &backend_message);
-    send_chat_request_with_context(
-        app,
-        tx,
-        rpc_cmd_tx,
-        cancel_token,
-        backend_message,
-        prepared_request.explicit_files,
-        prepared_request.pinned_files,
-        trimmed.to_string(),
-        launch.session_log.as_ref(),
-    );
-    false
-}
-
-fn send_chat_request(
-    app: &mut App,
-    tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
-    cancel_token: &Arc<AtomicBool>,
-    backend_message: String,
-    display_message: String,
-    session_log: Option<&SessionLogWriter>,
-) {
-    send_chat_request_with_context(
-        app,
-        tx,
-        rpc_cmd_tx,
-        cancel_token,
-        backend_message,
-        Vec::new(),
-        Vec::new(),
-        display_message,
-        session_log,
-    );
-}
-
-fn send_chat_request_with_context(
-    app: &mut App,
-    tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
-    cancel_token: &Arc<AtomicBool>,
-    backend_message: String,
-    explicit_context_files: Vec<String>,
-    pinned_context_files: Vec<String>,
-    display_message: String,
-    session_log: Option<&SessionLogWriter>,
-) {
-    const STREAM_REPLY_TIMEOUT_SECS: u64 = 130;
-
-    let display_kind = chat_display_kind(&display_message);
-    let display_char_count = display_message.chars().count();
-    let backend_char_count = backend_message.chars().count();
-
-    cancel_token.store(false, Ordering::SeqCst);
-    app.remember_recent_prompt(&display_message);
-    app.record_user_input(&display_message);
-    app.push_message(ChatMessage::user(display_message));
-    app.start_waiting();
-    app.turn_input_tokens = 0;
-    app.turn_output_tokens = 0;
-
-    // Use streaming endpoint — notifications arrive via the notification channel
-    let request_id = app.next_request_id();
-    app.active_request_id = request_id.clone();
-    app.active_request_started_at = Some(std::time::Instant::now());
-    write_session_log(
-        session_log,
-        &format!(
-            "chat_request_start request_id={} kind={} display_chars={} backend_chars={}",
-            request_id, display_kind, display_char_count, backend_char_count
-        ),
-    );
-    let tx2 = tx.clone();
-    let cancel = cancel_token.clone();
-    let request_id_for_thread = request_id.clone();
-    let log_ctx = session_log.cloned();
-    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-    if rpc_cmd_tx
-        .send(RpcCommand::ChatStreaming {
-            message: backend_message,
-            request_id,
-            context_files: explicit_context_files,
-            pinned_context_files,
-            context_budget_tokens: Some(app.context_budget_tokens),
-            reply: reply_tx,
-        })
-        .is_err()
-    {
-        app.stop_waiting();
-        app.active_request_id.clear();
-        app.active_request_started_at = None;
-        write_session_log(
-            session_log,
-            "chat_request_send_error reason=rpc_worker_unavailable",
-        );
-        app.push_message(ChatMessage::error(
-            "Failed to send request: RPC worker unavailable",
-        ));
-        return;
-    }
-
-    thread::spawn(move || {
-        match reply_rx.recv_timeout(Duration::from_secs(STREAM_REPLY_TIMEOUT_SECS)) {
-            Ok(Ok(_content)) => {
-                // Streaming already delivered chunks via notifications.
-                // The final result is ignored since finalize_streaming handles it.
-                write_session_log(
-                    log_ctx.as_ref(),
-                    &format!(
-                        "chat_request_rpc_result request_id={} status=ok",
-                        request_id_for_thread
-                    ),
-                );
-            }
-            Ok(Err(e)) => {
-                write_session_log(
-                    log_ctx.as_ref(),
-                    &format!(
-                        "chat_request_rpc_result request_id={} status=error error={}",
-                        request_id_for_thread,
-                        truncate_line(&e.replace('\n', " "), 180)
-                    ),
-                );
-                if !cancel.load(Ordering::SeqCst) {
-                    let _ = tx2.send(ServerMsg::Error { message: e });
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                write_session_log(
-                    log_ctx.as_ref(),
-                    &format!(
-                        "chat_request_rpc_result request_id={} status=timeout",
-                        request_id_for_thread
-                    ),
-                );
-                if !cancel.load(Ordering::SeqCst) {
-                    let _ = tx2.send(ServerMsg::Error {
-                        message: "Timed out waiting for backend response".into(),
-                    });
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                write_session_log(
-                    log_ctx.as_ref(),
-                    &format!(
-                        "chat_request_rpc_result request_id={} status=disconnected",
-                        request_id_for_thread
-                    ),
-                );
-                if !cancel.load(Ordering::SeqCst) {
-                    let _ = tx2.send(ServerMsg::Error {
-                        message: "RPC worker reply channel disconnected".into(),
-                    });
-                }
-            }
-        }
-    });
-}
-
-fn dispatch_next_queued_prompt(
-    app: &mut App,
-    tx: &mpsc::Sender<ServerMsg>,
-    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
-    cancel_token: &Arc<AtomicBool>,
-    session_log: Option<&SessionLogWriter>,
-) {
-    if app.waiting || app.prompt_queue.is_empty() || app.queue_paused || !app.plan_steps.is_empty()
-    {
-        return;
-    }
-    if let Some(next_prompt) = app.prompt_queue.pop_front() {
-        app.sync_queue_selection();
-        let remaining = app.prompt_queue.len();
-        app.push_message(ChatMessage::system(format!(
-            "[queue] auto-sending next {} prompt ({remaining} remaining)",
-            next_prompt.source
-        )));
-        send_chat_request(
-            app,
-            tx,
-            rpc_cmd_tx,
-            cancel_token,
-            next_prompt.backend,
-            next_prompt.display,
-            session_log,
-        );
-    }
-}
-
-const MAX_CONTEXT_FILES_PER_REQUEST: usize = 12;
-
-fn prepare_context_request(app: &mut App, message: &str) -> Result<PreparedContextRequest, String> {
-    let inline_specs = extract_at_references(message)?;
-
-    let mut seen_paths = HashSet::<String>::new();
-    let mut unresolved_refs = Vec::<String>::new();
-    let mut ambiguous_refs = Vec::<String>::new();
-    let mut explicit_paths = Vec::<PathBuf>::new();
-
-    for spec in &inline_specs {
-        let matches = resolve_context_spec(app, spec);
-        if matches.is_empty() {
-            unresolved_refs.push(spec.clone());
-            continue;
-        }
-
-        if matches.len() > 1 {
-            let preview = matches
-                .iter()
-                .take(3)
-                .map(|path| format!("`{}`", display_project_path(app, path)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            ambiguous_refs.push(format!("`{spec}` -> {preview}"));
-            continue;
-        }
-
-        let path = matches[0].clone();
-        let key = path.to_string_lossy().to_string();
-        if seen_paths.insert(key) {
-            explicit_paths.push(path);
-        }
-    }
-
-    if !unresolved_refs.is_empty() || !ambiguous_refs.is_empty() {
-        let mut lines =
-            vec!["Cannot send message because one or more `@` references are invalid.".to_string()];
-        if !unresolved_refs.is_empty() {
-            lines.push(format!(
-                "Unresolved: {}",
-                unresolved_refs
-                    .iter()
-                    .map(|spec| format!("`@{spec}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-        if !ambiguous_refs.is_empty() {
-            lines.push(format!("Ambiguous: {}", ambiguous_refs.join(" ; ")));
-            lines.push(
-                "Use a more specific path (or quote it) so each `@` maps to exactly one file."
-                    .to_string(),
-            );
-        }
-        lines
-            .push("Tip: paths with spaces must be quoted like `@\"docs/My File.md\"`.".to_string());
-        return Err(lines.join("\n"));
-    }
-
-    let mut pinned_paths = Vec::<PathBuf>::new();
-    if !app.pinned_context_files.is_empty() {
-        let remaining = MAX_CONTEXT_FILES_PER_REQUEST.saturating_sub(explicit_paths.len());
-        let pinned_resolved = resolve_context_specs(app, &app.pinned_context_files, remaining);
-        for path in pinned_resolved {
-            let key = path.to_string_lossy().to_string();
-            if seen_paths.insert(key) {
-                pinned_paths.push(path);
-            }
-        }
-    }
-
-    if explicit_paths.is_empty() && pinned_paths.is_empty() {
-        return Ok(PreparedContextRequest {
-            message: message.to_string(),
-            explicit_files: Vec::new(),
-            pinned_files: Vec::new(),
-        });
-    }
-
-    let attached = explicit_paths
-        .iter()
-        .chain(pinned_paths.iter())
-        .map(|path| display_project_path(app, path))
-        .collect::<Vec<_>>();
-    let attached_summary = attached
-        .iter()
-        .take(3)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(", ");
-    let extra = attached.len().saturating_sub(3);
-    let source_label = if !inline_specs.is_empty() && !pinned_paths.is_empty() {
-        "@ references and pinned files"
-    } else if !inline_specs.is_empty() {
-        "@ references"
-    } else {
-        "pinned files"
-    };
-    if extra > 0 {
-        app.set_status(format!(
-            "Attached {} {} ({attached_summary}, +{extra} more)",
-            attached.len(),
-            source_label
-        ));
-    } else {
-        app.set_status(format!(
-            "Attached {} {} ({attached_summary})",
-            attached.len(),
-            source_label
-        ));
-    }
-
-    Ok(PreparedContextRequest {
-        message: message.to_string(),
-        explicit_files: explicit_paths
-            .into_iter()
-            .map(|path| path.to_string_lossy().to_string())
-            .collect(),
-        pinned_files: pinned_paths
-            .into_iter()
-            .map(|path| path.to_string_lossy().to_string())
-            .collect(),
-    })
-}
-
-fn extract_at_references(message: &str) -> Result<Vec<String>, String> {
-    let mut seen = HashSet::new();
-    let mut refs = Vec::new();
-    let mut parse_errors = Vec::new();
-    let chars: Vec<char> = message.chars().collect();
-    let mut idx = 0usize;
-
-    while idx < chars.len() {
-        if chars[idx] != '@' {
-            idx += 1;
-            continue;
-        }
-
-        if !is_reference_boundary(idx.checked_sub(1).and_then(|i| chars.get(i).copied())) {
-            idx += 1;
-            continue;
-        }
-
-        let next_idx = idx + 1;
-        if next_idx >= chars.len() || chars[next_idx].is_whitespace() {
-            idx += 1;
-            continue;
-        }
-
-        if chars[next_idx] == '"' || chars[next_idx] == '\'' {
-            let quote = chars[next_idx];
-            let mut end_idx = next_idx + 1;
-            while end_idx < chars.len() && chars[end_idx] != quote {
-                end_idx += 1;
-            }
-            if end_idx >= chars.len() {
-                parse_errors.push("unterminated quoted @ reference".to_string());
-                break;
-            }
-
-            let spec = chars[next_idx + 1..end_idx]
-                .iter()
-                .collect::<String>()
-                .trim()
-                .to_string();
-            if spec.is_empty() {
-                parse_errors.push("empty quoted @ reference".to_string());
-            } else if seen.insert(spec.clone()) {
-                refs.push(spec);
-            }
-
-            idx = end_idx + 1;
-            continue;
-        }
-
-        let mut end_idx = next_idx;
-        while end_idx < chars.len() && is_unquoted_reference_char(chars[end_idx]) {
-            end_idx += 1;
-        }
-
-        let spec = chars[next_idx..end_idx]
-            .iter()
-            .collect::<String>()
-            .trim()
-            .to_string();
-        if !spec.is_empty() && seen.insert(spec.clone()) {
-            refs.push(spec);
-        }
-
-        idx = if end_idx > idx { end_idx } else { idx + 1 };
-    }
-
-    if parse_errors.is_empty() {
-        Ok(refs)
-    } else {
-        Err(format!(
-            "Invalid @ reference syntax: {}",
-            parse_errors.join("; ")
-        ))
-    }
-}
-
-fn is_reference_boundary(previous: Option<char>) -> bool {
-    match previous {
-        None => true,
-        Some(ch) => ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '<'),
-    }
-}
-
-fn is_unquoted_reference_char(ch: char) -> bool {
-    !ch.is_whitespace()
-        && !matches!(
-            ch,
-            '"' | '\'' | '`' | ',' | ';' | ':' | ')' | ']' | '}' | '(' | '[' | '{'
-        )
-}
-
-fn resolve_context_specs(app: &App, specs: &[String], limit: usize) -> Vec<PathBuf> {
-    if limit == 0 {
-        return Vec::new();
-    }
-    let mut out = Vec::new();
-    let mut seen = HashSet::new();
-
-    for spec in specs {
-        for path in resolve_context_spec(app, spec) {
-            let key = path.to_string_lossy().to_string();
-            if seen.insert(key) {
-                out.push(path);
-            }
-            if out.len() >= limit {
-                return out;
-            }
-        }
-    }
-
-    out
-}
-
-fn resolve_context_spec(app: &App, spec: &str) -> Vec<PathBuf> {
-    let cwd = Path::new(&app.cwd);
-    let raw_path = PathBuf::from(spec);
-    let candidate = if raw_path.is_absolute() {
-        raw_path
-    } else {
-        cwd.join(raw_path)
-    };
-
-    if candidate.is_file() {
-        return vec![candidate];
-    }
-
-    if candidate.is_dir() {
-        return collect_directory_files(&candidate, 8);
-    }
-
-    find_suffix_matches(cwd, spec, 5)
-}
-
-fn collect_directory_files(root: &Path, limit: usize) -> Vec<PathBuf> {
-    let mut queue = VecDeque::from([root.to_path_buf()]);
-    let mut files = Vec::new();
-
-    while let Some(dir) = queue.pop_front() {
-        let entries = match fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-
-        let mut sorted_entries = entries.flatten().collect::<Vec<_>>();
-        sorted_entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
-
-        for entry in sorted_entries {
-            let path = entry.path();
-            if path.is_dir() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if should_skip_dir(&name) {
-                    continue;
-                }
-                queue.push_back(path);
-                continue;
-            }
-
-            if path.is_file() {
-                files.push(path);
-                if files.len() >= limit {
-                    return files;
-                }
-            }
-        }
-    }
-
-    files
-}
-
-fn find_suffix_matches(root: &Path, suffix: &str, limit: usize) -> Vec<PathBuf> {
-    let mut queue = VecDeque::from([root.to_path_buf()]);
-    let mut matches = Vec::new();
-    let normalized = suffix.trim_start_matches("./");
-
-    while let Some(dir) = queue.pop_front() {
-        let entries = match fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-
-        let mut sorted_entries = entries.flatten().collect::<Vec<_>>();
-        sorted_entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
-
-        for entry in sorted_entries {
-            let path = entry.path();
-            if path.is_dir() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if should_skip_dir(&name) {
-                    continue;
-                }
-                queue.push_back(path);
-                continue;
-            }
-
-            if !path.is_file() {
-                continue;
-            }
-
-            let rel = path
-                .strip_prefix(root)
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.to_string_lossy().to_string());
-            if rel == normalized || rel.ends_with(normalized) {
-                matches.push(path);
-                if matches.len() >= limit {
-                    return matches;
-                }
-            }
-        }
-    }
-
-    matches
-}
-
-fn display_project_path(app: &App, path: &Path) -> String {
-    let cwd = Path::new(&app.cwd);
-    path.strip_prefix(cwd)
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string_lossy().to_string())
-}
-
-fn with_pending_images(app: &mut App, message: &str) -> String {
-    if app.pending_images.is_empty() {
-        return message.to_string();
-    }
-
-    let queued = std::mem::take(&mut app.pending_images);
-    let attachment_lines = queued
-        .iter()
-        .map(|p| format!("- {p}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!(
-        "{message}\n\nAttached image files (paths):\n{attachment_lines}\n\nUse these images as context when possible."
-    )
-}
-
-fn apply_response_mode_to_user_input(mode: ResponseMode, user_input: &str) -> String {
-    let mode_instruction = match mode {
-        ResponseMode::Poor => {
-            "Response mode is poor. Keep the answer as short as possible while still correct. \
-Use minimal tokens and avoid extra explanation unless explicitly requested."
-        }
-        ResponseMode::Rich => {
-            "Response mode is rich. Prioritize quality, completeness, and clear structure. \
-Cover important reasoning and tradeoffs when relevant."
-        }
-    };
-
-    format!("{mode_instruction}\n\nUser request:\n{user_input}")
-}
-
-const BANG_COMMAND_MAX_OUTPUT_CHARS: usize = 16_000;
-const BANG_COMMAND_TIMEOUT_SECS: u64 = 120;
-const BANG_COMMAND_RESPONSE_TIMEOUT_SECS: u64 = 150;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BangCommandInput {
-    command: String,
-    question: Option<String>,
-}
-
-fn parse_bang_command(input: &str) -> Option<BangCommandInput> {
-    let trimmed = input.trim();
-    let payload = trimmed.strip_prefix('!')?.trim();
-    if payload.is_empty() {
-        None
-    } else {
-        let (command_raw, question_raw) = if let Some((command, question)) = payload.split_once('|')
-        {
-            (command.trim(), Some(question.trim()))
-        } else {
-            (payload, None)
-        };
-
-        if command_raw.is_empty() {
-            return None;
-        }
-
-        let question = question_raw
-            .filter(|value| !value.is_empty())
-            .map(|value| value.to_string());
-
-        Some(BangCommandInput {
-            command: command_raw.to_string(),
-            question,
-        })
-    }
-}
-
-fn build_bang_command_prompt(command: &str, output: &str, question: Option<&str>) -> String {
-    let content = if output.trim().is_empty() {
-        "(command produced no output)"
-    } else {
-        output
-    };
-
-    let mut prompt = format!(
-        "I ran a local shell command and want help based on its output.\n\n\
-Command: `{command}`\n\n\
-Output:\n```text\n{}\n```",
-        truncate_block(content, BANG_COMMAND_MAX_OUTPUT_CHARS)
-    );
-
-    if let Some(user_question) = question.filter(|value| !value.trim().is_empty()) {
-        prompt.push_str(&format!("\n\nUser question: {user_question}"));
-    }
-
-    prompt
-}
-
-struct OnboardingStep {
-    title: &'static str,
-    objective: &'static str,
-    commands: &'static [&'static str],
-    try_now: &'static str,
-}
-
-const ONBOARDING_STEPS: &[OnboardingStep] = &[
-    OnboardingStep {
-        title: "Get Oriented",
-        objective:
-            "Start with visibility into your session and where to find command docs quickly.",
-        commands: &[
-            "/help",
-            "/status",
-            "/bootstrap",
-            "/profile status",
-            "/search <term>",
-        ],
-        try_now: "/bootstrap",
-    },
-    OnboardingStep {
-        title: "Choose Provider + Model",
-        objective: "Inspect your active model, switch when needed, and configure provider auth without leaving the TUI.",
-        commands: &["/setup", "/provider", "/providers", "/switch", "/api-key status"],
-        try_now: "/setup",
-    },
-    OnboardingStep {
-        title: "Run Local Services",
-        objective: "Control local dependencies from the TUI instead of shelling out.",
-        commands: &[
-            "/service status",
-            "/service start <name> <command...>",
-            "/service logs <name> [lines]",
-            "/ollama start",
-        ],
-        try_now: "/service status",
-    },
-    OnboardingStep {
-        title: "Run Collaboration Sessions",
-        objective: "Start a mob or review room, invite collaborators, and keep the session moving with handoff and agenda commands.",
-        commands: &[
-            "/collab start mob",
-            "/collab join <invite-code>",
-            "/collab members",
-            "/collab handoff next",
-            "/collab agenda add <text>",
-        ],
-        try_now: "/collab start mob",
-    },
-    OnboardingStep {
-        title: "Daily Coding Workflow",
-        objective: "Use these commands for context, review, tests, and quick rollback checkpoints.",
-        commands: &[
-            "/add <path>",
-            "/files",
-            "/review [file]",
-            "/test <file>",
-            "/checkpoint",
-            "/rewind [id|last]",
-        ],
-        try_now: "/files",
-    },
-];
-
-fn onboarding_step_count() -> usize {
-    ONBOARDING_STEPS.len()
-}
-
-fn onboarding_navigation_hint() -> &'static str {
-    "Navigation: `/onboarding next` • `/onboarding prev` • `/onboarding <step>` • `/onboarding exit`"
-}
-
-fn format_onboarding_step(step_index: usize) -> String {
-    if ONBOARDING_STEPS.is_empty() {
-        return "Onboarding is currently unavailable.".to_string();
-    }
-
-    let total = onboarding_step_count();
-    let idx = step_index.min(total.saturating_sub(1));
-    let step = &ONBOARDING_STEPS[idx];
-
-    let mut lines = vec![
-        format!("**Onboarding {}/{}: {}**", idx + 1, total, step.title),
-        String::new(),
-        step.objective.to_string(),
-        String::new(),
-        "**Core commands**".to_string(),
-    ];
-
-    lines.extend(step.commands.iter().map(|cmd| format!("- `{cmd}`")));
-    lines.push(String::new());
-    lines.push(format!("Try now: `{}`", step.try_now));
-
-    if idx + 1 == total {
-        lines.push(
-            "You reached the final step. Run `/onboarding exit` to end this onboarding session."
-                .to_string(),
-        );
-    }
-
-    lines.push(String::new());
-    lines.push(onboarding_navigation_hint().to_string());
-    lines.join("\n")
 }
 
 fn watch_msg_sender(tx: &mpsc::Sender<ServerMsg>) -> mpsc::Sender<WatchMsg> {
@@ -6028,6 +4655,111 @@ CUSTOM_FLAG=yes\n";
 
         assert_eq!(provider, "openai");
         assert_eq!(model, provider_catalog::default_model("openai"));
+    }
+
+    #[test]
+    fn startup_selection_prefers_configured_ready_provider() {
+        let selection = resolve_startup_selection(
+            None,
+            None,
+            Some(&StartupState {
+                provider: "openai".to_string(),
+                model: "gpt-5.1".to_string(),
+            }),
+            &[
+                ProviderInfo {
+                    name: "openai".to_string(),
+                    available: true,
+                    ready: true,
+                    status_label: "API key configured".to_string(),
+                    models: vec!["gpt-5.1".to_string()],
+                },
+                ProviderInfo {
+                    name: "anthropic".to_string(),
+                    available: true,
+                    ready: true,
+                    status_label: "API key configured".to_string(),
+                    models: vec!["claude-sonnet-4-20250514".to_string()],
+                },
+            ],
+        );
+
+        assert_eq!(selection.provider.as_deref(), Some("openai"));
+        assert_eq!(selection.model.as_deref(), Some("gpt-5.1"));
+    }
+
+    #[test]
+    fn startup_selection_ignores_empty_configured_model() {
+        let selection = resolve_startup_selection(
+            None,
+            Some("   ".to_string()),
+            Some(&StartupState {
+                provider: "openai".to_string(),
+                model: String::new(),
+            }),
+            &[ProviderInfo {
+                name: "openai".to_string(),
+                available: true,
+                ready: true,
+                status_label: "API key configured".to_string(),
+                models: vec!["gpt-5.1".to_string()],
+            }],
+        );
+
+        assert_eq!(selection.provider.as_deref(), Some("openai"));
+        assert_eq!(selection.model.as_deref(), Some("gpt-5.1"));
+    }
+
+    #[test]
+    fn startup_selection_falls_back_to_first_ready_provider_when_default_is_unready() {
+        let selection = resolve_startup_selection(
+            None,
+            None,
+            Some(&StartupState {
+                provider: "gemini".to_string(),
+                model: "gemini-2.5-flash".to_string(),
+            }),
+            &[
+                ProviderInfo {
+                    name: "gemini".to_string(),
+                    available: true,
+                    ready: false,
+                    status_label: "missing GEMINI_API_KEY".to_string(),
+                    models: vec!["gemini-2.5-flash".to_string()],
+                },
+                ProviderInfo {
+                    name: "openai".to_string(),
+                    available: true,
+                    ready: true,
+                    status_label: "API key configured".to_string(),
+                    models: vec!["gpt-5.1".to_string()],
+                },
+            ],
+        );
+
+        assert_eq!(selection.provider.as_deref(), Some("openai"));
+        assert_eq!(selection.model.as_deref(), Some("gpt-5.1"));
+    }
+
+    #[test]
+    fn startup_selection_leaves_provider_unset_when_nothing_is_ready() {
+        let selection = resolve_startup_selection(
+            None,
+            None,
+            Some(&StartupState {
+                provider: "gemini".to_string(),
+                model: "gemini-2.5-flash".to_string(),
+            }),
+            &[ProviderInfo {
+                name: "gemini".to_string(),
+                available: true,
+                ready: false,
+                status_label: "missing GEMINI_API_KEY".to_string(),
+                models: vec!["gemini-2.5-flash".to_string()],
+            }],
+        );
+
+        assert!(selection.provider.is_none());
     }
 
     #[test]
