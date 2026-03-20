@@ -66,8 +66,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
             None => {}
         }
     }
-    // graph overlay renders even outside Overlay mode (passive during init)
-    if app.graph_overlay.active && app.overlay_kind != Some(OverlayKind::GraphOverlay) {
+    // graph overlay renders passively ONLY when no other overlay is active
+    if app.graph_overlay.active
+        && app.mode != AppMode::Overlay
+        && app.overlay_kind.is_none()
+    {
         overlays::draw_graph_overlay(frame, app);
     }
     if app.mode == AppMode::QuickOpen {

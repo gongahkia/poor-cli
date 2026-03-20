@@ -580,7 +580,7 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/switch" {
+    if lowered == "/switch" || lowered.starts_with("/switch ") || lowered == "/providers" || lowered.starts_with("/providers ") {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let _ = rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx });
         let tx2 = tx.clone();

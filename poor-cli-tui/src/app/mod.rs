@@ -898,6 +898,7 @@ impl App {
     }
 
     pub fn open_provider_select(&mut self) {
+        self.graph_overlay.active = false; // dismiss graph overlay if active
         self.provider.select_pane = ProviderSelectPane::Providers;
         self.provider.select_idx = self
             .provider
@@ -1644,6 +1645,7 @@ impl App {
         content: impl Into<String>,
         return_mode: Option<AppMode>,
     ) {
+        self.graph_overlay.active = false; // dismiss graph overlay if active
         self.info_popup_title = title.into();
         self.info_popup_content = content.into();
         self.info_popup_scroll = 0;
