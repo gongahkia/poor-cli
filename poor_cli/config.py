@@ -7,10 +7,11 @@ Handles loading, saving, and validating user configuration from YAML files.
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
+from poor_cli.provider_catalog import all_provider_entries, default_model_for_provider
 
 logger = setup_logger(__name__)
 
@@ -37,36 +38,25 @@ class ProviderConfig:
 class ModelConfig:
     """Configuration for AI model settings"""
     provider: str = "gemini"  # Active provider: gemini, openai, anthropic, ollama
-    model_name: str = "gemini-2.0-flash"
+    model_name: str = field(default_factory=lambda: default_model_for_provider("gemini"))
+    routing_mode: str = "manual"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
     top_p: float = 0.95
     top_k: int = 40
 
     # Provider registry
-    providers: Dict[str, ProviderConfig] = field(default_factory=lambda: {
-        "gemini": ProviderConfig(
-            name="gemini",
-            api_key_env_var="GEMINI_API_KEY",
-            default_model="gemini-2.0-flash"
-        ),
-        "openai": ProviderConfig(
-            name="openai",
-            api_key_env_var="OPENAI_API_KEY",
-            default_model="gpt-4-turbo"
-        ),
-        "anthropic": ProviderConfig(
-            name="anthropic",
-            api_key_env_var="ANTHROPIC_API_KEY",
-            default_model="claude-3-5-sonnet-20241022"
-        ),
-        "ollama": ProviderConfig(
-            name="ollama",
-            api_key_env_var="OLLAMA_API_KEY",  # Usually not needed
-            default_model="llama3",
-            base_url="http://localhost:11434"
-        ),
-    })
+    providers: Dict[str, ProviderConfig] = field(
+        default_factory=lambda: {
+            entry.name: ProviderConfig(
+                name=entry.name,
+                api_key_env_var=entry.env_var,
+                default_model=entry.default_model,
+                base_url=entry.base_url,
+            )
+            for entry in all_provider_entries()
+        }
+    )
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ModelConfig':
@@ -259,6 +249,28 @@ class SandboxConfig:
 
 
 @dataclass
+class MultiplayerConfig:
+    """Configuration for owner-authoritative P2P multiplayer."""
+
+    signaling_bind_host: str = "0.0.0.0"
+    signaling_port: int = 8765
+    signaling_path: str = "/rpc"
+    share_host: str = ""
+    invite_ttl_seconds: int = 86400
+    owner_name: str = "host"
+    reconnect_grace_seconds: int = 30
+    ice_servers: List[Dict[str, Any]] = field(
+        default_factory=lambda: [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+        ]
+    )
+    turn_urls: List[str] = field(default_factory=list)
+    turn_username_env: str = "POOR_CLI_TURN_USERNAME"
+    turn_credential_env: str = "POOR_CLI_TURN_CREDENTIAL"
+    turn_realm: str = ""
+
+
+@dataclass
 class TasksConfig:
     """Background task runner settings."""
 
@@ -276,6 +288,14 @@ class SkillsConfig:
 
 
 @dataclass
+class WorkflowConfig:
+    """Workflow template defaults and overrides."""
+
+    default_workflow: str = "implement"
+    defaults: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class Config:
     """Main configuration class"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -284,8 +304,10 @@ class Config:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
+    multiplayer: MultiplayerConfig = field(default_factory=MultiplayerConfig)
     tasks: TasksConfig = field(default_factory=TasksConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     plan_mode: PlanModeConfig = field(default_factory=PlanModeConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     agentic: AgenticConfig = field(default_factory=AgenticConfig)
@@ -307,8 +329,10 @@ class Config:
             "security": self.security.to_dict(),
             "tools": asdict(self.tools),
             "sandbox": asdict(self.sandbox),
+            "multiplayer": asdict(self.multiplayer),
             "tasks": asdict(self.tasks),
             "skills": asdict(self.skills),
+            "workflow": asdict(self.workflow),
             "plan_mode": asdict(self.plan_mode),
             "checkpoint": asdict(self.checkpoint),
             "agentic": asdict(self.agentic),
@@ -330,8 +354,10 @@ class Config:
             security=SecurityConfig.from_dict(data.get("security", {})),
             tools=ToolConfig(**data.get("tools", {})),
             sandbox=SandboxConfig(**data.get("sandbox", {})),
+            multiplayer=MultiplayerConfig(**data.get("multiplayer", {})),
             tasks=TasksConfig(**data.get("tasks", {})),
             skills=SkillsConfig(**data.get("skills", {})),
+            workflow=WorkflowConfig(**data.get("workflow", {})),
             plan_mode=PlanModeConfig(**data.get("plan_mode", {})),
             checkpoint=CheckpointConfig(**data.get("checkpoint", {})),
             agentic=AgenticConfig(**data.get("agentic", {})),
@@ -426,8 +452,10 @@ class ConfigManager:
             "security",
             "tools",
             "sandbox",
+            "multiplayer",
             "tasks",
             "skills",
+            "workflow",
             "plan_mode",
             "checkpoint",
             "agentic",
@@ -604,6 +632,16 @@ class ConfigManager:
             raise ConfigurationError("max_file_size_mb must be at least 1")
         if self.config.security.max_bash_timeout_seconds < 1:
             raise ConfigurationError("max_bash_timeout_seconds must be at least 1")
+
+        # Validate multiplayer config
+        if self.config.multiplayer.signaling_port < 1:
+            raise ConfigurationError("multiplayer.signaling_port must be at least 1")
+        if self.config.multiplayer.invite_ttl_seconds < 1:
+            raise ConfigurationError("multiplayer.invite_ttl_seconds must be at least 1")
+        if self.config.multiplayer.reconnect_grace_seconds < 1:
+            raise ConfigurationError("multiplayer.reconnect_grace_seconds must be at least 1")
+        if not self.config.multiplayer.signaling_path.startswith("/"):
+            raise ConfigurationError("multiplayer.signaling_path must start with '/'")
 
         logger.info("Configuration validated successfully")
         return True

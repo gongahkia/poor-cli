@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - protobuf is an indirect dependency.
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
 from .tool_translator import ToolTranslator, ProviderType
+from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -46,7 +47,7 @@ class GeminiProvider(BaseProvider):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.0-flash",
+        model_name: str = default_model_for_provider("gemini"),
         max_retries: int = 3,
         retry_delay: float = 1.0,
         timeout: float = 60.0,

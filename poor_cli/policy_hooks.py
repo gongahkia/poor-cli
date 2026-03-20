@@ -22,9 +22,18 @@ logger = setup_logger(__name__)
 HOOK_EVENTS: tuple[str, ...] = (
     "session_start",
     "user_prompt_submitted",
+    "permission_decision",
     "pre_tool_use",
     "post_tool_use",
+    "tool_failure",
+    "task_started",
+    "task_finished",
+    "automation_started",
+    "automation_finished",
+    "checkpoint_restored",
+    "collaboration_event",
 )
+SUPPORTED_SCHEMA_VERSIONS: tuple[int, ...] = (1,)
 
 
 @dataclass
@@ -39,6 +48,7 @@ class HookDefinition:
     env: Dict[str, str] = field(default_factory=dict)
     name: str = ""
     source_path: str = ""
+    schema_version: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -50,6 +60,7 @@ class HookDefinition:
             "env": self.env,
             "name": self.name,
             "sourcePath": self.source_path,
+            "schemaVersion": self.schema_version,
         }
 
 
@@ -85,10 +96,12 @@ class PolicyHookManager:
         self.repo_root = (repo_root or Path.cwd()).resolve()
         self.hooks_dir = self.repo_root / ".poor-cli" / "hooks"
         self._hooks_by_event: Dict[str, List[HookDefinition]] = {event: [] for event in HOOK_EVENTS}
+        self._validation_errors: List[Dict[str, Any]] = []
         self.reload()
 
     def reload(self) -> None:
         hooks_by_event: Dict[str, List[HookDefinition]] = {event: [] for event in HOOK_EVENTS}
+        self._validation_errors = []
         if self.hooks_dir.is_dir():
             for path in sorted(self.hooks_dir.glob("*.json")):
                 for hook in self._load_hooks_from_file(path):
@@ -99,6 +112,8 @@ class PolicyHookManager:
         return {
             "hooksDir": str(self.hooks_dir),
             "totalHooks": sum(len(hooks) for hooks in self._hooks_by_event.values()),
+            "supportedSchemaVersions": list(SUPPORTED_SCHEMA_VERSIONS),
+            "validationErrors": list(self._validation_errors),
             "events": {
                 event: [hook.to_dict() for hook in hooks]
                 for event, hooks in self._hooks_by_event.items()
@@ -166,19 +181,61 @@ class PolicyHookManager:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
-            logger.warning("Failed to parse hook file %s: %s", path, error)
+            self._record_validation_error(path, f"Failed to parse hook file: {error}")
             return []
+
+        schema_version: Optional[int] = None
+        if isinstance(payload, dict) and "schemaVersion" in payload:
+            raw_schema_version = payload.get("schemaVersion")
+            try:
+                schema_version = int(raw_schema_version)
+            except (TypeError, ValueError):
+                self._record_validation_error(path, "schemaVersion must be an integer.")
+                return []
+            if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+                supported = ", ".join(str(value) for value in SUPPORTED_SCHEMA_VERSIONS)
+                self._record_validation_error(
+                    path,
+                    f"Unsupported schemaVersion `{schema_version}`. Supported values: {supported}.",
+                )
+                return []
 
         hooks: List[HookDefinition] = []
         if isinstance(payload, dict) and isinstance(payload.get("hooks"), dict):
             for event, entries in payload["hooks"].items():
-                hooks.extend(self._hook_entries_from_payload(path, event, entries))
+                hooks.extend(
+                    self._hook_entries_from_payload(
+                        path,
+                        event,
+                        entries,
+                        schema_version=schema_version,
+                    )
+                )
         elif isinstance(payload, dict) and payload.get("event"):
-            hooks.extend(self._hook_entries_from_payload(path, str(payload.get("event")), [payload]))
+            hooks.extend(
+                self._hook_entries_from_payload(
+                    path,
+                    str(payload.get("event")),
+                    [payload],
+                    schema_version=schema_version,
+                )
+            )
         elif isinstance(payload, list):
             for entry in payload:
                 if isinstance(entry, dict) and entry.get("event"):
-                    hooks.extend(self._hook_entries_from_payload(path, str(entry.get("event")), [entry]))
+                    hooks.extend(
+                        self._hook_entries_from_payload(
+                            path,
+                            str(entry.get("event")),
+                            [entry],
+                            schema_version=schema_version,
+                        )
+                    )
+        elif isinstance(payload, dict):
+            self._record_validation_error(
+                path,
+                "Hook file must define `hooks`, a top-level `event`, or a list of hook entries.",
+            )
         return hooks
 
     def _hook_entries_from_payload(
@@ -186,8 +243,18 @@ class PolicyHookManager:
         source_path: Path,
         event: str,
         entries: Any,
+        *,
+        schema_version: Optional[int],
     ) -> List[HookDefinition]:
-        if event not in HOOK_EVENTS or not isinstance(entries, list):
+        if event not in HOOK_EVENTS:
+            self._record_validation_error(source_path, f"Unknown hook event `{event}`.", event=event)
+            return []
+        if not isinstance(entries, list):
+            self._record_validation_error(
+                source_path,
+                f"Hook event `{event}` must map to a list of hook entries.",
+                event=event,
+            )
             return []
 
         hooks: List[HookDefinition] = []
@@ -213,9 +280,26 @@ class PolicyHookManager:
                     env={str(key): str(value) for key, value in env.items()},
                     name=str(entry.get("name", "")).strip() or source_path.stem,
                     source_path=str(source_path),
+                    schema_version=schema_version,
                 )
             )
         return hooks
+
+    def _record_validation_error(
+        self,
+        source_path: Path,
+        message: str,
+        *,
+        event: Optional[str] = None,
+    ) -> None:
+        payload = {
+            "sourcePath": str(source_path),
+            "message": message,
+        }
+        if event:
+            payload["event"] = event
+        self._validation_errors.append(payload)
+        logger.warning("Invalid hook configuration in %s: %s", source_path, message)
 
     @staticmethod
     def _hook_argv(hook: HookDefinition) -> List[str]:

@@ -347,20 +347,18 @@ fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String
 /// Parse a server notification from JSON-RPC method + params.
 fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
     match method {
-        "poor-cli/thinkingChunk" => {
-            Some(ServerNotification::ThinkingChunk {
-                request_id: params
-                    .get("requestId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                chunk: params
-                    .get("chunk")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            })
-        }
+        "poor-cli/thinkingChunk" => Some(ServerNotification::ThinkingChunk {
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            chunk: params
+                .get("chunk")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        }),
         "poor-cli/streamChunk" | "poor-cli/streamingChunk" => {
             Some(ServerNotification::StreamChunk {
                 request_id: params
@@ -1111,6 +1109,35 @@ impl RpcClient {
         self.call("poor-cli/getInstructionStack", Value::Object(params))
     }
 
+    pub fn get_status_view(&self) -> Result<Value, String> {
+        self.call("poor-cli/getStatusView", Value::Object(Default::default()))
+    }
+
+    pub fn get_trust_view(&self) -> Result<Value, String> {
+        self.call("poor-cli/getTrustView", Value::Object(Default::default()))
+    }
+
+    pub fn get_doctor_report(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getDoctorReport",
+            Value::Object(Default::default()),
+        )
+    }
+
+    pub fn get_context_explain(
+        &self,
+        message: &str,
+        context_files: &[String],
+        pinned_context_files: &[String],
+        context_budget_tokens: Option<usize>,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("message".into(), Value::String(message.into()));
+        insert_context_file_params(&mut params, context_files, pinned_context_files);
+        insert_context_budget_param(&mut params, context_budget_tokens);
+        self.call("poor-cli/getContextExplain", Value::Object(params))
+    }
+
     pub fn get_policy_status(&self) -> Result<Value, String> {
         self.call(
             "poor-cli/getPolicyStatus",
@@ -1127,6 +1154,33 @@ impl RpcClient {
 
     pub fn get_mcp_status(&self) -> Result<Value, String> {
         self.call("poor-cli/getMcpStatus", Value::Object(Default::default()))
+    }
+
+    pub fn list_runs(
+        &self,
+        source_kind: Option<&str>,
+        source_id: Option<&str>,
+        limit: u64,
+    ) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(kind) = source_kind {
+            params.insert("sourceKind".into(), Value::String(kind.to_string()));
+        }
+        if let Some(id) = source_id {
+            params.insert("sourceId".into(), Value::String(id.to_string()));
+        }
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/listRuns", Value::Object(params))
+    }
+
+    pub fn list_workflows(&self) -> Result<Value, String> {
+        self.call("poor-cli/listWorkflows", Value::Object(Default::default()))
+    }
+
+    pub fn get_workflow(&self, name: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("name".into(), Value::String(name.to_string()));
+        self.call("poor-cli/getWorkflow", Value::Object(params))
     }
 
     pub fn list_skills(&self) -> Result<Value, String> {
@@ -1203,6 +1257,46 @@ impl RpcClient {
         let mut params = serde_json::Map::new();
         params.insert("taskId".into(), Value::String(task_id.to_string()));
         self.call("poor-cli/cancelTask", Value::Object(params))
+    }
+
+    pub fn retry_task(&self, task_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("taskId".into(), Value::String(task_id.to_string()));
+        self.call("poor-cli/retryTask", Value::Object(params))
+    }
+
+    pub fn replay_task(&self, task_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("taskId".into(), Value::String(task_id.to_string()));
+        self.call("poor-cli/replayTask", Value::Object(params))
+    }
+
+    pub fn list_automations(&self, enabled: Option<bool>, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(enabled) = enabled {
+            params.insert("enabled".into(), Value::Bool(enabled));
+        }
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/listAutomations", Value::Object(params))
+    }
+
+    pub fn get_automation_history(&self, automation_id: &str, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "automationId".into(),
+            Value::String(automation_id.to_string()),
+        );
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/getAutomationHistory", Value::Object(params))
+    }
+
+    pub fn replay_automation(&self, automation_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "automationId".into(),
+            Value::String(automation_id.to_string()),
+        );
+        self.call("poor-cli/replayAutomation", Value::Object(params))
     }
 
     pub fn list_config_options(&self) -> Result<Value, String> {
@@ -1409,6 +1503,13 @@ impl RpcClient {
     pub fn get_host_server_status(&self) -> Result<Value, String> {
         self.call(
             "poor-cli/getHostServerStatus",
+            Value::Object(Default::default()),
+        )
+    }
+
+    pub fn get_collab_summary(&self) -> Result<Value, String> {
+        self.call(
+            "poor-cli/getCollabSummary",
             Value::Object(Default::default()),
         )
     }
@@ -1750,6 +1851,15 @@ pub enum RpcCommand {
         referenced_files: Vec<String>,
         reply: SyncSender<Result<Value, String>>,
     },
+    GetStatusView {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetTrustView {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetDoctorReport {
+        reply: SyncSender<Result<Value, String>>,
+    },
     GetPolicyStatus {
         reply: SyncSender<Result<Value, String>>,
     },
@@ -1757,6 +1867,26 @@ pub enum RpcCommand {
         reply: SyncSender<Result<Value, String>>,
     },
     GetMcpStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetContextExplain {
+        message: String,
+        context_files: Vec<String>,
+        pinned_context_files: Vec<String>,
+        context_budget_tokens: Option<usize>,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListRuns {
+        source_kind: Option<String>,
+        source_id: Option<String>,
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListWorkflows {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetWorkflow {
+        name: String,
         reply: SyncSender<Result<Value, String>>,
     },
     ListSkills {
@@ -1850,6 +1980,28 @@ pub enum RpcCommand {
         task_id: String,
         reply: SyncSender<Result<Value, String>>,
     },
+    RetryTask {
+        task_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ReplayTask {
+        task_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListAutomations {
+        enabled: Option<bool>,
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetAutomationHistory {
+        automation_id: String,
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ReplayAutomation {
+        automation_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
     ListCheckpoints {
         limit: u64,
         reply: SyncSender<Result<Value, String>>,
@@ -1877,6 +2029,9 @@ pub enum RpcCommand {
         reply: SyncSender<Result<Value, String>>,
     },
     GetHostServerStatus {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    GetCollabSummary {
         reply: SyncSender<Result<Value, String>>,
     },
     StopHostServer {
@@ -2114,6 +2269,15 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }) => {
                 let _ = reply.send(client.get_instruction_stack(&referenced_files));
             }
+            Ok(RpcCommand::GetStatusView { reply }) => {
+                let _ = reply.send(client.get_status_view());
+            }
+            Ok(RpcCommand::GetTrustView { reply }) => {
+                let _ = reply.send(client.get_trust_view());
+            }
+            Ok(RpcCommand::GetDoctorReport { reply }) => {
+                let _ = reply.send(client.get_doctor_report());
+            }
             Ok(RpcCommand::GetPolicyStatus { reply }) => {
                 let _ = reply.send(client.get_policy_status());
             }
@@ -2122,6 +2286,38 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::GetMcpStatus { reply }) => {
                 let _ = reply.send(client.get_mcp_status());
+            }
+            Ok(RpcCommand::GetContextExplain {
+                message,
+                context_files,
+                pinned_context_files,
+                context_budget_tokens,
+                reply,
+            }) => {
+                let _ = reply.send(client.get_context_explain(
+                    &message,
+                    &context_files,
+                    &pinned_context_files,
+                    context_budget_tokens,
+                ));
+            }
+            Ok(RpcCommand::ListRuns {
+                source_kind,
+                source_id,
+                limit,
+                reply,
+            }) => {
+                let _ = reply.send(client.list_runs(
+                    source_kind.as_deref(),
+                    source_id.as_deref(),
+                    limit,
+                ));
+            }
+            Ok(RpcCommand::ListWorkflows { reply }) => {
+                let _ = reply.send(client.list_workflows());
+            }
+            Ok(RpcCommand::GetWorkflow { name, reply }) => {
+                let _ = reply.send(client.get_workflow(&name));
             }
             Ok(RpcCommand::ListSkills { reply }) => {
                 let _ = reply.send(client.list_skills());
@@ -2224,6 +2420,32 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             Ok(RpcCommand::CancelTask { task_id, reply }) => {
                 let _ = reply.send(client.cancel_task(&task_id));
             }
+            Ok(RpcCommand::RetryTask { task_id, reply }) => {
+                let _ = reply.send(client.retry_task(&task_id));
+            }
+            Ok(RpcCommand::ReplayTask { task_id, reply }) => {
+                let _ = reply.send(client.replay_task(&task_id));
+            }
+            Ok(RpcCommand::ListAutomations {
+                enabled,
+                limit,
+                reply,
+            }) => {
+                let _ = reply.send(client.list_automations(enabled, limit));
+            }
+            Ok(RpcCommand::GetAutomationHistory {
+                automation_id,
+                limit,
+                reply,
+            }) => {
+                let _ = reply.send(client.get_automation_history(&automation_id, limit));
+            }
+            Ok(RpcCommand::ReplayAutomation {
+                automation_id,
+                reply,
+            }) => {
+                let _ = reply.send(client.replay_automation(&automation_id));
+            }
             Ok(RpcCommand::ListCheckpoints { limit, reply }) => {
                 let _ = reply.send(client.list_checkpoints(limit));
             }
@@ -2255,6 +2477,9 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::GetHostServerStatus { reply }) => {
                 let _ = reply.send(client.get_host_server_status());
+            }
+            Ok(RpcCommand::GetCollabSummary { reply }) => {
+                let _ = reply.send(client.get_collab_summary());
             }
             Ok(RpcCommand::StopHostServer { reply }) => {
                 let _ = reply.send(client.stop_host_server());
@@ -2756,12 +2981,8 @@ mod tests {
     fn build_server_command_includes_extra_args() {
         let args = vec![
             "--bridge".to_string(),
-            "--url".to_string(),
-            "wss://example.test/rpc".to_string(),
-            "--room".to_string(),
-            "dev".to_string(),
-            "--token".to_string(),
-            "tok".to_string(),
+            "--invite".to_string(),
+            "invite-code".to_string(),
         ];
         let cmd = RpcClient::build_server_command("python3", Some("/tmp"), &args, None);
         let collected = cmd
@@ -2774,12 +2995,8 @@ mod tests {
                 "-m",
                 "poor_cli.server",
                 "--bridge",
-                "--url",
-                "wss://example.test/rpc",
-                "--room",
-                "dev",
-                "--token",
-                "tok",
+                "--invite",
+                "invite-code",
             ]
         );
     }

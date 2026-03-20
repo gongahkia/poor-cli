@@ -21,9 +21,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use poor_cli_tui::app::{
-    ApiKeyEditorField, ApiKeyEditorState, App, AppMode, ChatMessage, ContextInspectorFile,
-    ContextInspectorState, MessageRole, ProviderEntry, QueuedPrompt, QuickOpenItem,
-    QuickOpenItemKind, ResponseMode, ThemeMode, TimelineEntry, TimelineEntryKind,
+    ApiKeyEditorField, ApiKeyEditorState, App, AppMode, AppWorkspace, ChatMessage,
+    ContextInspectorFile, ContextInspectorState, MessageRole, ProviderEntry, QueuedPrompt,
+    QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode, TimelineEntry, TimelineEntryKind,
 };
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;
@@ -32,6 +32,7 @@ use poor_cli_tui::helpers::{
     truncate_line,
 };
 use poor_cli_tui::input::{self, InputAction};
+use poor_cli_tui::provider_catalog;
 use poor_cli_tui::rpc::{run_rpc_worker, InitResult, RpcClient, RpcCommand, ServerNotification};
 use poor_cli_tui::watcher::{self, QaWatchState, WatchMsg, WatchState};
 
@@ -62,15 +63,9 @@ struct Cli {
     /// Python binary to use (default: python3)
     #[arg(long, default_value = "python3")]
     python: String,
-    /// Remote multiplayer websocket URL (bridge mode)
+    /// Remote multiplayer invite code
     #[arg(long)]
-    remote_url: Option<String>,
-    /// Remote multiplayer room name (requires --remote-url and --remote-token)
-    #[arg(long)]
-    remote_room: Option<String>,
-    /// Remote multiplayer invite token (requires --remote-url and --remote-room)
-    #[arg(long)]
-    remote_token: Option<String>,
+    remote_invite: Option<String>,
 }
 
 // ── Background message from server thread ────────────────────────────
@@ -200,36 +195,38 @@ struct ManagedEnvField {
     help: &'static str,
 }
 
-const MANAGED_ENV_FIELDS: &[ManagedEnvField] = &[
-    ManagedEnvField {
-        label: "Gemini",
-        provider: Some("gemini"),
-        env_var: "GEMINI_API_KEY",
-        default_model: "gemini-2.0-flash",
-        help: "Gemini is the default provider. Paste a Google AI Studio or Vertex-backed Gemini key here.",
-    },
-    ManagedEnvField {
-        label: "OpenAI",
-        provider: Some("openai"),
-        env_var: "OPENAI_API_KEY",
-        default_model: "gpt-4-turbo",
-        help: "Use an OpenAI API key if you want GPT models available in `/switch` and the TUI.",
-    },
-    ManagedEnvField {
-        label: "Anthropic",
-        provider: Some("anthropic"),
-        env_var: "ANTHROPIC_API_KEY",
-        default_model: "claude-3-5-sonnet-20241022",
-        help: "Anthropic powers Claude models. Saving here keeps the key available for later provider switches.",
-    },
-    ManagedEnvField {
-        label: "Brave",
-        provider: None,
-        env_var: "BRAVE_SEARCH_API_KEY",
-        default_model: "",
-        help: "Optional. Enables Brave-backed web search tooling when configured.",
-    },
-];
+fn managed_env_fields() -> [ManagedEnvField; 4] {
+    [
+        ManagedEnvField {
+            label: provider_catalog::display_name("gemini"),
+            provider: Some("gemini"),
+            env_var: provider_catalog::env_var("gemini"),
+            default_model: provider_catalog::default_model("gemini"),
+            help: provider_catalog::setup_help("gemini"),
+        },
+        ManagedEnvField {
+            label: provider_catalog::display_name("openai"),
+            provider: Some("openai"),
+            env_var: provider_catalog::env_var("openai"),
+            default_model: provider_catalog::default_model("openai"),
+            help: provider_catalog::setup_help("openai"),
+        },
+        ManagedEnvField {
+            label: provider_catalog::display_name("anthropic"),
+            provider: Some("anthropic"),
+            env_var: provider_catalog::env_var("anthropic"),
+            default_model: provider_catalog::default_model("anthropic"),
+            help: provider_catalog::setup_help("anthropic"),
+        },
+        ManagedEnvField {
+            label: "Brave",
+            provider: None,
+            env_var: "BRAVE_SEARCH_API_KEY",
+            default_model: "",
+            help: "Optional. Enables Brave-backed web search tooling when configured.",
+        },
+    ]
+}
 
 type SessionLogWriter = Arc<Mutex<fs::File>>;
 
@@ -398,13 +395,9 @@ fn spawn_backend_worker(
                 thread::spawn(move || {
                     while let Ok(notif) = notification_rx.recv() {
                         let msg = match notif {
-                            ServerNotification::ThinkingChunk {
-                                request_id,
-                                chunk,
-                            } => ServerMsg::ThinkingChunk {
-                                request_id,
-                                chunk,
-                            },
+                            ServerNotification::ThinkingChunk { request_id, chunk } => {
+                                ServerMsg::ThinkingChunk { request_id, chunk }
+                            }
                             ServerNotification::StreamChunk {
                                 request_id,
                                 chunk,
@@ -707,7 +700,7 @@ fn server_msg_from_init_result(
             .unwrap_or_else(|| {
                 model_fallback
                     .clone()
-                    .unwrap_or_else(|| "gemini-2.0-flash".into())
+                    .unwrap_or_else(|| provider_catalog::default_model("gemini").into())
             });
         (provider, model)
     } else {
@@ -715,7 +708,7 @@ fn server_msg_from_init_result(
             provider_fallback.clone().unwrap_or_else(|| "gemini".into()),
             model_fallback
                 .clone()
-                .unwrap_or_else(|| "gemini-2.0-flash".into()),
+                .unwrap_or_else(|| provider_catalog::default_model("gemini").into()),
         )
     };
 
@@ -784,15 +777,12 @@ fn run_app(
             .and_then(|p| p.to_str().map(|s| s.to_string()))
             .unwrap_or_else(|| ".".into())
     });
-    if let Some(url) = cli.remote_url.as_ref() {
-        app.multiplayer_remote_url = url.clone();
-    }
-    if let Some(token) = cli.remote_token.as_ref() {
-        app.multiplayer_remote_token = token.clone();
-    }
-    if let Some(room) = cli.remote_room.as_ref() {
-        app.multiplayer_room = room.clone();
-        app.multiplayer_enabled = true;
+    if let Some(invite) = cli.remote_invite.as_ref() {
+        app.multiplayer_remote_invite = invite.clone();
+        if let Ok(bootstrap) = multiplayer::decode_invite_code(invite) {
+            app.multiplayer_room = bootstrap.room;
+            app.multiplayer_enabled = true;
+        }
     }
     let (session_log, tui_log_path, backend_log_path) = setup_session_logs(&app.cwd);
     write_session_log(
@@ -835,7 +825,9 @@ fn run_app(
     ));
 
     app.provider_name = cli.provider.unwrap_or_else(|| "gemini".into());
-    app.model_name = cli.model.unwrap_or_else(|| "gemini-2.0-flash".into());
+    app.model_name = cli
+        .model
+        .unwrap_or_else(|| provider_catalog::default_model("gemini").into());
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
         let _ = apply_execution_profile(&mut app, &rpc_cmd_tx.borrow(), &saved_profile.name, false);
@@ -866,27 +858,36 @@ fn run_app(
         &mut app,
         &rx,
         |app| {
+            let mut reconnect: Option<(u32, multiplayer::RemoteBootstrap)> = None;
             let mut state = remote_reconnect_state.borrow_mut();
             if let Some(deadline) = state.1 {
                 if std::time::Instant::now() >= deadline {
                     state.1 = None;
                     let attempt_label = state.0;
-                    let url = app.multiplayer_remote_url.clone();
-                    let room = app.multiplayer_room.clone();
-                    let token = app.multiplayer_remote_token.clone();
-                    app.push_message(ChatMessage::system(format!(
-                        "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to `{url}` room `{room}`..."
-                    )));
-                    multiplayer::reconnect_to_remote_server(
-                        app,
-                        &tx,
-                        &mut rpc_cmd_tx.borrow_mut(),
-                        &launch,
-                        &url,
-                        &room,
-                        &token,
-                    );
+                    match multiplayer::decode_invite_code(&app.multiplayer_remote_invite) {
+                        Ok(bootstrap) => reconnect = Some((attempt_label, bootstrap)),
+                        Err(error) => {
+                            state.2 = false;
+                            app.push_message(ChatMessage::error(format!(
+                                "Multiplayer reconnect cancelled: {error}"
+                            )));
+                        }
+                    }
                 }
+            }
+            drop(state);
+            if let Some((attempt_label, bootstrap)) = reconnect {
+                app.push_message(ChatMessage::system(format!(
+                    "Attempting multiplayer reconnect ({attempt_label}/{MAX_REMOTE_RECONNECT_ATTEMPTS}) to session `{}`...",
+                    bootstrap.room
+                )));
+                multiplayer::reconnect_to_remote_server(
+                    app,
+                    &tx,
+                    &mut rpc_cmd_tx.borrow_mut(),
+                    &launch,
+                    &bootstrap,
+                );
             }
             Ok(LoopControl::Continue)
         },
@@ -1187,15 +1188,13 @@ fn run_app(
                         }
                     });
                 }
-                InputAction::JoinWizardComplete(url, room, token) => {
+                InputAction::JoinWizardComplete(bootstrap) => {
                     multiplayer::reconnect_to_remote_server(
                         app,
                         &tx,
                         &mut rpc_cmd_tx.borrow_mut(),
                         &launch,
-                        &url,
-                        &room,
-                        &token,
+                        &bootstrap,
                     );
                 }
                 InputAction::SaveApiKeyEditor => {
@@ -1346,6 +1345,24 @@ fn run_app(
                     Ok(()) => app.set_status(format!("Opened `{path}`")),
                     Err(error) => app.push_message(ChatMessage::error(error)),
                 },
+                InputAction::WorkspaceSelected(workspace) => {
+                    if matches!(
+                        app.mode,
+                        AppMode::InfoPopup
+                            | AppMode::QueueManager
+                            | AppMode::QuickOpen
+                            | AppMode::Timeline
+                            | AppMode::TranscriptSearch
+                            | AppMode::ContextInspector
+                            | AppMode::ProviderSelect
+                            | AppMode::CompactSelect
+                            | AppMode::JoinWizard
+                    ) {
+                        app.mode = AppMode::Normal;
+                    }
+                    activate_workspace(app, &rpc_cmd_tx.borrow(), workspace);
+                    app.set_status(format!("Workspace: {}", workspace.label()));
+                }
                 InputAction::Redraw => {}
                 InputAction::None => {}
             }
@@ -2354,16 +2371,16 @@ fn format_host_server_payload(payload: &Value) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0.0");
     let port = payload.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
-    let local_ws = payload
-        .get("localWsUrl")
+    let local_signaling = payload
+        .get("localSignalingUrl")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let share_ws = payload
-        .get("shareWsUrl")
+    let share_signaling = payload
+        .get("shareSignalingUrl")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let public_ws = payload
-        .get("publicWsUrl")
+    let public_signaling = payload
+        .get("publicSignalingUrl")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -2376,20 +2393,20 @@ fn format_host_server_payload(payload: &Value) -> String {
         format!("Bind: `{bind_host}:{port}`"),
     ];
 
-    if !local_ws.is_empty() {
-        lines.push(format!("Local URL: `{local_ws}`"));
+    if !local_signaling.is_empty() {
+        lines.push(format!("Local signaling: `{local_signaling}`"));
     }
-    if !share_ws.is_empty() {
-        lines.push(format!("LAN share URL: `{share_ws}`"));
-        if bind_host == "0.0.0.0" && share_ws.contains("127.0.0.1") {
+    if !share_signaling.is_empty() {
+        lines.push(format!("LAN signaling: `{share_signaling}`"));
+        if bind_host == "0.0.0.0" && share_signaling.contains("127.0.0.1") {
             lines.push(
                 "**⚠ ACTION REQUIRED:** LAN IP detection fell back to localhost. Replace `127.0.0.1` with your actual LAN IP before sharing."
                     .to_string(),
             );
         }
     }
-    if !public_ws.is_empty() {
-        lines.push(format!("Public URL: `{public_ws}`"));
+    if !public_signaling.is_empty() {
+        lines.push(format!("Public signaling: `{public_signaling}`"));
     }
 
     let rooms = payload
@@ -2409,14 +2426,6 @@ fn format_host_server_payload(payload: &Value) -> String {
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let viewer_token = room
-            .get("viewerToken")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let prompter_token = room
-            .get("prompterToken")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
         let viewer_join = room
             .get("viewerJoinCommand")
             .and_then(|v| v.as_str())
@@ -2425,8 +2434,16 @@ fn format_host_server_payload(payload: &Value) -> String {
             .get("prompterJoinCommand")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let signaling_url = room
+            .get("signalingUrl")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let viewer_code = room
             .get("viewerInviteCode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let prompter_code = room
+            .get("prompterInviteCode")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let member_count = room
@@ -2447,8 +2464,9 @@ fn format_host_server_payload(payload: &Value) -> String {
             "**Room `{name}`** ({member_count} member(s), lobby: {}, preset: `{preset}`)",
             if lobby_enabled { "on" } else { "off" }
         ));
-        lines.push(format!("- Viewer token: `{viewer_token}`"));
-        lines.push(format!("- Prompter token: `{prompter_token}`"));
+        if !signaling_url.is_empty() {
+            lines.push(format!("- Signaling endpoint: `{signaling_url}`"));
+        }
         if !viewer_join.is_empty() {
             lines.push(format!("- Share viewer command: `{viewer_join}`"));
         }
@@ -2457,6 +2475,9 @@ fn format_host_server_payload(payload: &Value) -> String {
         }
         if !viewer_code.is_empty() {
             lines.push(format!("- Viewer invite code: `{viewer_code}`"));
+        }
+        if !prompter_code.is_empty() {
+            lines.push(format!("- Prompter invite code: `{prompter_code}`"));
         }
     }
 
@@ -3496,6 +3517,282 @@ fn refresh_resume_dashboard(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>
     app.set_resume_dashboard(dashboard);
 }
 
+fn format_api_key_workspace_summary(payload: &Value) -> String {
+    let providers = payload
+        .get("providers")
+        .and_then(|value| value.as_object())
+        .cloned()
+        .unwrap_or_default();
+    if providers.is_empty() {
+        return "No provider API key status available.".to_string();
+    }
+
+    let mut names = providers.keys().cloned().collect::<Vec<_>>();
+    names.sort();
+
+    let mut lines = vec!["## API Keys".to_string(), String::new()];
+    for provider in names {
+        let Some(entry) = providers.get(&provider) else {
+            continue;
+        };
+        let configured = entry
+            .get("configured")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let masked = entry
+            .get("masked")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(not set)");
+        let source = entry
+            .get("source")
+            .and_then(|value| value.as_str())
+            .unwrap_or("none");
+        lines.push(format!(
+            "- {} **{}**: `{}` ({source})",
+            if configured { "✓" } else { "✗" },
+            provider,
+            masked,
+        ));
+    }
+    lines.join("\n")
+}
+
+fn refresh_review_workspace(app: &mut App) {
+    let mut lines = vec![
+        "# Review Workspace".to_string(),
+        "Focus this tab for approvals, diffs, rollback points, and recent mutation activity."
+            .to_string(),
+        String::new(),
+    ];
+
+    if let Some(review) = app.mutation_review.as_ref() {
+        lines.push(format!(
+            "## Active Approval\n- Tool: `{}`\n- Files: {}\n- Hunks: {}\n- Checkpoint: `{}`",
+            review.tool_name,
+            review.paths.len(),
+            review.chunks.len(),
+            review.checkpoint_id.as_deref().unwrap_or("(none)")
+        ));
+        lines.push(String::new());
+        lines.push(
+            "Use the approval overlay to accept or reject the proposed mutation.".to_string(),
+        );
+    } else if let Some(checkpoint_id) = app.last_mutation_checkpoint_id.as_deref() {
+        lines.push(format!("## Last Rollback Point\n- `{checkpoint_id}`"));
+        if !app.last_mutation_diff.trim().is_empty() {
+            lines.push(String::new());
+            lines.push("## Last Mutation Diff".to_string());
+            lines.push(format!(
+                "```diff\n{}\n```",
+                truncate_block(&app.last_mutation_diff, 2400)
+            ));
+        }
+    } else {
+        lines.push("No active approval or recent mutation summary yet.".to_string());
+    }
+
+    if !app.timeline_entries.is_empty() {
+        lines.push(String::new());
+        lines.push("## Recent Timeline".to_string());
+        for entry in app.timeline_entries.iter().rev().take(5) {
+            lines.push(format!(
+                "- {}: {}",
+                entry.title,
+                truncate_line(&entry.detail, 100)
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push("Suggested actions: `/review`, `/explain-diff`, `/timeline`, `/undo`.".to_string());
+    app.set_workspace_content(AppWorkspace::Review, lines.join("\n"));
+}
+
+fn refresh_tasks_workspace(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) {
+    let inbox = rpc_list_tasks_blocking(rpc_cmd_tx, true)
+        .map(|payload| commands::format_task_list(&payload, "## Inbox"))
+        .unwrap_or_else(|error| format!("## Inbox\n\nFailed to load inbox: {error}"));
+    let tasks = rpc_list_tasks_blocking(rpc_cmd_tx, false)
+        .map(|payload| commands::format_task_list(&payload, "## Tasks"))
+        .unwrap_or_else(|error| format!("## Tasks\n\nFailed to load tasks: {error}"));
+    let automations = rpc_list_automations_blocking(rpc_cmd_tx, None, 12)
+        .map(|payload| commands::format_automation_list(&payload, "## Automations"))
+        .unwrap_or_else(|error| format!("## Automations\n\nFailed to load automations: {error}"));
+    let runs = rpc_list_runs_blocking(rpc_cmd_tx, None, None, 5)
+        .map(|payload| commands::format_runs_payload(&payload, "## Recent Runs"))
+        .unwrap_or_else(|error| format!("## Recent Runs\n\nFailed to load runs: {error}"));
+
+    let content = vec![
+        "# Tasks Workspace".to_string(),
+        "Monitor queued work, isolated worktrees, and recent shared runs from one place."
+            .to_string(),
+        String::new(),
+        inbox,
+        String::new(),
+        tasks,
+        String::new(),
+        automations,
+        String::new(),
+        runs,
+        String::new(),
+        "Suggested actions: `/task create <prompt>`, `/task open <id>`, `/automation history <id>`, `/automation replay <id>`.".to_string(),
+    ]
+    .join("\n");
+    app.set_workspace_content(AppWorkspace::Tasks, content);
+}
+
+fn refresh_context_workspace(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) {
+    let status = rpc_get_status_view_blocking(rpc_cmd_tx).map(|payload| {
+        let context = payload.pointer("/context/lastPreview").unwrap_or(&Value::Null);
+        let session = payload.get("session").unwrap_or(&Value::Null);
+        let selected_count = context
+            .get("selected")
+            .and_then(|value| value.as_array())
+            .map(|items| items.len())
+            .unwrap_or(0);
+        let excluded_count = context
+            .get("excluded")
+            .and_then(|value| value.as_array())
+            .map(|items| items.len())
+            .unwrap_or(0);
+        let total_tokens = context
+            .get("totalTokens")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let budget_tokens = context
+            .get("budgetTokens")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let request_message = context
+            .get("requestMessage")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let mut lines = vec![
+            "# Context Workspace".to_string(),
+            "See the current context budget, attached files, and the latest status snapshot without leaving the main layout.".to_string(),
+            String::new(),
+            "## Selection Summary".to_string(),
+            format!("- Selected files: {selected_count}"),
+            format!("- Excluded files: {excluded_count}"),
+            format!("- Budget: ~{total_tokens}/{budget_tokens} tokens"),
+            format!(
+                "- Routing mode: `{}`",
+                session
+                    .get("routingMode")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("manual")
+            ),
+        ];
+        if !request_message.is_empty() {
+            lines.push(format!("- Last request: {}", truncate_line(request_message, 140)));
+        }
+        if let Some(selected) = context.get("selected").and_then(|value| value.as_array()) {
+            if !selected.is_empty() {
+                lines.push(String::new());
+                lines.push("## Selected Files".to_string());
+                for file in selected.iter().take(8) {
+                    let path = file.get("path").and_then(|value| value.as_str()).unwrap_or("-");
+                    let reason = file.get("reason").and_then(|value| value.as_str()).unwrap_or("");
+                    lines.push(format!("- `{path}`: {}", truncate_line(reason, 120)));
+                }
+            }
+        }
+        lines.push(String::new());
+        lines.push("Suggested actions: `/context explain`, `Ctrl+I`, `@path/to/file`, `/status`.".to_string());
+        lines.join("\n")
+    });
+    let content = status.unwrap_or_else(|error| {
+        format!("# Context Workspace\n\nFailed to load context status: {error}")
+    });
+    app.set_workspace_content(AppWorkspace::Context, content);
+}
+
+fn refresh_collaboration_workspace(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) {
+    let summary = rpc_get_collab_summary_blocking(rpc_cmd_tx)
+        .map(|payload| commands::format_collab_summary_payload(&payload))
+        .unwrap_or_else(|error| {
+            format!("**Collaboration Summary**\n\nFailed to load collaboration summary: {error}")
+        });
+
+    let content = vec![
+        "# Collaboration Workspace".to_string(),
+        "Host, join, and review multiplayer sessions from a single persistent panel."
+            .to_string(),
+        String::new(),
+        summary,
+        String::new(),
+        "Suggested actions: `/collab start mob`, `/collab join <invite>`, `/collab members`, `/collab agenda add <text>`.".to_string(),
+    ]
+    .join("\n");
+    app.set_workspace_content(AppWorkspace::Collaboration, content);
+}
+
+fn refresh_setup_workspace(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) {
+    let trust = rpc_get_trust_view_blocking(rpc_cmd_tx)
+        .map(|payload| commands::format_trust_view_payload(&payload))
+        .unwrap_or_else(|error| format!("**Trust Center**\n\nFailed to load trust view: {error}"));
+    let doctor = rpc_get_doctor_report_blocking(rpc_cmd_tx)
+        .map(|payload| commands::format_doctor_report_payload(&payload))
+        .unwrap_or_else(|error| {
+            format!("**Doctor Report**\n\nFailed to load doctor report: {error}")
+        });
+    let setup = match (
+        rpc_get_trust_view_blocking(rpc_cmd_tx),
+        rpc_list_workflows_blocking(rpc_cmd_tx),
+    ) {
+        (Ok(trust), Ok(workflows)) => commands::format_setup_guide_payload(&trust, &workflows),
+        (Err(error), _) | (_, Err(error)) => {
+            format!("**Setup Guide**\n\nFailed to load setup guide: {error}")
+        }
+    };
+    let api_key_status = rpc_get_api_key_status_blocking(rpc_cmd_tx, None)
+        .map(|payload| format_api_key_workspace_summary(&payload))
+        .unwrap_or_else(|error| format!("## API Keys\n\nFailed to load API key status: {error}"));
+
+    let content = vec![
+        "# Setup Workspace".to_string(),
+        "Use this tab to get a repo ready: keys, routing, sandbox, trust, and the first workflow."
+            .to_string(),
+        String::new(),
+        trust,
+        String::new(),
+        doctor,
+        String::new(),
+        setup,
+        String::new(),
+        api_key_status,
+        String::new(),
+        "Suggested actions: `/api-key`, `/switch`, `/sandbox <preset>`, `/workflow <name>`."
+            .to_string(),
+    ]
+    .join("\n");
+    app.set_workspace_content(AppWorkspace::Setup, content);
+}
+
+fn refresh_workspace_panels(app: &mut App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) {
+    refresh_review_workspace(app);
+    refresh_context_workspace(app, rpc_cmd_tx);
+    refresh_tasks_workspace(app, rpc_cmd_tx);
+    refresh_collaboration_workspace(app, rpc_cmd_tx);
+    refresh_setup_workspace(app, rpc_cmd_tx);
+}
+
+fn activate_workspace(
+    app: &mut App,
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    workspace: AppWorkspace,
+) {
+    match workspace {
+        AppWorkspace::Chat => {}
+        AppWorkspace::Review => refresh_review_workspace(app),
+        AppWorkspace::Context => refresh_context_workspace(app, rpc_cmd_tx),
+        AppWorkspace::Tasks => refresh_tasks_workspace(app, rpc_cmd_tx),
+        AppWorkspace::Collaboration => refresh_collaboration_workspace(app, rpc_cmd_tx),
+        AppWorkspace::Setup => refresh_setup_workspace(app, rpc_cmd_tx),
+    }
+    app.set_workspace(workspace);
+}
+
 fn resolve_explicit_context_map(
     app: &App,
     message: &str,
@@ -3528,7 +3825,7 @@ fn open_context_inspector_for_message(
     message: String,
 ) -> Result<(), String> {
     let prepared = prepare_context_request(app, &message)?;
-    let preview = rpc_preview_context_blocking(
+    let preview = rpc_get_context_explain_blocking(
         rpc_cmd_tx,
         &prepared.message,
         &prepared.explicit_files,
@@ -4034,6 +4331,39 @@ fn rpc_get_instruction_stack_blocking(
         .map_err(|_| "Timed out waiting for instruction stack".to_string())?
 }
 
+fn rpc_get_status_view_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetStatusView { reply: reply_tx })
+        .map_err(|e| format!("Failed to request status view: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for status view".to_string())?
+}
+
+fn rpc_get_trust_view_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetTrustView { reply: reply_tx })
+        .map_err(|e| format!("Failed to request trust view: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for trust view".to_string())?
+}
+
+fn rpc_get_doctor_report_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetDoctorReport { reply: reply_tx })
+        .map_err(|e| format!("Failed to request doctor report: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for doctor report".to_string())?
+}
+
 fn rpc_get_policy_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
@@ -4144,7 +4474,7 @@ fn rpc_run_custom_command_blocking(
         .map_err(|_| "Timed out waiting for custom command".to_string())?
 }
 
-fn rpc_preview_context_blocking(
+fn rpc_get_context_explain_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     message: &str,
     context_files: &[String],
@@ -4153,18 +4483,67 @@ fn rpc_preview_context_blocking(
 ) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
-        .send(RpcCommand::PreviewContext {
+        .send(RpcCommand::GetContextExplain {
             message: message.to_string(),
             context_files: context_files.to_vec(),
             pinned_context_files: pinned_context_files.to_vec(),
             context_budget_tokens,
             reply: reply_tx,
         })
-        .map_err(|e| format!("Failed to request context preview: {e}"))?;
+        .map_err(|e| format!("Failed to request context explanation: {e}"))?;
 
     reply_rx
         .recv_timeout(Duration::from_secs(30))
-        .map_err(|_| "Timed out waiting for context preview".to_string())?
+        .map_err(|_| "Timed out waiting for context explanation".to_string())?
+}
+
+fn rpc_list_runs_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    source_kind: Option<&str>,
+    source_id: Option<&str>,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListRuns {
+            source_kind: source_kind.map(|value| value.to_string()),
+            source_id: source_id.map(|value| value.to_string()),
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request runs: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for runs".to_string())?
+}
+
+fn rpc_list_workflows_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListWorkflows { reply: reply_tx })
+        .map_err(|e| format!("Failed to request workflows: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for workflows".to_string())?
+}
+
+fn rpc_get_workflow_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    name: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetWorkflow {
+            name: name.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request workflow: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for workflow".to_string())?
 }
 
 fn rpc_list_config_options_blocking(
@@ -4354,6 +4733,7 @@ fn format_env_value(value: &str) -> String {
 fn update_env_file_contents(base: &str, updates: &HashMap<String, String>) -> String {
     let mut seen = HashSet::new();
     let mut rendered = Vec::new();
+    let managed_env_fields = managed_env_fields();
     for line in base.lines() {
         if let Some(key) = parse_env_line_key(line) {
             if let Some(value) = updates.get(&key) {
@@ -4365,7 +4745,7 @@ fn update_env_file_contents(base: &str, updates: &HashMap<String, String>) -> St
         rendered.push(line.to_string());
     }
 
-    for spec in MANAGED_ENV_FIELDS {
+    for spec in &managed_env_fields {
         if seen.contains(spec.env_var) {
             continue;
         }
@@ -4398,7 +4778,8 @@ fn build_api_key_editor_state(
 
     let mut fields = Vec::new();
     let mut selected_index = 0usize;
-    for (idx, spec) in MANAGED_ENV_FIELDS.iter().enumerate() {
+    let managed_env_fields = managed_env_fields();
+    for (idx, spec) in managed_env_fields.iter().enumerate() {
         let value = env_values
             .get(spec.env_var)
             .cloned()
@@ -4445,7 +4826,8 @@ fn open_api_key_setup_editor(app: &mut App, init_error: Option<&str>) -> Result<
 }
 
 fn select_setup_provider_model(editor: &ApiKeyEditorState) -> (String, String) {
-    let active_has_key = MANAGED_ENV_FIELDS.iter().any(|spec| {
+    let managed_env_fields = managed_env_fields();
+    let active_has_key = managed_env_fields.iter().any(|spec| {
         spec.provider == Some(editor.target_provider.as_str())
             && editor
                 .fields
@@ -4459,7 +4841,7 @@ fn select_setup_provider_model(editor: &ApiKeyEditorState) -> (String, String) {
         return (editor.target_provider.clone(), editor.target_model.clone());
     }
 
-    for spec in MANAGED_ENV_FIELDS {
+    for spec in &managed_env_fields {
         let Some(provider) = spec.provider else {
             continue;
         };
@@ -4718,6 +5100,95 @@ fn rpc_cancel_task_blocking(
         .map_err(|_| "Timed out waiting for task cancel".to_string())?
 }
 
+fn rpc_retry_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RetryTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to retry task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task retry".to_string())?
+}
+
+fn rpc_replay_task_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ReplayTask {
+            task_id: task_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to replay task: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for task replay".to_string())?
+}
+
+fn rpc_list_automations_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    enabled: Option<bool>,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListAutomations {
+            enabled,
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to list automations: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for automations".to_string())?
+}
+
+fn rpc_get_automation_history_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    automation_id: &str,
+    limit: u64,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetAutomationHistory {
+            automation_id: automation_id.to_string(),
+            limit,
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request automation history: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for automation history".to_string())?
+}
+
+fn rpc_replay_automation_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    automation_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ReplayAutomation {
+            automation_id: automation_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to replay automation: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for automation replay".to_string())?
+}
+
 fn rpc_list_checkpoints_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     limit: u64,
@@ -4835,6 +5306,17 @@ fn rpc_get_host_server_status_blocking(
     reply_rx
         .recv_timeout(Duration::from_secs(30))
         .map_err(|_| "Timed out waiting for host server status response".to_string())?
+}
+
+fn rpc_get_collab_summary_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetCollabSummary { reply: reply_tx })
+        .map_err(|e| format!("Failed to request collaboration summary: {e}"))?;
+
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for collaboration summary".to_string())?
 }
 
 fn rpc_stop_host_server_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
@@ -5415,82 +5897,56 @@ mod tests {
 
     #[test]
     fn backend_server_args_for_remote_mode() {
-        let cli = Cli::parse_from([
-            "poor-cli-tui",
-            "--remote-url",
-            "wss://example.test/rpc",
-            "--remote-room",
-            "dev",
-            "--remote-token",
-            "tok-123",
-        ]);
+        let cli = Cli::parse_from(["poor-cli-tui", "--remote-invite", "invite-code"]);
         let args = multiplayer::build_backend_server_args(&cli).expect("remote args should build");
         assert_eq!(
             args,
             vec![
                 "--bridge".to_string(),
-                "--url".to_string(),
-                "wss://example.test/rpc".to_string(),
-                "--room".to_string(),
-                "dev".to_string(),
-                "--token".to_string(),
-                "tok-123".to_string(),
+                "--invite".to_string(),
+                "invite-code".to_string(),
             ]
         );
     }
 
     #[test]
-    fn backend_server_args_require_complete_remote_triplet() {
-        let cli = Cli::parse_from(["poor-cli-tui", "--remote-url", "wss://example.test/rpc"]);
-        let err = multiplayer::build_backend_server_args(&cli)
-            .expect_err("should fail for partial remote args");
-        assert!(err.contains("--remote-url"));
-    }
-
-    #[test]
-    fn join_server_parser_accepts_invite_code() {
-        let parsed =
-            multiplayer::parse_join_server_args("/join-server ws://127.0.0.1:8765/rpc|dev|tok-abc")
-                .expect("invite code should parse");
+    fn backend_server_args_support_remote_invite() {
+        let cli = Cli::parse_from(["poor-cli-tui", "--remote-invite", "invite-code"]);
+        let args =
+            multiplayer::build_backend_server_args(&cli).expect("remote invite args should build");
         assert_eq!(
-            parsed,
-            (
-                "ws://127.0.0.1:8765/rpc".to_string(),
-                "dev".to_string(),
-                "tok-abc".to_string(),
-            )
+            args,
+            vec![
+                "--bridge".to_string(),
+                "--invite".to_string(),
+                "invite-code".to_string(),
+            ]
         );
     }
 
     #[test]
-    fn join_server_parser_accepts_base64_invite_code() {
+    fn join_server_parser_accepts_signed_invite_code() {
         let parsed = multiplayer::parse_join_server_args(
-            "/join-server d3M6Ly8xMjcuMC4wLjE6ODc2NS9ycGN8ZGV2fHRvay1hYmM",
+            "/join-server eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJodHRwczovL2hvc3QudGVzdC9ycGMiLCJzZXNzaW9uSWQiOiJkb2NzIiwidG9rZW4iOiJ0b2steHl6Iiwicm9sZSI6InZpZXdlciJ9LCJzaWciOiJzaWcifQ",
         )
-        .expect("base64 invite code should parse");
+        .expect("signed invite should parse");
         assert_eq!(
             parsed,
-            (
-                "ws://127.0.0.1:8765/rpc".to_string(),
-                "dev".to_string(),
-                "tok-abc".to_string(),
-            )
+            multiplayer::RemoteBootstrap {
+                invite: "eyJwYXlsb2FkIjp7InYiOjEsImtpbmQiOiJwb29yLWNsaS1wMnAiLCJzaWduYWxpbmdVcmwiOiJodHRwczovL2hvc3QudGVzdC9ycGMiLCJzZXNzaW9uSWQiOiJkb2NzIiwidG9rZW4iOiJ0b2steHl6Iiwicm9sZSI6InZpZXdlciJ9LCJzaWciOiJzaWcifQ".to_string(),
+                signaling_url: "https://host.test/rpc".to_string(),
+                room: "docs".to_string(),
+                token: "tok-xyz".to_string(),
+            }
         );
     }
 
     #[test]
-    fn join_server_parser_accepts_explicit_triplet() {
-        let parsed =
+    fn join_server_parser_rejects_legacy_triplet() {
+        let err =
             multiplayer::parse_join_server_args("/join-server wss://host.test/rpc docs tok-xyz")
-                .expect("triplet should parse");
-        assert_eq!(
-            parsed,
-            (
-                "wss://host.test/rpc".to_string(),
-                "docs".to_string(),
-                "tok-xyz".to_string(),
-            )
-        );
+                .expect_err("legacy triplet should fail");
+        assert!(err.contains("Usage"));
     }
 
     #[test]
@@ -5498,6 +5954,16 @@ mod tests {
         let err = multiplayer::parse_join_server_args("/join-server checkpoint")
             .expect_err("single non-code arg should fail");
         assert!(err.contains("Usage"));
+    }
+
+    #[test]
+    fn remote_reconnect_classifier_accepts_signaling_and_datachannel_errors() {
+        assert!(multiplayer::should_attempt_remote_reconnect(
+            "Signaling request failed (500): owner unavailable"
+        ));
+        assert!(multiplayer::should_attempt_remote_reconnect(
+            "data channel is not open"
+        ));
     }
 
     #[test]
@@ -5538,7 +6004,7 @@ CUSTOM_FLAG=yes\n";
     fn select_setup_provider_model_falls_back_to_first_configured_provider() {
         let editor = ApiKeyEditorState {
             target_provider: "gemini".to_string(),
-            target_model: "gemini-2.0-flash".to_string(),
+            target_model: provider_catalog::default_model("gemini").to_string(),
             fields: vec![
                 ApiKeyEditorField {
                     label: "Gemini".to_string(),
@@ -5561,7 +6027,7 @@ CUSTOM_FLAG=yes\n";
         let (provider, model) = select_setup_provider_model(&editor);
 
         assert_eq!(provider, "openai");
-        assert_eq!(model, "gpt-4-turbo");
+        assert_eq!(model, provider_catalog::default_model("openai"));
     }
 
     #[test]
@@ -5576,7 +6042,7 @@ CUSTOM_FLAG=yes\n";
 
         let mut app = build_app_for_root(&root);
         app.provider_name = "openai".to_string();
-        app.model_name = "gpt-4-turbo".to_string();
+        app.model_name = provider_catalog::default_model("openai").to_string();
 
         let state = build_api_key_editor_state(&app, Some("Initialization failed"))
             .expect("editor state should build");

@@ -1,7 +1,7 @@
 """
 OpenAI Provider Implementation
 
-Supports GPT-4, GPT-4-Turbo, GPT-3.5-Turbo and other OpenAI models.
+Supports current OpenAI GPT families and other compatible OpenAI models.
 """
 
 import asyncio
@@ -18,6 +18,7 @@ except ImportError:
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
 from .tool_translator import ToolTranslator, ProviderType
+from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -33,14 +34,14 @@ logger = setup_logger(__name__)
 class OpenAIProvider(BaseProvider):
     """OpenAI API provider implementation"""
 
-    def __init__(self, api_key: str, model_name: str = "gpt-4-turbo",
+    def __init__(self, api_key: str, model_name: str = default_model_for_provider("openai"),
                  max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0):
         """
         Initialize OpenAI provider
 
         Args:
             api_key: OpenAI API key
-            model_name: Model to use (gpt-4-turbo, gpt-4, gpt-3.5-turbo, etc.)
+            model_name: Model to use (for example gpt-5.1, gpt-5, gpt-5-mini)
             max_retries: Max retries for failed requests
             retry_delay: Initial retry delay in seconds
             timeout: Request timeout in seconds

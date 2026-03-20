@@ -81,6 +81,7 @@ fn collab_usage_text() -> &'static str {
     "Usage: /collab start <pair|mob|review>\n\
        /collab join [invite-code]\n\
        /collab status\n\
+       /collab summary\n\
        /collab members\n\
        /collab share [driver|viewer]\n\
        /collab handoff [next|#N|@name]\n\
@@ -222,6 +223,22 @@ fn format_policy_status(payload: &Value) -> String {
         .pointer("/audit/path")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let validation_errors = payload
+        .pointer("/hooks/validationErrors")
+        .and_then(|v| v.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    let supported_schema_versions = payload
+        .pointer("/hooks/supportedSchemaVersions")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter()
+                .filter_map(|item| item.as_u64())
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
 
     let mut lines = vec![
         "**Policy Status**".to_string(),
@@ -237,6 +254,12 @@ fn format_policy_status(payload: &Value) -> String {
             }
         ),
     ];
+    if !supported_schema_versions.is_empty() {
+        lines.push(format!("- Supported schema versions: {supported_schema_versions}"));
+    }
+    if validation_errors > 0 {
+        lines.push(format!("- Validation errors: {validation_errors}"));
+    }
 
     if let Some(events) = payload.pointer("/hooks/events").and_then(|v| v.as_object()) {
         for (event, entries) in events {
@@ -248,7 +271,7 @@ fn format_policy_status(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_task_list(payload: &Value, title: &str) -> String {
+pub(crate) fn format_task_list(payload: &Value, title: &str) -> String {
     let tasks = payload
         .get("tasks")
         .and_then(|value| value.as_array())
@@ -284,7 +307,72 @@ fn format_task_list(payload: &Value, title: &str) -> String {
     lines.join("\n")
 }
 
-fn format_task_detail(payload: &Value) -> String {
+pub(crate) fn format_automation_list(payload: &Value, title: &str) -> String {
+    let automations = payload
+        .get("automations")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if automations.is_empty() {
+        return format!("{title}\n\nNo automations found.");
+    }
+
+    let mut lines = vec![format!("{title}\n")];
+    for automation in automations {
+        let automation_id = automation
+            .get("automationId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(unknown)");
+        let name = automation
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(unnamed)");
+        let enabled = automation
+            .get("enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let next_run = automation
+            .get("nextRunAt")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let last_status = automation
+            .get("lastRunStatus")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        lines.push(format!(
+            "- `{automation_id}` [{}] {}",
+            if enabled { "enabled" } else { "disabled" },
+            name
+        ));
+        if !next_run.is_empty() {
+            lines.push(format!("  next: {next_run}"));
+        }
+        if !last_status.is_empty() {
+            let last_run_id = automation
+                .get("lastRunId")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if last_run_id.is_empty() {
+                lines.push(format!("  last run: `{last_status}`"));
+            } else {
+                lines.push(format!("  last run: `{last_status}` via `{last_run_id}`"));
+            }
+        }
+        if let Some(summary) = automation.get("lastRunSummary").and_then(|value| value.as_str()) {
+            if !summary.is_empty() {
+                lines.push(format!("  {}", truncate_line(summary, 160)));
+            }
+        }
+        if let Some(error) = automation.get("lastRunError").and_then(|value| value.as_str()) {
+            if !error.is_empty() {
+                lines.push(format!("  failure: {}", truncate_line(error, 160)));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_task_detail(payload: &Value) -> String {
     let task = payload.get("task").unwrap_or(payload);
     let task_id = task
         .get("taskId")
@@ -342,6 +430,528 @@ fn format_task_detail(payload: &Value) -> String {
     if !error_message.is_empty() {
         lines.push(format!("- Error: {}", truncate_line(error_message, 180)));
     }
+    if let Some(runs) = payload.get("runs").and_then(|value| value.as_array()) {
+        if let Some(run) = runs.first() {
+            if let Some(run_id) = run.get("runId").and_then(|value| value.as_str()) {
+                let status = run
+                    .get("status")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("unknown");
+                lines.push(format!("- Latest run: `{run_id}` [{status}]"));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_runs_payload(payload: &Value, title: &str) -> String {
+    let runs = payload
+        .get("runs")
+        .or_else(|| payload.get("recent"))
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if runs.is_empty() {
+        return format!("{title}\n\nNo runs found.");
+    }
+
+    let mut lines = vec![title.to_string(), String::new()];
+    for run in runs {
+        let run_id = run
+            .get("runId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(unknown)");
+        let status = run
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let source_kind = run
+            .get("sourceKind")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let source_id = run
+            .get("sourceId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let summary = run
+            .get("summary")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let error_class = run
+            .get("errorClass")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        lines.push(format!(
+            "- `{run_id}` [{status}] `{source_kind}/{source_id}`"
+        ));
+        if !summary.is_empty() {
+            lines.push(format!("  {}", truncate_line(summary, 180)));
+        }
+        if !error_class.is_empty() {
+            lines.push(format!("  error class: `{error_class}`"));
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_workflows_payload(payload: &Value) -> String {
+    let workflows = payload
+        .get("workflows")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if workflows.is_empty() {
+        return "**Workflows**\n\nNo workflows available.".to_string();
+    }
+
+    let recommended = payload
+        .get("recommended")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let mut lines = vec!["**Workflows**".to_string(), String::new()];
+    for workflow in workflows {
+        let name = workflow
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let description = workflow
+            .get("description")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let marker = if name == recommended {
+            " (recommended)"
+        } else {
+            ""
+        };
+        lines.push(format!("- `{name}`{marker}: {description}"));
+    }
+    lines.push(String::new());
+    lines.push("Inspect one with `/workflow <name>`.".to_string());
+    lines.join("\n")
+}
+
+pub(crate) fn format_workflow_detail(payload: &Value) -> String {
+    let workflow = payload.get("workflow").unwrap_or(payload);
+    let name = workflow
+        .get("name")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let description = workflow
+        .get("description")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let scaffold = workflow
+        .get("starterPrompt")
+        .or_else(|| workflow.get("starter_prompt"))
+        .or_else(|| workflow.get("promptScaffold"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let sandbox = workflow
+        .get("defaultSandboxPreset")
+        .or_else(|| workflow.get("sandboxPreset"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let context = workflow
+        .get("contextStrategy")
+        .or_else(|| workflow.get("suggestedContextStrategy"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let follow_ups = workflow
+        .get("followUpCommands")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+
+    let mut lines = vec![
+        format!("**Workflow** `{name}`"),
+        format!("- Description: {description}"),
+    ];
+    if !sandbox.is_empty() {
+        lines.push(format!("- Default sandbox: `{sandbox}`"));
+    }
+    if !context.is_empty() {
+        lines.push(format!("- Context strategy: {context}"));
+    }
+    if !follow_ups.is_empty() {
+        lines.push(format!("- Follow-up commands: {follow_ups}"));
+    }
+    if !scaffold.is_empty() {
+        lines.push(String::new());
+        lines.push("```text".to_string());
+        lines.push(scaffold.to_string());
+        lines.push("```".to_string());
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_collab_summary_payload(payload: &Value) -> String {
+    let collab = payload.get("collaboration").unwrap_or(payload);
+    let running = collab
+        .get("running")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let role = collab
+        .get("role")
+        .and_then(|value| value.as_str())
+        .unwrap_or("solo");
+    let room = collab
+        .get("room")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let member_count = collab
+        .get("memberCount")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let summary = collab
+        .get("summary")
+        .and_then(|value| value.as_str())
+        .unwrap_or("No collaboration summary available.");
+    let health = collab
+        .get("connectionHealth")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let queue_depth = collab
+        .pointer("/queueState/depth")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let hands_raised = collab
+        .pointer("/queueState/handsRaised")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let mut lines = vec![
+        "**Collaboration Summary**".to_string(),
+        format!("- Running: `{running}`"),
+        format!("- Role: `{role}`"),
+        format!("- Room: `{}`", if room.is_empty() { "-" } else { room }),
+        format!("- Members: {member_count}"),
+        format!("- Queue depth: {queue_depth}"),
+        format!("- Hands raised: {hands_raised}"),
+        format!("- Connection health: `{health}`"),
+        format!("- Summary: {summary}"),
+    ];
+    if let Some(signaling_url) = collab.get("signalingUrl").and_then(|value| value.as_str()) {
+        if !signaling_url.is_empty() {
+            lines.push(format!("- Signaling: `{signaling_url}`"));
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_status_view_payload(
+    payload: &Value,
+    app: &App,
+    watch_state: &WatchState,
+    qa_watch_state: &QaWatchState,
+) -> String {
+    let session = payload.get("session").unwrap_or(&Value::Null);
+    let provider = payload.pointer("/provider/active").unwrap_or(&Value::Null);
+    let context = payload
+        .pointer("/context/lastPreview")
+        .unwrap_or(&Value::Null);
+    let runs = payload.pointer("/runs/recent").unwrap_or(&Value::Null);
+    let collab = payload.get("collaboration").unwrap_or(&Value::Null);
+    let mutation = payload
+        .pointer("/recovery/lastMutation")
+        .unwrap_or(&Value::Null);
+    let recent_run_id = runs
+        .as_array()
+        .and_then(|items| items.first())
+        .and_then(|run| run.get("runId"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("-");
+    let selected_count = context
+        .get("selected")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    let excluded_count = context
+        .get("excluded")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    let context_total = context
+        .get("totalTokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let context_budget = context
+        .get("budgetTokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(app.context_budget_tokens as u64);
+    let role = collab
+        .get("role")
+        .and_then(|value| value.as_str())
+        .unwrap_or("solo");
+    let room = collab
+        .get("room")
+        .and_then(|value| value.as_str())
+        .unwrap_or("-");
+    let member_count = collab
+        .get("memberCount")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let mut lines = vec![
+        "**Session Status**".to_string(),
+        format!(
+            "- Provider: `{}/{}`",
+            provider.get("name").and_then(|value| value.as_str()).unwrap_or("-"),
+            provider.get("model").and_then(|value| value.as_str()).unwrap_or("-")
+        ),
+        format!(
+            "- Routing mode: `{}`",
+            session
+                .get("routingMode")
+                .and_then(|value| value.as_str())
+                .unwrap_or("manual")
+        ),
+        format!(
+            "- Permission mode: `{}`",
+            session
+                .get("permissionMode")
+                .and_then(|value| value.as_str())
+                .unwrap_or("prompt")
+        ),
+        format!("- CWD: `{}`", app.cwd),
+        format!("- Response mode: `{}`", app.response_mode.as_str()),
+        format!("- Context: {selected_count} selected / {excluded_count} excluded (~{context_total}/{context_budget} tokens)"),
+        format!("- Recent run: `{recent_run_id}`"),
+        format!("- Watch mode: {}", if watch_state.is_running() { "active" } else { "inactive" }),
+        format!("- QA watch: {}", if qa_watch_state.is_running() { "running" } else { "stopped" }),
+        format!("- Collaboration: role=`{role}` room=`{room}` members={member_count}"),
+    ];
+    if let Some(intent) = mutation.get("intent").and_then(|value| value.as_str()) {
+        if !intent.is_empty() {
+            lines.push(format!("- Last mutation: `{intent}`"));
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_trust_view_payload(payload: &Value) -> String {
+    let trust = payload.get("trust").unwrap_or(&Value::Null);
+    let provider = payload.pointer("/provider/active").unwrap_or(&Value::Null);
+    let readiness = payload
+        .pointer("/provider/readiness")
+        .unwrap_or(&Value::Null);
+    let recovery = payload.get("recovery").unwrap_or(&Value::Null);
+    let mut lines = vec![
+        "**Trust Center**".to_string(),
+        format!(
+            "- Provider: `{}/{}`",
+            provider
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("-"),
+            provider
+                .get("model")
+                .and_then(|value| value.as_str())
+                .unwrap_or("-")
+        ),
+        format!(
+            "- Routing mode: `{}`",
+            provider
+                .get("routingMode")
+                .and_then(|value| value.as_str())
+                .unwrap_or("manual")
+        ),
+        format!(
+            "- Sandbox preset: `{}`",
+            trust
+                .get("sandboxPreset")
+                .and_then(|value| value.as_str())
+                .unwrap_or("-")
+        ),
+        format!(
+            "- Checkpointing: `{}`",
+            trust
+                .get("checkpointing")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+        ),
+        format!(
+            "- Trusted workspace boundary: `{}`",
+            trust
+                .pointer("/security/trustedWorkspaceBoundary")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(true)
+        ),
+        format!(
+            "- Privacy posture: `{}`",
+            payload
+                .pointer("/provider/privacyPosture")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+        ),
+    ];
+    if let Some(fallback_to) = payload
+        .pointer("/provider/fallback/to")
+        .and_then(|value| value.as_str())
+    {
+        if !fallback_to.is_empty() {
+            lines.push(format!("- Fallback target: `{fallback_to}`"));
+        }
+    }
+    if let Some(last_error) = payload
+        .pointer("/provider/lastError")
+        .and_then(|value| value.as_str())
+    {
+        if !last_error.is_empty() {
+            lines.push(format!(
+                "- Last provider error: {}",
+                truncate_line(last_error, 180)
+            ));
+        }
+    }
+    if let Some(roots) = trust
+        .pointer("/security/trustedRoots")
+        .and_then(|value| value.as_array())
+    {
+        if !roots.is_empty() {
+            lines.push(format!("- Trusted roots: {}", roots.len()));
+        }
+    }
+    let hook_total = trust
+        .pointer("/policy/hooks/totalHooks")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    lines.push(format!("- Policy hooks: {hook_total}"));
+    let hook_validation_errors = trust
+        .pointer("/policy/hooks/validationErrors")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    if hook_validation_errors > 0 {
+        lines.push(format!("- Hook validation errors: {hook_validation_errors}"));
+    }
+    if let Some(obj) = readiness.as_object() {
+        let ready_count = obj
+            .values()
+            .filter(|entry| {
+                entry
+                    .get("ready")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+            })
+            .count();
+        lines.push(format!("- Ready providers: {ready_count}"));
+    }
+    if let Some(checkpoint_id) = recovery
+        .pointer("/lastMutation/checkpointId")
+        .and_then(|value| value.as_str())
+    {
+        if !checkpoint_id.is_empty() {
+            lines.push(format!("- Last rollback point: `{checkpoint_id}`"));
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_doctor_report_payload(payload: &Value) -> String {
+    let overall = payload
+        .pointer("/summary/overall")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let ready_provider_count = payload
+        .pointer("/summary/readyProviderCount")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let routing_mode = payload
+        .pointer("/summary/routingMode")
+        .and_then(|value| value.as_str())
+        .unwrap_or("manual");
+    let privacy = payload
+        .pointer("/summary/privacyPosture")
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let checks = payload
+        .get("checks")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut lines = vec![
+        "**Doctor Report**".to_string(),
+        format!("- Overall: `{overall}`"),
+        format!("- Ready providers: {ready_provider_count}"),
+        format!("- Routing mode: `{routing_mode}`"),
+        format!("- Privacy posture: `{privacy}`"),
+        String::new(),
+    ];
+    for check in checks {
+        let title = check
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Check");
+        let status = check
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("unknown");
+        let message = check
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let action = check
+            .get("action")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        lines.push(format!("- **{title}** [{status}]: {message}"));
+        if !action.is_empty() {
+            lines.push(format!("  action: {action}"));
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_setup_guide_payload(
+    trust_payload: &Value,
+    workflows_payload: &Value,
+) -> String {
+    let provider_readiness = trust_payload
+        .pointer("/provider/readiness")
+        .unwrap_or(&Value::Null);
+    let recommended_workflow = workflows_payload
+        .get("recommended")
+        .and_then(|value| value.as_str())
+        .unwrap_or("implement");
+    let recommended_routing = trust_payload
+        .pointer("/session/routingMode")
+        .and_then(|value| value.as_str())
+        .unwrap_or("manual");
+    let recommended_sandbox = trust_payload
+        .pointer("/trust/sandboxPreset")
+        .and_then(|value| value.as_str())
+        .unwrap_or("workspace-write");
+    let ready_count = provider_readiness
+        .as_object()
+        .map(|items| {
+            items
+                .values()
+                .filter(|entry| {
+                    entry
+                        .get("ready")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    let lines = vec![
+        "**Setup Guide**".to_string(),
+        format!("- Ready providers: {ready_count}"),
+        format!("- Recommended routing mode: `{recommended_routing}`"),
+        format!("- Recommended sandbox preset: `{recommended_sandbox}`"),
+        format!("- Suggested first workflow: `{recommended_workflow}`"),
+        String::new(),
+        "Next steps:".to_string(),
+        "1. Use `/api-key` if a cloud provider is not ready.".to_string(),
+        "2. Use `/sandbox <preset>` to confirm your mutation guardrails.".to_string(),
+        "3. Run `/workflow <name>` to inspect a starter scaffold.".to_string(),
+        "4. Run `/trust` to verify rollback, provider, and policy state.".to_string(),
+    ];
     lines.join("\n")
 }
 
@@ -619,8 +1229,8 @@ pub(super) fn handle_slash_command(
         app.onboarding_step = 0;
         app.join_wizard_active = false;
         app.join_wizard_step = 0;
-        app.join_wizard_url.clear();
-        app.join_wizard_room.clear();
+        app.join_wizard_input.clear();
+        app.join_wizard_error.clear();
         if qa_watch_state.is_running() {
             qa_watch_state.stop();
             app.qa_mode_enabled = false;
@@ -650,8 +1260,8 @@ pub(super) fn handle_slash_command(
         app.onboarding_step = 0;
         app.join_wizard_active = false;
         app.join_wizard_step = 0;
-        app.join_wizard_url.clear();
-        app.join_wizard_room.clear();
+        app.join_wizard_input.clear();
+        app.join_wizard_error.clear();
         if qa_watch_state.is_running() {
             qa_watch_state.stop();
             app.qa_mode_enabled = false;
@@ -721,11 +1331,13 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/setup"
-        || lowered == "/env"
-        || lowered == "/api-key"
-        || lowered == "/api-key edit"
-    {
+    if lowered == "/setup" {
+        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Setup);
+        app.set_status("Opened Setup workspace");
+        return false;
+    }
+
+    if lowered == "/env" || lowered == "/api-key" || lowered == "/api-key edit" {
         match open_api_key_setup_editor(app, None) {
             Ok(()) => {}
             Err(error) => app.push_message(ChatMessage::error(format!(
@@ -1633,133 +2245,62 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/doctor" {
-        let mut lines = vec!["**poor-cli Doctor**".to_string(), String::new()];
+        match rpc_get_doctor_report_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                show_command_info_popup(app, raw, format_doctor_report_payload(&payload))
+            }
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to load doctor report: {error}"))
+            }
+        }
+        return false;
+    }
 
-        match rpc_get_config_blocking(rpc_cmd_tx) {
-            Ok(cfg) => {
-                let mode = cfg
-                    .get("permissionMode")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                lines.push(format!("- Permission mode: `{mode}`"));
-                if mode == "danger-full-access" {
-                    lines.push("- Warning: running in `danger-full-access`.".to_string());
+    if lowered == "/trust" {
+        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Setup);
+        app.set_status("Opened Setup workspace");
+        return false;
+    }
+
+    if lowered == "/runs" || lowered.starts_with("/runs ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let limit = args
+            .get(1)
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(20);
+        match rpc_list_runs_blocking(rpc_cmd_tx, None, None, limit) {
+            Ok(payload) => {
+                show_command_info_popup(app, raw, format_runs_payload(&payload, "**Runs**"))
+            }
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to load runs: {error}"))
+            }
+        }
+        return false;
+    }
+
+    if lowered == "/workflow" || lowered.starts_with("/workflow ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let selected = args.get(1).copied().unwrap_or("").trim();
+        if selected.is_empty() {
+            match rpc_list_workflows_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_workflows_payload(&payload))
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to load workflows: {error}"))
                 }
             }
-            Err(e) => lines.push(format!("- Permission mode check failed: {e}")),
-        }
-
-        match rpc_get_api_key_status_blocking(rpc_cmd_tx, None) {
-            Ok(payload) => {
-                let providers = payload
-                    .get("providers")
-                    .and_then(|v| v.as_object())
-                    .cloned()
-                    .unwrap_or_default();
-                let configured = providers
-                    .values()
-                    .filter(|entry| {
-                        entry
-                            .get("configured")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
-                    })
-                    .count();
-                lines.push(format!(
-                    "- API keys configured: {configured}/{} provider(s)",
-                    providers.len()
-                ));
+        } else {
+            match rpc_get_workflow_blocking(rpc_cmd_tx, selected) {
+                Ok(payload) => show_command_info_popup(app, raw, format_workflow_detail(&payload)),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to load workflow `{selected}`: {error}"),
+                ),
             }
-            Err(e) => lines.push(format!("- API key status check failed: {e}")),
         }
-
-        match rpc_get_service_status_blocking(rpc_cmd_tx, None) {
-            Ok(payload) => {
-                let services = payload
-                    .get("services")
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                let running = services
-                    .iter()
-                    .filter(|entry| {
-                        entry
-                            .get("running")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
-                    })
-                    .count();
-                lines.push(format!(
-                    "- Managed services running: {running}/{}",
-                    services.len()
-                ));
-            }
-            Err(e) => lines.push(format!("- Service check failed: {e}")),
-        }
-
-        match rpc_get_instruction_stack_blocking(rpc_cmd_tx, &[]) {
-            Ok(payload) => {
-                let source_count = payload
-                    .get("sourceCount")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                lines.push(format!("- Instruction sources active: {source_count}"));
-            }
-            Err(e) => lines.push(format!("- Instruction stack check failed: {e}")),
-        }
-
-        match rpc_get_policy_status_blocking(rpc_cmd_tx) {
-            Ok(payload) => {
-                let total_hooks = payload
-                    .pointer("/hooks/totalHooks")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let audit_path = payload
-                    .pointer("/audit/path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                lines.push(format!("- Repo policy hooks: {total_hooks}"));
-                if !audit_path.is_empty() {
-                    lines.push(format!("- Audit log: `{audit_path}`"));
-                }
-            }
-            Err(e) => lines.push(format!("- Policy hook check failed: {e}")),
-        }
-
-        match rpc_get_mcp_status_blocking(rpc_cmd_tx) {
-            Ok(payload) => {
-                let configured = payload
-                    .get("configuredServers")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let connected = payload
-                    .get("connectedServers")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let tool_count = payload
-                    .get("toolCount")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                lines.push(format!(
-                    "- MCP servers connected: {connected}/{configured} ({tool_count} tool(s))"
-                ));
-            }
-            Err(e) => lines.push(format!("- MCP check failed: {e}")),
-        }
-
-        match rpc_execute_command_with_timeout_blocking(
-            rpc_cmd_tx,
-            "git rev-parse --abbrev-ref HEAD",
-            Some(15),
-            20,
-        ) {
-            Ok(branch) => lines.push(format!("- Git branch: `{}`", first_line(&branch))),
-            Err(_) => lines.push("- Git branch: unavailable (not a git repo?)".to_string()),
-        }
-
-        lines.push(String::new());
-        lines.push("If anything is degraded: check `/api-key`, `/permission-mode`, `/service status`, `/status`, and the repo-local `.poor-cli` policy files.".to_string());
-        show_command_info_popup(app, raw, lines.join("\n"));
         return false;
     }
 
@@ -2217,7 +2758,7 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
-    if lowered == "/context" {
+    if lowered == "/context" || lowered == "/context explain" {
         let preview_message = app.last_user_message.clone().unwrap_or_default();
         match open_context_inspector_for_message(app, rpc_cmd_tx, preview_message) {
             Ok(()) => {}
@@ -2666,14 +3207,8 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/inbox" {
-        match rpc_list_tasks_blocking(rpc_cmd_tx, true) {
-            Ok(payload) => {
-                show_command_info_popup(app, raw, format_task_list(&payload, "**Inbox**"))
-            }
-            Err(error) => {
-                show_command_info_popup(app, raw, format!("Failed to load inbox: {error}"))
-            }
-        }
+        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+        app.set_status("Opened Tasks workspace");
         return false;
     }
 
@@ -2690,14 +3225,8 @@ Context Window: {max_context} tokens\n\n\
             .trim()
             .to_ascii_lowercase();
         if subcommand == "list" {
-            match rpc_list_tasks_blocking(rpc_cmd_tx, false) {
-                Ok(payload) => {
-                    show_command_info_popup(app, raw, format_task_list(&payload, "**Tasks**"))
-                }
-                Err(error) => {
-                    show_command_info_popup(app, raw, format!("Failed to list tasks: {error}"))
-                }
-            }
+            activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+            app.set_status("Opened Tasks workspace");
             return false;
         }
         if subcommand == "open" || subcommand == "show" {
@@ -2741,7 +3270,10 @@ Context Window: {max_context} tokens\n\n\
                 auto_start,
                 requires_approval,
             ) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to create task: {error}"))
                 }
@@ -2755,7 +3287,10 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_approve_task_blocking(rpc_cmd_tx, task_id) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to approve task: {error}"))
                 }
@@ -2769,9 +3304,46 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_cancel_task_blocking(rpc_cmd_tx, task_id) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to cancel task: {error}"))
+                }
+            }
+            return false;
+        }
+        if subcommand == "retry" {
+            let task_id = args.get(2).copied().unwrap_or("").trim();
+            if task_id.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /task retry <task-id>".to_string());
+                return false;
+            }
+            match rpc_retry_task_blocking(rpc_cmd_tx, task_id) {
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to retry task: {error}"))
+                }
+            }
+            return false;
+        }
+        if subcommand == "replay" {
+            let task_id = args.get(2).copied().unwrap_or("").trim();
+            if task_id.is_empty() {
+                show_command_info_popup(app, raw, "Usage: /task replay <task-id>".to_string());
+                return false;
+            }
+            match rpc_replay_task_blocking(rpc_cmd_tx, task_id) {
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to replay task: {error}"))
                 }
             }
             return false;
@@ -2779,7 +3351,72 @@ Context Window: {max_context} tokens\n\n\
         show_command_info_popup(
             app,
             raw,
-            "Usage: /task list\n       /task create <prompt>\n       /task open <task-id>\n       /task approve <task-id>\n       /task cancel <task-id>".to_string(),
+            "Usage: /task list\n       /task create <prompt>\n       /task open <task-id>\n       /task approve <task-id>\n       /task cancel <task-id>\n       /task retry <task-id>\n       /task replay <task-id>".to_string(),
+        );
+        return false;
+    }
+
+    if lowered == "/automation" || lowered.starts_with("/automation ") {
+        let args: Vec<&str> = raw.split_whitespace().collect();
+        let subcommand = args
+            .get(1)
+            .copied()
+            .unwrap_or("help")
+            .trim()
+            .to_ascii_lowercase();
+        if subcommand == "history" {
+            let automation_id = args.get(2).copied().unwrap_or("").trim();
+            if automation_id.is_empty() {
+                show_command_info_popup(
+                    app,
+                    raw,
+                    "Usage: /automation history <automation-id> [limit]".to_string(),
+                );
+                return false;
+            }
+            let limit = args
+                .get(3)
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(20);
+            match rpc_get_automation_history_blocking(rpc_cmd_tx, automation_id, limit) {
+                Ok(payload) => show_command_info_popup(
+                    app,
+                    raw,
+                    format_runs_payload(&payload, "**Automation History**"),
+                ),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to load automation history: {error}"),
+                ),
+            }
+            return false;
+        }
+        if subcommand == "replay" {
+            let automation_id = args.get(2).copied().unwrap_or("").trim();
+            if automation_id.is_empty() {
+                show_command_info_popup(
+                    app,
+                    raw,
+                    "Usage: /automation replay <automation-id>".to_string(),
+                );
+                return false;
+            }
+            match rpc_replay_automation_blocking(rpc_cmd_tx, automation_id) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Err(error) => show_command_info_popup(
+                    app,
+                    raw,
+                    format!("Failed to replay automation: {error}"),
+                ),
+            }
+            return false;
+        }
+        show_command_info_popup(
+            app,
+            raw,
+            "Usage: /automation history <automation-id> [limit]\n       /automation replay <automation-id>"
+                .to_string(),
         );
         return false;
     }
@@ -3044,18 +3681,6 @@ Context Window: {max_context} tokens\n\n\
                 }
             }
             "join" => {
-                if args.len() == 2 && matches!(args[1], "manual" | "wizard") {
-                    return handle_slash_command(
-                        app,
-                        tx,
-                        rpc_cmd_tx,
-                        launch,
-                        cancel_token,
-                        watch_state,
-                        qa_watch_state,
-                        "/join-server",
-                    );
-                }
                 if args.len() == 2 {
                     let join_command = format!("/join-server {}", args[1]);
                     return handle_slash_command(
@@ -3073,7 +3698,7 @@ Context Window: {max_context} tokens\n\n\
                     show_command_info_popup(
                         app,
                         raw,
-                        "Usage: /collab join <invite-code>\n       /collab join manual".to_string(),
+                        "Usage: /collab join\n       /collab join <invite-code>".to_string(),
                     );
                     return false;
                 }
@@ -3114,6 +3739,19 @@ Context Window: {max_context} tokens\n\n\
                             "Failed to fetch collaboration status: {e}"
                         ))),
                     }
+                }
+                return false;
+            }
+            "summary" => {
+                match rpc_get_collab_summary_blocking(rpc_cmd_tx) {
+                    Ok(payload) => {
+                        show_command_info_popup(app, raw, format_collab_summary_payload(&payload))
+                    }
+                    Err(error) => show_command_info_popup(
+                        app,
+                        raw,
+                        format!("Failed to load collaboration summary: {error}"),
+                    ),
                 }
                 return false;
             }
@@ -3553,8 +4191,8 @@ Context Window: {max_context} tokens\n\n\
         }
         // join mode: /pair <invite-code>
         let invite = args[1];
-        let (url, room, token) = match multiplayer::decode_invite_code(invite) {
-            Ok((u, r, t)) => (u, r, t),
+        let bootstrap = match multiplayer::decode_invite_code(invite) {
+            Ok(bootstrap) => bootstrap,
             Err(e) => {
                 show_command_info_popup(
                     app,
@@ -3565,7 +4203,7 @@ Context Window: {max_context} tokens\n\n\
             }
         };
         app.set_status("Connecting to endpoint...");
-        if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
+        if let Err(e) = multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
             app.push_message(ChatMessage::error(format!(
                 "Join preflight failed: {e}\nCheck the invite code and try again."
             )));
@@ -3573,11 +4211,14 @@ Context Window: {max_context} tokens\n\n\
         }
         app.pair_mode_active = true;
         app.pair_is_host = false;
-        app.pair_short_code = room.clone();
-        app.multiplayer_room = room.clone();
+        app.pair_short_code = bootstrap.room.clone();
+        app.multiplayer_room = bootstrap.room.clone();
         app.multiplayer_role = "viewer".to_string();
-        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
-        app.push_message(ChatMessage::system(format!("Joining pair session: {room}")));
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &bootstrap);
+        app.push_message(ChatMessage::system(format!(
+            "Joining pair session: {}",
+            bootstrap.room
+        )));
         return false;
     }
 
@@ -3700,8 +4341,6 @@ Context Window: {max_context} tokens\n\n\
         if args.len() == 1 {
             app.join_wizard_active = true;
             app.join_wizard_step = 0;
-            app.join_wizard_url.clear();
-            app.join_wizard_room.clear();
             app.join_wizard_input.clear();
             app.join_wizard_error.clear();
             app.mode = AppMode::JoinWizard;
@@ -3716,13 +4355,13 @@ Context Window: {max_context} tokens\n\n\
         {
             app.join_wizard_active = false;
             app.join_wizard_step = 0;
-            app.join_wizard_url.clear();
-            app.join_wizard_room.clear();
+            app.join_wizard_input.clear();
+            app.join_wizard_error.clear();
             show_command_info_popup(app, raw, "Join wizard cancelled.".to_string());
             return false;
         }
 
-        let (url, room, token) = match multiplayer::parse_join_server_args(raw) {
+        let bootstrap = match multiplayer::parse_join_server_args(raw) {
             Ok(values) => values,
             Err(error_message) => {
                 show_command_info_popup(app, raw, error_message);
@@ -3731,14 +4370,14 @@ Context Window: {max_context} tokens\n\n\
         };
 
         app.set_status("Connecting to endpoint...");
-        if let Err(e) = multiplayer::preflight_join_endpoint(&url) {
+        if let Err(e) = multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
             app.push_message(ChatMessage::error(format!(
-                "Join preflight failed: {e}\nUse `/collab join manual` for the guided join flow."
+                "Join preflight failed: {e}\nUse `/collab join` for the invite prompt."
             )));
             return false;
         }
 
-        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &url, &room, &token);
+        multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &bootstrap);
         return false;
     }
 
@@ -4700,93 +5339,16 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/status" {
-        refresh_context_budget_state(app);
-        let onboarding_state = if app.onboarding_active {
-            format!(
-                "active ({}/{})",
-                app.onboarding_step.saturating_add(1),
-                onboarding_step_count()
-            )
-        } else {
-            "inactive".to_string()
-        };
-        let multiplayer_state = if app.multiplayer_enabled {
-            format!(
-                "room=`{}` role=`{}` members={} queue={} active=`{}` lobby={} preset={}",
-                if app.multiplayer_room.is_empty() {
-                    "unknown"
-                } else {
-                    &app.multiplayer_room
-                },
-                if app.multiplayer_role.is_empty() {
-                    "unknown"
-                } else {
-                    &app.multiplayer_role
-                },
-                app.multiplayer_member_count,
-                app.multiplayer_queue_depth,
-                if app.multiplayer_active_connection_id.is_empty() {
-                    "-"
-                } else {
-                    &app.multiplayer_active_connection_id
-                },
-                if app.multiplayer_lobby_enabled {
-                    "on"
-                } else {
-                    "off"
-                },
-                if app.multiplayer_preset.is_empty() {
-                    "-"
-                } else {
-                    &app.multiplayer_preset
-                },
-            )
-        } else {
-            "inactive".to_string()
-        };
-        let status = format!(
-            "**Session Status:**\n\
-Provider: {}/{}\n\
-CWD: {}\n\
-Response mode: {}\n\
-Profile: {}\n\
-Autopilot: {}\n\
-Context budget: {} tok ({} file(s), ~{} tok used)\n\
-QA watch: {}\n\
-Pinned files: {}\n\
-Queued images: {}\n\
-Watch mode: {}\n\
-Onboarding: {}\n\
-Multiplayer: {}",
-            app.provider_name,
-            app.model_name,
-            app.cwd,
-            app.response_mode.as_str(),
-            app.execution_profile,
-            if app.autopilot_enabled {
-                "enabled"
-            } else {
-                "disabled"
-            },
-            app.context_budget_tokens,
-            app.context_budget_files.len(),
-            app.context_budget_estimated_tokens,
-            if qa_watch_state.is_running() {
-                "running"
-            } else {
-                "stopped"
-            },
-            app.pinned_context_files.len(),
-            app.pending_images.len(),
-            if watch_state.is_running() {
-                "active"
-            } else {
-                "inactive"
-            },
-            onboarding_state,
-            multiplayer_state
-        );
-        show_command_info_popup(app, raw, status);
+        match rpc_get_status_view_blocking(rpc_cmd_tx) {
+            Ok(payload) => show_command_info_popup(
+                app,
+                raw,
+                format_status_view_payload(&payload, app, watch_state, qa_watch_state),
+            ),
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to load session status: {error}"))
+            }
+        }
         return false;
     }
 

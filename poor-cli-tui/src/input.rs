@@ -1,5 +1,5 @@
 /// Input handling: keyboard events, slash-command completion, etc.
-use crate::app::{App, AppMode, ProviderSelectPane, QueuedPrompt, QuickOpenItem};
+use crate::app::{App, AppMode, AppWorkspace, ProviderSelectPane, QueuedPrompt, QuickOpenItem};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -27,8 +27,8 @@ pub enum InputAction {
     CompactStrategySelected(String),
     /// Copy text to clipboard.
     CopyToClipboard(String),
-    /// Join wizard completed with (url, room, token).
-    JoinWizardComplete(String, String, String),
+    /// Join wizard completed with a resolved remote bootstrap.
+    JoinWizardComplete(crate::multiplayer::RemoteBootstrap),
     /// Save the API key/.env editor.
     SaveApiKeyEditor,
     /// Open the backend-owned context inspector.
@@ -47,6 +47,8 @@ pub enum InputAction {
     RestoreLastMutation,
     /// Open a file in the user's editor.
     OpenFileInEditor(String),
+    /// Switch to a primary workspace.
+    WorkspaceSelected(AppWorkspace),
 }
 
 pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
@@ -181,6 +183,16 @@ pub fn handle_event(app: &mut App, event: Event) -> InputAction {
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::F(1) => return InputAction::WorkspaceSelected(AppWorkspace::Chat),
+        KeyCode::F(2) => return InputAction::WorkspaceSelected(AppWorkspace::Review),
+        KeyCode::F(3) => return InputAction::WorkspaceSelected(AppWorkspace::Context),
+        KeyCode::F(4) => return InputAction::WorkspaceSelected(AppWorkspace::Tasks),
+        KeyCode::F(5) => return InputAction::WorkspaceSelected(AppWorkspace::Collaboration),
+        KeyCode::F(6) => return InputAction::WorkspaceSelected(AppWorkspace::Setup),
+        _ => {}
+    }
+
     // Global keybindings
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
@@ -825,8 +837,6 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
         KeyCode::Esc => {
             app.join_wizard_active = false;
             app.join_wizard_step = 0;
-            app.join_wizard_url.clear();
-            app.join_wizard_room.clear();
             app.join_wizard_input.clear();
             app.join_wizard_error.clear();
             app.mode = AppMode::Normal;
@@ -843,86 +853,30 @@ fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputAction {
         }
         KeyCode::Enter => {
             let input = app.join_wizard_input.trim().to_string();
-            match app.join_wizard_step {
-                0 => {
-                    // Invite-first step. A raw ws:// URL falls back to manual room/token entry.
-                    if input.is_empty() {
-                        app.join_wizard_error =
-                            "Paste an invite code or enter a ws:// / wss:// URL.".to_string();
-                        return InputAction::Redraw;
-                    }
+            if input.is_empty() {
+                app.join_wizard_error = "Paste a collaboration invite code.".to_string();
+                return InputAction::Redraw;
+            }
 
-                    if let Ok((url, room, token)) = crate::multiplayer::decode_invite_code(&input) {
-                        match crate::multiplayer::preflight_join_endpoint(&url) {
-                            Ok(_) => {
-                                app.join_wizard_active = false;
-                                app.join_wizard_step = 0;
-                                app.join_wizard_url.clear();
-                                app.join_wizard_room.clear();
-                                app.join_wizard_input.clear();
-                                app.join_wizard_error.clear();
-                                app.mode = AppMode::Normal;
-                                return InputAction::JoinWizardComplete(url, room, token);
-                            }
-                            Err(e) => {
-                                app.join_wizard_error = format!("Preflight failed: {e}");
-                                return InputAction::Redraw;
-                            }
-                        }
-                    }
-
-                    if !(input.starts_with("ws://") || input.starts_with("wss://")) {
-                        app.join_wizard_error =
-                            "Enter an invite code or a URL starting with ws:// or wss://."
-                                .to_string();
-                        return InputAction::Redraw;
-                    }
-
-                    match crate::multiplayer::preflight_join_endpoint(&input) {
-                        Ok(_) => {
-                            app.join_wizard_url = input;
-                            app.join_wizard_input.clear();
-                            app.join_wizard_error.clear();
-                            app.join_wizard_step = 1;
-                        }
-                        Err(e) => {
-                            app.join_wizard_error = format!("Preflight failed: {e}");
-                        }
-                    }
-                    InputAction::Redraw
+            let bootstrap = match crate::multiplayer::decode_invite_code(&input) {
+                Ok(bootstrap) => bootstrap,
+                Err(error) => {
+                    app.join_wizard_error = error;
+                    return InputAction::Redraw;
                 }
-                1 => {
-                    // room step
-                    if input.is_empty() {
-                        app.join_wizard_error = "Room name cannot be empty.".to_string();
-                        return InputAction::Redraw;
-                    }
-                    app.join_wizard_room = input;
-                    app.join_wizard_input.clear();
-                    app.join_wizard_error.clear();
-                    app.join_wizard_step = 2;
-                    InputAction::Redraw
-                }
-                2 => {
-                    // token step
-                    if input.is_empty() {
-                        app.join_wizard_error = "Token cannot be empty.".to_string();
-                        return InputAction::Redraw;
-                    }
-                    let url = app.join_wizard_url.clone();
-                    let room = app.join_wizard_room.clone();
-                    let token = input;
+            };
+
+            match crate::multiplayer::preflight_join_endpoint(&bootstrap.signaling_url) {
+                Ok(_) => {
                     app.join_wizard_active = false;
                     app.join_wizard_step = 0;
-                    app.join_wizard_url.clear();
-                    app.join_wizard_room.clear();
                     app.join_wizard_input.clear();
                     app.join_wizard_error.clear();
                     app.mode = AppMode::Normal;
-                    InputAction::JoinWizardComplete(url, room, token)
+                    InputAction::JoinWizardComplete(bootstrap)
                 }
-                _ => {
-                    app.mode = AppMode::Normal;
+                Err(e) => {
+                    app.join_wizard_error = format!("Preflight failed: {e}");
                     InputAction::Redraw
                 }
             }
@@ -1808,7 +1762,10 @@ mod tests {
             available: true,
             ready: true,
             status_label: "API key configured".to_string(),
-            models: vec!["gpt-4o".to_string(), "gpt-4-turbo".to_string()],
+            models: vec![
+                crate::provider_catalog::default_model("openai").to_string(),
+                "gpt-5-mini".to_string(),
+            ],
         }];
         app.open_provider_select();
 
@@ -1816,7 +1773,10 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.provider_select_pane, ProviderSelectPane::Models);
-        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            app.selected_provider_model().as_deref(),
+            Some(crate::provider_catalog::default_model("openai"))
+        );
     }
 
     #[test]
@@ -1828,9 +1788,9 @@ mod tests {
             ready: true,
             status_label: "API key configured".to_string(),
             models: vec![
-                "gpt-4o".to_string(),
-                "gpt-4-turbo".to_string(),
-                "gpt-3.5-turbo".to_string(),
+                crate::provider_catalog::default_model("openai").to_string(),
+                "gpt-5".to_string(),
+                "gpt-5-mini".to_string(),
             ],
         }];
         app.open_provider_select();
@@ -1838,14 +1798,14 @@ mod tests {
 
         let down = handle_key_provider_select(&mut app, key_down());
         assert!(matches!(down, InputAction::Redraw));
-        assert_eq!(
-            app.selected_provider_model().as_deref(),
-            Some("gpt-4-turbo")
-        );
+        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-5"));
 
         let up = handle_key_provider_select(&mut app, key_up());
         assert!(matches!(up, InputAction::Redraw));
-        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            app.selected_provider_model().as_deref(),
+            Some(crate::provider_catalog::default_model("openai"))
+        );
     }
 
     #[test]
@@ -1856,7 +1816,7 @@ mod tests {
             available: true,
             ready: true,
             status_label: "API key configured".to_string(),
-            models: vec!["gpt-4o".to_string()],
+            models: vec![crate::provider_catalog::default_model("openai").to_string()],
         }];
         app.open_provider_select();
         app.provider_select_pane = ProviderSelectPane::Models;
@@ -1865,6 +1825,65 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.provider_select_pane, ProviderSelectPane::Providers);
+    }
+
+    #[test]
+    fn function_keys_switch_primary_workspaces() {
+        let mut app = App::new();
+
+        let chat = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            chat,
+            InputAction::WorkspaceSelected(AppWorkspace::Chat)
+        ));
+
+        let review = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            review,
+            InputAction::WorkspaceSelected(AppWorkspace::Review)
+        ));
+
+        let context = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            context,
+            InputAction::WorkspaceSelected(AppWorkspace::Context)
+        ));
+
+        let tasks = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            tasks,
+            InputAction::WorkspaceSelected(AppWorkspace::Tasks)
+        ));
+
+        let collaboration = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            collaboration,
+            InputAction::WorkspaceSelected(AppWorkspace::Collaboration)
+        ));
+
+        let setup = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            setup,
+            InputAction::WorkspaceSelected(AppWorkspace::Setup)
+        ));
     }
 
     #[test]

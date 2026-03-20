@@ -70,6 +70,7 @@ pub(super) fn handle_server_message(
             }
             refresh_workspace_status(app);
             refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
+            refresh_workspace_panels(app, &rpc_cmd_tx.borrow());
             write_session_log(
                 session_log,
                 &format!(
@@ -157,6 +158,7 @@ pub(super) fn handle_server_message(
                 ),
             );
             app.set_status("Provider switched successfully");
+            refresh_workspace_panels(app, &rpc_cmd_tx.borrow());
         }
         ServerMsg::Error { message } => {
             let active_request_id = app.active_request_id.clone();
@@ -180,9 +182,8 @@ pub(super) fn handle_server_message(
             app.finalize_streaming();
             app.active_tool = None;
             app.stop_waiting();
-            let remote_reconnect_configured = !app.multiplayer_remote_url.is_empty()
-                && !app.multiplayer_remote_token.is_empty()
-                && !app.multiplayer_room.is_empty();
+            let remote_reconnect_configured =
+                !app.multiplayer_remote_invite.is_empty() && !app.multiplayer_room.is_empty();
             let mut state = remote_reconnect_state.borrow_mut();
             if remote_reconnect_configured
                 && multiplayer::should_attempt_remote_reconnect(&message)
@@ -236,10 +237,7 @@ pub(super) fn handle_server_message(
             app.active_request_id.clear();
             app.active_request_started_at = None;
         }
-        ServerMsg::ThinkingChunk {
-            request_id,
-            chunk,
-        } => {
+        ServerMsg::ThinkingChunk { request_id, chunk } => {
             if !chunk.is_empty() {
                 app.append_thinking_chunk(&chunk);
             }

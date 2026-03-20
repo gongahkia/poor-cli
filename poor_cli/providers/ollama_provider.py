@@ -1,7 +1,7 @@
 """
 Ollama Provider Implementation
 
-Supports local model execution with Ollama (Llama 3, CodeLlama, Mistral, etc.)
+Supports local model execution with Ollama and modern local coding models.
 """
 
 import asyncio
@@ -16,6 +16,7 @@ except ImportError:
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
 from .tool_translator import ToolTranslator, ProviderType
+from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -31,7 +32,7 @@ logger = setup_logger(__name__)
 class OllamaProvider(BaseProvider):
     """Ollama local model provider implementation"""
 
-    def __init__(self, api_key: str = "", model_name: str = "llama3",
+    def __init__(self, api_key: str = "", model_name: str = default_model_for_provider("ollama"),
                  max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 120.0,
                  base_url: str = "http://localhost:11434"):
         """
@@ -39,7 +40,7 @@ class OllamaProvider(BaseProvider):
 
         Args:
             api_key: Not used for Ollama (local), kept for compatibility
-            model_name: Model to use (llama3, codellama, mistral, etc.)
+            model_name: Model to use (for example llama3.1, qwen2.5-coder, mistral)
             max_retries: Max retries for failed requests
             retry_delay: Initial retry delay in seconds
             timeout: Request timeout in seconds (longer for local models)

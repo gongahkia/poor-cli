@@ -61,7 +61,19 @@
     },
     {
       "command": "/status",
-      "description": "Show session status summary",
+      "description": "Show canonical session status summary",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/runs",
+      "description": "Inspect recent shared run history",
+      "recommended": true,
+      "category": "Core Workflow"
+    },
+    {
+      "command": "/workflow",
+      "description": "Inspect guided workflow templates and starter scaffolds",
       "recommended": false,
       "category": "Core Workflow"
     },
@@ -157,7 +169,13 @@
     },
     {
       "command": "/context",
-      "description": "Open backend context inspector",
+      "description": "Open backend context inspector or `/context explain`",
+      "recommended": true,
+      "category": "Review & Safety"
+    },
+    {
+      "command": "/trust",
+      "description": "Open the trust center for provider, sandbox, rollback, and policy state",
       "recommended": true,
       "category": "Review & Safety"
     },
@@ -283,7 +301,7 @@
     },
     {
       "command": "/setup",
-      "description": "Open the guided API key and .env editor",
+      "description": "Open the guided setup summary and recommended first workflow",
       "recommended": true,
       "category": "Providers & Config"
     },
@@ -427,7 +445,13 @@
     },
     {
       "command": "/task",
-      "description": "Manage durable background tasks",
+      "description": "Manage durable background tasks, including retry and replay",
+      "recommended": true,
+      "category": "Automation & Tasks"
+    },
+    {
+      "command": "/automation",
+      "description": "Inspect automation run history and replay automations",
       "recommended": true,
       "category": "Automation & Tasks"
     },
@@ -469,7 +493,7 @@
     },
     {
       "command": "/doctor",
-      "description": "Run environment and service health checks",
+      "description": "Open structured diagnostics with remediation guidance",
       "recommended": true,
       "category": "Services & Shell"
     },
@@ -517,7 +541,7 @@
     },
     {
       "command": "/collab",
-      "description": "Start, join, and manage collaboration sessions",
+      "description": "Start, join, summarize, and manage collaboration sessions",
       "recommended": true,
       "category": "Collaboration"
     },

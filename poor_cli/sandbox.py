@@ -10,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
+from .command_capabilities import inspect_shell_command
 from .command_validator import CommandRisk, get_command_validator
 from .config import PermissionMode
 from .exceptions import PermissionDeniedError
@@ -179,7 +180,11 @@ def evaluate_tool_access(
     safe_process_commands: Optional[Sequence[str]] = None,
 ) -> SandboxDecision:
     normalized_preset = normalize_preset(sandbox_preset, fallback_permission_mode=permission_mode)
-    normalized_caps = [str(cap) for cap in tool_capabilities if str(cap).strip()]
+    inferred = inspect_shell_command(tool_name, tool_args)
+    normalized_caps = _dedupe_capabilities(
+        [*tool_capabilities, *inferred.capabilities]
+    )
+    effective_mutation_paths = _dedupe_paths([*mutation_paths, *inferred.mutation_paths])
     if not normalized_caps:
         return SandboxDecision(allowed=True, capabilities=[])
 
@@ -196,7 +201,7 @@ def evaluate_tool_access(
         )
 
     if enforce_trusted_workspace and ToolCapability.FILESYSTEM_WRITE.value in normalized_caps:
-        trusted_denial = _check_trusted_roots(mutation_paths, trusted_roots)
+        trusted_denial = _check_trusted_roots(effective_mutation_paths, trusted_roots)
         if trusted_denial is not None:
             return SandboxDecision(
                 allowed=False,
@@ -247,6 +252,30 @@ def _check_trusted_roots(paths: Sequence[str], trusted_roots: Sequence[Path]) ->
         joined_roots = ", ".join(str(root) for root in normalized_roots)
         return f"requested mutation falls outside trusted workspace roots ({joined_roots})"
     return None
+
+
+def _dedupe_capabilities(capabilities: Sequence[str]) -> List[str]:
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for capability in capabilities:
+        normalized = str(capability).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _dedupe_paths(paths: Sequence[str]) -> List[str]:
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        normalized = str(path).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _path_is_within_root(candidate: Path, root: Path) -> bool:

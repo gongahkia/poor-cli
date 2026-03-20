@@ -1,14 +1,15 @@
-"""Multiplayer WebSocket host runtime for poor-cli.
+"""Owner-authoritative multiplayer runtime for poor-cli.
 
-This module hosts room-scoped JSON-RPC sessions over WebSocket. Each room has
-shared chat state, serialized prompt execution, role-based access control, and
-room lifecycle notifications.
+This module hosts room-scoped JSON-RPC sessions over WebRTC DataChannels.
+Each room has shared chat state, serialized prompt execution, role-based
+access control, and room lifecycle notifications.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections import deque
+import contextlib
 import json
 from pathlib import Path
 import secrets
@@ -18,28 +19,25 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Deque, Dict, List, Optional
 
-from aiohttp import WSMsgType, web
+from aiohttp import web
 
 from .exceptions import setup_logger
+from .multiplayer_invites import (
+    build_owner_fingerprint,
+    build_signed_invite,
+    verify_signed_invite,
+)
+from .multiplayer_session import AgendaItem, CollaborationSession, InviteToken
 
 logger = setup_logger(__name__)
 
 
 @dataclass
-class InviteToken:
-    """Room-scoped invite token."""
-
-    token: str
-    role: str  # viewer | prompter
-    expires_at: Optional[str] = None
-
-
-@dataclass
 class ConnectionState:
-    """Connected websocket client state."""
+    """Connected remote client state."""
 
     connection_id: str
-    ws: web.WebSocketResponse
+    ws: Any
     role: Optional[str] = None
     room_name: Optional[str] = None
     initialized: bool = False
@@ -48,35 +46,31 @@ class ConnectionState:
     joined_at: Optional[str] = None
     approved: bool = True
     hand_raised: bool = False
+    peer_key: Optional[str] = None
     connected_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
-    last_pong: float = field(default_factory=time.monotonic)
     request_timestamps: Deque[float] = field(default_factory=deque)
 
 
-@dataclass
-class AgendaItem:
-    """Room-scoped collaboration agenda item."""
+class DataChannelTransport:
+    """A minimal send/close wrapper over a WebRTC data channel."""
 
-    item_id: str
-    text: str
-    author: str
-    created_at: str
-    resolved: bool = False
-    resolved_at: Optional[str] = None
-    resolved_by: str = ""
+    def __init__(self, channel: Any):
+        self._channel = channel
 
-    def to_payload(self) -> Dict[str, Any]:
-        return {
-            "id": self.item_id,
-            "text": self.text,
-            "author": self.author,
-            "createdAt": self.created_at,
-            "resolved": self.resolved,
-            "resolvedAt": self.resolved_at or "",
-            "resolvedBy": self.resolved_by,
-        }
+    @property
+    def closed(self) -> bool:
+        return str(getattr(self._channel, "readyState", "closed")) != "open"
 
+    async def send_str(self, payload: str) -> None:
+        if self.closed:
+            raise ConnectionError("data channel is not open")
+        self._channel.send(payload)
+
+    async def close(self, code: int = 1000, message: bytes = b"") -> None:
+        del code, message
+        if not self.closed:
+            self._channel.close()
 
 @dataclass
 class QueuedRequest:
@@ -107,6 +101,7 @@ class RoomState:
     hand_raise_queue: List[str] = field(default_factory=list)
     next_agenda_id: int = 1
     persist_path: Optional[str] = None  # path to persist room state
+    session: CollaborationSession = field(init=False, repr=False)
 
 
 class RoomPersistence:
@@ -154,7 +149,7 @@ class RoomPersistence:
 
 
 class MultiplayerHost:
-    """WebSocket host for multiplayer poor-cli sessions."""
+    """Owner signaling host for multiplayer poor-cli sessions."""
 
     _QUEUE_METHODS = {
         "chat",
@@ -202,9 +197,11 @@ class MultiplayerHost:
         message_cls: Any,
         rpc_error_cls: Any,
         default_permission_mode: str = "prompt",
-        heartbeat_interval_seconds: float = 30.0,
-        pong_timeout_seconds: float = 60.0,
         requests_per_minute: int = 10,
+        invite_secret: Optional[str] = None,
+        invite_ttl_seconds: int = 900,
+        owner_name: str = "",
+        ice_servers: Optional[List[Dict[str, Any]]] = None,
     ):
         self.bind_host = bind_host
         self.port = port
@@ -212,17 +209,21 @@ class MultiplayerHost:
         self.message_cls = message_cls
         self.rpc_error_cls = rpc_error_cls
         self.default_permission_mode = default_permission_mode
-        self.heartbeat_interval_seconds = heartbeat_interval_seconds
-        self.pong_timeout_seconds = pong_timeout_seconds
         self.requests_per_minute = max(1, requests_per_minute)
+        self.invite_secret = invite_secret or secrets.token_urlsafe(32)
+        self.invite_ttl_seconds = max(1, invite_ttl_seconds)
+        self.owner_name = owner_name.strip() or "owner"
+        self.owner_id = f"owner-{uuid.uuid4().hex[:12]}"
+        self.owner_fingerprint = build_owner_fingerprint(self.invite_secret)
+        self.ice_servers = [dict(entry) for entry in (ice_servers or [])]
 
         self.rooms: Dict[str, RoomState] = {}
         self.connections: Dict[str, ConnectionState] = {}
         self._runner: Optional[web.AppRunner] = None
         self._site: Optional[web.TCPSite] = None
         self._app: Optional[web.Application] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
         self._stopped = False
+        self._peer_connections: Dict[str, Any] = {}
 
         normalized_rooms = [name.strip() for name in room_names if name and name.strip()]
         if not normalized_rooms:
@@ -230,6 +231,100 @@ class MultiplayerHost:
 
         for room_name in normalized_rooms:
             self.rooms[room_name] = self._create_room(room_name)
+
+    def build_room_share_payload(
+        self,
+        room_name: str,
+        role: str,
+        *,
+        signaling_url: str,
+        expires_in_seconds: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        room = self.rooms.get(room_name)
+        if room is None:
+            return None
+
+        normalized_role = role.strip().lower()
+        if normalized_role not in {"viewer", "prompter"}:
+            raise ValueError("role must be viewer or prompter")
+
+        active_tokens = room.session.active_tokens()
+        token = str(active_tokens.get(normalized_role, "")).strip()
+        if not token:
+            return None
+
+        ttl_seconds = expires_in_seconds
+        if ttl_seconds is None or ttl_seconds <= 0:
+            ttl_seconds = self.invite_ttl_seconds
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        ).replace(microsecond=0).isoformat()
+
+        payload = {
+            "signalingUrl": signaling_url,
+            "sessionId": room_name,
+            "role": normalized_role,
+            "token": token,
+            "expiresAt": expires_at,
+            "ownerId": self.owner_id,
+            "ownerName": self.owner_name,
+            "ownerFingerprint": self.owner_fingerprint,
+            "iceServers": self.ice_servers,
+        }
+        invite_code = build_signed_invite(payload, secret=self.invite_secret)
+        return {
+            "role": normalized_role,
+            "token": token,
+            "inviteCode": invite_code,
+            "expiresAt": expires_at,
+            "signalingUrl": signaling_url,
+            "sessionId": room_name,
+            "ownerId": self.owner_id,
+            "ownerName": self.owner_name,
+            "ownerFingerprint": self.owner_fingerprint,
+            "iceServers": self.ice_servers,
+        }
+
+    @staticmethod
+    async def _wait_for_ice_gathering_complete(peer_connection: Any, *, timeout: float = 5.0) -> None:
+        if str(getattr(peer_connection, "iceGatheringState", "")) == "complete":
+            return
+
+        loop = asyncio.get_running_loop()
+        done = loop.create_future()
+
+        @peer_connection.on("icegatheringstatechange")
+        def _on_ice_gathering_state_change() -> None:
+            if str(getattr(peer_connection, "iceGatheringState", "")) == "complete":
+                if not done.done():
+                    done.set_result(None)
+
+        await asyncio.wait_for(done, timeout=timeout)
+
+    def _build_rtc_configuration(self) -> Any:
+        try:
+            from aiortc import RTCConfiguration, RTCIceServer
+        except ImportError as error:
+            raise RuntimeError(
+                "P2P multiplayer requires aiortc. Install dependencies with: pip install -r requirements.txt"
+            ) from error
+
+        ice_servers = []
+        for entry in self.ice_servers:
+            urls = entry.get("urls", [])
+            if isinstance(urls, str):
+                urls = [urls]
+            if not isinstance(urls, list) or not urls:
+                continue
+            kwargs: Dict[str, Any] = {"urls": urls}
+            username = str(entry.get("username", "")).strip()
+            credential = str(entry.get("credential", "")).strip()
+            if username:
+                kwargs["username"] = username
+            if credential:
+                kwargs["credential"] = credential
+            ice_servers.append(RTCIceServer(**kwargs))
+        return RTCConfiguration(iceServers=ice_servers)
 
     def _create_room(self, room_name: str) -> RoomState:
         server = self.server_factory()
@@ -243,6 +338,7 @@ class MultiplayerHost:
         token_index = {token.token: token for token in tokens.values()}
 
         room = RoomState(name=room_name, server=server, tokens=token_index)
+        room.session = CollaborationSession(room, is_member_closed=lambda member: member.ws.closed)
 
         async def _room_notification_sink(message: Any) -> None:
             method = str(getattr(message, "method", "") or "")
@@ -268,101 +364,39 @@ class MultiplayerHost:
 
     @staticmethod
     def _now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return CollaborationSession.now_iso()
 
     @staticmethod
     def _room_mode(room: RoomState) -> str:
-        if room.preset == "pairing":
-            return "pair"
-        return room.preset
+        return room.session.room_mode()
 
     @staticmethod
     def _member_display_name(member: ConnectionState) -> str:
-        return member.client_name or member.connection_id
+        return CollaborationSession.member_display_name(member)
 
     @staticmethod
     def _member_approval_state(member: ConnectionState) -> str:
-        return "approved" if member.approved else "pending"
+        return CollaborationSession.member_approval_state(member)
 
     def _member_ui_role(self, room: RoomState, member: ConnectionState) -> str:
-        if member.role == "prompter" and member.approved:
-            return "driver"
-        if room.preset == "review":
-            return "reviewer"
-        return "navigator"
+        return room.session.member_ui_role(member)
 
     @staticmethod
     def _ordered_member_items(room: RoomState) -> List[tuple[str, ConnectionState]]:
-        return sorted(
-            room.members.items(),
-            key=lambda item: (item[1].connected_at, item[0]),
-        )
+        return room.session.ordered_member_items()
 
     def _agenda_summary(self, room: RoomState) -> Dict[str, Any]:
-        open_items = [item for item in room.agenda if not item.resolved]
-        return {
-            "total": len(room.agenda),
-            "open": len(open_items),
-            "openItems": [item.to_payload() for item in open_items[-10:]],
-        }
+        return room.session.agenda_summary()
 
     @staticmethod
     def _is_token_expired(invite: InviteToken) -> bool:
-        if not invite.expires_at:
-            return False
-        try:
-            expires_at = datetime.fromisoformat(invite.expires_at)
-        except ValueError:
-            return False
-        now = datetime.now(expires_at.tzinfo or timezone.utc)
-        return now >= expires_at
+        return CollaborationSession.is_token_expired(invite)
 
     def _room_member_snapshots(self, room: RoomState) -> List[Dict[str, Any]]:
-        members: List[Dict[str, Any]] = []
-        for connection_id, member in self._ordered_member_items(room):
-            queue_position = 0
-            if connection_id in room.hand_raise_queue:
-                queue_position = room.hand_raise_queue.index(connection_id) + 1
-            members.append(
-                {
-                    "connectionId": connection_id,
-                    "role": member.role or "unknown",
-                    "clientName": member.client_name,
-                    "displayName": self._member_display_name(member),
-                    "uiRole": self._member_ui_role(room, member),
-                    "initialized": member.initialized,
-                    "connected": not member.ws.closed,
-                    "active": room.active_connection_id == connection_id,
-                    "approved": member.approved,
-                    "approvalState": self._member_approval_state(member),
-                    "handRaised": member.hand_raised,
-                    "queuePosition": queue_position,
-                    "joinedAt": member.joined_at or "",
-                }
-            )
-        return members
+        return room.session.room_member_snapshots()
 
     def _list_room_member_payload(self, room: RoomState) -> List[Dict[str, Any]]:
-        members: List[Dict[str, Any]] = []
-        for connection_id, member in self._ordered_member_items(room):
-            queue_position = 0
-            if connection_id in room.hand_raise_queue:
-                queue_position = room.hand_raise_queue.index(connection_id) + 1
-            members.append(
-                {
-                    "connection_id": connection_id,
-                    "role": member.role or "unknown",
-                    "ui_role": self._member_ui_role(room, member),
-                    "display_name": self._member_display_name(member),
-                    "approval_state": self._member_approval_state(member),
-                    "hand_raised": member.hand_raised,
-                    "queue_position": queue_position,
-                    "connected_at": member.connected_at,
-                    "last_active": member.last_active,
-                    "is_active_prompter": member.role == "prompter",
-                }
-            )
-        return members
+        return room.session.list_room_member_payload()
 
     def _pick_room_prompter(
         self,
@@ -371,32 +405,10 @@ class MultiplayerHost:
         preferred_connection_id: Optional[str] = None,
         promote_fallback: bool = False,
     ) -> Optional[str]:
-        approved_member_ids = [
-            connection_id
-            for connection_id, member in room.members.items()
-            if member.approved and not member.ws.closed
-        ]
-        if not approved_member_ids:
-            return None
-
-        if preferred_connection_id:
-            preferred = room.members.get(preferred_connection_id)
-            if preferred is not None and preferred.approved and not preferred.ws.closed:
-                return preferred_connection_id
-
-        approved_prompters = [
-            connection_id
-            for connection_id in approved_member_ids
-            if room.members[connection_id].role == "prompter"
-        ]
-        if approved_prompters:
-            if room.active_connection_id in approved_prompters:
-                return room.active_connection_id
-            return approved_prompters[0]
-
-        if promote_fallback:
-            return approved_member_ids[0]
-        return None
+        return room.session.pick_room_prompter(
+            preferred_connection_id=preferred_connection_id,
+            promote_fallback=promote_fallback,
+        )
 
     def _rebalance_room_roles(
         self,
@@ -405,19 +417,10 @@ class MultiplayerHost:
         preferred_connection_id: Optional[str] = None,
         promote_fallback: bool = False,
     ) -> Optional[str]:
-        promoted_connection_id = self._pick_room_prompter(
-            room,
+        return room.session.rebalance_room_roles(
             preferred_connection_id=preferred_connection_id,
             promote_fallback=promote_fallback,
         )
-        if promoted_connection_id is None:
-            return None
-
-        for connection_id, member in room.members.items():
-            if not member.approved or member.ws.closed:
-                continue
-            member.role = "prompter" if connection_id == promoted_connection_id else "viewer"
-        return promoted_connection_id
 
     async def _broadcast_member_role_updates(self, room: RoomState) -> None:
         for connection_id, member in room.members.items():
@@ -441,63 +444,22 @@ class MultiplayerHost:
         request_id: str = "",
         details: Optional[Dict[str, Any]] = None,
     ) -> None:
-        event = {
-            "timestamp": self._now_iso(),
-            "eventType": event_type,
-            "room": room.name,
-            "actor": actor,
-            "requestId": request_id,
-            "details": details or {},
-        }
-        room.activity.append(event)
-        if len(room.activity) > 300:
-            del room.activity[:-300]
+        room.session.record_activity(
+            event_type=event_type,
+            actor=actor,
+            request_id=request_id,
+            details=details,
+        )
 
     @staticmethod
     def _prune_hand_raise_queue(room: RoomState) -> None:
-        room.hand_raise_queue = [
-            connection_id
-            for connection_id in room.hand_raise_queue
-            if (
-                connection_id in room.members
-                and room.members[connection_id].approved
-                and not room.members[connection_id].ws.closed
-                and room.members[connection_id].role != "prompter"
-            )
-        ]
+        room.session.prune_hand_raise_queue()
 
     def resolve_room_member_reference(self, room_name: str, reference: str) -> Optional[str]:
         room = self.rooms.get(room_name)
         if room is None:
             return None
-        normalized = str(reference or "").strip()
-        if not normalized:
-            return None
-
-        member = room.members.get(normalized)
-        if member is not None and not member.ws.closed:
-            return normalized
-
-        if normalized.startswith("@"):
-            normalized = normalized[1:].strip()
-
-        ordered_members = self._ordered_member_items(room)
-        if normalized.startswith("#") and normalized[1:].isdigit():
-            index = int(normalized[1:]) - 1
-            if 0 <= index < len(ordered_members):
-                return ordered_members[index][0]
-
-        if normalized.isdigit():
-            index = int(normalized) - 1
-            if 0 <= index < len(ordered_members):
-                return ordered_members[index][0]
-
-        lowered = normalized.lower()
-        for connection_id, member_state in ordered_members:
-            display_name = self._member_display_name(member_state).lower()
-            if display_name == lowered or connection_id.lower() == lowered:
-                return connection_id
-        return None
+        return room.session.resolve_member_reference(reference)
 
     def list_room_agenda(
         self,
@@ -508,10 +470,7 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return []
-        items = room.agenda
-        if not include_resolved:
-            items = [item for item in items if not item.resolved]
-        return [item.to_payload() for item in items]
+        return room.session.list_room_agenda(include_resolved=include_resolved)
 
     async def add_room_agenda_item(
         self,
@@ -524,27 +483,15 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return None
-
-        normalized_text = str(text or "").strip()
-        if not normalized_text:
-            raise ValueError("agenda text cannot be empty")
-
-        item = AgendaItem(
-            item_id=f"a-{room.next_agenda_id}",
-            text=normalized_text,
-            author=author.strip() or "unknown",
-            created_at=self._now_iso(),
-        )
-        room.next_agenda_id += 1
-        room.agenda.append(item)
+        item = room.session.add_agenda_item(text, author=author)
         await self._broadcast_room_event(
             room,
             "agenda_added",
             actor=actor_connection_id,
             queue_depth=room.request_queue.qsize(),
-            details={"agendaItem": item.to_payload()},
+            details={"agendaItem": item},
         )
-        return item.to_payload()
+        return item
 
     async def resolve_room_agenda_item(
         self,
@@ -557,26 +504,17 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return None
-
-        normalized_id = str(item_id or "").strip()
-        if not normalized_id:
-            raise ValueError("agenda item id is required")
-
-        for item in room.agenda:
-            if item.item_id != normalized_id:
-                continue
-            item.resolved = True
-            item.resolved_at = self._now_iso()
-            item.resolved_by = resolved_by.strip() or "unknown"
-            await self._broadcast_room_event(
-                room,
-                "agenda_resolved",
-                actor=actor_connection_id,
-                queue_depth=room.request_queue.qsize(),
-                details={"agendaItem": item.to_payload()},
-            )
-            return item.to_payload()
-        return None
+        item = room.session.resolve_agenda_item(item_id, resolved_by=resolved_by)
+        if item is None:
+            return None
+        await self._broadcast_room_event(
+            room,
+            "agenda_resolved",
+            actor=actor_connection_id,
+            queue_depth=room.request_queue.qsize(),
+            details={"agendaItem": item},
+        )
+        return item
 
     async def set_room_member_hand_raised(
         self,
@@ -587,48 +525,17 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return None
-
-        member = room.members.get(connection_id)
-        if member is None or member.ws.closed or not member.approved:
+        result = room.session.set_member_hand_raised(connection_id, raised)
+        if result is None:
             return None
-
-        if member.role == "prompter":
-            member.hand_raised = False
-            self._prune_hand_raise_queue(room)
-            return {
-                "connectionId": connection_id,
-                "handRaised": False,
-                "queuePosition": 0,
-            }
-
-        member.hand_raised = bool(raised)
-        self._prune_hand_raise_queue(room)
-        if member.hand_raised:
-            if connection_id not in room.hand_raise_queue:
-                room.hand_raise_queue.append(connection_id)
-        else:
-            room.hand_raise_queue = [
-                queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
-            ]
-        queue_position = 0
-        if connection_id in room.hand_raise_queue:
-            queue_position = room.hand_raise_queue.index(connection_id) + 1
         await self._broadcast_room_event(
             room,
-            "hand_raised" if member.hand_raised else "hand_lowered",
+            "hand_raised" if result.get("handRaised") else "hand_lowered",
             actor=connection_id,
             queue_depth=room.request_queue.qsize(),
-            details={
-                "connectionId": connection_id,
-                "handRaised": member.hand_raised,
-                "queuePosition": queue_position,
-            },
+            details=result,
         )
-        return {
-            "connectionId": connection_id,
-            "handRaised": member.hand_raised,
-            "queuePosition": queue_position,
-        }
+        return result
 
     async def handoff_next_driver(
         self,
@@ -639,40 +546,12 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return None
-
-        self._prune_hand_raise_queue(room)
-        next_connection_id = next(
-            (connection_id for connection_id in room.hand_raise_queue if connection_id != actor_connection_id),
-            None,
+        next_connection_id = room.session.handoff_next_driver(
+            actor_connection_id=actor_connection_id,
         )
         if next_connection_id is None:
-            ordered_members = [
-                connection_id
-                for connection_id, member in self._ordered_member_items(room)
-                if member.approved and not member.ws.closed
-            ]
-            if not ordered_members:
-                return None
-            if actor_connection_id in ordered_members:
-                start_index = ordered_members.index(actor_connection_id) + 1
-                rotated = ordered_members[start_index:] + ordered_members[:start_index]
-            else:
-                rotated = ordered_members
-            next_connection_id = next(
-                (connection_id for connection_id in rotated if connection_id != actor_connection_id),
-                None,
-            )
-        if next_connection_id is None:
             return None
-        updated = await self.handoff_room_prompter(room_name, next_connection_id)
-        if not updated:
-            return None
-        room.hand_raise_queue = [
-            connection_id for connection_id in room.hand_raise_queue if connection_id != next_connection_id
-        ]
-        target = room.members.get(next_connection_id)
-        if target is not None:
-            target.hand_raised = False
+        await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
             "next_driver_selected",
@@ -686,16 +565,7 @@ class MultiplayerHost:
         """Return room->role->token mapping for host-local sharing."""
         output: Dict[str, Dict[str, str]] = {}
         for room_name, room in self.rooms.items():
-            role_map: Dict[str, str] = {}
-            expired_tokens: List[str] = []
-            for token_value, invite in room.tokens.items():
-                if self._is_token_expired(invite):
-                    expired_tokens.append(token_value)
-                    continue
-                role_map[invite.role] = invite.token
-            for token_value in expired_tokens:
-                room.tokens.pop(token_value, None)
-            output[room_name] = role_map
+            output[room_name] = room.session.active_tokens()
         return output
 
     def list_room_members(self, room_name: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -712,21 +582,7 @@ class MultiplayerHost:
             if room is None:
                 continue
 
-            members = self._room_member_snapshots(room)
-            output.append(
-                {
-                    "name": selected_room,
-                    "mode": self._room_mode(room),
-                    "memberCount": len(members),
-                    "members": members,
-                    "queueDepth": room.request_queue.qsize(),
-                    "activeConnectionId": room.active_connection_id or "",
-                    "lobbyEnabled": room.lobby_enabled,
-                    "preset": room.preset,
-                    "agendaSummary": self._agenda_summary(room),
-                    "handsRaised": len(room.hand_raise_queue),
-                }
-            )
+            output.append(room.session.room_snapshot(queue_depth=room.request_queue.qsize()))
         return output
 
     def list_room_activity(
@@ -738,29 +594,13 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return []
-        bounded = max(1, min(limit, 200))
-        items = room.activity
-        if event_type:
-            normalized = event_type.strip().lower()
-            items = [
-                item
-                for item in room.activity
-                if str(item.get("eventType", "")).strip().lower() == normalized
-            ]
-        return [dict(item) for item in items[-bounded:]]
+        return room.session.list_room_activity(limit=limit, event_type=event_type)
 
     async def set_room_lobby(self, room_name: str, enabled: bool) -> bool:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-        room.lobby_enabled = enabled
-        roles_rebalanced = False
-        if not enabled:
-            for member in room.members.values():
-                member.approved = True
-            self._rebalance_room_roles(room)
-            roles_rebalanced = True
-        self._prune_hand_raise_queue(room)
+        roles_rebalanced = room.session.set_room_lobby(enabled)
         if roles_rebalanced:
             await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
@@ -775,19 +615,9 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        member = room.members.get(connection_id)
-        if member is None:
+        approved, promoted_connection_id = room.session.approve_room_member(connection_id)
+        if not approved:
             return False
-
-        member.approved = True
-        promoted_connection_id = None
-        if member.role == "prompter":
-            promoted_connection_id = self._rebalance_room_roles(
-                room,
-                preferred_connection_id=connection_id,
-            )
-        self._prune_hand_raise_queue(room)
         if promoted_connection_id is not None:
             await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
@@ -802,20 +632,14 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        member = room.members.pop(connection_id, None)
+        member, promoted_connection_id = room.session.pop_room_member(
+            connection_id,
+            promote_fallback=True,
+        )
         if member is None:
             return False
 
         self.connections.pop(connection_id, None)
-        if room.active_connection_id == connection_id:
-            room.active_connection_id = None
-        room.hand_raise_queue = [
-            queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
-        ]
-        promoted_connection_id = None
-        if member.role == "prompter":
-            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4003, message=b"Denied by host")
@@ -843,35 +667,14 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return None
-
-        normalized_role = role.strip().lower()
-        if normalized_role not in {"viewer", "prompter"}:
-            raise ValueError("role must be viewer or prompter")
-
-        stale_tokens = [
-            token_value
-            for token_value, invite in room.tokens.items()
-            if invite.role == normalized_role
-        ]
-        for token_value in stale_tokens:
-            room.tokens.pop(token_value, None)
-
-        expires_at: Optional[str] = None
-        if expires_in_seconds is not None and expires_in_seconds > 0:
-            expires_at = (
-                datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)
-            ).isoformat()
-
-        new_token = secrets.token_urlsafe(18)
-        room.tokens[new_token] = InviteToken(
-            token=new_token,
-            role=normalized_role,
-            expires_at=expires_at,
+        new_token = room.session.rotate_room_token(
+            role,
+            expires_in_seconds=expires_in_seconds,
         )
         await self._broadcast_room_event(
             room,
             "token_rotated",
-            details={"role": normalized_role},
+            details={"role": role.strip().lower()},
             queue_depth=room.request_queue.qsize(),
         )
         return new_token
@@ -880,8 +683,7 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        invite = room.tokens.pop(token, None)
+        invite = room.session.revoke_room_token(token)
         if invite is None:
             return False
 
@@ -897,18 +699,8 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        target = room.members.get(connection_id)
-        if target is None:
+        if not room.session.handoff_room_prompter(connection_id):
             return False
-        if target.ws.closed or not target.approved:
-            return False
-
-        target.hand_raised = False
-        room.hand_raise_queue = [
-            queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
-        ]
-        self._rebalance_room_roles(room, preferred_connection_id=connection_id)
         await self._broadcast_member_role_updates(room)
 
         await self._broadcast_room_event(
@@ -923,20 +715,7 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        normalized = preset.strip().lower()
-        if normalized not in {"pairing", "mob", "review"}:
-            raise ValueError("preset must be one of: pairing, mob, review")
-
-        room.preset = normalized
-        if normalized == "pairing":
-            room.lobby_enabled = False
-            room.hand_raise_queue.clear()
-            for member in room.members.values():
-                member.hand_raised = False
-        else:
-            room.lobby_enabled = True
-        self._prune_hand_raise_queue(room)
+        normalized = room.session.set_room_preset(preset)
 
         await self._broadcast_room_event(
             room,
@@ -955,20 +734,14 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        member = room.members.pop(connection_id, None)
+        member, promoted_connection_id = room.session.pop_room_member(
+            connection_id,
+            promote_fallback=True,
+        )
         if member is None:
             return False
 
         self.connections.pop(connection_id, None)
-        if room.active_connection_id == connection_id:
-            room.active_connection_id = None
-        room.hand_raise_queue = [
-            queued_id for queued_id in room.hand_raise_queue if queued_id != connection_id
-        ]
-        promoted_connection_id = None
-        if member.role == "prompter":
-            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4001, message=b"Removed by host")
@@ -991,36 +764,8 @@ class MultiplayerHost:
         room = self.rooms.get(room_name)
         if room is None:
             return False
-
-        member = room.members.get(connection_id)
-        if member is None:
+        if not room.session.set_room_member_role(connection_id, role):
             return False
-
-        normalized_role = role.strip().lower()
-        if normalized_role not in {"viewer", "prompter"}:
-            raise ValueError("role must be viewer or prompter")
-
-        member.role = normalized_role
-        if normalized_role == "prompter":
-            member.hand_raised = False
-            self._rebalance_room_roles(room, preferred_connection_id=connection_id)
-        else:
-            fallback_connection_id = next(
-                (
-                    other_connection_id
-                    for other_connection_id, other_member in room.members.items()
-                    if other_connection_id != connection_id
-                    and other_member.approved
-                    and not other_member.ws.closed
-                ),
-                None,
-            )
-            self._rebalance_room_roles(
-                room,
-                preferred_connection_id=fallback_connection_id,
-                promote_fallback=fallback_connection_id is None,
-            )
-        self._prune_hand_raise_queue(room)
         await self._broadcast_member_role_updates(room)
         await self._broadcast_room_event(
             room,
@@ -1031,9 +776,9 @@ class MultiplayerHost:
         return True
 
     async def start(self) -> None:
-        """Start the HTTP/WebSocket host."""
+        """Start the HTTP signaling host."""
         app = web.Application()
-        app.router.add_get("/rpc", self._handle_ws)
+        app.router.add_post("/rpc", self._handle_signaling_rpc)
         app.router.add_get("/health", self._handle_health)
 
         self._app = app
@@ -1041,10 +786,211 @@ class MultiplayerHost:
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, host=self.bind_host, port=self.port)
         await self._site.start()
-        self._heartbeat_task = asyncio.create_task(
-            self._heartbeat_loop(), name="poor-cli-multiplayer-heartbeat"
+        logger.info("Multiplayer signaling host listening on http://%s:%s/rpc", self.bind_host, self.port)
+
+    async def _handle_signaling_rpc(self, request: web.Request) -> web.Response:
+        """Handle owner-side signaling/bootstrap requests."""
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response(
+                {"ok": False, "error": "invalid_json"},
+                status=400,
+            )
+
+        if not isinstance(payload, dict):
+            return web.json_response(
+                {"ok": False, "error": "invalid_payload"},
+                status=400,
+            )
+
+        action = str(payload.get("action", "")).strip().lower()
+        if action == "connect":
+            return await self._handle_signaling_connect(payload)
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "unsupported_action",
+                "supportedActions": ["connect"],
+            },
+            status=400,
         )
-        logger.info("Multiplayer host listening on ws://%s:%s/rpc", self.bind_host, self.port)
+
+    async def _handle_signaling_connect(self, payload: Dict[str, Any]) -> web.Response:
+        room_name = str(payload.get("room", "")).strip()
+        token = str(payload.get("token", "")).strip()
+        invite_code = str(payload.get("invite", "")).strip()
+        client_name = str(payload.get("clientName", "")).strip()
+        offer_payload = payload.get("offer")
+
+        if invite_code:
+            try:
+                invite_payload = verify_signed_invite(invite_code, secret=self.invite_secret)
+            except ValueError as error:
+                return web.json_response(
+                    {"ok": False, "error": "invalid_invite", "message": str(error)},
+                    status=403,
+                )
+            room_name = str(invite_payload.get("sessionId", "")).strip()
+            token = str(invite_payload.get("token", "")).strip()
+
+        if not room_name or not token:
+            return web.json_response(
+                {"ok": False, "error": "invalid_multiplayer_auth"},
+                status=403,
+            )
+
+        room = self.rooms.get(room_name)
+        invite = room.tokens.get(token) if room else None
+        if room is None or invite is None or self._is_token_expired(invite):
+            if room is not None and invite is not None and self._is_token_expired(invite):
+                room.tokens.pop(token, None)
+            return web.json_response(
+                {"ok": False, "error": "invalid_multiplayer_auth"},
+                status=403,
+            )
+
+        if not isinstance(offer_payload, dict):
+            return web.json_response(
+                {"ok": False, "error": "invalid_offer"},
+                status=400,
+            )
+
+        offer_type = str(offer_payload.get("type", "")).strip()
+        offer_sdp = str(offer_payload.get("sdp", "")).strip()
+        if offer_type != "offer" or not offer_sdp:
+            return web.json_response(
+                {"ok": False, "error": "invalid_offer"},
+                status=400,
+            )
+
+        try:
+            from aiortc import RTCPeerConnection, RTCSessionDescription
+        except ImportError as error:
+            return web.json_response(
+                {
+                    "ok": False,
+                    "error": "missing_aiortc",
+                    "message": str(error),
+                },
+                status=500,
+            )
+
+        peer_connection = RTCPeerConnection(configuration=self._build_rtc_configuration())
+        peer_key = f"peer-{uuid.uuid4().hex[:12]}"
+        self._peer_connections[peer_key] = peer_connection
+        connection_ref: Dict[str, ConnectionState] = {}
+
+        @peer_connection.on("datachannel")
+        def _on_datachannel(channel: Any) -> None:
+            connection_id = uuid.uuid4().hex[:12]
+            conn = ConnectionState(
+                connection_id=connection_id,
+                ws=DataChannelTransport(channel),
+                client_name=client_name,
+                peer_key=peer_key,
+            )
+            self.connections[connection_id] = conn
+            connection_ref["conn"] = conn
+
+            @channel.on("message")
+            def _on_message(data: Any) -> None:
+                asyncio.create_task(self._handle_datachannel_message(conn, data))
+
+            @channel.on("close")
+            def _on_close() -> None:
+                asyncio.create_task(self._cleanup_connection(conn))
+
+        @peer_connection.on("connectionstatechange")
+        async def _on_connection_state_change() -> None:
+            if str(getattr(peer_connection, "connectionState", "")) in {
+                "failed",
+                "closed",
+                "disconnected",
+            }:
+                conn = connection_ref.get("conn")
+                if conn is not None:
+                    await self._cleanup_connection(conn)
+                self._peer_connections.pop(peer_key, None)
+                with contextlib.suppress(Exception):
+                    await peer_connection.close()
+
+        try:
+            await peer_connection.setRemoteDescription(
+                RTCSessionDescription(sdp=offer_sdp, type=offer_type)
+            )
+            answer = await peer_connection.createAnswer()
+            await peer_connection.setLocalDescription(answer)
+            await self._wait_for_ice_gathering_complete(peer_connection)
+        except Exception as error:
+            self._peer_connections.pop(peer_key, None)
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
+            logger.exception("Failed to establish P2P signaling for room %s", room_name)
+            return web.json_response(
+                {"ok": False, "error": "signaling_failed", "message": str(error)},
+                status=500,
+            )
+
+        local_description = getattr(peer_connection, "localDescription", None)
+        if local_description is None:
+            self._peer_connections.pop(peer_key, None)
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
+            return web.json_response(
+                {"ok": False, "error": "signaling_failed"},
+                status=500,
+            )
+
+        return web.json_response(
+            {
+                "ok": True,
+                "room": room_name,
+                "role": invite.role,
+                "transport": "webrtc-datachannel",
+                "answer": {
+                    "type": str(getattr(local_description, "type", "answer")),
+                    "sdp": str(getattr(local_description, "sdp", "")),
+                },
+                "ownerId": self.owner_id,
+                "ownerName": self.owner_name,
+                "ownerFingerprint": self.owner_fingerprint,
+                "iceServers": self.ice_servers,
+            }
+        )
+
+    async def _handle_datachannel_message(self, conn: ConnectionState, payload: Any) -> None:
+        if payload is None:
+            return
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8", errors="ignore")
+        if not isinstance(payload, str):
+            return
+
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError:
+            await self._send_error_response(
+                conn.ws,
+                request_id=None,
+                code=self.rpc_error_cls.PARSE_ERROR,
+                message="Invalid JSON",
+                data={"error_code": "PARSE_ERROR"},
+            )
+            return
+
+        if not isinstance(decoded, dict):
+            await self._send_error_response(
+                conn.ws,
+                request_id=None,
+                code=self.rpc_error_cls.INVALID_REQUEST,
+                message="JSON-RPC payload must be an object",
+                data={"error_code": "INVALID_REQUEST"},
+            )
+            return
+
+        message = self.message_cls.from_dict(decoded)
+        await self._handle_message(conn, message)
 
     async def stop(self) -> None:
         """Stop host and workers."""
@@ -1055,8 +1001,6 @@ class MultiplayerHost:
         for room in self.rooms.values():
             if room.worker_task:
                 room.worker_task.cancel()
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
 
         for room in self.rooms.values():
             if room.worker_task:
@@ -1064,17 +1008,17 @@ class MultiplayerHost:
                     await room.worker_task
                 except asyncio.CancelledError:
                     pass
-        if self._heartbeat_task:
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
 
         for conn in list(self.connections.values()):
             try:
                 await conn.ws.close()
             except Exception:
                 pass
+
+        for peer_connection in list(self._peer_connections.values()):
+            with contextlib.suppress(Exception):
+                await peer_connection.close()
+        self._peer_connections.clear()
 
         if self._runner:
             await self._runner.cleanup()
@@ -1095,59 +1039,12 @@ class MultiplayerHost:
                 "ok": True,
                 "rooms": sorted(self.rooms.keys()),
                 "connections": len(self.connections),
+                "transport": "webrtc-datachannel",
+                "signaling": True,
             }
         )
 
-    async def _handle_ws(self, request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(heartbeat=30)
-        await ws.prepare(request)
-
-        conn = ConnectionState(connection_id=uuid.uuid4().hex[:12], ws=ws)
-        self.connections[conn.connection_id] = conn
-
-        try:
-            async for incoming in ws:
-                if incoming.type == WSMsgType.PONG:
-                    conn.last_pong = time.monotonic()
-                    conn.last_active = time.time()
-                    continue
-                if incoming.type != WSMsgType.TEXT:
-                    if incoming.type in {WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED}:
-                        break
-                    continue
-
-                try:
-                    payload = json.loads(incoming.data)
-                except json.JSONDecodeError:
-                    await self._send_error_response(
-                        ws,
-                        request_id=None,
-                        code=self.rpc_error_cls.PARSE_ERROR,
-                        message="Invalid JSON",
-                        data={"error_code": "PARSE_ERROR"},
-                    )
-                    continue
-
-                if not isinstance(payload, dict):
-                    await self._send_error_response(
-                        ws,
-                        request_id=None,
-                        code=self.rpc_error_cls.INVALID_REQUEST,
-                        message="JSON-RPC payload must be an object",
-                        data={"error_code": "INVALID_REQUEST"},
-                    )
-                    continue
-
-                message = self.message_cls.from_dict(payload)
-                await self._handle_message(conn, message)
-
-        finally:
-            await self._cleanup_connection(conn)
-
-        return ws
-
     async def _handle_message(self, conn: ConnectionState, message: Any) -> None:
-        conn.last_pong = time.monotonic()
         conn.last_active = time.time()
 
         if not conn.initialized:
@@ -1607,7 +1504,10 @@ class MultiplayerHost:
             )
             return
 
-        member = room.members.pop(target_connection_id, None)
+        member, promoted_connection_id = room.session.pop_room_member(
+            target_connection_id,
+            promote_fallback=True,
+        )
         if member is None:
             await self._send_error_response(
                 conn.ws,
@@ -1619,14 +1519,6 @@ class MultiplayerHost:
             return
 
         self.connections.pop(target_connection_id, None)
-        if room.active_connection_id == target_connection_id:
-            room.active_connection_id = None
-        room.hand_raise_queue = [
-            queued_id for queued_id in room.hand_raise_queue if queued_id != target_connection_id
-        ]
-        promoted_connection_id = None
-        if member.role == "prompter":
-            promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
 
         try:
             await member.ws.close(code=4001, message=b"Kicked by host")
@@ -2013,55 +1905,38 @@ class MultiplayerHost:
 
     async def _cleanup_connection(self, conn: ConnectionState) -> None:
         self.connections.pop(conn.connection_id, None)
+        if conn.peer_key:
+            peer_connection = self._peer_connections.pop(conn.peer_key, None)
+            if peer_connection is not None:
+                with contextlib.suppress(Exception):
+                    await peer_connection.close()
 
-        if conn.room_name:
-            room = self.rooms.get(conn.room_name)
-            if room and conn.connection_id in room.members:
-                room.members.pop(conn.connection_id, None)
-                room.hand_raise_queue = [
-                    queued_id for queued_id in room.hand_raise_queue if queued_id != conn.connection_id
-                ]
-                promoted_connection_id = None
-                if conn.role == "prompter":
-                    promoted_connection_id = self._rebalance_room_roles(room, promote_fallback=True)
-                self._prune_hand_raise_queue(room)
-                if promoted_connection_id is not None:
-                    await self._broadcast_member_role_updates(room)
-                await self._broadcast_room_event(
-                    room,
-                    "member_left",
-                    actor=conn.connection_id,
-                    queue_depth=room.request_queue.qsize(),
-                )
+        if not conn.room_name:
+            return
 
-    async def _heartbeat_loop(self) -> None:
-        while not self._stopped:
-            await asyncio.sleep(self.heartbeat_interval_seconds)
-            now = time.monotonic()
-            stale_connections: List[ConnectionState] = []
-            for conn in list(self.connections.values()):
-                if conn.ws.closed:
-                    stale_connections.append(conn)
-                    continue
-                if now - conn.last_pong > self.pong_timeout_seconds:
-                    stale_connections.append(conn)
-                    continue
-                try:
-                    await conn.ws.ping()
-                except Exception:
-                    stale_connections.append(conn)
+        room = self.rooms.get(conn.room_name)
+        if room is None:
+            return
 
-            for conn in stale_connections:
-                if not conn.ws.closed:
-                    try:
-                        await conn.ws.close(code=4000, message=b"Heartbeat timeout")
-                    except Exception:
-                        pass
-                await self._cleanup_connection(conn)
+        member, promoted_connection_id = room.session.pop_room_member(
+            conn.connection_id,
+            promote_fallback=True,
+        )
+        if member is None:
+            return
+
+        if promoted_connection_id is not None:
+            await self._broadcast_member_role_updates(room)
+        await self._broadcast_room_event(
+            room,
+            "member_left",
+            actor=conn.connection_id,
+            queue_depth=room.request_queue.qsize(),
+        )
 
     async def _broadcast_rpc(self, room: RoomState, message: Any) -> None:
         dead_members: List[str] = []
-        for connection_id, member in room.members.items():
+        for connection_id, member in list(room.members.items()):
             if member.ws.closed:
                 dead_members.append(connection_id)
                 continue
@@ -2070,11 +1945,11 @@ class MultiplayerHost:
             except Exception:
                 dead_members.append(connection_id)
 
-        for connection_id in dead_members:
-            room.members.pop(connection_id, None)
-            self.connections.pop(connection_id, None)
-        if dead_members:
-            self._prune_hand_raise_queue(room)
+        for connection_id in dict.fromkeys(dead_members):
+            member = room.members.get(connection_id) or self.connections.get(connection_id)
+            if member is None:
+                continue
+            await self._cleanup_connection(member)
 
     async def _broadcast_streaming_chunk(
         self,
@@ -2094,7 +1969,7 @@ class MultiplayerHost:
             },
         )
         dead_members: List[str] = []
-        for connection_id, member in room.members.items():
+        for connection_id, member in list(room.members.items()):
             if member.ws.closed:
                 dead_members.append(connection_id)
                 continue
@@ -2106,11 +1981,11 @@ class MultiplayerHost:
             except Exception:
                 dead_members.append(connection_id)
 
-        for connection_id in dead_members:
-            room.members.pop(connection_id, None)
-            self.connections.pop(connection_id, None)
-        if dead_members:
-            self._prune_hand_raise_queue(room)
+        for connection_id in dict.fromkeys(dead_members):
+            member = room.members.get(connection_id) or self.connections.get(connection_id)
+            if member is None:
+                continue
+            await self._cleanup_connection(member)
 
     async def _broadcast_room_event(
         self,
@@ -2150,12 +2025,12 @@ class MultiplayerHost:
         )
         await self._broadcast_rpc(room, notification)
 
-    async def _send_rpc(self, ws: web.WebSocketResponse, message: Any) -> None:
+    async def _send_rpc(self, ws: Any, message: Any) -> None:
         await ws.send_str(message.to_json())
 
     async def _send_error_response(
         self,
-        ws: web.WebSocketResponse,
+        ws: Any,
         request_id: Any,
         code: int,
         message: str,

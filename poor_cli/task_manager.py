@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .core import PoorCLICore
+from .run_history import RunHistoryManager
 from .sandbox import (
     evaluate_tool_access,
     normalize_preset,
@@ -40,6 +41,29 @@ def _slugify(value: str) -> str:
         safe = safe.replace("--", "-")
     safe = safe.strip("-")
     return safe[:48] or "task"
+
+
+def _execution_mode_from_metadata(metadata: Dict[str, Any]) -> str:
+    execution = metadata.get("execution")
+    if not isinstance(execution, dict):
+        return "worktree"
+    mode = str(execution.get("executionMode", "") or "").strip().lower()
+    return "local" if mode == "local" else "worktree"
+
+
+def _current_git_branch(repo_root: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return "local"
+    branch = result.stdout.strip()
+    return branch or "local"
 
 
 @dataclass(frozen=True)
@@ -76,6 +100,7 @@ class TaskRecord:
         return loaded if isinstance(loaded, dict) else {}
 
     def to_dict(self) -> Dict[str, Any]:
+        metadata = self.metadata
         return {
             "taskId": self.task_id,
             "title": self.title,
@@ -98,7 +123,8 @@ class TaskRecord:
             "approvedAt": self.approved_at,
             "startedAt": self.started_at,
             "finishedAt": self.finished_at,
-            "metadata": self.metadata,
+            "executionMode": _execution_mode_from_metadata(metadata),
+            "metadata": metadata,
         }
 
 
@@ -109,6 +135,7 @@ class TaskManager:
         self.tasks_dir = self.base_dir / "tasks"
         self.worktrees_dir = self.base_dir / "worktrees"
         self.db_path = self.tasks_dir / "tasks.db"
+        self.run_history = RunHistoryManager(self.repo_root)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -163,13 +190,18 @@ class TaskManager:
     ) -> TaskRecord:
         task_id = uuid.uuid4().hex[:12]
         slug = _slugify(title)
-        branch_name = f"codex/poor-cli-task-{task_id}-{slug}"
         artifact_dir = self.tasks_dir / task_id
         artifact_dir.mkdir(parents=True, exist_ok=True)
-        worktree_path = self._ensure_worktree(task_id, slug, branch_name)
         created_at = _utc_now()
         preset = normalize_preset(sandbox_preset)
         metadata_payload = dict(metadata or {})
+        execution_mode = _execution_mode_from_metadata(metadata_payload)
+        if execution_mode == "local":
+            worktree_path = self.repo_root
+            branch_name = _current_git_branch(self.repo_root)
+        else:
+            branch_name = f"codex/poor-cli-task-{task_id}-{slug}"
+            worktree_path = self._ensure_worktree(task_id, slug, branch_name)
         effective_auto_approve = bool(
             auto_approve or metadata_payload.get("autoApprove", False)
         )
@@ -303,6 +335,101 @@ class TaskManager:
         )
         return self._require_task(task.task_id)
 
+    def retry_task(self, task_id: str, *, auto_start: Optional[bool] = None) -> TaskRecord:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        last_run = self.run_history.list_runs(
+            source_kind="task",
+            source_id=task.task_id,
+            limit=1,
+        )
+        metadata["retryOfTaskId"] = task.task_id
+        metadata.pop("replayOfRunId", None)
+        if metadata.get("lastRunId"):
+            metadata["retryOfRunId"] = str(metadata["lastRunId"])
+        elif last_run:
+            metadata["retryOfRunId"] = last_run[0].run_id
+
+        effective_auto_approve = bool(metadata.get("autoApprove", False))
+        requires_approval = bool(
+            task.sandbox_preset in APPROVAL_REQUIRED_PRESETS and not effective_auto_approve
+        )
+        effective_auto_start = (
+            not requires_approval if auto_start is None else bool(auto_start)
+        )
+        return self.create_task(
+            title=f"{task.title} (retry)",
+            prompt=task.prompt,
+            sandbox_preset=task.sandbox_preset,
+            source=task.source,
+            metadata=metadata,
+            auto_start=effective_auto_start and not requires_approval,
+            requires_approval=requires_approval,
+            auto_approve=effective_auto_approve,
+        )
+
+    def replay_task(self, task_id: str, *, auto_start: Optional[bool] = None) -> TaskRecord:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        replay_run = self.run_history.last_successful_run(
+            source_kind="task",
+            source_id=task.task_id,
+        )
+        if replay_run is None:
+            recent = self.run_history.list_runs(
+                source_kind="task",
+                source_id=task.task_id,
+                limit=1,
+            )
+            replay_run = recent[0] if recent else None
+        metadata["replayOfTaskId"] = task.task_id
+        metadata.pop("retryOfRunId", None)
+        if replay_run is not None:
+            metadata["replayOfRunId"] = replay_run.run_id
+
+        effective_auto_approve = bool(metadata.get("autoApprove", False))
+        requires_approval = bool(
+            task.sandbox_preset in APPROVAL_REQUIRED_PRESETS and not effective_auto_approve
+        )
+        effective_auto_start = (
+            not requires_approval if auto_start is None else bool(auto_start)
+        )
+        return self.create_task(
+            title=f"{task.title} (replay)",
+            prompt=task.prompt,
+            sandbox_preset=task.sandbox_preset,
+            source=task.source,
+            metadata=metadata,
+            auto_start=effective_auto_start and not requires_approval,
+            requires_approval=requires_approval,
+            auto_approve=effective_auto_approve,
+        )
+
+    def task_runs(self, task_id: str, *, limit: int = 25) -> List[Dict[str, Any]]:
+        return [
+            record.to_dict()
+            for record in self.run_history.list_runs(
+                source_kind="task",
+                source_id=str(task_id).strip(),
+                limit=limit,
+            )
+        ]
+
+    def attach_run(self, task_id: str, run_id: str) -> TaskRecord:
+        task = self._require_task(task_id)
+        metadata = dict(task.metadata)
+        metadata["lastRunId"] = str(run_id).strip()
+        self._update_task(
+            task_id,
+            metadata_json=json.dumps(metadata, ensure_ascii=False),
+        )
+        updated = self._require_task(task_id)
+        self._update_linked_automation_state(
+            updated,
+            lastRunId=str(run_id).strip(),
+        )
+        return updated
+
     def start_task_process(self, task_id: str) -> TaskRecord:
         task = self._require_task(task_id)
         if task.status not in {"queued"}:
@@ -367,7 +494,14 @@ class TaskManager:
             worker_pid=worker_pid,
             error_message="",
         )
-        return self._require_task(task_id)
+        task = self._require_task(task_id)
+        self._update_linked_automation_state(
+            task,
+            lastRunStatus="running",
+            lastRunSummary="",
+            lastRunError="",
+        )
+        return task
 
     def mark_completed(self, task_id: str, *, summary: str = "") -> TaskRecord:
         self._update_task(
@@ -378,7 +512,14 @@ class TaskManager:
             worker_pid=None,
             error_message="",
         )
-        return self._require_task(task_id)
+        task = self._require_task(task_id)
+        self._update_linked_automation_state(
+            task,
+            lastRunStatus="completed",
+            lastRunSummary=summary.strip(),
+            lastRunError="",
+        )
+        return task
 
     def mark_failed(self, task_id: str, *, error_message: str) -> TaskRecord:
         self._update_task(
@@ -388,7 +529,50 @@ class TaskManager:
             error_message=error_message.strip(),
             worker_pid=None,
         )
-        return self._require_task(task_id)
+        task = self._require_task(task_id)
+        self._update_linked_automation_state(
+            task,
+            lastRunStatus="failed",
+            lastRunSummary="",
+            lastRunError=error_message.strip(),
+        )
+        return task
+
+    def _update_linked_automation_state(self, task: TaskRecord, **updates: Any) -> None:
+        automation_id = str(task.metadata.get("automationId", "") or "").strip()
+        if not automation_id:
+            return
+
+        db_path = self.tasks_dir / "automations.db"
+        if not db_path.exists():
+            return
+
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT metadata_json FROM automations WHERE automation_id = ?",
+                (automation_id,),
+            ).fetchone()
+            if row is None:
+                return
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except json.JSONDecodeError:
+                metadata = {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            for key, value in updates.items():
+                if value is None:
+                    continue
+                metadata[key] = value
+            conn.execute(
+                """
+                UPDATE automations
+                SET metadata_json = ?, updated_at = ?
+                WHERE automation_id = ?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), _utc_now(), automation_id),
+            )
 
     def _update_task(self, task_id: str, **updates: Any) -> None:
         if not updates:
@@ -455,6 +639,13 @@ class TaskManager:
             finished_at=_utc_now(),
             worker_pid=None,
             error_message="worker process exited unexpectedly",
+        )
+        refreshed = self._require_task(task.task_id)
+        self._update_linked_automation_state(
+            refreshed,
+            lastRunStatus="failed",
+            lastRunSummary="",
+            lastRunError="worker process exited unexpectedly",
         )
         with self._connect() as conn:
             row = conn.execute(
@@ -549,6 +740,8 @@ async def run_task_worker(
     execution = task.metadata.get("execution", {}) if isinstance(task.metadata, dict) else {}
     if not isinstance(execution, dict):
         execution = {}
+    execution_mode = _execution_mode_from_metadata(task.metadata)
+    reasoning_effort = str(execution.get("reasoningEffort", "") or "").strip().lower()
 
     def _permission_callback(
         tool_name: str,
@@ -596,6 +789,9 @@ async def run_task_worker(
             model_name=str(execution.get("model", "")).strip() or None,
         )
         initialized = True
+        routing_mode = str(execution.get("routingMode", "")).strip()
+        if routing_mode:
+            core.set_routing_mode(routing_mode)
         context_files = [
             str(path)
             for path in execution.get("contextFiles", [])
@@ -608,6 +804,43 @@ async def run_task_worker(
         ]
         raw_context_budget = execution.get("contextBudgetTokens")
         context_budget_tokens = int(raw_context_budget) if isinstance(raw_context_budget, int) else None
+        run_metadata: Dict[str, Any] = {
+            "taskId": task.task_id,
+            "taskTitle": task.title,
+            "taskSource": task.source,
+            "executionMode": execution_mode,
+        }
+        if reasoning_effort:
+            run_metadata["reasoningEffort"] = reasoning_effort
+        for key in (
+            "automationId",
+            "automationName",
+            "retryOfRunId",
+            "replayOfRunId",
+            "retryOfTaskId",
+            "replayOfTaskId",
+        ):
+            value = task.metadata.get(key)
+            if value:
+                run_metadata[key] = value
+        task_hook_payload = {
+            "taskId": task.task_id,
+            "title": task.title,
+            "source": task.source,
+            "sandboxPreset": task.sandbox_preset,
+            "executionMode": execution_mode,
+            "worktreePath": str(target_cwd),
+        }
+        await core._emit_policy_hooks("task_started", task_hook_payload)
+        if task.metadata.get("automationId"):
+            await core._emit_policy_hooks(
+                "automation_started",
+                {
+                    **task_hook_payload,
+                    "automationId": str(task.metadata.get("automationId", "")),
+                    "automationName": str(task.metadata.get("automationName", "")),
+                },
+            )
         with Path(task.events_path).open("w", encoding="utf-8") as event_handle:
             async for event in core.send_message_events(
                 task.prompt,
@@ -615,6 +848,10 @@ async def run_task_worker(
                 pinned_context_files=pinned_context_files,
                 context_budget_tokens=context_budget_tokens,
                 request_id=f"task-{task.task_id}",
+                source_kind="task",
+                source_id=task.task_id,
+                artifact_dir=task.artifact_dir,
+                run_metadata=run_metadata,
             ):
                 event_handle.write(
                     json.dumps(
@@ -627,17 +864,61 @@ async def run_task_worker(
                     chunk = str(event.data.get("chunk", ""))
                     if chunk:
                         response_chunks.append(chunk)
+        run_id = core.get_last_run_id()
+        if run_id:
+            manager.attach_run(task.task_id, run_id)
         response_text = "".join(response_chunks).strip()
         Path(task.response_path).write_text(response_text, encoding="utf-8")
-        manager.mark_completed(
+        completed_task = manager.mark_completed(
             task.task_id,
             summary=textwrap.shorten(response_text or "completed", width=180, placeholder="..."),
         )
+        finish_payload = {
+            **task_hook_payload,
+            "status": "completed",
+            "runId": str(run_id or ""),
+            "summary": completed_task.summary,
+        }
+        await core._emit_policy_hooks("task_finished", finish_payload)
+        if task.metadata.get("automationId"):
+            await core._emit_policy_hooks(
+                "automation_finished",
+                {
+                    **finish_payload,
+                    "automationId": str(task.metadata.get("automationId", "")),
+                    "automationName": str(task.metadata.get("automationName", "")),
+                },
+            )
         return 0
     except Exception as error:
         message = str(error)
+        run_id = core.get_last_run_id()
+        if run_id:
+            manager.attach_run(task.task_id, run_id)
         Path(task.response_path).write_text(message, encoding="utf-8")
         manager.mark_failed(task.task_id, error_message=message)
+        finish_payload = {
+            "taskId": task.task_id,
+            "title": task.title,
+            "source": task.source,
+            "sandboxPreset": task.sandbox_preset,
+            "executionMode": execution_mode,
+            "worktreePath": str(target_cwd),
+            "status": "failed",
+            "runId": str(run_id or ""),
+            "error": message,
+        }
+        if initialized:
+            await core._emit_policy_hooks("task_finished", finish_payload)
+            if task.metadata.get("automationId"):
+                await core._emit_policy_hooks(
+                    "automation_finished",
+                    {
+                        **finish_payload,
+                        "automationId": str(task.metadata.get("automationId", "")),
+                        "automationName": str(task.metadata.get("automationName", "")),
+                    },
+                )
         return 1
     finally:
         os.chdir(original_cwd)

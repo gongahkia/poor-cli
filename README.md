@@ -1,12 +1,9 @@
-[![](https://img.shields.io/badge/poor_cli_1.0.0-passing-A8E6A3)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
-[![](https://img.shields.io/badge/poor_cli_2.0.0-passing-7CD67A)](https://github.com/gongahkia/poor-cli/releases/tag/2.0.0)
-[![](https://img.shields.io/badge/poor_cli_3.0.0-passing-50C878)](https://github.com/gongahkia/poor-cli/releases/tag/3.0.0)
-[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-2E8B57)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
+[![](https://img.shields.io/badge/poor_cli_0.4.0-passing-2E8B57)](https://github.com/gongahkia/poor-cli/releases/tag/v0.4.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 
 # `poor-cli`
 
-[Multiplayer](#multiplayer) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface) and [Neovim](https://neovim.io/) Coding [Agent](#available-tools) *(optimised for the [poor man](#available-commands))*.
+Open, [multiplayer](#multiplayer), [BYOK](#model-support) coding agent for the terminal, [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/).
 
 <div align="center">
     <img src="./asset/logo/1.png" width="30%">
@@ -14,7 +11,7 @@
 
 ## Stack
 
-* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
+* *Script*: [Rust](https://rust-lang.org/), [Python](https://www.python.org/), [Lua](https://www.lua.org/), [Emacs Lisp](https://www.gnu.org/software/emacs/manual/html_node/elisp/), [Vim Script](https://vimhelp.org/usr_41.txt.html), [Bash](https://www.gnu.org/software/bash/)
 * *Dependencies*: [ratatui](https://crates.io/crates/ratatui), [crossterm](https://crates.io/crates/crossterm), [tokio](https://crates.io/crates/tokio), [clap](https://crates.io/crates/clap), [serde](https://crates.io/crates/serde), [google-genai](https://pypi.org/project/google-genai/), [rich](https://pypi.org/project/rich/), [PyYAML](https://pypi.org/project/PyYAML/), [aiofiles](https://pypi.org/project/aiofiles/), [aiohttp](https://pypi.org/project/aiohttp/), [cryptography](https://pypi.org/project/cryptography/)
 * *Optional SDKs*: [openai](https://pypi.org/project/openai/), [anthropic](https://pypi.org/project/anthropic/)
 * *Distribution*: [Docker](https://www.docker.com/), [GitHub Actions](https://github.com/features/actions)
@@ -26,9 +23,23 @@
 
 ## Usage
 
-The below instructions are for installing and running `poor-cli` from this repository.
+Supported Python versions are `3.11` and `3.12`.
 
-1. Bootstrap the project.
+Published wheels are platform-specific and bundle the Rust `poor-cli-tui` binary for supported targets. After `pip install poor-cli`, bare `poor-cli` should launch the TUI directly, and `poor-cli install-info` will show which packaged launcher was selected.
+
+### Preferred install
+
+Install the published package when you want the normal end-user path.
+
+```console
+$ python3 -m pip install --upgrade poor-cli
+$ poor-cli install-info
+$ poor-cli
+```
+
+### Development install
+
+Use the repository checkout when you want to modify or test `poor-cli` itself.
 
 ```console
 $ git clone https://github.com/gongahkia/poor-cli.git
@@ -37,15 +48,16 @@ $ python3 -m venv .venv && source .venv/bin/activate
 $ pip install ".[all]"
 ```
 
-2. Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
+Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
 
 ```console
 $ cp .env.example .env
 ```
 
-3. Finally run any of the below to begin using `poor-cli`'s TUI.
+Then run any of the below to begin using `poor-cli`'s TUI.
 
 ```console
+$ poor-cli                 
 $ ./run.sh                   
 $ ./run_tui.sh               
 
@@ -55,7 +67,9 @@ $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
 
-4. Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
+For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
+
+Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) package manager.
 
 ```lua
 {
@@ -72,10 +86,25 @@ $ docker run -it --env-file .env poor-cli
 }
 ```
 
+Vanilla Emacs 29+ is also supported through the first-party package in `emacs-poor-cli/`.
+
+```elisp
+(require 'package)
+(package-initialize)
+(package-vc-install
+ '(poor-cli
+   :url "https://github.com/gongahkia/poor-cli"
+   :lisp-dir "emacs-poor-cli"))
+
+(require 'poor-cli)
+(global-poor-cli-mode 1)
+```
+
 ## Multiplayer
 
-`poor-cli-server` can run in multiplayer WebSocket host mode with room-scoped
-invite tokens and role permissions *(`viewer` or `prompter`)*.
+`poor-cli-server` runs multiplayer as an invite-only, owner-authoritative P2P
+session over WebRTC DataChannels. The host prints signed viewer and prompter
+invite codes for each room it serves.
 
 ### Start host
 
@@ -92,7 +121,7 @@ $ poor-cli-server --host --bind 127.0.0.1 --port 8765 --room dev --ngrok
 ### Join from TUI
 
 ```console
-$ poor-cli --remote-url ws://HOST:8765/rpc --remote-room dev --remote-token <prompter-or-viewer-token>
+$ poor-cli --remote-invite <signed-viewer-or-prompter-invite>
 ```
 
 ### Join from Neovim
@@ -101,12 +130,13 @@ $ poor-cli --remote-url ws://HOST:8765/rpc --remote-room dev --remote-token <pro
 require("poor-cli").setup({
     multiplayer = {
         enabled = true,
-        url = "ws://HOST:8765/rpc",
-        room = "dev",
-        token = "<prompter-or-viewer-token>",
+        invite = "<signed-viewer-or-prompter-invite>",
     },
 })
 ```
+
+Full protocol details, failure behavior, and compatibility notes live in
+[`docs/MULTIPLAYER.md`](./docs/MULTIPLAYER.md).
 
 ## Model support
 
@@ -114,10 +144,10 @@ require("poor-cli").setup({
 
 | Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
 |---|---|---|---|---|
-| Gemini | `gemini` | `gemini-2.0-flash` | `gemini-2.0-flash`, `gemini-1.5-pro` | Streaming, function calling, system instructions, vision, JSON mode |
-| OpenAI | `openai` | `gpt-4-turbo` | `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo` | Streaming, function calling, system instructions, JSON mode, vision on GPT-4-class models |
-| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-3-5-sonnet-20241022` | `claude-sonnet-4-20250514`, `claude-3-haiku-20240307` | Streaming, function calling, system instructions, vision |
-| Ollama | `ollama` | `llama3` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3`, `codellama`, `mistral`, `phi3` | Streaming, system instructions, JSON mode, optional function calling (model-dependent), local-only execution via `http://localhost:11434` |
+| Gemini | `gemini` | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Streaming, function calling, system instructions, vision, JSON mode |
+| OpenAI | `openai` | `gpt-5.1` | `gpt-5.1`, `gpt-5`, `gpt-5-mini` | Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models |
+| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-sonnet-4-20250514` | `claude-sonnet-4-20250514`, `claude-3-7-sonnet-20250219`, `claude-3-5-haiku-20241022` | Streaming, function calling, system instructions, vision |
+| Ollama | `ollama` | `llama3.1` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3.1`, `qwen2.5-coder`, `mistral`, `codellama` | Streaming, system instructions, JSON mode, optional function calling for capable local models, local-only execution via `http://localhost:11434` |
 
 ## Architecture
 
@@ -139,7 +169,9 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/queue` - Manage prompt queue (add/list/clear/drop)
 - `/compact` - Manage context (compact/compress/handoff)
 - `/search` - Search transcript, tools, and diffs
-- `/status` - Show session status summary
+- `/status` - Show canonical session status summary
+- `/runs` - Inspect recent shared run history
+- `/workflow` - Inspect guided workflow templates and starter scaffolds
 - `/export` - Export conversation history
 - `/retry` - Retry last request
 - `/edit-last` - Edit and resend last prompt
@@ -160,7 +192,8 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/instructions` - Inspect the active instruction stack
 - `/memory` - Show or update repo-local memory
 - `/policy` - Inspect repo-local hooks and audit status
-- `/context` - Open backend context inspector
+- `/context` - Open backend context inspector or `/context explain`
+- `/trust` - Open the trust center for provider, sandbox, rollback, and policy state
 - `/timeline` - Open agent timeline and diffs
 - `/explain-diff` - Explain behavior and risk in current diff
 - `/fix-failures` - Analyze latest test/lint failure output
@@ -183,7 +216,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/broke` - Set poor mode (terse responses)
 - `/my-treat` - Set rich mode (comprehensive responses)
 - `/settings` - List editable config settings
-- `/setup` - Open the guided API key and .env editor
+- `/setup` - Open the guided setup summary and recommended first workflow
 - `/env` - Open the guided API key and .env editor
 - `/api-key` - Open the API key editor or use `/api-key status`
 - `/verbose` - Toggle verbose logging
@@ -213,7 +246,8 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 **Automation & Tasks:**
 - `/autopilot` - Toggle bounded autonomous execution mode
 - `/qa` - Run background QA watch for lint/tests
-- `/task` - Manage durable background tasks
+- `/task` - Manage durable background tasks, including retry and replay
+- `/automation` - Inspect automation run history and replay automations
 - `/inbox` - Show pending and actionable tasks
 - `/tasks` - Legacy alias for /task
 - `/skills` - Inspect or run repo and user skills
@@ -222,7 +256,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/unwatch` - Stop watch mode
 
 **Services & Shell:**
-- `/doctor` - Run environment and service health checks
+- `/doctor` - Open structured diagnostics with remediation guidance
 - `/service` - Manage local background services
 - `/ollama` - Manage Ollama service and models
 - `/run` - Run shell command via backend
@@ -234,7 +268,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/commit` - Create commit message from staged diff
 
 **Collaboration:**
-- `/collab` - Start, join, and manage collaboration sessions
+- `/collab` - Start, join, summarize, and manage collaboration sessions
 - `/pair` - Legacy pair alias for collaboration sessions
 - `/pass` - Hand driver role to the next collaborator
 - `/suggest` - Send suggestion to the active driver
@@ -247,7 +281,6 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 
 **Safety & Undo:**
 - `/gc` - Run checkpoint garbage collection
-
 ## Available Tools
 
 `poor-cli` can currently use these tools.

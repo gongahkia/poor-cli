@@ -6,13 +6,10 @@ import argparse
 import asyncio
 import json
 import os
-import platform
-import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 
 from .automation_manager import (
     AutomationManager,
@@ -22,12 +19,14 @@ from .automation_manager import (
 )
 from .config import Config, ConfigManager, PermissionMode
 from .core import PoorCLICore
+from .cli_errors import run_with_cli_error_handling
 from .custom_commands import CustomCommandRegistry
 from .github_task import create_task_from_context, default_mode_for_context, load_github_context
 from .repo_config import get_repo_config
 from .sandbox import PRESET_DESCRIPTION, evaluate_tool_access, normalize_preset
 from .skills import SkillRegistry
 from .task_manager import APPROVAL_REQUIRED_PRESETS, TaskManager, run_task_worker
+from .tui_launcher import launch_tui, run_install_info_mode
 from . import __version__
 
 
@@ -57,276 +56,6 @@ def _render_root_help() -> str:
         "  - The interactive TUI can be launched from a repo build, a packaged binary, PATH, or POOR_CLI_TUI_BIN.\n"
         "  - Run `poor-cli help` or `poor-cli --help` to show this overview.\n"
     )
-
-
-def _tui_executable_name() -> str:
-    return "poor-cli-tui.exe" if os.name == "nt" else "poor-cli-tui"
-
-
-def _is_usable_binary(path: Path) -> bool:
-    return path.is_file() and os.access(path, os.X_OK)
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
-def _repo_tui_binary_path(repo_root: Optional[Path] = None) -> Path:
-    root = repo_root or _repo_root()
-    return root / "poor-cli-tui" / "target" / "release" / _tui_executable_name()
-
-
-def _repo_binary_is_fresh(repo_root: Path, binary: Path) -> bool:
-    if not _is_usable_binary(binary):
-        return False
-
-    try:
-        binary_mtime = binary.stat().st_mtime
-    except OSError:
-        return False
-
-    watched_paths = [
-        repo_root / "poor-cli-tui" / "Cargo.toml",
-        repo_root / "poor-cli-tui" / "Cargo.lock",
-    ]
-    src_dir = repo_root / "poor-cli-tui" / "src"
-    watched_paths.extend(path for path in src_dir.rglob("*") if path.is_file())
-
-    try:
-        return not any(path.stat().st_mtime > binary_mtime for path in watched_paths if path.exists())
-    except OSError:
-        return False
-
-
-def _run_tui_from_repo(argv: list[str]) -> int:
-    repo_root = _repo_root()
-    script = repo_root / "run_tui.sh"
-    if not script.is_file():
-        return 1
-    return subprocess.call([str(script), *argv], cwd=str(repo_root))
-
-
-def _iter_packaged_tui_candidates() -> list[Path]:
-    package_root = Path(__file__).resolve().parent
-    executable_name = _tui_executable_name()
-    machine = platform.machine().lower().replace("amd64", "x86_64")
-    platform_key = sys.platform.lower()
-    platform_tags = [platform_key, f"{platform_key}-{machine}"]
-
-    if sys.platform == "darwin":
-        platform_tags.extend(["macos", f"macos-{machine}"])
-    elif sys.platform.startswith("linux"):
-        platform_tags.extend(["linux", f"linux-{machine}"])
-    elif os.name == "nt":
-        platform_tags.extend(["windows", f"windows-{machine}"])
-
-    candidates = [package_root / "bin" / executable_name]
-    candidates.extend(package_root / "bin" / tag / executable_name for tag in platform_tags)
-
-    deduped: list[Path] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(candidate)
-    return deduped
-
-
-def _resolve_env_tui_binary() -> Optional[Path]:
-    raw_value = os.environ.get("POOR_CLI_TUI_BIN", "").strip()
-    if not raw_value:
-        return None
-    candidate = Path(raw_value).expanduser()
-    if not candidate.is_absolute():
-        candidate = Path.cwd() / candidate
-    candidate = candidate.resolve()
-    if not _is_usable_binary(candidate):
-        return None
-    return candidate
-
-
-def _resolve_packaged_tui_binary() -> Optional[Path]:
-    for candidate in _iter_packaged_tui_candidates():
-        if _is_usable_binary(candidate):
-            return candidate
-    return None
-
-
-def _resolve_path_tui_binary() -> Optional[Path]:
-    binary = shutil.which(_tui_executable_name())
-    if binary is None:
-        return None
-    return Path(binary).resolve()
-
-
-def _resolve_tui_binary() -> tuple[Optional[Path], Optional[str]]:
-    env_binary = _resolve_env_tui_binary()
-    if env_binary is not None:
-        return env_binary, "env"
-
-    repo_root = _repo_root()
-    repo_binary = _repo_tui_binary_path(repo_root)
-    if _repo_binary_is_fresh(repo_root, repo_binary):
-        return repo_binary, "repo"
-
-    packaged_binary = _resolve_packaged_tui_binary()
-    if packaged_binary is not None:
-        return packaged_binary, "package"
-
-    path_binary = _resolve_path_tui_binary()
-    if path_binary is not None:
-        return path_binary, "path"
-
-    return None, None
-
-
-def _run_tui_binary(argv: list[str]) -> int:
-    binary, _source = _resolve_tui_binary()
-    if binary is None:
-        return 1
-    os.execv(str(binary), [str(binary), *argv])
-    return 1
-
-
-def _inspect_tui_installation() -> dict[str, Any]:
-    repo_root = _repo_root()
-    repo_binary = _repo_tui_binary_path(repo_root)
-    env_override = os.environ.get("POOR_CLI_TUI_BIN", "").strip()
-    env_binary = _resolve_env_tui_binary()
-    path_binary = _resolve_path_tui_binary()
-    selected_binary, selected_source = _resolve_tui_binary()
-    packaged_candidates = _iter_packaged_tui_candidates()
-    run_tui_script = repo_root / "run_tui.sh"
-
-    return {
-        "version": __version__,
-        "platform": sys.platform,
-        "machine": platform.machine(),
-        "tuiExecutableName": _tui_executable_name(),
-        "selectedLauncher": {
-            "source": selected_source,
-            "path": str(selected_binary),
-        }
-        if selected_binary is not None and selected_source is not None
-        else None,
-        "envOverride": {
-            "configured": bool(env_override),
-            "path": env_override or None,
-            "usable": env_binary is not None,
-        },
-        "repoBinary": {
-            "path": str(repo_binary),
-            "exists": repo_binary.is_file(),
-            "usable": _is_usable_binary(repo_binary),
-            "fresh": _repo_binary_is_fresh(repo_root, repo_binary),
-        },
-        "packagedCandidates": [
-            {
-                "path": str(candidate),
-                "exists": candidate.is_file(),
-                "usable": _is_usable_binary(candidate),
-            }
-            for candidate in packaged_candidates
-        ],
-        "pathBinary": {
-            "path": str(path_binary) if path_binary is not None else None,
-            "usable": path_binary is not None and _is_usable_binary(path_binary),
-        },
-        "repoLauncherScript": {
-            "path": str(run_tui_script),
-            "exists": run_tui_script.is_file(),
-        },
-    }
-
-
-def _render_install_info(payload: dict[str, Any]) -> str:
-    lines = [
-        f"poor-cli {payload['version']}",
-        f"Platform: {payload['platform']} ({payload['machine']})",
-        f"TUI executable: {payload['tuiExecutableName']}",
-    ]
-
-    selected = payload.get("selectedLauncher")
-    if isinstance(selected, dict):
-        lines.append(f"Resolved launcher: {selected['source']} -> {selected['path']}")
-    else:
-        lines.append("Resolved launcher: not found")
-
-    env_override = payload["envOverride"]
-    if env_override["configured"]:
-        status = "usable" if env_override["usable"] else "missing or not executable"
-        lines.append(f"POOR_CLI_TUI_BIN: {env_override['path']} [{status}]")
-    else:
-        lines.append("POOR_CLI_TUI_BIN: not set")
-
-    repo_binary = payload["repoBinary"]
-    repo_status = "fresh" if repo_binary["fresh"] else "missing or stale"
-    lines.append(f"Repo release binary: {repo_binary['path']} [{repo_status}]")
-
-    path_binary = payload["pathBinary"]
-    if path_binary["path"]:
-        lines.append(f"PATH binary: {path_binary['path']}")
-    else:
-        lines.append("PATH binary: not found")
-
-    repo_script = payload["repoLauncherScript"]
-    lines.append(
-        "Repo launcher script: "
-        f"{repo_script['path']} [{'available' if repo_script['exists'] else 'missing'}]"
-    )
-
-    packaged_candidates = payload["packagedCandidates"]
-    if packaged_candidates:
-        lines.append("Packaged TUI candidates:")
-        for candidate in packaged_candidates:
-            status = "usable" if candidate["usable"] else "missing"
-            lines.append(f"  {candidate['path']} [{status}]")
-
-    lines.append("Tip: set POOR_CLI_TUI_BIN to force a specific TUI binary.")
-    return "\n".join(lines)
-
-
-def _build_install_info_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="poor-cli install-info")
-    parser.add_argument("--json", action="store_true")
-    return parser
-
-
-def _run_install_info_mode(argv: Sequence[str]) -> int:
-    parser = _build_install_info_parser()
-    args = parser.parse_args(list(argv))
-    payload = _inspect_tui_installation()
-    if args.json:
-        _print_json(payload)
-    else:
-        print(_render_install_info(payload))
-    return 0
-
-
-def _launch_tui(argv: list[str]) -> int:
-    if _run_tui_binary(argv) == 0:
-        return 0
-    if _run_tui_from_repo(argv) == 0:
-        return 0
-    raise SystemExit(
-        "Rust TUI launcher not found.\n\n"
-        "Interactive options:\n"
-        "  - Run ./run_tui.sh from a repo checkout\n"
-        "  - Install or place a `poor-cli-tui` binary in PATH\n"
-        "  - Set POOR_CLI_TUI_BIN=/path/to/poor-cli-tui\n"
-        "  - Run `poor-cli install-info` to inspect launcher paths\n\n"
-        "Python surfaces still available:\n"
-        "  - `poor-cli exec --help`\n"
-        "  - `poor-cli task --help`\n"
-        "  - `poor-cli automation --help`\n"
-        "  - `poor-cli skills --help`\n"
-        "  - `poor-cli commands --help`\n"
-        "  - `poor-cli server --help`\n\n"
-        "Run `poor-cli help` for a full overview."
-    )
-
 
 def _run_server_mode(argv: Sequence[str]) -> int:
     from .server import main as server_main
@@ -365,6 +94,11 @@ def _build_exec_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan-only", action="store_true", help="Return a plan without executing tools")
     parser.add_argument("--provider", help="Override provider for this execution")
     parser.add_argument("--model", help="Override model for this execution")
+    parser.add_argument(
+        "--routing-mode",
+        choices=("manual", "quality", "speed", "cheap", "private"),
+        help="Routing policy for provider selection and privacy posture",
+    )
     parser.add_argument("--api-key", help="Override API key for this execution")
     parser.add_argument("--config", help="Path to config file")
     parser.add_argument("--cwd", help="Working directory for this execution")
@@ -535,6 +269,8 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
         model_name=args.model,
         api_key=args.api_key,
     )
+    if args.routing_mode:
+        core.set_routing_mode(args.routing_mode)
     if core.config is not None:
         if args.permission_mode:
             core.config.security.permission_mode = PermissionMode(args.permission_mode)
@@ -570,6 +306,9 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                 context_files=list(args.context_file or []),
                 pinned_context_files=list(args.pinned_context_file or []),
                 context_budget_tokens=args.context_budget_tokens,
+                source_kind="exec",
+                source_id="cli-exec",
+                run_metadata={"cliCommand": "exec"},
             ):
                 print(
                     json.dumps(
@@ -588,6 +327,9 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
             context_files=list(args.context_file or []),
             pinned_context_files=list(args.pinned_context_file or []),
             context_budget_tokens=args.context_budget_tokens,
+            source_kind="exec",
+            source_id="cli-exec",
+            run_metadata={"cliCommand": "exec"},
         )
         if args.output_format == "json":
             print(
@@ -599,6 +341,7 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
                         "sandboxPreset": effective_sandbox_preset,
                         "autoApprove": bool(args.auto_approve),
                         "cost": core.get_session_cost_summary(),
+                        "statusView": core.build_status_view(),
                         "instructionStack": core.inspect_instruction_stack(
                             list(args.context_file or []) + list(args.pinned_context_file or [])
                         ),
@@ -672,9 +415,21 @@ def _build_execution_metadata_from_args(args: argparse.Namespace) -> dict[str, A
     if model:
         execution["model"] = model
 
+    routing_mode = str(getattr(args, "routing_mode", "") or "").strip()
+    if routing_mode:
+        execution["routingMode"] = routing_mode
+
     config_path = str(getattr(args, "config", "") or "").strip()
     if config_path:
         execution["configPath"] = config_path
+
+    execution_mode = str(getattr(args, "execution_mode", "") or "").strip().lower()
+    if execution_mode:
+        execution["executionMode"] = execution_mode
+
+    reasoning_effort = str(getattr(args, "reasoning_effort", "") or "").strip().lower()
+    if reasoning_effort:
+        execution["reasoningEffort"] = reasoning_effort
 
     context_files = _collect_string_values(getattr(args, "context_file", []))
     if context_files:
@@ -810,6 +565,10 @@ def _build_task_parser() -> argparse.ArgumentParser:
     create.set_defaults(auto_start=None)
     create.add_argument("--provider")
     create.add_argument("--model")
+    create.add_argument("--routing-mode", choices=("manual", "quality", "speed", "cheap", "private"))
+    create.add_argument("--timezone", help="IANA timezone for daily/weekly schedules (defaults to local timezone)")
+    create.add_argument("--execution-mode", choices=("worktree", "local"), default="worktree")
+    create.add_argument("--reasoning-effort", choices=("low", "medium", "high"))
     create.add_argument("--config")
     create.add_argument("--context-file", action="append", default=[])
     create.add_argument("--pinned-context-file", action="append", default=[])
@@ -852,6 +611,20 @@ def _build_task_parser() -> argparse.ArgumentParser:
     cancel.add_argument("task_id")
     cancel.add_argument("--json", action="store_true")
 
+    retry = subparsers.add_parser("retry")
+    retry.add_argument("task_id")
+    retry.add_argument("--no-auto-start", action="store_true")
+    retry.add_argument("--wait", action="store_true")
+    retry.add_argument("--wait-timeout-seconds", type=int, default=900)
+    retry.add_argument("--json", action="store_true")
+
+    replay = subparsers.add_parser("replay")
+    replay.add_argument("task_id")
+    replay.add_argument("--no-auto-start", action="store_true")
+    replay.add_argument("--wait", action="store_true")
+    replay.add_argument("--wait-timeout-seconds", type=int, default=900)
+    replay.add_argument("--json", action="store_true")
+
     run = subparsers.add_parser("run")
     run.add_argument("--task-id", required=True)
     run.add_argument("--repo-root", required=True)
@@ -868,6 +641,7 @@ def _coerce_task_prompt(args: argparse.Namespace) -> str:
 
 
 def _format_task(task: dict) -> str:
+    metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
     lines = [
         f"Task: {task['taskId']} [{task['status']}]",
         f"Title: {task['title']}",
@@ -876,6 +650,9 @@ def _format_task(task: dict) -> str:
         f"Worktree: {task['worktreePath']}",
         f"Artifacts: {task['artifactDir']}",
     ]
+    last_run_id = str(metadata.get("lastRunId", "") or "").strip()
+    if last_run_id:
+        lines.append(f"Last run: {last_run_id}")
     if task.get("summary"):
         lines.append(f"Summary: {task['summary']}")
     if task.get("errorMessage"):
@@ -1035,6 +812,40 @@ def _run_task_mode(argv: Sequence[str]) -> int:
             print(_format_task(task.to_dict()))
         return 0
 
+    if args.subcommand == "retry":
+        if args.wait and args.no_auto_start:
+            raise SystemExit("`poor-cli task retry --wait` requires auto-start.")
+        task = manager.retry_task(args.task_id, auto_start=not args.no_auto_start)
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task retry",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
+    if args.subcommand == "replay":
+        if args.wait and args.no_auto_start:
+            raise SystemExit("`poor-cli task replay --wait` requires auto-start.")
+        task = manager.replay_task(args.task_id, auto_start=not args.no_auto_start)
+        payload = _task_payload_with_wait(
+            manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli task replay",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
     if args.subcommand == "run":
         repo_root = Path(args.repo_root).expanduser().resolve()
         config_path = Path(args.config).expanduser() if args.config else None
@@ -1138,6 +949,7 @@ def _build_automation_parser() -> argparse.ArgumentParser:
     create.add_argument("--disabled", action="store_true")
     create.add_argument("--provider")
     create.add_argument("--model")
+    create.add_argument("--routing-mode", choices=("manual", "quality", "speed", "cheap", "private"))
     create.add_argument("--config")
     create.add_argument("--context-file", action="append", default=[])
     create.add_argument("--pinned-context-file", action="append", default=[])
@@ -1179,6 +991,17 @@ def _build_automation_parser() -> argparse.ArgumentParser:
 
     serve = subparsers.add_parser("serve")
     serve.add_argument("--poll-seconds", type=int, default=30)
+
+    history = subparsers.add_parser("history")
+    history.add_argument("automation_id")
+    history.add_argument("--limit", type=int, default=25)
+    history.add_argument("--json", action="store_true")
+
+    replay = subparsers.add_parser("replay")
+    replay.add_argument("automation_id")
+    replay.add_argument("--wait", action="store_true")
+    replay.add_argument("--wait-timeout-seconds", type=int, default=900)
+    replay.add_argument("--json", action="store_true")
     return parser
 
 
@@ -1194,25 +1017,67 @@ def _automation_schedule_from_args(args: argparse.Namespace) -> dict[str, Any]:
     if args.every_minutes is not None:
         return schedule_interval(args.every_minutes)
     if args.daily:
-        return parse_daily_schedule(args.daily)
+        return parse_daily_schedule(args.daily, timezone_name=args.timezone)
     if args.weekly:
-        return parse_weekly_schedule(args.weekly)
+        return parse_weekly_schedule(args.weekly, timezone_name=args.timezone)
     raise SystemExit("Missing automation schedule.")
 
 
 def _format_automation(automation: dict) -> str:
+    metadata = automation.get("metadata") if isinstance(automation.get("metadata"), dict) else {}
+    execution = metadata.get("execution") if isinstance(metadata.get("execution"), dict) else {}
     lines = [
         f"Automation: {automation['automationId']} [{'enabled' if automation['enabled'] else 'disabled'}]",
         f"Name: {automation['name']}",
         f"Preset: {automation['sandboxPreset']}",
         f"Schedule: {automation['scheduleSummary']}",
     ]
+    if automation.get("scheduleTimezone"):
+        lines.append(f"Timezone: {automation['scheduleTimezone']}")
+    execution_mode = str(automation.get("executionMode", "") or execution.get("executionMode", "")).strip()
+    if execution_mode:
+        lines.append(f"Execution mode: {execution_mode}")
+    reasoning_effort = str(automation.get("reasoningEffort", "") or execution.get("reasoningEffort", "")).strip()
+    if reasoning_effort:
+        lines.append(f"Reasoning effort: {reasoning_effort}")
     if automation.get("nextRunAt"):
         lines.append(f"Next run: {automation['nextRunAt']}")
     if automation.get("lastRunAt"):
         lines.append(f"Last run: {automation['lastRunAt']}")
     if automation.get("lastTaskId"):
         lines.append(f"Last task: {automation['lastTaskId']}")
+    if automation.get("lastRunId"):
+        lines.append(f"Linked run: {automation['lastRunId']}")
+    if automation.get("lastRunStatus"):
+        lines.append(f"Last run status: {automation['lastRunStatus']}")
+    if automation.get("lastRunSummary"):
+        lines.append(f"Last run summary: {automation['lastRunSummary']}")
+    if automation.get("lastRunError"):
+        lines.append(f"Last run failure: {automation['lastRunError']}")
+    if automation.get("replayOfRunId"):
+        lines.append(f"Replay source: {automation['replayOfRunId']}")
+    return "\n".join(lines)
+
+
+def _format_run(run: dict) -> str:
+    lines = [
+        f"Run: {run.get('runId', '')} [{run.get('status', 'unknown')}]",
+        f"Source: {run.get('sourceKind', 'unknown')}/{run.get('sourceId', 'unknown')}",
+        f"Started: {run.get('startedAt', '')}",
+    ]
+    if run.get("finishedAt"):
+        lines.append(f"Finished: {run['finishedAt']}")
+    if run.get("errorClass"):
+        lines.append(f"Error class: {run['errorClass']}")
+    if run.get("checkpointId"):
+        lines.append(f"Checkpoint: {run['checkpointId']}")
+    provider = run.get("providerSummary") if isinstance(run.get("providerSummary"), dict) else {}
+    provider_name = str(provider.get("name", "") or "").strip()
+    provider_model = str(provider.get("model", "") or "").strip()
+    if provider_name or provider_model:
+        lines.append(f"Provider: {provider_name}/{provider_model}")
+    if run.get("summary"):
+        lines.append(f"Summary: {run['summary']}")
     return "\n".join(lines)
 
 
@@ -1374,6 +1239,31 @@ def _run_automation_mode(argv: Sequence[str]) -> int:
                 print()
         return 0
 
+    if args.subcommand == "history":
+        payload = manager.history(args.automation_id, limit=max(1, int(args.limit)))
+        if args.json:
+            _print_json(payload)
+        else:
+            for run in payload:
+                print(_format_run(run))
+                print()
+        return 0
+
+    if args.subcommand == "replay":
+        task = manager.replay(args.automation_id)
+        payload = _task_payload_with_wait(
+            manager.task_manager,
+            task,
+            wait=bool(args.wait),
+            timeout_seconds=args.wait_timeout_seconds,
+            command_label="poor-cli automation replay",
+        )
+        if args.json:
+            _print_json(payload)
+        else:
+            print(_format_task(payload))
+        return 0
+
     if args.subcommand == "serve":
         manager.serve_forever(poll_seconds=args.poll_seconds)
         return 0
@@ -1448,10 +1338,10 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
     raise SystemExit(f"Unknown github-task subcommand: {args.subcommand}")
 
 
-def main() -> None:
+def _main() -> None:
     argv = sys.argv[1:]
     if not argv:
-        raise SystemExit(_launch_tui(argv))
+        raise SystemExit(launch_tui(argv))
     if argv[0] in {"help", "--help", "-h"}:
         print(_render_root_help())
         raise SystemExit(0)
@@ -1473,10 +1363,14 @@ def main() -> None:
     if argv and argv[0] == "server":
         raise SystemExit(_run_server_mode(argv[1:]))
     if argv and argv[0] == "install-info":
-        raise SystemExit(_run_install_info_mode(argv[1:]))
+        raise SystemExit(run_install_info_mode(argv[1:]))
     if argv and argv[0] == "tui":
-        raise SystemExit(_launch_tui(argv[1:]))
-    raise SystemExit(_launch_tui(argv))
+        raise SystemExit(launch_tui(argv[1:]))
+    raise SystemExit(launch_tui(argv))
+
+
+def main() -> None:
+    run_with_cli_error_handling(_main)
 
 
 if __name__ == "__main__":

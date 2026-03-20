@@ -867,6 +867,49 @@ pub enum AppMode {
     Quitting,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppWorkspace {
+    Chat,
+    Review,
+    Context,
+    Tasks,
+    Collaboration,
+    Setup,
+}
+
+impl AppWorkspace {
+    pub const ALL: [Self; 6] = [
+        Self::Chat,
+        Self::Review,
+        Self::Context,
+        Self::Tasks,
+        Self::Collaboration,
+        Self::Setup,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Chat => "Chat",
+            Self::Review => "Review",
+            Self::Context => "Context",
+            Self::Tasks => "Tasks",
+            Self::Collaboration => "Collab",
+            Self::Setup => "Setup",
+        }
+    }
+
+    pub const fn shortcut(self) -> &'static str {
+        match self {
+            Self::Chat => "F1",
+            Self::Review => "F2",
+            Self::Context => "F3",
+            Self::Tasks => "F4",
+            Self::Collaboration => "F5",
+            Self::Setup => "F6",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PlanStep {
     pub description: String,
@@ -973,6 +1016,7 @@ pub struct App {
 
     // ── Mode ───
     pub mode: AppMode,
+    pub active_workspace: AppWorkspace,
 
     // ── Provider info ───
     pub provider_name: String,
@@ -1022,6 +1066,11 @@ pub struct App {
     pub timeline_scroll: u16,
     pub transcript_search: TranscriptSearchState,
     pub permission_mode_label: String,
+    pub review_workspace_content: String,
+    pub context_workspace_content: String,
+    pub tasks_workspace_content: String,
+    pub collaboration_workspace_content: String,
+    pub setup_workspace_content: String,
 
     // ── Status message (temporary) ───
     pub status_message: Option<(String, Instant)>,
@@ -1050,8 +1099,6 @@ pub struct App {
     pub onboarding_step: usize,
     pub join_wizard_active: bool,
     pub join_wizard_step: u8,
-    pub join_wizard_url: String,
-    pub join_wizard_room: String,
     pub join_wizard_input: String,
     pub join_wizard_error: String,
     pub autopilot_enabled: bool,
@@ -1080,8 +1127,7 @@ pub struct App {
     pub multiplayer_approval_state: String,
     pub multiplayer_hand_raised: bool,
     pub multiplayer_queue_position: u64,
-    pub multiplayer_remote_url: String,
-    pub multiplayer_remote_token: String,
+    pub multiplayer_remote_invite: String,
     pub multiplayer_queue_depth: u64,
     pub multiplayer_member_count: u64,
     pub multiplayer_active_connection_id: String,
@@ -1141,6 +1187,7 @@ impl Default for App {
             input_cursor: 0,
             scroll_offset: 0,
             mode: AppMode::Normal,
+            active_workspace: AppWorkspace::Chat,
             provider_name: "unknown".into(),
             model_name: "unknown".into(),
             capabilities: Vec::new(),
@@ -1178,6 +1225,11 @@ impl Default for App {
             timeline_scroll: 0,
             transcript_search: TranscriptSearchState::default(),
             permission_mode_label: "prompt".to_string(),
+            review_workspace_content: String::new(),
+            context_workspace_content: String::new(),
+            tasks_workspace_content: String::new(),
+            collaboration_workspace_content: String::new(),
+            setup_workspace_content: String::new(),
             status_message: None,
             server_connected: false,
             cwd: String::new(),
@@ -1196,8 +1248,6 @@ impl Default for App {
             onboarding_step: 0,
             join_wizard_active: false,
             join_wizard_step: 0,
-            join_wizard_url: String::new(),
-            join_wizard_room: String::new(),
             join_wizard_input: String::new(),
             join_wizard_error: String::new(),
             autopilot_enabled: false,
@@ -1226,8 +1276,7 @@ impl Default for App {
             multiplayer_approval_state: String::new(),
             multiplayer_hand_raised: false,
             multiplayer_queue_position: 0,
-            multiplayer_remote_url: String::new(),
-            multiplayer_remote_token: String::new(),
+            multiplayer_remote_invite: String::new(),
             multiplayer_queue_depth: 0,
             multiplayer_member_count: 0,
             multiplayer_active_connection_id: String::new(),
@@ -1326,6 +1375,33 @@ impl App {
         self.messages
             .push(ChatMessage::welcome(self.welcome_text()));
         self.scroll_offset = 0;
+    }
+
+    pub fn set_workspace(&mut self, workspace: AppWorkspace) {
+        self.active_workspace = workspace;
+    }
+
+    pub fn workspace_content(&self) -> Option<&str> {
+        match self.active_workspace {
+            AppWorkspace::Chat => None,
+            AppWorkspace::Review => Some(self.review_workspace_content.as_str()),
+            AppWorkspace::Context => Some(self.context_workspace_content.as_str()),
+            AppWorkspace::Tasks => Some(self.tasks_workspace_content.as_str()),
+            AppWorkspace::Collaboration => Some(self.collaboration_workspace_content.as_str()),
+            AppWorkspace::Setup => Some(self.setup_workspace_content.as_str()),
+        }
+    }
+
+    pub fn set_workspace_content(&mut self, workspace: AppWorkspace, content: impl Into<String>) {
+        let content = content.into();
+        match workspace {
+            AppWorkspace::Chat => {}
+            AppWorkspace::Review => self.review_workspace_content = content,
+            AppWorkspace::Context => self.context_workspace_content = content,
+            AppWorkspace::Tasks => self.tasks_workspace_content = content,
+            AppWorkspace::Collaboration => self.collaboration_workspace_content = content,
+            AppWorkspace::Setup => self.setup_workspace_content = content,
+        }
     }
 
     /// Retroactively update the welcome message after init completes.
@@ -1705,6 +1781,7 @@ impl App {
         } else {
             state.message.clone()
         };
+        self.active_workspace = AppWorkspace::Review;
         self.mutation_review = Some(state);
         self.mode = AppMode::MutationReview;
     }
@@ -2117,8 +2194,12 @@ impl App {
         let lines: Vec<&str> = self.thinking_buffer.lines().collect();
         let display_lines = if lines.len() > 20 {
             let hidden = lines.len() - 20;
-            let mut out = vec![format!("💭 Thinking ({} lines, {} hidden):", lines.len(), hidden)];
-            out.extend(lines[lines.len()-20..].iter().map(|s| s.to_string()));
+            let mut out = vec![format!(
+                "💭 Thinking ({} lines, {} hidden):",
+                lines.len(),
+                hidden
+            )];
+            out.extend(lines[lines.len() - 20..].iter().map(|s| s.to_string()));
             out
         } else {
             let mut out = vec![format!("💭 Thinking ({} lines):", lines.len())];
@@ -2266,6 +2347,7 @@ impl App {
         self.multiplayer_approval_state.clear();
         self.multiplayer_hand_raised = false;
         self.multiplayer_queue_position = 0;
+        self.multiplayer_remote_invite.clear();
     }
 
     pub fn can_control_multiplayer_reviews(&self) -> bool {
@@ -2667,8 +2749,8 @@ fn redact_sensitive_history_command(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_mutation_review_chunks, ApprovedReviewChunk, MutationReviewChunk,
-        MutationReviewState, ProviderEntry, ReviewDecisionState, ThemeMode,
+        parse_mutation_review_chunks, AppMode, AppWorkspace, ApprovedReviewChunk,
+        MutationReviewChunk, MutationReviewState, ProviderEntry, ReviewDecisionState, ThemeMode,
     };
 
     #[test]
@@ -2841,7 +2923,7 @@ diff --git a/src/other.rs b/src/other.rs
     fn provider_select_defaults_to_active_provider_and_model() {
         let mut app = super::App::new();
         app.provider_name = "openai".to_string();
-        app.model_name = "gpt-4-turbo".to_string();
+        app.model_name = crate::provider_catalog::default_model("openai").to_string();
         app.providers = vec![
             ProviderEntry {
                 name: "anthropic".to_string(),
@@ -2855,7 +2937,10 @@ diff --git a/src/other.rs b/src/other.rs
                 available: true,
                 ready: true,
                 status_label: "API key configured".to_string(),
-                models: vec!["gpt-4o".to_string(), "gpt-4-turbo".to_string()],
+                models: vec![
+                    "gpt-5-mini".to_string(),
+                    crate::provider_catalog::default_model("openai").to_string(),
+                ],
             },
         ];
 
@@ -2865,7 +2950,40 @@ diff --git a/src/other.rs b/src/other.rs
         assert_eq!(app.selected_provider_model_index(), Some(1));
         assert_eq!(
             app.selected_provider_model().as_deref(),
-            Some("gpt-4-turbo")
+            Some(crate::provider_catalog::default_model("openai"))
         );
+    }
+
+    #[test]
+    fn workspace_content_round_trips_for_persistent_panels() {
+        let mut app = super::App::new();
+        app.set_workspace_content(AppWorkspace::Tasks, "# Tasks Workspace\n");
+        app.set_workspace(AppWorkspace::Tasks);
+
+        assert_eq!(app.workspace_content(), Some("# Tasks Workspace\n"));
+    }
+
+    #[test]
+    fn opening_mutation_review_switches_to_review_workspace() {
+        let mut app = super::App::new();
+        app.set_workspace(AppWorkspace::Tasks);
+
+        app.open_mutation_review(MutationReviewState {
+            request_id: "req-1".to_string(),
+            tool_name: "write_file".to_string(),
+            operation: "write_file".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            paths: vec!["/tmp/demo.txt".to_string()],
+            diff: "@@ -0,0 +1 @@\n+hello".to_string(),
+            checkpoint_id: Some("cp-1".to_string()),
+            changed: Some(true),
+            message: "Preview write".to_string(),
+            selected_path_index: 0,
+            chunks: Vec::new(),
+            selected_chunk_index: 0,
+        });
+
+        assert_eq!(app.active_workspace, AppWorkspace::Review);
+        assert_eq!(app.mode, AppMode::MutationReview);
     }
 }
