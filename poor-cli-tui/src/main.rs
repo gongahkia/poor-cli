@@ -435,13 +435,13 @@ fn run_app(
                 InputAction::Cancel => {
                     write_session_log(
                         session_log.as_ref(),
-                        &format!("input_cancel active_request_id={}", app.active_request_id),
+                        &format!("input_cancel active_request_id={}", app.streaming.active_request_id),
                     );
                     cancel_token.store(true, Ordering::SeqCst);
                     let _ = rpc_cmd_tx.borrow().send(RpcCommand::CancelRequest);
                     app.finalize_streaming();
-                    app.active_request_id.clear();
-                    app.active_request_started_at = None;
+                    app.streaming.active_request_id.clear();
+                    app.streaming.active_request_started_at = None;
                     app.stop_waiting();
                     app.set_status("Request cancelled");
                 }
@@ -2741,7 +2741,7 @@ fn apply_execution_profile(
     };
     app.response_mode = response_mode;
     app.context_budget_tokens = context_budget;
-    app.iteration_cap = iteration_cap;
+    app.streaming.iteration_cap = iteration_cap;
 
     let _ = rpc_set_config_blocking(
         rpc_cmd_tx,
@@ -2774,7 +2774,7 @@ fn apply_execution_profile(
         app.response_mode.as_str(),
         permission_mode,
         app.context_budget_tokens,
-        app.iteration_cap,
+        app.streaming.iteration_cap,
         notes
     ))
 }

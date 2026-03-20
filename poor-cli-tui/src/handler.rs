@@ -200,8 +200,8 @@ pub(super) fn handle_server_message(
             refresh_workspace_panels(app, &rpc_cmd_tx.borrow());
         }
         ServerMsg::Error { message } => {
-            let active_request_id = app.active_request_id.clone();
-            let elapsed_ms = app
+            let active_request_id = app.streaming.active_request_id.clone();
+            let elapsed_ms = app.streaming
                 .active_request_started_at
                 .map(|started| started.elapsed().as_millis())
                 .unwrap_or(0);
@@ -219,7 +219,7 @@ pub(super) fn handle_server_message(
                 ),
             );
             app.finalize_streaming();
-            app.active_tool = None;
+            app.streaming.active_tool = None;
             app.stop_waiting();
             let remote_reconnect_configured =
                 !app.multiplayer_remote_invite.is_empty() && !app.multiplayer_room.is_empty();
@@ -278,8 +278,8 @@ pub(super) fn handle_server_message(
                 app.set_status(format!("Queue paused after error ({remaining} remaining)"));
             }
             app.push_message(ChatMessage::error(message));
-            app.active_request_id.clear();
-            app.active_request_started_at = None;
+            app.streaming.active_request_id.clear();
+            app.streaming.active_request_started_at = None;
         }
         ServerMsg::ThinkingChunk { request_id, chunk } => {
             if !chunk.is_empty() {
@@ -294,17 +294,17 @@ pub(super) fn handle_server_message(
             reason,
         } => {
             let request_id_for_log = if request_id.is_empty() {
-                app.active_request_id.clone()
+                app.streaming.active_request_id.clone()
             } else {
                 request_id
             };
             if done {
-                let response_chars = app
-                    .streaming_message
+                let response_chars = app.streaming
+                    .message
                     .and_then(|idx| app.messages.get(idx))
                     .map(|msg| msg.content.chars().count())
                     .unwrap_or(0);
-                let elapsed_ms = app
+                let elapsed_ms = app.streaming
                     .active_request_started_at
                     .map(|started| started.elapsed().as_millis())
                     .unwrap_or(0);
@@ -318,8 +318,8 @@ pub(super) fn handle_server_message(
                 );
                 app.finalize_streaming();
                 app.stop_waiting();
-                app.active_request_id.clear();
-                app.active_request_started_at = None;
+                app.streaming.active_request_id.clear();
+                app.streaming.active_request_started_at = None;
                 if !app.plan.steps.is_empty() && app.plan.current_step < app.plan.steps.len() {
                     app.advance_plan_step();
                     if app.plan.current_step < app.plan.steps.len() {
@@ -338,7 +338,7 @@ pub(super) fn handle_server_message(
                         chunk.chars().count()
                     ),
                 );
-                if app.streaming_message.is_none() {
+                if app.streaming.message.is_none() {
                     app.start_streaming_message();
                 }
                 app.append_streaming_chunk(&chunk);
@@ -365,10 +365,10 @@ pub(super) fn handle_server_message(
                     request_id, event_type, tool_name, iteration_index, iteration_cap
                 ),
             );
-            app.current_iteration = iteration_index;
-            app.iteration_cap = iteration_cap;
+            app.streaming.current_iteration = iteration_index;
+            app.streaming.iteration_cap = iteration_cap;
             if event_type == "tool_call_start" {
-                app.active_tool = Some(tool_name.clone());
+                app.streaming.active_tool = Some(tool_name.clone());
                 let args_str = serde_json::to_string_pretty(&tool_args).unwrap_or_default();
                 app.push_message(ChatMessage::tool_call(&tool_name, args_str));
                 app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
@@ -384,7 +384,7 @@ pub(super) fn handle_server_message(
                     timestamp: std::time::Instant::now(),
                 });
             } else if event_type == "tool_result" {
-                app.active_tool = None;
+                app.streaming.active_tool = None;
                 if !diff.is_empty() {
                     app.push_message(ChatMessage::diff_view(&tool_name, diff.clone()));
                 } else {
@@ -548,8 +548,8 @@ pub(super) fn handle_server_message(
                     iteration_cap
                 ),
             );
-            app.current_iteration = iteration_index;
-            app.iteration_cap = iteration_cap;
+            app.streaming.current_iteration = iteration_index;
+            app.streaming.iteration_cap = iteration_cap;
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Phase,
                 request_id,

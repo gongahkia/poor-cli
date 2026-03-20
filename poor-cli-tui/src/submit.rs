@@ -189,8 +189,8 @@ pub(crate) fn send_chat_request_with_context(
 
     // use streaming endpoint — notifications arrive via the notification channel
     let request_id = app.next_request_id();
-    app.active_request_id = request_id.clone();
-    app.active_request_started_at = Some(std::time::Instant::now());
+    app.streaming.active_request_id = request_id.clone();
+    app.streaming.active_request_started_at = Some(std::time::Instant::now());
     session::write_session_log(
         session_log,
         &format!(
@@ -215,8 +215,8 @@ pub(crate) fn send_chat_request_with_context(
         .is_err()
     {
         app.stop_waiting();
-        app.active_request_id.clear();
-        app.active_request_started_at = None;
+        app.streaming.active_request_id.clear();
+        app.streaming.active_request_started_at = None;
         session::write_session_log(
             session_log,
             "chat_request_send_error reason=rpc_worker_unavailable",

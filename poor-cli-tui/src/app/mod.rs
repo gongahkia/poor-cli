@@ -541,6 +541,33 @@ pub struct TokenTracking {
     pub cumulative_output_tokens: u64,
 }
 
+pub struct StreamingState {
+    pub message: Option<usize>, // index of in-progress assistant message
+    pub thinking_buffer: String, // accumulated thinking/reasoning text
+    pub thinking_active: bool, // true while thinking content is streaming
+    pub current_iteration: u32,
+    pub iteration_cap: u32,
+    pub active_tool: Option<String>,
+    pub request_id_counter: u64,
+    pub active_request_id: String,
+    pub active_request_started_at: Option<Instant>,
+}
+impl Default for StreamingState {
+    fn default() -> Self {
+        Self {
+            message: None,
+            thinking_buffer: String::new(),
+            thinking_active: false,
+            current_iteration: 0,
+            iteration_cap: 25,
+            active_tool: None,
+            request_id_counter: 0,
+            active_request_id: String::new(),
+            active_request_started_at: None,
+        }
+    }
+}
+
 pub struct App {
     // ── Chat state ───
     pub messages: Vec<ChatMessage>,
@@ -676,15 +703,7 @@ pub struct App {
     pub multiplayer_agenda_total_count: u64,
 
     // ── Streaming / agentic state ───
-    pub streaming_message: Option<usize>, // index of in-progress assistant message
-    pub thinking_buffer: String,          // accumulated thinking/reasoning text
-    pub thinking_active: bool,            // true while thinking content is streaming
-    pub current_iteration: u32,
-    pub iteration_cap: u32,
-    pub active_tool: Option<String>,
-    pub request_id_counter: u64,
-    pub active_request_id: String,
-    pub active_request_started_at: Option<Instant>,
+    pub streaming: StreamingState,
 
     // ── Plan mode state ───
     pub plan: PlanState,
@@ -815,15 +834,7 @@ impl Default for App {
             multiplayer_agenda: Vec::new(),
             multiplayer_agenda_open_count: 0,
             multiplayer_agenda_total_count: 0,
-            streaming_message: None,
-            thinking_buffer: String::new(),
-            thinking_active: false,
-            current_iteration: 0,
-            iteration_cap: 25,
-            active_tool: None,
-            request_id_counter: 0,
-            active_request_id: String::new(),
-            active_request_started_at: None,
+            streaming: StreamingState::default(),
             plan: PlanState::default(),
             tokens: TokenTracking::default(),
             response_mode: ResponseMode::Rich,
@@ -1686,30 +1697,30 @@ impl App {
     }
 
     pub fn next_request_id(&mut self) -> String {
-        self.request_id_counter += 1;
-        format!("req-{}", self.request_id_counter)
+        self.streaming.request_id_counter += 1;
+        format!("req-{}", self.streaming.request_id_counter)
     }
 
     pub fn start_streaming_message(&mut self) {
         let idx = self.messages.len();
         self.messages.push(ChatMessage::assistant(""));
-        self.streaming_message = Some(idx);
-        self.thinking_buffer.clear();
-        self.thinking_active = false;
-        self.current_iteration = 0;
+        self.streaming.message = Some(idx);
+        self.streaming.thinking_buffer.clear();
+        self.streaming.thinking_active = false;
+        self.streaming.current_iteration = 0;
         self.tokens.turn_input_tokens = 0;
         self.tokens.turn_output_tokens = 0;
         self.scroll_offset = 0;
     }
 
     pub fn append_thinking_chunk(&mut self, chunk: &str) {
-        self.thinking_active = true;
-        self.thinking_buffer.push_str(chunk);
-        if self.streaming_message.is_none() {
+        self.streaming.thinking_active = true;
+        self.streaming.thinking_buffer.push_str(chunk);
+        if self.streaming.message.is_none() {
             self.start_streaming_message();
         }
         let thinking_display = self.format_thinking_display();
-        if let Some(idx) = self.streaming_message {
+        if let Some(idx) = self.streaming.message {
             if let Some(msg) = self.messages.get_mut(idx) {
                 msg.content = thinking_display;
             }
@@ -1720,11 +1731,11 @@ impl App {
     }
 
     fn format_thinking_display(&self) -> String {
-        if self.thinking_buffer.is_empty() {
+        if self.streaming.thinking_buffer.is_empty() {
             return String::new();
         }
         // Show a condensed view of thinking, last few lines
-        let lines: Vec<&str> = self.thinking_buffer.lines().collect();
+        let lines: Vec<&str> = self.streaming.thinking_buffer.lines().collect();
         let display_lines = if lines.len() > 20 {
             let hidden = lines.len() - 20;
             let mut out = vec![format!(
@@ -1744,17 +1755,17 @@ impl App {
 
     pub fn append_streaming_chunk(&mut self, chunk: &str) {
         // If we were in thinking mode, transition to response mode
-        if self.thinking_active {
-            self.thinking_active = false;
+        if self.streaming.thinking_active {
+            self.streaming.thinking_active = false;
             let thinking_display = self.format_thinking_display();
             let separator = format!("{thinking_display}\n\n---\n\n");
-            if let Some(idx) = self.streaming_message {
+            if let Some(idx) = self.streaming.message {
                 if let Some(msg) = self.messages.get_mut(idx) {
                     msg.content = separator;
                 }
             }
         }
-        if let Some(idx) = self.streaming_message {
+        if let Some(idx) = self.streaming.message {
             if let Some(msg) = self.messages.get_mut(idx) {
                 msg.content.push_str(chunk);
             }
@@ -1765,14 +1776,14 @@ impl App {
     }
 
     pub fn finalize_streaming(&mut self) {
-        if let Some(idx) = self.streaming_message {
+        if let Some(idx) = self.streaming.message {
             if let Some(msg) = self.messages.get(idx) {
                 self.record_assistant_output(&msg.content.clone());
             }
         }
-        self.streaming_message = None;
-        self.thinking_active = false;
-        self.active_tool = None;
+        self.streaming.message = None;
+        self.streaming.thinking_active = false;
+        self.streaming.active_tool = None;
         self.scroll_offset = 0;
     }
 

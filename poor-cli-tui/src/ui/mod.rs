@@ -214,26 +214,26 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn show_activity_bar(app: &App) -> bool {
-    app.active_tool.is_some() || app.streaming_message.is_some() || app.waiting
+    app.streaming.active_tool.is_some() || app.streaming.message.is_some() || app.waiting
 }
 
 fn draw_activity_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     let mut spans = vec![Span::styled("  ", Style::default())];
 
-    let (label, detail) = if let Some(tool) = &app.active_tool {
+    let (label, detail) = if let Some(tool) = &app.streaming.active_tool {
         (
             format!("{} {}", app.spinner_frame(), ellipsize_middle(tool, 22)),
             format!(
                 "  [{}/{}]  {}",
-                app.current_iteration,
-                app.iteration_cap,
+                app.streaming.current_iteration,
+                app.streaming.iteration_cap,
                 app.wait_elapsed()
             ),
         )
-    } else if app.streaming_message.is_some() {
-        let label = if app.thinking_active {
-            let line_count = app.thinking_buffer.lines().count();
+    } else if app.streaming.message.is_some() {
+        let label = if app.streaming.thinking_active {
+            let line_count = app.streaming.thinking_buffer.lines().count();
             format!("{} reasoning ({} lines)", app.thinking_frame(), line_count)
         } else {
             format!("{} responding", app.thinking_frame())

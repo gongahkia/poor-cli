@@ -1894,7 +1894,7 @@ Context Window: {max_context} tokens\n\n\
                     } else {
                         "disabled"
                     },
-                    app.iteration_cap
+                    app.streaming.iteration_cap
                 ),
             );
             return false;
@@ -1942,7 +1942,7 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             app.autopilot_enabled = true;
-            app.iteration_cap = cap;
+            app.streaming.iteration_cap = cap;
             show_command_info_popup(
                 app,
                 raw,
@@ -1960,7 +1960,7 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             app.autopilot_enabled = false;
-            app.iteration_cap = 25;
+            app.streaming.iteration_cap = 25;
             show_command_info_popup(
                 app,
                 raw,
