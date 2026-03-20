@@ -838,3 +838,26 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
 fn truncate_label(s: &str, max: usize) -> String {
     if s.len() <= max { s.to_string() } else { format!("{}…", &s[..max - 1]) }
 }
+
+/// Replace all numeric sequences in `s` with values interpolated from 0 to their final value.
+fn interpolate_numbers(s: &str, progress: f64) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            let mut num_str = String::from(c);
+            while let Some(&next) = chars.peek() {
+                if next.is_ascii_digit() { num_str.push(chars.next().unwrap()); } else { break; }
+            }
+            if let Ok(final_val) = num_str.parse::<u64>() {
+                let current = (final_val as f64 * progress).round() as u64;
+                result.push_str(&current.to_string());
+            } else {
+                result.push_str(&num_str);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
