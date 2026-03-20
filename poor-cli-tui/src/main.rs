@@ -22,8 +22,9 @@ use serde_json::Value;
 
 use poor_cli_tui::app::{
     ApiKeyEditorField, ApiKeyEditorState, App, AppMode, ChatMessage,
-    ContextInspectorFile, ContextInspectorState, MessageRole, ProviderEntry, QueuedPrompt,
-    QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode, TimelineEntry, TimelineEntryKind,
+    ContextInspectorFile, ContextInspectorState, MessageRole, OverlayKind, ProviderEntry,
+    QueuedPrompt, QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode, TimelineEntry,
+    TimelineEntryKind,
 };
 use poor_cli_tui::event as app_event;
 use poor_cli_tui::event::LoopControl;

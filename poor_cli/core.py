@@ -462,10 +462,6 @@ class PoorCLICore:
                             stats = await loop.run_in_executor(None, lambda: self._repo_graph.build_index(on_progress=_progress))
                         else:
                             stats = await loop.run_in_executor(None, lambda: self._repo_graph.incremental_update(on_progress=_progress))
-                        # emit animation frames
-                        frames = self._repo_graph.generate_graph_frames()
-                        for frame in frames:
-                            _progress(frame)
                         logger.info("Repo index (%s): %s", reindex_mode, stats)
                 self._context_manager._repo_graph = self._repo_graph
             provider_status = self.get_provider_readiness()

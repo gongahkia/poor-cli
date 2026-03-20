@@ -1,6 +1,6 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, Padding, Paragraph, Wrap},
     Frame,
@@ -653,4 +653,139 @@ pub(crate) fn draw_join_wizard(frame: &mut Frame, app: &App) {
             .padding(Padding::new(1, 1, 0, 0)),
     );
     frame.render_widget(popup, area);
+}
+
+// ── Graph overlay (repo indexing animation) ─────────────────────────
+
+struct GNode {
+    label: &'static str,
+    angle: f64,
+    ring: u8, // 0=center, 1=inner, 2=outer
+    color: Color,
+}
+
+const GRAPH_NODES: &[GNode] = &[
+    GNode { label: "core",    angle: 0.0,   ring: 0, color: Color::Rgb(255, 200, 87) },
+    GNode { label: "config",  angle: 0.0,   ring: 1, color: Color::Rgb(176, 187, 143) },
+    GNode { label: "server",  angle: 2.09,  ring: 1, color: Color::Rgb(176, 187, 143) },
+    GNode { label: "tools",   angle: 4.19,  ring: 1, color: Color::Rgb(176, 187, 143) },
+    GNode { label: "graph",   angle: 0.52,  ring: 2, color: Color::Rgb(200, 150, 220) },
+    GNode { label: "context", angle: 1.57,  ring: 2, color: Color::Rgb(130, 190, 220) },
+    GNode { label: "index",   angle: 2.62,  ring: 2, color: Color::Rgb(130, 190, 220) },
+    GNode { label: "model",   angle: 3.67,  ring: 2, color: Color::Rgb(130, 190, 220) },
+    GNode { label: "symbols", angle: 4.71,  ring: 2, color: Color::Rgb(200, 150, 220) },
+    GNode { label: "edges",   angle: 5.76,  ring: 2, color: Color::Rgb(200, 150, 220) },
+];
+
+const GRAPH_EDGES: &[(usize, usize)] = &[
+    (0, 1), (0, 2), (0, 3),
+    (1, 4), (1, 5),
+    (2, 6), (2, 7),
+    (3, 8), (3, 9),
+    (4, 5), (6, 7), (8, 9),
+];
+
+pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(60, 55, frame.area());
+    render_popup_surface(frame, area, mode);
+    let border_block = Block::default()
+        .title(Span::styled(
+            " Indexing Repository ",
+            Style::default()
+                .fg(theme::accent(mode))
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme::accent(mode)));
+    frame.render_widget(border_block, area);
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 2,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(5),
+    };
+    if inner.width < 10 || inner.height < 6 {
+        return;
+    }
+    let elapsed = app.graph_overlay.started_at.elapsed().as_millis() as f64;
+    let node_count = GRAPH_NODES.len();
+    let visible_nodes = ((elapsed / 120.0) as usize).min(node_count);
+    let edge_start = if elapsed > 400.0 { ((elapsed - 400.0) / 80.0) as usize } else { 0 };
+    let visible_edges = edge_start.min(GRAPH_EDGES.len());
+    let cx = inner.x as f64 + inner.width as f64 / 2.0;
+    let cy = inner.y as f64 + inner.height as f64 / 2.0;
+    let rx = (inner.width as f64 / 2.0 - 6.0).max(4.0);
+    let ry = (inner.height as f64 / 2.0 - 2.0).max(2.0);
+    let buf = frame.buffer_mut();
+    let node_pos = |n: &GNode| -> (u16, u16) {
+        if n.ring == 0 {
+            (cx as u16, cy as u16)
+        } else {
+            let r_scale = if n.ring == 1 { 0.45 } else { 0.9 };
+            let nx = cx + n.angle.cos() * rx * r_scale;
+            let ny = cy + n.angle.sin() * ry * r_scale;
+            (nx as u16, ny as u16)
+        }
+    };
+    // edges
+    let edge_color = theme::muted_fg(mode);
+    for i in 0..visible_edges {
+        let (a, b) = GRAPH_EDGES[i];
+        if a >= visible_nodes || b >= visible_nodes { continue; }
+        let (x1, y1) = node_pos(&GRAPH_NODES[a]);
+        let (x2, y2) = node_pos(&GRAPH_NODES[b]);
+        let steps = ((x2 as i32 - x1 as i32).abs().max((y2 as i32 - y1 as i32).abs() * 2)) as usize;
+        if steps == 0 { continue; }
+        for s in 1..steps {
+            let t = s as f64 / steps as f64;
+            let px = (x1 as f64 + (x2 as f64 - x1 as f64) * t) as u16;
+            let py = (y1 as f64 + (y2 as f64 - y1 as f64) * t) as u16;
+            if px > inner.x && px < inner.x + inner.width - 1
+                && py >= inner.y && py < inner.y + inner.height
+            {
+                buf.set_string(px, py, "·", Style::default().fg(edge_color));
+            }
+        }
+    }
+    // nodes
+    for i in 0..visible_nodes {
+        let node = &GRAPH_NODES[i];
+        let (nx, ny) = node_pos(node);
+        if nx < inner.x || nx >= inner.x + inner.width
+            || ny < inner.y || ny >= inner.y + inner.height { continue; }
+        let ch = if node.ring == 0 { "◉" } else { "●" };
+        buf.set_string(nx, ny, ch, Style::default().fg(node.color).add_modifier(Modifier::BOLD));
+        let label = node.label;
+        if nx as f64 >= cx {
+            let lx = nx + 2;
+            if lx + label.len() as u16 <= inner.x + inner.width {
+                buf.set_string(lx, ny, label, Style::default().fg(node.color));
+            }
+        } else {
+            let lx = nx.saturating_sub(label.len() as u16 + 1);
+            if lx >= inner.x {
+                buf.set_string(lx, ny, label, Style::default().fg(node.color));
+            }
+        }
+    }
+    // progress bar + status
+    let bar_y = area.y + area.height - 2;
+    let bar_x = inner.x;
+    let pct = app.graph_overlay.progress_pct as u16;
+    let bar_width = inner.width.saturating_sub(6);
+    let filled = (bar_width * pct / 100).min(bar_width);
+    if bar_width > 0 {
+        let bar_str: String = "▓".repeat(filled as usize) + &"░".repeat((bar_width - filled) as usize);
+        let pct_label = format!(" {}%", pct);
+        buf.set_string(bar_x, bar_y, &bar_str, Style::default().fg(theme::accent(mode)));
+        buf.set_string(bar_x + bar_width, bar_y, &pct_label, Style::default().fg(theme::muted_fg(mode)));
+    }
+    let status_y = bar_y.saturating_sub(1);
+    let status = &app.graph_overlay.status_text;
+    if !status.is_empty() && status_y > inner.y {
+        let max_w = inner.width as usize;
+        let truncated = if status.len() > max_w { &status[..max_w] } else { status.as_str() };
+        buf.set_string(bar_x, status_y, truncated, Style::default().fg(theme::muted_fg(mode)));
+    }
 }

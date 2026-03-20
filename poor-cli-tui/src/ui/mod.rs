@@ -62,8 +62,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Some(OverlayKind::InfoPopup) => overlays::draw_info_popup(frame, app),
             Some(OverlayKind::ApiKeyEditor) => overlays::draw_api_key_editor(frame, app),
             Some(OverlayKind::JoinWizard) => overlays::draw_join_wizard(frame, app),
+            Some(OverlayKind::GraphOverlay) => overlays::draw_graph_overlay(frame, app),
             None => {}
         }
+    }
+    // graph overlay renders even outside Overlay mode (passive during init)
+    if app.graph_overlay.active && app.overlay_kind != Some(OverlayKind::GraphOverlay) {
+        overlays::draw_graph_overlay(frame, app);
     }
     if app.mode == AppMode::QuickOpen {
         overlays::draw_quick_open(frame, app);

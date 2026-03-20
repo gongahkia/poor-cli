@@ -604,6 +604,31 @@ pub(super) fn handle_server_message(
             );
             app.streaming.current_iteration = iteration_index;
             app.streaming.iteration_cap = iteration_cap;
+            if phase == "repo_index" {
+                // open graph overlay if not active
+                if !app.graph_overlay.active {
+                    app.graph_overlay.active = true;
+                    app.graph_overlay.started_at = std::time::Instant::now();
+                    app.graph_overlay.progress_pct = 0;
+                    app.graph_overlay.completed_at = None;
+                    app.mode = AppMode::Overlay;
+                    app.overlay_kind = Some(OverlayKind::GraphOverlay);
+                }
+                app.graph_overlay.status_text = message.replace('\n', " ");
+                // map progress messages to percentage
+                let msg_lower = app.graph_overlay.status_text.to_lowercase();
+                if msg_lower.contains("starting") { app.graph_overlay.progress_pct = 5; }
+                else if msg_lower.contains("scanning") { app.graph_overlay.progress_pct = 15; }
+                else if msg_lower.contains("found") { app.graph_overlay.progress_pct = 25; }
+                else if msg_lower.contains("extracting") { app.graph_overlay.progress_pct = 40; }
+                else if msg_lower.contains("extracted") { app.graph_overlay.progress_pct = 60; }
+                else if msg_lower.contains("building") { app.graph_overlay.progress_pct = 75; }
+                else if msg_lower.contains("built") { app.graph_overlay.progress_pct = 85; }
+                else if msg_lower.contains("complete") || msg_lower.contains("update:") || msg_lower.contains("up to date") {
+                    app.graph_overlay.progress_pct = 100;
+                    app.graph_overlay.completed_at = Some(std::time::Instant::now());
+                }
+            }
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Phase,
                 request_id,

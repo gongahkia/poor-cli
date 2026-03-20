@@ -229,6 +229,14 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
             Some(OverlayKind::InfoPopup) => mode_handlers::handle_key_info_popup(app, key),
             Some(OverlayKind::ApiKeyEditor) => mode_handlers::handle_key_api_key_editor(app, key),
             Some(OverlayKind::JoinWizard) => mode_handlers::handle_key_join_wizard(app, key),
+            Some(OverlayKind::GraphOverlay) => {
+                if matches!(key.code, KeyCode::Esc) {
+                    app.graph_overlay.active = false;
+                    app.overlay_kind = None;
+                    app.mode = AppMode::Normal;
+                }
+                InputAction::Redraw
+            }
             None => {
                 app.mode = AppMode::Normal;
                 InputAction::Redraw

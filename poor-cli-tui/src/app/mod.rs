@@ -404,6 +404,16 @@ pub enum OverlayKind {
     InfoPopup,
     ApiKeyEditor,
     JoinWizard,
+    GraphOverlay,
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphOverlayState {
+    pub active: bool,
+    pub started_at: Instant,
+    pub status_text: String,
+    pub progress_pct: u8,
+    pub completed_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -707,6 +717,9 @@ pub struct App {
 
     // ── Pair mode state ───
     pub pair: PairState,
+
+    // ── Graph overlay (repo indexing animation) ───
+    pub graph_overlay: GraphOverlayState,
 }
 
 impl Default for App {
@@ -796,6 +809,13 @@ impl Default for App {
             compact_select_idx: 0,
             reconnect_message_idx: None,
             pair: PairState::default(),
+            graph_overlay: GraphOverlayState {
+                active: false,
+                started_at: Instant::now(),
+                status_text: String::new(),
+                progress_pct: 0,
+                completed_at: None,
+            },
         }
     }
 }
@@ -1053,6 +1073,18 @@ impl App {
     pub fn tick_spinner(&mut self) {
         if self.waiting {
             self.spinner_tick = (self.spinner_tick + 1) % SPINNER_FRAMES.len();
+        }
+        // auto-dismiss graph overlay after completion
+        if self.graph_overlay.active {
+            if let Some(completed_at) = self.graph_overlay.completed_at {
+                if completed_at.elapsed().as_millis() > 1500 {
+                    self.graph_overlay.active = false;
+                    if self.overlay_kind == Some(OverlayKind::GraphOverlay) {
+                        self.overlay_kind = None;
+                        self.mode = AppMode::Normal;
+                    }
+                }
+            }
         }
     }
 
