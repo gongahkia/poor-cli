@@ -476,23 +476,57 @@ pub(super) fn handle_server_message(
                 };
                 app.info_popup_scroll = 0;
                 app.mode = poor_cli_tui::app::AppMode::InfoPopup;
-            } else if !diff.is_empty() || !paths.is_empty() {
-                app.open_mutation_review(poor_cli_tui::app::MutationReviewState {
+            } else {
+                // build mutation review state if diff/paths present
+                let mutation_review = if !diff.is_empty() || !paths.is_empty() {
+                    let mut mr = poor_cli_tui::app::MutationReviewState {
+                        request_id: request_id.clone(),
+                        tool_name: tool_name.clone(),
+                        operation: operation.clone(),
+                        prompt_id: prompt_id.clone(),
+                        paths: paths.clone(),
+                        diff: diff.clone(),
+                        checkpoint_id: checkpoint_id.clone(),
+                        changed,
+                        message: message.clone(),
+                        selected_path_index: 0,
+                        chunks: Vec::new(),
+                        selected_chunk_index: 0,
+                    };
+                    mr.chunks = poor_cli_tui::app::parse_mutation_review_chunks(&mr.diff, &mr.paths);
+                    mr.sync_selected_path_from_chunk();
+                    Some(mr)
+                } else {
+                    None
+                };
+                let paths_display = if paths.is_empty() {
+                    String::new()
+                } else {
+                    paths.join(", ")
+                };
+                let summary = if message.is_empty() {
+                    operation.clone()
+                } else {
+                    message.clone()
+                };
+                app.push_message(poor_cli_tui::app::ChatMessage::approval_request(
+                    tool_name.clone(),
+                    format!("{paths_display}\n{summary}"),
+                ));
+                app.pending_approval = Some(poor_cli_tui::app::ApprovalState {
                     request_id,
                     tool_name,
                     operation,
                     prompt_id,
                     paths,
                     diff,
+                    message,
                     checkpoint_id,
                     changed,
-                    message,
-                    selected_path_index: 0,
-                    chunks: Vec::new(),
-                    selected_chunk_index: 0,
+                    diff_expanded: false,
+                    mutation_review,
                 });
-            } else {
-                app.mode = poor_cli_tui::app::AppMode::PermissionPrompt;
+                app.mode = poor_cli_tui::app::AppMode::InlineApproval;
             }
         }
         ServerMsg::PlanRequest {
@@ -528,7 +562,26 @@ pub(super) fn handle_server_message(
                 timestamp: std::time::Instant::now(),
             });
             let read_only = !app.can_control_multiplayer_reviews();
-            app.set_plan_review(steps, original_request, summary, prompt_id, true, read_only);
+            if read_only {
+                app.set_plan_review(steps, original_request, summary, prompt_id, true, read_only);
+            } else {
+                // inline approval for plan reviews
+                let steps_display = steps.iter().enumerate()
+                    .map(|(i, s)| format!("  {}. {}", i + 1, s))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let plan_summary = if summary.is_empty() {
+                    "Plan review".to_string()
+                } else {
+                    summary.clone()
+                };
+                app.push_message(poor_cli_tui::app::ChatMessage::approval_request(
+                    "plan",
+                    format!("{plan_summary}\n{steps_display}"),
+                ));
+                app.set_plan_review(steps, original_request, summary, prompt_id, true, false);
+                app.mode = poor_cli_tui::app::AppMode::InlineApproval;
+            }
         }
         ServerMsg::Progress {
             request_id,

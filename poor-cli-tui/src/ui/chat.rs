@@ -56,6 +56,9 @@ fn chat_fingerprint(app: &App) -> u64 {
     if app.waiting {
         app.spinner_tick.hash(&mut hasher);
     }
+    if let Some(ref approval) = app.pending_approval {
+        approval.diff_expanded.hash(&mut hasher);
+    }
     for msg in &app.messages {
         role_fingerprint(&msg.role, &mut hasher);
         msg.content.len().hash(&mut hasher);
@@ -86,6 +89,10 @@ fn role_fingerprint(role: &MessageRole, hasher: &mut impl Hasher) {
         MessageRole::DiffView { name } => {
             6u8.hash(hasher);
             name.hash(hasher);
+        }
+        MessageRole::ApprovalRequest { tool_name } => {
+            8u8.hash(hasher);
+            tool_name.hash(hasher);
         }
         MessageRole::Error => 7u8.hash(hasher),
     }
@@ -453,6 +460,76 @@ fn build_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
                         "    …".to_string(),
                         Style::default().fg(theme::muted_fg(mode)),
                     )));
+                }
+            }
+            MessageRole::ApprovalRequest { tool_name } => {
+                // header: flag icon + tool name + paths/summary
+                let mut header_spans = vec![
+                    Span::styled("  ⚑ ", Style::default().fg(theme::warning(mode))),
+                    Span::styled(
+                        tool_name.clone(),
+                        Style::default()
+                            .fg(theme::warning(mode))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ];
+                // first line of content = paths, rest = summary
+                let mut content_lines = msg.content.lines();
+                if let Some(first) = content_lines.next() {
+                    if !first.trim().is_empty() {
+                        header_spans.push(Span::styled(
+                            format!("  {first}"),
+                            Style::default().fg(theme::muted_fg(mode)),
+                        ));
+                    }
+                }
+                all_lines.push(Line::from(header_spans));
+                for line in content_lines {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("    {line}"),
+                        Style::default().fg(theme::muted_fg(mode)),
+                    )));
+                }
+                // hint line
+                all_lines.push(Line::from(vec![
+                    Span::styled("    y", Style::default().fg(theme::success(mode))),
+                    Span::styled(" allow  ", Style::default().fg(theme::muted_fg(mode))),
+                    Span::styled("n", Style::default().fg(theme::error(mode))),
+                    Span::styled(" deny  ", Style::default().fg(theme::muted_fg(mode))),
+                    Span::styled("d", Style::default().fg(theme::accent(mode))),
+                    Span::styled(" diff  ", Style::default().fg(theme::muted_fg(mode))),
+                    Span::styled("?", Style::default().fg(theme::accent(mode))),
+                    Span::styled(" help", Style::default().fg(theme::muted_fg(mode))),
+                ]));
+                // expanded diff
+                if let Some(approval) = &app.pending_approval {
+                    if approval.diff_expanded && !approval.diff.is_empty() {
+                        all_lines.push(Line::from(Span::styled(
+                            "    ── diff ──".to_string(),
+                            Style::default().fg(theme::accent(mode)),
+                        )));
+                        for diff_line in approval.diff.lines().take(60) {
+                            let color = if diff_line.starts_with('+') && !diff_line.starts_with("+++") {
+                                theme::success(mode)
+                            } else if diff_line.starts_with('-') && !diff_line.starts_with("---") {
+                                theme::error(mode)
+                            } else if diff_line.starts_with("@@") {
+                                theme::accent(mode)
+                            } else {
+                                theme::muted_fg(mode)
+                            };
+                            all_lines.push(Line::from(Span::styled(
+                                format!("    {diff_line}"),
+                                Style::default().fg(color),
+                            )));
+                        }
+                        if approval.diff.lines().count() > 60 {
+                            all_lines.push(Line::from(Span::styled(
+                                "    …".to_string(),
+                                Style::default().fg(theme::muted_fg(mode)),
+                            )));
+                        }
+                    }
                 }
             }
             MessageRole::Error => {

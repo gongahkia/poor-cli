@@ -110,6 +110,7 @@ pub enum MessageRole {
     ToolCall { name: String },
     ToolResult { name: String },
     DiffView { name: String },
+    ApprovalRequest { tool_name: String },
     Error,
 }
 
@@ -172,6 +173,14 @@ impl ChatMessage {
     pub fn diff_view(name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: MessageRole::DiffView { name: name.into() },
+            content: content.into(),
+            timestamp: Instant::now(),
+        }
+    }
+
+    pub fn approval_request(tool_name: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::ApprovalRequest { tool_name: tool_name.into() },
             content: content.into(),
             timestamp: Instant::now(),
         }
@@ -397,6 +406,7 @@ pub enum AppMode {
     PlanReview,
     CompactSelect,
     JoinWizard,
+    InlineApproval,
     Quitting,
 }
 
@@ -565,6 +575,21 @@ impl Default for ProviderState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ApprovalState {
+    pub request_id: String,
+    pub tool_name: String,
+    pub operation: String,
+    pub prompt_id: String,
+    pub paths: Vec<String>,
+    pub diff: String,
+    pub message: String,
+    pub checkpoint_id: Option<String>,
+    pub changed: Option<bool>,
+    pub diff_expanded: bool,
+    pub mutation_review: Option<MutationReviewState>,
+}
+
 pub struct App {
     // ── Chat state ───
     pub messages: Vec<ChatMessage>,
@@ -611,6 +636,7 @@ pub struct App {
     pub permission_approved_chunks: Vec<ApprovedReviewChunk>,
     pub permission_review_read_only: bool,
     pub mutation_review: Option<MutationReviewState>,
+    pub pending_approval: Option<ApprovalState>,
     pub context_inspector: Option<ContextInspectorState>,
     pub quick_open: QuickOpenState,
     pub at_path_completion: AtPathCompletionState,
@@ -718,6 +744,7 @@ impl Default for App {
             permission_approved_chunks: Vec::new(),
             permission_review_read_only: false,
             mutation_review: None,
+            pending_approval: None,
             context_inspector: None,
             quick_open: QuickOpenState::default(),
             at_path_completion: AtPathCompletionState::default(),
@@ -1392,6 +1419,10 @@ impl App {
                 MessageRole::DiffView { name } => {
                     (TranscriptSearchItemKind::Diff, format!("Diff / {name}"))
                 }
+                MessageRole::ApprovalRequest { tool_name } => (
+                    TranscriptSearchItemKind::Tool,
+                    format!("Approval / {tool_name}"),
+                ),
             };
 
             if kind == TranscriptSearchItemKind::Message && !self.transcript_search.include_messages

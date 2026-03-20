@@ -271,6 +271,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
         AppMode::TranscriptSearch => mode_handlers::handle_key_transcript_search(app, key),
         AppMode::PlanReview => mode_handlers::handle_key_plan_review(app, key),
         AppMode::JoinWizard => mode_handlers::handle_key_join_wizard(app, key),
+        AppMode::InlineApproval => mode_handlers::handle_key_inline_approval(app, key),
         AppMode::Quitting => InputAction::Quit,
     }
 }

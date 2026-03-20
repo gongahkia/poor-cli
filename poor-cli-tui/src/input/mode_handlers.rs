@@ -1087,3 +1087,31 @@ pub(super) fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputActio
         _ => InputAction::None,
     }
 }
+
+pub(super) fn handle_key_inline_approval(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => {
+            app.permission_approved_paths.clear();
+            app.permission_answer = Some(true);
+            app.mode = AppMode::Normal;
+            InputAction::PermissionAnswered(true)
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            app.permission_approved_paths.clear();
+            app.permission_answer = Some(false);
+            app.mode = AppMode::Normal;
+            InputAction::PermissionAnswered(false)
+        }
+        KeyCode::Char('d') | KeyCode::Char('D') => {
+            if let Some(approval) = app.pending_approval.as_mut() {
+                approval.diff_expanded = !approval.diff_expanded;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Char('?') => {
+            open_permission_help(app);
+            InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}

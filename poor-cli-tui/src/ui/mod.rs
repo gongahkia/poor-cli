@@ -410,6 +410,17 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
         ]
+    } else if app.mode == AppMode::InlineApproval {
+        vec![
+            Span::styled("  y", Style::default().fg(theme::success(mode))),
+            Span::styled(" allow  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("n/Esc", Style::default().fg(theme::error(mode))),
+            Span::styled(" deny  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("d", Style::default().fg(theme::accent(mode))),
+            Span::styled(" diff  ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled("?", Style::default().fg(theme::accent(mode))),
+            Span::styled(" help", Style::default().fg(theme::muted_fg(mode))),
+        ]
     } else if app.mode == AppMode::PermissionPrompt {
         vec![
             Span::styled("  y/Enter", Style::default().fg(theme::success(mode))),

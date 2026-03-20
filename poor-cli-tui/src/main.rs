@@ -501,8 +501,18 @@ fn run_app(
                     }
                 }
                 InputAction::PermissionAnswered(allowed) => {
-                    let review_state = app.mutation_review.clone();
-                    let prompt_id = std::mem::take(&mut app.permission_prompt_id);
+                    // prefer inline approval state, fall back to legacy fields
+                    let inline_approval = app.pending_approval.take();
+                    let review_state = if let Some(ref ia) = inline_approval {
+                        ia.mutation_review.clone()
+                    } else {
+                        app.mutation_review.clone()
+                    };
+                    let prompt_id = if let Some(ref ia) = inline_approval {
+                        ia.prompt_id.clone()
+                    } else {
+                        std::mem::take(&mut app.permission_prompt_id)
+                    };
                     let approved_paths = if allowed {
                         std::mem::take(&mut app.permission_approved_paths)
                     } else {
@@ -546,6 +556,7 @@ fn run_app(
                         });
                     }
                     app.close_mutation_review();
+                    app.mode = AppMode::Normal;
                     write_session_log(
                         session_log.as_ref(),
                         &format!(
