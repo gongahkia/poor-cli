@@ -230,7 +230,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
             Some(OverlayKind::ApiKeyEditor) => mode_handlers::handle_key_api_key_editor(app, key),
             Some(OverlayKind::JoinWizard) => mode_handlers::handle_key_join_wizard(app, key),
             Some(OverlayKind::GraphOverlay) => {
-                if matches!(key.code, KeyCode::Esc) {
+                // dismiss on any key, but only after animation completes (4s)
+                if app.graph_overlay.started_at.elapsed().as_millis() >= 4000 {
                     app.graph_overlay.active = false;
                     app.overlay_kind = None;
                     app.mode = AppMode::Normal;

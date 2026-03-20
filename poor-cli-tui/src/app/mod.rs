@@ -1676,8 +1676,11 @@ impl App {
 
     pub fn close_api_key_editor(&mut self) {
         self.api_key_editor = None;
-        self.mode = AppMode::Normal;
-        self.overlay_kind = None;
+        // don't clobber graph overlay if it's active
+        if self.overlay_kind != Some(OverlayKind::GraphOverlay) {
+            self.mode = AppMode::Normal;
+            self.overlay_kind = None;
+        }
     }
 
     pub fn scroll_info_popup_up(&mut self, amount: u16) {

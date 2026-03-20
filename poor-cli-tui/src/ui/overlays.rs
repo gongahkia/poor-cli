@@ -821,17 +821,15 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
             &format!(" {:.0}%", visual_pct),
             Style::default().fg(theme::muted_fg(mode)),
         );
-        // show dismiss hint after animation completes
+        // show dismiss hint top-right after animation completes
         if anim_progress >= 1.0 {
-            let hint = "press Esc to continue";
-            let hx = (cx as u16).saturating_sub(hint.len() as u16 / 2);
-            if bar_y + 1 < area.y + area.height {
-                buf.set_string(
-                    hx.max(inner.x), bar_y,
-                    hint,
-                    Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
-                );
-            }
+            let hint = " press any key to continue ";
+            let hx = (area.x + area.width).saturating_sub(hint.len() as u16 + 1);
+            buf.set_string(
+                hx, area.y,
+                hint,
+                Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+            );
         }
     }
 }
