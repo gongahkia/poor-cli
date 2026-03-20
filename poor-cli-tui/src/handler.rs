@@ -385,6 +385,13 @@ pub(super) fn handle_server_message(
                 });
             } else if event_type == "tool_result" {
                 app.streaming.active_tool = None;
+                // checkpoint badge before mutating tool results
+                if let Some(ref cp) = checkpoint_id {
+                    let short = if cp.len() > 8 { &cp[..8] } else { cp.as_str() };
+                    app.push_message(ChatMessage::system(format!(
+                        "[checkpoint {short}] snapshot created before {tool_name}"
+                    )));
+                }
                 if !diff.is_empty() {
                     app.push_message(ChatMessage::diff_view(&tool_name, diff.clone()));
                 } else {
@@ -633,6 +640,15 @@ pub(super) fn handle_server_message(
                     app.graph_overlay.progress_pct = 100;
                     app.graph_overlay.completed_at = Some(std::time::Instant::now());
                 }
+            } else if phase == "tool_loop" {
+                // iteration gauge in status bar
+                app.set_status(format!(
+                    "iteration {}/{} | {}",
+                    iteration_index + 1, iteration_cap, message
+                ));
+            } else if phase == "context_selection" || phase == "compression" || phase == "provider_probe" {
+                // show backend operations as system messages
+                app.push_message(ChatMessage::system(message.clone()));
             }
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Phase,
@@ -663,6 +679,13 @@ pub(super) fn handle_server_message(
             app.tokens.turn_output_tokens += output_tokens;
             app.tokens.cumulative_input_tokens += input_tokens;
             app.tokens.cumulative_output_tokens += output_tokens;
+            // live cost ticker in status bar
+            let total_in = app.tokens.cumulative_input_tokens;
+            let total_out = app.tokens.cumulative_output_tokens;
+            app.set_status(format!(
+                "tokens: {}in / {}out | session: {}in / {}out",
+                input_tokens, output_tokens, total_in, total_out
+            ));
             app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
                 kind: poor_cli_tui::app::TimelineEntryKind::Cost,
                 request_id,

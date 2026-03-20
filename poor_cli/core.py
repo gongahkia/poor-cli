@@ -466,6 +466,13 @@ class PoorCLICore:
                         logger.info("Repo index (%s): %s", reindex_mode, stats)
                 self._context_manager._repo_graph = self._repo_graph
             provider_status = self.get_provider_readiness()
+            # emit provider probe results
+            ready = [n for n, s in provider_status.items() if s.get("ready")]
+            avail = [n for n, s in provider_status.items() if s.get("available") and not s.get("ready")]
+            self._pending_events.append(CoreEvent(
+                type="progress",
+                data={"phase": "provider_probe", "message": f"providers: {', '.join(ready)} ready" + (f" | {', '.join(avail)} available" if avail else "")},
+            ))
             self._resolved_routing_mode = resolve_routing_mode(
                 self.config.model.routing_mode,
                 provider_status,
@@ -955,6 +962,21 @@ class PoorCLICore:
                         "budgetTokens": context_budget_tokens or getattr(self._context_manager, "max_tokens", 0),
                     }
                 )
+                # emit context selection summary
+                n_sel = len(context_result.selected)
+                n_exc = len(context_result.excluded)
+                tokens = context_result.total_tokens
+                trunc = " (truncated)" if context_result.truncated else ""
+                # group by source
+                sources: Dict[str, int] = {}
+                for fc in context_result.files:
+                    src = getattr(fc, "source", "auto")
+                    sources[src] = sources.get(src, 0) + 1
+                src_parts = ", ".join(f"{k}={v}" for k, v in sorted(sources.items()))
+                self._pending_events.append(CoreEvent(
+                    type="progress",
+                    data={"phase": "context_selection", "message": f"context: {n_sel} files selected (~{tokens} tokens){trunc} [{src_parts}] | {n_exc} excluded"},
+                ))
 
         instruction_snapshot = self._inspect_instruction_snapshot(referenced_files)
         instruction_prefix = instruction_snapshot.render_prompt_prefix()
@@ -1462,9 +1484,15 @@ class PoorCLICore:
             if cc_cfg and getattr(cc_cfg, "enabled", False) and self.provider:
                 history = self.provider.get_history()
                 if self._context_compressor.should_compress(history, cc_cfg):
+                    before = len(history)
                     compressed = self._context_compressor.compress(history, cc_cfg)
                     self.provider.set_history(compressed)
-                    logger.info("Compressed conversation context: %d -> %d messages", len(history), len(compressed))
+                    after = len(compressed)
+                    logger.info("Compressed conversation context: %d -> %d messages", before, after)
+                    self._pending_events.append(CoreEvent(
+                        type="progress",
+                        data={"phase": "compression", "message": f"context compressed: {before} \u2192 {after} messages ({100 - after * 100 // max(before, 1)}% reduction)"},
+                    ))
         except (AttributeError, TypeError):
             pass
 
