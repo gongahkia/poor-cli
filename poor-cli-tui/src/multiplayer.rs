@@ -73,10 +73,10 @@ pub(super) fn reconnect_to_remote_server(
     app.server_connected = false;
     app.finalize_streaming();
     app.stop_waiting();
-    app.multiplayer_enabled = true;
-    app.multiplayer_remote_invite = bootstrap.invite.clone();
-    app.multiplayer_room = bootstrap.room.clone();
-    app.multiplayer_role.clear();
+    app.multiplayer.enabled = true;
+    app.multiplayer.remote_invite = bootstrap.invite.clone();
+    app.multiplayer.room = bootstrap.room.clone();
+    app.multiplayer.role.clear();
     app.push_message(ChatMessage::system(format!(
         "Joining multiplayer session `{}` via invite...",
         display_target(bootstrap)

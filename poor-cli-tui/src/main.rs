@@ -270,10 +270,10 @@ fn run_app(
             .unwrap_or_else(|| ".".into())
     });
     if let Some(invite) = cli.remote_invite.as_ref() {
-        app.multiplayer_remote_invite = invite.clone();
+        app.multiplayer.remote_invite = invite.clone();
         if let Ok(bootstrap) = multiplayer::decode_invite_code(invite) {
-            app.multiplayer_room = bootstrap.room;
-            app.multiplayer_enabled = true;
+            app.multiplayer.room = bootstrap.room;
+            app.multiplayer.enabled = true;
         }
     }
     let (session_log, tui_log_path, backend_log_path) = setup_session_logs(&app.cwd);
@@ -355,7 +355,7 @@ fn run_app(
                 if std::time::Instant::now() >= deadline {
                     state.1 = None;
                     let attempt_label = state.0;
-                    match multiplayer::decode_invite_code(&app.multiplayer_remote_invite) {
+                    match multiplayer::decode_invite_code(&app.multiplayer.remote_invite) {
                         Ok(bootstrap) => reconnect = Some((attempt_label, bootstrap)),
                         Err(error) => {
                             state.2 = false;

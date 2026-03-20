@@ -35,7 +35,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let input_height = compute_input_height(app, frame.area().width);
     let activity_height = if show_activity_bar(app) { 1 } else { 0 };
-    let has_presence = app.multiplayer_enabled && !app.pair.connected_users.is_empty();
+    let has_presence = app.multiplayer.enabled && !app.pair.connected_users.is_empty();
     let mut constraints = Vec::new();
     if has_presence {
         constraints.push(Constraint::Length(1));
@@ -190,17 +190,17 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::styled(" ●", Style::default().fg(theme::accent(mode))));
         }
     }
-    if app.multiplayer_queue_depth > 0 {
+    if app.multiplayer.queue_depth > 0 {
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
         spans.push(Span::styled(
-            format!("queue:{}", app.multiplayer_queue_depth),
+            format!("queue:{}", app.multiplayer.queue_depth),
             Style::default().fg(theme::warning(mode)),
         ));
     }
     let room_label = if !app.pair.short_code.is_empty() {
         app.pair.short_code.as_str()
     } else {
-        app.multiplayer_room.as_str()
+        app.multiplayer.room.as_str()
     };
     if !room_label.is_empty() {
         spans.push(Span::styled(" │ ", Style::default().fg(dim)));
@@ -679,18 +679,18 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
     right_segments.push(app.permission_mode_label.clone());
     right_segments.push(format!("{workspace}{branch}"));
     let mut right = right_segments.join(" · ");
-    if app.multiplayer_enabled && !app.multiplayer_room.is_empty() {
-        let role = if app.multiplayer_ui_role.is_empty() {
+    if app.multiplayer.enabled && !app.multiplayer.room.is_empty() {
+        let role = if app.multiplayer.ui_role.is_empty() {
             "?"
         } else {
-            &app.multiplayer_ui_role
+            &app.multiplayer.ui_role
         };
-        let mode = if app.multiplayer_mode.is_empty() {
+        let mode = if app.multiplayer.mode.is_empty() {
             "collab"
         } else {
-            &app.multiplayer_mode
+            &app.multiplayer.mode
         };
-        right.push_str(&format!(" · {}/{} ({mode})", app.multiplayer_room, role));
+        right.push_str(&format!(" · {}/{} ({mode})", app.multiplayer.room, role));
     }
 
     let left_candidates: Vec<String> = if app.queue_paused && !app.prompt_queue.is_empty() {

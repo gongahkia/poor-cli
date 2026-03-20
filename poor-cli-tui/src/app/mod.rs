@@ -61,6 +61,30 @@ pub struct CollaborationAgendaItem {
     pub resolved: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct MultiplayerState {
+    pub enabled: bool,
+    pub room: String,
+    pub role: String,
+    pub ui_role: String,
+    pub mode: String,
+    pub connection_id: String,
+    pub display_name: String,
+    pub approval_state: String,
+    pub hand_raised: bool,
+    pub queue_position: u64,
+    pub remote_invite: String,
+    pub queue_depth: u64,
+    pub member_count: u64,
+    pub active_connection_id: String,
+    pub lobby_enabled: bool,
+    pub preset: String,
+    pub member_roles: Vec<String>,
+    pub agenda: Vec<CollaborationAgendaItem>,
+    pub agenda_open_count: u64,
+    pub agenda_total_count: u64,
+}
+
 const SUGGESTION_TTL: Duration = Duration::from_secs(30);
 const SUGGESTION_MAX: usize = 10;
 pub const SUGGESTION_HINT_TTL: Duration = Duration::from_secs(15);
@@ -691,26 +715,7 @@ pub struct App {
     pub resume_dashboard: ResumeDashboardState,
     pub qa_mode_enabled: bool,
     pub qa_command: String,
-    pub multiplayer_enabled: bool,
-    pub multiplayer_room: String,
-    pub multiplayer_role: String,
-    pub multiplayer_ui_role: String,
-    pub multiplayer_mode: String,
-    pub multiplayer_connection_id: String,
-    pub multiplayer_display_name: String,
-    pub multiplayer_approval_state: String,
-    pub multiplayer_hand_raised: bool,
-    pub multiplayer_queue_position: u64,
-    pub multiplayer_remote_invite: String,
-    pub multiplayer_queue_depth: u64,
-    pub multiplayer_member_count: u64,
-    pub multiplayer_active_connection_id: String,
-    pub multiplayer_lobby_enabled: bool,
-    pub multiplayer_preset: String,
-    pub multiplayer_member_roles: Vec<String>,
-    pub multiplayer_agenda: Vec<CollaborationAgendaItem>,
-    pub multiplayer_agenda_open_count: u64,
-    pub multiplayer_agenda_total_count: u64,
+    pub multiplayer: MultiplayerState,
 
     // ── Streaming / agentic state ───
     pub streaming: StreamingState,
@@ -819,26 +824,7 @@ impl Default for App {
             resume_dashboard: ResumeDashboardState::default(),
             qa_mode_enabled: false,
             qa_command: String::new(),
-            multiplayer_enabled: false,
-            multiplayer_room: String::new(),
-            multiplayer_role: String::new(),
-            multiplayer_ui_role: String::new(),
-            multiplayer_mode: String::new(),
-            multiplayer_connection_id: String::new(),
-            multiplayer_display_name: String::new(),
-            multiplayer_approval_state: String::new(),
-            multiplayer_hand_raised: false,
-            multiplayer_queue_position: 0,
-            multiplayer_remote_invite: String::new(),
-            multiplayer_queue_depth: 0,
-            multiplayer_member_count: 0,
-            multiplayer_active_connection_id: String::new(),
-            multiplayer_lobby_enabled: false,
-            multiplayer_preset: String::new(),
-            multiplayer_member_roles: Vec::new(),
-            multiplayer_agenda: Vec::new(),
-            multiplayer_agenda_open_count: 0,
-            multiplayer_agenda_total_count: 0,
+            multiplayer: MultiplayerState::default(),
             streaming: StreamingState::default(),
             plan: PlanState::default(),
             tokens: TokenTracking::default(),
@@ -1881,30 +1867,30 @@ impl App {
         self.pair.is_host = false;
         self.pair.connected_users.clear();
         self.pair.suggestions.clear();
-        self.multiplayer_agenda.clear();
-        self.multiplayer_agenda_open_count = 0;
-        self.multiplayer_agenda_total_count = 0;
-        self.multiplayer_ui_role.clear();
-        self.multiplayer_mode.clear();
-        self.multiplayer_connection_id.clear();
-        self.multiplayer_display_name.clear();
-        self.multiplayer_approval_state.clear();
-        self.multiplayer_hand_raised = false;
-        self.multiplayer_queue_position = 0;
-        self.multiplayer_remote_invite.clear();
+        self.multiplayer.agenda.clear();
+        self.multiplayer.agenda_open_count = 0;
+        self.multiplayer.agenda_total_count = 0;
+        self.multiplayer.ui_role.clear();
+        self.multiplayer.mode.clear();
+        self.multiplayer.connection_id.clear();
+        self.multiplayer.display_name.clear();
+        self.multiplayer.approval_state.clear();
+        self.multiplayer.hand_raised = false;
+        self.multiplayer.queue_position = 0;
+        self.multiplayer.remote_invite.clear();
     }
 
     pub fn can_control_multiplayer_reviews(&self) -> bool {
-        self.multiplayer_enabled
-            && self.multiplayer_ui_role == "driver"
-            && self.multiplayer_approval_state != "pending"
+        self.multiplayer.enabled
+            && self.multiplayer.ui_role == "driver"
+            && self.multiplayer.approval_state != "pending"
     }
 
     pub fn update_agenda_from_summary(
         &mut self,
         summary: &serde_json::Map<String, serde_json::Value>,
     ) {
-        self.multiplayer_agenda = summary
+        self.multiplayer.agenda = summary
             .get("openItems")
             .and_then(|value| value.as_array())
             .map(|items| {
@@ -1934,11 +1920,11 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
-        self.multiplayer_agenda_open_count = summary
+        self.multiplayer.agenda_open_count = summary
             .get("open")
             .and_then(|value| value.as_u64())
             .unwrap_or(0);
-        self.multiplayer_agenda_total_count = summary
+        self.multiplayer.agenda_total_count = summary
             .get("total")
             .and_then(|value| value.as_u64())
             .unwrap_or(0);

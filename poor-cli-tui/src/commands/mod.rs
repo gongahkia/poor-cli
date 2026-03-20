@@ -2674,13 +2674,13 @@ Context Window: {max_context} tokens\n\n\
 
                         app.pair.is_host = true;
                         app.pair.mode_active = false;
-                        app.multiplayer_enabled = true;
-                        app.multiplayer_room = room_name.clone();
-                        app.multiplayer_role = "prompter".to_string();
-                        app.multiplayer_ui_role = "driver".to_string();
-                        app.multiplayer_mode = mode.clone();
-                        app.multiplayer_preset = mode.clone();
-                        app.multiplayer_lobby_enabled = preset_payload
+                        app.multiplayer.enabled = true;
+                        app.multiplayer.room = room_name.clone();
+                        app.multiplayer.role = "prompter".to_string();
+                        app.multiplayer.ui_role = "driver".to_string();
+                        app.multiplayer.mode = mode.clone();
+                        app.multiplayer.preset = mode.clone();
+                        app.multiplayer.lobby_enabled = preset_payload
                             .get("lobbyEnabled")
                             .and_then(|value| value.as_bool())
                             .unwrap_or(mode != "pair");
@@ -3077,10 +3077,10 @@ Context Window: {max_context} tokens\n\n\
                     return false;
                 }
                 "members" | "who" => {
-                    let room = if app.multiplayer_room.is_empty() {
+                    let room = if app.multiplayer.room.is_empty() {
                         None
                     } else {
-                        Some(app.multiplayer_room.as_str())
+                        Some(app.multiplayer.room.as_str())
                     };
                     match rpc_list_room_members_blocking(rpc_cmd_tx, room) {
                         Ok(payload) => {
@@ -3119,10 +3119,10 @@ Context Window: {max_context} tokens\n\n\
                     } else {
                         target.to_string()
                     };
-                    let room = if app.multiplayer_room.is_empty() {
+                    let room = if app.multiplayer.room.is_empty() {
                         None
                     } else {
-                        Some(app.multiplayer_room.as_str())
+                        Some(app.multiplayer.room.as_str())
                     };
                     match rpc_kick_member_blocking(rpc_cmd_tx, &cid, room) {
                         Ok(_) => show_command_info_popup(
@@ -3140,10 +3140,10 @@ Context Window: {max_context} tokens\n\n\
                     match rpc_get_host_server_status_blocking(rpc_cmd_tx) {
                         Ok(payload) => {
                             let role = args.get(2).copied();
-                            let room = if app.multiplayer_room.is_empty() {
+                            let room = if app.multiplayer.room.is_empty() {
                                 None
                             } else {
-                                Some(app.multiplayer_room.as_str())
+                                Some(app.multiplayer.room.as_str())
                             };
                             show_command_info_popup(
                                 app,
@@ -3171,9 +3171,9 @@ Context Window: {max_context} tokens\n\n\
                     app.pair.is_host = true;
                     app.pair.short_code = short_code.to_string();
                     app.pair.invite_code = invite_code.to_string();
-                    app.multiplayer_enabled = true;
-                    app.multiplayer_room = short_code.to_string();
-                    app.multiplayer_role = "prompter".to_string();
+                    app.multiplayer.enabled = true;
+                    app.multiplayer.room = short_code.to_string();
+                    app.multiplayer.role = "prompter".to_string();
                     // best-effort clipboard copy
                     let _ = std::process::Command::new("pbcopy")
                         .stdin(std::process::Stdio::piped())
@@ -3205,10 +3205,10 @@ Context Window: {max_context} tokens\n\n\
                     app.pair.is_host = true;
                     app.pair.short_code = short_code.to_string();
                     app.pair.invite_code = invite_code.to_string();
-                    app.multiplayer_enabled = true;
-                    app.multiplayer_room = short_code.to_string();
-                    app.multiplayer_role = "prompter".to_string();
-                    app.multiplayer_lobby_enabled = true;
+                    app.multiplayer.enabled = true;
+                    app.multiplayer.room = short_code.to_string();
+                    app.multiplayer.role = "prompter".to_string();
+                    app.multiplayer.lobby_enabled = true;
                     let _ = std::process::Command::new("pbcopy")
                         .stdin(std::process::Stdio::piped())
                         .spawn()
@@ -3250,8 +3250,8 @@ Context Window: {max_context} tokens\n\n\
         app.pair.mode_active = true;
         app.pair.is_host = false;
         app.pair.short_code = bootstrap.room.clone();
-        app.multiplayer_room = bootstrap.room.clone();
-        app.multiplayer_role = "viewer".to_string();
+        app.multiplayer.room = bootstrap.room.clone();
+        app.multiplayer.role = "viewer".to_string();
         multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &bootstrap);
         app.push_message(ChatMessage::system(format!(
             "Joining pair session: {}",
@@ -3286,10 +3286,10 @@ Context Window: {max_context} tokens\n\n\
         } else {
             (None, None) // pass to next navigator
         };
-        let room = if app.multiplayer_room.is_empty() {
+        let room = if app.multiplayer.room.is_empty() {
             None
         } else {
-            Some(app.multiplayer_room.as_str())
+            Some(app.multiplayer.room.as_str())
         };
         match rpc_pass_driver_blocking(
             rpc_cmd_tx,
@@ -3368,9 +3368,9 @@ Context Window: {max_context} tokens\n\n\
             ));
         }
         app.reset_pair_state();
-        app.multiplayer_enabled = false;
-        app.multiplayer_room.clear();
-        app.multiplayer_role.clear();
+        app.multiplayer.enabled = false;
+        app.multiplayer.room.clear();
+        app.multiplayer.role.clear();
         return false;
     }
 
@@ -3434,10 +3434,10 @@ Context Window: {max_context} tokens\n\n\
         let connection_id = args[1];
         let room = if let Some(explicit_room) = args.get(2).copied() {
             Some(explicit_room)
-        } else if app.multiplayer_room.is_empty() {
+        } else if app.multiplayer.room.is_empty() {
             None
         } else {
-            Some(app.multiplayer_room.as_str())
+            Some(app.multiplayer.room.as_str())
         };
 
         match rpc_kick_member_blocking(rpc_cmd_tx, connection_id, room) {
@@ -3473,10 +3473,10 @@ Context Window: {max_context} tokens\n\n\
 
         let room = if let Some(explicit_room) = args.get(1).copied() {
             Some(explicit_room)
-        } else if app.multiplayer_room.is_empty() {
+        } else if app.multiplayer.room.is_empty() {
             None
         } else {
-            Some(app.multiplayer_room.as_str())
+            Some(app.multiplayer.room.as_str())
         };
 
         match rpc_list_room_members_blocking(rpc_cmd_tx, room) {

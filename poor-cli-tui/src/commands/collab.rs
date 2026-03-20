@@ -1,10 +1,10 @@
 use super::super::*;
 
 pub(super) fn current_multiplayer_room(app: &App) -> Option<&str> {
-    if app.multiplayer_room.is_empty() {
+    if app.multiplayer.room.is_empty() {
         None
     } else {
-        Some(app.multiplayer_room.as_str())
+        Some(app.multiplayer.room.as_str())
     }
 }
 

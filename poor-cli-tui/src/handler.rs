@@ -37,27 +37,27 @@ pub(super) fn handle_server_message(
             app.server_connected = true;
             app.is_local_provider = app.provider_name == "ollama";
             app.close_api_key_editor();
-            app.multiplayer_enabled = multiplayer_room.is_some();
+            app.multiplayer.enabled = multiplayer_room.is_some();
             if let Some(room_name) = multiplayer_room {
-                app.multiplayer_room = room_name;
+                app.multiplayer.room = room_name;
             }
             if let Some(role_name) = multiplayer_role {
-                app.multiplayer_role = role_name;
+                app.multiplayer.role = role_name;
             }
             if let Some(ui_role) = multiplayer_ui_role {
-                app.multiplayer_ui_role = ui_role;
+                app.multiplayer.ui_role = ui_role;
             }
             if let Some(mode_name) = multiplayer_mode {
-                app.multiplayer_mode = mode_name;
+                app.multiplayer.mode = mode_name;
             }
             if let Some(connection_id) = multiplayer_connection_id {
-                app.multiplayer_connection_id = connection_id;
+                app.multiplayer.connection_id = connection_id;
             }
             if let Some(display_name) = multiplayer_display_name {
-                app.multiplayer_display_name = display_name;
+                app.multiplayer.display_name = display_name;
             }
             if let Some(approval_state) = multiplayer_approval_state {
-                app.multiplayer_approval_state = approval_state;
+                app.multiplayer.approval_state = approval_state;
             }
             app.update_welcome();
             if let Ok(cfg) = rpc_get_config_blocking(&rpc_cmd_tx.borrow()) {
@@ -222,7 +222,7 @@ pub(super) fn handle_server_message(
             app.streaming.active_tool = None;
             app.stop_waiting();
             let remote_reconnect_configured =
-                !app.multiplayer_remote_invite.is_empty() && !app.multiplayer_room.is_empty();
+                !app.multiplayer.remote_invite.is_empty() && !app.multiplayer.room.is_empty();
             let mut state = remote_reconnect_state.borrow_mut();
             if remote_reconnect_configured
                 && multiplayer::should_attempt_remote_reconnect(&message)
@@ -613,14 +613,14 @@ pub(super) fn handle_server_message(
                     room, event_type, actor, request_id, queue_depth, member_count
                 ),
             );
-            app.multiplayer_enabled = true;
-            app.multiplayer_room = room;
-            app.multiplayer_mode = mode;
-            app.multiplayer_queue_depth = queue_depth;
-            app.multiplayer_member_count = member_count;
-            app.multiplayer_active_connection_id = active_connection_id;
-            app.multiplayer_lobby_enabled = lobby_enabled;
-            app.multiplayer_preset = preset;
+            app.multiplayer.enabled = true;
+            app.multiplayer.room = room;
+            app.multiplayer.mode = mode;
+            app.multiplayer.queue_depth = queue_depth;
+            app.multiplayer.member_count = member_count;
+            app.multiplayer.active_connection_id = active_connection_id;
+            app.multiplayer.lobby_enabled = lobby_enabled;
+            app.multiplayer.preset = preset;
             if let Some(summary) = agenda_summary.as_object() {
                 app.update_agenda_from_summary(summary);
             }
@@ -657,7 +657,7 @@ pub(super) fn handle_server_message(
                     }
                     summaries.push(label);
                 }
-                app.multiplayer_member_roles = summaries;
+                app.multiplayer.member_roles = summaries;
                 let mut pair_users = Vec::new();
                 for entry in items.iter().take(20) {
                     let cid = entry
@@ -683,24 +683,24 @@ pub(super) fn handle_server_message(
                         role: poor_cli_tui::app::PairRole::from_ui_role(ui_role),
                         is_active: active,
                     });
-                    if app.multiplayer_connection_id == cid {
-                        app.multiplayer_role = entry
+                    if app.multiplayer.connection_id == cid {
+                        app.multiplayer.role = entry
                             .get("role")
                             .and_then(|v| v.as_str())
-                            .unwrap_or(&app.multiplayer_role)
+                            .unwrap_or(&app.multiplayer.role)
                             .to_string();
-                        app.multiplayer_ui_role = ui_role.to_string();
-                        app.multiplayer_display_name = name.to_string();
-                        app.multiplayer_approval_state = entry
+                        app.multiplayer.ui_role = ui_role.to_string();
+                        app.multiplayer.display_name = name.to_string();
+                        app.multiplayer.approval_state = entry
                             .get("approvalState")
                             .and_then(|v| v.as_str())
                             .unwrap_or("approved")
                             .to_string();
-                        app.multiplayer_hand_raised = entry
+                        app.multiplayer.hand_raised = entry
                             .get("handRaised")
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false);
-                        app.multiplayer_queue_position = entry
+                        app.multiplayer.queue_position = entry
                             .get("queuePosition")
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0);
@@ -719,11 +719,11 @@ pub(super) fn handle_server_message(
                 "member_denied" => format!("Member denied: `{actor}`"),
                 "agenda_added" => format!(
                     "Agenda updated ({} open)",
-                    app.multiplayer_agenda_open_count
+                    app.multiplayer.agenda_open_count
                 ),
                 "agenda_resolved" => format!(
                     "Agenda resolved ({} open)",
-                    app.multiplayer_agenda_open_count
+                    app.multiplayer.agenda_open_count
                 ),
                 "hand_raised" => format!("Hand raised: `{actor}`"),
                 "hand_lowered" => format!("Hand lowered: `{actor}`"),
@@ -752,13 +752,13 @@ pub(super) fn handle_server_message(
                     room, connection_id, role
                 ),
             );
-            app.multiplayer_enabled = true;
+            app.multiplayer.enabled = true;
             if !room.is_empty() {
-                app.multiplayer_room = room;
+                app.multiplayer.room = room;
             }
             let prefix = format!("{connection_id}:");
             let mut updated = false;
-            for entry in &mut app.multiplayer_member_roles {
+            for entry in &mut app.multiplayer.member_roles {
                 if entry.starts_with(&prefix) {
                     *entry = format!("{connection_id}:{role}");
                     updated = true;
@@ -767,17 +767,17 @@ pub(super) fn handle_server_message(
             }
             if !updated {
                 if ui_role.is_empty() {
-                    app.multiplayer_member_roles
+                    app.multiplayer.member_roles
                         .push(format!("{connection_id}:{role}"));
                 } else {
-                    app.multiplayer_member_roles
+                    app.multiplayer.member_roles
                         .push(format!("{connection_id}:{role}/{ui_role}"));
                 }
             }
-            if connection_id == app.multiplayer_connection_id {
-                app.multiplayer_role = role.clone();
+            if connection_id == app.multiplayer.connection_id {
+                app.multiplayer.role = role.clone();
                 if !ui_role.is_empty() {
-                    app.multiplayer_ui_role = ui_role.clone();
+                    app.multiplayer.ui_role = ui_role.clone();
                 }
             }
             app.set_status(format!(
