@@ -1570,7 +1570,7 @@ class PoorCLIServer:
 
         stored_securely = False
         if persist:
-            from .api_key_manager import get_api_key_manager
+            from ..api_key_manager import get_api_key_manager
 
             get_api_key_manager().store_key(
                 provider,
@@ -1623,7 +1623,7 @@ class PoorCLIServer:
         secure_store = None
         secure_store_entries: Dict[str, Dict[str, Any]] = {}
         try:
-            from .api_key_manager import get_api_key_manager
+            from ..api_key_manager import get_api_key_manager
 
             secure_store = get_api_key_manager()
             secure_store_entries = secure_store.list_providers()

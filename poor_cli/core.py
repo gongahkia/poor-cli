@@ -450,8 +450,9 @@ class PoorCLICore:
                     reindex_mode = self._repo_graph.should_reindex()
                     if reindex_mode == "skip":
                         stats = self._repo_graph.get_stats()
+                        dir_count = self._repo_graph._count_directories()
                         _progress(
-                            f"repo index up to date: {stats['files']} files, "
+                            f"repo index up to date: {dir_count} directories, {stats['files']} files, "
                             f"{stats['symbols']} symbols, {stats['edges']} edges"
                         )
                         logger.info("Repo index (skipped): %s", stats)

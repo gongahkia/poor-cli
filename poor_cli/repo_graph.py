@@ -424,8 +424,9 @@ class RepoGraph:
         self._store_index_metadata()
         self.invalidate_summary_cache()
         duration_ms = int((time.time() - t0) * 1000)
+        dir_count = self._count_directories()
         stats = {"files": len(discovered), "symbols": sym_total, "edges": len(all_edges), "duration_ms": duration_ms}
-        emit(f"indexing complete in {duration_ms}ms")
+        emit(f"indexing complete: {dir_count} directories, {len(discovered)} files in {duration_ms}ms")
         return stats
 
     def _get_top_symbols(self, limit: int = 20) -> List[str]:
@@ -518,8 +519,10 @@ class RepoGraph:
         self._store_index_metadata()
         self.invalidate_summary_cache()
         duration_ms = int((time.time() - t0) * 1000)
-        stats = {"files": len(changed), "symbols": sym_total, "edges": len(import_edges), "duration_ms": duration_ms}
-        emit(f"incremental update: {len(changed)} files in {duration_ms}ms")
+        totals = self.get_stats()
+        dir_count = self._count_directories()
+        stats = {"files": totals["files"], "symbols": totals["symbols"], "edges": totals["edges"], "duration_ms": duration_ms}
+        emit(f"incremental update: {dir_count} directories, {totals['files']} files in {duration_ms}ms")
         return stats
 
     def reindex_file(self, abs_path: str) -> None:
@@ -672,6 +675,11 @@ class RepoGraph:
             symbols = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
             edges = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         return {"files": files, "symbols": symbols, "edges": edges}
+
+    def _count_directories(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(DISTINCT SUBSTR(relative_path, 1, INSTR(relative_path || '/', '/'))) FROM files").fetchone()
+        return row[0] if row else 0
 
     def get_tree_summary(self) -> Optional[str]:
         return self._get_tree()
