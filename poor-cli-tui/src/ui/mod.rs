@@ -319,200 +319,34 @@ fn draw_input_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
+    let dim = theme::muted_fg(mode);
     let spans = if let Some((status, _)) = &app.status_message {
-        vec![Span::styled(
-            format!("  {status}"),
-            Style::default().fg(theme::warning(mode)),
-        )]
+        vec![Span::styled(format!("  {status}"), Style::default().fg(theme::warning(mode)))]
     } else if let Some(suggestion) = app.latest_suggestion() {
         let remaining = crate::app::SUGGESTION_HINT_TTL
             .checked_sub(suggestion.received_at.elapsed())
             .map(|d| d.as_secs())
             .unwrap_or(0);
         vec![
-            Span::styled(
-                format!("  [{}]: {}", suggestion.sender, suggestion.text),
-                Style::default().fg(theme::accent(mode)),
-            ),
-            Span::styled(
-                format!(" ({remaining}s)"),
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
+            Span::styled(format!("  [{}]: {}", suggestion.sender, suggestion.text), Style::default().fg(theme::accent(mode))),
+            Span::styled(format!(" ({remaining}s)"), Style::default().fg(dim)),
         ]
+    } else if app.mode == AppMode::Quitting {
+        vec![]
     } else if app.mode == AppMode::Overlay {
-        match app.overlay_kind {
-            Some(OverlayKind::InfoPopup) => vec![
-                Span::styled("  Esc/Enter", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled(": close  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("c", Style::default().fg(theme::accent(mode))),
-                Span::styled(": copy all  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("1-9", Style::default().fg(theme::accent(mode))),
-                Span::styled(": copy item  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled(": fast scroll", Style::default().fg(theme::muted_fg(mode))),
-            ],
-            Some(OverlayKind::ApiKeyEditor) => vec![
-                Span::styled("  ↑↓/Tab", Style::default().fg(theme::accent(mode))),
-                Span::styled(": switch field  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("Enter", Style::default().fg(theme::success(mode))),
-                Span::styled(": next/save  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("Ctrl+S", Style::default().fg(theme::success(mode))),
-                Span::styled(": save  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-                Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
-            ],
-            Some(OverlayKind::ProviderSelect) => vec![
-                Span::styled("  ←→", Style::default().fg(theme::accent(mode))),
-                Span::styled(": switch pane  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
-                Span::styled(": navigate  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("Enter", Style::default().fg(theme::success(mode))),
-                Span::styled(": switch provider/model  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-                Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-            ],
-            Some(OverlayKind::JoinWizard) => vec![
-                Span::styled("  Enter", Style::default().fg(theme::accent(mode))),
-                Span::styled(": confirm  ", Style::default().fg(theme::muted_fg(mode))),
-                Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-                Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
-            ],
-            None => vec![],
-        }
+        vec![Span::styled("  Esc close", Style::default().fg(dim))]
     } else if app.mode == AppMode::InlineApproval {
-        vec![
-            Span::styled("  y", Style::default().fg(theme::success(mode))),
-            Span::styled(" allow  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("n/Esc", Style::default().fg(theme::error(mode))),
-            Span::styled(" deny  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("d", Style::default().fg(theme::accent(mode))),
-            Span::styled(" diff  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("?", Style::default().fg(theme::accent(mode))),
-            Span::styled(" help", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.at_path_completion.active && app.mode == AppMode::Normal {
-        vec![
-            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": select file  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Tab/Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": attach  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
+        vec![Span::styled("  y allow  n deny  d diff  ? help", Style::default().fg(dim))]
     } else if app.mode == AppMode::QuickOpen {
-        vec![
-            Span::styled("  type", Style::default().fg(theme::accent(mode))),
-            Span::styled(": filter  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": move  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": open  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
+        vec![Span::styled("  Enter select  Esc close  Type to filter", Style::default().fg(dim))]
     } else {
-        draw_default_footer_bar(frame, app, area);
-        return;
+        // Normal mode
+        vec![Span::styled("  / commands  Ctrl+P palette  Esc cancel", Style::default().fg(dim))]
     };
-
     let hint = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));
     frame.render_widget(hint, area);
 }
 
-fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let mode = app.theme_mode;
-    let width = usize::from(area.width);
-    if width == 0 {
-        return;
-    }
-
-    let model = if app.provider.model.trim().is_empty() || app.provider.model == "unknown" {
-        app.provider.name.clone()
-    } else {
-        app.provider.model.clone()
-    };
-    let branch = if app.git_branch.is_empty() {
-        String::new()
-    } else if app.git_dirty {
-        format!(" ({})", format!("{}*", app.git_branch))
-    } else {
-        format!(" ({})", app.git_branch)
-    };
-    let workspace = if app.cwd.trim().is_empty() {
-        "~".to_string()
-    } else {
-        ellipsize_middle(&app.cwd, 28)
-    };
-    let mut right_segments = vec![ellipsize_middle(&model, 24)];
-    if app.context_budget_tokens > 0 {
-        let used = app
-            .context_budget_estimated_tokens
-            .min(app.context_budget_tokens);
-        let remaining_pct = 100usize.saturating_sub((used * 100) / app.context_budget_tokens);
-        right_segments.push(format!("ctx {remaining_pct}% left"));
-    }
-    right_segments.push(app.permission_mode_label.clone());
-    right_segments.push(format!("{workspace}{branch}"));
-    let mut right = right_segments.join(" · ");
-    if app.multiplayer.enabled && !app.multiplayer.room.is_empty() {
-        let role = if app.multiplayer.ui_role.is_empty() {
-            "?"
-        } else {
-            &app.multiplayer.ui_role
-        };
-        let mode = if app.multiplayer.mode.is_empty() {
-            "collab"
-        } else {
-            &app.multiplayer.mode
-        };
-        right.push_str(&format!(" · {}/{} ({mode})", app.multiplayer.room, role));
-    }
-
-    let left_candidates: Vec<String> = if app.queue_paused && !app.prompt_queue.is_empty() {
-        vec!["Queue paused · /queue to review".to_string()]
-    } else if app.waiting || !app.prompt_queue.is_empty() {
-        vec!["Tab to queue message".to_string()]
-    } else if app.input_buffer.trim().is_empty() {
-        let workspace_hint = if cfg!(target_os = "macos") {
-            "Alt+1..6 switch workspaces"
-        } else {
-            "F1-F6 or Alt+1..6 switch workspaces"
-        };
-        vec![workspace_hint.to_string(), "? for shortcuts".to_string()]
-    } else {
-        vec!["Shift+Enter for newline".to_string()]
-    };
-
-    let mut chosen_left: Option<String> = None;
-    for candidate in &left_candidates {
-        if candidate.chars().count() + right.chars().count() + 4 <= width {
-            chosen_left = Some(candidate.clone());
-            break;
-        }
-    }
-
-    let line = if let Some(left) = chosen_left {
-        let spacing = width.saturating_sub(left.chars().count() + right.chars().count());
-        format!("{left}{}{}", " ".repeat(spacing), right)
-    } else if right.chars().count() < width {
-        format!(
-            "{}{}",
-            " ".repeat(width.saturating_sub(right.chars().count())),
-            right
-        )
-    } else {
-        ellipsize_middle(&right, width.saturating_sub(1).max(1))
-    };
-
-    let hint = Paragraph::new(Line::from(Span::styled(
-        format!("  {line}"),
-        Style::default().fg(theme::muted_fg(mode)),
-    )))
-    .style(theme::footer_style(mode));
-    frame.render_widget(hint, area);
-}
 
 fn draw_command_palette(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;

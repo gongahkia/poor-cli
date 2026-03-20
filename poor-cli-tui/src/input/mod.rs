@@ -35,13 +35,13 @@ pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
     if trimmed == "/" {
         return SLASH_COMMANDS
             .iter()
-            .filter(|spec| spec.recommended)
+            .filter(|spec| spec.recommended && !spec.hidden)
             .collect();
     }
 
     SLASH_COMMANDS
         .iter()
-        .filter(|spec| spec.command.starts_with(trimmed))
+        .filter(|spec| !spec.hidden && spec.command.starts_with(trimmed))
         .collect()
 }
 
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn arrow_keys_navigate_command_matches() {
         let mut app = App::new();
-        app.input_buffer = "/pro".to_string();
+        app.input_buffer = "/co".to_string(); // matches multiple visible commands
         app.input_cursor = app.input_buffer.len();
         app.mode = AppMode::Normal;
 
@@ -788,10 +788,10 @@ mod tests {
     #[test]
     fn enter_confirms_selected_match_when_multiple_exist() {
         let mut app = App::new();
-        app.input_buffer = "/pro".to_string();
+        app.input_buffer = "/co".to_string(); // matches multiple visible commands
         app.input_cursor = app.input_buffer.len();
         app.mode = AppMode::Normal;
-        let matches = command_palette_matches("/pro");
+        let matches = command_palette_matches("/co");
         assert!(matches.len() >= 2);
         let expected = matches[1].command.to_string();
 

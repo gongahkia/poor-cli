@@ -20,6 +20,8 @@ pub struct SlashCommandSpec {
     pub description: String,
     pub recommended: bool,
     pub category: String,
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 static MANIFEST: LazyLock<CommandManifest> = LazyLock::new(|| {

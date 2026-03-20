@@ -14,8 +14,9 @@
     {
       "command": "/onboarding",
       "description": "Start guided CLI onboarding",
-      "recommended": true,
-      "category": "Core Workflow"
+      "recommended": false,
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/plan",
@@ -33,7 +34,8 @@
       "command": "/sessions",
       "description": "List recent sessions",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/new-session",
@@ -44,7 +46,7 @@
     {
       "command": "/queue",
       "description": "Manage prompt queue (add/list/clear/drop)",
-      "recommended": true,
+      "recommended": false,
       "category": "Core Workflow"
     },
     {
@@ -68,8 +70,9 @@
     {
       "command": "/runs",
       "description": "Inspect recent shared run history",
-      "recommended": true,
-      "category": "Core Workflow"
+      "recommended": false,
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/workflow",
@@ -93,55 +96,61 @@
       "command": "/edit-last",
       "description": "Edit and resend last prompt",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/copy",
       "description": "Copy last assistant response",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/quit",
       "description": "Exit the TUI",
-      "recommended": false,
+      "recommended": true,
       "category": "Core Workflow"
     },
     {
       "command": "/exit",
       "description": "Exit the TUI (alias)",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/clear",
       "description": "Clear conversation history",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/clear-output",
       "description": "Clear screen output only",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/review",
       "description": "Review code or staged diff",
-      "recommended": true,
+      "recommended": false,
       "category": "Review & Safety"
     },
     {
       "command": "/test",
       "description": "Generate tests for a file",
-      "recommended": true,
+      "recommended": false,
       "category": "Review & Safety"
     },
     {
       "command": "/permission-mode",
       "description": "Show permission mode",
-      "recommended": true,
-      "category": "Review & Safety"
+      "recommended": false,
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/sandbox",
@@ -152,20 +161,22 @@
     {
       "command": "/instructions",
       "description": "Inspect the active instruction stack",
-      "recommended": true,
+      "recommended": false,
       "category": "Review & Safety"
     },
     {
       "command": "/memory",
       "description": "Show or update repo-local memory",
-      "recommended": true,
-      "category": "Review & Safety"
+      "recommended": false,
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/policy",
       "description": "Inspect repo-local hooks and audit status",
       "recommended": false,
-      "category": "Review & Safety"
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/context",
@@ -176,26 +187,29 @@
     {
       "command": "/trust",
       "description": "Open the trust center for provider, sandbox, rollback, and policy state",
-      "recommended": true,
+      "recommended": false,
       "category": "Review & Safety"
     },
     {
       "command": "/timeline",
       "description": "Open agent timeline and diffs",
-      "recommended": true,
-      "category": "Review & Safety"
+      "recommended": false,
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/explain-diff",
       "description": "Explain behavior and risk in current diff",
-      "recommended": true,
-      "category": "Review & Safety"
+      "recommended": false,
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/fix-failures",
       "description": "Analyze latest test/lint failure output",
-      "recommended": true,
-      "category": "Review & Safety"
+      "recommended": false,
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/checkpoints",
@@ -219,13 +233,15 @@
       "command": "/rewind",
       "description": "Restore checkpoint by id or latest",
       "recommended": false,
-      "category": "Review & Safety"
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/restore",
       "description": "Restore latest checkpoint",
       "recommended": false,
-      "category": "Review & Safety"
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/diff",
@@ -236,14 +252,15 @@
     {
       "command": "/undo",
       "description": "Undo last file change (checkpoint)",
-      "recommended": false,
+      "recommended": true,
       "category": "Review & Safety"
     },
     {
       "command": "/plan-mode",
       "description": "Toggle plan-first execution guidance",
       "recommended": false,
-      "category": "Review & Safety"
+      "category": "Review & Safety",
+      "hidden": true
     },
     {
       "command": "/provider",
@@ -254,50 +271,58 @@
     {
       "command": "/switch",
       "description": "Switch provider/model",
-      "recommended": true,
-      "category": "Providers & Config"
+      "recommended": false,
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/providers",
       "description": "List providers and models",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/config",
       "description": "Show active configuration",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/model-info",
       "description": "Show model capabilities",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/profile",
       "description": "Set execution profile (speed|safe|deep-review)",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/broke",
       "description": "Set poor mode (terse responses)",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/my-treat",
       "description": "Set rich mode (comprehensive responses)",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/settings",
       "description": "List editable config settings",
-      "recommended": true,
-      "category": "Providers & Config"
+      "recommended": false,
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/setup",
@@ -309,43 +334,50 @@
       "command": "/env",
       "description": "Open the guided API key and .env editor",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/api-key",
       "description": "Open the API key editor or use `/api-key status`",
-      "recommended": true,
-      "category": "Providers & Config"
+      "recommended": false,
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/verbose",
       "description": "Toggle verbose logging",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/toggle",
       "description": "Toggle boolean config value",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/set",
       "description": "Set config key to a value",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/theme",
       "description": "Show or set UI theme (dark/light)",
-      "recommended": true,
-      "category": "Providers & Config"
+      "recommended": false,
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/tools",
       "description": "List backend tools",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Providers & Config",
+      "hidden": true
     },
     {
       "command": "/mcp",
@@ -356,86 +388,99 @@
     {
       "command": "/files",
       "description": "List pinned context files",
-      "recommended": true,
-      "category": "Context & Reuse"
+      "recommended": false,
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/add",
       "description": "Pin file/directory for context",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/drop",
       "description": "Unpin context file",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/clear-files",
       "description": "Clear all pinned context files",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/focus",
       "description": "Manage persistent coding focus state",
-      "recommended": true,
+      "recommended": false,
       "category": "Context & Reuse"
     },
     {
       "command": "/resume",
       "description": "Resume with branch/checkpoint/session summary",
-      "recommended": true,
-      "category": "Context & Reuse"
+      "recommended": false,
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/workspace-map",
       "description": "Summarize repository layout and hotspots",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/bootstrap",
       "description": "Detect project type and suggest quickstart commands",
-      "recommended": true,
-      "category": "Context & Reuse"
+      "recommended": false,
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/context-budget",
       "description": "Rank context files against a token budget",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/image",
       "description": "Queue image for next message",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/save-prompt",
       "description": "Save reusable prompt",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/use",
       "description": "Load and run saved prompt",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/prompts",
       "description": "List saved prompts",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/autopilot",
       "description": "Toggle bounded autonomous execution mode",
       "recommended": false,
-      "category": "Automation & Tasks"
+      "category": "Automation & Tasks",
+      "hidden": true
     },
     {
       "command": "/qa",
@@ -446,26 +491,29 @@
     {
       "command": "/task",
       "description": "Manage durable background tasks, including retry and replay",
-      "recommended": true,
+      "recommended": false,
       "category": "Automation & Tasks"
     },
     {
       "command": "/automation",
       "description": "Inspect automation run history and replay automations",
-      "recommended": true,
-      "category": "Automation & Tasks"
+      "recommended": false,
+      "category": "Automation & Tasks",
+      "hidden": true
     },
     {
       "command": "/inbox",
       "description": "Show pending and actionable tasks",
-      "recommended": true,
-      "category": "Automation & Tasks"
+      "recommended": false,
+      "category": "Automation & Tasks",
+      "hidden": true
     },
     {
       "command": "/tasks",
       "description": "Legacy alias for /task",
       "recommended": false,
-      "category": "Automation & Tasks"
+      "category": "Automation & Tasks",
+      "hidden": true
     },
     {
       "command": "/skills",
@@ -477,7 +525,8 @@
       "command": "/commands",
       "description": "Inspect or run repo and user commands",
       "recommended": false,
-      "category": "Automation & Tasks"
+      "category": "Automation & Tasks",
+      "hidden": true
     },
     {
       "command": "/watch",
@@ -489,25 +538,28 @@
       "command": "/unwatch",
       "description": "Stop watch mode",
       "recommended": false,
-      "category": "Automation & Tasks"
+      "category": "Automation & Tasks",
+      "hidden": true
     },
     {
       "command": "/doctor",
       "description": "Open structured diagnostics with remediation guidance",
-      "recommended": true,
+      "recommended": false,
       "category": "Services & Shell"
     },
     {
       "command": "/service",
       "description": "Manage local background services",
-      "recommended": true,
-      "category": "Services & Shell"
+      "recommended": false,
+      "category": "Services & Shell",
+      "hidden": true
     },
     {
       "command": "/ollama",
       "description": "Manage Ollama service and models",
-      "recommended": true,
-      "category": "Services & Shell"
+      "recommended": false,
+      "category": "Services & Shell",
+      "hidden": true
     },
     {
       "command": "/run",
@@ -525,13 +577,15 @@
       "command": "/pwd",
       "description": "Show current working directory",
       "recommended": false,
-      "category": "Services & Shell"
+      "category": "Services & Shell",
+      "hidden": true
     },
     {
       "command": "/ls",
       "description": "List files in directory",
       "recommended": false,
-      "category": "Services & Shell"
+      "category": "Services & Shell",
+      "hidden": true
     },
     {
       "command": "/commit",
@@ -542,7 +596,7 @@
     {
       "command": "/collab",
       "description": "Start, join, summarize, and manage collaboration sessions",
-      "recommended": true,
+      "recommended": false,
       "category": "Collaboration"
     },
     {
@@ -554,86 +608,99 @@
     {
       "command": "/pass",
       "description": "Hand driver role to the next collaborator",
-      "recommended": true,
-      "category": "Collaboration"
+      "recommended": false,
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/suggest",
       "description": "Send suggestion to the active driver",
-      "recommended": true,
-      "category": "Collaboration"
+      "recommended": false,
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/leave",
       "description": "Disconnect from collaboration session",
-      "recommended": true,
-      "category": "Collaboration"
+      "recommended": false,
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/host-server",
       "description": "Legacy advanced host controls for collaboration",
       "recommended": false,
-      "category": "Collaboration"
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/join-server",
       "description": "Legacy join alias for invite/manual room entry",
       "recommended": false,
-      "category": "Collaboration"
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/kick",
       "description": "Remove a room member from collaboration",
       "recommended": false,
-      "category": "Collaboration"
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/who",
       "description": "Show room members and roles",
       "recommended": false,
-      "category": "Collaboration"
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/members",
       "description": "Alias for /who",
       "recommended": false,
-      "category": "Collaboration"
+      "category": "Collaboration",
+      "hidden": true
     },
     {
       "command": "/cost",
       "description": "Show session token usage and estimated cost",
-      "recommended": false,
+      "recommended": true,
       "category": "Core Workflow"
     },
     {
       "command": "/gc",
       "description": "Run checkpoint garbage collection",
       "recommended": false,
-      "category": "Safety & Undo"
+      "category": "Safety & Undo",
+      "hidden": true
     },
     {
       "command": "/save-session",
       "description": "Save current session for later restore",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/restore-session",
       "description": "Restore most recent saved session",
       "recommended": false,
-      "category": "Context & Reuse"
+      "category": "Context & Reuse",
+      "hidden": true
     },
     {
       "command": "/ollama-models",
       "description": "List locally available Ollama models",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     },
     {
       "command": "/mcp-health",
       "description": "Check health of MCP servers",
       "recommended": false,
-      "category": "Core Workflow"
+      "category": "Core Workflow",
+      "hidden": true
     }
   ]
 }
