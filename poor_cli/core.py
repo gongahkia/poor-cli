@@ -568,6 +568,12 @@ class PoorCLICore:
 
         resolved_provider = provider_name or self.config.model.provider
         resolved_model = model_name or self.config.model.model_name
+        if self._resolved_routing_mode != "manual":
+            from poor_cli.provider_catalog import select_provider_and_model
+            ready = [p for p, s in (self.get_provider_readiness() or {}).items() if s.get("ready")]
+            rp, rm = select_provider_and_model(self._resolved_routing_mode, ready)
+            if rp and rm:
+                resolved_provider, resolved_model = rp, rm
         if not resolved_model:
             provider_config = self.config.model.providers.get(resolved_provider)
             if provider_config:
@@ -1384,14 +1390,14 @@ class PoorCLICore:
         cost_per_1k_output = 0.0015
         if self.config:
             provider = self.config.model.provider
-            if provider == "gemini":
-                cost_per_1k_input, cost_per_1k_output = 0.00035, 0.00105
-            elif provider == "anthropic":
-                cost_per_1k_input, cost_per_1k_output = 0.003, 0.015
-            elif provider == "openai":
-                cost_per_1k_input, cost_per_1k_output = 0.001, 0.003
+            model = self.config.model.model_name
+            from poor_cli.provider_catalog import get_model_tier
+            tier = get_model_tier(provider, model)
+            if tier:
+                cost_per_1k_input = tier.cost_1k_in
+                cost_per_1k_output = tier.cost_1k_out
             elif provider == "ollama":
-                return 0.0  # local, free
+                return 0.0
         return (input_tokens / 1000) * cost_per_1k_input + (output_tokens / 1000) * cost_per_1k_output
 
     def _track_cost(self, input_tokens: int, output_tokens: int) -> None:

@@ -314,6 +314,73 @@ class TestRunner:
             output=output
         )
 
+    def discover_test_files(self) -> List[str]:
+        """Discover all test files in the workspace."""
+        import glob as glob_module
+        patterns = [
+            "test_*.py", "*_test.py", "*.test.ts", "*.spec.ts",
+            "*_test.go", "tests/**/*.py", "**/*_test.py", "**/test_*.py",
+            "**/*.test.ts", "**/*.spec.ts", "**/*_test.go",
+        ]
+        found: set = set()
+        for pat in patterns:
+            for match in glob_module.glob(str(self.workspace_root / pat), recursive=True):
+                found.add(str(Path(match).resolve()))
+        return sorted(found)
+
+    def select_affected_tests(
+        self, changed_files: List[str], repo_graph=None
+    ) -> List[str]:
+        """Select tests affected by the given changed files."""
+        test_files = set(self.discover_test_files())
+        affected: set = set()
+        for cf in changed_files:
+            cf_resolved = str(Path(cf).resolve())
+            if cf_resolved in test_files:
+                affected.add(cf_resolved)
+                continue
+            if repo_graph is not None:
+                try:
+                    related = repo_graph.files_related_to(cf_resolved, max_depth=2)
+                    for rel_path, _score in related:
+                        if rel_path in test_files:
+                            affected.add(rel_path)
+                except Exception:
+                    pass
+            stem = Path(cf).stem
+            for tf in test_files:
+                tf_stem = Path(tf).stem
+                if tf_stem == f"test_{stem}" or tf_stem == f"{stem}_test":
+                    affected.add(tf)
+        return sorted(affected)
+
+    def run_affected_tests(
+        self,
+        changed_files: List[str],
+        framework: TestFramework,
+        repo_graph=None,
+    ) -> Tuple[TestResult, List[str]]:
+        """Run only tests affected by changed files.
+
+        Returns:
+            Tuple of (aggregated TestResult, list of test files run)
+        """
+        selected = self.select_affected_tests(changed_files, repo_graph)
+        if not selected:
+            return TestResult(output="No affected tests found for changed files."), []
+        aggregated = TestResult()
+        for test_path in selected:
+            result = self.run_tests(framework, test_path=test_path)
+            aggregated.passed += result.passed
+            aggregated.failed += result.failed
+            aggregated.skipped += result.skipped
+            aggregated.total += result.total
+            aggregated.duration_seconds += result.duration_seconds
+            if result.output:
+                aggregated.output += f"\n--- {test_path} ---\n{result.output}"
+            aggregated.failures.extend(result.failures)
+        return aggregated, selected
+
 
 class QualityChecker:
     """Run linters and type checkers"""

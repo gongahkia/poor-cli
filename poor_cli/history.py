@@ -269,6 +269,29 @@ class HistoryManager:
                     ON sessions(archived)
                 """)
 
+                # FTS5 full-text search on messages
+                cursor.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
+                    USING fts5(content, session_id UNINDEXED, role UNINDEXED,
+                               content='messages', content_rowid='id')
+                """)
+                cursor.execute("""
+                    CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages
+                    BEGIN
+                        INSERT INTO messages_fts(rowid, content, session_id, role)
+                        VALUES (new.id, new.content, new.session_id, new.role);
+                    END
+                """)
+                cursor.execute("""
+                    CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages
+                    BEGIN
+                        INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+                        VALUES ('delete', old.id, old.content, old.session_id, old.role);
+                    END
+                """)
+
+                self._backfill_fts(conn)
+
                 # Archived sessions table for old data
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS archived_sessions (
@@ -285,6 +308,27 @@ class HistoryManager:
 
         except Exception as e:
             raise FileOperationError(f"Failed to initialize history database: {e}")
+
+    def _backfill_fts(self, conn: sqlite3.Connection) -> None:
+        """One-time backfill of FTS index from existing messages."""
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM messages_fts")
+            fts_count = cursor.fetchone()[0]
+            if fts_count > 0:
+                return  # already populated
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE compressed = 0")
+            msg_count = cursor.fetchone()[0]
+            if msg_count == 0:
+                return
+            cursor.execute("""
+                INSERT INTO messages_fts(rowid, content, session_id, role)
+                SELECT id, content, session_id, role FROM messages WHERE compressed = 0
+            """)
+            conn.commit()
+            logger.info(f"Backfilled FTS index with {msg_count} messages")
+        except Exception as e:
+            logger.warning(f"FTS backfill skipped: {e}")
 
     def start_session(self, model: str = DEFAULT_HISTORY_MODEL) -> Session:
         """Start a new conversation session
@@ -742,3 +786,85 @@ class HistoryManager:
     def cleanup_pool(self):
         """Clean up connection pool resources"""
         self._pool.close_all()
+
+    def search_messages(
+        self, query: str, limit: int = 20,
+        role: Optional[str] = None, session_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Full-text search across message history.
+
+        Args:
+            query: FTS5 search query
+            limit: Max results
+            role: Filter by role (user/model/tool)
+            session_id: Filter by session
+
+        Returns:
+            List of matching message dicts
+        """
+        try:
+            with self._pool.get_connection() as conn:
+                cursor = conn.cursor()
+                sql = """
+                    SELECT m.session_id, m.role,
+                           snippet(messages_fts, 0, '>>>', '<<<', '...', 48) AS content_snippet,
+                           m.timestamp, messages_fts.rank
+                    FROM messages_fts
+                    JOIN messages m ON m.id = messages_fts.rowid
+                    WHERE messages_fts MATCH ?
+                """
+                params: List[Any] = [query]
+                if role:
+                    sql += " AND m.role = ?"
+                    params.append(role)
+                if session_id:
+                    sql += " AND m.session_id = ?"
+                    params.append(session_id)
+                sql += " ORDER BY messages_fts.rank LIMIT ?"
+                params.append(limit)
+                cursor.execute(sql, params)
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        "session_id": row[0],
+                        "role": row[1],
+                        "content_snippet": row[2],
+                        "timestamp": row[3],
+                        "rank": row[4],
+                    })
+                return results
+        except Exception as e:
+            logger.error(f"Message search failed: {e}")
+            return []
+
+    def search_sessions(
+        self, query: str, limit: int = 10,
+    ) -> List[Tuple[str, str, int, float]]:
+        """Search sessions by message content.
+
+        Args:
+            query: FTS5 search query
+            limit: Max sessions to return
+
+        Returns:
+            List of (session_id, started_at, match_count, best_rank)
+        """
+        try:
+            with self._pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT m.session_id, s.started_at,
+                           COUNT(*) AS match_count,
+                           MIN(messages_fts.rank) AS best_rank
+                    FROM messages_fts
+                    JOIN messages m ON m.id = messages_fts.rowid
+                    JOIN sessions s ON s.session_id = m.session_id
+                    WHERE messages_fts MATCH ?
+                    GROUP BY m.session_id
+                    ORDER BY best_rank
+                    LIMIT ?
+                """, (query, limit))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Session search failed: {e}")
+            return []

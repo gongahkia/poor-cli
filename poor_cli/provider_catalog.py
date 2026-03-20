@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,15 @@ class ProviderCatalogEntry:
     capability_summary: str
     base_url: str | None = None
     aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ModelTier:
+    model_name: str
+    tier: str  # "quality" | "balanced" | "cheap" | "private"
+    cost_1k_in: float
+    cost_1k_out: float
+    speed_rank: int  # 1=fastest, 3=slowest
 
 
 @lru_cache(maxsize=1)
@@ -85,6 +94,70 @@ def common_models_for_provider(name: str) -> list[str]:
 
 def all_provider_entries() -> Iterable[ProviderCatalogEntry]:
     return provider_catalog().values()
+
+
+def get_model_tier(provider: str, model: str) -> Optional[ModelTier]:
+    """Lookup model tier info from catalog JSON."""
+    canonical = canonical_provider_name(provider)
+    payload = _catalog_payload().get("providers", {}).get(canonical, {})
+    tiers = payload.get("modelTiers", {})
+    tier_data = tiers.get(model)
+    if not tier_data:
+        return None
+    return ModelTier(
+        model_name=model,
+        tier=str(tier_data.get("tier", "balanced")),
+        cost_1k_in=float(tier_data.get("cost_1k_in", 0)),
+        cost_1k_out=float(tier_data.get("cost_1k_out", 0)),
+        speed_rank=int(tier_data.get("speed_rank", 2)),
+    )
+
+
+def select_provider_and_model(
+    routing_mode: str, ready_providers: List[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """Pick best (provider, model) for the given routing mode.
+
+    Returns (None, None) for 'manual' or if no match found.
+    """
+    if routing_mode == "manual" or not ready_providers:
+        return None, None
+
+    payload = _catalog_payload().get("providers", {})
+    candidates: List[Tuple[str, ModelTier]] = []
+    for prov in ready_providers:
+        canonical = canonical_provider_name(prov)
+        prov_data = payload.get(canonical, {})
+        for model_name, tier_data in prov_data.get("modelTiers", {}).items():
+            mt = ModelTier(
+                model_name=model_name,
+                tier=str(tier_data.get("tier", "balanced")),
+                cost_1k_in=float(tier_data.get("cost_1k_in", 0)),
+                cost_1k_out=float(tier_data.get("cost_1k_out", 0)),
+                speed_rank=int(tier_data.get("speed_rank", 2)),
+            )
+            candidates.append((canonical, mt))
+
+    if not candidates:
+        return None, None
+
+    if routing_mode == "quality":
+        quality = [(p, m) for p, m in candidates if m.tier == "quality"]
+        if quality:
+            best = min(quality, key=lambda x: x[1].cost_1k_in)
+            return best[0], best[1].model_name
+    elif routing_mode == "speed":
+        fastest = min(candidates, key=lambda x: (x[1].speed_rank, x[1].cost_1k_in))
+        return fastest[0], fastest[1].model_name
+    elif routing_mode == "cheap":
+        cheapest = min(candidates, key=lambda x: x[1].cost_1k_in)
+        return cheapest[0], cheapest[1].model_name
+    elif routing_mode == "private":
+        private = [(p, m) for p, m in candidates if m.tier == "private"]
+        if private:
+            return private[0][0], private[0][1].model_name
+
+    return None, None
 
 
 README_MODEL_SUPPORT_HEADER = (

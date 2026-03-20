@@ -82,6 +82,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "git_commit": [ToolCapability.GIT_WRITE.value],
     "create_directory": [ToolCapability.FILESYSTEM_WRITE.value],
     "run_tests": [ToolCapability.PROCESS_EXECUTE.value],
+    "run_affected_tests": [ToolCapability.PROCESS_EXECUTE.value],
     "git_status_diff": [ToolCapability.GIT_READ.value],
     "apply_patch_unified": [ToolCapability.FILESYSTEM_WRITE.value],
     "format_and_lint": [
@@ -104,6 +105,9 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "update_todo": [],
     "delegate_task": [ToolCapability.PROCESS_EXECUTE.value],
 }
+
+_CACHEABLE_TOOLS = frozenset({"read_file", "glob_files", "grep_files", "git_status", "git_diff", "git_log", "list_directory", "diff_files"})
+_MUTATION_TOOLS = frozenset({"write_file", "edit_file", "delete_file", "copy_file", "move_file", "bash", "git_add", "git_commit", "create_directory", "apply_patch_unified", "json_yaml_edit"})
 
 DEFAULT_MUTATING_TOOLS = {
     "write_file",
@@ -198,10 +202,18 @@ class ToolRegistryAsync:
         self._cwd: str = os.getcwd()  # persisted working directory across bash calls
         self.command_validator = get_command_validator(strict_mode=False)
         self._core = None  # set by PoorCLICore after init for compact/delegate
+        self._tool_cache: Dict[str, str] = {}
+        self._tool_cache_hits: int = 0
+        self._tool_cache_misses: int = 0
         self._todos: List[Dict[str, str]] = []  # agent todo list
         self._todos_path = Path.cwd() / ".poor-cli" / "todos.json"
         self._load_todos()
         self._register_tools()
+
+    def _tool_cache_key(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        import hashlib
+        canonical = json.dumps({"t": tool_name, "a": arguments}, sort_keys=True)
+        return hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
     def reset_cwd(self) -> None:
         self._cwd = os.getcwd()  # reset to process working directory
@@ -607,6 +619,32 @@ class ToolRegistryAsync:
                             "timeout": {
                                 "type": "INTEGER",
                                 "description": "Timeout in seconds (default 300)"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            "run_affected_tests": {
+                "function": self.run_affected_tests,
+                "declaration": {
+                    "name": "run_affected_tests",
+                    "description": "Run only tests affected by changed files, using repo graph and filename heuristics for smart selection",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "changed_files": {
+                                "type": "ARRAY",
+                                "items": {"type": "STRING"},
+                                "description": "List of changed file paths. If empty, auto-detects from git diff HEAD."
+                            },
+                            "path": {
+                                "type": "STRING",
+                                "description": "Project directory (defaults to current directory)"
+                            },
+                            "framework": {
+                                "type": "STRING",
+                                "description": "Test framework: pytest, jest, cargo, go. Auto-detected if omitted."
                             }
                         },
                         "required": []
@@ -1035,6 +1073,15 @@ class ToolRegistryAsync:
         Raises:
             ToolExecutionError: If tool execution fails
         """
+        if tool_name in _CACHEABLE_TOOLS:
+            cache_key = self._tool_cache_key(tool_name, arguments)
+            if cache_key in self._tool_cache:
+                self._tool_cache_hits += 1
+                return self._tool_cache[cache_key]
+            self._tool_cache_misses += 1
+        elif tool_name in _MUTATION_TOOLS:
+            self._tool_cache.clear()
+
         result = await self.execute_tool_raw(tool_name, arguments)
         if isinstance(result, ToolOutcome):
             text = result.to_json()
@@ -1042,7 +1089,19 @@ class ToolRegistryAsync:
             text = str(result)
         if self._output_max_chars > 0 or self._output_max_lines > 0:
             text = truncate_output(text, self._output_max_chars, self._output_max_lines)
+
+        if tool_name in _CACHEABLE_TOOLS:
+            self._tool_cache[self._tool_cache_key(tool_name, arguments)] = text
+
         return text
+
+    def get_tool_cache_stats(self) -> Dict[str, int]:
+        """Return cache hit/miss stats for /cost display."""
+        return {
+            "cache_hits": self._tool_cache_hits,
+            "cache_misses": self._tool_cache_misses,
+            "cache_entries": len(self._tool_cache),
+        }
 
     @staticmethod
     def _text_diff(file_path: str, before: str, after: str) -> str:
@@ -2938,6 +2997,70 @@ class ToolRegistryAsync:
             raise
         except Exception as e:
             raise ToolExecutionError("run_tests", f"Failed to run tests: {str(e)}")
+
+    async def run_affected_tests(
+        self,
+        changed_files: Optional[List[str]] = None,
+        path: Optional[str] = None,
+        framework: Optional[str] = None,
+    ) -> str:
+        """Run only tests affected by changed files."""
+        try:
+            work_dir = self._resolve_directory(path)
+            if not changed_files:
+                result = await self._run_command_capture(
+                    argv=["git", "diff", "--name-only", "HEAD"],
+                    timeout=10, cwd=str(work_dir),
+                )
+                changed_files = [
+                    f for f in (result.get("stdout", "") or "").splitlines() if f.strip()
+                ]
+            if not changed_files:
+                return json.dumps({"ok": True, "message": "No changed files detected.", "tests_run": []})
+
+            from poor_cli.testing_tools import TestRunner, TestFramework
+            runner = TestRunner(workspace_root=work_dir)
+
+            if not framework:
+                framework = self._detect_test_framework(work_dir)
+
+            fw_map = {
+                "pytest": TestFramework.PYTEST, "jest": TestFramework.JEST,
+                "cargo": TestFramework.CARGO_TEST, "go": TestFramework.GO_TEST,
+            }
+            fw = fw_map.get(framework or "pytest", TestFramework.PYTEST)
+
+            repo_graph = None
+            if self._core and hasattr(self._core, "_repo_graph"):
+                repo_graph = self._core._repo_graph
+
+            result, test_files = runner.run_affected_tests(changed_files, fw, repo_graph)
+            payload = {
+                "ok": result.failed == 0 and result.total > 0,
+                "passed": result.passed,
+                "failed": result.failed,
+                "skipped": result.skipped,
+                "total": result.total,
+                "duration_seconds": round(result.duration_seconds, 2),
+                "tests_run": test_files,
+                "changed_files": changed_files,
+                "output_excerpt": result.output[:6000] if result.output else "",
+            }
+            return json.dumps(payload, indent=2)
+        except Exception as e:
+            raise ToolExecutionError("run_affected_tests", f"Failed: {str(e)}")
+
+    def _detect_test_framework(self, work_dir: Path) -> str:
+        """Auto-detect test framework from workspace files."""
+        if (work_dir / "pytest.ini").exists() or (work_dir / "pyproject.toml").exists() or (work_dir / "setup.py").exists():
+            return "pytest"
+        if (work_dir / "package.json").exists():
+            return "jest"
+        if (work_dir / "Cargo.toml").exists():
+            return "cargo"
+        if (work_dir / "go.mod").exists():
+            return "go"
+        return "pytest"
 
     async def git_status_diff(
         self,

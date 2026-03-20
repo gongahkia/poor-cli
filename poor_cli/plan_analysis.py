@@ -14,6 +14,7 @@ from typing import List, Dict, Set, Optional, Any, Tuple
 from pathlib import Path
 from enum import Enum
 import re
+import subprocess
 
 from poor_cli.plan_mode import ExecutionPlan, PlanStep, PlanStepType, RiskLevel
 from poor_cli.checkpoint import CheckpointManager
@@ -159,6 +160,9 @@ class PlanAnalyzer:
 
         # Factor 4: Dependencies and conflicts (0-10 points)
         risk_score += self._score_dependencies(plan, assessment)
+
+        # Factor 5: Git churn hotspots (0-15 points)
+        risk_score += self._score_git_churn(plan, assessment)
 
         assessment.overall_risk_score = min(risk_score, 100.0)
         assessment.risk_level = self._score_to_risk_level(risk_score)
@@ -450,6 +454,69 @@ class PlanAnalyzer:
         assessment.risk_factors.append(f"{len(conflicts)} conflict(s) detected")
 
         return min(score, 10.0)
+
+    def _analyze_git_hotspots(self, file_paths: Set[str]) -> Dict[str, Dict[str, Any]]:
+        """Analyze git history for churn hotspots in given files."""
+        if not file_paths:
+            return {}
+        result: Dict[str, Dict[str, Any]] = {}
+        try:
+            cmd = [
+                "git", "log", "--since=30.days",
+                "--pretty=format:%H %s", "--name-only", "--"
+            ] + list(file_paths)
+            proc = subprocess.run(
+                cmd, cwd=str(self.workspace_root),
+                capture_output=True, text=True, timeout=15
+            )
+            if proc.returncode != 0:
+                return {}
+            current_subject = ""
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if " " in line and len(line.split()[0]) == 40:
+                    parts = line.split(" ", 1)
+                    current_subject = parts[1] if len(parts) > 1 else ""
+                else:
+                    path = line
+                    if path not in result:
+                        result[path] = {"commits_30d": 0, "fix_commits_30d": 0}
+                    result[path]["commits_30d"] += 1
+                    if re.search(r'\b(fix|bug|patch|revert)\b', current_subject, re.IGNORECASE):
+                        result[path]["fix_commits_30d"] += 1
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+        for info in result.values():
+            total = info["commits_30d"]
+            fix = info["fix_commits_30d"]
+            info["churn_score"] = round((fix / total * 10) + (total / 5), 2) if total > 0 else 0.0
+        return result
+
+    def _score_git_churn(self, plan: ExecutionPlan, assessment: RiskAssessment) -> float:
+        """Score risk based on recent git churn and fix frequency."""
+        if not assessment.blast_radius:
+            return 0.0
+        affected = assessment.blast_radius.affected_files
+        if not affected:
+            return 0.0
+        hotspots = self._analyze_git_hotspots(affected)
+        if not hotspots:
+            return 0.0
+        score = 0.0
+        for path, info in hotspots.items():
+            if info.get("fix_commits_30d", 0) >= 3:
+                score += 10.0
+                assessment.risk_factors.append(
+                    f"Git hotspot: {path} has {info['fix_commits_30d']} fix commits in 30 days"
+                )
+            elif info.get("commits_30d", 0) >= 10:
+                score += 5.0
+                assessment.risk_factors.append(
+                    f"High churn: {path} has {info['commits_30d']} commits in 30 days"
+                )
+        return min(score, 15.0)
 
     def _score_to_risk_level(self, score: float) -> RiskLevel:
         """Convert risk score to risk level"""
