@@ -1070,7 +1070,7 @@ pub(super) fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputActio
         KeyCode::Char('?') => open_plan_review_help(app),
         KeyCode::Enter => {
             app.mode = AppMode::Normal;
-            if app.plan_review_read_only {
+            if app.plan.review_read_only {
                 InputAction::Redraw
             } else {
                 InputAction::PlanApproved
@@ -1078,7 +1078,7 @@ pub(super) fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputActio
         }
         KeyCode::Esc | KeyCode::Char('q') => {
             app.mode = AppMode::Normal;
-            if app.plan_review_read_only {
+            if app.plan.review_read_only {
                 InputAction::Redraw
             } else {
                 InputAction::PlanCancelled

@@ -1473,29 +1473,29 @@ pub(crate) fn draw_plan_review(frame: &mut Frame, app: &App) {
         Line::from(""),
     ];
 
-    if !app.plan_summary.is_empty() {
+    if !app.plan.summary.is_empty() {
         lines.push(Line::from(Span::styled(
-            format!("  {}", app.plan_summary),
+            format!("  {}", app.plan.summary),
             Style::default().fg(theme::muted_fg(mode)),
         )));
         lines.push(Line::from(""));
     }
 
-    if !app.plan_original_request.is_empty() {
+    if !app.plan.original_request.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  Request: ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled(
-                app.plan_original_request.clone(),
+                app.plan.original_request.clone(),
                 Style::default().fg(theme::base_fg(mode)),
             ),
         ]));
         lines.push(Line::from(""));
     }
 
-    for (i, step) in app.plan_steps.iter().enumerate() {
+    for (i, step) in app.plan.steps.iter().enumerate() {
         let (marker, style) = match step.status {
             crate::app::PlanStepStatus::Pending => {
-                if i == app.plan_current_step {
+                if i == app.plan.current_step {
                     (
                         "▸ ",
                         Style::default()
@@ -1522,13 +1522,13 @@ pub(crate) fn draw_plan_review(frame: &mut Frame, app: &App) {
     lines.push(Line::from(vec![
         Span::styled("  Press ", Style::default().fg(theme::muted_fg(mode))),
         Span::styled(
-            if app.plan_review_read_only {
+            if app.plan.review_read_only {
                 "Enter"
             } else {
                 "Enter"
             },
             Style::default()
-                .fg(if app.plan_review_read_only {
+                .fg(if app.plan.review_read_only {
                     theme::accent(mode)
                 } else {
                     theme::success(mode)
@@ -1536,9 +1536,9 @@ pub(crate) fn draw_plan_review(frame: &mut Frame, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            if app.plan_review_read_only {
+            if app.plan.review_read_only {
                 " to close, "
-            } else if app.plan_is_execution_gate {
+            } else if app.plan.is_execution_gate {
                 " to approve, "
             } else {
                 " to execute, "
@@ -1552,9 +1552,9 @@ pub(crate) fn draw_plan_review(frame: &mut Frame, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            if app.plan_review_read_only {
+            if app.plan.review_read_only {
                 " to dismiss"
-            } else if app.plan_is_execution_gate {
+            } else if app.plan.is_execution_gate {
                 " to reject"
             } else {
                 " to cancel"
@@ -1575,7 +1575,7 @@ pub(crate) fn draw_plan_review(frame: &mut Frame, app: &App) {
             Style::default().fg(theme::muted_fg(mode)),
         ),
     ]));
-    if app.plan_review_read_only {
+    if app.plan.review_read_only {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Driver review in progress. This client is read-only for plan approval prompts.",

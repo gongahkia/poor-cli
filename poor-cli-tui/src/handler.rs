@@ -320,9 +320,9 @@ pub(super) fn handle_server_message(
                 app.stop_waiting();
                 app.active_request_id.clear();
                 app.active_request_started_at = None;
-                if !app.plan_steps.is_empty() && app.plan_current_step < app.plan_steps.len() {
+                if !app.plan.steps.is_empty() && app.plan.current_step < app.plan.steps.len() {
                     app.advance_plan_step();
-                    if app.plan_current_step < app.plan_steps.len() {
+                    if app.plan.current_step < app.plan.steps.len() {
                         app.mode = poor_cli_tui::app::AppMode::PlanReview;
                     } else {
                         app.push_message(ChatMessage::system("Plan complete.".to_string()));

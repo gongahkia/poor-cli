@@ -441,6 +441,17 @@ pub enum PlanStepStatus {
     Skipped,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PlanState {
+    pub steps: Vec<PlanStep>,
+    pub current_step: usize,
+    pub original_request: String,
+    pub summary: String,
+    pub prompt_id: String,
+    pub is_execution_gate: bool,
+    pub review_read_only: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResponseMode {
     Poor,
@@ -676,13 +687,7 @@ pub struct App {
     pub active_request_started_at: Option<Instant>,
 
     // ── Plan mode state ───
-    pub plan_steps: Vec<PlanStep>,
-    pub plan_current_step: usize,
-    pub plan_original_request: String,
-    pub plan_summary: String,
-    pub plan_prompt_id: String,
-    pub plan_is_execution_gate: bool,
-    pub plan_review_read_only: bool,
+    pub plan: PlanState,
 
     // ── Real token tracking (from server) ───
     pub tokens: TokenTracking,
@@ -819,13 +824,7 @@ impl Default for App {
             request_id_counter: 0,
             active_request_id: String::new(),
             active_request_started_at: None,
-            plan_steps: Vec::new(),
-            plan_current_step: 0,
-            plan_original_request: String::new(),
-            plan_summary: String::new(),
-            plan_prompt_id: String::new(),
-            plan_is_execution_gate: false,
-            plan_review_read_only: false,
+            plan: PlanState::default(),
             tokens: TokenTracking::default(),
             response_mode: ResponseMode::Rich,
             theme_mode: ThemeMode::Dark,
@@ -1797,43 +1796,43 @@ impl App {
         is_execution_gate: bool,
         read_only: bool,
     ) {
-        self.plan_steps = steps
+        self.plan.steps = steps
             .into_iter()
             .map(|s| PlanStep {
                 description: s,
                 status: PlanStepStatus::Pending,
             })
             .collect();
-        self.plan_current_step = 0;
-        self.plan_original_request = original_request;
-        self.plan_summary = summary;
-        self.plan_prompt_id = prompt_id;
-        self.plan_is_execution_gate = is_execution_gate;
-        self.plan_review_read_only = read_only;
+        self.plan.current_step = 0;
+        self.plan.original_request = original_request;
+        self.plan.summary = summary;
+        self.plan.prompt_id = prompt_id;
+        self.plan.is_execution_gate = is_execution_gate;
+        self.plan.review_read_only = read_only;
         self.mode = AppMode::PlanReview;
     }
 
     pub fn advance_plan_step(&mut self) {
-        if self.plan_current_step < self.plan_steps.len() {
-            self.plan_steps[self.plan_current_step].status = PlanStepStatus::Done;
-            self.plan_current_step += 1;
+        if self.plan.current_step < self.plan.steps.len() {
+            self.plan.steps[self.plan.current_step].status = PlanStepStatus::Done;
+            self.plan.current_step += 1;
         }
     }
 
     pub fn current_plan_step_description(&self) -> Option<&str> {
-        self.plan_steps
-            .get(self.plan_current_step)
+        self.plan.steps
+            .get(self.plan.current_step)
             .map(|s| s.description.as_str())
     }
 
     pub fn clear_plan(&mut self) {
-        self.plan_steps.clear();
-        self.plan_current_step = 0;
-        self.plan_original_request.clear();
-        self.plan_summary.clear();
-        self.plan_prompt_id.clear();
-        self.plan_is_execution_gate = false;
-        self.plan_review_read_only = false;
+        self.plan.steps.clear();
+        self.plan.current_step = 0;
+        self.plan.original_request.clear();
+        self.plan.summary.clear();
+        self.plan.prompt_id.clear();
+        self.plan.is_execution_gate = false;
+        self.plan.review_read_only = false;
     }
 
     pub fn push_suggestion(&mut self, sender: String, text: String) {

@@ -5116,7 +5116,7 @@ Submitting any slash command will cancel capture."
 Return ONLY a numbered list (1. step, 2. step, etc.) with no other text.\n\n\
 Task: {request}"
         );
-        app.plan_original_request = request.clone();
+        app.plan.original_request = request.clone();
         app.push_message(ChatMessage::user(format!("/plan {request}")));
         app.start_waiting();
         let tx2 = tx.clone();

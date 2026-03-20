@@ -292,7 +292,7 @@ pub(crate) fn dispatch_next_queued_prompt(
     cancel_token: &Arc<AtomicBool>,
     session_log: Option<&session::SessionLogWriter>,
 ) {
-    if app.waiting || app.prompt_queue.is_empty() || app.queue_paused || !app.plan_steps.is_empty()
+    if app.waiting || app.prompt_queue.is_empty() || app.queue_paused || !app.plan.steps.is_empty()
     {
         return;
     }

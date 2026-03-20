@@ -404,23 +404,23 @@ fn open_plan_review_help(app: &mut App) -> InputAction {
             .to_string(),
     ];
 
-    if !app.plan_summary.trim().is_empty() {
+    if !app.plan.summary.trim().is_empty() {
         lines.push(String::new());
         lines.push("## Summary".to_string());
-        lines.push(app.plan_summary.clone());
+        lines.push(app.plan.summary.clone());
     }
 
-    if !app.plan_original_request.trim().is_empty() {
+    if !app.plan.original_request.trim().is_empty() {
         lines.push(String::new());
-        lines.push(format!("Request: `{}`", app.plan_original_request));
+        lines.push(format!("Request: `{}`", app.plan.original_request));
     }
 
     lines.push(String::new());
     lines.push("## Keys".to_string());
-    if app.plan_review_read_only {
+    if app.plan.review_read_only {
         lines.push("- `Enter`: close this review".to_string());
         lines.push("- `Esc`: dismiss this review".to_string());
-    } else if app.plan_is_execution_gate {
+    } else if app.plan.is_execution_gate {
         lines.push("- `Enter`: approve the plan".to_string());
         lines.push("- `Esc`: reject the plan".to_string());
     } else {
@@ -942,9 +942,9 @@ mod tests {
     fn plan_review_question_mark_opens_help_and_returns() {
         let mut app = App::new();
         app.mode = AppMode::PlanReview;
-        app.plan_summary = "Need approval before mutating files.".to_string();
-        app.plan_original_request = "Update the config".to_string();
-        app.plan_is_execution_gate = true;
+        app.plan.summary = "Need approval before mutating files.".to_string();
+        app.plan.original_request = "Update the config".to_string();
+        app.plan.is_execution_gate = true;
 
         let action = handle_key_plan_review(&mut app, key_question());
 

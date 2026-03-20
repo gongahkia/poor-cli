@@ -395,7 +395,7 @@ fn run_app(
             if !app.waiting
                 && !app.prompt_queue.is_empty()
                 && !app.queue_paused
-                && app.plan_steps.is_empty()
+                && app.plan.steps.is_empty()
             {
                 dispatch_next_queued_prompt(
                     app,
@@ -570,8 +570,8 @@ fn run_app(
                     });
                 }
                 InputAction::PlanApproved => {
-                    if !app.plan_prompt_id.is_empty() && app.plan_is_execution_gate {
-                        let prompt_id = app.plan_prompt_id.clone();
+                    if !app.plan.prompt_id.is_empty() && app.plan.is_execution_gate {
+                        let prompt_id = app.plan.prompt_id.clone();
                         let _ = rpc_cmd_tx.borrow().send(RpcCommand::SendNotification {
                             method: "poor-cli/planRes".into(),
                             params: serde_json::json!({
@@ -583,9 +583,9 @@ fn run_app(
                         app.clear_plan();
                         app.set_status("Plan approved");
                     } else {
-                        let step_idx = app.plan_current_step;
+                        let step_idx = app.plan.current_step;
                         let step_desc = app.current_plan_step_description().map(|s| s.to_string());
-                        let orig = app.plan_original_request.clone();
+                        let orig = app.plan.original_request.clone();
                         if let Some(desc) = step_desc {
                             write_session_log(
                                 session_log.as_ref(),
@@ -602,8 +602,8 @@ fn run_app(
                                 orig,
                             );
                             let display = format!("[plan step {}] {}", step_idx + 1, desc);
-                            if step_idx < app.plan_steps.len() {
-                                app.plan_steps[step_idx].status =
+                            if step_idx < app.plan.steps.len() {
+                                app.plan.steps[step_idx].status =
                                     poor_cli_tui::app::PlanStepStatus::Running;
                             }
                             send_chat_request(
@@ -619,8 +619,8 @@ fn run_app(
                     }
                 }
                 InputAction::PlanCancelled => {
-                    if !app.plan_prompt_id.is_empty() && app.plan_is_execution_gate {
-                        let prompt_id = app.plan_prompt_id.clone();
+                    if !app.plan.prompt_id.is_empty() && app.plan.is_execution_gate {
+                        let prompt_id = app.plan.prompt_id.clone();
                         let _ = rpc_cmd_tx.borrow().send(RpcCommand::SendNotification {
                             method: "poor-cli/planRes".into(),
                             params: serde_json::json!({
