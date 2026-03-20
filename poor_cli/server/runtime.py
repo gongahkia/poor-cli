@@ -735,14 +735,18 @@ class PoorCLIServer:
                 params.get("clientCapabilities")
             )
 
-            # wire init progress callback to push notifications to TUI
+            # wire init progress callback to push notifications to TUI.
+            # callback may fire from executor thread (during indexing) or main
+            # thread (skip path / animation frames), so we stash messages and
+            # flush after initialize() returns.
+            _init_progress_queue: list = []
             loop = asyncio.get_event_loop()
             def _init_progress(msg: str) -> None:
                 notification = JsonRpcMessage(
                     method="poor-cli/progress",
-                    params={"stage": "repo_index", "message": msg},
+                    params={"phase": "repo_index", "message": msg},
                 )
-                asyncio.run_coroutine_threadsafe(self.write_message_stdio(notification), loop)
+                _init_progress_queue.append(notification)
             self.core._init_progress_callback = _init_progress
             await self.core.initialize(
                 provider_name=params.get("provider"),
@@ -750,6 +754,9 @@ class PoorCLIServer:
                 api_key=params.get("apiKey"),
             )
             self.core._init_progress_callback = None
+            # flush queued progress notifications
+            for notification in _init_progress_queue:
+                await self.write_message_stdio(notification)
             self.initialized = True
             if self.core.config is not None:
                 mode = self.core.config.security.permission_mode

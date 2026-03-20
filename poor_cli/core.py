@@ -443,16 +443,20 @@ class PoorCLICore:
                     def _progress(msg: str) -> None:
                         logger.info("[repo-index] %s", msg)
                         self._pending_events.append(CoreEvent(
-                            type="progress", data={"stage": "repo_index", "message": msg},
+                            type="progress", data={"phase": "repo_index", "message": msg},
                         ))
                         if self._init_progress_callback:
                             self._init_progress_callback(msg)
                     reindex_mode = self._repo_graph.should_reindex()
                     if reindex_mode == "skip":
-                        _progress("index up to date")
                         stats = self._repo_graph.get_stats()
+                        _progress(
+                            f"repo index up to date: {stats['files']} files, "
+                            f"{stats['symbols']} symbols, {stats['edges']} edges"
+                        )
                         logger.info("Repo index (skipped): %s", stats)
                     else:
+                        _progress(f"repo index: {reindex_mode} reindex starting...")
                         loop = asyncio.get_event_loop()
                         if reindex_mode == "full" or not self.config.repo_index.incremental:
                             stats = await loop.run_in_executor(None, lambda: self._repo_graph.build_index(on_progress=_progress))
