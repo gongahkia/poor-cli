@@ -754,6 +754,31 @@ class PoorCLIServer:
                 api_key=params.get("apiKey"),
             )
             self.core._init_progress_callback = None
+            # collect directory tree nodes for the graph overlay
+            graph_nodes: list = []
+            try:
+                import os as _os
+                cwd = _os.getcwd()
+                skip = {".git", ".poor-cli", "node_modules", "__pycache__",
+                        ".venv", "venv", "target", "dist", "build", ".mypy_cache"}
+                entries = sorted(_os.listdir(cwd))
+                dirs = [e for e in entries if _os.path.isdir(_os.path.join(cwd, e)) and e not in skip and not e.startswith(".")]
+                for d in dirs[:12]:
+                    sub = []
+                    try:
+                        sub_entries = sorted(_os.listdir(_os.path.join(cwd, d)))
+                        sub = [s for s in sub_entries if not s.startswith(".") and s not in skip][:6]
+                    except OSError:
+                        pass
+                    graph_nodes.append({"name": d, "children": sub})
+            except Exception:
+                pass
+            # inject nodes into the last progress notification
+            if graph_nodes:
+                _init_progress_queue.append(JsonRpcMessage(
+                    method="poor-cli/progress",
+                    params={"phase": "repo_index", "message": "graph_nodes", "nodes": graph_nodes},
+                ))
             # flush queued progress notifications
             for notification in _init_progress_queue:
                 await self.write_message_stdio(notification)

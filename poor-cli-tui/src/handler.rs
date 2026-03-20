@@ -590,6 +590,7 @@ pub(super) fn handle_server_message(
             message,
             iteration_index,
             iteration_cap,
+            nodes,
         } => {
             write_session_log(
                 session_log,
@@ -605,17 +606,21 @@ pub(super) fn handle_server_message(
             app.streaming.current_iteration = iteration_index;
             app.streaming.iteration_cap = iteration_cap;
             if phase == "repo_index" {
-                // open graph overlay if not active
                 if !app.graph_overlay.active {
                     app.graph_overlay.active = true;
                     app.graph_overlay.started_at = std::time::Instant::now();
                     app.graph_overlay.progress_pct = 0;
                     app.graph_overlay.completed_at = None;
+                    app.graph_overlay.nodes.clear();
                     app.mode = AppMode::Overlay;
                     app.overlay_kind = Some(OverlayKind::GraphOverlay);
                 }
-                app.graph_overlay.status_text = message.replace('\n', " ");
-                // map progress messages to percentage
+                if !nodes.is_empty() {
+                    app.graph_overlay.nodes = nodes;
+                }
+                if message != "graph_nodes" {
+                    app.graph_overlay.status_text = message.replace('\n', " ");
+                }
                 let msg_lower = app.graph_overlay.status_text.to_lowercase();
                 if msg_lower.contains("starting") { app.graph_overlay.progress_pct = 5; }
                 else if msg_lower.contains("scanning") { app.graph_overlay.progress_pct = 15; }

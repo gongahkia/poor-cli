@@ -657,37 +657,18 @@ pub(crate) fn draw_join_wizard(frame: &mut Frame, app: &App) {
 
 // ── Graph overlay (repo indexing animation) ─────────────────────────
 
-struct GNode {
-    label: &'static str,
-    angle: f64,
-    ring: u8, // 0=center, 1=inner, 2=outer
-    color: Color,
-}
-
-const GRAPH_NODES: &[GNode] = &[
-    GNode { label: "core",    angle: 0.0,   ring: 0, color: Color::Rgb(255, 200, 87) },
-    GNode { label: "config",  angle: 0.0,   ring: 1, color: Color::Rgb(176, 187, 143) },
-    GNode { label: "server",  angle: 2.09,  ring: 1, color: Color::Rgb(176, 187, 143) },
-    GNode { label: "tools",   angle: 4.19,  ring: 1, color: Color::Rgb(176, 187, 143) },
-    GNode { label: "graph",   angle: 0.52,  ring: 2, color: Color::Rgb(200, 150, 220) },
-    GNode { label: "context", angle: 1.57,  ring: 2, color: Color::Rgb(130, 190, 220) },
-    GNode { label: "index",   angle: 2.62,  ring: 2, color: Color::Rgb(130, 190, 220) },
-    GNode { label: "model",   angle: 3.67,  ring: 2, color: Color::Rgb(130, 190, 220) },
-    GNode { label: "symbols", angle: 4.71,  ring: 2, color: Color::Rgb(200, 150, 220) },
-    GNode { label: "edges",   angle: 5.76,  ring: 2, color: Color::Rgb(200, 150, 220) },
-];
-
-const GRAPH_EDGES: &[(usize, usize)] = &[
-    (0, 1), (0, 2), (0, 3),
-    (1, 4), (1, 5),
-    (2, 6), (2, 7),
-    (3, 8), (3, 9),
-    (4, 5), (6, 7), (8, 9),
+const DIR_COLORS: &[Color] = &[
+    Color::Rgb(176, 187, 143), // green
+    Color::Rgb(200, 150, 220), // purple
+    Color::Rgb(130, 190, 220), // blue
+    Color::Rgb(220, 180, 120), // orange
+    Color::Rgb(180, 220, 180), // light green
+    Color::Rgb(220, 150, 150), // pink
 ];
 
 pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
-    let area = centered_rect(60, 55, frame.area());
+    let area = centered_rect(64, 60, frame.area());
     render_popup_surface(frame, area, mode);
     let border_block = Block::default()
         .title(Span::styled(
@@ -705,87 +686,147 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
         width: area.width.saturating_sub(4),
         height: area.height.saturating_sub(5),
     };
-    if inner.width < 10 || inner.height < 6 {
-        return;
-    }
+    if inner.width < 10 || inner.height < 6 { return; }
     let elapsed = app.graph_overlay.started_at.elapsed().as_millis() as f64;
-    let node_count = GRAPH_NODES.len();
-    let visible_nodes = ((elapsed / 120.0) as usize).min(node_count);
-    let edge_start = if elapsed > 400.0 { ((elapsed - 400.0) / 80.0) as usize } else { 0 };
-    let visible_edges = edge_start.min(GRAPH_EDGES.len());
     let cx = inner.x as f64 + inner.width as f64 / 2.0;
-    let cy = inner.y as f64 + inner.height as f64 / 2.0;
-    let rx = (inner.width as f64 / 2.0 - 6.0).max(4.0);
-    let ry = (inner.height as f64 / 2.0 - 2.0).max(2.0);
+    let cy = inner.y as f64 + (inner.height as f64 - 3.0) / 2.0;
+    let rx = (inner.width as f64 / 2.0 - 5.0).max(4.0);
+    let ry = ((inner.height as f64 - 3.0) / 2.0 - 1.0).max(2.0);
     let buf = frame.buffer_mut();
-    let node_pos = |n: &GNode| -> (u16, u16) {
-        if n.ring == 0 {
-            (cx as u16, cy as u16)
-        } else {
-            let r_scale = if n.ring == 1 { 0.45 } else { 0.9 };
-            let nx = cx + n.angle.cos() * rx * r_scale;
-            let ny = cy + n.angle.sin() * ry * r_scale;
-            (nx as u16, ny as u16)
+    let nodes = &app.graph_overlay.nodes;
+    // build flat list: (label, x, y, color, parent_idx)
+    // ring 1 = directories at equal angles, ring 2 = children offset from parent
+    let dir_count = nodes.len().max(1);
+    struct PlotNode { x: f64, y: f64, color: Color, label: String, parent: Option<usize> }
+    let mut plot_nodes: Vec<PlotNode> = Vec::new();
+    // center node: repo root (use cwd basename)
+    let root_label = ".".to_string();
+    plot_nodes.push(PlotNode {
+        x: cx, y: cy,
+        color: Color::Rgb(255, 200, 87),
+        label: root_label, parent: None,
+    });
+    // ring 1: directories
+    for (i, (dir_name, children)) in nodes.iter().enumerate() {
+        let angle = 2.0 * std::f64::consts::PI * i as f64 / dir_count as f64 - std::f64::consts::FRAC_PI_2;
+        let dx = cx + angle.cos() * rx * 0.5;
+        let dy = cy + angle.sin() * ry * 0.5;
+        let color = DIR_COLORS[i % DIR_COLORS.len()];
+        let dir_idx = plot_nodes.len();
+        plot_nodes.push(PlotNode {
+            x: dx, y: dy, color,
+            label: truncate_label(dir_name, 10), parent: Some(0),
+        });
+        // ring 2: children spread around parent
+        let child_count = children.len().max(1);
+        for (ci, child) in children.iter().enumerate() {
+            let child_angle = angle + (ci as f64 - child_count as f64 / 2.0) * 0.3;
+            let child_x = cx + child_angle.cos() * rx * 0.9;
+            let child_y = cy + child_angle.sin() * ry * 0.9;
+            plot_nodes.push(PlotNode {
+                x: child_x, y: child_y,
+                color: Color::Rgb(
+                    ((color.to_string().len() * 7 + ci * 31) % 60 + 140) as u8,
+                    ((color.to_string().len() * 13 + ci * 17) % 60 + 160) as u8,
+                    ((color.to_string().len() * 3 + ci * 23) % 60 + 150) as u8,
+                ),
+                label: truncate_label(child, 8),
+                parent: Some(dir_idx),
+            });
         }
-    };
-    // edges
-    let edge_color = theme::muted_fg(mode);
-    for i in 0..visible_edges {
-        let (a, b) = GRAPH_EDGES[i];
-        if a >= visible_nodes || b >= visible_nodes { continue; }
-        let (x1, y1) = node_pos(&GRAPH_NODES[a]);
-        let (x2, y2) = node_pos(&GRAPH_NODES[b]);
-        let steps = ((x2 as i32 - x1 as i32).abs().max((y2 as i32 - y1 as i32).abs() * 2)) as usize;
-        if steps == 0 { continue; }
-        for s in 1..steps {
-            let t = s as f64 / steps as f64;
-            let px = (x1 as f64 + (x2 as f64 - x1 as f64) * t) as u16;
-            let py = (y1 as f64 + (y2 as f64 - y1 as f64) * t) as u16;
-            if px > inner.x && px < inner.x + inner.width - 1
-                && py >= inner.y && py < inner.y + inner.height
-            {
-                buf.set_string(px, py, "·", Style::default().fg(edge_color));
+    }
+    // if no dynamic nodes yet, use a simple loading animation
+    if nodes.is_empty() {
+        let spin_idx = (elapsed / 200.0) as usize % 4;
+        let spin = ["⠋", "⠙", "⠹", "⠸"][spin_idx];
+        buf.set_string(
+            cx as u16, cy as u16, spin,
+            Style::default().fg(Color::Rgb(255, 200, 87)).add_modifier(Modifier::BOLD),
+        );
+        buf.set_string(
+            cx as u16 + 2, cy as u16, "scanning...",
+            Style::default().fg(theme::muted_fg(mode)),
+        );
+    } else {
+        // adaptive reveal: always takes ANIM_DURATION_MS regardless of node count
+        const ANIM_DURATION_MS: f64 = 4000.0;
+        let total = plot_nodes.len().max(1);
+        let interval = ANIM_DURATION_MS / total as f64;
+        let visible = ((elapsed / interval) as usize).min(total);
+        let edge_color = theme::muted_fg(mode);
+        // draw edges first
+        for i in 1..visible {
+            if let Some(pi) = plot_nodes[i].parent {
+                if pi < visible {
+                    let (x1, y1) = (plot_nodes[pi].x, plot_nodes[pi].y);
+                    let (x2, y2) = (plot_nodes[i].x, plot_nodes[i].y);
+                    let steps = ((x2 - x1).abs().max((y2 - y1).abs() * 2.0)) as usize;
+                    if steps == 0 { continue; }
+                    for s in 1..steps {
+                        let t = s as f64 / steps as f64;
+                        let px = (x1 + (x2 - x1) * t) as u16;
+                        let py = (y1 + (y2 - y1) * t) as u16;
+                        if px > inner.x && px < inner.x + inner.width - 1
+                            && py >= inner.y && py < inner.y + inner.height - 2
+                        {
+                            buf.set_string(px, py, "·", Style::default().fg(edge_color));
+                        }
+                    }
+                }
+            }
+        }
+        // draw nodes
+        for i in 0..visible {
+            let n = &plot_nodes[i];
+            let nx = n.x as u16;
+            let ny = n.y as u16;
+            if nx < inner.x || nx >= inner.x + inner.width
+                || ny < inner.y || ny >= inner.y + inner.height - 2 { continue; }
+            let ch = if n.parent.is_none() { "◉" } else if n.parent == Some(0) { "●" } else { "○" };
+            buf.set_string(nx, ny, ch, Style::default().fg(n.color).add_modifier(Modifier::BOLD));
+            if nx as f64 >= cx {
+                let lx = nx + 2;
+                if lx + n.label.len() as u16 <= inner.x + inner.width {
+                    buf.set_string(lx, ny, &n.label, Style::default().fg(n.color));
+                }
+            } else {
+                let lx = nx.saturating_sub(n.label.len() as u16 + 1);
+                if lx >= inner.x {
+                    buf.set_string(lx, ny, &n.label, Style::default().fg(n.color));
+                }
             }
         }
     }
-    // nodes
-    for i in 0..visible_nodes {
-        let node = &GRAPH_NODES[i];
-        let (nx, ny) = node_pos(node);
-        if nx < inner.x || nx >= inner.x + inner.width
-            || ny < inner.y || ny >= inner.y + inner.height { continue; }
-        let ch = if node.ring == 0 { "◉" } else { "●" };
-        buf.set_string(nx, ny, ch, Style::default().fg(node.color).add_modifier(Modifier::BOLD));
-        let label = node.label;
-        if nx as f64 >= cx {
-            let lx = nx + 2;
-            if lx + label.len() as u16 <= inner.x + inner.width {
-                buf.set_string(lx, ny, label, Style::default().fg(node.color));
-            }
-        } else {
-            let lx = nx.saturating_sub(label.len() as u16 + 1);
-            if lx >= inner.x {
-                buf.set_string(lx, ny, label, Style::default().fg(node.color));
-            }
-        }
-    }
-    // progress bar + status
-    let bar_y = area.y + area.height - 2;
+    // status text
+    let status_y = area.y + area.height - 3;
     let bar_x = inner.x;
-    let pct = app.graph_overlay.progress_pct as u16;
-    let bar_width = inner.width.saturating_sub(6);
-    let filled = (bar_width * pct / 100).min(bar_width);
-    if bar_width > 0 {
-        let bar_str: String = "▓".repeat(filled as usize) + &"░".repeat((bar_width - filled) as usize);
-        let pct_label = format!(" {}%", pct);
-        buf.set_string(bar_x, bar_y, &bar_str, Style::default().fg(theme::accent(mode)));
-        buf.set_string(bar_x + bar_width, bar_y, &pct_label, Style::default().fg(theme::muted_fg(mode)));
-    }
-    let status_y = bar_y.saturating_sub(1);
     let status = &app.graph_overlay.status_text;
     if !status.is_empty() && status_y > inner.y {
         let max_w = inner.width as usize;
-        let truncated = if status.len() > max_w { &status[..max_w] } else { status.as_str() };
-        buf.set_string(bar_x, status_y, truncated, Style::default().fg(theme::muted_fg(mode)));
+        let s = if status.len() > max_w { &status[..max_w] } else { status.as_str() };
+        buf.set_string(bar_x, status_y, s, Style::default().fg(theme::muted_fg(mode)));
     }
+    // loading bar: fills in sync with node reveal (always completes together)
+    let bar_y = area.y + area.height - 2;
+    let bar_width = inner.width.saturating_sub(6);
+    if bar_width > 0 {
+        let total_nodes = if nodes.is_empty() { 1 } else {
+            1usize + nodes.iter().map(|(_, c)| 1 + c.len()).sum::<usize>()
+        };
+        const ANIM_DURATION_MS: f64 = 4000.0;
+        let anim_progress = (elapsed / ANIM_DURATION_MS).min(1.0);
+        let visual_pct = anim_progress * 100.0;
+        let filled = ((bar_width as f64 * anim_progress) as u16).min(bar_width);
+        let bar: String = "█".repeat(filled as usize) + &"░".repeat((bar_width - filled) as usize);
+        buf.set_string(bar_x, bar_y, &bar, Style::default().fg(theme::accent(mode)));
+        buf.set_string(
+            bar_x + bar_width, bar_y,
+            &format!(" {:.0}%", visual_pct),
+            Style::default().fg(theme::muted_fg(mode)),
+        );
+    }
+}
+
+fn truncate_label(s: &str, max: usize) -> String {
+    if s.len() <= max { s.to_string() } else { format!("{}…", &s[..max - 1]) }
 }

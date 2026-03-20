@@ -195,7 +195,7 @@ pub(crate) fn spawn_backend_worker(
                                 message,
                                 iteration_index,
                                 iteration_cap,
-                                ..
+                                nodes,
                             } => {
                                 session::write_session_log(
                                     notification_log_ctx.as_ref(),
@@ -210,6 +210,7 @@ pub(crate) fn spawn_backend_worker(
                                     message,
                                     iteration_index,
                                     iteration_cap,
+                                    nodes,
                                 }
                             }
                             ServerNotification::CostUpdate {

@@ -414,6 +414,7 @@ pub struct GraphOverlayState {
     pub status_text: String,
     pub progress_pct: u8,
     pub completed_at: Option<Instant>,
+    pub nodes: Vec<(String, Vec<String>)>, // (dir_name, children)
 }
 
 #[derive(Debug, Clone)]
@@ -815,6 +816,7 @@ impl Default for App {
                 status_text: String::new(),
                 progress_pct: 0,
                 completed_at: None,
+                nodes: Vec::new(),
             },
         }
     }
@@ -1074,15 +1076,15 @@ impl App {
         if self.waiting {
             self.spinner_tick = (self.spinner_tick + 1) % SPINNER_FRAMES.len();
         }
-        // auto-dismiss graph overlay after completion
+        // auto-dismiss graph overlay: wait for 4s animation to complete + 1s hold
         if self.graph_overlay.active {
-            if let Some(completed_at) = self.graph_overlay.completed_at {
-                if completed_at.elapsed().as_millis() > 1500 {
-                    self.graph_overlay.active = false;
-                    if self.overlay_kind == Some(OverlayKind::GraphOverlay) {
-                        self.overlay_kind = None;
-                        self.mode = AppMode::Normal;
-                    }
+            let total_elapsed = self.graph_overlay.started_at.elapsed().as_millis();
+            // animation is 4000ms, then hold for 1000ms so user sees 100%
+            if total_elapsed > 5000 {
+                self.graph_overlay.active = false;
+                if self.overlay_kind == Some(OverlayKind::GraphOverlay) {
+                    self.overlay_kind = None;
+                    self.mode = AppMode::Normal;
                 }
             }
         }

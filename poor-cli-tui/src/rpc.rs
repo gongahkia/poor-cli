@@ -271,6 +271,7 @@ pub enum ServerNotification {
         message: String,
         iteration_index: u32,
         iteration_cap: u32,
+        nodes: Vec<(String, Vec<String>)>,
     },
     CostUpdate {
         request_id: String,
@@ -548,6 +549,27 @@ fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification
                 .get("iterationCap")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(25) as u32,
+            nodes: params
+                .get("nodes")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| {
+                            let name = item.get("name")?.as_str()?.to_string();
+                            let children = item
+                                .get("children")
+                                .and_then(|c| c.as_array())
+                                .map(|ca| {
+                                    ca.iter()
+                                        .filter_map(|s| s.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            Some((name, children))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         }),
         "poor-cli/costUpdate" => Some(ServerNotification::CostUpdate {
             request_id: params

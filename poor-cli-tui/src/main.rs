@@ -189,6 +189,7 @@ enum ServerMsg {
         message: String,
         iteration_index: u32,
         iteration_cap: u32,
+        nodes: Vec<(String, Vec<String>)>,
     },
     CostUpdate {
         request_id: String,
