@@ -509,13 +509,6 @@
       "hidden": true
     },
     {
-      "command": "/tasks",
-      "description": "Legacy alias for /task",
-      "recommended": false,
-      "category": "Automation & Tasks",
-      "hidden": true
-    },
-    {
       "command": "/skills",
       "description": "Inspect or run repo and user skills",
       "recommended": false,
@@ -600,12 +593,6 @@
       "category": "Collaboration"
     },
     {
-      "command": "/pair",
-      "description": "Legacy pair alias for collaboration sessions",
-      "recommended": false,
-      "category": "Collaboration"
-    },
-    {
       "command": "/pass",
       "description": "Hand driver role to the next collaborator",
       "recommended": false,
@@ -622,41 +609,6 @@
     {
       "command": "/leave",
       "description": "Disconnect from collaboration session",
-      "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
-    },
-    {
-      "command": "/host-server",
-      "description": "Legacy advanced host controls for collaboration",
-      "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
-    },
-    {
-      "command": "/join-server",
-      "description": "Legacy join alias for invite/manual room entry",
-      "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
-    },
-    {
-      "command": "/kick",
-      "description": "Remove a room member from collaboration",
-      "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
-    },
-    {
-      "command": "/who",
-      "description": "Show room members and roles",
-      "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
-    },
-    {
-      "command": "/members",
-      "description": "Alias for /who",
       "recommended": false,
       "category": "Collaboration",
       "hidden": true

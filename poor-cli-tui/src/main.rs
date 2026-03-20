@@ -944,7 +944,7 @@ fn format_host_server_payload(payload: &Value) -> String {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if !running {
-        return "No collaboration host is running.\nUse `/collab start mob` or `/host-server` to start one.".to_string();
+        return "No collaboration host is running.\nUse `/collab start mob` to start one.".to_string();
     }
 
     let created = payload
@@ -1079,7 +1079,7 @@ fn format_host_share_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if !running {
-        return "No collaboration host is running.\nUse `/collab start mob` or `/host-server` to start one.".to_string();
+        return "No collaboration host is running.\nUse `/collab start mob` to start one.".to_string();
     }
 
     let rooms = payload
@@ -1256,7 +1256,7 @@ fn format_host_members_payload(payload: &Value) -> String {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if !running {
-        return "No collaboration host is running.\nUse `/collab start mob` or `/host-server` to start one.".to_string();
+        return "No collaboration host is running.\nUse `/collab start mob` to start one.".to_string();
     }
 
     let rooms = payload

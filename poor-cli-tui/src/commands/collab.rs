@@ -64,7 +64,7 @@ pub(super) fn collab_usage_text() -> &'static str {
        /collab agenda done <item-id>\n\
        /collab hand raise\n\
        /collab hand lower\n\n\
-Legacy aliases remain available: `/pair`, `/join-server`, `/host-server`, `/pass`, `/members`, `/kick`."
+All collaboration features are accessed through /collab subcommands."
 }
 
 pub(crate) fn format_collab_summary_payload(payload: &Value) -> String {
