@@ -316,8 +316,8 @@ fn run_app(
         permission_mode.clone(),
     ));
 
-    app.provider_name = cli.provider.unwrap_or_else(|| "select provider".into());
-    app.model_name = cli.model.unwrap_or_default();
+    app.provider.name = cli.provider.unwrap_or_else(|| "select provider".into());
+    app.provider.model = cli.model.unwrap_or_default();
     app.startup_first_launch = is_startup_first_launch(&app);
     app.add_welcome();
     if let Ok(Some(saved_profile)) = load_profile_state(&app) {
@@ -450,9 +450,9 @@ fn run_app(
                     return Ok(LoopControl::Break);
                 }
                 InputAction::ProviderSelected(idx) => {
-                    if let Some(provider) = app.providers.get(idx) {
+                    if let Some(provider) = app.provider.list.get(idx) {
                         let name = provider.name.clone();
-                        let model = if idx == app.provider_select_idx {
+                        let model = if idx == app.provider.select_idx {
                             app.selected_provider_switch_model()
                         } else {
                             provider.models.first().cloned()
@@ -3412,7 +3412,7 @@ fn build_api_key_editor_state(
             .cloned()
             .or_else(|| std::env::var(spec.env_var).ok())
             .unwrap_or_default();
-        if spec.provider == Some(app.provider_name.as_str()) {
+        if spec.provider == Some(app.provider.name.as_str()) {
             selected_index = idx;
         }
         fields.push(ApiKeyEditorField {
@@ -3441,8 +3441,8 @@ fn build_api_key_editor_state(
         },
         error: String::new(),
         init_error: init_error.unwrap_or("").to_string(),
-        target_provider: app.provider_name.clone(),
-        target_model: app.model_name.clone(),
+        target_provider: app.provider.name.clone(),
+        target_model: app.provider.model.clone(),
     })
 }
 
@@ -4773,8 +4773,8 @@ CUSTOM_FLAG=yes\n";
         fs::write(root.join(".env.example"), "# template\n").expect("template should be written");
 
         let mut app = build_app_for_root(&root);
-        app.provider_name = "openai".to_string();
-        app.model_name = provider_catalog::default_model("openai").to_string();
+        app.provider.name = "openai".to_string();
+        app.provider.model = provider_catalog::default_model("openai").to_string();
 
         let state = build_api_key_editor_state(&app, Some("Initialization failed"))
             .expect("editor state should build");

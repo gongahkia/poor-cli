@@ -651,10 +651,10 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let model = if app.model_name.trim().is_empty() || app.model_name == "unknown" {
-        app.provider_name.clone()
+    let model = if app.provider.model.trim().is_empty() || app.provider.model == "unknown" {
+        app.provider.name.clone()
     } else {
-        app.model_name.clone()
+        app.provider.model.clone()
     };
     let branch = if app.git_branch.is_empty() {
         String::new()

@@ -690,7 +690,7 @@ mod tests {
     fn provider_select_right_focuses_model_pane() {
         let mut app = App::new();
         app.mode = AppMode::ProviderSelect;
-        app.providers = vec![ProviderEntry {
+        app.provider.list = vec![ProviderEntry {
             name: "openai".to_string(),
             available: true,
             ready: true,
@@ -705,7 +705,7 @@ mod tests {
         let action = handle_key_provider_select(&mut app, key_right());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.provider_select_pane, ProviderSelectPane::Models);
+        assert_eq!(app.provider.select_pane, ProviderSelectPane::Models);
         assert_eq!(
             app.selected_provider_model().as_deref(),
             Some(crate::provider_catalog::default_model("openai"))
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     fn provider_select_up_down_navigate_models_when_model_pane_is_focused() {
         let mut app = App::new();
-        app.providers = vec![ProviderEntry {
+        app.provider.list = vec![ProviderEntry {
             name: "openai".to_string(),
             available: true,
             ready: true,
@@ -727,7 +727,7 @@ mod tests {
             ],
         }];
         app.open_provider_select();
-        app.provider_select_pane = ProviderSelectPane::Models;
+        app.provider.select_pane = ProviderSelectPane::Models;
 
         let down = handle_key_provider_select(&mut app, key_down());
         assert!(matches!(down, InputAction::Redraw));
@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn provider_select_left_returns_to_provider_pane() {
         let mut app = App::new();
-        app.providers = vec![ProviderEntry {
+        app.provider.list = vec![ProviderEntry {
             name: "openai".to_string(),
             available: true,
             ready: true,
@@ -752,12 +752,12 @@ mod tests {
             models: vec![crate::provider_catalog::default_model("openai").to_string()],
         }];
         app.open_provider_select();
-        app.provider_select_pane = ProviderSelectPane::Models;
+        app.provider.select_pane = ProviderSelectPane::Models;
 
         let action = handle_key_provider_select(&mut app, key_left());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.provider_select_pane, ProviderSelectPane::Providers);
+        assert_eq!(app.provider.select_pane, ProviderSelectPane::Providers);
     }
 
     #[test]

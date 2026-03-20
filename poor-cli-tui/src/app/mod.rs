@@ -602,6 +602,30 @@ impl Default for StreamingState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ProviderState {
+    pub name: String,
+    pub model: String,
+    pub capabilities: Vec<String>,
+    pub list: Vec<ProviderEntry>,
+    pub select_idx: usize,
+    pub select_pane: ProviderSelectPane,
+    pub model_select_indices: HashMap<String, usize>,
+}
+impl Default for ProviderState {
+    fn default() -> Self {
+        Self {
+            name: "unknown".into(),
+            model: "unknown".into(),
+            capabilities: Vec::new(),
+            list: Vec::new(),
+            select_idx: 0,
+            select_pane: ProviderSelectPane::Providers,
+            model_select_indices: HashMap::new(),
+        }
+    }
+}
+
 pub struct App {
     // ── Chat state ───
     pub messages: Vec<ChatMessage>,
@@ -616,13 +640,7 @@ pub struct App {
     pub active_workspace: AppWorkspace,
 
     // ── Provider info ───
-    pub provider_name: String,
-    pub model_name: String,
-    pub capabilities: Vec<String>,
-    pub providers: Vec<ProviderEntry>,
-    pub provider_select_idx: usize,
-    pub provider_select_pane: ProviderSelectPane,
-    pub provider_model_select_indices: HashMap<String, usize>,
+    pub provider: ProviderState,
     pub info_popup_title: String,
     pub info_popup_content: String,
     pub info_popup_scroll: u16,
@@ -745,13 +763,7 @@ impl Default for App {
             scroll_offset: 0,
             mode: AppMode::Normal,
             active_workspace: AppWorkspace::Chat,
-            provider_name: "unknown".into(),
-            model_name: "unknown".into(),
-            capabilities: Vec::new(),
-            providers: Vec::new(),
-            provider_select_idx: 0,
-            provider_select_pane: ProviderSelectPane::Providers,
-            provider_model_select_indices: HashMap::new(),
+            provider: ProviderState::default(),
             info_popup_title: String::new(),
             info_popup_content: String::new(),
             info_popup_scroll: 0,
@@ -849,14 +861,14 @@ impl App {
             self.cwd.clone()
         };
         let provider_known =
-            !self.provider_name.trim().is_empty() && self.provider_name != "unknown";
-        let model_known = !self.model_name.trim().is_empty() && self.model_name != "unknown";
+            !self.provider.name.trim().is_empty() && self.provider.name != "unknown";
+        let model_known = !self.provider.model.trim().is_empty() && self.provider.model != "unknown";
         let provider_summary = match (provider_known, model_known) {
             (true, true) => format!(
                 "{} · {} · {}",
-                self.model_name, self.provider_name, self.permission_mode_label
+                self.provider.model, self.provider.name, self.permission_mode_label
             ),
-            (true, false) => format!("{} · {}", self.provider_name, self.permission_mode_label),
+            (true, false) => format!("{} · {}", self.provider.name, self.permission_mode_label),
             _ => format!(
                 "provider selection pending · {}",
                 self.permission_mode_label
@@ -946,19 +958,20 @@ impl App {
     }
 
     pub fn open_provider_select(&mut self) {
-        self.provider_select_pane = ProviderSelectPane::Providers;
-        self.provider_select_idx = self
-            .providers
+        self.provider.select_pane = ProviderSelectPane::Providers;
+        self.provider.select_idx = self
+            .provider
+            .list
             .iter()
-            .position(|provider| provider.name.eq_ignore_ascii_case(&self.provider_name))
+            .position(|provider| provider.name.eq_ignore_ascii_case(&self.provider.name))
             .unwrap_or(0)
-            .min(self.providers.len().saturating_sub(1));
+            .min(self.provider.list.len().saturating_sub(1));
         self.ensure_provider_model_selection();
         self.mode = AppMode::ProviderSelect;
     }
 
     pub fn selected_provider(&self) -> Option<&ProviderEntry> {
-        self.providers.get(self.provider_select_idx)
+        self.provider.list.get(self.provider.select_idx)
     }
 
     pub fn selected_provider_model_index(&self) -> Option<usize> {
@@ -967,7 +980,8 @@ impl App {
             return None;
         }
         let selected = self
-            .provider_model_select_indices
+            .provider
+            .model_select_indices
             .get(&provider.name)
             .copied()
             .unwrap_or_else(|| self.default_provider_model_index(provider));
@@ -977,11 +991,11 @@ impl App {
     pub fn selected_provider_model(&self) -> Option<String> {
         let provider = self.selected_provider()?;
         if provider.models.is_empty() {
-            if provider.name.eq_ignore_ascii_case(&self.provider_name)
-                && !self.model_name.trim().is_empty()
-                && self.model_name != "unknown"
+            if provider.name.eq_ignore_ascii_case(&self.provider.name)
+                && !self.provider.model.trim().is_empty()
+                && self.provider.model != "unknown"
             {
-                return Some(self.model_name.clone());
+                return Some(self.provider.model.clone());
             }
             return None;
         }
@@ -998,25 +1012,25 @@ impl App {
     }
 
     pub fn move_provider_selection(&mut self, forward: bool) -> bool {
-        if self.providers.is_empty() {
+        if self.provider.list.is_empty() {
             return false;
         }
         let next_idx = if forward {
-            (self.provider_select_idx + 1).min(self.providers.len().saturating_sub(1))
+            (self.provider.select_idx + 1).min(self.provider.list.len().saturating_sub(1))
         } else {
-            self.provider_select_idx.saturating_sub(1)
+            self.provider.select_idx.saturating_sub(1)
         };
-        if next_idx == self.provider_select_idx {
+        if next_idx == self.provider.select_idx {
             return false;
         }
-        self.provider_select_idx = next_idx;
+        self.provider.select_idx = next_idx;
         self.ensure_provider_model_selection();
         if self
             .selected_provider()
             .is_some_and(|provider| provider.models.is_empty())
-            && self.provider_select_pane == ProviderSelectPane::Models
+            && self.provider.select_pane == ProviderSelectPane::Models
         {
-            self.provider_select_pane = ProviderSelectPane::Providers;
+            self.provider.select_pane = ProviderSelectPane::Providers;
         }
         true
     }
@@ -1039,7 +1053,7 @@ impl App {
         if next == current {
             return false;
         }
-        self.provider_model_select_indices
+        self.provider.model_select_indices
             .insert(provider_name, next);
         true
     }
@@ -1050,7 +1064,7 @@ impl App {
             .is_some_and(|provider| !provider.models.is_empty())
         {
             self.ensure_provider_model_selection();
-            self.provider_select_pane = ProviderSelectPane::Models;
+            self.provider.select_pane = ProviderSelectPane::Models;
             true
         } else {
             false
@@ -1058,10 +1072,10 @@ impl App {
     }
 
     pub fn focus_provider_list(&mut self) -> bool {
-        if self.provider_select_pane == ProviderSelectPane::Providers {
+        if self.provider.select_pane == ProviderSelectPane::Providers {
             return false;
         }
-        self.provider_select_pane = ProviderSelectPane::Providers;
+        self.provider.select_pane = ProviderSelectPane::Providers;
         true
     }
 
@@ -1074,21 +1088,22 @@ impl App {
         let max_index = provider.models.len().saturating_sub(1);
         let default_idx = self.default_provider_model_index(provider);
         let entry = self
-            .provider_model_select_indices
+            .provider
+            .model_select_indices
             .entry(provider_name)
             .or_insert(default_idx);
         *entry = (*entry).min(max_index);
     }
 
     fn default_provider_model_index(&self, provider: &ProviderEntry) -> usize {
-        if provider.name.eq_ignore_ascii_case(&self.provider_name)
-            && !self.model_name.trim().is_empty()
-            && self.model_name != "unknown"
+        if provider.name.eq_ignore_ascii_case(&self.provider.name)
+            && !self.provider.model.trim().is_empty()
+            && self.provider.model != "unknown"
         {
             provider
                 .models
                 .iter()
-                .position(|model| model == &self.model_name)
+                .position(|model| model == &self.provider.model)
                 .unwrap_or(0)
         } else {
             0
@@ -1960,8 +1975,8 @@ Duration: {}\n\
 Requests: {}\n\
 Input: {} chars (~{} tokens)\n\
 Output: {} chars (~{} tokens)",
-            self.provider_name,
-            self.model_name,
+            self.provider.name,
+            self.provider.model,
             duration,
             self.session_requests,
             self.input_chars,
@@ -2301,9 +2316,9 @@ mod tests {
     #[test]
     fn provider_select_defaults_to_active_provider_and_model() {
         let mut app = super::App::new();
-        app.provider_name = "openai".to_string();
-        app.model_name = crate::provider_catalog::default_model("openai").to_string();
-        app.providers = vec![
+        app.provider.name = "openai".to_string();
+        app.provider.model = crate::provider_catalog::default_model("openai").to_string();
+        app.provider.list = vec![
             ProviderEntry {
                 name: "anthropic".to_string(),
                 available: true,
@@ -2325,7 +2340,7 @@ mod tests {
 
         app.open_provider_select();
 
-        assert_eq!(app.provider_select_idx, 1);
+        assert_eq!(app.provider.select_idx, 1);
         assert_eq!(app.selected_provider_model_index(), Some(1));
         assert_eq!(
             app.selected_provider_model().as_deref(),

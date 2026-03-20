@@ -157,7 +157,7 @@ pub(super) fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
 pub(super) fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputAction {
     match key.code {
         KeyCode::Up => {
-            let moved = if app.provider_select_pane == ProviderSelectPane::Models {
+            let moved = if app.provider.select_pane == ProviderSelectPane::Models {
                 app.move_provider_model_selection(false)
             } else {
                 app.move_provider_selection(false)
@@ -169,7 +169,7 @@ pub(super) fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputA
             }
         }
         KeyCode::Down => {
-            let moved = if app.provider_select_pane == ProviderSelectPane::Models {
+            let moved = if app.provider.select_pane == ProviderSelectPane::Models {
                 app.move_provider_model_selection(true)
             } else {
                 app.move_provider_selection(true)
@@ -195,7 +195,7 @@ pub(super) fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputA
             }
         }
         KeyCode::Enter => {
-            let idx = app.provider_select_idx;
+            let idx = app.provider.select_idx;
             app.mode = AppMode::Normal;
             InputAction::ProviderSelected(idx)
         }

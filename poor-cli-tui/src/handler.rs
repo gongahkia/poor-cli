@@ -31,11 +31,11 @@ pub(super) fn handle_server_message(
             state.1 = None;
             state.2 = false;
             app.reconnect_message_idx = None;
-            app.provider_name = provider;
-            app.model_name = model;
+            app.provider.name = provider;
+            app.provider.model = model;
             app.version = version;
             app.server_connected = true;
-            app.is_local_provider = app.provider_name == "ollama";
+            app.is_local_provider = app.provider.name == "ollama";
             app.close_api_key_editor();
             app.multiplayer.enabled = multiplayer_room.is_some();
             if let Some(room_name) = multiplayer_room {
@@ -75,7 +75,7 @@ pub(super) fn handle_server_message(
                 session_log,
                 &format!(
                     "server_initialized provider={} model={} version={}",
-                    app.provider_name, app.model_name, app.version
+                    app.provider.name, app.provider.model, app.version
                 ),
             );
             app.set_status("Connected to Python backend");
@@ -96,7 +96,7 @@ pub(super) fn handle_server_message(
                                 .send(RpcCommand::ListProviders { reply: reply_tx });
                             if let Ok(Ok(providers)) = reply_rx.recv_timeout(Duration::from_secs(15))
                             {
-                                app.providers = providers
+                                app.provider.list = providers
                                     .into_iter()
                                     .map(|provider| ProviderEntry {
                                         name: provider.name,
@@ -182,18 +182,18 @@ pub(super) fn handle_server_message(
             }
         }
         ServerMsg::Providers { providers } => {
-            app.providers = providers;
+            app.provider.list = providers;
             app.open_provider_select();
         }
         ServerMsg::ProviderSwitched { provider, model } => {
-            app.provider_name = provider;
-            app.model_name = model;
-            app.is_local_provider = app.provider_name == "ollama";
+            app.provider.name = provider;
+            app.provider.model = model;
+            app.is_local_provider = app.provider.name == "ollama";
             write_session_log(
                 session_log,
                 &format!(
                     "provider_switch_success provider={} model={}",
-                    app.provider_name, app.model_name
+                    app.provider.name, app.provider.model
                 ),
             );
             app.set_status("Provider switched successfully");
@@ -254,8 +254,8 @@ pub(super) fn handle_server_message(
                     )));
                 }
             }
-            if app.provider_name.eq_ignore_ascii_case("ollama") {
-                if let Some((title, content)) = ollama_recovery_popup(&message, &app.model_name) {
+            if app.provider.name.eq_ignore_ascii_case("ollama") {
+                if let Some((title, content)) = ollama_recovery_popup(&message, &app.provider.model) {
                     app.open_info_popup(title, content);
                 }
             }

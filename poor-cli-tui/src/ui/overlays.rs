@@ -26,20 +26,21 @@ pub(crate) fn draw_provider_select(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
         .split(area);
 
-    let provider_pane_focused = app.provider_select_pane == ProviderSelectPane::Providers;
-    let model_pane_focused = app.provider_select_pane == ProviderSelectPane::Models;
+    let provider_pane_focused = app.provider.select_pane == ProviderSelectPane::Providers;
+    let model_pane_focused = app.provider.select_pane == ProviderSelectPane::Models;
 
     let items: Vec<ListItem> = app
-        .providers
+        .provider
+        .list
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let marker = if i == app.provider_select_idx {
+            let marker = if i == app.provider.select_idx {
                 "▸ "
             } else {
                 "  "
             };
-            let style = if i == app.provider_select_idx {
+            let style = if i == app.provider.select_idx {
                 let base = if provider_pane_focused {
                     theme::accent(mode)
                 } else {
@@ -101,16 +102,16 @@ pub(crate) fn draw_provider_select(frame: &mut Frame, app: &App) {
     );
     frame.render_widget(list, chunks[0]);
 
-    let selected = app.providers.get(app.provider_select_idx);
+    let selected = app.provider.list.get(app.provider.select_idx);
     let selected_provider_name = selected
         .map(|provider| provider.name.as_str())
         .unwrap_or("unknown");
     let selected_model = app.selected_provider_model().unwrap_or_else(|| {
-        if selected_provider_name.eq_ignore_ascii_case(&app.provider_name)
-            && !app.model_name.trim().is_empty()
-            && app.model_name != "unknown"
+        if selected_provider_name.eq_ignore_ascii_case(&app.provider.name)
+            && !app.provider.model.trim().is_empty()
+            && app.provider.model != "unknown"
         {
-            app.model_name.clone()
+            app.provider.model.clone()
         } else {
             "default".to_string()
         }
@@ -173,7 +174,7 @@ pub(crate) fn draw_provider_select(frame: &mut Frame, app: &App) {
         ]),
     ];
 
-    if selected_provider_name.eq_ignore_ascii_case(&app.provider_name) {
+    if selected_provider_name.eq_ignore_ascii_case(&app.provider.name) {
         detail_lines.push(Line::from(Span::styled(
             "This is the provider active in the current session.",
             Style::default().fg(theme::success(mode)),

@@ -341,11 +341,11 @@ pub(super) fn handle_slash_command(
                 let provider = value
                     .get("name")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(app.provider_name.as_str());
+                    .unwrap_or(app.provider.name.as_str());
                 let model = value
                     .get("model")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(app.model_name.as_str());
+                    .unwrap_or(app.provider.model.as_str());
                 let caps = value.get("capabilities").unwrap_or(&Value::Null);
                 let streaming = bool_icon(caps.get("streaming").and_then(|v| v.as_bool()));
                 let function_calling =
@@ -603,10 +603,10 @@ Config File: {}\n\
 Version: v{}",
                     cfg.get("provider")
                         .and_then(|v| v.as_str())
-                        .unwrap_or(app.provider_name.as_str()),
+                        .unwrap_or(app.provider.name.as_str()),
                     cfg.get("model")
                         .and_then(|v| v.as_str())
-                        .unwrap_or(app.model_name.as_str()),
+                        .unwrap_or(app.provider.model.as_str()),
                     cfg.get("theme")
                         .and_then(|v| v.as_str())
                         .unwrap_or(app.theme_mode.as_str()),
@@ -920,11 +920,11 @@ Version: v{}",
                 let provider = value
                     .get("name")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(app.provider_name.as_str());
+                    .unwrap_or(app.provider.name.as_str());
                 let model = value
                     .get("model")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(app.model_name.as_str());
+                    .unwrap_or(app.provider.model.as_str());
                 let caps = value.get("capabilities").unwrap_or(&Value::Null);
                 let streaming = bool_icon(caps.get("streaming").and_then(|v| v.as_bool()));
                 let function_calling =
@@ -4612,8 +4612,8 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/cost" {
-        let provider = app.provider_name.to_lowercase();
-        let model = app.model_name.to_lowercase();
+        let provider = app.provider.name.to_lowercase();
+        let model = app.provider.model.to_lowercase();
 
         let (input_per_million, output_per_million) =
             if provider == "gemini" || provider == "ollama" {
@@ -4667,8 +4667,8 @@ Total: **${:.4}**",
             in_tokens as u64,
             app.output_chars,
             out_tokens as u64,
-            app.provider_name,
-            app.model_name,
+            app.provider.name,
+            app.provider.model,
             input_cost,
             output_cost,
             total
