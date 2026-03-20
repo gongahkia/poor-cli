@@ -1453,6 +1453,65 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/gc" {
+        match rpc_gc_checkpoints_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("Checkpoint GC complete:\n{msg}"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("GC failed: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/mcp-health" {
+        match rpc_mcp_health_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("MCP Health Check:\n{msg}"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("MCP health check failed: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/ollama-models" {
+        match rpc_list_ollama_models_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let models = payload.get("models")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|m| m.as_str()).collect::<Vec<_>>().join("\n  "))
+                    .unwrap_or_else(|| "(none)".to_string());
+                show_command_info_popup(app, raw, format!("Ollama Models:\n  {models}"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to list Ollama models: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/save-session" {
+        match rpc_save_session_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+                show_command_info_popup(app, raw, format!("Session saved to:\n{path}"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to save session: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/restore-session" {
+        match rpc_restore_session_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let restored = payload.get("restored").and_then(|v| v.as_bool()).unwrap_or(false);
+                let msg = if restored { "Session restored successfully." } else { "No saved session found to restore." };
+                show_command_info_popup(app, raw, msg.to_string());
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to restore session: {e}"))),
+        }
+        return false;
+    }
+
     if lowered == "/policy" || lowered.starts_with("/policy ") {
         match rpc_get_policy_status_blocking(rpc_cmd_tx) {
             Ok(payload) => show_command_info_popup(app, raw, format_policy_status(&payload)),

@@ -797,21 +797,22 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
             }
         }
     }
-    // status text
+    // loading bar + animated status text
     let status_y = area.y + area.height - 3;
     let bar_x = inner.x;
+    let bar_y = area.y + area.height - 2;
+    let bar_width = inner.width.saturating_sub(6);
+    const ANIM_DURATION_MS: f64 = 4000.0;
+    let anim_progress = (elapsed / ANIM_DURATION_MS).min(1.0);
+    // render status text with numbers counting up from 0
     let status = &app.graph_overlay.status_text;
     if !status.is_empty() && status_y > inner.y {
         let max_w = inner.width as usize;
-        let s = if status.len() > max_w { &status[..max_w] } else { status.as_str() };
+        let animated = interpolate_numbers(status, anim_progress);
+        let s = if animated.len() > max_w { &animated[..max_w] } else { animated.as_str() };
         buf.set_string(bar_x, status_y, s, Style::default().fg(theme::muted_fg(mode)));
     }
-    // loading bar: fills in sync with node reveal (always completes together)
-    let bar_y = area.y + area.height - 2;
-    let bar_width = inner.width.saturating_sub(6);
     if bar_width > 0 {
-        const ANIM_DURATION_MS: f64 = 4000.0;
-        let anim_progress = (elapsed / ANIM_DURATION_MS).min(1.0);
         let visual_pct = anim_progress * 100.0;
         let filled = ((bar_width as f64 * anim_progress) as u16).min(bar_width);
         let bar: String = "█".repeat(filled as usize) + &"░".repeat((bar_width - filled) as usize);
