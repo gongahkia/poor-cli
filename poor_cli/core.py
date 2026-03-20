@@ -157,12 +157,19 @@ class CoreEvent:
 
     @staticmethod
     def cost_update(input_tokens: int = 0, output_tokens: int = 0, estimated_cost: float = 0.0,
-                    cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0) -> "CoreEvent":
+                    cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0,
+                    is_estimate: bool = False,
+                    cumulative_input_tokens: int = 0, cumulative_output_tokens: int = 0) -> "CoreEvent":
         data = {"inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost}
         if cache_creation_input_tokens:
             data["cacheCreationInputTokens"] = cache_creation_input_tokens
         if cache_read_input_tokens:
             data["cacheReadInputTokens"] = cache_read_input_tokens
+        if is_estimate:
+            data["isEstimate"] = True
+        if cumulative_input_tokens or cumulative_output_tokens:
+            data["cumulativeInputTokens"] = cumulative_input_tokens
+            data["cumulativeOutputTokens"] = cumulative_output_tokens
         return CoreEvent(type="cost_update", data=data)
 
     @staticmethod
@@ -1573,7 +1580,19 @@ class PoorCLICore:
                     return
 
                 if chunk.function_calls:
-                    if chunk.metadata:
+                    # extract usage from structured UsageMetadata or metadata dict
+                    u = chunk.usage
+                    if u:
+                        self._track_cost(u.input_tokens, u.output_tokens)
+                        yield CoreEvent.cost_update(
+                            input_tokens=u.input_tokens,
+                            output_tokens=u.output_tokens,
+                            cache_creation_input_tokens=u.cache_creation_input_tokens,
+                            cache_read_input_tokens=u.cache_read_input_tokens,
+                            cumulative_input_tokens=self._session_total_input_tokens,
+                            cumulative_output_tokens=self._session_total_output_tokens,
+                        )
+                    elif chunk.metadata:
                         usage = chunk.metadata.get("usage", {})
                         if usage:
                             self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
@@ -1582,6 +1601,8 @@ class PoorCLICore:
                                 output_tokens=usage.get("output_tokens", 0),
                                 cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
                                 cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
+                                cumulative_input_tokens=self._session_total_input_tokens,
+                                cumulative_output_tokens=self._session_total_output_tokens,
                             )
 
                     tool_results = await self._handle_function_calls_events(
@@ -1673,6 +1694,14 @@ class PoorCLICore:
                     if chunk.content:
                         accumulated_text += chunk.content
                         yield CoreEvent.text_chunk(chunk.content, request_id)
+                        # live estimated token count per chunk
+                        est_out = len(accumulated_text) // 4
+                        yield CoreEvent.cost_update(
+                            output_tokens=est_out,
+                            is_estimate=True,
+                            cumulative_input_tokens=self._session_total_input_tokens,
+                            cumulative_output_tokens=self._session_total_output_tokens + est_out,
+                        )
 
             accumulated_text, confidence_suffix = self._ensure_confidence_line(accumulated_text)
             if confidence_suffix:
@@ -1767,10 +1796,14 @@ class PoorCLICore:
     ) -> Tuple["ProviderResponse", List["CoreEvent"]]:
         """Stream a provider call, collecting events and building a response."""
         accumulated_text = ""
+        accumulated_chars = 0
         function_calls: Optional[List[FunctionCall]] = None
         metadata: Dict[str, Any] = {}
         events: List[CoreEvent] = []
+        last_usage: Optional[UsageMetadata] = None
         async for chunk in self.provider.send_message_stream(message):
+            if chunk.usage:
+                last_usage = chunk.usage
             if chunk.function_calls:
                 function_calls = chunk.function_calls
                 if chunk.metadata:
@@ -1781,17 +1814,53 @@ class PoorCLICore:
                     events.append(CoreEvent.thinking_chunk(thinking, request_id))
                 if chunk.content:
                     accumulated_text += chunk.content
+                    accumulated_chars += len(chunk.content)
                     events.append(CoreEvent.text_chunk(chunk.content, request_id))
-        if metadata:
+                    # emit live estimated cost per chunk (chars/4 heuristic)
+                    est_output = accumulated_chars // 4
+                    events.append(CoreEvent.cost_update(
+                        output_tokens=est_output,
+                        is_estimate=True,
+                        cumulative_input_tokens=self._session_total_input_tokens,
+                        cumulative_output_tokens=self._session_total_output_tokens + est_output,
+                    ))
+        # reconcile with actual usage at stream end
+        actual_in = 0
+        actual_out = 0
+        cache_create = 0
+        cache_read = 0
+        if last_usage:
+            actual_in = last_usage.input_tokens
+            actual_out = last_usage.output_tokens
+            cache_create = last_usage.cache_creation_input_tokens
+            cache_read = last_usage.cache_read_input_tokens
+        if not actual_in and not actual_out and metadata:
             usage = metadata.get("usage", {})
             if usage:
-                self._track_cost(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
-                events.append(CoreEvent.cost_update(
-                    input_tokens=usage.get("input_tokens", 0),
-                    output_tokens=usage.get("output_tokens", 0),
-                    cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
-                    cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
-                ))
+                actual_in = usage.get("input_tokens", 0)
+                actual_out = usage.get("output_tokens", 0)
+                cache_create = usage.get("cache_creation_input_tokens", 0)
+                cache_read = usage.get("cache_read_input_tokens", 0)
+        if actual_in or actual_out:
+            self._track_cost(actual_in, actual_out)
+            events.append(CoreEvent.cost_update(
+                input_tokens=actual_in,
+                output_tokens=actual_out,
+                cache_creation_input_tokens=cache_create,
+                cache_read_input_tokens=cache_read,
+                cumulative_input_tokens=self._session_total_input_tokens,
+                cumulative_output_tokens=self._session_total_output_tokens,
+            ))
+        elif accumulated_chars > 0:
+            # no actual usage available, finalize with estimate
+            est_output = accumulated_chars // 4
+            self._track_cost(0, est_output)
+            events.append(CoreEvent.cost_update(
+                output_tokens=est_output,
+                is_estimate=True,
+                cumulative_input_tokens=self._session_total_input_tokens,
+                cumulative_output_tokens=self._session_total_output_tokens,
+            ))
         response = ProviderResponse(
             content=accumulated_text,
             function_calls=function_calls,

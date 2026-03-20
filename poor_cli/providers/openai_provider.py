@@ -153,7 +153,8 @@ class OpenAIProvider(BaseProvider):
             request_params = {
                 "model": self.model_name,
                 "messages": self.messages,
-                "stream": True
+                "stream": True,
+                "stream_options": {"include_usage": True},
             }
 
             if self.tools:
@@ -163,8 +164,18 @@ class OpenAIProvider(BaseProvider):
             # Stream response
             accumulated_content = ""
             accumulated_tool_calls = {}
+            stream_usage = None
 
             async for chunk in await self.client.chat.completions.create(**request_params):
+                # capture usage from final chunk (stream_options include_usage)
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    stream_usage = UsageMetadata(
+                        input_tokens=chunk.usage.prompt_tokens or 0,
+                        output_tokens=chunk.usage.completion_tokens or 0,
+                        total_tokens=chunk.usage.total_tokens or 0,
+                        prompt_tokens=chunk.usage.prompt_tokens or 0,
+                        completion_tokens=chunk.usage.completion_tokens or 0,
+                    )
                 if chunk.choices:
                     delta = chunk.choices[0].delta
 
@@ -231,11 +242,27 @@ class OpenAIProvider(BaseProvider):
                 assistant_message["tool_calls"] = tool_calls_list
 
                 # Yield final response with tool calls so the agentic loop can execute them
+                usage_meta = None
+                if stream_usage:
+                    usage_meta = {
+                        "input_tokens": stream_usage.input_tokens,
+                        "output_tokens": stream_usage.output_tokens,
+                    }
                 yield ProviderResponse(
                     content=accumulated_content,
                     role="assistant",
                     function_calls=function_calls,
-                    metadata={"is_chunk": False},
+                    metadata={"is_chunk": False, "usage": usage_meta} if usage_meta else {"is_chunk": False},
+                    usage=stream_usage,
+                )
+
+            elif stream_usage:
+                # no tool calls but we have usage — yield final with usage
+                yield ProviderResponse(
+                    content="",
+                    role="assistant",
+                    metadata={"usage": {"input_tokens": stream_usage.input_tokens, "output_tokens": stream_usage.output_tokens}},
+                    usage=stream_usage,
                 )
 
             self.messages.append(assistant_message)

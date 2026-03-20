@@ -240,7 +240,8 @@ class AnthropicProvider(BaseProvider):
                     "text": accumulated_content
                 })
 
-            # Add tool uses from final message
+            # Build function calls and tool uses from final message
+            final_function_calls = []
             if hasattr(final_message, 'content'):
                 for block in final_message.content:
                     if hasattr(block, 'type') and block.type == "tool_use":
@@ -250,8 +251,38 @@ class AnthropicProvider(BaseProvider):
                             "name": block.name,
                             "input": block.input
                         })
+                        final_function_calls.append(FunctionCall(
+                            id=block.id, name=block.name,
+                            arguments=block.input if hasattr(block, 'input') else {},
+                        ))
 
             self.messages.append(assistant_message)
+
+            # yield final response with actual usage and tool calls
+            final_usage = None
+            final_usage_meta = None
+            if hasattr(final_message, 'usage') and final_message.usage:
+                cache_creation = getattr(final_message.usage, "cache_creation_input_tokens", 0) or 0
+                cache_read = getattr(final_message.usage, "cache_read_input_tokens", 0) or 0
+                final_usage = UsageMetadata(
+                    input_tokens=final_message.usage.input_tokens,
+                    output_tokens=final_message.usage.output_tokens,
+                    cache_creation_input_tokens=cache_creation,
+                    cache_read_input_tokens=cache_read,
+                )
+                final_usage_meta = {
+                    "input_tokens": final_message.usage.input_tokens,
+                    "output_tokens": final_message.usage.output_tokens,
+                    "cache_creation_input_tokens": cache_creation,
+                    "cache_read_input_tokens": cache_read,
+                }
+            yield ProviderResponse(
+                content=accumulated_content,
+                role="assistant",
+                function_calls=final_function_calls if final_function_calls else None,
+                metadata={"usage": final_usage_meta} if final_usage_meta else {},
+                usage=final_usage,
+            )
 
         except Exception as e:
             logger.error(f"Anthropic streaming error: {e}")
