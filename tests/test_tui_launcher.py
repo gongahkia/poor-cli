@@ -96,6 +96,25 @@ class TuiLauncherTests(unittest.TestCase):
                 packaged_binary.resolve(),
             )
 
+    def test_inspect_tui_installation_reports_repo_script_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package_root = root / "poor_cli"
+            repo_root = root / "repo"
+            run_tui_script = repo_root / "run_tui.sh"
+            _make_executable(run_tui_script)
+
+            with mock.patch.object(tui_launcher, "_package_root", return_value=package_root), mock.patch.object(
+                tui_launcher, "repo_root", return_value=repo_root
+            ), mock.patch("shutil.which", return_value=None), mock.patch.dict(os.environ, {}, clear=False):
+                payload = tui_launcher.inspect_tui_installation()
+
+            self.assertEqual(payload["selectedLauncher"]["source"], "repo-script")
+            self.assertEqual(
+                Path(payload["selectedLauncher"]["path"]).resolve(),
+                run_tui_script.resolve(),
+            )
+
     def test_run_install_info_mode_renders_human_and_json_output(self) -> None:
         payload = {
             "version": "1.2.3",

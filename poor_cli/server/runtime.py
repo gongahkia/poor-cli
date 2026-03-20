@@ -53,6 +53,7 @@ from ..exceptions import (
     set_log_context,
     setup_logger,
 )
+from ..provider_catalog import common_models_for_provider
 from .types import JsonRpcMessage, JsonRpcError, InvalidParamsError, ManagedServiceRuntime
 from .error_formatter import _sanitize_exception_message
 from .transport import StdioTransport
@@ -247,6 +248,15 @@ class PoorCLIServer:
         )
         return payload
 
+    async def _emit_collaboration_event(self, action: str, payload: Dict[str, Any]) -> None:
+        await self.core._emit_policy_hooks(
+            "collaboration_event",
+            {
+                "action": action,
+                **payload,
+            },
+        )
+
     def _status_view_payload(self) -> Dict[str, Any]:
         payload = self.core.build_status_view()
         payload["collaboration"] = self._collaboration_status_payload()
@@ -310,6 +320,20 @@ class PoorCLIServer:
         config_path = str(raw_execution.get("configPath", "") or "").strip()
         if config_path:
             execution["configPath"] = config_path
+
+        execution_mode = str(raw_execution.get("executionMode", "") or "").strip().lower()
+        if execution_mode:
+            if execution_mode not in {"worktree", "local"}:
+                raise InvalidParamsError("execution.executionMode must be `worktree` or `local`")
+            execution["executionMode"] = execution_mode
+
+        reasoning_effort = str(raw_execution.get("reasoningEffort", "") or "").strip().lower()
+        if reasoning_effort:
+            if reasoning_effort not in {"low", "medium", "high"}:
+                raise InvalidParamsError(
+                    "execution.reasoningEffort must be `low`, `medium`, or `high`"
+                )
+            execution["reasoningEffort"] = reasoning_effort
 
         context_files = self._normalize_string_list(
             raw_execution.get("contextFiles"),
@@ -1249,13 +1273,11 @@ class PoorCLIServer:
             dependency_available = bool(info.get("available", True))
             # Provide default model suggestions per provider
             model_suggestions: Dict[str, list] = {
-                "gemini": ["gemini-2.0-flash", "gemini-1.5-pro"],
-                "openai": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
-                "anthropic": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
-                "claude": ["claude-sonnet-4-20250514", "claude-3-haiku-20240307"],
-                "ollama": ollama_models
-                if ollama_models
-                else ["llama3", "codellama", "mistral", "phi3"],
+                "gemini": common_models_for_provider("gemini"),
+                "openai": common_models_for_provider("openai"),
+                "anthropic": common_models_for_provider("anthropic"),
+                "claude": common_models_for_provider("anthropic"),
+                "ollama": ollama_models if ollama_models else common_models_for_provider("ollama"),
             }
             if provider_key == "ollama":
                 ready = ollama_ready
@@ -3202,7 +3224,17 @@ class PoorCLIServer:
             self._host_rooms = rooms
             self._host_ngrok_enabled = enable_ngrok
 
-            return self._compose_host_server_payload(created=True, stopped=False)
+            payload = self._compose_host_server_payload(created=True, stopped=False)
+            await self._emit_collaboration_event(
+                "host_started",
+                {
+                    "rooms": rooms,
+                    "bindHost": bind_host,
+                    "port": port,
+                    "shareSignalingUrl": self._host_share_signaling_url,
+                },
+            )
+            return payload
 
     async def handle_get_host_server_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return current in-process multiplayer host status."""
@@ -3224,8 +3256,17 @@ class PoorCLIServer:
         self._ensure_initialized()
         self._ensure_host_controls_available()
         async with self._get_host_server_lock():
+            active_rooms = list(self._host_rooms)
             was_running = await self._shutdown_host_server_locked()
-            return self._compose_host_server_payload(created=False, stopped=was_running)
+            payload = self._compose_host_server_payload(created=False, stopped=was_running)
+            if was_running:
+                await self._emit_collaboration_event(
+                    "host_stopped",
+                    {
+                        "rooms": active_rooms,
+                    },
+                )
+            return payload
 
     def _host_room_names_locked(self) -> List[str]:
         """Return active host room names (call while holding host lock)."""
@@ -3765,12 +3806,21 @@ class PoorCLIServer:
             agenda_summary = {}
             if room_payload and isinstance(room_payload, list):
                 agenda_summary = dict(room_payload[0].get("agendaSummary", {}) or {})
-            return {
+            payload = {
                 "success": True,
                 "room": room_name,
                 "item": item,
                 "agendaSummary": agenda_summary,
             }
+            await self._emit_collaboration_event(
+                "agenda_added",
+                {
+                    "room": room_name,
+                    "itemId": str(item.get("itemId", "")) if isinstance(item, dict) else "",
+                    "text": text,
+                },
+            )
+            return payload
 
     async def handle_list_agenda(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self._ensure_initialized()
@@ -3822,12 +3872,20 @@ class PoorCLIServer:
                 room_payload = host.list_room_members(room_name)
                 if room_payload and isinstance(room_payload, list):
                     agenda_summary = dict(room_payload[0].get("agendaSummary", {}) or {})
-            return {
+            payload = {
                 "success": True,
                 "room": room_name,
                 "item": item,
                 "agendaSummary": agenda_summary,
             }
+            await self._emit_collaboration_event(
+                "agenda_resolved",
+                {
+                    "room": room_name,
+                    "itemId": item_id,
+                },
+            )
+            return payload
 
     async def handle_set_hand_raised(self, params: Dict[str, Any]) -> Dict[str, Any]:
         self._ensure_initialized()
@@ -4733,4 +4791,3 @@ class StreamingJsonRpcServer(PoorCLIServer):
 # =============================================================================
 # Main Entry Point
 # =============================================================================
-

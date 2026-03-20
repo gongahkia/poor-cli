@@ -223,6 +223,22 @@ fn format_policy_status(payload: &Value) -> String {
         .pointer("/audit/path")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let validation_errors = payload
+        .pointer("/hooks/validationErrors")
+        .and_then(|v| v.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    let supported_schema_versions = payload
+        .pointer("/hooks/supportedSchemaVersions")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter()
+                .filter_map(|item| item.as_u64())
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
 
     let mut lines = vec![
         "**Policy Status**".to_string(),
@@ -238,6 +254,12 @@ fn format_policy_status(payload: &Value) -> String {
             }
         ),
     ];
+    if !supported_schema_versions.is_empty() {
+        lines.push(format!("- Supported schema versions: {supported_schema_versions}"));
+    }
+    if validation_errors > 0 {
+        lines.push(format!("- Validation errors: {validation_errors}"));
+    }
 
     if let Some(events) = payload.pointer("/hooks/events").and_then(|v| v.as_object()) {
         for (event, entries) in events {
@@ -249,7 +271,7 @@ fn format_policy_status(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_task_list(payload: &Value, title: &str) -> String {
+pub(crate) fn format_task_list(payload: &Value, title: &str) -> String {
     let tasks = payload
         .get("tasks")
         .and_then(|value| value.as_array())
@@ -285,7 +307,72 @@ fn format_task_list(payload: &Value, title: &str) -> String {
     lines.join("\n")
 }
 
-fn format_task_detail(payload: &Value) -> String {
+pub(crate) fn format_automation_list(payload: &Value, title: &str) -> String {
+    let automations = payload
+        .get("automations")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if automations.is_empty() {
+        return format!("{title}\n\nNo automations found.");
+    }
+
+    let mut lines = vec![format!("{title}\n")];
+    for automation in automations {
+        let automation_id = automation
+            .get("automationId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(unknown)");
+        let name = automation
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("(unnamed)");
+        let enabled = automation
+            .get("enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let next_run = automation
+            .get("nextRunAt")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let last_status = automation
+            .get("lastRunStatus")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        lines.push(format!(
+            "- `{automation_id}` [{}] {}",
+            if enabled { "enabled" } else { "disabled" },
+            name
+        ));
+        if !next_run.is_empty() {
+            lines.push(format!("  next: {next_run}"));
+        }
+        if !last_status.is_empty() {
+            let last_run_id = automation
+                .get("lastRunId")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if last_run_id.is_empty() {
+                lines.push(format!("  last run: `{last_status}`"));
+            } else {
+                lines.push(format!("  last run: `{last_status}` via `{last_run_id}`"));
+            }
+        }
+        if let Some(summary) = automation.get("lastRunSummary").and_then(|value| value.as_str()) {
+            if !summary.is_empty() {
+                lines.push(format!("  {}", truncate_line(summary, 160)));
+            }
+        }
+        if let Some(error) = automation.get("lastRunError").and_then(|value| value.as_str()) {
+            if !error.is_empty() {
+                lines.push(format!("  failure: {}", truncate_line(error, 160)));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn format_task_detail(payload: &Value) -> String {
     let task = payload.get("task").unwrap_or(payload);
     let task_id = task
         .get("taskId")
@@ -357,7 +444,7 @@ fn format_task_detail(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_runs_payload(payload: &Value, title: &str) -> String {
+pub(crate) fn format_runs_payload(payload: &Value, title: &str) -> String {
     let runs = payload
         .get("runs")
         .or_else(|| payload.get("recent"))
@@ -394,7 +481,9 @@ fn format_runs_payload(payload: &Value, title: &str) -> String {
             .get("errorClass")
             .and_then(|value| value.as_str())
             .unwrap_or("");
-        lines.push(format!("- `{run_id}` [{status}] `{source_kind}/{source_id}`"));
+        lines.push(format!(
+            "- `{run_id}` [{status}] `{source_kind}/{source_id}`"
+        ));
         if !summary.is_empty() {
             lines.push(format!("  {}", truncate_line(summary, 180)));
         }
@@ -405,7 +494,7 @@ fn format_runs_payload(payload: &Value, title: &str) -> String {
     lines.join("\n")
 }
 
-fn format_workflows_payload(payload: &Value) -> String {
+pub(crate) fn format_workflows_payload(payload: &Value) -> String {
     let workflows = payload
         .get("workflows")
         .and_then(|value| value.as_array())
@@ -429,7 +518,11 @@ fn format_workflows_payload(payload: &Value) -> String {
             .get("description")
             .and_then(|value| value.as_str())
             .unwrap_or("");
-        let marker = if name == recommended { " (recommended)" } else { "" };
+        let marker = if name == recommended {
+            " (recommended)"
+        } else {
+            ""
+        };
         lines.push(format!("- `{name}`{marker}: {description}"));
     }
     lines.push(String::new());
@@ -437,7 +530,7 @@ fn format_workflows_payload(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_workflow_detail(payload: &Value) -> String {
+pub(crate) fn format_workflow_detail(payload: &Value) -> String {
     let workflow = payload.get("workflow").unwrap_or(payload);
     let name = workflow
         .get("name")
@@ -467,7 +560,8 @@ fn format_workflow_detail(payload: &Value) -> String {
         .get("followUpCommands")
         .and_then(|value| value.as_array())
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(|item| item.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -496,7 +590,7 @@ fn format_workflow_detail(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_collab_summary_payload(payload: &Value) -> String {
+pub(crate) fn format_collab_summary_payload(payload: &Value) -> String {
     let collab = payload.get("collaboration").unwrap_or(payload);
     let running = collab
         .get("running")
@@ -549,7 +643,7 @@ fn format_collab_summary_payload(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_status_view_payload(
+pub(crate) fn format_status_view_payload(
     payload: &Value,
     app: &App,
     watch_state: &WatchState,
@@ -557,10 +651,14 @@ fn format_status_view_payload(
 ) -> String {
     let session = payload.get("session").unwrap_or(&Value::Null);
     let provider = payload.pointer("/provider/active").unwrap_or(&Value::Null);
-    let context = payload.pointer("/context/lastPreview").unwrap_or(&Value::Null);
+    let context = payload
+        .pointer("/context/lastPreview")
+        .unwrap_or(&Value::Null);
     let runs = payload.pointer("/runs/recent").unwrap_or(&Value::Null);
     let collab = payload.get("collaboration").unwrap_or(&Value::Null);
-    let mutation = payload.pointer("/recovery/lastMutation").unwrap_or(&Value::Null);
+    let mutation = payload
+        .pointer("/recovery/lastMutation")
+        .unwrap_or(&Value::Null);
     let recent_run_id = runs
         .as_array()
         .and_then(|items| items.first())
@@ -634,17 +732,25 @@ fn format_status_view_payload(
     lines.join("\n")
 }
 
-fn format_trust_view_payload(payload: &Value) -> String {
+pub(crate) fn format_trust_view_payload(payload: &Value) -> String {
     let trust = payload.get("trust").unwrap_or(&Value::Null);
     let provider = payload.pointer("/provider/active").unwrap_or(&Value::Null);
-    let readiness = payload.pointer("/provider/readiness").unwrap_or(&Value::Null);
+    let readiness = payload
+        .pointer("/provider/readiness")
+        .unwrap_or(&Value::Null);
     let recovery = payload.get("recovery").unwrap_or(&Value::Null);
     let mut lines = vec![
         "**Trust Center**".to_string(),
         format!(
             "- Provider: `{}/{}`",
-            provider.get("name").and_then(|value| value.as_str()).unwrap_or("-"),
-            provider.get("model").and_then(|value| value.as_str()).unwrap_or("-")
+            provider
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("-"),
+            provider
+                .get("model")
+                .and_then(|value| value.as_str())
+                .unwrap_or("-")
         ),
         format!(
             "- Routing mode: `{}`",
@@ -682,29 +788,62 @@ fn format_trust_view_payload(payload: &Value) -> String {
                 .unwrap_or("unknown")
         ),
     ];
-    if let Some(fallback_to) = payload.pointer("/provider/fallback/to").and_then(|value| value.as_str()) {
+    if let Some(fallback_to) = payload
+        .pointer("/provider/fallback/to")
+        .and_then(|value| value.as_str())
+    {
         if !fallback_to.is_empty() {
             lines.push(format!("- Fallback target: `{fallback_to}`"));
         }
     }
-    if let Some(last_error) = payload.pointer("/provider/lastError").and_then(|value| value.as_str()) {
+    if let Some(last_error) = payload
+        .pointer("/provider/lastError")
+        .and_then(|value| value.as_str())
+    {
         if !last_error.is_empty() {
-            lines.push(format!("- Last provider error: {}", truncate_line(last_error, 180)));
+            lines.push(format!(
+                "- Last provider error: {}",
+                truncate_line(last_error, 180)
+            ));
         }
     }
-    if let Some(roots) = trust.pointer("/security/trustedRoots").and_then(|value| value.as_array()) {
+    if let Some(roots) = trust
+        .pointer("/security/trustedRoots")
+        .and_then(|value| value.as_array())
+    {
         if !roots.is_empty() {
             lines.push(format!("- Trusted roots: {}", roots.len()));
         }
     }
+    let hook_total = trust
+        .pointer("/policy/hooks/totalHooks")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    lines.push(format!("- Policy hooks: {hook_total}"));
+    let hook_validation_errors = trust
+        .pointer("/policy/hooks/validationErrors")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len())
+        .unwrap_or(0);
+    if hook_validation_errors > 0 {
+        lines.push(format!("- Hook validation errors: {hook_validation_errors}"));
+    }
     if let Some(obj) = readiness.as_object() {
         let ready_count = obj
             .values()
-            .filter(|entry| entry.get("ready").and_then(|value| value.as_bool()).unwrap_or(false))
+            .filter(|entry| {
+                entry
+                    .get("ready")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+            })
             .count();
         lines.push(format!("- Ready providers: {ready_count}"));
     }
-    if let Some(checkpoint_id) = recovery.pointer("/lastMutation/checkpointId").and_then(|value| value.as_str()) {
+    if let Some(checkpoint_id) = recovery
+        .pointer("/lastMutation/checkpointId")
+        .and_then(|value| value.as_str())
+    {
         if !checkpoint_id.is_empty() {
             lines.push(format!("- Last rollback point: `{checkpoint_id}`"));
         }
@@ -712,7 +851,7 @@ fn format_trust_view_payload(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_doctor_report_payload(payload: &Value) -> String {
+pub(crate) fn format_doctor_report_payload(payload: &Value) -> String {
     let overall = payload
         .pointer("/summary/overall")
         .and_then(|value| value.as_str())
@@ -767,8 +906,13 @@ fn format_doctor_report_payload(payload: &Value) -> String {
     lines.join("\n")
 }
 
-fn format_setup_guide_payload(trust_payload: &Value, workflows_payload: &Value) -> String {
-    let provider_readiness = trust_payload.pointer("/provider/readiness").unwrap_or(&Value::Null);
+pub(crate) fn format_setup_guide_payload(
+    trust_payload: &Value,
+    workflows_payload: &Value,
+) -> String {
+    let provider_readiness = trust_payload
+        .pointer("/provider/readiness")
+        .unwrap_or(&Value::Null);
     let recommended_workflow = workflows_payload
         .get("recommended")
         .and_then(|value| value.as_str())
@@ -786,7 +930,12 @@ fn format_setup_guide_payload(trust_payload: &Value, workflows_payload: &Value) 
         .map(|items| {
             items
                 .values()
-                .filter(|entry| entry.get("ready").and_then(|value| value.as_bool()).unwrap_or(false))
+                .filter(|entry| {
+                    entry
+                        .get("ready")
+                        .and_then(|value| value.as_bool())
+                        .unwrap_or(false)
+                })
                 .count()
         })
         .unwrap_or(0);
@@ -1183,21 +1332,8 @@ pub(super) fn handle_slash_command(
     }
 
     if lowered == "/setup" {
-        match (
-            rpc_get_trust_view_blocking(rpc_cmd_tx),
-            rpc_list_workflows_blocking(rpc_cmd_tx),
-        ) {
-            (Ok(trust_payload), Ok(workflows_payload)) => show_command_info_popup(
-                app,
-                raw,
-                format_setup_guide_payload(&trust_payload, &workflows_payload),
-            ),
-            (Err(error), _) | (_, Err(error)) => show_command_info_popup(
-                app,
-                raw,
-                format!("Failed to load setup guide: {error}"),
-            ),
-        }
+        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Setup);
+        app.set_status("Opened Setup workspace");
         return false;
     }
 
@@ -2110,7 +2246,9 @@ Context Window: {max_context} tokens\n\n\
 
     if lowered == "/doctor" {
         match rpc_get_doctor_report_blocking(rpc_cmd_tx) {
-            Ok(payload) => show_command_info_popup(app, raw, format_doctor_report_payload(&payload)),
+            Ok(payload) => {
+                show_command_info_popup(app, raw, format_doctor_report_payload(&payload))
+            }
             Err(error) => {
                 show_command_info_popup(app, raw, format!("Failed to load doctor report: {error}"))
             }
@@ -2119,12 +2257,8 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/trust" {
-        match rpc_get_trust_view_blocking(rpc_cmd_tx) {
-            Ok(payload) => show_command_info_popup(app, raw, format_trust_view_payload(&payload)),
-            Err(error) => {
-                show_command_info_popup(app, raw, format!("Failed to load trust view: {error}"))
-            }
-        }
+        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Setup);
+        app.set_status("Opened Setup workspace");
         return false;
     }
 
@@ -2135,8 +2269,12 @@ Context Window: {max_context} tokens\n\n\
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(20);
         match rpc_list_runs_blocking(rpc_cmd_tx, None, None, limit) {
-            Ok(payload) => show_command_info_popup(app, raw, format_runs_payload(&payload, "**Runs**")),
-            Err(error) => show_command_info_popup(app, raw, format!("Failed to load runs: {error}")),
+            Ok(payload) => {
+                show_command_info_popup(app, raw, format_runs_payload(&payload, "**Runs**"))
+            }
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to load runs: {error}"))
+            }
         }
         return false;
     }
@@ -2146,12 +2284,12 @@ Context Window: {max_context} tokens\n\n\
         let selected = args.get(1).copied().unwrap_or("").trim();
         if selected.is_empty() {
             match rpc_list_workflows_blocking(rpc_cmd_tx) {
-                Ok(payload) => show_command_info_popup(app, raw, format_workflows_payload(&payload)),
-                Err(error) => show_command_info_popup(
-                    app,
-                    raw,
-                    format!("Failed to load workflows: {error}"),
-                ),
+                Ok(payload) => {
+                    show_command_info_popup(app, raw, format_workflows_payload(&payload))
+                }
+                Err(error) => {
+                    show_command_info_popup(app, raw, format!("Failed to load workflows: {error}"))
+                }
             }
         } else {
             match rpc_get_workflow_blocking(rpc_cmd_tx, selected) {
@@ -3069,14 +3207,8 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/inbox" {
-        match rpc_list_tasks_blocking(rpc_cmd_tx, true) {
-            Ok(payload) => {
-                show_command_info_popup(app, raw, format_task_list(&payload, "**Inbox**"))
-            }
-            Err(error) => {
-                show_command_info_popup(app, raw, format!("Failed to load inbox: {error}"))
-            }
-        }
+        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+        app.set_status("Opened Tasks workspace");
         return false;
     }
 
@@ -3093,14 +3225,8 @@ Context Window: {max_context} tokens\n\n\
             .trim()
             .to_ascii_lowercase();
         if subcommand == "list" {
-            match rpc_list_tasks_blocking(rpc_cmd_tx, false) {
-                Ok(payload) => {
-                    show_command_info_popup(app, raw, format_task_list(&payload, "**Tasks**"))
-                }
-                Err(error) => {
-                    show_command_info_popup(app, raw, format!("Failed to list tasks: {error}"))
-                }
-            }
+            activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+            app.set_status("Opened Tasks workspace");
             return false;
         }
         if subcommand == "open" || subcommand == "show" {
@@ -3144,7 +3270,10 @@ Context Window: {max_context} tokens\n\n\
                 auto_start,
                 requires_approval,
             ) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to create task: {error}"))
                 }
@@ -3158,7 +3287,10 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_approve_task_blocking(rpc_cmd_tx, task_id) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to approve task: {error}"))
                 }
@@ -3172,7 +3304,10 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_cancel_task_blocking(rpc_cmd_tx, task_id) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to cancel task: {error}"))
                 }
@@ -3186,7 +3321,10 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_retry_task_blocking(rpc_cmd_tx, task_id) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to retry task: {error}"))
                 }
@@ -3200,7 +3338,10 @@ Context Window: {max_context} tokens\n\n\
                 return false;
             }
             match rpc_replay_task_blocking(rpc_cmd_tx, task_id) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_detail(&payload)),
+                Ok(payload) => {
+                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
+                    show_command_info_popup(app, raw, format_task_detail(&payload))
+                }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to replay task: {error}"))
                 }
@@ -3238,9 +3379,11 @@ Context Window: {max_context} tokens\n\n\
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(20);
             match rpc_get_automation_history_blocking(rpc_cmd_tx, automation_id, limit) {
-                Ok(payload) => {
-                    show_command_info_popup(app, raw, format_runs_payload(&payload, "**Automation History**"))
-                }
+                Ok(payload) => show_command_info_popup(
+                    app,
+                    raw,
+                    format_runs_payload(&payload, "**Automation History**"),
+                ),
                 Err(error) => show_command_info_popup(
                     app,
                     raw,
@@ -5202,11 +5345,9 @@ Context Window: {max_context} tokens\n\n\
                 raw,
                 format_status_view_payload(&payload, app, watch_state, qa_watch_state),
             ),
-            Err(error) => show_command_info_popup(
-                app,
-                raw,
-                format!("Failed to load session status: {error}"),
-            ),
+            Err(error) => {
+                show_command_info_popup(app, raw, format!("Failed to load session status: {error}"))
+            }
         }
         return false;
     }

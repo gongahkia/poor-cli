@@ -1,5 +1,5 @@
 /// Input handling: keyboard events, slash-command completion, etc.
-use crate::app::{App, AppMode, ProviderSelectPane, QueuedPrompt, QuickOpenItem};
+use crate::app::{App, AppMode, AppWorkspace, ProviderSelectPane, QueuedPrompt, QuickOpenItem};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -47,6 +47,8 @@ pub enum InputAction {
     RestoreLastMutation,
     /// Open a file in the user's editor.
     OpenFileInEditor(String),
+    /// Switch to a primary workspace.
+    WorkspaceSelected(AppWorkspace),
 }
 
 pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
@@ -181,6 +183,16 @@ pub fn handle_event(app: &mut App, event: Event) -> InputAction {
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::F(1) => return InputAction::WorkspaceSelected(AppWorkspace::Chat),
+        KeyCode::F(2) => return InputAction::WorkspaceSelected(AppWorkspace::Review),
+        KeyCode::F(3) => return InputAction::WorkspaceSelected(AppWorkspace::Context),
+        KeyCode::F(4) => return InputAction::WorkspaceSelected(AppWorkspace::Tasks),
+        KeyCode::F(5) => return InputAction::WorkspaceSelected(AppWorkspace::Collaboration),
+        KeyCode::F(6) => return InputAction::WorkspaceSelected(AppWorkspace::Setup),
+        _ => {}
+    }
+
     // Global keybindings
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
@@ -1750,7 +1762,10 @@ mod tests {
             available: true,
             ready: true,
             status_label: "API key configured".to_string(),
-            models: vec!["gpt-4o".to_string(), "gpt-4-turbo".to_string()],
+            models: vec![
+                crate::provider_catalog::default_model("openai").to_string(),
+                "gpt-5-mini".to_string(),
+            ],
         }];
         app.open_provider_select();
 
@@ -1758,7 +1773,10 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.provider_select_pane, ProviderSelectPane::Models);
-        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            app.selected_provider_model().as_deref(),
+            Some(crate::provider_catalog::default_model("openai"))
+        );
     }
 
     #[test]
@@ -1770,9 +1788,9 @@ mod tests {
             ready: true,
             status_label: "API key configured".to_string(),
             models: vec![
-                "gpt-4o".to_string(),
-                "gpt-4-turbo".to_string(),
-                "gpt-3.5-turbo".to_string(),
+                crate::provider_catalog::default_model("openai").to_string(),
+                "gpt-5".to_string(),
+                "gpt-5-mini".to_string(),
             ],
         }];
         app.open_provider_select();
@@ -1780,14 +1798,14 @@ mod tests {
 
         let down = handle_key_provider_select(&mut app, key_down());
         assert!(matches!(down, InputAction::Redraw));
-        assert_eq!(
-            app.selected_provider_model().as_deref(),
-            Some("gpt-4-turbo")
-        );
+        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-5"));
 
         let up = handle_key_provider_select(&mut app, key_up());
         assert!(matches!(up, InputAction::Redraw));
-        assert_eq!(app.selected_provider_model().as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            app.selected_provider_model().as_deref(),
+            Some(crate::provider_catalog::default_model("openai"))
+        );
     }
 
     #[test]
@@ -1798,7 +1816,7 @@ mod tests {
             available: true,
             ready: true,
             status_label: "API key configured".to_string(),
-            models: vec!["gpt-4o".to_string()],
+            models: vec![crate::provider_catalog::default_model("openai").to_string()],
         }];
         app.open_provider_select();
         app.provider_select_pane = ProviderSelectPane::Models;
@@ -1807,6 +1825,65 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.provider_select_pane, ProviderSelectPane::Providers);
+    }
+
+    #[test]
+    fn function_keys_switch_primary_workspaces() {
+        let mut app = App::new();
+
+        let chat = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            chat,
+            InputAction::WorkspaceSelected(AppWorkspace::Chat)
+        ));
+
+        let review = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            review,
+            InputAction::WorkspaceSelected(AppWorkspace::Review)
+        ));
+
+        let context = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            context,
+            InputAction::WorkspaceSelected(AppWorkspace::Context)
+        ));
+
+        let tasks = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            tasks,
+            InputAction::WorkspaceSelected(AppWorkspace::Tasks)
+        ));
+
+        let collaboration = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            collaboration,
+            InputAction::WorkspaceSelected(AppWorkspace::Collaboration)
+        ));
+
+        let setup = handle_event(
+            &mut app,
+            Event::Key(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE)),
+        );
+        assert!(matches!(
+            setup,
+            InputAction::WorkspaceSelected(AppWorkspace::Setup)
+        ));
     }
 
     #[test]

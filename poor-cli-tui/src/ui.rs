@@ -20,7 +20,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::app::{
-    App, AppMode, MessageRole, ProviderSelectPane, ReviewDecisionState, ThemeMode,
+    App, AppMode, AppWorkspace, MessageRole, ProviderSelectPane, ReviewDecisionState, ThemeMode,
     TimelineEntryKind, TranscriptSearchItemKind,
 };
 use crate::input::{command_palette_matches, SlashCommandSpec};
@@ -51,6 +51,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if has_presence {
         constraints.push(Constraint::Length(1));
     }
+    constraints.push(Constraint::Length(1));
     constraints.push(Constraint::Min(5));
     constraints.push(Constraint::Length(activity_height));
     constraints.push(Constraint::Length(input_height));
@@ -65,7 +66,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         draw_presence_bar(frame, app, chunks[idx]);
         idx += 1;
     }
-    draw_chat_area(frame, app, chunks[idx]);
+    draw_workspace_bar(frame, app, chunks[idx]);
+    idx += 1;
+    draw_main_area(frame, app, chunks[idx]);
     idx += 1;
     if activity_height > 0 {
         draw_activity_bar(frame, app, chunks[idx]);
@@ -246,10 +249,7 @@ fn draw_activity_bar(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             format!("{} responding", app.thinking_frame())
         };
-        (
-            label,
-            format!("  {}  ·  Esc cancel", app.wait_elapsed()),
-        )
+        (label, format!("  {}  ·  Esc cancel", app.wait_elapsed()))
     } else {
         let queue_detail = if app.prompt_queue.is_empty() {
             "type to queue".to_string()
@@ -306,6 +306,36 @@ fn ellipsize_middle(value: &str, max_chars: usize) -> String {
 
 // ── Chat area ────────────────────────────────────────────────────────
 
+fn draw_main_area(frame: &mut Frame, app: &App, area: Rect) {
+    if app.active_workspace == AppWorkspace::Chat {
+        draw_chat_area(frame, app, area);
+    } else {
+        draw_workspace_panel(frame, app, area);
+    }
+}
+
+fn draw_workspace_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
+    let mut spans = vec![Span::styled("  ", Style::default())];
+    for (idx, workspace) in AppWorkspace::ALL.iter().enumerate() {
+        if idx > 0 {
+            spans.push(Span::styled("  ", Style::default()));
+        }
+        let is_active = *workspace == app.active_workspace;
+        let label = format!("{} {}", workspace.shortcut(), workspace.label());
+        let style = if is_active {
+            Style::default()
+                .fg(theme::accent(mode))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::muted_fg(mode))
+        };
+        spans.push(Span::styled(label, style));
+    }
+    let bar = Paragraph::new(Line::from(spans)).style(theme::footer_style(mode));
+    frame.render_widget(bar, area);
+}
+
 fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     if app.messages.is_empty() {
@@ -333,6 +363,27 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     let para = base_para.scroll((max_scroll.saturating_sub(effective_scroll), 0));
 
     frame.render_widget(para, area);
+}
+
+fn draw_workspace_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = app.theme_mode;
+    let title = format!(" {} Workspace ", app.active_workspace.label());
+    let body = app
+        .workspace_content()
+        .filter(|content| !content.trim().is_empty())
+        .unwrap_or("No workspace data loaded yet.");
+    let lines = markdown::render_markdown(body, mode);
+    let panel = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .style(theme::surface_style(mode))
+        .block(
+            Block::default()
+                .borders(Borders::TOP)
+                .title(Span::styled(title, theme::brand_style(mode)))
+                .style(theme::surface_style(mode))
+                .padding(Padding::new(1, 1, 0, 0)),
+        );
+    frame.render_widget(panel, area);
 }
 
 fn cached_chat_lines(app: &App, mode: ThemeMode) -> Vec<Line<'static>> {
@@ -1107,7 +1158,10 @@ fn draw_default_footer_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else if app.waiting || !app.prompt_queue.is_empty() {
         vec!["Tab to queue message".to_string()]
     } else if app.input_buffer.trim().is_empty() {
-        vec!["? for shortcuts".to_string()]
+        vec![
+            "F1-F6 switch workspaces".to_string(),
+            "? for shortcuts".to_string(),
+        ]
     } else {
         vec!["Shift+Enter for newline".to_string()]
     };

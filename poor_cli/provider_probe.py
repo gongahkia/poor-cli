@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from .config import Config, ConfigManager
+from .provider_catalog import common_models_for_provider
 from .providers.provider_factory import ProviderFactory
 
 ROUTING_MODES = ("manual", "quality", "speed", "cheap", "private")
@@ -104,7 +105,7 @@ def probe_providers(
             models = (
                 ollama_known_models
                 if ollama_known_models
-                else [provider_cfg.default_model, "codellama", "mistral", "phi3"]
+                else common_models_for_provider(provider_name)
             )
         else:
             api_key = config_manager.get_api_key(provider_name)
@@ -112,7 +113,7 @@ def probe_providers(
             ready = dependency_available and configured
             source = "environment" if api_key else "none"
             status_label = "API key configured" if ready else f"missing {env_var}"
-            models = [provider_cfg.default_model]
+            models = common_models_for_provider(provider_name)
 
         if not dependency_available:
             ready = False
@@ -184,4 +185,3 @@ def suggested_privacy_posture(provider_status: Dict[str, Dict[str, Any]]) -> str
     if any(ready):
         return "cloud"
     return "unconfigured"
-

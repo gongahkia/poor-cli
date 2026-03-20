@@ -1,7 +1,7 @@
 """
 Anthropic (Claude) Provider Implementation
 
-Supports Claude 3.5 Sonnet, Claude 3 Opus, and other Anthropic models.
+Supports current Claude and Anthropic model families.
 """
 
 import asyncio
@@ -19,6 +19,7 @@ except ImportError:
 
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
 from .tool_translator import ToolTranslator, ProviderType
+from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -34,14 +35,14 @@ logger = setup_logger(__name__)
 class AnthropicProvider(BaseProvider):
     """Anthropic (Claude) API provider implementation"""
 
-    def __init__(self, api_key: str, model_name: str = "claude-3-5-sonnet-20241022",
+    def __init__(self, api_key: str, model_name: str = default_model_for_provider("anthropic"),
                  max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0):
         """
         Initialize Anthropic provider
 
         Args:
             api_key: Anthropic API key
-            model_name: Model to use (claude-3-5-sonnet-20241022, claude-3-opus-20240229, etc.)
+            model_name: Model to use (for example claude-sonnet-4-20250514 or claude-3-7-sonnet-20250219)
             max_retries: Max retries for failed requests
             retry_delay: Initial retry delay in seconds
             timeout: Request timeout in seconds

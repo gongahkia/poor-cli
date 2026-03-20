@@ -1,6 +1,6 @@
 use super::*;
-pub use poor_cli_tui::multiplayer::RemoteBootstrap;
 use poor_cli_tui::multiplayer as multiplayer_lib;
+pub use poor_cli_tui::multiplayer::RemoteBootstrap;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
@@ -91,7 +91,8 @@ pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
 }
 
 pub(super) fn parse_join_server_args(raw: &str) -> Result<RemoteBootstrap, String> {
-    let usage = "Usage: /join-server\n       /join-server <invite-code>\n       /join-server cancel";
+    let usage =
+        "Usage: /join-server\n       /join-server <invite-code>\n       /join-server cancel";
     let args = raw
         .split_whitespace()
         .skip(1)

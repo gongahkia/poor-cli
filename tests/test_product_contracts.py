@@ -1,17 +1,47 @@
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from poor_cli.automation_manager import AutomationManager, schedule_interval
+from poor_cli import __version__
+from poor_cli.automation_manager import AutomationManager, parse_daily_schedule, schedule_interval
 from poor_cli.config import Config
 from poor_cli.context import ContextManager
 from poor_cli.core import PoorCLICore
+from poor_cli.policy_hooks import PolicyHookManager
+from poor_cli.provider_catalog import README_MODEL_SUPPORT_HEADER, render_readme_model_support_table
 from poor_cli.run_history import RunHistoryManager
 from poor_cli.task_manager import TaskManager
 
 
 class ProductContractTests(unittest.TestCase):
+    def _readme_text(self) -> str:
+        return (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+
+    def _readme_model_support_table(self) -> str:
+        lines = self._readme_text().splitlines()
+        start = lines.index(README_MODEL_SUPPORT_HEADER)
+        table_lines = []
+        for line in lines[start:]:
+            if not line.startswith("|"):
+                break
+            table_lines.append(line)
+        return "\n".join(table_lines)
+
+    def test_readme_release_badge_matches_package_version(self) -> None:
+        readme = self._readme_text()
+
+        self.assertEqual(readme.count("https://img.shields.io/badge/poor_cli_"), 1)
+        self.assertIn(f"poor_cli_{__version__}", readme)
+        self.assertIn(f"/releases/tag/v{__version__}", readme)
+
+    def test_readme_model_support_table_matches_provider_catalog(self) -> None:
+        self.assertEqual(
+            self._readme_model_support_table(),
+            render_readme_model_support_table(),
+        )
+
     def test_status_view_shape_includes_canonical_sections(self) -> None:
         core = PoorCLICore()
         core.config = Config()
@@ -92,7 +122,7 @@ class ProductContractTests(unittest.TestCase):
                 run.run_id,
                 status="completed",
                 checkpoint_id="cp-1",
-                provider_summary={"name": "ollama", "model": "llama3"},
+                provider_summary={"name": "ollama", "model": "llama3.1"},
                 cost_summary={"total_tokens": 42},
                 summary="completed successfully",
             )
@@ -177,6 +207,96 @@ class ProductContractTests(unittest.TestCase):
             self.assertEqual(len(history), 1)
             self.assertEqual(history[0]["runId"], automation_run.run_id)
             self.assertEqual(replayed.metadata.get("replayOfRunId"), automation_run.run_id)
+
+    def test_automation_payload_reports_timezone_and_execution_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = AutomationManager(Path(tmpdir))
+            automation = manager.create_automation(
+                name="Morning review",
+                prompt="Review the current worktree state.",
+                schedule=parse_daily_schedule("09:30", timezone_name="Asia/Singapore"),
+                sandbox_preset="read-only",
+                metadata={
+                    "execution": {
+                        "executionMode": "local",
+                        "reasoningEffort": "high",
+                    }
+                },
+            )
+
+            payload = automation.to_dict()
+            self.assertEqual(payload["scheduleTimezone"], "Asia/Singapore")
+            self.assertEqual(payload["executionMode"], "local")
+            self.assertEqual(payload["reasoningEffort"], "high")
+            self.assertIn("Asia/Singapore", payload["scheduleSummary"])
+
+    def test_local_execution_mode_uses_repo_root_instead_of_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            manager = TaskManager(root)
+            task = manager.create_task(
+                title="Inspect local checkout",
+                prompt="Summarize the repo state.",
+                sandbox_preset="read-only",
+                source="manual",
+                metadata={"execution": {"executionMode": "local"}},
+                auto_start=False,
+            )
+
+            payload = task.to_dict()
+            self.assertEqual(Path(task.worktree_path).resolve(), root.resolve())
+            self.assertEqual(payload["executionMode"], "local")
+
+    def test_policy_hooks_report_schema_validation_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            hooks_dir = root / ".poor-cli" / "hooks"
+            hooks_dir.mkdir(parents=True, exist_ok=True)
+
+            (hooks_dir / "valid.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "hooks": {
+                            "task_started": [
+                                {
+                                    "command": "python3",
+                                    "args": ["-c", "print('ok')"],
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (hooks_dir / "invalid.json").write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "hooks": {
+                            "not_a_real_event": [
+                                {
+                                    "command": "python3",
+                                    "args": ["-c", "print('nope')"],
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manager = PolicyHookManager(root)
+            status = manager.status()
+
+            self.assertEqual(status["totalHooks"], 1)
+            self.assertEqual(status["supportedSchemaVersions"], [1])
+            self.assertIn("task_started", status["events"])
+            self.assertTrue(status["validationErrors"])
+            self.assertEqual(
+                status["validationErrors"][0]["event"],
+                "not_a_real_event",
+            )
 
 
 if __name__ == "__main__":

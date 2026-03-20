@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
+from poor_cli.provider_catalog import all_provider_entries, default_model_for_provider
 
 logger = setup_logger(__name__)
 
@@ -37,7 +38,7 @@ class ProviderConfig:
 class ModelConfig:
     """Configuration for AI model settings"""
     provider: str = "gemini"  # Active provider: gemini, openai, anthropic, ollama
-    model_name: str = "gemini-2.0-flash"
+    model_name: str = field(default_factory=lambda: default_model_for_provider("gemini"))
     routing_mode: str = "manual"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
@@ -45,29 +46,17 @@ class ModelConfig:
     top_k: int = 40
 
     # Provider registry
-    providers: Dict[str, ProviderConfig] = field(default_factory=lambda: {
-        "gemini": ProviderConfig(
-            name="gemini",
-            api_key_env_var="GEMINI_API_KEY",
-            default_model="gemini-2.0-flash"
-        ),
-        "openai": ProviderConfig(
-            name="openai",
-            api_key_env_var="OPENAI_API_KEY",
-            default_model="gpt-4-turbo"
-        ),
-        "anthropic": ProviderConfig(
-            name="anthropic",
-            api_key_env_var="ANTHROPIC_API_KEY",
-            default_model="claude-3-5-sonnet-20241022"
-        ),
-        "ollama": ProviderConfig(
-            name="ollama",
-            api_key_env_var="OLLAMA_API_KEY",  # Usually not needed
-            default_model="llama3",
-            base_url="http://localhost:11434"
-        ),
-    })
+    providers: Dict[str, ProviderConfig] = field(
+        default_factory=lambda: {
+            entry.name: ProviderConfig(
+                name=entry.name,
+                api_key_env_var=entry.env_var,
+                default_model=entry.default_model,
+                base_url=entry.base_url,
+            )
+            for entry in all_provider_entries()
+        }
+    )
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ModelConfig':

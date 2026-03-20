@@ -347,20 +347,18 @@ fn read_one_message<R: Read>(reader: &mut BufReader<R>) -> Result<String, String
 /// Parse a server notification from JSON-RPC method + params.
 fn parse_notification(method: &str, params: &Value) -> Option<ServerNotification> {
     match method {
-        "poor-cli/thinkingChunk" => {
-            Some(ServerNotification::ThinkingChunk {
-                request_id: params
-                    .get("requestId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                chunk: params
-                    .get("chunk")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            })
-        }
+        "poor-cli/thinkingChunk" => Some(ServerNotification::ThinkingChunk {
+            request_id: params
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            chunk: params
+                .get("chunk")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        }),
         "poor-cli/streamChunk" | "poor-cli/streamingChunk" => {
             Some(ServerNotification::StreamChunk {
                 request_id: params
@@ -1120,7 +1118,10 @@ impl RpcClient {
     }
 
     pub fn get_doctor_report(&self) -> Result<Value, String> {
-        self.call("poor-cli/getDoctorReport", Value::Object(Default::default()))
+        self.call(
+            "poor-cli/getDoctorReport",
+            Value::Object(Default::default()),
+        )
     }
 
     pub fn get_context_explain(
@@ -1270,16 +1271,31 @@ impl RpcClient {
         self.call("poor-cli/replayTask", Value::Object(params))
     }
 
+    pub fn list_automations(&self, enabled: Option<bool>, limit: u64) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        if let Some(enabled) = enabled {
+            params.insert("enabled".into(), Value::Bool(enabled));
+        }
+        params.insert("limit".into(), Value::Number(limit.into()));
+        self.call("poor-cli/listAutomations", Value::Object(params))
+    }
+
     pub fn get_automation_history(&self, automation_id: &str, limit: u64) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
-        params.insert("automationId".into(), Value::String(automation_id.to_string()));
+        params.insert(
+            "automationId".into(),
+            Value::String(automation_id.to_string()),
+        );
         params.insert("limit".into(), Value::Number(limit.into()));
         self.call("poor-cli/getAutomationHistory", Value::Object(params))
     }
 
     pub fn replay_automation(&self, automation_id: &str) -> Result<Value, String> {
         let mut params = serde_json::Map::new();
-        params.insert("automationId".into(), Value::String(automation_id.to_string()));
+        params.insert(
+            "automationId".into(),
+            Value::String(automation_id.to_string()),
+        );
         self.call("poor-cli/replayAutomation", Value::Object(params))
     }
 
@@ -1492,7 +1508,10 @@ impl RpcClient {
     }
 
     pub fn get_collab_summary(&self) -> Result<Value, String> {
-        self.call("poor-cli/getCollabSummary", Value::Object(Default::default()))
+        self.call(
+            "poor-cli/getCollabSummary",
+            Value::Object(Default::default()),
+        )
     }
 
     pub fn stop_host_server(&self) -> Result<Value, String> {
@@ -1969,6 +1988,11 @@ pub enum RpcCommand {
         task_id: String,
         reply: SyncSender<Result<Value, String>>,
     },
+    ListAutomations {
+        enabled: Option<bool>,
+        limit: u64,
+        reply: SyncSender<Result<Value, String>>,
+    },
     GetAutomationHistory {
         automation_id: String,
         limit: u64,
@@ -2401,6 +2425,13 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::ReplayTask { task_id, reply }) => {
                 let _ = reply.send(client.replay_task(&task_id));
+            }
+            Ok(RpcCommand::ListAutomations {
+                enabled,
+                limit,
+                reply,
+            }) => {
+                let _ = reply.send(client.list_automations(enabled, limit));
             }
             Ok(RpcCommand::GetAutomationHistory {
                 automation_id,

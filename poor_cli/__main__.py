@@ -423,6 +423,14 @@ def _build_execution_metadata_from_args(args: argparse.Namespace) -> dict[str, A
     if config_path:
         execution["configPath"] = config_path
 
+    execution_mode = str(getattr(args, "execution_mode", "") or "").strip().lower()
+    if execution_mode:
+        execution["executionMode"] = execution_mode
+
+    reasoning_effort = str(getattr(args, "reasoning_effort", "") or "").strip().lower()
+    if reasoning_effort:
+        execution["reasoningEffort"] = reasoning_effort
+
     context_files = _collect_string_values(getattr(args, "context_file", []))
     if context_files:
         execution["contextFiles"] = context_files
@@ -558,6 +566,9 @@ def _build_task_parser() -> argparse.ArgumentParser:
     create.add_argument("--provider")
     create.add_argument("--model")
     create.add_argument("--routing-mode", choices=("manual", "quality", "speed", "cheap", "private"))
+    create.add_argument("--timezone", help="IANA timezone for daily/weekly schedules (defaults to local timezone)")
+    create.add_argument("--execution-mode", choices=("worktree", "local"), default="worktree")
+    create.add_argument("--reasoning-effort", choices=("low", "medium", "high"))
     create.add_argument("--config")
     create.add_argument("--context-file", action="append", default=[])
     create.add_argument("--pinned-context-file", action="append", default=[])
@@ -1006,25 +1017,45 @@ def _automation_schedule_from_args(args: argparse.Namespace) -> dict[str, Any]:
     if args.every_minutes is not None:
         return schedule_interval(args.every_minutes)
     if args.daily:
-        return parse_daily_schedule(args.daily)
+        return parse_daily_schedule(args.daily, timezone_name=args.timezone)
     if args.weekly:
-        return parse_weekly_schedule(args.weekly)
+        return parse_weekly_schedule(args.weekly, timezone_name=args.timezone)
     raise SystemExit("Missing automation schedule.")
 
 
 def _format_automation(automation: dict) -> str:
+    metadata = automation.get("metadata") if isinstance(automation.get("metadata"), dict) else {}
+    execution = metadata.get("execution") if isinstance(metadata.get("execution"), dict) else {}
     lines = [
         f"Automation: {automation['automationId']} [{'enabled' if automation['enabled'] else 'disabled'}]",
         f"Name: {automation['name']}",
         f"Preset: {automation['sandboxPreset']}",
         f"Schedule: {automation['scheduleSummary']}",
     ]
+    if automation.get("scheduleTimezone"):
+        lines.append(f"Timezone: {automation['scheduleTimezone']}")
+    execution_mode = str(automation.get("executionMode", "") or execution.get("executionMode", "")).strip()
+    if execution_mode:
+        lines.append(f"Execution mode: {execution_mode}")
+    reasoning_effort = str(automation.get("reasoningEffort", "") or execution.get("reasoningEffort", "")).strip()
+    if reasoning_effort:
+        lines.append(f"Reasoning effort: {reasoning_effort}")
     if automation.get("nextRunAt"):
         lines.append(f"Next run: {automation['nextRunAt']}")
     if automation.get("lastRunAt"):
         lines.append(f"Last run: {automation['lastRunAt']}")
     if automation.get("lastTaskId"):
         lines.append(f"Last task: {automation['lastTaskId']}")
+    if automation.get("lastRunId"):
+        lines.append(f"Linked run: {automation['lastRunId']}")
+    if automation.get("lastRunStatus"):
+        lines.append(f"Last run status: {automation['lastRunStatus']}")
+    if automation.get("lastRunSummary"):
+        lines.append(f"Last run summary: {automation['lastRunSummary']}")
+    if automation.get("lastRunError"):
+        lines.append(f"Last run failure: {automation['lastRunError']}")
+    if automation.get("replayOfRunId"):
+        lines.append(f"Replay source: {automation['replayOfRunId']}")
     return "\n".join(lines)
 
 

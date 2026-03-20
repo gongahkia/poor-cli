@@ -1,0 +1,57 @@
+{
+  "providers": {
+    "gemini": {
+      "displayName": "Gemini",
+      "envVar": "GEMINI_API_KEY",
+      "defaultModel": "gemini-2.5-flash",
+      "commonModels": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite"
+      ],
+      "setupHelp": "Gemini is the default provider. Paste a Google AI Studio or Vertex-backed Gemini key here.",
+      "capabilitySummary": "Streaming, function calling, system instructions, vision, JSON mode"
+    },
+    "openai": {
+      "displayName": "OpenAI",
+      "envVar": "OPENAI_API_KEY",
+      "defaultModel": "gpt-5.1",
+      "commonModels": [
+        "gpt-5.1",
+        "gpt-5",
+        "gpt-5-mini"
+      ],
+      "setupHelp": "Use an OpenAI API key if you want GPT models available in `/switch` and the TUI.",
+      "capabilitySummary": "Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models"
+    },
+    "anthropic": {
+      "displayName": "Anthropic",
+      "envVar": "ANTHROPIC_API_KEY",
+      "defaultModel": "claude-sonnet-4-20250514",
+      "commonModels": [
+        "claude-sonnet-4-20250514",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-haiku-20241022"
+      ],
+      "aliases": [
+        "claude"
+      ],
+      "setupHelp": "Anthropic powers Claude models. Saving here keeps the key available for later provider switches.",
+      "capabilitySummary": "Streaming, function calling, system instructions, vision"
+    },
+    "ollama": {
+      "displayName": "Ollama",
+      "envVar": "OLLAMA_API_KEY",
+      "defaultModel": "llama3.1",
+      "commonModels": [
+        "llama3.1",
+        "qwen2.5-coder",
+        "mistral",
+        "codellama"
+      ],
+      "baseUrl": "http://localhost:11434",
+      "setupHelp": "Optional. Ollama runs locally and does not usually require an API key.",
+      "capabilitySummary": "Streaming, system instructions, JSON mode, optional function calling for capable local models"
+    }
+  }
+}

@@ -21,8 +21,10 @@ from dataclasses import dataclass, asdict
 from contextlib import contextmanager
 from threading import Lock
 from poor_cli.exceptions import FileOperationError, setup_logger
+from poor_cli.provider_catalog import default_model_for_provider
 
 logger = setup_logger(__name__)
+DEFAULT_HISTORY_MODEL = default_model_for_provider("gemini")
 
 
 class ConnectionPool:
@@ -111,7 +113,7 @@ class Session:
     ended_at: Optional[str] = None
     messages: List[Message] = None
     total_tokens: int = 0
-    model: str = "gemini-2.0-flash"
+    model: str = DEFAULT_HISTORY_MODEL
 
     def __post_init__(self):
         if self.messages is None:
@@ -211,13 +213,13 @@ class HistoryManager:
                 cursor = conn.cursor()
 
                 # Sessions table
-                cursor.execute("""
+                cursor.execute(f"""
                     CREATE TABLE IF NOT EXISTS sessions (
                         session_id TEXT PRIMARY KEY,
                         started_at TEXT NOT NULL,
                         ended_at TEXT,
                         total_tokens INTEGER DEFAULT 0,
-                        model TEXT DEFAULT 'gemini-2.0-flash',
+                        model TEXT DEFAULT '{DEFAULT_HISTORY_MODEL}',
                         archived INTEGER DEFAULT 0
                     )
                 """)
@@ -284,7 +286,7 @@ class HistoryManager:
         except Exception as e:
             raise FileOperationError(f"Failed to initialize history database: {e}")
 
-    def start_session(self, model: str = "gemini-2.0-flash") -> Session:
+    def start_session(self, model: str = DEFAULT_HISTORY_MODEL) -> Session:
         """Start a new conversation session
 
         Args:

@@ -1,12 +1,9 @@
-[![](https://img.shields.io/badge/poor_cli_1.0.0-passing-A8E6A3)](https://github.com/gongahkia/poor-cli/releases/tag/1.0.0)
-[![](https://img.shields.io/badge/poor_cli_2.0.0-passing-7CD67A)](https://github.com/gongahkia/poor-cli/releases/tag/2.0.0)
-[![](https://img.shields.io/badge/poor_cli_3.0.0-passing-50C878)](https://github.com/gongahkia/poor-cli/releases/tag/3.0.0)
-[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-2E8B57)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
+[![](https://img.shields.io/badge/poor_cli_0.4.0-passing-2E8B57)](https://github.com/gongahkia/poor-cli/releases/tag/v0.4.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 
 # `poor-cli`
 
-[Multiplayer](#multiplayer) & [BYOK](#model-support) [CLI](https://en.wikipedia.org/wiki/Command-line_interface), [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/) Coding [Agent](#available-tools) *(optimised for the [poor man](#available-commands))*.
+Open, [multiplayer](#multiplayer), [BYOK](#model-support) coding agent for the terminal, [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/).
 
 <div align="center">
     <img src="./asset/logo/1.png" width="30%">
@@ -26,13 +23,23 @@
 
 ## Usage
 
-The below instructions are for installing and running `poor-cli` from this repository.
-
 Supported Python versions are `3.11` and `3.12`.
 
 Published wheels are platform-specific and bundle the Rust `poor-cli-tui` binary for supported targets. After `pip install poor-cli`, bare `poor-cli` should launch the TUI directly, and `poor-cli install-info` will show which packaged launcher was selected.
 
-1. Bootstrap the project.
+### Preferred install
+
+Install the published package when you want the normal end-user path.
+
+```console
+$ python3 -m pip install --upgrade poor-cli
+$ poor-cli install-info
+$ poor-cli
+```
+
+### Development install
+
+Use the repository checkout when you want to modify or test `poor-cli` itself.
 
 ```console
 $ git clone https://github.com/gongahkia/poor-cli.git
@@ -41,13 +48,13 @@ $ python3 -m venv .venv && source .venv/bin/activate
 $ pip install ".[all]"
 ```
 
-2. Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
+Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
 
 ```console
 $ cp .env.example .env
 ```
 
-3. Finally run any of the below to begin using `poor-cli`'s TUI.
+Then run any of the below to begin using `poor-cli`'s TUI.
 
 ```console
 $ poor-cli                 
@@ -62,7 +69,7 @@ $ docker run -it --env-file .env poor-cli
 
 For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
 
-4. Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) Package Manager.
+Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) package manager.
 
 ```lua
 {
@@ -79,7 +86,7 @@ For safety, `workspace-write` and `review-only` block shell commands that imply 
 }
 ```
 
-5. Vanilla Emacs 29+ is also supported through the first-party package in `emacs-poor-cli/`.
+Vanilla Emacs 29+ is also supported through the first-party package in `emacs-poor-cli/`.
 
 ```elisp
 (require 'package)
@@ -137,10 +144,10 @@ Full protocol details, failure behavior, and compatibility notes live in
 
 | Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
 |---|---|---|---|---|
-| Gemini | `gemini` | `gemini-2.0-flash` | `gemini-2.0-flash`, `gemini-1.5-pro` | Streaming, function calling, system instructions, vision, JSON mode |
-| OpenAI | `openai` | `gpt-4-turbo` | `gpt-4o`, `gpt-4-turbo`, `gpt-3.5-turbo` | Streaming, function calling, system instructions, JSON mode, vision on GPT-4-class models |
-| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-3-5-sonnet-20241022` | `claude-sonnet-4-20250514`, `claude-3-haiku-20240307` | Streaming, function calling, system instructions, vision |
-| Ollama | `ollama` | `llama3` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3`, `codellama`, `mistral`, `phi3` | Streaming, system instructions, JSON mode, optional function calling (model-dependent), local-only execution via `http://localhost:11434` |
+| Gemini | `gemini` | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Streaming, function calling, system instructions, vision, JSON mode |
+| OpenAI | `openai` | `gpt-5.1` | `gpt-5.1`, `gpt-5`, `gpt-5-mini` | Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models |
+| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-sonnet-4-20250514` | `claude-sonnet-4-20250514`, `claude-3-7-sonnet-20250219`, `claude-3-5-haiku-20241022` | Streaming, function calling, system instructions, vision |
+| Ollama | `ollama` | `llama3.1` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3.1`, `qwen2.5-coder`, `mistral`, `codellama` | Streaming, system instructions, JSON mode, optional function calling for capable local models, local-only execution via `http://localhost:11434` |
 
 ## Architecture
 

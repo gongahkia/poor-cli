@@ -159,18 +159,24 @@ def inspect_tui_installation() -> dict[str, Any]:
     selected_binary, selected_source = resolve_tui_binary()
     packaged_candidates = iter_packaged_tui_candidates()
     run_tui_script = root / "run_tui.sh"
+    selected_launcher = None
+    if selected_binary is not None and selected_source is not None:
+        selected_launcher = {
+            "source": selected_source,
+            "path": str(selected_binary),
+        }
+    elif run_tui_script.is_file():
+        selected_launcher = {
+            "source": "repo-script",
+            "path": str(run_tui_script),
+        }
 
     return {
         "version": __version__,
         "platform": sys.platform,
         "machine": platform.machine(),
         "tuiExecutableName": tui_executable_name(),
-        "selectedLauncher": {
-            "source": selected_source,
-            "path": str(selected_binary),
-        }
-        if selected_binary is not None and selected_source is not None
-        else None,
+        "selectedLauncher": selected_launcher,
         "envOverride": {
             "configured": bool(env_override),
             "path": env_override or None,

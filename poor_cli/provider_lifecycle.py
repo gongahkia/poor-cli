@@ -15,6 +15,7 @@ from rich.table import Table
 
 from .config import Config, ProviderConfig
 from .exceptions import ConfigurationError, setup_logger
+from .provider_catalog import all_provider_entries
 from .providers.base import BaseProvider
 from .providers.provider_factory import ProviderFactory
 
@@ -220,14 +221,14 @@ class ProviderLifecycleService:
 
             self.console.print(table)
 
-            info_text = (
-                "\n[bold]Available Models by Provider:[/bold]\n\n"
-                "[cyan]Gemini (Free):[/cyan] gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash\n"
-                "[cyan]OpenAI (Paid):[/cyan] gpt-4-turbo, gpt-4, gpt-3.5-turbo\n"
-                "[cyan]Anthropic (Paid):[/cyan] claude-3-5-sonnet-20241022, claude-3-opus, claude-3-sonnet\n"
-                "[cyan]Ollama (Local):[/cyan] llama3, codellama, mistral, phi3\n\n"
-                "[dim]Use /switch to change providers or set DEFAULT_PROVIDER in .env[/dim]"
-            )
+            lines = ["\n[bold]Available Models by Provider:[/bold]\n"]
+            for entry in all_provider_entries():
+                posture = "Local" if entry.name == "ollama" else "BYOK"
+                lines.append(
+                    f"[cyan]{entry.display_name} ({posture}):[/cyan] {', '.join(entry.common_models)}"
+                )
+            lines.append("\n[dim]Use /switch to change providers or set DEFAULT_PROVIDER in .env[/dim]")
+            info_text = "\n".join(lines)
             self.console.print(Panel(info_text, title="Model Information", border_style="cyan"))
 
         except Exception as e:

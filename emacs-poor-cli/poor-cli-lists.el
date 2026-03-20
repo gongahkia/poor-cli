@@ -165,8 +165,9 @@
             (or (plist-get automation :automationId) "")
             (if (plist-get automation :enabled) "enabled" "disabled")
             (or (plist-get automation :name) "")
+            (or (plist-get automation :executionMode) "worktree")
             (or (plist-get automation :nextRunAt) "")
-            (or (plist-get automation :lastRunAt) ""))))
+            (or (plist-get automation :lastRunStatus) ""))))
    (poor-cli--normalize-seq
     (plist-get (poor-cli-list-automations nil 100) :automations))))
 
@@ -210,7 +211,7 @@
   (poor-cli-lists--open
    poor-cli-automations-buffer-name
    "automations"
-   [("Automation ID" 18 t) ("Enabled" 10 t) ("Name" 28 t) ("Next Run" 24 t) ("Last Run" 24 t)]
+   [("Automation ID" 18 t) ("Enabled" 10 t) ("Name" 26 t) ("Mode" 10 t) ("Next Run" 24 t) ("Last Status" 14 t)]
    #'poor-cli-lists--automation-entries
    '(("e" . poor-cli-lists-automation-toggle)
      ("r" . poor-cli-lists-automation-run-now)

@@ -55,6 +55,8 @@
   (let* ((trust (plist-get payload :trust))
          (provider (plist-get payload :provider))
          (active (plist-get provider :active))
+         (policy (plist-get trust :policy))
+         (hooks (plist-get policy :hooks))
          (recovery (plist-get payload :recovery))
          (mutation (plist-get recovery :lastMutation)))
     (mapconcat
@@ -70,6 +72,9 @@
            (format "- Checkpointing: `%s`" (plist-get trust :checkpointing))
            (format "- Trusted workspace boundary: `%s`"
                    (plist-get (plist-get trust :security) :trustedWorkspaceBoundary))
+           (format "- Policy hooks: %s" (or (plist-get hooks :totalHooks) 0))
+           (format "- Hook validation errors: %s"
+                   (length (poor-cli--normalize-seq (plist-get hooks :validationErrors))))
            (if-let ((last-error (plist-get provider :lastError)))
                (format "- Last provider error: %s" last-error)
              "- Last provider error: none")

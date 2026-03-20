@@ -17,9 +17,8 @@ pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
     while padded.len() % 4 != 0 {
         padded.push('=');
     }
-    let decoded = base64_url_decode(&padded).map_err(|_| {
-        "Invalid invite code: not a valid signed invite envelope.".to_string()
-    })?;
+    let decoded = base64_url_decode(&padded)
+        .map_err(|_| "Invalid invite code: not a valid signed invite envelope.".to_string())?;
 
     if let Ok(envelope) = serde_json::from_slice::<Value>(&decoded) {
         let payload = envelope
@@ -45,7 +44,9 @@ pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
             .trim()
             .to_string();
         if signaling_url.is_empty() || room.is_empty() || token.is_empty() {
-            return Err("Invalid invite code: missing signalingUrl, sessionId, or token.".to_string());
+            return Err(
+                "Invalid invite code: missing signalingUrl, sessionId, or token.".to_string(),
+            );
         }
         return Ok(RemoteBootstrap {
             invite: trimmed.to_string(),

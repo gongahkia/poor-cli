@@ -70,6 +70,7 @@ pub(super) fn handle_server_message(
             }
             refresh_workspace_status(app);
             refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
+            refresh_workspace_panels(app, &rpc_cmd_tx.borrow());
             write_session_log(
                 session_log,
                 &format!(
@@ -157,6 +158,7 @@ pub(super) fn handle_server_message(
                 ),
             );
             app.set_status("Provider switched successfully");
+            refresh_workspace_panels(app, &rpc_cmd_tx.borrow());
         }
         ServerMsg::Error { message } => {
             let active_request_id = app.active_request_id.clone();
@@ -235,10 +237,7 @@ pub(super) fn handle_server_message(
             app.active_request_id.clear();
             app.active_request_started_at = None;
         }
-        ServerMsg::ThinkingChunk {
-            request_id,
-            chunk,
-        } => {
+        ServerMsg::ThinkingChunk { request_id, chunk } => {
             if !chunk.is_empty() {
                 app.append_thinking_chunk(&chunk);
             }

@@ -19,7 +19,7 @@
 (ert-deftest poor-cli-capture-initialize-result-updates-state ()
   (poor-cli-reset-session-state)
   (poor-cli--capture-initialize-result
-   '(:capabilities (:providerInfo (:name "ollama" :model "llama3")
+   '(:capabilities (:providerInfo (:name "ollama" :model "llama3.1")
                    :multiplayer (:enabled t
                                  :room "dev"
                                  :role "prompter"

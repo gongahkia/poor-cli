@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, time as clock_time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .run_history import RunHistoryManager
 from .sandbox import normalize_preset
@@ -41,6 +44,109 @@ def _parse_timestamp(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _local_timezone_name() -> str:
+    candidate = str(os.environ.get("TZ", "") or "").strip()
+    if candidate:
+        try:
+            ZoneInfo(candidate)
+            return candidate
+        except ZoneInfoNotFoundError:
+            pass
+
+    local_tz = datetime.now().astimezone().tzinfo
+    key = str(getattr(local_tz, "key", "") or "").strip()
+    if key:
+        try:
+            ZoneInfo(key)
+            return key
+        except ZoneInfoNotFoundError:
+            pass
+
+    timezone_file = Path("/etc/timezone")
+    try:
+        candidate = timezone_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        candidate = ""
+    if candidate:
+        try:
+            ZoneInfo(candidate)
+            return candidate
+        except ZoneInfoNotFoundError:
+            pass
+
+    localtime = Path("/etc/localtime")
+    with contextlib.suppress(OSError, RuntimeError):
+        resolved = localtime.resolve()
+        marker = "/zoneinfo/"
+        if marker in str(resolved):
+            derived = str(resolved).split(marker, 1)[1].strip()
+            if derived:
+                try:
+                    ZoneInfo(derived)
+                    return derived
+                except ZoneInfoNotFoundError:
+                    pass
+
+    return "UTC"
+
+
+def _normalize_timezone_name(
+    value: Optional[str],
+    *,
+    default_local: bool,
+) -> str:
+    candidate = str(value or "").strip()
+    if not candidate and default_local:
+        candidate = _local_timezone_name()
+    if not candidate:
+        return ""
+    try:
+        ZoneInfo(candidate)
+    except ZoneInfoNotFoundError as error:
+        raise ValueError(
+            f"Timezone must be a valid IANA name such as `Asia/Singapore`, got `{candidate}`."
+        ) from error
+    return candidate
+
+
+def _schedule_timezone_name(schedule: Dict[str, Any]) -> str:
+    kind = str(schedule.get("kind", "")).strip().lower()
+    if kind not in {"daily", "weekly"}:
+        return ""
+    candidate = str(schedule.get("timezone", "") or "").strip()
+    return candidate or "UTC"
+
+
+def _schedule_timezone(schedule: Dict[str, Any]) -> ZoneInfo:
+    return ZoneInfo(_schedule_timezone_name(schedule) or "UTC")
+
+
+def _normalize_execution_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    payload = dict(metadata or {})
+    execution = payload.get("execution")
+    if execution is None:
+        return payload
+    if not isinstance(execution, dict):
+        raise ValueError("Automation metadata.execution must be an object.")
+
+    normalized_execution = dict(execution)
+    execution_mode = str(normalized_execution.get("executionMode", "") or "").strip().lower()
+    if execution_mode and execution_mode not in {"worktree", "local"}:
+        raise ValueError("Automation executionMode must be `worktree` or `local`.")
+    normalized_execution["executionMode"] = execution_mode or "worktree"
+
+    reasoning_effort = str(normalized_execution.get("reasoningEffort", "") or "").strip().lower()
+    if reasoning_effort and reasoning_effort not in {"low", "medium", "high"}:
+        raise ValueError("Automation reasoningEffort must be `low`, `medium`, or `high`.")
+    if reasoning_effort:
+        normalized_execution["reasoningEffort"] = reasoning_effort
+    else:
+        normalized_execution.pop("reasoningEffort", None)
+
+    payload["execution"] = normalized_execution
+    return payload
+
+
 def schedule_interval(minutes: int) -> Dict[str, Any]:
     minutes = int(minutes)
     if minutes <= 0:
@@ -48,12 +154,16 @@ def schedule_interval(minutes: int) -> Dict[str, Any]:
     return {"kind": "interval", "minutes": minutes}
 
 
-def parse_daily_schedule(value: str) -> Dict[str, Any]:
+def parse_daily_schedule(value: str, *, timezone_name: Optional[str] = None) -> Dict[str, Any]:
     hour, minute = _parse_clock(value)
-    return {"kind": "daily", "hour": hour, "minute": minute}
+    schedule = {"kind": "daily", "hour": hour, "minute": minute}
+    schedule_timezone = _normalize_timezone_name(timezone_name, default_local=True)
+    if schedule_timezone:
+        schedule["timezone"] = schedule_timezone
+    return schedule
 
 
-def parse_weekly_schedule(value: str) -> Dict[str, Any]:
+def parse_weekly_schedule(value: str, *, timezone_name: Optional[str] = None) -> Dict[str, Any]:
     days_part, _, time_part = str(value).partition("@")
     if not days_part or not time_part:
         raise ValueError("Weekly schedule must look like `mon,wed@09:30`.")
@@ -68,7 +178,11 @@ def parse_weekly_schedule(value: str) -> Dict[str, Any]:
     if not weekdays:
         raise ValueError("Weekly schedule must include at least one weekday.")
     hour, minute = _parse_clock(time_part)
-    return {"kind": "weekly", "weekdays": weekdays, "hour": hour, "minute": minute}
+    schedule = {"kind": "weekly", "weekdays": weekdays, "hour": hour, "minute": minute}
+    schedule_timezone = _normalize_timezone_name(timezone_name, default_local=True)
+    if schedule_timezone:
+        schedule["timezone"] = schedule_timezone
+    return schedule
 
 
 def format_schedule(schedule: Dict[str, Any]) -> str:
@@ -77,13 +191,17 @@ def format_schedule(schedule: Dict[str, Any]) -> str:
         minutes = int(schedule["minutes"])
         return f"every {minutes} minute(s)"
     if kind == "daily":
-        return f"daily at {int(schedule['hour']):02d}:{int(schedule['minute']):02d} UTC"
+        return (
+            f"daily at {int(schedule['hour']):02d}:{int(schedule['minute']):02d} "
+            f"{_schedule_timezone_name(schedule)}"
+        )
     if kind == "weekly":
         reverse_map = {value: key for key, value in WEEKDAY_MAP.items()}
         weekdays = ",".join(reverse_map[int(day)] for day in schedule.get("weekdays", []))
         return (
             f"weekly on {weekdays} at "
-            f"{int(schedule['hour']):02d}:{int(schedule['minute']):02d} UTC"
+            f"{int(schedule['hour']):02d}:{int(schedule['minute']):02d} "
+            f"{_schedule_timezone_name(schedule)}"
         )
     raise ValueError(f"Unknown schedule kind: {kind}")
 
@@ -95,30 +213,36 @@ def next_run_after(schedule: Dict[str, Any], now: Optional[datetime] = None) -> 
         return current + timedelta(minutes=int(schedule["minutes"]))
 
     if kind == "daily":
-        candidate = current.replace(
+        schedule_tz = _schedule_timezone(schedule)
+        current_local = current.astimezone(schedule_tz)
+        candidate = current_local.replace(
             hour=int(schedule["hour"]),
             minute=int(schedule["minute"]),
             second=0,
             microsecond=0,
         )
-        if candidate <= current:
+        if candidate <= current_local:
             candidate += timedelta(days=1)
-        return candidate
+        return candidate.astimezone(timezone.utc)
 
     if kind == "weekly":
         weekdays = [int(day) for day in schedule.get("weekdays", [])]
-        target_time = clock_time(
-            hour=int(schedule["hour"]),
-            minute=int(schedule["minute"]),
-            tzinfo=timezone.utc,
-        )
+        schedule_tz = _schedule_timezone(schedule)
+        current_local = current.astimezone(schedule_tz)
         for delta in range(0, 15):
-            candidate_day = (current + timedelta(days=delta)).date()
+            candidate_day = (current_local + timedelta(days=delta)).date()
             if candidate_day.weekday() not in weekdays:
                 continue
-            candidate = datetime.combine(candidate_day, target_time)
-            if candidate > current:
-                return candidate
+            candidate = datetime(
+                candidate_day.year,
+                candidate_day.month,
+                candidate_day.day,
+                int(schedule["hour"]),
+                int(schedule["minute"]),
+                tzinfo=schedule_tz,
+            )
+            if candidate > current_local:
+                return candidate.astimezone(timezone.utc)
         raise ValueError("Unable to compute next weekly run.")
 
     raise ValueError(f"Unknown schedule kind: {kind}")
@@ -162,12 +286,21 @@ class AutomationRecord:
         return loaded if isinstance(loaded, dict) else {}
 
     def to_dict(self) -> Dict[str, Any]:
+        metadata = self.metadata
+        execution = metadata.get("execution") if isinstance(metadata.get("execution"), dict) else {}
+        last_run = {
+            "runId": str(metadata.get("lastRunId", "") or ""),
+            "status": str(metadata.get("lastRunStatus", "") or ""),
+            "summary": str(metadata.get("lastRunSummary", "") or ""),
+            "error": str(metadata.get("lastRunError", "") or ""),
+        }
         return {
             "automationId": self.automation_id,
             "name": self.name,
             "prompt": self.prompt,
             "schedule": self.schedule,
             "scheduleSummary": format_schedule(self.schedule),
+            "scheduleTimezone": _schedule_timezone_name(self.schedule),
             "sandboxPreset": self.sandbox_preset,
             "enabled": self.enabled,
             "requiresApproval": self.requires_approval,
@@ -176,7 +309,15 @@ class AutomationRecord:
             "lastRunAt": self.last_run_at,
             "nextRunAt": self.next_run_at,
             "lastTaskId": self.last_task_id,
-            "metadata": self.metadata,
+            "lastRunId": last_run["runId"],
+            "lastRunStatus": last_run["status"],
+            "lastRunSummary": last_run["summary"],
+            "lastRunError": last_run["error"],
+            "lastRun": last_run,
+            "executionMode": str(execution.get("executionMode", "worktree") or "worktree"),
+            "reasoningEffort": str(execution.get("reasoningEffort", "") or ""),
+            "replayOfRunId": str(metadata.get("replayOfRunId", "") or ""),
+            "metadata": metadata,
         }
 
 
@@ -236,7 +377,7 @@ class AutomationManager:
         validated_schedule = self._validate_schedule(schedule)
         current = _utc_now_dt()
         preset = normalize_preset(sandbox_preset)
-        metadata_payload = dict(metadata or {})
+        metadata_payload = _normalize_execution_metadata(metadata)
         effective_auto_approve = bool(
             auto_approve or metadata_payload.get("autoApprove", False)
         )
@@ -422,7 +563,10 @@ class AutomationManager:
         if kind == "interval":
             return schedule_interval(int(schedule.get("minutes", 0)))
         if kind == "daily":
-            return parse_daily_schedule(f"{int(schedule.get('hour', -1)):02d}:{int(schedule.get('minute', -1)):02d}")
+            return parse_daily_schedule(
+                f"{int(schedule.get('hour', -1)):02d}:{int(schedule.get('minute', -1)):02d}",
+                timezone_name=schedule.get("timezone"),
+            )
         if kind == "weekly":
             weekdays = schedule.get("weekdays", [])
             if not isinstance(weekdays, Sequence) or not weekdays:
@@ -431,7 +575,8 @@ class AutomationManager:
                 key for key, value in WEEKDAY_MAP.items() if value in {int(day) for day in weekdays}
             )
             return parse_weekly_schedule(
-                f"{rendered_days}@{int(schedule.get('hour', -1)):02d}:{int(schedule.get('minute', -1)):02d}"
+                f"{rendered_days}@{int(schedule.get('hour', -1)):02d}:{int(schedule.get('minute', -1)):02d}",
+                timezone_name=schedule.get("timezone"),
             )
         raise ValueError(f"Unknown schedule kind: {kind}")
 

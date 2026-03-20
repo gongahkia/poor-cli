@@ -1106,13 +1106,39 @@ class PoorCLICore:
         preview: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not self._permission_callback:
-            return {"allowed": True, "approvedPaths": [], "approvedChunks": []}
+            decision = {"allowed": True, "approvedPaths": [], "approvedChunks": []}
+            await self._emit_policy_hooks(
+                "permission_decision",
+                {
+                    "toolName": tool_name,
+                    "toolArgs": self._stringify_tool_arguments(tool_args),
+                    "preview": preview or {},
+                    "allowed": True,
+                    "approvedPaths": [],
+                    "approvedChunks": [],
+                    "source": "default-allow",
+                },
+            )
+            return decision
 
         try:
             decision = await self._permission_callback(tool_name, tool_args, preview)
         except TypeError:
             decision = await self._permission_callback(tool_name, tool_args)
-        return self._normalize_permission_decision(decision)
+        normalized = self._normalize_permission_decision(decision)
+        await self._emit_policy_hooks(
+            "permission_decision",
+            {
+                "toolName": tool_name,
+                "toolArgs": self._stringify_tool_arguments(tool_args),
+                "preview": preview or {},
+                "allowed": normalized["allowed"],
+                "approvedPaths": normalized["approvedPaths"],
+                "approvedChunks": normalized["approvedChunks"],
+                "source": "permission-callback",
+            },
+        )
+        return normalized
 
     async def _apply_permission_scope(
         self,
@@ -1215,6 +1241,14 @@ class PoorCLICore:
                 severity=AuditSeverity.WARNING,
                 success=False,
                 error_message=str(error),
+            )
+            await self._emit_policy_hooks(
+                "tool_failure",
+                {
+                    **post_payload,
+                    "error": str(error),
+                    "targets": targets,
+                },
             )
             await self._emit_policy_hooks(
                 "post_tool_use",
@@ -2816,6 +2850,8 @@ class PoorCLICore:
         hooks = self._hook_manager.status() if self._hook_manager else {
             "hooksDir": str(Path.cwd() / ".poor-cli" / "hooks"),
             "totalHooks": 0,
+            "supportedSchemaVersions": [1],
+            "validationErrors": [],
             "events": {},
         }
         return {
@@ -3190,6 +3226,13 @@ class PoorCLICore:
                 operation="checkpoint:restore",
                 target=checkpoint_id,
                 details={
+                    "checkpointId": checkpoint_id,
+                    "restoredFiles": restored_files,
+                },
+            )
+            await self._emit_policy_hooks(
+                "checkpoint_restored",
+                {
                     "checkpointId": checkpoint_id,
                     "restoredFiles": restored_files,
                 },

@@ -10,6 +10,7 @@ pub mod input;
 pub mod markdown;
 #[path = "multiplayer_lib.rs"]
 pub mod multiplayer;
+pub mod provider_catalog;
 pub mod rpc;
 pub mod theme;
 pub mod ui;
