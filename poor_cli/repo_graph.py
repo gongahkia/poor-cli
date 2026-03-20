@@ -459,7 +459,9 @@ class RepoGraph:
             if abs_p not in existing or existing[abs_p] != mtime:
                 changed.append((abs_p, rel_p))
         if not changed and not deleted:
-            emit("index up to date")
+            totals = self.get_stats()
+            dir_count = self._count_directories()
+            emit(f"index up to date: {dir_count} directories, {totals['files']} files, {totals['symbols']} symbols, {totals['edges']} edges")
             return {"files": 0, "symbols": 0, "edges": 0, "duration_ms": 0}
         emit(f"re-indexing {len(changed)} changed, removing {len(deleted)} deleted")
         t0 = time.time()
