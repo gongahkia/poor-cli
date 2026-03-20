@@ -810,9 +810,6 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
     let bar_y = area.y + area.height - 2;
     let bar_width = inner.width.saturating_sub(6);
     if bar_width > 0 {
-        let total_nodes = if nodes.is_empty() { 1 } else {
-            1usize + nodes.iter().map(|(_, c)| 1 + c.len()).sum::<usize>()
-        };
         const ANIM_DURATION_MS: f64 = 4000.0;
         let anim_progress = (elapsed / ANIM_DURATION_MS).min(1.0);
         let visual_pct = anim_progress * 100.0;
@@ -824,6 +821,18 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
             &format!(" {:.0}%", visual_pct),
             Style::default().fg(theme::muted_fg(mode)),
         );
+        // show dismiss hint after animation completes
+        if anim_progress >= 1.0 {
+            let hint = "press Esc to continue";
+            let hx = (cx as u16).saturating_sub(hint.len() as u16 / 2);
+            if bar_y + 1 < area.y + area.height {
+                buf.set_string(
+                    hx.max(inner.x), bar_y,
+                    hint,
+                    Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+                );
+            }
+        }
     }
 }
 

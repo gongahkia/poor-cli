@@ -695,6 +695,16 @@ class RepoGraph:
         except OSError:
             return None
 
+    def _fs_max_mtime(self) -> Optional[float]:
+        """Sample max mtime from discovered files for non-git change detection."""
+        try:
+            discovered = self._discover_files()
+            if not discovered:
+                return None
+            return max(os.stat(p).st_mtime for p, _ in discovered[:200] if os.path.exists(p))
+        except Exception:
+            return None
+
     def should_reindex(self) -> str:
         """Return "full", "incremental", or "skip"."""
         with self._connect() as conn:
@@ -703,7 +713,13 @@ class RepoGraph:
             return "full"
         head = self._git_head_hash()
         git_mtime = self._git_index_mtime()
-        if head is None and git_mtime is None: # non-git dir
+        if head is None and git_mtime is None: # non-git dir: use filesystem mtime
+            stored_fs_mtime = rows.get("fs_max_mtime")
+            if stored_fs_mtime is None:
+                return "incremental"
+            current = self._fs_max_mtime()
+            if current is not None and str(current) == stored_fs_mtime:
+                return "skip"
             return "incremental"
         stored_head = rows.get("git_head")
         stored_mtime = rows.get("git_index_mtime")
@@ -717,11 +733,14 @@ class RepoGraph:
     def _store_index_metadata(self) -> None:
         head = self._git_head_hash()
         git_mtime = self._git_index_mtime()
+        fs_mtime = self._fs_max_mtime() if head is None else None
         with self._connect() as conn:
             if head is not None:
                 conn.execute("INSERT OR REPLACE INTO index_metadata VALUES (?, ?)", ("git_head", head))
             if git_mtime is not None:
                 conn.execute("INSERT OR REPLACE INTO index_metadata VALUES (?, ?)", ("git_index_mtime", str(git_mtime)))
+            if fs_mtime is not None:
+                conn.execute("INSERT OR REPLACE INTO index_metadata VALUES (?, ?)", ("fs_max_mtime", str(fs_mtime)))
 
     # -- repo summary for LLM --------------------------------------------
 

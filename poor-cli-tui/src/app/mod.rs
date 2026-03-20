@@ -1076,18 +1076,7 @@ impl App {
         if self.waiting {
             self.spinner_tick = (self.spinner_tick + 1) % SPINNER_FRAMES.len();
         }
-        // auto-dismiss graph overlay: wait for 4s animation to complete + 1s hold
-        if self.graph_overlay.active {
-            let total_elapsed = self.graph_overlay.started_at.elapsed().as_millis();
-            // animation is 4000ms, then hold for 1000ms so user sees 100%
-            if total_elapsed > 5000 {
-                self.graph_overlay.active = false;
-                if self.overlay_kind == Some(OverlayKind::GraphOverlay) {
-                    self.overlay_kind = None;
-                    self.mode = AppMode::Normal;
-                }
-            }
-        }
+        // graph overlay: user must press Esc to dismiss (handled in input/mod.rs)
     }
 
     /// Get the current spinner frame.
