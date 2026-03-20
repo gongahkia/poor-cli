@@ -1856,6 +1856,8 @@ class ToolRegistryAsync:
 
             if shutil.which("rg"): # prefer ripgrep when available
                 return await self._grep_ripgrep(pattern, search_path, file_pattern, case_sensitive, context_lines)
+            if shutil.which("grep"): # unix grep as intermediate fallback
+                return await self._grep_unix_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
             return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
 
         except ToolExecutionError:
@@ -1892,6 +1894,38 @@ class ToolRegistryAsync:
         lines = stdout.split("\n")[:500] # cap result lines
         output = f"Found {len(lines)} result lines:\n" + "\n".join(lines)
         logger.info(f"Grep search (rg): {pattern} found {len(lines)} result lines")
+        return output
+
+    async def _grep_unix_fallback(self, pattern: str, search_path: str,
+                                  file_pattern: str, case_sensitive: bool,
+                                  context_lines: int) -> str:
+        """unix grep fallback (faster than pure Python, slower than rg)"""
+        cmd = ["grep", "-rn", "--max-count=500", "-E"]
+        if context_lines > 0:
+            cmd.extend(["-C", str(context_lines)])
+        if not case_sensitive:
+            cmd.append("-i")
+        if file_pattern != "*":
+            cmd.extend(["--include", file_pattern])
+        # exclude common noise dirs
+        for d in (".git", "node_modules", "__pycache__", ".venv", "target", "dist"):
+            cmd.extend(["--exclude-dir", d])
+        cmd.append(pattern)
+        cmd.append(search_path)
+        result = await self._run_command_capture(cmd, timeout=30)
+        if result["timed_out"]:
+            raise ToolExecutionError("grep_files", "grep search timed out")
+        if result["exit_code"] == 1: # no matches
+            return f"No matches found for pattern: {pattern}"
+        if result["exit_code"] not in (0, 1):
+            # fall through to python fallback on error
+            return await self._grep_python_fallback(pattern, search_path, file_pattern, case_sensitive, context_lines)
+        stdout = result["stdout"].rstrip()
+        if not stdout:
+            return f"No matches found for pattern: {pattern}"
+        lines = stdout.split("\n")[:500]
+        output = f"Found {len(lines)} result lines:\n" + "\n".join(lines)
+        logger.info(f"Grep search (grep): {pattern} found {len(lines)} result lines")
         return output
 
     async def _grep_python_fallback(self, pattern: str, search_path: str,
@@ -2402,16 +2436,29 @@ class ToolRegistryAsync:
             if not os.path.isdir(dir_path):
                 raise FileOperationError(f"Not a directory: {dir_path}")
 
-            # Get directory entries
+            # prefer ls for speed and native formatting
+            ls_cmd = ["ls", "-lh"]
+            if show_hidden:
+                ls_cmd.append("-a")
+            ls_cmd.append(dir_path)
+            try:
+                ls_result = await self._run_command_capture(ls_cmd, timeout=10)
+                if ls_result["exit_code"] == 0 and ls_result["stdout"].strip():
+                    result = f"Contents of {dir_path}:\n{ls_result['stdout'].rstrip()}"
+                    logger.info(f"Listed directory (ls): {dir_path}")
+                    return result
+            except Exception:
+                pass # fall through to python fallback
+
             entries = []
             for entry in os.listdir(dir_path):
                 if not show_hidden and entry.startswith('.'):
                     continue
-
                 full_path = os.path.join(dir_path, entry)
-                stat = os.stat(full_path)
-
-                # Format size
+                try:
+                    stat = os.stat(full_path)
+                except OSError:
+                    continue
                 size = stat.st_size
                 if size < 1024:
                     size_str = f"{size}B"
@@ -2419,15 +2466,12 @@ class ToolRegistryAsync:
                     size_str = f"{size / 1024:.1f}KB"
                 else:
                     size_str = f"{size / (1024 * 1024):.1f}MB"
-
-                # Get type
                 if os.path.isdir(full_path):
                     type_str = "DIR"
                 elif os.path.islink(full_path):
                     type_str = "LINK"
                 else:
                     type_str = "FILE"
-
                 entries.append(f"{type_str:6} {size_str:10} {entry}")
 
             result = f"Contents of {dir_path}:\n" + "\n".join(sorted(entries))

@@ -243,6 +243,7 @@ class PoorCLICore:
         self._plan_analyzer: PlanAnalyzer = PlanAnalyzer()
         self._pending_events: List[CoreEvent] = []
         self._plan_callback: Optional[Callable[..., Any]] = None
+        self._init_progress_callback: Optional[Callable[[str], None]] = None
 
         # Permission callback for file operations
         # Set this to a callable(tool_name: str, tool_args: dict) -> Awaitable[bool]
@@ -250,6 +251,9 @@ class PoorCLICore:
 
         # Context manager for intelligent context gathering
         self._context_manager: Optional[ContextManager] = None
+
+        # Repo knowledge graph (initialized if repo_index.enabled)
+        self._repo_graph: Any = None
 
         # Cancel events for in-flight request cancellation.
         self._cancel_event: threading.Event = threading.Event()
@@ -430,6 +434,36 @@ class PoorCLICore:
             # Initialize context manager
             self._context_manager = get_context_manager()
             logger.info("Context manager initialized")
+
+            # Initialize repo knowledge graph
+            if self.config.repo_index.enabled:
+                from .repo_graph import RepoGraph
+                self._repo_graph = RepoGraph(repo_root)
+                if self.config.repo_index.auto_index_on_start:
+                    def _progress(msg: str) -> None:
+                        logger.info("[repo-index] %s", msg)
+                        self._pending_events.append(CoreEvent(
+                            type="progress", data={"stage": "repo_index", "message": msg},
+                        ))
+                        if self._init_progress_callback:
+                            self._init_progress_callback(msg)
+                    reindex_mode = self._repo_graph.should_reindex()
+                    if reindex_mode == "skip":
+                        _progress("index up to date")
+                        stats = self._repo_graph.get_stats()
+                        logger.info("Repo index (skipped): %s", stats)
+                    else:
+                        loop = asyncio.get_event_loop()
+                        if reindex_mode == "full" or not self.config.repo_index.incremental:
+                            stats = await loop.run_in_executor(None, lambda: self._repo_graph.build_index(on_progress=_progress))
+                        else:
+                            stats = await loop.run_in_executor(None, lambda: self._repo_graph.incremental_update(on_progress=_progress))
+                        # emit animation frames
+                        frames = self._repo_graph.generate_graph_frames()
+                        for frame in frames:
+                            _progress(frame)
+                        logger.info("Repo index (%s): %s", reindex_mode, stats)
+                self._context_manager._repo_graph = self._repo_graph
             provider_status = self.get_provider_readiness()
             self._resolved_routing_mode = resolve_routing_mode(
                 self.config.model.routing_mode,
@@ -848,9 +882,16 @@ class PoorCLICore:
         referenced_files: Optional[List[str]] = None,
     ) -> InstructionSnapshot:
         manager = self._instruction_manager or InstructionManager(Path.cwd())
+        repo_summary = ""
+        if self._repo_graph is not None:
+            try:
+                repo_summary = self._repo_graph.build_repo_summary()
+            except Exception:
+                logger.debug("Failed to build repo summary", exc_info=True)
         return manager.build_snapshot(
             referenced_files or [],
             plan_mode_enabled=bool(self.config and self.config.plan_mode.enabled),
+            repo_summary=repo_summary,
         )
 
     def _build_full_message(self, message: str, context_files: Optional[List[str]] = None) -> str:

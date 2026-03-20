@@ -735,11 +735,21 @@ class PoorCLIServer:
                 params.get("clientCapabilities")
             )
 
+            # wire init progress callback to push notifications to TUI
+            loop = asyncio.get_event_loop()
+            def _init_progress(msg: str) -> None:
+                notification = JsonRpcMessage(
+                    method="poor-cli/progress",
+                    params={"stage": "repo_index", "message": msg},
+                )
+                asyncio.run_coroutine_threadsafe(self.write_message_stdio(notification), loop)
+            self.core._init_progress_callback = _init_progress
             await self.core.initialize(
                 provider_name=params.get("provider"),
                 model_name=params.get("model"),
                 api_key=params.get("apiKey"),
             )
+            self.core._init_progress_callback = None
             self.initialized = True
             if self.core.config is not None:
                 mode = self.core.config.security.permission_mode
@@ -781,6 +791,7 @@ class PoorCLIServer:
                         "trustedWorkspaceBoundary": self._trusted_workspace_enabled(),
                         "trustedRoots": [str(root) for root in self._trusted_workspace_roots()],
                     },
+                    "repoIndex": self.core._repo_graph.get_stats() if self.core._repo_graph else None,
                 }
             }
         except ConfigurationError as e:

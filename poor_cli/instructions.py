@@ -78,6 +78,7 @@ class InstructionManager:
         referenced_files: Optional[Sequence[str]] = None,
         *,
         plan_mode_enabled: bool = False,
+        repo_summary: str = "",
     ) -> InstructionSnapshot:
         sources: List[InstructionSource] = []
         sources.extend(self._load_runtime_policy(plan_mode_enabled))
@@ -89,7 +90,17 @@ class InstructionManager:
         focus = self._load_focus()
         if focus is not None:
             sources.append(focus)
+        if repo_summary:
+            sources.append(self._load_repo_graph_summary(repo_summary))
         return InstructionSnapshot(repo_root=str(self.repo_root), sources=sources)
+
+    @staticmethod
+    def _load_repo_graph_summary(summary: str) -> InstructionSource:
+        return InstructionSource(
+            kind="repo_graph",
+            label="Repo Structure",
+            content=summary,
+        )
 
     def _load_runtime_policy(self, plan_mode_enabled: bool) -> List[InstructionSource]:
         if not plan_mode_enabled:

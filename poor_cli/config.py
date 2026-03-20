@@ -288,6 +288,15 @@ class SkillsConfig:
 
 
 @dataclass
+class RepoIndexConfig:
+    """Repo knowledge-graph indexing settings."""
+    enabled: bool = True
+    auto_index_on_start: bool = True
+    max_files: int = 10000
+    incremental: bool = True
+
+
+@dataclass
 class WorkflowConfig:
     """Workflow template defaults and overrides."""
 
@@ -315,6 +324,7 @@ class Config:
     fallback: FallbackConfig = field(default_factory=FallbackConfig)
     context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
+    repo_index: RepoIndexConfig = field(default_factory=RepoIndexConfig)
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
@@ -340,6 +350,7 @@ class Config:
             "fallback": asdict(self.fallback),
             "context_compression": asdict(self.context_compression),
             "output_truncation": asdict(self.output_truncation),
+            "repo_index": asdict(self.repo_index),
             "mcp_servers": self.mcp_servers,
         }
         return config_dict
@@ -365,6 +376,7 @@ class Config:
             fallback=FallbackConfig(**data.get("fallback", {})),
             context_compression=ContextCompressionConfig(**data.get("context_compression", {})),
             output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
+            repo_index=RepoIndexConfig(**data.get("repo_index", {})),
             mcp_servers=data.get("mcp_servers", {}),
         )
 

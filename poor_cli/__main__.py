@@ -269,6 +269,13 @@ async def _run_exec_mode_async(args: argparse.Namespace) -> int:
         model_name=args.model,
         api_key=args.api_key,
     )
+    # drain init progress events to stderr
+    for ev in core._pending_events:
+        if ev.type == "progress":
+            msg = ev.data.get("message", "")
+            if msg:
+                print(f"[init] {msg}", file=sys.stderr)
+    core._pending_events = []
     if args.routing_mode:
         core.set_routing_mode(args.routing_mode)
     if core.config is not None:

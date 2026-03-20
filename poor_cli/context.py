@@ -12,6 +12,7 @@ import asyncio
 import logging
 import os
 import re
+import shutil
 import subprocess
 import time
 from urllib.parse import unquote, urlparse
@@ -108,6 +109,9 @@ class ContextManager:
         
         # Recently edited files (for priority)
         self._recent_edits: Dict[str, float] = {}
+
+        # Repo knowledge graph (injected by core.py if available)
+        self._repo_graph: Any = None
         
         # Language-specific import patterns
         self._import_patterns = {
@@ -212,6 +216,27 @@ class ContextManager:
             include_full_content=False,
             reason="git-changed file",
         )
+        # graph-based related files (dependency neighbors of known files)
+        if self._repo_graph is not None and seen_paths:
+            graph_candidates: List[str] = []
+            seen_graph: Set[str] = set()
+            for seed_path in list(seen_paths)[:10]:
+                try:
+                    for related_path, _score in self._repo_graph.files_related_to(seed_path, max_depth=2):
+                        if related_path not in seen_paths and related_path not in seen_graph:
+                            seen_graph.add(related_path)
+                            graph_candidates.append(related_path)
+                except Exception:
+                    pass
+            if graph_candidates:
+                await _add_candidates(
+                    graph_candidates,
+                    source="graph",
+                    base_priority=150.0,
+                    include_full_content=False,
+                    reason="dependency-graph neighbor",
+                )
+
         await _add_candidates(
             self._discover_auto_files(root),
             source="auto",
@@ -672,19 +697,41 @@ class ContextManager:
         return changed
 
     def _discover_auto_files(self, repo_root: Path) -> List[str]:
-        candidates: List[Tuple[int, str]] = []
-        skipped_dirs = {
-            ".git",
-            ".poor-cli",
-            "node_modules",
-            "target",
-            "dist",
-            "build",
-            "__pycache__",
-            ".venv",
-            "venv",
-        }
-
+        # prefer graph-ranked files when available
+        if self._repo_graph is not None:
+            try:
+                ranked = self._repo_graph.rank_files_for_query([], limit=max(self.max_files * 3, 24))
+                if ranked:
+                    return [path for path, _score in ranked]
+            except Exception:
+                pass
+        skipped_dirs = {".git", ".poor-cli", "node_modules", "target", "dist",
+                        "build", "__pycache__", ".venv", "venv"}
+        # try find(1) first for speed in large repos
+        if shutil.which("find"):
+            try:
+                prune_args = []
+                for d in skipped_dirs:
+                    prune_args += ["-name", d, "-o"]
+                # build: find repo_root \( -name .git -o -name node_modules ... \) -prune -o -type f -print | head -5000
+                cmd = ["find", str(repo_root), "("] + prune_args[:-1] + [")", "-prune", "-o", "-type", "f", "-print"]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0 and result.stdout.strip():
+                    candidates: List[Tuple[int, str]] = []
+                    for line in result.stdout.splitlines()[:5000]:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        p = Path(line)
+                        if self._is_binary(str(p)):
+                            continue
+                        candidates.append((self._context_relevance_score(p), str(p.resolve())))
+                    candidates.sort(key=lambda item: (-item[0], item[1]))
+                    return [path for _, path in candidates[:max(self.max_files * 3, 24)]]
+            except Exception:
+                pass # fall through to os.walk
+        # os.walk fallback
+        candidates_fb: List[Tuple[int, str]] = []
         discovered = 0
         for root, dirnames, filenames in os.walk(repo_root):
             dirnames[:] = [name for name in sorted(dirnames) if name not in skipped_dirs]
@@ -697,12 +744,11 @@ class ContextManager:
                     continue
                 if self._is_binary(str(path)):
                     continue
-                candidates.append((self._context_relevance_score(path), str(path.resolve())))
+                candidates_fb.append((self._context_relevance_score(path), str(path.resolve())))
             if discovered > 5000:
                 break
-
-        candidates.sort(key=lambda item: (-item[0], item[1]))
-        return [path for _, path in candidates[: max(self.max_files * 3, 24)]]
+        candidates_fb.sort(key=lambda item: (-item[0], item[1]))
+        return [path for _, path in candidates_fb[:max(self.max_files * 3, 24)]]
 
     @staticmethod
     def _context_relevance_score(path: Path) -> int:
@@ -942,26 +988,38 @@ class ContextManager:
         ext = Path(file_path).suffix.lower()
         return ext_map.get(ext, "text")
     
+    _file_cmd_available: Optional[bool] = None
+
     def _is_binary(self, file_path: str) -> bool:
-        """
-        Check if a file is binary.
-        
-        Args:
-            file_path: Path to the file
-        
-        Returns:
-            True if file appears to be binary
-        """
-        binary_extensions = {
-            ".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe",
-            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico",
-            ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-            ".zip", ".tar", ".gz", ".rar", ".7z",
-            ".wasm", ".o", ".a", ".lib",
-        }
-        
+        """Check if a file is binary using `file` command with extension fallback."""
+        # fast extension check first
         ext = Path(file_path).suffix.lower()
-        return ext in binary_extensions
+        if ext in {".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe",
+                   ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico",
+                   ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+                   ".zip", ".tar", ".gz", ".rar", ".7z",
+                   ".wasm", ".o", ".a", ".lib"}:
+            return True
+        # use `file` command for ambiguous extensions
+        if ContextManager._file_cmd_available is None:
+            ContextManager._file_cmd_available = shutil.which("file") is not None
+        if ContextManager._file_cmd_available and ext not in {
+            ".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".go", ".java",
+            ".kt", ".rb", ".sh", ".md", ".txt", ".toml", ".yaml", ".yml",
+            ".json", ".html", ".css", ".sql", ".c", ".h", ".cpp", ".hpp",
+        }:
+            try:
+                result = subprocess.run(
+                    ["file", "--brief", "--mime-type", file_path],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if result.returncode == 0:
+                    mime = result.stdout.strip()
+                    if not mime.startswith("text/") and mime != "application/json":
+                        return True
+            except Exception:
+                pass
+        return False
     
     def format_context_for_prompt(
         self,
