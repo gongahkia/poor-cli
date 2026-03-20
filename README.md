@@ -23,7 +23,7 @@ Open, [multiplayer](#multiplayer), [BYOK](#model-support) coding agent for the t
 
 ## Usage
 
-Supported Python versions are `3.11` and `3.12`.
+Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
 Published wheels are platform-specific and bundle the Rust `poor-cli-tui` binary for supported targets. After `pip install poor-cli`, bare `poor-cli` should launch the TUI directly, and `poor-cli install-info` will show which packaged launcher was selected.
 

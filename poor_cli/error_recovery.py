@@ -211,8 +211,8 @@ class ErrorRecoveryManager:
             title="Install missing package",
             description="Install the required Python package",
             commands=[
-                "pip install " + (module if module else "<package_name>"),
-                "pip install -r requirements.txt"
+                "python -m pip install " + (module if module else "<package_name>"),
+                "python -m pip install -e \".[all]\""
             ],
             priority=1
         ))

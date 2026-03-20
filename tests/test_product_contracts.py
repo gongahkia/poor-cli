@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,10 @@ from poor_cli.task_manager import TaskManager
 class ProductContractTests(unittest.TestCase):
     def _readme_text(self) -> str:
         return (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+
+    def _pyproject_data(self) -> dict:
+        pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        return tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
 
     def _readme_model_support_table(self) -> str:
         lines = self._readme_text().splitlines()
@@ -40,6 +45,18 @@ class ProductContractTests(unittest.TestCase):
         self.assertEqual(
             self._readme_model_support_table(),
             render_readme_model_support_table(),
+        )
+
+    def test_python_support_and_aiortc_pin_are_aligned(self) -> None:
+        project = self._pyproject_data()["project"]
+        dependencies = set(project["dependencies"])
+        readme = self._readme_text()
+
+        self.assertEqual(project["requires-python"], ">=3.11,<3.15")
+        self.assertIn("aiortc>=1.14,<1.15", dependencies)
+        self.assertIn(
+            "Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.",
+            readme,
         )
 
     def test_status_view_shape_includes_canonical_sections(self) -> None:

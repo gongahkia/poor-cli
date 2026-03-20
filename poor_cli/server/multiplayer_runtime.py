@@ -148,13 +148,13 @@ async def _run_stdio_bridge(invite_code: str = "") -> None:
         import aiohttp
     except ImportError as e:
         raise RuntimeError(
-            "Bridge mode requires aiohttp. Install dependencies with: pip install -r requirements.txt"
+            "Bridge mode requires aiohttp. Install the current package dependencies in this environment and retry."
         ) from e
     try:
         from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
     except ImportError as e:
         raise RuntimeError(
-            "Bridge mode requires aiortc. Install dependencies with: pip install -r requirements.txt"
+            "Bridge mode requires aiortc. Install the current package dependencies in this environment and retry."
         ) from e
 
     bootstrap = _decode_bridge_invite(invite_code)

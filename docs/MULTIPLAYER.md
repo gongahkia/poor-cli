@@ -216,11 +216,11 @@ Verified during this migration:
 - `luac -p nvim-poor-cli/lua/poor-cli/rpc.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/commands.lua`
 - `luac -p nvim-poor-cli/lua/poor-cli/chat.lua`
-- `python -m unittest tests.test_multiplayer_invites tests.test_multiplayer_session tests.test_multiplayer_runtime` inside a Python 3.12 venv with `ffmpeg@7`, `aiohttp`, and `aiortc>=1.13,<1.14`
+- `python -m unittest tests.test_multiplayer_invites tests.test_multiplayer_session tests.test_multiplayer_runtime` inside a Python 3.14 venv with `aiohttp` and `aiortc>=1.14,<1.15`
 
 ## Troubleshooting
 
-- If bridge startup fails with `missing_aiortc` or `ModuleNotFoundError: aiortc`, install Python dependencies from `requirements.txt`.
+- If bridge startup fails with `missing_aiortc` or `ModuleNotFoundError: aiortc`, install the current package dependencies in the active environment and retry.
 - If invite preflight fails, verify the HTTP signaling endpoint in the invite is reachable.
 - If internet peers cannot connect reliably, configure TURN and verify the referenced TURN credential env vars are present.
 - If Neovim join or leave appears stuck, inspect `:PoorCliStatus` and the reported server log path.
