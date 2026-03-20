@@ -6,10 +6,13 @@ the Neovim plugin.
 """
 
 import asyncio
+import difflib
+import hashlib
 import subprocess
 import re
 import threading
 import textwrap
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Protocol, Tuple
@@ -35,6 +38,12 @@ from .instructions import InstructionManager, InstructionSnapshot
 from .mcp_client import MCPManager
 from .plan_analyzer import PlanAnalyzer
 from .policy_hooks import HookExecutionResult, PolicyHookManager
+from .economy import (
+    EconomySavingsTracker,
+    classify_prompt_complexity,
+    distill_prompt,
+    apply_economy_preset,
+)
 from .prompts import (
     build_fim_prompt as _build_fim_prompt,
     build_tool_calling_system_instruction,
@@ -183,6 +192,10 @@ class CoreEvent:
         return CoreEvent(type="todo_update", data={"todos": todos, "completed": completed, "total": total})
 
     @staticmethod
+    def economy_savings(savings: Dict[str, Any]) -> "CoreEvent":
+        return CoreEvent(type="economy_savings", data=savings)
+
+    @staticmethod
     def done(reason: str = "complete") -> "CoreEvent":
         return CoreEvent(type="done", data={"reason": reason})
 
@@ -281,6 +294,16 @@ class PoorCLICore:
 
         # Context compressor
         self._context_compressor: ContextCompressor = ContextCompressor()
+
+        # Economy mode savings tracker + downshift state
+        self._economy_tracker: EconomySavingsTracker = EconomySavingsTracker()
+        self._original_model_name: Optional[str] = None
+        self._downshifted: bool = False
+        self._response_cache: Dict[str, Tuple[str, float]] = {} # prompt_hash -> (response, timestamp)
+        self._files_seen_in_session: Dict[str, str] = {} # path -> content hash for context dedup
+        self._last_file_contents: Dict[str, str] = {} # path -> last read content for diff-only reads
+        self._idle_compact_task: Optional[asyncio.TimerHandle] = None
+        self._idle_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Sub-agent delegation depth (0 = top-level)
         self._sub_agent_depth: int = 0
@@ -409,8 +432,11 @@ class PoorCLICore:
             logger.info(f"Registered {len(tool_declarations)} tools")
             
             # Build system instruction (provider-tuned for constrained models)
+            terse = getattr(self.config.economy, "terse_system_prompt", False)
+            batched = getattr(self.config.economy, "prefer_batched_reads", False)
             self._system_instruction = build_tool_calling_system_instruction(
                 str(repo_root), provider=self.config.model.provider,
+                terse_mode=terse, batched_reads=batched,
             )
             
             provider_capabilities = self.provider.get_capabilities()
@@ -1432,6 +1458,193 @@ class PoorCLICore:
             "estimated_cost_usd": round(self._session_total_cost_usd, 6),
         }
 
+    def get_economy_savings(self) -> Dict[str, Any]:
+        """Return accumulated economy savings summary."""
+        return self._economy_tracker.get_summary()
+
+    def set_economy_preset(self, preset: str) -> Dict[str, Any]:
+        """Switch economy preset. Returns the updated economy config dict."""
+        if not self.config:
+            return {"error": "not initialized"}
+        from dataclasses import asdict as _asdict
+        apply_economy_preset(self.config.economy, preset)
+        return _asdict(self.config.economy)
+
+    def _maybe_downshift_model(self, prompt: str) -> None:
+        """Switch to a cheaper model for simple prompts if economy.auto_downshift enabled."""
+        if not self.config or not self.provider:
+            return
+        eco = self.config.economy
+        if not eco.auto_downshift:
+            return
+        if len(prompt) >= eco.downshift_threshold_chars:
+            return
+        if eco.downshift_exclude_tools:
+            complexity = classify_prompt_complexity(prompt)
+            if complexity != "simple":
+                return
+        from .provider_catalog import get_downshift_model, get_model_tier
+        result = get_downshift_model(self.config.model.provider)
+        if not result:
+            return
+        cheap_model_name, cheap_tier = result
+        if cheap_model_name == self.config.model.model_name:
+            return # already on cheapest
+        current_tier = get_model_tier(self.config.model.provider, self.config.model.model_name)
+        self._original_model_name = self.config.model.model_name
+        self._downshifted = True
+        self.provider.switch_model(cheap_model_name)
+        if current_tier:
+            self._economy_tracker.record_downshift(
+                current_tier.cost_1k_in + current_tier.cost_1k_out,
+                cheap_tier.cost_1k_in + cheap_tier.cost_1k_out,
+            )
+
+    def _restore_model(self) -> None:
+        """Restore original model after a downshift."""
+        if self._downshifted and self._original_model_name and self.provider:
+            self.provider.switch_model(self._original_model_name)
+            self._original_model_name = None
+            self._downshifted = False
+
+    # ── Economy: response cache ───────────────────────────────────────
+
+    def _cache_key(self, prompt: str) -> str:
+        return hashlib.sha256(prompt.encode("utf-8", errors="replace")).hexdigest()
+
+    def _cache_lookup(self, prompt: str) -> Optional[str]:
+        """Return cached response if valid, else None."""
+        if not self.config or not self.config.economy.response_cache:
+            return None
+        key = self._cache_key(prompt)
+        entry = self._response_cache.get(key)
+        if entry is None:
+            return None
+        cached_text, ts = entry
+        ttl = self.config.economy.response_cache_ttl
+        if time.monotonic() - ts > ttl:
+            del self._response_cache[key]
+            return None
+        return cached_text
+
+    def _cache_store(self, prompt: str, response: str) -> None:
+        if not self.config or not self.config.economy.response_cache:
+            return
+        key = self._cache_key(prompt)
+        self._response_cache[key] = (response, time.monotonic())
+
+    # ── Economy: context dedup ────────────────────────────────────────
+
+    def _dedup_context_files(self, context_text: str) -> Tuple[str, int]:
+        """Remove file content blocks already seen this session. Returns (deduped, tokens_saved)."""
+        if not self.config or not (self.config.economy.context_dedup or self.config.economy.dedup_context):
+            return context_text, 0
+        lines = context_text.split("\n")
+        output_lines: List[str] = []
+        skipping = False
+        current_path = ""
+        tokens_saved = 0
+        for line in lines:
+            if line.startswith("--- file: ") or line.startswith("File: "):
+                path = line.split(": ", 1)[-1].strip()
+                content_hash = hashlib.md5(line.encode()).hexdigest()
+                if path in self._files_seen_in_session and self._files_seen_in_session[path] == content_hash:
+                    skipping = True
+                    current_path = path
+                    output_lines.append(f"{line} [already in context, skipped]")
+                    continue
+                else:
+                    self._files_seen_in_session[path] = content_hash
+                    skipping = False
+            if skipping:
+                tokens_saved += len(line) // 4
+                continue
+            output_lines.append(line)
+        return "\n".join(output_lines), tokens_saved
+
+    # ── Economy: diff-only reads ──────────────────────────────────────
+
+    def _apply_diff_only_read(self, tool_name: str, tool_args: Dict[str, Any], result: str) -> str:
+        """For read_file results, return only changed lines vs last read if diff_only_reads enabled."""
+        if not self.config or not self.config.economy.diff_only_reads:
+            return result
+        if tool_name != "read_file":
+            return result
+        path = tool_args.get("file_path", "")
+        if not path:
+            return result
+        previous = self._last_file_contents.get(path)
+        self._last_file_contents[path] = result
+        if previous is None:
+            return result # first read — return full
+        if previous == result:
+            return f"[unchanged since last read: {path}]"
+        diff = difflib.unified_diff(
+            previous.splitlines(keepends=True),
+            result.splitlines(keepends=True),
+            fromfile=f"{path} (previous)",
+            tofile=f"{path} (current)",
+            n=3,
+        )
+        diff_text = "".join(diff)
+        if not diff_text:
+            return f"[unchanged since last read: {path}]"
+        return f"[diff-only read: {path}]\n{diff_text}"
+
+    # ── Economy: idle auto-compact ────────────────────────────────────
+
+    def _reset_idle_compact_timer(self) -> None:
+        """Reset the idle auto-compact timer."""
+        if not self.config:
+            return
+        seconds = self.config.economy.idle_compact_seconds
+        if seconds <= 0:
+            return
+        # cancel existing timer
+        if self._idle_compact_task is not None:
+            self._idle_compact_task.cancel()
+            self._idle_compact_task = None
+        try:
+            loop = asyncio.get_running_loop()
+            self._idle_loop = loop
+            self._idle_compact_task = loop.call_later(seconds, self._idle_compact_fire)
+        except RuntimeError:
+            pass # no running loop
+
+    def _idle_compact_fire(self) -> None:
+        """Fired when idle timer expires — schedule compression."""
+        if self._idle_loop is None or not self.provider:
+            return
+        async def _do_compact():
+            try:
+                cc_cfg = getattr(self.config, "context_compression", None) if self.config else None
+                if not cc_cfg or not getattr(cc_cfg, "enabled", False):
+                    return
+                history = self.provider.get_history()
+                if len(history) <= 2:
+                    return
+                if self._context_compressor.should_compress(history, cc_cfg):
+                    before = len(history)
+                    compressed = self._context_compressor.compress(history, cc_cfg)
+                    self.provider.set_history(compressed)
+                    after = len(compressed)
+                    logger.info("Idle auto-compact: %d -> %d messages", before, after)
+            except Exception:
+                pass
+        self._idle_loop.create_task(_do_compact())
+
+    # ── Economy: economy_max_tokens ───────────────────────────────────
+
+    def _apply_economy_max_tokens(self) -> None:
+        """Set economy output token cap on the provider if configured."""
+        if not self.config or not self.provider:
+            return
+        cap = self.config.economy.economy_max_tokens
+        if cap > 0:
+            self.provider.economy_max_output_tokens = cap
+        else:
+            self.provider.economy_max_output_tokens = 0
+
     @staticmethod
     def _git_context_summary() -> str:
         """Build git-aware context (staged diff + recent commits) for injection."""
@@ -1508,6 +1721,60 @@ class PoorCLICore:
             pinned_context_files=pinned_context_files,
             context_budget_tokens=context_budget_tokens,
         )
+
+        # Economy: context dedup — strip file blocks already in session
+        try:
+            if self.config and (self.config.economy.context_dedup or self.config.economy.dedup_context):
+                full_message, dedup_saved = self._dedup_context_files(full_message)
+                if dedup_saved > 0:
+                    self._economy_tracker.record_dedup(dedup_saved)
+        except (AttributeError, TypeError):
+            pass
+
+        # Economy: prompt distillation
+        try:
+            eco = self.config.economy if self.config else None
+            if eco and eco.prompt_distill:
+                tokens_before = len(full_message) // 4
+                full_message, tokens_saved = distill_prompt(full_message, "", eco)
+                if tokens_saved > 0:
+                    self._economy_tracker.record_distillation(tokens_before, tokens_before - tokens_saved)
+        except (AttributeError, TypeError):
+            pass
+
+        # Economy: smart model downshift for simple prompts
+        try:
+            self._maybe_downshift_model(message)
+        except Exception:
+            pass
+
+        # Economy: apply output token cap
+        try:
+            self._apply_economy_max_tokens()
+        except Exception:
+            pass
+
+        # Economy: reset idle auto-compact timer
+        try:
+            self._reset_idle_compact_timer()
+        except Exception:
+            pass
+
+        # Economy: response cache lookup
+        cached_response = None
+        try:
+            cached_response = self._cache_lookup(full_message)
+        except Exception:
+            pass
+        if cached_response is not None:
+            self._economy_tracker.record_cache_hit()
+            yield CoreEvent.text_chunk(cached_response, request_id)
+            savings = self._economy_tracker.get_summary()
+            if any(v for v in savings.values()):
+                yield CoreEvent.economy_savings(savings)
+            self._restore_model()
+            yield CoreEvent.done(reason="cache_hit")
+            return
 
         if self.history_adapter:
             self.history_adapter.add_message("user", message)
@@ -1655,6 +1922,23 @@ class PoorCLICore:
                             yield CoreEvent.done(reason="iteration_cap")
                             return
 
+                        # Economy: tool call budget enforcement
+                        eco_budget = getattr(self.config.economy, "tool_call_budget", 0) if self.config else 0
+                        if eco_budget > 0 and iteration >= eco_budget:
+                            self._economy_tracker.record_tool_calls_avoided(max_iterations - iteration)
+                            self._finish_run_record(
+                                run_state,
+                                status="completed",
+                                summary="economy tool budget reached",
+                                checkpoint_id=last_checkpoint_id,
+                                artifact_dir=artifact_dir,
+                            )
+                            yield CoreEvent.text_chunk(f"\n[Economy] Tool call budget reached ({eco_budget})", request_id)
+                            yield CoreEvent.economy_savings(self._economy_tracker.get_summary())
+                            yield CoreEvent.done(reason="economy_tool_budget")
+                            self._restore_model()
+                            return
+
                         yield CoreEvent.progress("tool_loop", f"Iteration {iteration}/{max_iterations}", iteration, max_iterations)
 
                         tool_results = await self._handle_function_calls_events(
@@ -1724,6 +2008,18 @@ class PoorCLICore:
                 artifact_dir=artifact_dir,
                 metadata_updates={"requestId": request_id},
             )
+
+            # Economy: store response in cache
+            try:
+                self._cache_store(full_message, accumulated_text)
+            except Exception:
+                pass
+
+            # Economy: emit savings summary and restore model
+            savings = self._economy_tracker.get_summary()
+            if any(v for v in savings.values()):
+                yield CoreEvent.economy_savings(savings)
+            self._restore_model()
 
             yield CoreEvent.done(reason="complete")
             logger.info(f"Message complete (events), {len(accumulated_text)} chars")
@@ -1997,6 +2293,13 @@ class PoorCLICore:
             logger.error(f"Tool execution failed: {e}")
 
         result_text = self._tool_result_text(result)
+
+        # Economy: diff-only reads — replace full read_file output with diff vs last read
+        try:
+            result_text = self._apply_diff_only_read(tool_name, tool_args, result_text)
+        except Exception:
+            pass
+
         events.append(CoreEvent.tool_result(
             tool_name, result_text, fc.id, iteration, max_iterations,
             diff=self._tool_result_diff(result),

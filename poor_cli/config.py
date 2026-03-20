@@ -12,6 +12,7 @@ from dataclasses import dataclass, asdict, field
 from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
 from poor_cli.provider_catalog import all_provider_entries, default_model_for_provider
+from poor_cli.economy import EconomyConfig, ECONOMY_PRESETS, apply_economy_preset
 
 logger = setup_logger(__name__)
 
@@ -331,6 +332,7 @@ class Config:
     context_compression: ContextCompressionConfig = field(default_factory=ContextCompressionConfig)
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
     repo_index: RepoIndexConfig = field(default_factory=RepoIndexConfig)
+    economy: EconomyConfig = field(default_factory=EconomyConfig)
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
@@ -357,6 +359,7 @@ class Config:
             "context_compression": asdict(self.context_compression),
             "output_truncation": asdict(self.output_truncation),
             "repo_index": asdict(self.repo_index),
+            "economy": asdict(self.economy),
             "mcp_servers": self.mcp_servers,
         }
         return config_dict
@@ -383,6 +386,7 @@ class Config:
             context_compression=ContextCompressionConfig(**data.get("context_compression", {})),
             output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
             repo_index=RepoIndexConfig(**data.get("repo_index", {})),
+            economy=EconomyConfig(**data.get("economy", {})),
             mcp_servers=data.get("mcp_servers", {}),
         )
 
@@ -481,6 +485,7 @@ class ConfigManager:
             "fallback",
             "context_compression",
             "output_truncation",
+            "economy",
             "mcp_servers",
         }
 

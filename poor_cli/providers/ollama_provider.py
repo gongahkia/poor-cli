@@ -83,6 +83,9 @@ class OllamaProvider(BaseProvider):
         }
         if self.tools:
             request_data["tools"] = self.tools
+        # economy mode output cap
+        if self.economy_max_output_tokens > 0:
+            request_data.setdefault("options", {})["num_predict"] = self.economy_max_output_tokens
         return request_data
 
     async def initialize(self, tools: Optional[List[Dict[str, Any]]] = None,

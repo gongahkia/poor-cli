@@ -113,6 +113,55 @@ def get_model_tier(provider: str, model: str) -> Optional[ModelTier]:
     )
 
 
+def get_cheapest_model(provider: str) -> Optional[ModelTier]:
+    """Return the cheapest model tier for a given provider, or None."""
+    canonical = canonical_provider_name(provider)
+    payload = _catalog_payload().get("providers", {}).get(canonical, {})
+    tiers = payload.get("modelTiers", {})
+    if not tiers:
+        return None
+    best: Optional[ModelTier] = None
+    for model_name, tier_data in tiers.items():
+        mt = ModelTier(
+            model_name=model_name,
+            tier=str(tier_data.get("tier", "balanced")),
+            cost_1k_in=float(tier_data.get("cost_1k_in", 0)),
+            cost_1k_out=float(tier_data.get("cost_1k_out", 0)),
+            speed_rank=int(tier_data.get("speed_rank", 2)),
+        )
+        if best is None or mt.cost_1k_in < best.cost_1k_in:
+            best = mt
+    return best
+
+
+def get_downshift_model(provider: str) -> Optional[Tuple[str, ModelTier]]:
+    """Return (model_name, ModelTier) for the cheapest model of the same provider.
+
+    Returns None if the provider has no model tiers or only one model.
+    """
+    canonical = canonical_provider_name(provider)
+    payload = _catalog_payload().get("providers", {}).get(canonical, {})
+    tiers = payload.get("modelTiers", {})
+    if len(tiers) < 2:
+        return None
+    best_name: Optional[str] = None
+    best_tier: Optional[ModelTier] = None
+    for model_name, tier_data in tiers.items():
+        mt = ModelTier(
+            model_name=model_name,
+            tier=str(tier_data.get("tier", "balanced")),
+            cost_1k_in=float(tier_data.get("cost_1k_in", 0)),
+            cost_1k_out=float(tier_data.get("cost_1k_out", 0)),
+            speed_rank=int(tier_data.get("speed_rank", 2)),
+        )
+        if best_tier is None or mt.cost_1k_in < best_tier.cost_1k_in:
+            best_name = model_name
+            best_tier = mt
+    if best_name and best_tier:
+        return best_name, best_tier
+    return None
+
+
 def select_provider_and_model(
     routing_mode: str, ready_providers: List[str]
 ) -> Tuple[Optional[str], Optional[str]]:

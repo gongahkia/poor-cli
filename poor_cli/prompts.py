@@ -207,6 +207,10 @@ EDITING STRATEGY:
 
 If the user just asks for a solution/code without mentioning a file, show the code first and ask if they want it saved."""
 
+ECONOMY_TERSE_SUFFIX = "\n\nIMPORTANT: Be extremely concise. No preamble, no trailing summaries. Lead with the answer."
+
+ECONOMY_BATCHED_READS_SUFFIX = "\n\nEFFICIENCY: When you need to read multiple files, batch them into a single tool call round. Avoid reading files one at a time across separate iterations."
+
 
 # =============================================================================
 # Specialized Prompts
@@ -405,18 +409,29 @@ def _truncate_instruction_for_provider(instruction: str, provider: str) -> str:
     return truncated + "\n\n[System instruction truncated for model context limits]"
 
 
-def build_tool_calling_system_instruction(current_dir: str, provider: str = "") -> str:
+def build_tool_calling_system_instruction(
+    current_dir: str,
+    provider: str = "",
+    terse_mode: bool = False,
+    batched_reads: bool = False,
+) -> str:
     """
     Build the shared tool-calling system instruction used by CLI and server flows.
 
     Args:
         current_dir: Current working directory.
         provider: Optional provider name for instruction tuning.
+        terse_mode: Append economy terse suffix when True.
+        batched_reads: Append batched-reads hint when True.
 
     Returns:
         Fully rendered system instruction.
     """
     instruction = SYSTEM_INSTRUCTION_TOOL_CALLING_TEMPLATE.format(current_dir=current_dir)
+    if terse_mode:
+        instruction += ECONOMY_TERSE_SUFFIX
+    if batched_reads:
+        instruction += ECONOMY_BATCHED_READS_SUFFIX
     if provider:
         instruction = _truncate_instruction_for_provider(instruction, provider)
     return instruction

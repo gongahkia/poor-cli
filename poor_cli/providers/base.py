@@ -76,6 +76,7 @@ class BaseProvider(ABC):
         self.api_key = api_key
         self.model_name = model_name
         self.config = kwargs
+        self.economy_max_output_tokens: int = 0 # set by economy mode; 0 = no cap
 
     @abstractmethod
     async def initialize(self, tools: Optional[List[Dict[str, Any]]] = None,
@@ -167,6 +168,11 @@ class BaseProvider(ABC):
             f"{tool_result['name']}: {tool_result['result']}"
             for tool_result in tool_results
         )
+
+    def switch_model(self, model_name: str) -> None:
+        """Switch to a different model (e.g. for economy downshift).
+        Subclasses may override for provider-specific re-init."""
+        self.model_name = model_name
 
     def get_provider_name(self) -> str:
         """Get the provider name

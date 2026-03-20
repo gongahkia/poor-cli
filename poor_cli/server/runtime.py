@@ -691,6 +691,8 @@ class PoorCLIServer:
             "poor-cli/saveSession": self.handle_save_session,
             "poor-cli/mcpHealthCheck": self.handle_mcp_health_check,
             "poor-cli/restoreSession": self.handle_restore_session,
+            "poor-cli/getEconomySavings": self.handle_get_economy_savings,
+            "poor-cli/setEconomyPreset": self.handle_set_economy_preset,
         }
 
     # =========================================================================
@@ -4261,6 +4263,17 @@ class PoorCLIServer:
         """Return session token/cost totals."""
         self._ensure_initialized()
         return self.core.get_session_cost_summary()
+
+    async def handle_get_economy_savings(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return accumulated economy savings metrics."""
+        self._ensure_initialized()
+        return self.core.get_economy_savings()
+
+    async def handle_set_economy_preset(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Switch economy preset (frugal | balanced | quality)."""
+        self._ensure_initialized()
+        preset = str(params.get("preset", "balanced")).strip()
+        return self.core.set_economy_preset(preset)
 
     async def handle_list_ollama_models(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Discover models available on the local Ollama server."""

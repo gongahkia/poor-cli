@@ -608,6 +608,18 @@
       "description": "Check health of MCP servers",
       "recommended": false,
       "category": "Core Workflow"
+    },
+    {
+      "command": "/economy",
+      "description": "Show or switch economy preset (frugal|balanced|quality)",
+      "recommended": false,
+      "category": "Providers & Config"
+    },
+    {
+      "command": "/savings",
+      "description": "Show economy savings dashboard",
+      "recommended": false,
+      "category": "Providers & Config"
     }
   ]
 }

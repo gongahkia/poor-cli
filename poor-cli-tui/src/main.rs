@@ -2730,6 +2730,26 @@ fn rpc_mcp_health_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Valu
         .map_err(|_| "Timed out waiting for MCP health".to_string())?
 }
 
+fn rpc_get_economy_savings_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GetEconomySavings { reply: reply_tx })
+        .map_err(|e| format!("Failed to request economy savings: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for economy savings".to_string())?
+}
+
+fn rpc_set_economy_preset_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>, preset: &str) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SetEconomyPreset { preset: preset.to_string(), reply: reply_tx })
+        .map_err(|e| format!("Failed to set economy preset: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for economy preset".to_string())?
+}
+
 fn rpc_list_ollama_models_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx

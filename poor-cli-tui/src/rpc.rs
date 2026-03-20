@@ -1204,6 +1204,14 @@ impl RpcClient {
     pub fn restore_session(&self) -> Result<Value, String> {
         self.call("poor-cli/restoreSession", Value::Object(Default::default()))
     }
+    pub fn get_economy_savings(&self) -> Result<Value, String> {
+        self.call("poor-cli/getEconomySavings", Value::Object(Default::default()))
+    }
+    pub fn set_economy_preset(&self, preset: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("preset".to_string(), Value::String(preset.to_string()));
+        self.call("poor-cli/setEconomyPreset", Value::Object(params))
+    }
 
     pub fn list_runs(
         &self,
@@ -1933,6 +1941,13 @@ pub enum RpcCommand {
     RestoreSession {
         reply: SyncSender<Result<Value, String>>,
     },
+    GetEconomySavings {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SetEconomyPreset {
+        preset: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
     GetContextExplain {
         message: String,
         context_files: Vec<String>,
@@ -2365,6 +2380,12 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::RestoreSession { reply }) => {
                 let _ = reply.send(client.restore_session());
+            }
+            Ok(RpcCommand::GetEconomySavings { reply }) => {
+                let _ = reply.send(client.get_economy_savings());
+            }
+            Ok(RpcCommand::SetEconomyPreset { preset, reply }) => {
+                let _ = reply.send(client.set_economy_preset(&preset));
             }
             Ok(RpcCommand::GetContextExplain {
                 message,

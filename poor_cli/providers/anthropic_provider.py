@@ -111,6 +111,9 @@ class AnthropicProvider(BaseProvider):
             params["max_tokens"] = 16384
         else:
             params["max_tokens"] = 4096
+        # economy mode output cap
+        if self.economy_max_output_tokens > 0:
+            params["max_tokens"] = min(params["max_tokens"], self.economy_max_output_tokens)
         if self.system_instruction:
             if self.prompt_caching:
                 params["system"] = [{"type": "text", "text": self.system_instruction, "cache_control": {"type": "ephemeral"}}]

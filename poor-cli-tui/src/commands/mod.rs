@@ -1475,6 +1475,40 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/savings" {
+        match rpc_get_economy_savings_blocking(rpc_cmd_tx) {
+            Ok(payload) => {
+                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                show_command_info_popup(app, raw, format!("**Economy Savings:**\n```\n{msg}\n```"));
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Failed to get savings: {e}"))),
+        }
+        return false;
+    }
+
+    if lowered == "/economy" || lowered.starts_with("/economy ") {
+        let arg = lowered.strip_prefix("/economy").unwrap_or("").trim();
+        if arg.is_empty() {
+            // show current config
+            match rpc_get_economy_savings_blocking(rpc_cmd_tx) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Economy Mode:**\n```\n{msg}\n```\n\nUsage: `/economy frugal|balanced|quality`"));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to get economy: {e}"))),
+            }
+        } else {
+            match rpc_set_economy_preset_blocking(rpc_cmd_tx, arg) {
+                Ok(payload) => {
+                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
+                    show_command_info_popup(app, raw, format!("**Economy preset set to `{arg}`:**\n```\n{msg}\n```"));
+                }
+                Err(e) => app.push_message(ChatMessage::error(format!("Failed to set economy preset: {e}"))),
+            }
+        }
+        return false;
+    }
+
     if lowered == "/ollama-models" {
         match rpc_list_ollama_models_blocking(rpc_cmd_tx) {
             Ok(payload) => {

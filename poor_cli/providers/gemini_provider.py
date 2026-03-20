@@ -147,6 +147,13 @@ class GeminiProvider(BaseProvider):
         if self.chat is None:
             raise ConfigurationError("Gemini provider not initialized")
 
+        # economy mode output cap
+        if self.economy_max_output_tokens > 0 and self._chat_config is not None:
+            try:
+                self._chat_config.max_output_tokens = self.economy_max_output_tokens
+            except Exception:
+                pass
+
         normalized_message = self._normalize_message(message)
 
         for attempt in range(self.max_retries):

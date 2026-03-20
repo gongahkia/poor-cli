@@ -161,6 +161,10 @@ class OpenAIProvider(BaseProvider):
                 request_params["tools"] = self.tools
                 request_params["tool_choice"] = "auto"
 
+            # economy mode output cap
+            if self.economy_max_output_tokens > 0:
+                request_params["max_tokens"] = self.economy_max_output_tokens
+
             # Stream response
             accumulated_content = ""
             accumulated_tool_calls = {}
