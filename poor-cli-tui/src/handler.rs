@@ -86,7 +86,7 @@ pub(super) fn handle_server_message(
                         let ready_provider_count =
                             status_view_ready_provider_count(&status_view);
                         if unconfigured {
-                            activate_workspace(app, &rpc_cmd_tx.borrow(), AppWorkspace::Setup);
+                            // workspace panels removed; open setup via onboarding
                             start_startup_onboarding_intro(app, true);
                             app.set_status("Opened onboarding for first-launch setup");
                         } else if ready_provider_count > 1 {

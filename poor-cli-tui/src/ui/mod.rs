@@ -20,10 +20,9 @@ use ratatui::{
 };
 
 use crate::app::{
-    App, AppMode, AppWorkspace, ThemeMode,
+    App, AppMode, ThemeMode,
 };
 use crate::input::{command_palette_matches, SlashCommandSpec};
-use crate::markdown;
 use crate::theme;
 
 /// Main render function called each frame.
@@ -35,37 +34,24 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let input_height = compute_input_height(app, frame.area().width);
     let activity_height = if show_activity_bar(app) { 1 } else { 0 };
-    let has_presence = app.multiplayer.enabled && !app.pair.connected_users.is_empty();
-    let mut constraints = Vec::new();
-    if has_presence {
-        constraints.push(Constraint::Length(1));
-    }
-    constraints.push(Constraint::Length(1));
-    constraints.push(Constraint::Min(5));
-    constraints.push(Constraint::Length(activity_height));
-    constraints.push(Constraint::Length(input_height));
-    constraints.push(Constraint::Length(1));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(constraints)
+        .constraints([
+            Constraint::Length(1),  // header bar
+            Constraint::Min(5),    // chat area
+            Constraint::Length(activity_height), // activity bar
+            Constraint::Length(input_height),    // input bar
+            Constraint::Length(1), // hint bar
+        ])
         .split(frame.area());
 
-    let mut idx = 0usize;
-    if has_presence {
-        draw_presence_bar(frame, app, chunks[idx]);
-        idx += 1;
-    }
-    draw_workspace_bar(frame, app, chunks[idx]);
-    idx += 1;
-    draw_main_area(frame, app, chunks[idx]);
-    idx += 1;
+    draw_header_bar(frame, app, chunks[0]);
+    draw_main_area(frame, app, chunks[1]);
     if activity_height > 0 {
-        draw_activity_bar(frame, app, chunks[idx]);
+        draw_activity_bar(frame, app, chunks[2]);
     }
-    idx += 1;
-    draw_input_bar(frame, app, chunks[idx]);
-    idx += 1;
-    draw_hint_bar(frame, app, chunks[idx]);
+    draw_input_bar(frame, app, chunks[3]);
+    draw_hint_bar(frame, app, chunks[4]);
     draw_command_palette(frame, app);
     draw_at_path_completion(frame, app);
 
@@ -161,58 +147,6 @@ fn compute_input_height(app: &App, terminal_width: u16) -> u16 {
     visual_lines.saturating_add(2).clamp(3, 6)
 }
 
-// ── Presence bar (pair mode) ──────────────────────────────────────────
-
-fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let mode = app.theme_mode;
-    let dim = theme::muted_fg(mode);
-    let mut spans = vec![Span::styled("  ", Style::default())];
-    for (i, user) in app.pair.connected_users.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" · ", Style::default().fg(dim)));
-        }
-        spans.push(Span::styled(format!("{}", i + 1), Style::default().fg(dim)));
-        spans.push(Span::styled(" ", Style::default()));
-        let role_color = match user.role {
-            crate::app::PairRole::Driver => theme::success(mode),
-            crate::app::PairRole::Navigator => theme::accent(mode),
-            crate::app::PairRole::Reviewer => theme::warning(mode),
-        };
-        spans.push(Span::styled(
-            user.role.label().to_string(),
-            Style::default().fg(role_color).add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            format!(" {}", user.name),
-            Style::default().fg(theme::base_fg(mode)),
-        ));
-        if user.is_active {
-            spans.push(Span::styled(" ●", Style::default().fg(theme::accent(mode))));
-        }
-    }
-    if app.multiplayer.queue_depth > 0 {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            format!("queue:{}", app.multiplayer.queue_depth),
-            Style::default().fg(theme::warning(mode)),
-        ));
-    }
-    let room_label = if !app.pair.short_code.is_empty() {
-        app.pair.short_code.as_str()
-    } else {
-        app.multiplayer.room.as_str()
-    };
-    if !room_label.is_empty() {
-        spans.push(Span::styled(" │ ", Style::default().fg(dim)));
-        spans.push(Span::styled(
-            format!("room:{room_label}"),
-            Style::default().fg(dim),
-        ));
-    }
-    let bar = Paragraph::new(Line::from(spans)).style(theme::footer_style(mode));
-    frame.render_widget(bar, area);
-}
-
 fn show_activity_bar(app: &App) -> bool {
     app.streaming.active_tool.is_some() || app.streaming.message.is_some() || app.waiting
 }
@@ -296,30 +230,74 @@ pub(crate) fn ellipsize_middle(value: &str, max_chars: usize) -> String {
 // ── Chat area ────────────────────────────────────────────────────────
 
 fn draw_main_area(frame: &mut Frame, app: &App, area: Rect) {
-    if app.active_workspace == AppWorkspace::Chat {
-        draw_chat_area(frame, app, area);
-    } else {
-        draw_workspace_panel(frame, app, area);
-    }
+    draw_chat_area(frame, app, area);
 }
 
-fn draw_workspace_bar(frame: &mut Frame, app: &App, area: Rect) {
+// ── Header bar ───────────────────────────────────────────────────────
+
+fn draw_header_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
-    let mut spans = vec![Span::styled("  ", Style::default())];
-    for (idx, workspace) in AppWorkspace::ALL.iter().enumerate() {
-        if idx > 0 {
-            spans.push(Span::styled("  ", Style::default()));
-        }
-        let is_active = *workspace == app.active_workspace;
-        let label = format!("{} {}", workspace.shortcut(), workspace.label());
-        let style = if is_active {
-            Style::default()
-                .fg(theme::accent(mode))
-                .add_modifier(Modifier::BOLD)
+    let dim = theme::muted_fg(mode);
+    let mut spans = vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(
+            format!("poor-cli v{}", app.version),
+            theme::brand_style(mode),
+        ),
+    ];
+    // provider/model
+    let provider_known = !app.provider.name.trim().is_empty() && app.provider.name != "unknown";
+    let model_known = !app.provider.model.trim().is_empty() && app.provider.model != "unknown";
+    if provider_known || model_known {
+        spans.push(Span::styled("  ", Style::default()));
+        let label = if provider_known && model_known {
+            format!("{}/{}", app.provider.name, app.provider.model)
+        } else if provider_known {
+            app.provider.name.clone()
         } else {
-            Style::default().fg(theme::muted_fg(mode))
+            app.provider.model.clone()
         };
-        spans.push(Span::styled(label, style));
+        spans.push(Span::styled(label, Style::default().fg(theme::base_fg(mode))));
+    }
+    // sandbox mode
+    if !app.permission_mode_label.is_empty() {
+        spans.push(Span::styled("  ", Style::default()));
+        let sandbox_color = match app.permission_mode_label.as_str() {
+            "prompt" => theme::success(mode),
+            "auto-safe" => theme::warning(mode),
+            _ => theme::error(mode), // danger-full-access or unknown
+        };
+        spans.push(Span::styled(
+            app.permission_mode_label.clone(),
+            Style::default().fg(sandbox_color),
+        ));
+    }
+    // cost estimate
+    let input_cost = app.tokens.cumulative_input_tokens as f64 * 0.01 / 1000.0;
+    let output_cost = app.tokens.cumulative_output_tokens as f64 * 0.03 / 1000.0;
+    let total_cost = input_cost + output_cost;
+    if total_cost > 0.001 {
+        spans.push(Span::styled("  ", Style::default()));
+        spans.push(Span::styled(
+            format!("${total_cost:.2}"),
+            Style::default().fg(dim),
+        ));
+    }
+    // activity spinner
+    if app.waiting {
+        spans.push(Span::styled("  ", Style::default()));
+        spans.push(Span::styled(
+            format!("{} responding", app.spinner_frame()),
+            Style::default().fg(theme::accent(mode)),
+        ));
+    }
+    // multiplayer
+    if app.multiplayer.enabled && app.multiplayer.member_count > 0 {
+        spans.push(Span::styled("  ", Style::default()));
+        spans.push(Span::styled(
+            format!("[{} users]", app.multiplayer.member_count),
+            Style::default().fg(dim),
+        ));
     }
     let bar = Paragraph::new(Line::from(spans)).style(theme::footer_style(mode));
     frame.render_widget(bar, area);
@@ -350,27 +328,6 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     let para = base_para.scroll((max_scroll.saturating_sub(effective_scroll), 0));
 
     frame.render_widget(para, area);
-}
-
-fn draw_workspace_panel(frame: &mut Frame, app: &App, area: Rect) {
-    let mode = app.theme_mode;
-    let title = format!(" {} Workspace ", app.active_workspace.label());
-    let body = app
-        .workspace_content()
-        .filter(|content| !content.trim().is_empty())
-        .unwrap_or("No workspace data loaded yet.");
-    let lines = markdown::render_markdown(body, mode);
-    let panel = Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .style(theme::surface_style(mode))
-        .block(
-            Block::default()
-                .borders(Borders::TOP)
-                .title(Span::styled(title, theme::brand_style(mode)))
-                .style(theme::surface_style(mode))
-                .padding(Padding::new(1, 1, 0, 0)),
-        );
-    frame.render_widget(panel, area);
 }
 
 // ── Input bar ────────────────────────────────────────────────────────

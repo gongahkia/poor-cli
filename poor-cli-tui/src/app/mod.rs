@@ -400,67 +400,6 @@ pub enum AppMode {
     Quitting,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppWorkspace {
-    Chat,
-    Review,
-    Context,
-    Tasks,
-    Collaboration,
-    Setup,
-}
-
-impl AppWorkspace {
-    pub const ALL: [Self; 6] = [
-        Self::Chat,
-        Self::Review,
-        Self::Context,
-        Self::Tasks,
-        Self::Collaboration,
-        Self::Setup,
-    ];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Chat => "Chat",
-            Self::Review => "Review",
-            Self::Context => "Context",
-            Self::Tasks => "Tasks",
-            Self::Collaboration => "Collab",
-            Self::Setup => "Setup",
-        }
-    }
-
-    pub const fn shortcut(self) -> &'static str {
-        if cfg!(target_os = "macos") {
-            return self.alternate_shortcut();
-        }
-        self.function_shortcut()
-    }
-
-    pub const fn function_shortcut(self) -> &'static str {
-        match self {
-            Self::Chat => "F1",
-            Self::Review => "F2",
-            Self::Context => "F3",
-            Self::Tasks => "F4",
-            Self::Collaboration => "F5",
-            Self::Setup => "F6",
-        }
-    }
-
-    pub const fn alternate_shortcut(self) -> &'static str {
-        match self {
-            Self::Chat => "Alt+1",
-            Self::Review => "Alt+2",
-            Self::Context => "Alt+3",
-            Self::Tasks => "Alt+4",
-            Self::Collaboration => "Alt+5",
-            Self::Setup => "Alt+6",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PlanStep {
     pub description: String,
@@ -637,8 +576,6 @@ pub struct App {
 
     // ── Mode ───
     pub mode: AppMode,
-    pub active_workspace: AppWorkspace,
-
     // ── Provider info ───
     pub provider: ProviderState,
     pub info_popup_title: String,
@@ -682,11 +619,6 @@ pub struct App {
     pub timeline_scroll: u16,
     pub transcript_search: TranscriptSearchState,
     pub permission_mode_label: String,
-    pub review_workspace_content: String,
-    pub context_workspace_content: String,
-    pub tasks_workspace_content: String,
-    pub collaboration_workspace_content: String,
-    pub setup_workspace_content: String,
 
     // ── Status message (temporary) ───
     pub status_message: Option<(String, Instant)>,
@@ -762,7 +694,6 @@ impl Default for App {
             input_cursor: 0,
             scroll_offset: 0,
             mode: AppMode::Normal,
-            active_workspace: AppWorkspace::Chat,
             provider: ProviderState::default(),
             info_popup_title: String::new(),
             info_popup_content: String::new(),
@@ -795,11 +726,6 @@ impl Default for App {
             timeline_scroll: 0,
             transcript_search: TranscriptSearchState::default(),
             permission_mode_label: "prompt".to_string(),
-            review_workspace_content: String::new(),
-            context_workspace_content: String::new(),
-            tasks_workspace_content: String::new(),
-            collaboration_workspace_content: String::new(),
-            setup_workspace_content: String::new(),
             status_message: None,
             server_connected: false,
             cwd: String::new(),
@@ -887,11 +813,6 @@ impl App {
         } else {
             "\n/setup configures API keys and creates .env".to_string()
         };
-        let shortcut_hint = if cfg!(target_os = "macos") {
-            "Alt+1..6 switch workspaces"
-        } else {
-            "F1-F6 or Alt+1..6 switch workspaces"
-        };
         let logo = r#" ____   ___   ___  ____        ____ _     ___
 |  _ \ / _ \ / _ \|  _ \      / ___| |   |_ _|
 | |_) | | | | | | | |_) |    | |   | |    | |
@@ -902,11 +823,10 @@ impl App {
              poor-cli (v{version})\n\
              {provider_summary}\n\
              {workspace}\n\n\
-             ? for shortcuts · {shortcut_hint}{setup_line}{last_session_line}",
+             ? for shortcuts{setup_line}{last_session_line}",
             version = self.version,
             provider_summary = provider_summary,
             workspace = workspace,
-            shortcut_hint = shortcut_hint,
             setup_line = setup_line,
             last_session_line = last_session_line,
         )
@@ -917,33 +837,6 @@ impl App {
         self.messages
             .push(ChatMessage::welcome(self.welcome_text()));
         self.scroll_offset = 0;
-    }
-
-    pub fn set_workspace(&mut self, workspace: AppWorkspace) {
-        self.active_workspace = workspace;
-    }
-
-    pub fn workspace_content(&self) -> Option<&str> {
-        match self.active_workspace {
-            AppWorkspace::Chat => None,
-            AppWorkspace::Review => Some(self.review_workspace_content.as_str()),
-            AppWorkspace::Context => Some(self.context_workspace_content.as_str()),
-            AppWorkspace::Tasks => Some(self.tasks_workspace_content.as_str()),
-            AppWorkspace::Collaboration => Some(self.collaboration_workspace_content.as_str()),
-            AppWorkspace::Setup => Some(self.setup_workspace_content.as_str()),
-        }
-    }
-
-    pub fn set_workspace_content(&mut self, workspace: AppWorkspace, content: impl Into<String>) {
-        let content = content.into();
-        match workspace {
-            AppWorkspace::Chat => {}
-            AppWorkspace::Review => self.review_workspace_content = content,
-            AppWorkspace::Context => self.context_workspace_content = content,
-            AppWorkspace::Tasks => self.tasks_workspace_content = content,
-            AppWorkspace::Collaboration => self.collaboration_workspace_content = content,
-            AppWorkspace::Setup => self.setup_workspace_content = content,
-        }
     }
 
     /// Retroactively update the welcome message after init completes.
@@ -1326,7 +1219,6 @@ impl App {
         } else {
             state.message.clone()
         };
-        self.active_workspace = AppWorkspace::Review;
         self.mutation_review = Some(state);
         self.mode = AppMode::MutationReview;
     }
@@ -2294,7 +2186,7 @@ fn redact_sensitive_history_command(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppMode, AppWorkspace, MutationReviewState, ProviderEntry, ThemeMode,
+        AppMode, MutationReviewState, ProviderEntry, ThemeMode,
     };
 
     #[test]
@@ -2349,18 +2241,8 @@ mod tests {
     }
 
     #[test]
-    fn workspace_content_round_trips_for_persistent_panels() {
+    fn opening_mutation_review_enters_mutation_review_mode() {
         let mut app = super::App::new();
-        app.set_workspace_content(AppWorkspace::Tasks, "# Tasks Workspace\n");
-        app.set_workspace(AppWorkspace::Tasks);
-
-        assert_eq!(app.workspace_content(), Some("# Tasks Workspace\n"));
-    }
-
-    #[test]
-    fn opening_mutation_review_switches_to_review_workspace() {
-        let mut app = super::App::new();
-        app.set_workspace(AppWorkspace::Tasks);
 
         app.open_mutation_review(MutationReviewState {
             request_id: "req-1".to_string(),
@@ -2377,7 +2259,6 @@ mod tests {
             selected_chunk_index: 0,
         });
 
-        assert_eq!(app.active_workspace, AppWorkspace::Review);
         assert_eq!(app.mode, AppMode::MutationReview);
     }
 }

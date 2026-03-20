@@ -9,9 +9,9 @@ mod tasks;
 use collab::{collab_share_role, collab_usage_text, current_multiplayer_room, first_host_room_name, room_field};
 use core::{resolve_close_slash_command, show_command_info_popup};
 pub(crate) use collab::format_collab_summary_payload;
-pub(crate) use context::{format_doctor_report_payload, format_setup_guide_payload, format_status_view_payload, format_trust_view_payload};
+pub(crate) use context::{format_doctor_report_payload, format_status_view_payload, format_trust_view_payload};
 use provider::{format_instruction_stack, format_mcp_status, format_policy_status, parse_mcp_tool_names};
-pub(crate) use tasks::{format_automation_list, format_runs_payload, format_task_detail, format_task_list, format_workflow_detail, format_workflows_payload};
+pub(crate) use tasks::{format_runs_payload, format_task_detail, format_task_list, format_workflow_detail, format_workflows_payload};
 
 // ── Slash command handler ─────────────────────────────────────────────
 
@@ -370,8 +370,12 @@ pub(super) fn handle_slash_command(
     }
 
     if lowered == "/setup" {
-        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Setup);
-        app.set_status("Opened Setup workspace");
+        match open_api_key_setup_editor(app, None) {
+            Ok(()) => app.set_status("Opened setup editor"),
+            Err(error) => app.push_message(ChatMessage::error(format!(
+                "Failed to open setup editor: {error}"
+            ))),
+        }
         return false;
     }
 
@@ -1295,8 +1299,10 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/trust" {
-        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Setup);
-        app.set_status("Opened Setup workspace");
+        match rpc_get_trust_view_blocking(rpc_cmd_tx) {
+            Ok(payload) => show_command_info_popup(app, raw, format_trust_view_payload(&payload)),
+            Err(error) => show_command_info_popup(app, raw, format!("Failed to load trust view: {error}")),
+        }
         return false;
     }
 
@@ -2245,8 +2251,10 @@ Context Window: {max_context} tokens\n\n\
     }
 
     if lowered == "/inbox" {
-        activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
-        app.set_status("Opened Tasks workspace");
+        match rpc_list_tasks_blocking(rpc_cmd_tx, true) {
+            Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "Inbox")),
+            Err(error) => show_command_info_popup(app, raw, format!("Failed to load inbox: {error}")),
+        }
         return false;
     }
 
@@ -2263,8 +2271,10 @@ Context Window: {max_context} tokens\n\n\
             .trim()
             .to_ascii_lowercase();
         if subcommand == "list" {
-            activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
-            app.set_status("Opened Tasks workspace");
+            match rpc_list_tasks_blocking(rpc_cmd_tx, false) {
+                Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "Tasks")),
+                Err(error) => show_command_info_popup(app, raw, format!("Failed to load tasks: {error}")),
+            }
             return false;
         }
         if subcommand == "open" || subcommand == "show" {
@@ -2309,7 +2319,6 @@ Context Window: {max_context} tokens\n\n\
                 requires_approval,
             ) {
                 Ok(payload) => {
-                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
                     show_command_info_popup(app, raw, format_task_detail(&payload))
                 }
                 Err(error) => {
@@ -2326,7 +2335,6 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_approve_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => {
-                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
                     show_command_info_popup(app, raw, format_task_detail(&payload))
                 }
                 Err(error) => {
@@ -2343,7 +2351,6 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_cancel_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => {
-                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
                     show_command_info_popup(app, raw, format_task_detail(&payload))
                 }
                 Err(error) => {
@@ -2360,7 +2367,6 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_retry_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => {
-                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
                     show_command_info_popup(app, raw, format_task_detail(&payload))
                 }
                 Err(error) => {
@@ -2377,7 +2383,6 @@ Context Window: {max_context} tokens\n\n\
             }
             match rpc_replay_task_blocking(rpc_cmd_tx, task_id) {
                 Ok(payload) => {
-                    activate_workspace(app, rpc_cmd_tx, AppWorkspace::Tasks);
                     show_command_info_popup(app, raw, format_task_detail(&payload))
                 }
                 Err(error) => {

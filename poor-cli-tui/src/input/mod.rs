@@ -1,7 +1,7 @@
 /// Input handling: keyboard events, slash-command completion, etc.
 mod mode_handlers;
 
-use crate::app::{App, AppMode, AppWorkspace, QueuedPrompt, QuickOpenItem};
+use crate::app::{App, AppMode, QueuedPrompt, QuickOpenItem};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -49,8 +49,6 @@ pub enum InputAction {
     RestoreLastMutation,
     /// Open a file in the user's editor.
     OpenFileInEditor(String),
-    /// Switch to a primary workspace.
-    WorkspaceSelected(AppWorkspace),
 }
 
 pub fn command_palette_matches(prefix: &str) -> Vec<&'static SlashCommandSpec> {
@@ -185,28 +183,6 @@ pub fn handle_event(app: &mut App, event: Event) -> InputAction {
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
-    match (key.code, key.modifiers) {
-        (KeyCode::F(1), _) | (KeyCode::Char('1'), KeyModifiers::ALT) => {
-            return InputAction::WorkspaceSelected(AppWorkspace::Chat)
-        }
-        (KeyCode::F(2), _) | (KeyCode::Char('2'), KeyModifiers::ALT) => {
-            return InputAction::WorkspaceSelected(AppWorkspace::Review)
-        }
-        (KeyCode::F(3), _) | (KeyCode::Char('3'), KeyModifiers::ALT) => {
-            return InputAction::WorkspaceSelected(AppWorkspace::Context)
-        }
-        (KeyCode::F(4), _) | (KeyCode::Char('4'), KeyModifiers::ALT) => {
-            return InputAction::WorkspaceSelected(AppWorkspace::Tasks)
-        }
-        (KeyCode::F(5), _) | (KeyCode::Char('5'), KeyModifiers::ALT) => {
-            return InputAction::WorkspaceSelected(AppWorkspace::Collaboration)
-        }
-        (KeyCode::F(6), _) | (KeyCode::Char('6'), KeyModifiers::ALT) => {
-            return InputAction::WorkspaceSelected(AppWorkspace::Setup)
-        }
-        _ => {}
-    }
-
     // Global keybindings
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
@@ -758,124 +734,6 @@ mod tests {
 
         assert!(matches!(action, InputAction::Redraw));
         assert_eq!(app.provider.select_pane, ProviderSelectPane::Providers);
-    }
-
-    #[test]
-    fn function_keys_switch_primary_workspaces() {
-        let mut app = App::new();
-
-        let chat = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)),
-        );
-        assert!(matches!(
-            chat,
-            InputAction::WorkspaceSelected(AppWorkspace::Chat)
-        ));
-
-        let review = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
-        );
-        assert!(matches!(
-            review,
-            InputAction::WorkspaceSelected(AppWorkspace::Review)
-        ));
-
-        let context = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)),
-        );
-        assert!(matches!(
-            context,
-            InputAction::WorkspaceSelected(AppWorkspace::Context)
-        ));
-
-        let tasks = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
-        );
-        assert!(matches!(
-            tasks,
-            InputAction::WorkspaceSelected(AppWorkspace::Tasks)
-        ));
-
-        let collaboration = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
-        );
-        assert!(matches!(
-            collaboration,
-            InputAction::WorkspaceSelected(AppWorkspace::Collaboration)
-        ));
-
-        let setup = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE)),
-        );
-        assert!(matches!(
-            setup,
-            InputAction::WorkspaceSelected(AppWorkspace::Setup)
-        ));
-    }
-
-    #[test]
-    fn alt_number_shortcuts_switch_primary_workspaces() {
-        let mut app = App::new();
-
-        let chat = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT)),
-        );
-        assert!(matches!(
-            chat,
-            InputAction::WorkspaceSelected(AppWorkspace::Chat)
-        ));
-
-        let review = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT)),
-        );
-        assert!(matches!(
-            review,
-            InputAction::WorkspaceSelected(AppWorkspace::Review)
-        ));
-
-        let context = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT)),
-        );
-        assert!(matches!(
-            context,
-            InputAction::WorkspaceSelected(AppWorkspace::Context)
-        ));
-
-        let tasks = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT)),
-        );
-        assert!(matches!(
-            tasks,
-            InputAction::WorkspaceSelected(AppWorkspace::Tasks)
-        ));
-
-        let collaboration = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::ALT)),
-        );
-        assert!(matches!(
-            collaboration,
-            InputAction::WorkspaceSelected(AppWorkspace::Collaboration)
-        ));
-
-        let setup = handle_event(
-            &mut app,
-            Event::Key(KeyEvent::new(KeyCode::Char('6'), KeyModifiers::ALT)),
-        );
-        assert!(matches!(
-            setup,
-            InputAction::WorkspaceSelected(AppWorkspace::Setup)
-        ));
     }
 
     #[test]
