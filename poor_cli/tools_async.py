@@ -99,6 +99,10 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "gh_pr_create": [ToolCapability.NETWORK_ACCESS.value],
     "gh_pr_comment": [ToolCapability.NETWORK_ACCESS.value],
     "web_search": [ToolCapability.NETWORK_ACCESS.value],
+    "compact_conversation": [],
+    "write_todos": [],
+    "update_todo": [],
+    "delegate_task": [ToolCapability.PROCESS_EXECUTE.value],
 }
 
 DEFAULT_MUTATING_TOOLS = {
@@ -193,10 +197,26 @@ class ToolRegistryAsync:
         self._output_max_lines = output_max_lines
         self._cwd: str = os.getcwd()  # persisted working directory across bash calls
         self.command_validator = get_command_validator(strict_mode=False)
+        self._core = None  # set by PoorCLICore after init for compact/delegate
+        self._todos: List[Dict[str, str]] = []  # agent todo list
+        self._todos_path = Path.cwd() / ".poor-cli" / "todos.json"
+        self._load_todos()
         self._register_tools()
 
     def reset_cwd(self) -> None:
         self._cwd = os.getcwd()  # reset to process working directory
+
+    def _scan_unicode(self, text: str) -> str:
+        """Scan text for dangerous unicode chars. Returns warning string or empty."""
+        try:
+            if self._core and hasattr(self._core, "config") and self._core.config:
+                if not getattr(self._core.config.security, "unicode_scanning", True):
+                    return ""
+            from .unicode_security import scan_text
+            result = scan_text(text)
+            return result.summary()
+        except Exception:
+            return ""
 
     def _register_tools(self):
         """Register all available tools"""
@@ -862,6 +882,80 @@ class ToolRegistryAsync:
                         "query": {"type": "STRING", "description": "Search query"}
                     },
                     "required": ["query"]
+                }
+            }
+        }
+
+        self.tools["compact_conversation"] = {
+            "function": self.compact_conversation,
+            "declaration": {
+                "name": "compact_conversation",
+                "description": "Compact the conversation history using LLM summarization to free up context window. Use when conversation is getting long.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "strategy": {
+                            "type": "STRING",
+                            "description": "Compaction strategy: 'compact' (LLM summary), 'compress' (strip tool calls), or 'handoff' (new session with summary)"
+                        }
+                    },
+                    "required": []
+                }
+            }
+        }
+
+        self.tools["write_todos"] = {
+            "function": self.write_todos,
+            "declaration": {
+                "name": "write_todos",
+                "description": "Create or replace the agent todo list for tracking multi-step task progress. Items are injected into context each turn.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "todos": {
+                            "type": "STRING",
+                            "description": "JSON array of todo items: [{\"id\": \"1\", \"description\": \"...\", \"status\": \"pending\"}]. Status: pending|in_progress|completed"
+                        }
+                    },
+                    "required": ["todos"]
+                }
+            }
+        }
+
+        self.tools["update_todo"] = {
+            "function": self.update_todo,
+            "declaration": {
+                "name": "update_todo",
+                "description": "Update the status of a todo item by id",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "id": {"type": "STRING", "description": "Todo item id"},
+                        "status": {"type": "STRING", "description": "New status: pending|in_progress|completed"},
+                        "description": {"type": "STRING", "description": "Optional new description"}
+                    },
+                    "required": ["id", "status"]
+                }
+            }
+        }
+
+        self.tools["delegate_task"] = {
+            "function": self.delegate_task,
+            "declaration": {
+                "name": "delegate_task",
+                "description": "Delegate a sub-task to an in-process sub-agent with its own conversation. Returns the sub-agent's final response.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "prompt": {"type": "STRING", "description": "Task prompt for the sub-agent"},
+                        "context_files": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                            "description": "File paths to include as context"
+                        },
+                        "max_iterations": {"type": "INTEGER", "description": "Max tool iterations for sub-agent (default 10)"}
+                    },
+                    "required": ["prompt"]
                 }
             }
         }
@@ -1693,6 +1787,9 @@ class ToolRegistryAsync:
                         content = ''.join(f"{i:6d}\t{line}" for i, line in enumerate(raw_lines, 1))
 
             logger.info(f"Read file: {file_path}")
+            unicode_warn = self._scan_unicode(content)
+            if unicode_warn:
+                content = f"{unicode_warn}\n\n{content}"
             return content
 
         except (PoorFileNotFoundError, FilePermissionError, PathTraversalError):
@@ -1720,6 +1817,7 @@ class ToolRegistryAsync:
             existed_before = path_obj.exists()
             before = self._read_text_for_diff(path_obj) if existed_before else ""
 
+            unicode_warn = self._scan_unicode(content)
             changed = before != content
             if changed:
                 self._atomic_write_text(path_obj, content)
@@ -1728,6 +1826,8 @@ class ToolRegistryAsync:
             message = (
                 f"Created {file_path}" if not existed_before else f"Wrote {file_path}"
             )
+            if unicode_warn:
+                message = f"{message}\n{unicode_warn}"
             return self._tool_outcome(
                 operation="write_file",
                 path=path_obj,
@@ -1784,13 +1884,17 @@ class ToolRegistryAsync:
                 self._atomic_write_text(path_obj, new_content)
 
             logger.info(f"Edited file: {file_path}")
+            unicode_warn = self._scan_unicode(new_content)
+            edit_msg = f"Edited {file_path}"
+            if unicode_warn:
+                edit_msg = f"{edit_msg}\n{unicode_warn}"
             return self._tool_outcome(
                 operation="edit_file",
                 path=path_obj,
                 before=content,
                 after=new_content,
                 changed=changed,
-                message=f"Edited {file_path}",
+                message=edit_msg,
                 metadata=metadata,
             )
 
@@ -3426,6 +3530,77 @@ class ToolRegistryAsync:
     async def gh_pr_comment(self, number: int, body: str) -> str:
         from .github_tools import gh_pr_comment
         return await gh_pr_comment(number=number, body=body)
+
+    def _load_todos(self) -> None:
+        try:
+            if self._todos_path.exists():
+                self._todos = json.loads(self._todos_path.read_text(encoding="utf-8"))
+        except Exception:
+            self._todos = []
+
+    def _save_todos(self) -> None:
+        try:
+            self._todos_path.parent.mkdir(parents=True, exist_ok=True)
+            self._todos_path.write_text(json.dumps(self._todos, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning("failed to persist todos: %s", e)
+
+    def render_todos_for_context(self) -> str:
+        if not self._todos:
+            return ""
+        lines = ["[ACTIVE TODO LIST]"]
+        for item in self._todos:
+            status = item.get("status", "pending")
+            marker = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]"}.get(status, "[ ]")
+            lines.append(f"  {marker} #{item.get('id', '?')}: {item.get('description', '')}")
+        completed = sum(1 for t in self._todos if t.get("status") == "completed")
+        lines.append(f"  Progress: {completed}/{len(self._todos)}")
+        return "\n".join(lines)
+
+    async def compact_conversation(self, strategy: str = "compact") -> str:
+        if not self._core:
+            return "error: core engine not available for compaction"
+        if strategy not in ("compact", "compress", "handoff"):
+            return f"error: unknown strategy '{strategy}', use compact|compress|handoff"
+        result = await self._core.compact_context(strategy)
+        return json.dumps(result, indent=2)
+
+    async def write_todos(self, todos: str) -> str:
+        try:
+            items = json.loads(todos)
+            if not isinstance(items, list):
+                return "error: todos must be a JSON array"
+            for item in items:
+                if not isinstance(item, dict) or "id" not in item or "description" not in item:
+                    return "error: each todo must have 'id' and 'description'"
+                item.setdefault("status", "pending")
+            self._todos = items
+            self._save_todos()
+            return f"todo list set: {len(items)} items"
+        except json.JSONDecodeError as e:
+            return f"error: invalid JSON: {e}"
+
+    async def update_todo(self, id: str, status: str, description: str = "") -> str:
+        if status not in ("pending", "in_progress", "completed"):
+            return f"error: invalid status '{status}'"
+        for item in self._todos:
+            if item.get("id") == id:
+                item["status"] = status
+                if description:
+                    item["description"] = description
+                self._save_todos()
+                return f"todo #{id} updated to {status}"
+        return f"error: todo #{id} not found"
+
+    async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10) -> str:
+        if not self._core:
+            return "error: core engine not available for delegation"
+        try:
+            from .sub_agent import SubAgent
+            agent = SubAgent(self._core, max_iterations=max_iterations)
+            return await agent.run(prompt, context_files=context_files)
+        except Exception as e:
+            return f"sub-agent error: {e}"
 
     async def web_search(self, query: str) -> str:
         api_key = os.environ.get("BRAVE_SEARCH_API_KEY")

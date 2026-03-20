@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover - protobuf is an indirect dependency.
     MessageToDict = None
 
-from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
+from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
@@ -331,6 +331,12 @@ class GeminiProvider(BaseProvider):
                 if getattr(candidate, "finish_reason", None) is not None:
                     finish_reason = str(candidate.finish_reason)
 
+            usage_obj = None
+            raw_usage = getattr(response, "usage_metadata", None)
+            if raw_usage:
+                in_tok = getattr(raw_usage, "prompt_token_count", 0) or 0
+                out_tok = getattr(raw_usage, "candidates_token_count", 0) or 0
+                usage_obj = UsageMetadata(input_tokens=in_tok, output_tokens=out_tok)
             return ProviderResponse(
                 content=content,
                 role="assistant",
@@ -338,6 +344,7 @@ class GeminiProvider(BaseProvider):
                 function_calls=function_calls if function_calls else None,
                 raw_response=response,
                 metadata={"is_chunk": is_chunk},
+                usage=usage_obj,
             )
 
         except Exception as e:

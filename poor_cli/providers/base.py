@@ -3,41 +3,63 @@ Base provider interface for AI models
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, AsyncIterator
+from pydantic import BaseModel, Field, field_validator
 
 
-@dataclass
-class ProviderCapabilities:
+class ProviderCapabilities(BaseModel):
     """Capabilities supported by a provider"""
+    model_config = {"frozen": False}
     supports_streaming: bool = False
     supports_function_calling: bool = False
     supports_system_instructions: bool = False
-    max_context_tokens: int = 4096
+    max_context_tokens: int = Field(default=4096, ge=1)
     supports_vision: bool = False
     supports_json_mode: bool = False
     supports_code_interpreter: bool = False
     supports_thinking: bool = False  # extended thinking / reasoning
 
 
-@dataclass
-class FunctionCall:
+class FunctionCall(BaseModel):
     """Represents a function call from the AI"""
-    id: str
-    name: str
-    arguments: Dict[str, Any]
+    model_config = {"frozen": False}
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    arguments: Dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class ProviderResponse:
+class UsageMetadata(BaseModel):
+    """Token usage metadata from provider responses"""
+    model_config = {"frozen": False}
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(default=0, ge=0)
+    cache_creation_input_tokens: int = Field(default=0, ge=0)
+    cache_read_input_tokens: int = Field(default=0, ge=0)
+    prompt_tokens: int = Field(default=0, ge=0)  # openai compat alias
+    completion_tokens: int = Field(default=0, ge=0)  # openai compat alias
+    prompt_eval_count: int = Field(default=0, ge=0)  # ollama
+    eval_count: int = Field(default=0, ge=0)  # ollama
+
+
+class ProviderResponse(BaseModel):
     """Normalized response format across all providers"""
-    content: str
+    model_config = {"frozen": False, "arbitrary_types_allowed": True}
+    content: str = ""
     role: str = "assistant"
     finish_reason: Optional[str] = None
     function_calls: Optional[List[FunctionCall]] = None
-    raw_response: Optional[Any] = None  # Original provider response
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    raw_response: Optional[Any] = None  # original provider response
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     thinking_content: Optional[str] = None  # model reasoning/thinking text
+    usage: Optional[UsageMetadata] = None  # structured token usage
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in ("assistant", "user", "system", "tool", "model"):
+            raise ValueError(f"invalid role: {v}")
+        return v
 
 
 class BaseProvider(ABC):

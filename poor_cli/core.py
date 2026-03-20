@@ -24,7 +24,7 @@ from .provider_probe import (
     suggested_privacy_posture,
 )
 from .provider_fallback import ProviderFallbackManager
-from .providers.base import BaseProvider, ProviderResponse, FunctionCall
+from .providers.base import BaseProvider, ProviderResponse, FunctionCall, UsageMetadata
 from .providers.provider_factory import ProviderFactory
 from .run_history import RunHistoryManager, classify_error
 from .tools_async import ToolRegistryAsync, ToolOutcome
@@ -156,16 +156,24 @@ class CoreEvent:
         )
 
     @staticmethod
-    def cost_update(input_tokens: int = 0, output_tokens: int = 0, estimated_cost: float = 0.0) -> "CoreEvent":
-        return CoreEvent(type="cost_update", data={
-            "inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost,
-        })
+    def cost_update(input_tokens: int = 0, output_tokens: int = 0, estimated_cost: float = 0.0,
+                    cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0) -> "CoreEvent":
+        data = {"inputTokens": input_tokens, "outputTokens": output_tokens, "estimatedCost": estimated_cost}
+        if cache_creation_input_tokens:
+            data["cacheCreationInputTokens"] = cache_creation_input_tokens
+        if cache_read_input_tokens:
+            data["cacheReadInputTokens"] = cache_read_input_tokens
+        return CoreEvent(type="cost_update", data=data)
 
     @staticmethod
     def progress(phase: str, message: str, iteration: int = 0, cap: int = 25) -> "CoreEvent":
         return CoreEvent(type="progress", data={
             "phase": phase, "message": message, "iterationIndex": iteration, "iterationCap": cap,
         })
+
+    @staticmethod
+    def todo_update(todos: list, completed: int = 0, total: int = 0) -> "CoreEvent":
+        return CoreEvent(type="todo_update", data={"todos": todos, "completed": completed, "total": total})
 
     @staticmethod
     def done(reason: str = "complete") -> "CoreEvent":
@@ -267,6 +275,9 @@ class PoorCLICore:
         # Context compressor
         self._context_compressor: ContextCompressor = ContextCompressor()
 
+        # Sub-agent delegation depth (0 = top-level)
+        self._sub_agent_depth: int = 0
+
         # Provider fallback manager (initialized after config load)
         self._fallback_manager: Optional[ProviderFallbackManager] = None
         self._run_history: Optional[RunHistoryManager] = None
@@ -336,7 +347,9 @@ class PoorCLICore:
             extra_kwargs = {}
             if provider_config and provider_config.base_url:
                 extra_kwargs["base_url"] = provider_config.base_url
-            
+            if self.config.model.provider in ("anthropic", "claude"):
+                extra_kwargs["prompt_caching"] = getattr(self.config.model, "prompt_caching", True)
+
             # Create provider via factory
             self.provider = ProviderFactory.create(
                 provider_name=self.config.model.provider,
@@ -384,6 +397,7 @@ class PoorCLICore:
                         _call_mcp_tool,
                         declaration,
                     )
+            self.tool_registry._core = self  # back-ref for compact/delegate tools
             tool_declarations = self.tool_registry.get_tool_declarations()
             logger.info(f"Registered {len(tool_declarations)} tools")
             
@@ -981,6 +995,13 @@ class PoorCLICore:
         instruction_snapshot = self._inspect_instruction_snapshot(referenced_files)
         instruction_prefix = instruction_snapshot.render_prompt_prefix()
 
+        # inject agent todo list into context if non-empty
+        todo_ctx = ""
+        if self.tool_registry:
+            todo_ctx = self.tool_registry.render_todos_for_context()
+        if todo_ctx:
+            message = f"{todo_ctx}\n\n{message}"
+
         if not self._context_manager or context_result is None or not context_result.files:
             if instruction_prefix:
                 return f"{instruction_prefix}\n\nUser request: {message}"
@@ -1496,6 +1517,28 @@ class PoorCLICore:
         except (AttributeError, TypeError):
             pass
 
+        # Auto LLM compaction when token usage exceeds threshold
+        try:
+            cc_cfg = getattr(self.config, "context_compression", None) if self.config else None
+            if cc_cfg and getattr(cc_cfg, "enabled", False) and self.provider:
+                threshold_ratio = getattr(cc_cfg, "token_threshold_for_llm_compact", 0.8)
+                if threshold_ratio > 0:
+                    caps = self.provider.get_capabilities()
+                    max_ctx = caps.max_context_tokens
+                    total_used = self._session_total_input_tokens + self._session_total_output_tokens
+                    if max_ctx > 0 and total_used > max_ctx * threshold_ratio:
+                        history = self.provider.get_history()
+                        msgs_before = len(history)
+                        if msgs_before > 2: # only compact if enough history
+                            result = await self._compact_summarize(history, msgs_before)
+                            logger.info("Auto LLM compact triggered: %s", result)
+                            self._pending_events.append(CoreEvent(
+                                type="progress",
+                                data={"phase": "llm_compact", "message": f"auto LLM compact: {msgs_before} \u2192 {result.get('messages_after', 0)} messages"},
+                            ))
+        except (AttributeError, TypeError):
+            pass
+
         try:
             accumulated_text = ""
 
@@ -1510,6 +1553,11 @@ class PoorCLICore:
                     tool_name=str(event.data.get("toolName", "")),
                     result=event.data,
                 )
+                tool_name = event.data.get("toolName", "")
+                if tool_name in ("write_todos", "update_todo") and self.tool_registry:
+                    todos = self.tool_registry._todos
+                    completed = sum(1 for t in todos if t.get("status") == "completed")
+                    self._pending_events.append(CoreEvent.todo_update(todos, completed, len(todos)))
 
             async for chunk in self.provider.send_message_stream(full_message):
                 if cancel_event.is_set():
@@ -1532,6 +1580,8 @@ class PoorCLICore:
                             yield CoreEvent.cost_update(
                                 input_tokens=usage.get("input_tokens", 0),
                                 output_tokens=usage.get("output_tokens", 0),
+                                cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+                                cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
                             )
 
                     tool_results = await self._handle_function_calls_events(
@@ -1739,6 +1789,8 @@ class PoorCLICore:
                 events.append(CoreEvent.cost_update(
                     input_tokens=usage.get("input_tokens", 0),
                     output_tokens=usage.get("output_tokens", 0),
+                    cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+                    cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
                 ))
         response = ProviderResponse(
             content=accumulated_text,

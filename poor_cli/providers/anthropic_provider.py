@@ -17,7 +17,7 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     AsyncAnthropic = None
 
-from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
+from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
@@ -36,7 +36,8 @@ class AnthropicProvider(BaseProvider):
     """Anthropic (Claude) API provider implementation"""
 
     def __init__(self, api_key: str, model_name: str = default_model_for_provider("anthropic"),
-                 max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0):
+                 max_retries: int = 3, retry_delay: float = 1.0, timeout: float = 60.0,
+                 prompt_caching: bool = True):
         """
         Initialize Anthropic provider
 
@@ -46,6 +47,7 @@ class AnthropicProvider(BaseProvider):
             max_retries: Max retries for failed requests
             retry_delay: Initial retry delay in seconds
             timeout: Request timeout in seconds
+            prompt_caching: Enable cache_control injection on system/tools
         """
         if not ANTHROPIC_AVAILABLE:
             raise ConfigurationError(
@@ -57,6 +59,7 @@ class AnthropicProvider(BaseProvider):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.timeout = timeout
+        self.prompt_caching = prompt_caching
 
         # Initialize Anthropic client
         try:
@@ -109,9 +112,17 @@ class AnthropicProvider(BaseProvider):
         else:
             params["max_tokens"] = 4096
         if self.system_instruction:
-            params["system"] = self.system_instruction
+            if self.prompt_caching:
+                params["system"] = [{"type": "text", "text": self.system_instruction, "cache_control": {"type": "ephemeral"}}]
+            else:
+                params["system"] = self.system_instruction
         if self.tools:
-            params["tools"] = self.tools
+            if self.prompt_caching and self.tools:
+                tools_copy = [dict(t) for t in self.tools]
+                tools_copy[-1] = {**tools_copy[-1], "cache_control": {"type": "ephemeral"}}
+                params["tools"] = tools_copy
+            else:
+                params["tools"] = self.tools
         return params
 
     async def send_message(self, message: Any) -> ProviderResponse:
@@ -352,6 +363,23 @@ class AnthropicProvider(BaseProvider):
             # Add to history
             self.messages.append(assistant_message)
 
+            usage_obj = None
+            usage_meta = None
+            if hasattr(response, 'usage'):
+                cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+                cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+                usage_obj = UsageMetadata(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    cache_creation_input_tokens=cache_creation,
+                    cache_read_input_tokens=cache_read,
+                )
+                usage_meta = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_creation_input_tokens": cache_creation,
+                    "cache_read_input_tokens": cache_read,
+                }
             return ProviderResponse(
                 content=content,
                 role="assistant",
@@ -360,12 +388,10 @@ class AnthropicProvider(BaseProvider):
                 raw_response=response,
                 metadata={
                     "model": response.model if hasattr(response, 'model') else None,
-                    "usage": {
-                        "input_tokens": response.usage.input_tokens,
-                        "output_tokens": response.usage.output_tokens,
-                    } if hasattr(response, 'usage') else None
+                    "usage": usage_meta,
                 },
                 thinking_content=thinking_content or None,
+                usage=usage_obj,
             )
 
         except Exception as e:

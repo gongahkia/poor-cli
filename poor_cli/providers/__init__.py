@@ -8,7 +8,7 @@ Multi-provider support for AI models including:
 - Ollama (Local models)
 """
 
-from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
+from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from .provider_factory import ProviderFactory
 
@@ -21,6 +21,7 @@ __all__ = [
     "ProviderCapabilities",
     "ProviderResponse",
     "FunctionCall",
+    "UsageMetadata",
 
     # Utilities
     "ToolTranslator",

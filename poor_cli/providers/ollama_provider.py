@@ -14,7 +14,7 @@ try:
 except ImportError:
     AIOHTTP_AVAILABLE = False
 
-from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
+from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
@@ -312,6 +312,14 @@ class OllamaProvider(BaseProvider):
                 "content": content
             })
 
+            prompt_eval = response_data.get('prompt_eval_count', 0) or 0
+            eval_count = response_data.get('eval_count', 0) or 0
+            usage_obj = UsageMetadata(
+                input_tokens=prompt_eval,
+                output_tokens=eval_count,
+                prompt_eval_count=prompt_eval,
+                eval_count=eval_count,
+            ) if (prompt_eval or eval_count) else None
             return ProviderResponse(
                 content=content,
                 role="assistant",
@@ -322,9 +330,10 @@ class OllamaProvider(BaseProvider):
                     "model": response_data.get('model'),
                     "total_duration": response_data.get('total_duration'),
                     "load_duration": response_data.get('load_duration'),
-                    "prompt_eval_count": response_data.get('prompt_eval_count'),
-                    "eval_count": response_data.get('eval_count')
-                }
+                    "input_tokens": prompt_eval,
+                    "output_tokens": eval_count,
+                },
+                usage=usage_obj,
             )
 
         except Exception as e:

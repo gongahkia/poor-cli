@@ -44,6 +44,7 @@ class ModelConfig:
     max_tokens: Optional[int] = None
     top_p: float = 0.95
     top_k: int = 40
+    prompt_caching: bool = True  # inject cache_control on Anthropic system/tools
 
     # Provider registry
     providers: Dict[str, ProviderConfig] = field(
@@ -144,6 +145,7 @@ class ContextCompressionConfig:
     compress_after_turns: int = 20  # compress history older than N turns
     target_token_ratio: float = 0.3  # compress to ~30% of original tokens
     preserve_recent_turns: int = 8  # always keep last N turns uncompressed
+    token_threshold_for_llm_compact: float = 0.8  # auto LLM compact at this fraction of model context
 
 
 @dataclass
@@ -166,6 +168,9 @@ class AgenticConfig:
     deny_patterns: list = field(default_factory=lambda: [
         "rm -rf", "sudo", "chmod 777",
     ])
+    sub_agent_max_depth: int = 2  # max sub-agent recursion depth
+    sub_agent_max_iterations: int = 10  # max iterations per sub-agent
+    sub_agent_timeout: float = 120.0  # sub-agent timeout in seconds
 
 
 @dataclass
@@ -198,6 +203,7 @@ class SecurityConfig:
     max_bash_timeout_seconds: int = 60
     max_file_size_mb: int = 100
     allowed_file_extensions: list = field(default_factory=lambda: [])  # Empty = all allowed
+    unicode_scanning: bool = True  # scan file content for dangerous unicode chars
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize security config with enum values."""

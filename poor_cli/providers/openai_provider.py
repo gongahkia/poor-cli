@@ -16,7 +16,7 @@ except ImportError:
     OPENAI_AVAILABLE = False
     AsyncOpenAI = None
 
-from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall
+from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
 from ..exceptions import (
@@ -342,6 +342,23 @@ class OpenAIProvider(BaseProvider):
             # Add to history
             self.messages.append(assistant_message)
 
+            usage_obj = None
+            usage_meta = None
+            if hasattr(response, 'usage') and response.usage:
+                usage_obj = UsageMetadata(
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    total_tokens=response.usage.total_tokens,
+                    prompt_tokens=response.usage.prompt_tokens,
+                    completion_tokens=response.usage.completion_tokens,
+                )
+                usage_meta = {
+                    "input_tokens": response.usage.prompt_tokens,
+                    "output_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                }
             return ProviderResponse(
                 content=content,
                 role="assistant",
@@ -350,13 +367,10 @@ class OpenAIProvider(BaseProvider):
                 raw_response=response,
                 metadata={
                     "model": response.model,
-                    "usage": {
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens
-                    } if hasattr(response, 'usage') else None
+                    "usage": usage_meta,
                 },
                 thinking_content=thinking_content or None,
+                usage=usage_obj,
             )
 
         except Exception as e:
