@@ -35,7 +35,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     let input_height = compute_input_height(app, frame.area().width);
     let activity_height = if show_activity_bar(app) { 1 } else { 0 };
-    let has_presence = app.multiplayer_enabled && !app.connected_users.is_empty();
+    let has_presence = app.multiplayer_enabled && !app.pair.connected_users.is_empty();
     let mut constraints = Vec::new();
     if has_presence {
         constraints.push(Constraint::Length(1));
@@ -167,7 +167,7 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     let dim = theme::muted_fg(mode);
     let mut spans = vec![Span::styled("  ", Style::default())];
-    for (i, user) in app.connected_users.iter().enumerate() {
+    for (i, user) in app.pair.connected_users.iter().enumerate() {
         if i > 0 {
             spans.push(Span::styled(" · ", Style::default().fg(dim)));
         }
@@ -197,8 +197,8 @@ fn draw_presence_bar(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(theme::warning(mode)),
         ));
     }
-    let room_label = if !app.pair_short_code.is_empty() {
-        app.pair_short_code.as_str()
+    let room_label = if !app.pair.short_code.is_empty() {
+        app.pair.short_code.as_str()
     } else {
         app.multiplayer_room.as_str()
     };

@@ -65,6 +65,16 @@ const SUGGESTION_TTL: Duration = Duration::from_secs(30);
 const SUGGESTION_MAX: usize = 10;
 pub const SUGGESTION_HINT_TTL: Duration = Duration::from_secs(15);
 
+#[derive(Debug, Clone, Default)]
+pub struct PairState {
+    pub mode_active: bool,
+    pub short_code: String,
+    pub invite_code: String,
+    pub is_host: bool,
+    pub connected_users: Vec<PairUser>,
+    pub suggestions: VecDeque<Suggestion>,
+}
+
 // ── Message model ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -718,12 +728,7 @@ pub struct App {
     pub reconnect_message_idx: Option<usize>,
 
     // ── Pair mode state ───
-    pub pair_mode_active: bool,
-    pub pair_short_code: String,
-    pub pair_invite_code: String,
-    pub pair_is_host: bool,
-    pub connected_users: Vec<PairUser>,
-    pub suggestions: VecDeque<Suggestion>,
+    pub pair: PairState,
 }
 
 impl Default for App {
@@ -841,12 +846,7 @@ impl Default for App {
             theme_mode: ThemeMode::Dark,
             compact_select_idx: 0,
             reconnect_message_idx: None,
-            pair_mode_active: false,
-            pair_short_code: String::new(),
-            pair_invite_code: String::new(),
-            pair_is_host: false,
-            connected_users: Vec::new(),
-            suggestions: VecDeque::new(),
+            pair: PairState::default(),
         }
     }
 }
@@ -1847,40 +1847,40 @@ impl App {
     }
 
     pub fn push_suggestion(&mut self, sender: String, text: String) {
-        self.suggestions.push_back(Suggestion {
+        self.pair.suggestions.push_back(Suggestion {
             sender,
             text,
             received_at: Instant::now(),
         });
-        while self.suggestions.len() > SUGGESTION_MAX {
-            self.suggestions.pop_front();
+        while self.pair.suggestions.len() > SUGGESTION_MAX {
+            self.pair.suggestions.pop_front();
         }
     }
 
     pub fn clear_old_suggestions(&mut self) {
         let now = Instant::now();
         while self
-            .suggestions
+            .pair.suggestions
             .front()
             .is_some_and(|s| now.duration_since(s.received_at) > SUGGESTION_TTL)
         {
-            self.suggestions.pop_front();
+            self.pair.suggestions.pop_front();
         }
     }
 
     pub fn latest_suggestion(&self) -> Option<&Suggestion> {
-        self.suggestions
+        self.pair.suggestions
             .back()
             .filter(|s| s.received_at.elapsed() < SUGGESTION_HINT_TTL)
     }
 
     pub fn reset_pair_state(&mut self) {
-        self.pair_mode_active = false;
-        self.pair_short_code.clear();
-        self.pair_invite_code.clear();
-        self.pair_is_host = false;
-        self.connected_users.clear();
-        self.suggestions.clear();
+        self.pair.mode_active = false;
+        self.pair.short_code.clear();
+        self.pair.invite_code.clear();
+        self.pair.is_host = false;
+        self.pair.connected_users.clear();
+        self.pair.suggestions.clear();
         self.multiplayer_agenda.clear();
         self.multiplayer_agenda_open_count = 0;
         self.multiplayer_agenda_total_count = 0;

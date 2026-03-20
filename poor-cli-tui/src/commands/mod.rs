@@ -2672,8 +2672,8 @@ Context Window: {max_context} tokens\n\n\
                             Err(_) => start_payload,
                         };
 
-                        app.pair_is_host = true;
-                        app.pair_mode_active = false;
+                        app.pair.is_host = true;
+                        app.pair.mode_active = false;
                         app.multiplayer_enabled = true;
                         app.multiplayer_room = room_name.clone();
                         app.multiplayer_role = "prompter".to_string();
@@ -3062,7 +3062,7 @@ Context Window: {max_context} tokens\n\n\
     if lowered == "/pair" || lowered.starts_with("/pair ") {
         let args: Vec<&str> = raw.split_whitespace().collect();
         // pair host subcommands: /pair status, /pair members, /pair kick, /pair share
-        if args.len() >= 2 && app.pair_mode_active && app.pair_is_host {
+        if args.len() >= 2 && app.pair.mode_active && app.pair.is_host {
             let sub = args[1].to_ascii_lowercase();
             match sub.as_str() {
                 "status" => {
@@ -3103,15 +3103,15 @@ Context Window: {max_context} tokens\n\n\
                     }
                     let target = args[2];
                     let cid = if let Ok(num) = target.parse::<usize>() {
-                        if num >= 1 && num <= app.connected_users.len() {
-                            app.connected_users[num - 1].connection_id.clone()
+                        if num >= 1 && num <= app.pair.connected_users.len() {
+                            app.pair.connected_users[num - 1].connection_id.clone()
                         } else {
                             show_command_info_popup(
                                 app,
                                 raw,
                                 format!(
                                     "Invalid user number. Use 1-{}.",
-                                    app.connected_users.len()
+                                    app.pair.connected_users.len()
                                 ),
                             );
                             return false;
@@ -3167,10 +3167,10 @@ Context Window: {max_context} tokens\n\n\
                 Ok(payload) => {
                     let short_code = payload.get("shortCode").and_then(|v| v.as_str()).unwrap_or("");
                     let invite_code = payload.get("inviteCode").and_then(|v| v.as_str()).unwrap_or("");
-                    app.pair_mode_active = true;
-                    app.pair_is_host = true;
-                    app.pair_short_code = short_code.to_string();
-                    app.pair_invite_code = invite_code.to_string();
+                    app.pair.mode_active = true;
+                    app.pair.is_host = true;
+                    app.pair.short_code = short_code.to_string();
+                    app.pair.invite_code = invite_code.to_string();
                     app.multiplayer_enabled = true;
                     app.multiplayer_room = short_code.to_string();
                     app.multiplayer_role = "prompter".to_string();
@@ -3201,10 +3201,10 @@ Context Window: {max_context} tokens\n\n\
                 Ok(payload) => {
                     let short_code = payload.get("shortCode").and_then(|v| v.as_str()).unwrap_or("");
                     let invite_code = payload.get("inviteCode").and_then(|v| v.as_str()).unwrap_or("");
-                    app.pair_mode_active = true;
-                    app.pair_is_host = true;
-                    app.pair_short_code = short_code.to_string();
-                    app.pair_invite_code = invite_code.to_string();
+                    app.pair.mode_active = true;
+                    app.pair.is_host = true;
+                    app.pair.short_code = short_code.to_string();
+                    app.pair.invite_code = invite_code.to_string();
                     app.multiplayer_enabled = true;
                     app.multiplayer_room = short_code.to_string();
                     app.multiplayer_role = "prompter".to_string();
@@ -3247,9 +3247,9 @@ Context Window: {max_context} tokens\n\n\
             )));
             return false;
         }
-        app.pair_mode_active = true;
-        app.pair_is_host = false;
-        app.pair_short_code = bootstrap.room.clone();
+        app.pair.mode_active = true;
+        app.pair.is_host = false;
+        app.pair.short_code = bootstrap.room.clone();
         app.multiplayer_room = bootstrap.room.clone();
         app.multiplayer_role = "viewer".to_string();
         multiplayer::reconnect_to_remote_server(app, tx, rpc_cmd_tx, launch, &bootstrap);
@@ -3266,15 +3266,15 @@ Context Window: {max_context} tokens\n\n\
             let target = args[1..].join(" ");
             if let Ok(num) = target.parse::<usize>() {
                 // numeric index from presence bar
-                if num >= 1 && num <= app.connected_users.len() {
+                if num >= 1 && num <= app.pair.connected_users.len() {
                     (
                         None,
-                        Some(app.connected_users[num - 1].connection_id.clone()),
+                        Some(app.pair.connected_users[num - 1].connection_id.clone()),
                     )
                 } else {
                     app.push_message(ChatMessage::error(format!(
                         "Invalid user number {num}. Use 1-{} per the presence bar.",
-                        app.connected_users.len()
+                        app.pair.connected_users.len()
                     )));
                     return false;
                 }
@@ -3353,7 +3353,7 @@ Context Window: {max_context} tokens\n\n\
             .ok()
             .and_then(|payload| payload.get("running").and_then(|value| value.as_bool()))
             .unwrap_or(false);
-        if app.pair_is_host || host_running {
+        if app.pair.is_host || host_running {
             match rpc_stop_host_server_blocking(rpc_cmd_tx) {
                 Ok(_) => app.push_message(ChatMessage::system(
                     "Collaboration session stopped.".to_string(),

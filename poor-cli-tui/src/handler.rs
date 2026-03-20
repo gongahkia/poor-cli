@@ -706,7 +706,7 @@ pub(super) fn handle_server_message(
                             .unwrap_or(0);
                     }
                 }
-                app.connected_users = pair_users;
+                app.pair.connected_users = pair_users;
             }
             let status = match event_type.as_str() {
                 "queued" => format!("Room queue depth: {queue_depth}"),
