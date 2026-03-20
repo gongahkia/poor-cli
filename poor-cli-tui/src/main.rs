@@ -730,25 +730,9 @@ fn run_app(
                     }
                     Err(e) => app.set_status(format!("Copy failed: {e}")),
                 },
-                InputAction::OpenContextInspector => {
-                    match open_context_inspector_for_message(
-                        app,
-                        &rpc_cmd_tx.borrow(),
-                        app.input_buffer.clone(),
-                    ) {
-                        Ok(()) => {}
-                        Err(error) => app.push_message(ChatMessage::error(error)),
-                    }
-                }
                 InputAction::OpenQuickOpen => {
                     let items = build_quick_open_items(app, &rpc_cmd_tx.borrow());
                     app.open_quick_open(items);
-                }
-                InputAction::OpenTimeline => {
-                    app.open_timeline();
-                }
-                InputAction::OpenTranscriptSearch => {
-                    app.open_transcript_search();
                 }
                 InputAction::QuickOpenSelected(item) => {
                     app.close_quick_open();
@@ -756,11 +740,7 @@ fn run_app(
                         QuickOpenItemKind::Command | QuickOpenItemKind::Prompt => {
                             app.input_buffer = item.value;
                             app.input_cursor = app.input_buffer.len();
-                            app.mode = if app.input_buffer.starts_with('/') {
-                                AppMode::Command
-                            } else {
-                                AppMode::Normal
-                            };
+                            app.mode = AppMode::Normal;
                         }
                         QuickOpenItemKind::File => {
                             let rendered = if item.value.contains(char::is_whitespace) {
@@ -800,23 +780,6 @@ fn run_app(
                             }
                         }
                     }
-                }
-                InputAction::QueueSendSelected(prompt) => {
-                    app.queue_paused = false;
-                    app.push_message(ChatMessage::system(format!(
-                        "[queue] sending selected {} prompt ({} remaining)",
-                        prompt.source,
-                        app.prompt_queue.len()
-                    )));
-                    send_chat_request(
-                        app,
-                        &tx,
-                        &rpc_cmd_tx.borrow(),
-                        &cancel_token,
-                        prompt.backend,
-                        prompt.display,
-                        session_log.as_ref(),
-                    );
                 }
                 InputAction::RestoreLastMutation => {
                     let Some(checkpoint_id) = app.last_mutation_checkpoint_id.clone() else {

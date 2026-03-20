@@ -323,7 +323,7 @@ pub(super) fn handle_server_message(
                 if !app.plan.steps.is_empty() && app.plan.current_step < app.plan.steps.len() {
                     app.advance_plan_step();
                     if app.plan.current_step < app.plan.steps.len() {
-                        app.mode = poor_cli_tui::app::AppMode::PlanReview;
+                        app.mode = poor_cli_tui::app::AppMode::InlineApproval;
                     } else {
                         app.push_message(ChatMessage::system("Plan complete.".to_string()));
                         app.clear_plan();
@@ -475,7 +475,8 @@ pub(super) fn handle_server_message(
                     )
                 };
                 app.info_popup_scroll = 0;
-                app.mode = poor_cli_tui::app::AppMode::InfoPopup;
+                app.mode = poor_cli_tui::app::AppMode::Overlay;
+                app.overlay_kind = Some(poor_cli_tui::app::OverlayKind::InfoPopup);
             } else {
                 // build mutation review state if diff/paths present
                 let mutation_review = if !diff.is_empty() || !paths.is_empty() {

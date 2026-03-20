@@ -253,9 +253,25 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/compact" {
-        app.compact_select_idx = 0;
-        app.mode = AppMode::CompactSelect;
+    if lowered == "/compact" || lowered.starts_with("/compact ") {
+        let arg = raw.split_whitespace().nth(1).unwrap_or("compact");
+        let strategy = match arg {
+            "compress" => "compress",
+            "handoff" => "handoff",
+            _ => "compact",
+        };
+        show_command_info_popup(
+            app,
+            raw,
+            format!(
+                "Applying context strategy: **{strategy}**\n\n\
+                 Available strategies:\n\
+                 - `compact` — Summarize conversation in-place\n\
+                 - `compress` — Strip tool calls, keep text only\n\
+                 - `handoff` — New session with context summary\n\n\
+                 Usage: `/compact [compact|compress|handoff]`"
+            ),
+        );
         return false;
     }
 
@@ -1182,11 +1198,7 @@ Context Window: {max_context} tokens\n\n\
         if let Some(last) = app.last_user_message.clone() {
             app.input_buffer = last;
             app.input_cursor = app.input_buffer.len();
-            app.mode = if app.input_buffer.starts_with('/') {
-                poor_cli_tui::app::AppMode::Command
-            } else {
-                poor_cli_tui::app::AppMode::Normal
-            };
+            app.mode = poor_cli_tui::app::AppMode::Normal;
             app.set_status("Loaded last message into input");
         } else {
             show_command_info_popup(app, raw, "No previous request to edit.".to_string());
@@ -3386,7 +3398,8 @@ Context Window: {max_context} tokens\n\n\
             app.join_wizard_step = 0;
             app.join_wizard_input.clear();
             app.join_wizard_error.clear();
-            app.mode = AppMode::JoinWizard;
+            app.mode = AppMode::Overlay;
+            app.overlay_kind = Some(poor_cli_tui::app::OverlayKind::JoinWizard);
             return false;
         }
 

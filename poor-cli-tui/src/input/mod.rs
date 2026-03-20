@@ -1,53 +1,28 @@
 /// Input handling: keyboard events, slash-command completion, etc.
 mod mode_handlers;
 
-use crate::app::{App, AppMode, QueuedPrompt, QuickOpenItem};
+use crate::app::{App, AppMode, OverlayKind, QuickOpenItem};
 pub use crate::command_manifest::{help_markdown, SlashCommandSpec, SLASH_COMMANDS};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 /// Outcome of processing one input event.
 pub enum InputAction {
-    /// Nothing happened.
     None,
-    /// The user submitted their input text (Enter pressed).
     Submit(String),
-    /// User wants to quit.
     Quit,
-    /// Redraw required.
     Redraw,
-    /// Provider select confirmed (index).
     ProviderSelected(usize),
-    /// Permission prompt answered.
     PermissionAnswered(bool),
-    /// User cancelled an in-flight request (Ctrl+C / Esc while waiting).
     Cancel,
-    /// Plan approved — execute it.
     PlanApproved,
-    /// Plan cancelled.
     PlanCancelled,
-    /// Compact context strategy selected.
     CompactStrategySelected(String),
-    /// Copy text to clipboard.
     CopyToClipboard(String),
-    /// Join wizard completed with a resolved remote bootstrap.
     JoinWizardComplete(crate::multiplayer::RemoteBootstrap),
-    /// Save the API key/.env editor.
     SaveApiKeyEditor,
-    /// Open the backend-owned context inspector.
-    OpenContextInspector,
-    /// Open the combined quick-open palette.
     OpenQuickOpen,
-    /// Open the agent timeline panel.
-    OpenTimeline,
-    /// Open transcript search and filter.
-    OpenTranscriptSearch,
-    /// Execute the selected quick-open item.
     QuickOpenSelected(QuickOpenItem),
-    /// Send the selected queued prompt immediately.
-    QueueSendSelected(QueuedPrompt),
-    /// Restore the last mutation checkpoint.
     RestoreLastMutation,
-    /// Open a file in the user's editor.
     OpenFileInEditor(String),
 }
 
@@ -236,19 +211,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
                 }
                 return InputAction::Redraw;
             }
-            KeyCode::Char('i') => {
-                return InputAction::OpenContextInspector;
-            }
             KeyCode::Char('p') => {
                 return InputAction::OpenQuickOpen;
             }
-            KeyCode::Char('t') => {
-                return InputAction::OpenTimeline;
-            }
-            KeyCode::Char('f') => {
-                return InputAction::OpenTranscriptSearch;
-            }
-            KeyCode::Char('s') if app.mode == AppMode::ApiKeyEditor => {
+            KeyCode::Char('s') if app.overlay_kind == Some(OverlayKind::ApiKeyEditor) => {
                 return InputAction::SaveApiKeyEditor;
             }
             _ => {}
@@ -257,33 +223,26 @@ fn handle_key(app: &mut App, key: KeyEvent) -> InputAction {
 
     // Mode-specific handling
     match app.mode {
-        AppMode::Normal | AppMode::Command => mode_handlers::handle_key_normal(app, key),
-        AppMode::ProviderSelect => mode_handlers::handle_key_provider_select(app, key),
-        AppMode::CompactSelect => mode_handlers::handle_key_compact_select(app, key),
-        AppMode::InfoPopup => mode_handlers::handle_key_info_popup(app, key),
-        AppMode::ApiKeyEditor => mode_handlers::handle_key_api_key_editor(app, key),
-        AppMode::QueueManager => mode_handlers::handle_key_queue_manager(app, key),
-        AppMode::PermissionPrompt => mode_handlers::handle_key_permission(app, key),
-        AppMode::MutationReview => mode_handlers::handle_key_mutation_review(app, key),
-        AppMode::ContextInspector => mode_handlers::handle_key_context_inspector(app, key),
+        AppMode::Normal => mode_handlers::handle_key_normal(app, key),
+        AppMode::Overlay => match app.overlay_kind {
+            Some(OverlayKind::ProviderSelect) => mode_handlers::handle_key_provider_select(app, key),
+            Some(OverlayKind::InfoPopup) => mode_handlers::handle_key_info_popup(app, key),
+            Some(OverlayKind::ApiKeyEditor) => mode_handlers::handle_key_api_key_editor(app, key),
+            Some(OverlayKind::JoinWizard) => mode_handlers::handle_key_join_wizard(app, key),
+            None => {
+                app.mode = AppMode::Normal;
+                InputAction::Redraw
+            }
+        },
         AppMode::QuickOpen => mode_handlers::handle_key_quick_open(app, key),
-        AppMode::Timeline => mode_handlers::handle_key_timeline(app, key),
-        AppMode::TranscriptSearch => mode_handlers::handle_key_transcript_search(app, key),
-        AppMode::PlanReview => mode_handlers::handle_key_plan_review(app, key),
-        AppMode::JoinWizard => mode_handlers::handle_key_join_wizard(app, key),
         AppMode::InlineApproval => mode_handlers::handle_key_inline_approval(app, key),
         AppMode::Quitting => InputAction::Quit,
     }
 }
 
 fn sync_text_input_state(app: &mut App) {
-    if app.input_buffer.starts_with('/') {
-        app.mode = AppMode::Command;
-        app.command_match_index = 0;
-    } else {
-        app.mode = AppMode::Normal;
-        app.command_match_index = 0;
-    }
+    app.mode = AppMode::Normal;
+    app.command_match_index = 0;
     app.refresh_at_path_completion();
     clamp_command_match_index(app);
 }
@@ -323,7 +282,7 @@ fn open_permission_help(app: &mut App) -> InputAction {
     app.open_info_popup_with_return(
         "Approval Help",
         lines.join("\n"),
-        Some(AppMode::PermissionPrompt),
+        Some(AppMode::InlineApproval),
     );
     InputAction::Redraw
 }
@@ -369,7 +328,7 @@ fn open_mutation_review_help(app: &mut App) -> InputAction {
     app.open_info_popup_with_return(
         "Mutation Review Help",
         lines.join("\n"),
-        Some(AppMode::MutationReview),
+        Some(AppMode::InlineApproval),
     );
     InputAction::Redraw
 }
@@ -409,7 +368,7 @@ fn open_plan_review_help(app: &mut App) -> InputAction {
     app.open_info_popup_with_return(
         "Plan Review Help",
         lines.join("\n"),
-        Some(AppMode::PlanReview),
+        Some(AppMode::InlineApproval),
     );
     InputAction::Redraw
 }
@@ -417,7 +376,7 @@ fn open_plan_review_help(app: &mut App) -> InputAction {
 fn handle_mouse(app: &mut App, mouse: MouseEvent) -> InputAction {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            if app.mode == AppMode::InfoPopup {
+            if app.overlay_kind == Some(OverlayKind::InfoPopup) {
                 app.scroll_info_popup_up(3);
             } else {
                 app.scroll_up(3);
@@ -425,7 +384,7 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) -> InputAction {
             InputAction::Redraw
         }
         MouseEventKind::ScrollDown => {
-            if app.mode == AppMode::InfoPopup {
+            if app.overlay_kind == Some(OverlayKind::InfoPopup) {
                 app.scroll_info_popup_down(3);
             } else {
                 app.scroll_down(3);
@@ -529,8 +488,8 @@ mod tests {
     use super::*;
     use super::mode_handlers::*;
     use crate::app::{
-        ChatMessage, MutationReviewState, ProviderEntry, ProviderSelectPane, QuickOpenItemKind,
-        TimelineEntry, TimelineEntryKind,
+        ChatMessage, MutationReviewState, OverlayKind, ProviderEntry, ProviderSelectPane,
+        QueuedPrompt, QuickOpenItemKind, TimelineEntry, TimelineEntryKind,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -579,7 +538,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/new-ses".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
 
         let action = handle_key_normal(&mut app, key_enter());
 
@@ -592,7 +551,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/new-session".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
 
         let action = handle_key_normal(&mut app, key_enter());
 
@@ -607,7 +566,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/checkpoint".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
 
         let action = handle_key_normal(&mut app, key_enter());
 
@@ -622,7 +581,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/provider".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
 
         let action = handle_key_normal(&mut app, key_enter());
 
@@ -637,7 +596,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/theme da".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
 
         let action = handle_key_normal(&mut app, key_enter());
 
@@ -652,7 +611,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/pro".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
 
         let down = handle_key_normal(&mut app, key_down());
         assert!(matches!(down, InputAction::Redraw));
@@ -666,7 +625,8 @@ mod tests {
     #[test]
     fn provider_select_right_focuses_model_pane() {
         let mut app = App::new();
-        app.mode = AppMode::ProviderSelect;
+        app.mode = AppMode::Overlay;
+        app.overlay_kind = Some(OverlayKind::ProviderSelect);
         app.provider.list = vec![ProviderEntry {
             name: "openai".to_string(),
             available: true,
@@ -744,7 +704,8 @@ mod tests {
         let action = handle_key_normal(&mut app, key_question());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.mode, AppMode::Overlay);
+        assert_eq!(app.overlay_kind, Some(OverlayKind::InfoPopup));
         assert_eq!(app.info_popup_title, "Shortcuts");
         assert_eq!(app.info_popup_return_mode, Some(AppMode::Normal));
     }
@@ -752,19 +713,20 @@ mod tests {
     #[test]
     fn permission_prompt_question_mark_opens_help_and_returns() {
         let mut app = App::new();
-        app.mode = AppMode::PermissionPrompt;
+        app.mode = AppMode::InlineApproval;
         app.permission_message = "write_file: {\"file_path\":\"/tmp/demo.txt\"}".to_string();
 
-        let action = handle_key_permission(&mut app, key_question());
+        let action = open_permission_help(&mut app);
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.mode, AppMode::Overlay);
+        assert_eq!(app.overlay_kind, Some(OverlayKind::InfoPopup));
         assert_eq!(app.info_popup_title, "Approval Help");
 
         let close = handle_key_info_popup(&mut app, key_esc());
 
         assert!(matches!(close, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::PermissionPrompt);
+        assert_eq!(app.mode, AppMode::InlineApproval);
     }
 
     #[test]
@@ -788,33 +750,39 @@ mod tests {
         let action = handle_key_mutation_review(&mut app, key_question());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.mode, AppMode::Overlay);
+        assert_eq!(app.overlay_kind, Some(OverlayKind::InfoPopup));
         assert_eq!(app.info_popup_title, "Mutation Review Help");
 
         let close = handle_key_info_popup(&mut app, key_esc());
 
         assert!(matches!(close, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::MutationReview);
+        assert_eq!(app.mode, AppMode::InlineApproval);
     }
 
     #[test]
     fn plan_review_question_mark_opens_help_and_returns() {
         let mut app = App::new();
-        app.mode = AppMode::PlanReview;
+        app.mode = AppMode::InlineApproval;
         app.plan.summary = "Need approval before mutating files.".to_string();
         app.plan.original_request = "Update the config".to_string();
         app.plan.is_execution_gate = true;
+        app.plan.steps = vec![crate::app::PlanStep {
+            description: "step1".to_string(),
+            status: crate::app::PlanStepStatus::Pending,
+        }];
 
-        let action = handle_key_plan_review(&mut app, key_question());
+        let action = handle_key_inline_approval(&mut app, key_question());
 
         assert!(matches!(action, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::InfoPopup);
+        assert_eq!(app.mode, AppMode::Overlay);
+        assert_eq!(app.overlay_kind, Some(OverlayKind::InfoPopup));
         assert_eq!(app.info_popup_title, "Plan Review Help");
 
         let close = handle_key_info_popup(&mut app, key_esc());
 
         assert!(matches!(close, InputAction::Redraw));
-        assert_eq!(app.mode, AppMode::PlanReview);
+        assert_eq!(app.mode, AppMode::InlineApproval);
     }
 
     #[test]
@@ -822,7 +790,7 @@ mod tests {
         let mut app = App::new();
         app.input_buffer = "/pro".to_string();
         app.input_cursor = app.input_buffer.len();
-        app.mode = AppMode::Command;
+        app.mode = AppMode::Normal;
         let matches = command_palette_matches("/pro");
         assert!(matches.len() >= 2);
         let expected = matches[1].command.to_string();
@@ -856,32 +824,18 @@ mod tests {
     }
 
     #[test]
-    fn queue_manager_enter_dispatches_selected_prompt() {
+    fn queue_manager_opens_info_popup() {
         let mut app = App::new();
         app.prompt_queue
             .push_back(QueuedPrompt::user("first prompt"));
         app.prompt_queue
             .push_back(QueuedPrompt::user("second prompt"));
-        app.queue_manager.selected_index = 1;
-        app.mode = AppMode::QueueManager;
-        app.queue_paused = true;
+        app.open_queue_manager();
 
-        let action = handle_key_queue_manager(&mut app, key_enter());
-
-        match action {
-            InputAction::QueueSendSelected(prompt) => {
-                assert_eq!(prompt.display, "second prompt");
-            }
-            _ => panic!("expected queued prompt dispatch"),
-        }
-        assert_eq!(app.prompt_queue.len(), 1);
-        assert_eq!(
-            app.prompt_queue
-                .front()
-                .map(|prompt| prompt.display.as_str()),
-            Some("first prompt")
-        );
-        assert!(!app.queue_paused);
+        assert_eq!(app.mode, AppMode::Overlay);
+        assert_eq!(app.overlay_kind, Some(OverlayKind::InfoPopup));
+        assert!(app.info_popup_content.contains("first prompt"));
+        assert!(app.info_popup_content.contains("second prompt"));
     }
 
     #[test]
@@ -933,29 +887,19 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_i_requests_context_inspector() {
+    fn ctrl_p_requests_quick_open() {
         let mut app = App::new();
         let action = handle_key(
             &mut app,
-            KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
         );
-        assert!(matches!(action, InputAction::OpenContextInspector));
-    }
-
-    #[test]
-    fn ctrl_f_requests_transcript_search() {
-        let mut app = App::new();
-        let action = handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
-        );
-        assert!(matches!(action, InputAction::OpenTranscriptSearch));
+        assert!(matches!(action, InputAction::OpenQuickOpen));
     }
 
     #[test]
     fn mutation_review_enter_approves_permission() {
         let mut app = App::new();
-        app.mode = AppMode::MutationReview;
+        app.mode = AppMode::InlineApproval;
         app.mutation_review = Some(MutationReviewState {
             request_id: "req-1".to_string(),
             tool_name: "edit_file".to_string(),
@@ -979,7 +923,7 @@ mod tests {
     #[test]
     fn mutation_review_file_scope_tracks_selected_path() {
         let mut app = App::new();
-        app.mode = AppMode::MutationReview;
+        app.mode = AppMode::InlineApproval;
         app.mutation_review = Some(MutationReviewState {
             request_id: "req-1".to_string(),
             tool_name: "apply_patch_unified".to_string(),
@@ -1025,7 +969,7 @@ mod tests {
     #[test]
     fn mutation_review_chunk_scope_tracks_selected_hunk() {
         let mut app = App::new();
-        app.mode = AppMode::MutationReview;
+        app.mode = AppMode::InlineApproval;
         app.mutation_review = Some(MutationReviewState {
             request_id: "req-1".to_string(),
             tool_name: "apply_patch_unified".to_string(),
@@ -1077,7 +1021,7 @@ mod tests {
     #[test]
     fn mutation_review_tab_jumps_between_file_groups() {
         let mut app = App::new();
-        app.mode = AppMode::MutationReview;
+        app.mode = AppMode::InlineApproval;
         app.mutation_review = Some(MutationReviewState {
             request_id: "req-1".to_string(),
             tool_name: "apply_patch_unified".to_string(),
@@ -1135,7 +1079,7 @@ mod tests {
     #[test]
     fn mutation_review_file_group_shortcuts_select_and_clear_current_file() {
         let mut app = App::new();
-        app.mode = AppMode::MutationReview;
+        app.mode = AppMode::InlineApproval;
         app.mutation_review = Some(MutationReviewState {
             request_id: "req-1".to_string(),
             tool_name: "apply_patch_unified".to_string(),

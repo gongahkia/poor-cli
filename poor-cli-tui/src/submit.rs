@@ -38,7 +38,7 @@ pub(crate) fn handle_submit(
         &format!("submit_dispatch kind={submit_kind} chars={}", trimmed.len()),
     );
 
-    // join wizard is now handled via AppMode::JoinWizard popup (see input.rs)
+    // join wizard is now handled via Overlay+JoinWizard (see input.rs)
 
     if let Some(prompt_name) = app.pending_prompt_save_name.clone() {
         if !trimmed.starts_with('/') {

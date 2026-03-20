@@ -391,23 +391,19 @@ impl Default for TranscriptSearchState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppMode {
-    Normal,
-    Command,
+    Normal,          // includes Command (/ prefix detection)
+    Overlay,         // ProviderSelect, InfoPopup, ApiKeyEditor, JoinWizard
+    QuickOpen,       // Ctrl+P palette
+    InlineApproval,  // pending y/n/d in chat stream
+    Quitting,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverlayKind {
     ProviderSelect,
     InfoPopup,
     ApiKeyEditor,
-    QueueManager,
-    PermissionPrompt,
-    MutationReview,
-    ContextInspector,
-    QuickOpen,
-    Timeline,
-    TranscriptSearch,
-    PlanReview,
-    CompactSelect,
     JoinWizard,
-    InlineApproval,
-    Quitting,
 }
 
 #[derive(Debug, Clone)]
@@ -601,6 +597,7 @@ pub struct App {
 
     // ── Mode ───
     pub mode: AppMode,
+    pub overlay_kind: Option<OverlayKind>,
     // ── Provider info ───
     pub provider: ProviderState,
     pub info_popup_title: String,
@@ -720,6 +717,7 @@ impl Default for App {
             input_cursor: 0,
             scroll_offset: 0,
             mode: AppMode::Normal,
+            overlay_kind: None,
             provider: ProviderState::default(),
             info_popup_title: String::new(),
             info_popup_content: String::new(),
@@ -887,7 +885,8 @@ impl App {
             .unwrap_or(0)
             .min(self.provider.list.len().saturating_sub(1));
         self.ensure_provider_model_selection();
-        self.mode = AppMode::ProviderSelect;
+        self.mode = AppMode::Overlay;
+        self.overlay_kind = Some(OverlayKind::ProviderSelect);
     }
 
     pub fn selected_provider(&self) -> Option<&ProviderEntry> {
@@ -1224,13 +1223,31 @@ impl App {
     }
 
     pub fn open_context_inspector(&mut self, state: ContextInspectorState) {
+        // render context inspector data as InfoPopup overlay
+        let mut lines = vec![format!(
+            "**Context Inspector** — {} files, ~{} tokens (budget: {})",
+            state.files.len(), state.total_tokens, state.budget_tokens
+        )];
+        if state.truncated {
+            lines.push("(context truncated)".to_string());
+        }
+        if !state.message.is_empty() {
+            lines.push(format!("\n{}", state.message));
+        }
+        lines.push(String::new());
+        for file in &state.files {
+            lines.push(format!(
+                "- `{}` [{}] ~{} tok — {}",
+                file.path, file.source, file.estimated_tokens, file.reason
+            ));
+        }
         self.context_inspector = Some(state);
-        self.mode = AppMode::ContextInspector;
+        self.open_info_popup("Context Inspector", lines.join("\n"));
     }
 
     pub fn close_context_inspector(&mut self) {
         self.context_inspector = None;
-        self.mode = AppMode::Normal;
+        self.close_info_popup();
     }
 
     pub fn open_mutation_review(&mut self, mut state: MutationReviewState) {
@@ -1247,7 +1264,7 @@ impl App {
             state.message.clone()
         };
         self.mutation_review = Some(state);
-        self.mode = AppMode::MutationReview;
+        self.mode = AppMode::InlineApproval;
     }
 
     pub fn close_mutation_review(&mut self) {
@@ -1264,11 +1281,13 @@ impl App {
             items,
         };
         self.mode = AppMode::QuickOpen;
+        self.overlay_kind = None;
     }
 
     pub fn close_quick_open(&mut self) {
         self.quick_open = QuickOpenState::default();
         self.mode = AppMode::Normal;
+        self.overlay_kind = None;
     }
 
     pub fn refresh_at_path_completion(&mut self) {
@@ -1342,11 +1361,20 @@ impl App {
     }
 
     pub fn open_queue_manager(&mut self) {
-        self.queue_manager.selected_index = self
-            .queue_manager
-            .selected_index
-            .min(self.prompt_queue.len().saturating_sub(1));
-        self.mode = AppMode::QueueManager;
+        // render queue contents as InfoPopup
+        let mut lines = vec!["**Prompt Queue**".to_string()];
+        if self.prompt_queue.is_empty() {
+            lines.push("(empty)".to_string());
+        } else {
+            for (i, prompt) in self.prompt_queue.iter().enumerate() {
+                lines.push(format!("{}. [{}] {}", i + 1, prompt.source, prompt.display));
+            }
+        }
+        if self.queue_paused {
+            lines.push(String::new());
+            lines.push("Queue is paused. Use `/queue resume` to continue.".to_string());
+        }
+        self.open_info_popup("Queue", lines.join("\n"));
     }
 
     pub fn close_queue_manager(&mut self) {
@@ -1354,20 +1382,14 @@ impl App {
             .queue_manager
             .selected_index
             .min(self.prompt_queue.len().saturating_sub(1));
-        self.mode = if self.input_buffer.starts_with('/') {
-            AppMode::Command
-        } else {
-            AppMode::Normal
-        };
+        self.mode = AppMode::Normal;
+        self.overlay_kind = None;
     }
 
     pub fn sync_queue_selection(&mut self) {
         if self.prompt_queue.is_empty() {
             self.queue_manager.selected_index = 0;
             self.queue_paused = false;
-            if self.mode == AppMode::QueueManager {
-                self.close_queue_manager();
-            }
             return;
         }
 
@@ -1378,21 +1400,49 @@ impl App {
     }
 
     pub fn open_timeline(&mut self) {
-        self.mode = AppMode::Timeline;
+        // render timeline entries as InfoPopup
+        let mut lines = vec!["**Agent Timeline**".to_string()];
+        if self.timeline_entries.is_empty() {
+            lines.push("(no entries yet)".to_string());
+        } else {
+            for entry in self.timeline_entries.iter().rev().take(50) {
+                let kind = match entry.kind {
+                    TimelineEntryKind::Phase => "phase",
+                    TimelineEntryKind::ToolCall => "tool",
+                    TimelineEntryKind::ToolResult => "result",
+                    TimelineEntryKind::Permission => "review",
+                    TimelineEntryKind::Diff => "diff",
+                    TimelineEntryKind::Cost => "cost",
+                    TimelineEntryKind::Note => "note",
+                };
+                lines.push(format!("- [{}] {} — {}", kind, entry.title, entry.detail));
+            }
+        }
+        self.open_info_popup("Timeline", lines.join("\n"));
     }
 
     pub fn close_timeline(&mut self) {
-        self.mode = AppMode::Normal;
+        self.close_info_popup();
     }
 
     pub fn open_transcript_search(&mut self) {
+        // render transcript as InfoPopup
         self.transcript_search = TranscriptSearchState::default();
-        self.mode = AppMode::TranscriptSearch;
+        let items = self.transcript_search_items();
+        let mut lines = vec!["**Transcript Search**".to_string()];
+        if items.is_empty() {
+            lines.push("(no items)".to_string());
+        } else {
+            for item in items.iter().take(40) {
+                lines.push(format!("- [{}] {}", item.label, item.detail.lines().next().unwrap_or("")));
+            }
+        }
+        self.open_info_popup("Transcript", lines.join("\n"));
     }
 
     pub fn close_transcript_search(&mut self) {
         self.transcript_search = TranscriptSearchState::default();
-        self.mode = AppMode::Normal;
+        self.close_info_popup();
     }
 
     pub fn transcript_search_items(&self) -> Vec<TranscriptSearchItem> {
@@ -1575,13 +1625,15 @@ impl App {
         self.info_popup_content = content.into();
         self.info_popup_scroll = 0;
         self.info_popup_return_mode = return_mode;
-        self.mode = AppMode::InfoPopup;
+        self.mode = AppMode::Overlay;
+        self.overlay_kind = Some(OverlayKind::InfoPopup);
     }
 
     pub fn close_info_popup(&mut self) {
         self.info_popup_title.clear();
         self.info_popup_content.clear();
         self.info_popup_scroll = 0;
+        self.overlay_kind = None;
         self.mode = self
             .info_popup_return_mode
             .take()
@@ -1595,12 +1647,14 @@ impl App {
             state.cursor = state.cursor.min(max_cursor);
         }
         self.api_key_editor = Some(state);
-        self.mode = AppMode::ApiKeyEditor;
+        self.mode = AppMode::Overlay;
+        self.overlay_kind = Some(OverlayKind::ApiKeyEditor);
     }
 
     pub fn close_api_key_editor(&mut self) {
         self.api_key_editor = None;
         self.mode = AppMode::Normal;
+        self.overlay_kind = None;
     }
 
     pub fn scroll_info_popup_up(&mut self, amount: u16) {
@@ -1744,7 +1798,7 @@ impl App {
         self.plan.prompt_id = prompt_id;
         self.plan.is_execution_gate = is_execution_gate;
         self.plan.review_read_only = read_only;
-        self.mode = AppMode::PlanReview;
+        self.mode = AppMode::InlineApproval;
     }
 
     pub fn advance_plan_step(&mut self) {
@@ -2290,6 +2344,6 @@ mod tests {
             selected_chunk_index: 0,
         });
 
-        assert_eq!(app.mode, AppMode::MutationReview);
+        assert_eq!(app.mode, AppMode::InlineApproval);
     }
 }

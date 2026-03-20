@@ -20,7 +20,7 @@ use ratatui::{
 };
 
 use crate::app::{
-    App, AppMode, ThemeMode,
+    App, AppMode, OverlayKind, ThemeMode,
 };
 use crate::input::{command_palette_matches, SlashCommandSpec};
 use crate::theme;
@@ -56,44 +56,17 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_at_path_completion(frame, app);
 
     // Overlays
-    if app.mode == AppMode::ProviderSelect {
-        overlays::draw_provider_select(frame, app);
-    }
-    if app.mode == AppMode::InfoPopup {
-        overlays::draw_info_popup(frame, app);
-    }
-    if app.mode == AppMode::ApiKeyEditor {
-        overlays::draw_api_key_editor(frame, app);
-    }
-    if app.mode == AppMode::QueueManager {
-        overlays::draw_queue_manager(frame, app);
-    }
-    if app.mode == AppMode::PermissionPrompt {
-        overlays::draw_permission_prompt(frame, app);
-    }
-    if app.mode == AppMode::MutationReview {
-        overlays::draw_mutation_review(frame, app);
-    }
-    if app.mode == AppMode::ContextInspector {
-        overlays::draw_context_inspector(frame, app);
+    if app.mode == AppMode::Overlay {
+        match app.overlay_kind {
+            Some(OverlayKind::ProviderSelect) => overlays::draw_provider_select(frame, app),
+            Some(OverlayKind::InfoPopup) => overlays::draw_info_popup(frame, app),
+            Some(OverlayKind::ApiKeyEditor) => overlays::draw_api_key_editor(frame, app),
+            Some(OverlayKind::JoinWizard) => overlays::draw_join_wizard(frame, app),
+            None => {}
+        }
     }
     if app.mode == AppMode::QuickOpen {
         overlays::draw_quick_open(frame, app);
-    }
-    if app.mode == AppMode::Timeline {
-        overlays::draw_timeline(frame, app);
-    }
-    if app.mode == AppMode::TranscriptSearch {
-        overlays::draw_transcript_search(frame, app);
-    }
-    if app.mode == AppMode::PlanReview {
-        overlays::draw_plan_review(frame, app);
-    }
-    if app.mode == AppMode::CompactSelect {
-        overlays::draw_compact_select(frame, app);
-    }
-    if app.mode == AppMode::JoinWizard {
-        overlays::draw_join_wizard(frame, app);
     }
 }
 
@@ -366,50 +339,48 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(theme::muted_fg(mode)),
             ),
         ]
-    } else if app.mode == AppMode::InfoPopup {
-        vec![
-            Span::styled("  Esc/Enter", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": close  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("c", Style::default().fg(theme::accent(mode))),
-            Span::styled(": copy all  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("1-9", Style::default().fg(theme::accent(mode))),
-            Span::styled(": copy item  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled(": fast scroll", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::ApiKeyEditor {
-        vec![
-            Span::styled("  ↑↓/Tab", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": switch field  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": next/save  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Ctrl+S", Style::default().fg(theme::success(mode))),
-            Span::styled(": save  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::ProviderSelect {
-        vec![
-            Span::styled("  ←→", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": switch pane  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": navigate  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(
-                ": switch provider/model  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
+    } else if app.mode == AppMode::Overlay {
+        match app.overlay_kind {
+            Some(OverlayKind::InfoPopup) => vec![
+                Span::styled("  Esc/Enter", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled(": close  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("c", Style::default().fg(theme::accent(mode))),
+                Span::styled(": copy all  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("1-9", Style::default().fg(theme::accent(mode))),
+                Span::styled(": copy item  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("↑↓", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("PgUp/PgDn", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled(": fast scroll", Style::default().fg(theme::muted_fg(mode))),
+            ],
+            Some(OverlayKind::ApiKeyEditor) => vec![
+                Span::styled("  ↑↓/Tab", Style::default().fg(theme::accent(mode))),
+                Span::styled(": switch field  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("Enter", Style::default().fg(theme::success(mode))),
+                Span::styled(": next/save  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("Ctrl+S", Style::default().fg(theme::success(mode))),
+                Span::styled(": save  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+                Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
+            ],
+            Some(OverlayKind::ProviderSelect) => vec![
+                Span::styled("  ←→", Style::default().fg(theme::accent(mode))),
+                Span::styled(": switch pane  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
+                Span::styled(": navigate  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("Enter", Style::default().fg(theme::success(mode))),
+                Span::styled(": switch provider/model  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+                Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
+            ],
+            Some(OverlayKind::JoinWizard) => vec![
+                Span::styled("  Enter", Style::default().fg(theme::accent(mode))),
+                Span::styled(": confirm  ", Style::default().fg(theme::muted_fg(mode))),
+                Span::styled("Esc", Style::default().fg(theme::accent(mode))),
+                Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
+            ],
+            None => vec![],
+        }
     } else if app.mode == AppMode::InlineApproval {
         vec![
             Span::styled("  y", Style::default().fg(theme::success(mode))),
@@ -421,124 +392,14 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("?", Style::default().fg(theme::accent(mode))),
             Span::styled(" help", Style::default().fg(theme::muted_fg(mode))),
         ]
-    } else if app.mode == AppMode::PermissionPrompt {
-        vec![
-            Span::styled("  y/Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": allow  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("n/Esc", Style::default().fg(theme::error(mode))),
-            Span::styled(": deny  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("?", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": explain request",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-        ]
-    } else if app.mode == AppMode::QueueManager {
+    } else if app.at_path_completion.active && app.mode == AppMode::Normal {
         vec![
             Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": select  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Enter/s", Style::default().fg(theme::success(mode))),
-            Span::styled(": send  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("e", Style::default().fg(theme::accent(mode))),
-            Span::styled(": edit  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("d", Style::default().fg(theme::accent(mode))),
-            Span::styled(": drop  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("u/j", Style::default().fg(theme::accent(mode))),
-            Span::styled(": reorder  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("c", Style::default().fg(theme::accent(mode))),
-            Span::styled(": clear", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.at_path_completion.active
-        && matches!(app.mode, AppMode::Normal | AppMode::Command)
-    {
-        vec![
-            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": select file  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
+            Span::styled(": select file  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Tab/Enter", Style::default().fg(theme::success(mode))),
             Span::styled(": attach  ", Style::default().fg(theme::muted_fg(mode))),
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::JoinWizard {
-        vec![
-            Span::styled("  Enter", Style::default().fg(theme::accent(mode))),
-            Span::styled(": confirm  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": cancel", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::ContextInspector {
-        vec![
-            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": select  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("d", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": remove attachment  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("c", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": copy summary  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::MutationReview {
-        let approve_file_label = if app
-            .mutation_review
-            .as_ref()
-            .map(|review| review.paths.len() > 1)
-            .unwrap_or(false)
-        {
-            ": approve selected file  "
-        } else {
-            ": approve file  "
-        };
-        let supports_chunk_approval = app
-            .mutation_review
-            .as_ref()
-            .map(|review| review.supports_chunk_approval())
-            .unwrap_or(false);
-        vec![
-            Span::styled("  y/Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": approve  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("n/Esc", Style::default().fg(theme::error(mode))),
-            Span::styled(": reject  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Space", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                if supports_chunk_approval {
-                    ": toggle hunk  "
-                } else {
-                    ": no-op  "
-                },
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("h", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                if supports_chunk_approval {
-                    ": approve hunks  "
-                } else {
-                    ": no-op  "
-                },
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("f", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                approve_file_label,
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("u", Style::default().fg(theme::accent(mode))),
-            Span::styled(": undo  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("o", Style::default().fg(theme::accent(mode))),
-            Span::styled(": open file  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("?", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": explain review",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
         ]
     } else if app.mode == AppMode::QuickOpen {
         vec![
@@ -551,58 +412,6 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("Esc", Style::default().fg(theme::accent(mode))),
             Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
         ]
-    } else if app.mode == AppMode::Timeline {
-        vec![
-            Span::styled("  ↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": scroll  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("c", Style::default().fg(theme::accent(mode))),
-            Span::styled(": copy diff  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("u", Style::default().fg(theme::accent(mode))),
-            Span::styled(": undo  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::TranscriptSearch {
-        vec![
-            Span::styled("  type", Style::default().fg(theme::accent(mode))),
-            Span::styled(": search  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("↑↓", Style::default().fg(theme::accent(mode))),
-            Span::styled(": select  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Tab", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": filter group  ",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-            Span::styled("Esc", Style::default().fg(theme::accent(mode))),
-            Span::styled(": close", Style::default().fg(theme::muted_fg(mode))),
-        ]
-    } else if app.mode == AppMode::PlanReview {
-        vec![
-            Span::styled("  Enter", Style::default().fg(theme::success(mode))),
-            Span::styled(": continue  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("Esc", Style::default().fg(theme::error(mode))),
-            Span::styled(": back  ", Style::default().fg(theme::muted_fg(mode))),
-            Span::styled("?", Style::default().fg(theme::accent(mode))),
-            Span::styled(
-                ": explain plan gate",
-                Style::default().fg(theme::muted_fg(mode)),
-            ),
-        ]
-    } else if app.mode == AppMode::Command {
-        // Show matching commands
-        let prefix = &app.input_buffer;
-        let matches = command_palette_matches(prefix);
-        let mut spans = vec![Span::styled("  ", Style::default())];
-        for (i, m) in matches.into_iter().take(6).enumerate() {
-            if i > 0 {
-                spans.push(Span::styled("  ", Style::default()));
-            }
-            spans.push(Span::styled(
-                m.command.to_string(),
-                Style::default().fg(theme::muted_fg(mode)),
-            ));
-        }
-        spans
     } else {
         draw_default_footer_bar(frame, app, area);
         return;
@@ -790,7 +599,7 @@ fn draw_command_palette(frame: &mut Frame, app: &App) {
 
 fn draw_at_path_completion(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
-    if !app.at_path_completion.active || !matches!(app.mode, AppMode::Normal | AppMode::Command) {
+    if !app.at_path_completion.active || app.mode != AppMode::Normal {
         return;
     }
 

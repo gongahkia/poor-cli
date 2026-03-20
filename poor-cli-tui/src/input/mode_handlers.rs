@@ -197,37 +197,12 @@ pub(super) fn handle_key_provider_select(app: &mut App, key: KeyEvent) -> InputA
         KeyCode::Enter => {
             let idx = app.provider.select_idx;
             app.mode = AppMode::Normal;
+            app.overlay_kind = None;
             InputAction::ProviderSelected(idx)
         }
         KeyCode::Esc => {
             app.mode = AppMode::Normal;
-            InputAction::Redraw
-        }
-        _ => InputAction::None,
-    }
-}
-
-pub(super) fn handle_key_compact_select(app: &mut App, key: KeyEvent) -> InputAction {
-    match key.code {
-        KeyCode::Up => {
-            if app.compact_select_idx > 0 {
-                app.compact_select_idx -= 1;
-            }
-            InputAction::Redraw
-        }
-        KeyCode::Down => {
-            if app.compact_select_idx + 1 < crate::app::COMPACT_STRATEGIES.len() {
-                app.compact_select_idx += 1;
-            }
-            InputAction::Redraw
-        }
-        KeyCode::Enter => {
-            let strategy = crate::app::COMPACT_STRATEGIES[app.compact_select_idx].0;
-            app.mode = AppMode::Normal;
-            InputAction::CompactStrategySelected(strategy.to_string())
-        }
-        KeyCode::Esc => {
-            app.mode = AppMode::Normal;
+            app.overlay_kind = None;
             InputAction::Redraw
         }
         _ => InputAction::None,
@@ -325,6 +300,7 @@ pub(super) fn api_key_editor_next_boundary(text: &str, cursor: usize) -> usize {
 pub(super) fn handle_key_api_key_editor(app: &mut App, key: KeyEvent) -> InputAction {
     let Some(state) = app.api_key_editor.as_mut() else {
         app.mode = AppMode::Normal;
+        app.overlay_kind = None;
         return InputAction::Redraw;
     };
 
@@ -423,6 +399,7 @@ pub(super) fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputActio
             app.join_wizard_input.clear();
             app.join_wizard_error.clear();
             app.mode = AppMode::Normal;
+            app.overlay_kind = None;
             InputAction::Redraw
         }
         KeyCode::Char(c) => {
@@ -456,6 +433,7 @@ pub(super) fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputActio
                     app.join_wizard_input.clear();
                     app.join_wizard_error.clear();
                     app.mode = AppMode::Normal;
+                    app.overlay_kind = None;
                     InputAction::JoinWizardComplete(bootstrap)
                 }
                 Err(e) => {
@@ -463,25 +441,6 @@ pub(super) fn handle_key_join_wizard(app: &mut App, key: KeyEvent) -> InputActio
                     InputAction::Redraw
                 }
             }
-        }
-        _ => InputAction::None,
-    }
-}
-
-pub(super) fn handle_key_permission(app: &mut App, key: KeyEvent) -> InputAction {
-    match key.code {
-        KeyCode::Char('?') => open_permission_help(app),
-        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-            app.permission_approved_paths.clear();
-            app.permission_answer = Some(true);
-            app.mode = AppMode::Normal;
-            InputAction::PermissionAnswered(true)
-        }
-        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-            app.permission_approved_paths.clear();
-            app.permission_answer = Some(false);
-            app.mode = AppMode::Normal;
-            InputAction::PermissionAnswered(false)
         }
         _ => InputAction::None,
     }
@@ -715,106 +674,6 @@ pub(super) fn handle_key_mutation_review(app: &mut App, key: KeyEvent) -> InputA
     }
 }
 
-pub(super) fn handle_key_context_inspector(app: &mut App, key: KeyEvent) -> InputAction {
-    if app.context_inspector.is_none() {
-        app.mode = AppMode::Normal;
-        return InputAction::Redraw;
-    }
-
-    match key.code {
-        KeyCode::Up => {
-            let inspector = app
-                .context_inspector
-                .as_mut()
-                .expect("context inspector must exist");
-            if inspector.selected_index > 0 {
-                inspector.selected_index -= 1;
-            }
-            InputAction::Redraw
-        }
-        KeyCode::Down => {
-            let inspector = app
-                .context_inspector
-                .as_mut()
-                .expect("context inspector must exist");
-            if inspector.selected_index + 1 < inspector.files.len() {
-                inspector.selected_index += 1;
-            }
-            InputAction::Redraw
-        }
-        KeyCode::Char('c') | KeyCode::Char('C') => {
-            let summary = app
-                .context_inspector
-                .as_ref()
-                .map(|inspector| {
-                    inspector
-                        .files
-                        .iter()
-                        .map(|file| {
-                            format!(
-                                "{} [{}] ~{} tok",
-                                file.path, file.source, file.estimated_tokens
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default();
-            InputAction::CopyToClipboard(summary)
-        }
-        KeyCode::Char('d') | KeyCode::Char('D') => {
-            let maybe_file = app
-                .context_inspector
-                .as_ref()
-                .and_then(|inspector| inspector.files.get(inspector.selected_index).cloned());
-            let selected_index = app
-                .context_inspector
-                .as_ref()
-                .map(|inspector| inspector.selected_index)
-                .unwrap_or(0);
-            if let Some(file) = maybe_file {
-                if let Some(spec) = file.explicit_spec {
-                    if file.source == "pinned" {
-                        app.pinned_context_files.retain(|entry| entry != &spec);
-                        app.set_status(format!("Removed pinned context: {spec}"));
-                    } else if file.source == "explicit" {
-                        let quoted = format!("@\"{spec}\"");
-                        let plain = format!("@{spec}");
-                        if app.input_buffer.contains(&quoted) {
-                            app.input_buffer = app.input_buffer.replacen(&quoted, "", 1);
-                        } else if app.input_buffer.contains(&plain) {
-                            app.input_buffer = app.input_buffer.replacen(&plain, "", 1);
-                        }
-                        app.input_buffer = app
-                            .input_buffer
-                            .split_whitespace()
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        app.input_cursor = app.input_buffer.len();
-                        app.set_status(format!("Removed attachment: {spec}"));
-                    }
-                    if let Some(inspector) = app.context_inspector.as_mut() {
-                        if selected_index < inspector.files.len() {
-                            inspector.files.remove(selected_index);
-                        }
-                        if inspector.selected_index >= inspector.files.len()
-                            && inspector.selected_index > 0
-                        {
-                            inspector.selected_index -= 1;
-                        }
-                    }
-                }
-            }
-            InputAction::Redraw
-        }
-        KeyCode::Esc | KeyCode::Enter => {
-            app.close_context_inspector();
-            InputAction::Redraw
-        }
-        _ => InputAction::None,
-    }
-}
-
 pub(super) fn filtered_quick_open_items(app: &App) -> Vec<QuickOpenItem> {
     let query = app.quick_open.query.trim().to_lowercase();
     let mut items = app.quick_open.items.clone();
@@ -828,38 +687,6 @@ pub(super) fn filtered_quick_open_items(app: &App) -> Vec<QuickOpenItem> {
             || item.value.to_lowercase().contains(&query)
     });
     items
-}
-
-pub(super) fn cycle_transcript_filters(app: &mut App, reverse: bool) {
-    let current = (
-        app.transcript_search.include_messages,
-        app.transcript_search.include_tools,
-        app.transcript_search.include_diffs,
-    );
-    let presets = [
-        (true, true, true),
-        (true, false, false),
-        (false, true, false),
-        (false, false, true),
-    ];
-    let index = presets
-        .iter()
-        .position(|preset| *preset == current)
-        .unwrap_or(0);
-    let next_index = if reverse {
-        if index == 0 {
-            presets.len() - 1
-        } else {
-            index - 1
-        }
-    } else {
-        (index + 1) % presets.len()
-    };
-    let next = presets[next_index];
-    app.transcript_search.include_messages = next.0;
-    app.transcript_search.include_tools = next.1;
-    app.transcript_search.include_diffs = next.2;
-    app.transcript_search.selected_index = 0;
 }
 
 pub(super) fn handle_key_quick_open(app: &mut App, key: KeyEvent) -> InputAction {
@@ -903,192 +730,37 @@ pub(super) fn handle_key_quick_open(app: &mut App, key: KeyEvent) -> InputAction
     }
 }
 
-pub(super) fn handle_key_queue_manager(app: &mut App, key: KeyEvent) -> InputAction {
-    if app.prompt_queue.is_empty() {
-        match key.code {
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                app.close_queue_manager();
-                InputAction::Redraw
-            }
-            _ => InputAction::None,
-        }
-    } else {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                app.close_queue_manager();
-                InputAction::Redraw
-            }
-            KeyCode::Up => {
-                if app.queue_manager.selected_index > 0 {
-                    app.queue_manager.selected_index -= 1;
-                }
-                InputAction::Redraw
-            }
-            KeyCode::Down => {
-                if app.queue_manager.selected_index + 1 < app.prompt_queue.len() {
-                    app.queue_manager.selected_index += 1;
-                }
-                InputAction::Redraw
-            }
-            KeyCode::Char('u') | KeyCode::Char('k') => {
-                let selected = app.queue_manager.selected_index;
-                if selected > 0 {
-                    app.prompt_queue.swap(selected - 1, selected);
-                    app.queue_manager.selected_index -= 1;
-                    app.set_status("Moved queued prompt up");
-                }
-                InputAction::Redraw
-            }
-            KeyCode::Char('j') => {
-                let selected = app.queue_manager.selected_index;
-                if selected + 1 < app.prompt_queue.len() {
-                    app.prompt_queue.swap(selected, selected + 1);
-                    app.queue_manager.selected_index += 1;
-                    app.set_status("Moved queued prompt down");
-                }
-                InputAction::Redraw
-            }
-            KeyCode::Char('d') | KeyCode::Delete | KeyCode::Backspace => {
-                let selected = app.queue_manager.selected_index;
-                if let Some(prompt) = app.prompt_queue.remove(selected) {
-                    app.set_status(format!("Dropped queued {} prompt", prompt.source));
-                }
-                app.sync_queue_selection();
-                InputAction::Redraw
-            }
-            KeyCode::Char('c') | KeyCode::Char('C') => {
-                let count = app.prompt_queue.len();
-                app.prompt_queue.clear();
-                app.queue_paused = false;
-                app.sync_queue_selection();
-                app.set_status(format!("Cleared {count} queued prompt(s)"));
-                InputAction::Redraw
-            }
-            KeyCode::Char('e') | KeyCode::Char('E') => {
-                let selected = app.queue_manager.selected_index;
-                if let Some(prompt) = app.prompt_queue.remove(selected) {
-                    app.close_queue_manager();
-                    app.input_buffer = prompt.backend;
-                    app.input_cursor = app.input_buffer.len();
-                    sync_text_input_state(app);
-                    app.sync_queue_selection();
-                    app.set_status("Loaded queued prompt into composer");
-                }
-                InputAction::Redraw
-            }
-            KeyCode::Enter | KeyCode::Char('s') | KeyCode::Char('S') => {
-                if app.waiting {
-                    app.set_status("Wait for the active request before sending queued prompts");
-                    return InputAction::Redraw;
-                }
-
-                let selected = app.queue_manager.selected_index;
-                if let Some(prompt) = app.prompt_queue.remove(selected) {
-                    app.queue_paused = false;
-                    app.sync_queue_selection();
-                    app.close_queue_manager();
-                    return InputAction::QueueSendSelected(prompt);
-                }
-                InputAction::None
-            }
-            _ => InputAction::None,
-        }
-    }
-}
-
-pub(super) fn handle_key_timeline(app: &mut App, key: KeyEvent) -> InputAction {
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => {
-            app.close_timeline();
-            InputAction::Redraw
-        }
-        KeyCode::Up => {
-            app.timeline_scroll = app.timeline_scroll.saturating_sub(1);
-            InputAction::Redraw
-        }
-        KeyCode::Down => {
-            app.timeline_scroll = app.timeline_scroll.saturating_add(1);
-            InputAction::Redraw
-        }
-        KeyCode::Char('c') | KeyCode::Char('C') => {
-            let latest_diff = app
-                .timeline_entries
-                .iter()
-                .rev()
-                .find(|entry| !entry.diff.is_empty())
-                .map(|entry| entry.diff.clone())
-                .unwrap_or_default();
-            InputAction::CopyToClipboard(latest_diff)
-        }
-        KeyCode::Char('u') | KeyCode::Char('U') => InputAction::RestoreLastMutation,
-        _ => InputAction::None,
-    }
-}
-
-pub(super) fn handle_key_transcript_search(app: &mut App, key: KeyEvent) -> InputAction {
-    match key.code {
-        KeyCode::Esc | KeyCode::Enter => {
-            app.close_transcript_search();
-            InputAction::Redraw
-        }
-        KeyCode::Backspace => {
-            app.transcript_search.query.pop();
-            app.transcript_search.selected_index = 0;
-            InputAction::Redraw
-        }
-        KeyCode::Tab => {
-            cycle_transcript_filters(app, false);
-            InputAction::Redraw
-        }
-        KeyCode::BackTab => {
-            cycle_transcript_filters(app, true);
-            InputAction::Redraw
-        }
-        KeyCode::Up => {
-            app.transcript_search.selected_index =
-                app.transcript_search.selected_index.saturating_sub(1);
-            InputAction::Redraw
-        }
-        KeyCode::Down => {
-            let items = app.transcript_search_items();
-            if app.transcript_search.selected_index + 1 < items.len() {
-                app.transcript_search.selected_index += 1;
-            }
-            InputAction::Redraw
-        }
-        KeyCode::Char(c) => {
-            app.transcript_search.query.push(c);
-            app.transcript_search.selected_index = 0;
-            InputAction::Redraw
-        }
-        _ => InputAction::None,
-    }
-}
-
-pub(super) fn handle_key_plan_review(app: &mut App, key: KeyEvent) -> InputAction {
-    match key.code {
-        KeyCode::Char('?') => open_plan_review_help(app),
-        KeyCode::Enter => {
-            app.mode = AppMode::Normal;
-            if app.plan.review_read_only {
-                InputAction::Redraw
-            } else {
-                InputAction::PlanApproved
-            }
-        }
-        KeyCode::Esc | KeyCode::Char('q') => {
-            app.mode = AppMode::Normal;
-            if app.plan.review_read_only {
-                InputAction::Redraw
-            } else {
-                InputAction::PlanCancelled
-            }
-        }
-        _ => InputAction::None,
-    }
-}
-
 pub(super) fn handle_key_inline_approval(app: &mut App, key: KeyEvent) -> InputAction {
+    // plan review gate is active
+    let is_plan_review = app.plan.is_execution_gate && !app.plan.steps.is_empty();
+    // mutation review has expanded diff
+    let has_mutation_review = app.mutation_review.is_some();
+    if is_plan_review && app.pending_approval.is_none() {
+        return match key.code {
+            KeyCode::Char('?') => open_plan_review_help(app),
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                app.mode = AppMode::Normal;
+                if app.plan.review_read_only {
+                    InputAction::Redraw
+                } else {
+                    InputAction::PlanApproved
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
+                app.mode = AppMode::Normal;
+                if app.plan.review_read_only {
+                    InputAction::Redraw
+                } else {
+                    InputAction::PlanCancelled
+                }
+            }
+            _ => InputAction::None,
+        };
+    }
+    // mutation review mode (expanded diff with hunk selection)
+    if has_mutation_review {
+        return handle_key_mutation_review(app, key);
+    }
     match key.code {
         KeyCode::Char('y') | KeyCode::Char('Y') => {
             app.permission_approved_paths.clear();
