@@ -1189,6 +1189,21 @@ impl RpcClient {
     pub fn get_mcp_status(&self) -> Result<Value, String> {
         self.call("poor-cli/getMcpStatus", Value::Object(Default::default()))
     }
+    pub fn gc_checkpoints(&self) -> Result<Value, String> {
+        self.call("poor-cli/gcCheckpoints", Value::Object(Default::default()))
+    }
+    pub fn mcp_health_check(&self) -> Result<Value, String> {
+        self.call("poor-cli/mcpHealthCheck", Value::Object(Default::default()))
+    }
+    pub fn list_ollama_models(&self) -> Result<Value, String> {
+        self.call("poor-cli/listOllamaModels", Value::Object(Default::default()))
+    }
+    pub fn save_session(&self) -> Result<Value, String> {
+        self.call("poor-cli/saveSession", Value::Object(Default::default()))
+    }
+    pub fn restore_session(&self) -> Result<Value, String> {
+        self.call("poor-cli/restoreSession", Value::Object(Default::default()))
+    }
 
     pub fn list_runs(
         &self,
@@ -1903,6 +1918,21 @@ pub enum RpcCommand {
     GetMcpStatus {
         reply: SyncSender<Result<Value, String>>,
     },
+    GcCheckpoints {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    McpHealthCheck {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    ListOllamaModels {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    SaveSession {
+        reply: SyncSender<Result<Value, String>>,
+    },
+    RestoreSession {
+        reply: SyncSender<Result<Value, String>>,
+    },
     GetContextExplain {
         message: String,
         context_files: Vec<String>,
@@ -2320,6 +2350,21 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
             }
             Ok(RpcCommand::GetMcpStatus { reply }) => {
                 let _ = reply.send(client.get_mcp_status());
+            }
+            Ok(RpcCommand::GcCheckpoints { reply }) => {
+                let _ = reply.send(client.gc_checkpoints());
+            }
+            Ok(RpcCommand::McpHealthCheck { reply }) => {
+                let _ = reply.send(client.mcp_health_check());
+            }
+            Ok(RpcCommand::ListOllamaModels { reply }) => {
+                let _ = reply.send(client.list_ollama_models());
+            }
+            Ok(RpcCommand::SaveSession { reply }) => {
+                let _ = reply.send(client.save_session());
+            }
+            Ok(RpcCommand::RestoreSession { reply }) => {
+                let _ = reply.send(client.restore_session());
             }
             Ok(RpcCommand::GetContextExplain {
                 message,

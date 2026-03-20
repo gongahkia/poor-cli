@@ -2710,6 +2710,56 @@ fn rpc_get_mcp_status_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<
         .map_err(|_| "Timed out waiting for MCP status".to_string())?
 }
 
+fn rpc_gc_checkpoints_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::GcCheckpoints { reply: reply_tx })
+        .map_err(|e| format!("Failed to request GC: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for GC".to_string())?
+}
+
+fn rpc_mcp_health_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::McpHealthCheck { reply: reply_tx })
+        .map_err(|e| format!("Failed to request MCP health: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for MCP health".to_string())?
+}
+
+fn rpc_list_ollama_models_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::ListOllamaModels { reply: reply_tx })
+        .map_err(|e| format!("Failed to request Ollama models: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for Ollama models".to_string())?
+}
+
+fn rpc_save_session_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::SaveSession { reply: reply_tx })
+        .map_err(|e| format!("Failed to save session: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out saving session".to_string())?
+}
+
+fn rpc_restore_session_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::RestoreSession { reply: reply_tx })
+        .map_err(|e| format!("Failed to restore session: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out restoring session".to_string())?
+}
+
 fn rpc_list_skills_blocking(rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Result<Value, String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     rpc_cmd_tx
