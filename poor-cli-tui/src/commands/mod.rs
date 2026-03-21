@@ -712,47 +712,32 @@ Version: v{}",
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
-                let config_file = payload
+                let _config_file = payload
                     .get("configFile")
                     .and_then(|v| v.as_str())
                     .unwrap_or("(unknown)");
 
-                let mut lines = vec![
-                    format!("**Editable Settings** ({})", options.len()),
-                    format!("Config file: `{config_file}`"),
-                    String::new(),
-                    "Quick actions: `/toggle <key>` or `/set <key> <value>`".to_string(),
-                    String::new(),
-                ];
-
-                for opt in options.iter().take(80) {
-                    let key = opt
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let typ = opt
-                        .get("type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let value = opt.get("value").cloned().unwrap_or(Value::Null);
-                    let is_bool = opt
-                        .get("isBoolean")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let bool_hint = if is_bool { " (toggleable)" } else { "" };
-                    lines.push(format!(
-                        "- `{key}` [{typ}{bool_hint}] = `{}`",
-                        format_value_for_display(&value)
-                    ));
+                if options.is_empty() {
+                    show_command_info_popup(app, raw, "No editable settings found.".to_string());
+                } else {
+                    let items: Vec<ListSelectorItem> = options.iter().take(80).map(|opt| {
+                        let key = opt.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let typ = opt.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let value = opt.get("value").cloned().unwrap_or(Value::Null);
+                        let is_bool = opt.get("isBoolean").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let bool_hint = if is_bool { " (toggleable)" } else { "" };
+                        ListSelectorItem {
+                            label: format!("{key} [{typ}{bool_hint}] = {}", format_value_for_display(&value)),
+                            value: key.to_string(),
+                        }
+                    }).collect();
+                    app.open_list_selector(ListSelectorState {
+                        title: format!("Settings ({})", options.len()),
+                        items,
+                        selected_idx: 0,
+                        command_template: "/toggle {}".to_string(),
+                    });
                 }
-                if options.len() > 80 {
-                    lines.push(format!(
-                        "\n... and {} more settings. Narrow with `/set <key> <value>`.",
-                        options.len() - 80
-                    ));
-                }
-
-                show_command_info_popup(app, raw, lines.join("\n"));
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to load settings: {e}"))),
         }
@@ -816,14 +801,15 @@ Version: v{}",
     }
 
     if lowered == "/theme" {
-        show_command_info_popup(
-            app,
-            raw,
-            format!(
-                "Current theme: **{}**\nUse `/theme dark` or `/theme light`.",
-                app.theme_mode.as_str()
-            ),
-        );
+        let themes = vec![("dark", "Dark theme"), ("light", "Light theme")];
+        let items: Vec<ListSelectorItem> = themes.iter().map(|(name, desc)| {
+            let active = if *name == app.theme_mode.as_str() { " (active)" } else { "" };
+            ListSelectorItem { label: format!("{name}{active}: {desc}"), value: name.to_string() }
+        }).collect();
+        app.open_list_selector(ListSelectorState {
+            title: "Theme".to_string(), items, selected_idx: 0,
+            command_template: "/theme {}".to_string(),
+        });
         return false;
     }
 
@@ -933,17 +919,23 @@ Version: v{}",
 
         match rpc_get_config_blocking(rpc_cmd_tx) {
             Ok(cfg) => {
-                let mode = cfg
+                let current = cfg
                     .get("permissionMode")
                     .and_then(|v| v.as_str())
                     .unwrap_or("prompt");
-                show_command_info_popup(
-                    app,
-                    raw,
-                    format!(
-                        "Current permission mode: **{mode}**\nAvailable: prompt, auto-safe, danger-full-access\nSet with: `/permission-mode <mode>`"
-                    ),
-                );
+                let modes = vec![
+                    ("prompt", "ask before each action"),
+                    ("auto-safe", "auto-approve safe actions"),
+                    ("danger-full-access", "approve all actions"),
+                ];
+                let items: Vec<ListSelectorItem> = modes.iter().map(|(name, desc)| {
+                    let active = if *name == current { " (active)" } else { "" };
+                    ListSelectorItem { label: format!("{name}{active}: {desc}"), value: name.to_string() }
+                }).collect();
+                app.open_list_selector(ListSelectorState {
+                    title: "Permission Mode".to_string(), items, selected_idx: 0,
+                    command_template: "/permission-mode {}".to_string(),
+                });
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to fetch permission mode: {e}"
@@ -1520,14 +1512,18 @@ Context Window: {max_context} tokens\n\n\
     if lowered == "/economy" || lowered.starts_with("/economy ") {
         let arg = lowered.strip_prefix("/economy").unwrap_or("").trim();
         if arg.is_empty() {
-            // show current config
-            match rpc_get_economy_savings_blocking(rpc_cmd_tx) {
-                Ok(payload) => {
-                    let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
-                    show_command_info_popup(app, raw, format!("**Economy Mode:**\n```\n{msg}\n```\n\nUsage: `/economy frugal|balanced|quality`"));
-                }
-                Err(e) => app.push_message(ChatMessage::error(format!("Failed to get economy: {e}"))),
-            }
+            let presets = vec![
+                ("frugal", "minimize token usage"),
+                ("balanced", "balance cost and quality"),
+                ("quality", "maximize response quality"),
+            ];
+            let items: Vec<ListSelectorItem> = presets.iter().map(|(name, desc)| {
+                ListSelectorItem { label: format!("{name}: {desc}"), value: name.to_string() }
+            }).collect();
+            app.open_list_selector(ListSelectorState {
+                title: "Economy Preset".to_string(), items, selected_idx: 0,
+                command_template: "/economy {}".to_string(),
+            });
         } else {
             match rpc_set_economy_preset_blocking(rpc_cmd_tx, arg) {
                 Ok(payload) => {
@@ -1545,9 +1541,22 @@ Context Window: {max_context} tokens\n\n\
             Ok(payload) => {
                 let models = payload.get("models")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|m| m.as_str()).collect::<Vec<_>>().join("\n  "))
-                    .unwrap_or_else(|| "(none)".to_string());
-                show_command_info_popup(app, raw, format!("Ollama Models:\n  {models}"));
+                    .cloned()
+                    .unwrap_or_default();
+                if models.is_empty() {
+                    show_command_info_popup(app, raw, "No Ollama models found.".to_string());
+                } else {
+                    let items: Vec<ListSelectorItem> = models.iter()
+                        .filter_map(|m| m.as_str())
+                        .map(|name| ListSelectorItem {
+                            label: name.to_string(),
+                            value: name.to_string(),
+                        }).collect();
+                    app.open_list_selector(ListSelectorState {
+                        title: "Ollama Models".to_string(), items, selected_idx: 0,
+                        command_template: "/switch ollama {}".to_string(),
+                    });
+                }
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to list Ollama models: {e}"))),
         }
