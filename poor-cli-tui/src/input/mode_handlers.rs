@@ -229,6 +229,39 @@ pub(super) fn extract_copyable_items(content: &str) -> Vec<String> {
 }
 
 pub(super) fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
+    if app.onboarding_active {
+        match key.code {
+            KeyCode::Right | KeyCode::Tab => {
+                if app.onboarding_total_steps > 0 && app.onboarding_step + 1 < app.onboarding_total_steps {
+                    app.onboarding_step += 1;
+                    // content update happens via Submit which re-enters the handler
+                    app.close_info_popup();
+                    return InputAction::Submit(format!("/onboarding {}", app.onboarding_step + 1));
+                }
+                return InputAction::Redraw;
+            }
+            KeyCode::Left | KeyCode::BackTab => {
+                if app.onboarding_step > 0 {
+                    app.onboarding_step -= 1;
+                    app.close_info_popup();
+                    return InputAction::Submit(format!("/onboarding {}", app.onboarding_step + 1));
+                }
+                return InputAction::Redraw;
+            }
+            KeyCode::Enter => {
+                let try_now = if app.onboarding_try_now.is_empty() { "/help".to_string() } else { app.onboarding_try_now.clone() };
+                app.close_info_popup();
+                return InputAction::Submit(try_now);
+            }
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                app.onboarding_active = false;
+                app.onboarding_step = 0;
+                app.close_info_popup();
+                return InputAction::Redraw;
+            }
+            _ => {} // fall through to normal info popup scrolling
+        }
+    }
     let items = extract_copyable_items(&app.info_popup_content);
     let item_count = items.len();
     match key.code {
@@ -238,7 +271,12 @@ pub(super) fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction
         }
         KeyCode::Enter => {
             if let Some(item) = items.get(app.info_popup_selected_idx) {
-                InputAction::CopyToClipboard(item.clone())
+                if item.starts_with('/') {
+                    app.close_info_popup();
+                    InputAction::Submit(item.clone())
+                } else {
+                    InputAction::CopyToClipboard(item.clone())
+                }
             } else {
                 app.close_info_popup();
                 InputAction::Redraw
