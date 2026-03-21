@@ -479,6 +479,28 @@ class CheckpointManager:
             logger.error(f"Failed to restore checkpoint: {e}")
             raise FileOperationError("Failed to restore checkpoint", str(e))
 
+    def preview_checkpoint(self, checkpoint_id: str) -> List[Dict[str, Any]]:
+        """Compare checkpoint against current files without restoring.
+        Returns list of {filePath, status} where status is modified/deleted/added/unchanged."""
+        checkpoint = self.get_checkpoint(checkpoint_id)
+        if not checkpoint:
+            raise FileOperationError(f"Checkpoint not found: {checkpoint_id}")
+        results = []
+        for snapshot in checkpoint.snapshots:
+            file_path = Path(snapshot.file_path)
+            if not file_path.exists():
+                results.append({"filePath": snapshot.file_path, "status": "deleted"})
+            else:
+                try:
+                    current_hash = self._compute_file_hash(file_path.read_bytes())
+                    if current_hash == snapshot.content_hash:
+                        results.append({"filePath": snapshot.file_path, "status": "unchanged"})
+                    else:
+                        results.append({"filePath": snapshot.file_path, "status": "modified"})
+                except Exception:
+                    results.append({"filePath": snapshot.file_path, "status": "unknown"})
+        return results
+
     def _restore_file_snapshot(self, snapshot: FileSnapshot, checkpoint_dir: Path):
         """Restore a single file from snapshot"""
         # Get snapshot file

@@ -654,6 +654,7 @@ class PoorCLIServer:
             "poor-cli/listCheckpoints": self.handle_list_checkpoints,
             "poor-cli/createCheckpoint": self.handle_create_checkpoint,
             "poor-cli/restoreCheckpoint": self.handle_restore_checkpoint,
+            "poor-cli/previewCheckpoint": self.handle_preview_checkpoint,
             "poor-cli/compareFiles": self.handle_compare_files,
             "poor-cli/exportConversation": self.handle_export_conversation,
             "poor-cli/startHostServer": self.handle_start_host_server,
@@ -2184,6 +2185,18 @@ class PoorCLIServer:
             "description": checkpoint.description,
             "createdAt": checkpoint.created_at,
         }
+
+    async def handle_preview_checkpoint(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Preview what restoring a checkpoint would change."""
+        self._ensure_initialized()
+        manager = self.core.checkpoint_manager
+        if manager is None:
+            raise PoorCLIError("Checkpoint system not available")
+        checkpoint_id = str(params.get("checkpointId", "")).strip()
+        if not checkpoint_id:
+            raise InvalidParamsError("checkpointId is required")
+        files = await asyncio.to_thread(manager.preview_checkpoint, checkpoint_id)
+        return {"checkpointId": checkpoint_id, "files": files}
 
     async def handle_compare_files(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return a unified diff for two files."""

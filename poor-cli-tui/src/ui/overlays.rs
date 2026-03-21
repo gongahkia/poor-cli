@@ -10,6 +10,7 @@ use crate::app::{
     App, ProviderSelectPane,
 };
 use crate::markdown;
+use crate::onboarding::{owl_for_step, ONBOARDING_STEPS};
 use crate::theme;
 use super::{centered_rect, ellipsize_middle, render_popup_surface};
 
@@ -327,12 +328,7 @@ pub(crate) fn draw_info_popup(frame: &mut Frame, app: &App) {
 
     let annotated = annotate_copyable_items(&app.info_popup_content, app.info_popup_selected_idx);
     let markdown_lines = markdown::render_markdown(&annotated, mode);
-    let hint = if app.onboarding_active {
-        let try_now = if app.onboarding_try_now.is_empty() { "?" } else { &app.onboarding_try_now };
-        format!(" ←/→ steps ({}/{}) • Enter → {} • ↑↓ scroll • Esc exit ", app.onboarding_step + 1, app.onboarding_total_steps, try_now)
-    } else {
-        " ↑↓ navigate • Enter run/copy • c copy all • Esc close ".to_string()
-    };
+    let hint = " ↑↓ navigate • Enter run/copy • c copy all • Esc close ".to_string();
     let popup = Paragraph::new(Text::from(markdown_lines))
         .wrap(Wrap { trim: false })
         .scroll((app.info_popup_scroll, 0))
@@ -879,10 +875,14 @@ pub(crate) fn draw_list_selector(frame: &mut Frame, app: &App) {
         };
         ListItem::new(Line::from(Span::styled(format!("{marker}{}", item.label), style)))
     }).collect();
-    let action_preview = state.items.get(state.selected_idx)
-        .map(|item| state.command_template.replace("{}", &item.value))
-        .unwrap_or_default();
-    let hint = format!(" ↑↓/jk navigate • Enter → {} • c copy • Esc close ", action_preview);
+    let hint = if let Some(ref override_hint) = state.action_hint_override {
+        format!(" \u{2191}\u{2193}/jk navigate \u{2502} {} ", override_hint)
+    } else {
+        let action_preview = state.items.get(state.selected_idx)
+            .map(|item| state.command_template.replace("{}", &item.value))
+            .unwrap_or_default();
+        format!(" ↑↓/jk navigate • Enter → {} • c copy • Esc close ", action_preview)
+    };
     let list = List::new(items).block(
         Block::default()
             .title(Span::styled(
@@ -895,4 +895,108 @@ pub(crate) fn draw_list_selector(frame: &mut Frame, app: &App) {
             .padding(Padding::new(1, 1, 1, 1)),
     );
     frame.render_widget(list, area);
+}
+
+pub(crate) fn draw_onboarding(frame: &mut Frame, app: &App) {
+    let mode = app.theme_mode;
+    let area = centered_rect(78, 70, frame.area());
+    if area.width < 30 || area.height < 12 {
+        return;
+    }
+    render_popup_surface(frame, area, mode);
+    let step = app.onboarding_step;
+    let total = app.onboarding_total_steps.max(1);
+    let owl = owl_for_step(step);
+    let step_data = ONBOARDING_STEPS.get(step);
+    // step dots
+    let dots: Vec<Span> = (0..total).map(|i| {
+        if i <= step {
+            Span::styled("\u{25cf} ", Style::default().fg(theme::accent(mode)))
+        } else {
+            Span::styled("\u{25cb} ", Style::default().fg(theme::muted_fg(mode)))
+        }
+    }).collect();
+    let mut title_spans = vec![
+        Span::styled(" Onboarding ", Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD)),
+    ];
+    title_spans.push(Span::raw("  "));
+    title_spans.extend(dots);
+    let hint = " h/\u{2190} prev  l/\u{2192} next  Enter try it  Esc exit ";
+    // outer block
+    let outer = Block::default()
+        .title(Line::from(title_spans))
+        .title_bottom(Span::styled(hint, Style::default().fg(theme::muted_fg(mode))))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme::accent(mode)))
+        .padding(Padding::new(1, 1, 1, 0));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+    // split into left (mascot) and right (content)
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .split(inner);
+    let left = cols[0];
+    let right = cols[1];
+    // ── left panel: owl + speech bubble ──
+    let mut left_lines: Vec<Line> = Vec::new();
+    left_lines.push(Line::raw(""));
+    for art_line in owl.lines {
+        left_lines.push(Line::from(Span::styled(*art_line, Style::default().fg(theme::accent(mode)))));
+    }
+    left_lines.push(Line::raw(""));
+    // speech bubble
+    let bubble_w = (left.width as usize).saturating_sub(2).max(8);
+    let wrapped = textwrap::fill(owl.speech, bubble_w.saturating_sub(4));
+    let speech_lines: Vec<&str> = wrapped.lines().collect();
+    let bar_w = speech_lines.iter().map(|l| l.len()).max().unwrap_or(4).max(4);
+    left_lines.push(Line::from(Span::styled(
+        format!(" .{}.  ", "-".repeat(bar_w + 2)),
+        Style::default().fg(theme::muted_fg(mode)),
+    )));
+    for sl in &speech_lines {
+        left_lines.push(Line::from(Span::styled(
+            format!(" | {:<width$} | ", sl, width = bar_w),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+    }
+    left_lines.push(Line::from(Span::styled(
+        format!(" '{}'  ", "-".repeat(bar_w + 2)),
+        Style::default().fg(theme::muted_fg(mode)),
+    )));
+    let left_para = Paragraph::new(Text::from(left_lines));
+    frame.render_widget(left_para, left);
+    // ── right panel: step content ──
+    let mut right_lines: Vec<Line> = Vec::new();
+    if let Some(s) = step_data {
+        right_lines.push(Line::raw(""));
+        right_lines.push(Line::from(Span::styled(
+            s.title,
+            Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+        )));
+        right_lines.push(Line::raw(""));
+        right_lines.push(Line::from(Span::styled(
+            s.objective,
+            Style::default().fg(theme::base_fg(mode)),
+        )));
+        right_lines.push(Line::raw(""));
+        right_lines.push(Line::from(Span::styled(
+            "Commands:",
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+        for cmd in s.commands {
+            right_lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(*cmd, Style::default().fg(theme::accent(mode))),
+            ]));
+        }
+        right_lines.push(Line::raw(""));
+        right_lines.push(Line::from(vec![
+            Span::styled("Try now: ", Style::default().fg(theme::muted_fg(mode))),
+            Span::styled(s.try_now, Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD)),
+        ]));
+    }
+    let right_para = Paragraph::new(Text::from(right_lines))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(right_para, right);
 }

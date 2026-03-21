@@ -756,78 +756,7 @@ Output:\n```text\n{}\n```",
     prompt
 }
 
-pub(crate) struct OnboardingStep {
-    pub title: &'static str,
-    pub objective: &'static str,
-    pub commands: &'static [&'static str],
-    pub try_now: &'static str,
-}
-
-pub(crate) const ONBOARDING_STEPS: &[OnboardingStep] = &[
-    OnboardingStep {
-        title: "Get Oriented",
-        objective:
-            "Start with visibility into your session and where to find command docs quickly.",
-        commands: &[
-            "/help",
-            "/status",
-            "/bootstrap",
-            "/profile status",
-            "/search <term>",
-        ],
-        try_now: "/bootstrap",
-    },
-    OnboardingStep {
-        title: "Choose Provider + Model",
-        objective: "Inspect your active model, switch when needed, and configure provider auth without leaving the TUI.",
-        commands: &["/setup", "/provider", "/providers", "/switch", "/api-key status"],
-        try_now: "/setup",
-    },
-    OnboardingStep {
-        title: "Run Local Services",
-        objective: "Control local dependencies from the TUI instead of shelling out.",
-        commands: &[
-            "/service status",
-            "/service start <name> <command...>",
-            "/service logs <name> [lines]",
-            "/ollama start",
-        ],
-        try_now: "/service status",
-    },
-    OnboardingStep {
-        title: "Run Collaboration Sessions",
-        objective: "Start a mob or review room, invite collaborators, and keep the session moving with handoff and agenda commands.",
-        commands: &[
-            "/collab start mob",
-            "/collab join <invite-code>",
-            "/collab members",
-            "/collab handoff next",
-            "/collab agenda add <text>",
-        ],
-        try_now: "/collab start mob",
-    },
-    OnboardingStep {
-        title: "Daily Coding Workflow",
-        objective: "Use these commands for context, review, tests, and quick rollback checkpoints.",
-        commands: &[
-            "/add <path>",
-            "/files",
-            "/review [file]",
-            "/test <file>",
-            "/checkpoint",
-            "/rewind [id|last]",
-        ],
-        try_now: "/files",
-    },
-];
-
-pub(crate) fn onboarding_step_count() -> usize {
-    ONBOARDING_STEPS.len()
-}
-
-pub(crate) fn onboarding_navigation_hint() -> &'static str {
-    "Navigation: `/onboarding next` • `/onboarding prev` • `/onboarding <step>` • `/onboarding exit`"
-}
+pub(crate) use poor_cli_tui::onboarding::*;
 
 pub(crate) fn format_onboarding_step(step_index: usize) -> String {
     if ONBOARDING_STEPS.is_empty() {

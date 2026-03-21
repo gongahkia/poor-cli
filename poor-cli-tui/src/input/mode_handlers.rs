@@ -229,39 +229,6 @@ pub(super) fn extract_copyable_items(content: &str) -> Vec<String> {
 }
 
 pub(super) fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
-    if app.onboarding_active {
-        match key.code {
-            KeyCode::Right | KeyCode::Tab => {
-                if app.onboarding_total_steps > 0 && app.onboarding_step + 1 < app.onboarding_total_steps {
-                    app.onboarding_step += 1;
-                    // content update happens via Submit which re-enters the handler
-                    app.close_info_popup();
-                    return InputAction::Submit(format!("/onboarding {}", app.onboarding_step + 1));
-                }
-                return InputAction::Redraw;
-            }
-            KeyCode::Left | KeyCode::BackTab => {
-                if app.onboarding_step > 0 {
-                    app.onboarding_step -= 1;
-                    app.close_info_popup();
-                    return InputAction::Submit(format!("/onboarding {}", app.onboarding_step + 1));
-                }
-                return InputAction::Redraw;
-            }
-            KeyCode::Enter => {
-                let try_now = if app.onboarding_try_now.is_empty() { "/help".to_string() } else { app.onboarding_try_now.clone() };
-                app.close_info_popup();
-                return InputAction::Submit(try_now);
-            }
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                app.onboarding_active = false;
-                app.onboarding_step = 0;
-                app.close_info_popup();
-                return InputAction::Redraw;
-            }
-            _ => {} // fall through to normal info popup scrolling
-        }
-    }
     let items = extract_copyable_items(&app.info_popup_content);
     let item_count = items.len();
     match key.code {
@@ -361,6 +328,40 @@ pub(super) fn handle_key_list_selector(app: &mut App, key: KeyEvent) -> InputAct
             }
         }
         _ => InputAction::None,
+    }
+}
+
+pub(super) fn handle_key_onboarding(app: &mut App, key: KeyEvent) -> InputAction {
+    match key.code {
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+            let total = app.onboarding_total_steps;
+            if total > 0 && app.onboarding_step + 1 < total {
+                let next = app.onboarding_step + 2; // 1-indexed
+                return InputAction::Submit(format!("/onboarding {next}"));
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+            if app.onboarding_step > 0 {
+                let prev = app.onboarding_step; // 1-indexed (step is 0-indexed, so step == 1-indexed prev)
+                return InputAction::Submit(format!("/onboarding {prev}"));
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Enter => {
+            let try_now = if app.onboarding_try_now.is_empty() {
+                "/help".to_string()
+            } else {
+                app.onboarding_try_now.clone()
+            };
+            app.close_onboarding();
+            InputAction::Submit(try_now)
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.close_onboarding();
+            InputAction::Redraw
+        }
+        _ => InputAction::Redraw,
     }
 }
 

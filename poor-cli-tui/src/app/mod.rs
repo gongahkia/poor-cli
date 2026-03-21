@@ -253,6 +253,7 @@ pub enum TimelineEntryKind {
     Diff,
     Cost,
     Note,
+    Checkpoint,
 }
 
 #[derive(Debug, Clone)]
@@ -406,6 +407,7 @@ pub enum OverlayKind {
     JoinWizard,
     GraphOverlay,
     ListSelector,
+    Onboarding,
 }
 
 #[derive(Debug, Clone)]
@@ -419,7 +421,8 @@ pub struct ListSelectorState {
     pub title: String,
     pub items: Vec<ListSelectorItem>,
     pub selected_idx: usize,
-    pub command_template: String, // e.g. "/rewind {}" — {} replaced with selected value
+    pub command_template: String, // e.g. "/undo {}" — {} replaced with selected value
+    pub action_hint_override: Option<String>, // custom footer hint for this list
 }
 
 #[derive(Debug, Clone)]
@@ -698,6 +701,11 @@ pub struct App {
     pub onboarding_step: usize,
     pub onboarding_total_steps: usize,
     pub onboarding_try_now: String,
+    pub onboarding_step_title: String,
+    pub onboarding_step_objective: String,
+    pub onboarding_step_commands: Vec<String>,
+    pub onboarding_owl_lines: Vec<String>,
+    pub onboarding_owl_speech: String,
     pub join_wizard_active: bool,
     pub join_wizard_step: u8,
     pub join_wizard_input: String,
@@ -709,6 +717,7 @@ pub struct App {
     pub context_budget_files: Vec<String>,
     pub context_budget_estimated_tokens: usize,
     pub last_mutation_checkpoint_id: Option<String>,
+    pub pending_restore_checkpoint_id: Option<String>,
     pub last_mutation_diff: String,
     pub recent_edited_files: VecDeque<String>,
     pub recent_prompts: VecDeque<String>,
@@ -804,6 +813,11 @@ impl Default for App {
             onboarding_step: 0,
             onboarding_total_steps: 0,
             onboarding_try_now: String::new(),
+            onboarding_step_title: String::new(),
+            onboarding_step_objective: String::new(),
+            onboarding_step_commands: Vec::new(),
+            onboarding_owl_lines: Vec::new(),
+            onboarding_owl_speech: String::new(),
             join_wizard_active: false,
             join_wizard_step: 0,
             join_wizard_input: String::new(),
@@ -815,6 +829,7 @@ impl Default for App {
             context_budget_files: Vec::new(),
             context_budget_estimated_tokens: 0,
             last_mutation_checkpoint_id: None,
+            pending_restore_checkpoint_id: None,
             last_mutation_diff: String::new(),
             recent_edited_files: VecDeque::new(),
             recent_prompts: VecDeque::new(),
@@ -1461,8 +1476,16 @@ impl App {
                     TimelineEntryKind::Diff => "diff",
                     TimelineEntryKind::Cost => "cost",
                     TimelineEntryKind::Note => "note",
+                    TimelineEntryKind::Checkpoint => "cp",
                 };
-                lines.push(format!("- [{}] {} — {}", kind, entry.title, entry.detail));
+                let cp_marker = match &entry.checkpoint_id {
+                    Some(id) => {
+                        let short = if id.len() > 8 { &id[..8] } else { id };
+                        format!(" [cp:{short}]")
+                    }
+                    None => String::new(),
+                };
+                lines.push(format!("- [{}] {} \u{2014} {}{}", kind, entry.title, entry.detail, cp_marker));
             }
         }
         self.open_info_popup("Timeline", lines.join("\n"));
@@ -1566,6 +1589,7 @@ impl App {
                     TimelineEntryKind::Diff => "Diff",
                     TimelineEntryKind::Cost => "Cost",
                     TimelineEntryKind::Note => "Note",
+                    TimelineEntryKind::Checkpoint => "Checkpoint",
                 };
                 (
                     TranscriptSearchItemKind::Tool,
@@ -1718,6 +1742,28 @@ impl App {
         self.list_selector = None;
         self.mode = AppMode::Normal;
         self.overlay_kind = None;
+    }
+
+    pub fn open_onboarding(&mut self, step: usize) {
+        self.graph_overlay.active = false;
+        self.onboarding_active = true;
+        self.onboarding_step = step;
+        self.onboarding_total_steps = crate::onboarding::onboarding_step_count();
+        self.onboarding_try_now = crate::onboarding::ONBOARDING_STEPS
+            .get(step)
+            .map(|s| s.try_now.to_string())
+            .unwrap_or_default();
+        self.mode = AppMode::Overlay;
+        self.overlay_kind = Some(OverlayKind::Onboarding);
+    }
+
+    pub fn close_onboarding(&mut self) {
+        self.onboarding_active = false;
+        self.onboarding_step = 0;
+        self.onboarding_total_steps = 0;
+        self.onboarding_try_now.clear();
+        self.overlay_kind = None;
+        self.mode = AppMode::Normal;
     }
 
     pub fn scroll_info_popup_up(&mut self, amount: u16) {

@@ -21,6 +21,10 @@ fn sync_onboarding_metadata(app: &mut App) {
         .unwrap_or_default();
 }
 
+fn open_onboarding_at(app: &mut App, step: usize) {
+    app.open_onboarding(step);
+}
+
 // ── Slash command handler ─────────────────────────────────────────────
 
 pub(super) fn handle_slash_command(
@@ -66,15 +70,14 @@ pub(super) fn handle_slash_command(
             return false;
         }
 
-        if subcommand.is_empty()
-            || subcommand == "start"
-            || subcommand == "begin"
-            || subcommand == "restart"
-        {
-            app.onboarding_active = true;
-            app.onboarding_step = 0;
-            sync_onboarding_metadata(app);
-            show_command_info_popup(app, raw, format!("**Interactive onboarding started.**\n\n{}", format_onboarding_step(app.onboarding_step)));
+        if subcommand.is_empty() {
+            let step = if app.onboarding_active { app.onboarding_step } else { 0 };
+            open_onboarding_at(app, step);
+            return false;
+        }
+
+        if subcommand == "start" || subcommand == "begin" || subcommand == "restart" {
+            open_onboarding_at(app, 0);
             return false;
         }
 
@@ -84,55 +87,26 @@ pub(super) fn handle_slash_command(
         }
 
         if subcommand == "exit" || subcommand == "done" || subcommand == "quit" {
-            app.onboarding_active = false;
-            app.onboarding_step = 0;
-            show_command_info_popup(app, raw, "Onboarding ended.\nRun `/onboarding` anytime to start again.".to_string());
+            app.close_onboarding();
+            app.set_status("Onboarding ended. Run /onboarding anytime to restart.");
             return false;
         }
 
         if subcommand == "show" || subcommand == "repeat" || subcommand == "resume" {
-            if !app.onboarding_active {
-                app.onboarding_active = true;
-                app.onboarding_step = 0;
-            }
-            sync_onboarding_metadata(app);
-            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
+            let step = if app.onboarding_active { app.onboarding_step } else { 0 };
+            open_onboarding_at(app, step);
             return false;
         }
 
         if subcommand == "next" {
-            if !app.onboarding_active {
-                app.onboarding_active = true;
-                app.onboarding_step = 0;
-                sync_onboarding_metadata(app);
-                show_command_info_popup(app, raw, format!("No active onboarding session found; started at step 1.\n\n{}", format_onboarding_step(app.onboarding_step)));
-                return false;
-            }
-            if app.onboarding_step + 1 >= total_steps {
-                show_command_info_popup(app, raw, "You are already at the last onboarding step.\nUse `/onboarding exit` to end the onboarding session.".to_string());
-                return false;
-            }
-            app.onboarding_step += 1;
-            sync_onboarding_metadata(app);
-            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
+            let step = if app.onboarding_active { (app.onboarding_step + 1).min(total_steps.saturating_sub(1)) } else { 0 };
+            open_onboarding_at(app, step);
             return false;
         }
 
         if subcommand == "prev" || subcommand == "previous" || subcommand == "back" {
-            if !app.onboarding_active {
-                app.onboarding_active = true;
-                app.onboarding_step = 0;
-                sync_onboarding_metadata(app);
-                show_command_info_popup(app, raw, format!("No active onboarding session found; started at step 1.\n\n{}", format_onboarding_step(app.onboarding_step)));
-                return false;
-            }
-            if app.onboarding_step == 0 {
-                show_command_info_popup(app, raw, "You are already at the first onboarding step.".to_string());
-                return false;
-            }
-            app.onboarding_step -= 1;
-            sync_onboarding_metadata(app);
-            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
+            let step = if app.onboarding_active { app.onboarding_step.saturating_sub(1) } else { 0 };
+            open_onboarding_at(app, step);
             return false;
         }
 
@@ -141,10 +115,7 @@ pub(super) fn handle_slash_command(
                 show_command_info_popup(app, raw, format!("Step must be between 1 and {total_steps}.\n{}", onboarding_usage_text()));
                 return false;
             }
-            app.onboarding_active = true;
-            app.onboarding_step = step_number - 1;
-            sync_onboarding_metadata(app);
-            show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
+            open_onboarding_at(app, step_number - 1);
             return false;
         }
 
@@ -154,7 +125,21 @@ pub(super) fn handle_slash_command(
 
     if lowered == "/queue" || lowered.starts_with("/queue ") {
         let args: Vec<&str> = raw.splitn(3, ' ').collect();
-        let sub = args.get(1).copied().unwrap_or("list");
+        let sub = args.get(1).copied().unwrap_or("");
+        if sub.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "list: Open queue manager".into(), value: "list".into() },
+                ListSelectorItem { label: "add: Add prompt to queue".into(), value: "add".into() },
+                ListSelectorItem { label: "clear: Clear all queued prompts".into(), value: "clear".into() },
+                ListSelectorItem { label: "drop: Drop last queued prompt".into(), value: "drop".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Queue".into(), items, selected_idx: 0,
+                command_template: "/queue {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
         match sub {
             "add" | "a" => {
                 if let Some(text) = args.get(2) {
@@ -233,6 +218,7 @@ pub(super) fn handle_slash_command(
         app.open_list_selector(ListSelectorState {
             title: "Compact Strategy".into(), items, selected_idx: 0,
             command_template: "/compact {}".to_string(),
+            action_hint_override: None,
         });
         return false;
     }
@@ -685,6 +671,7 @@ Version: v{}",
                         items,
                         selected_idx: 0,
                         command_template: "/toggle {}".to_string(),
+                        action_hint_override: None,
                     });
                 }
             }
@@ -758,6 +745,7 @@ Version: v{}",
         app.open_list_selector(ListSelectorState {
             title: "Theme".to_string(), items, selected_idx: 0,
             command_template: "/theme {}".to_string(),
+            action_hint_override: None,
         });
         return false;
     }
@@ -884,6 +872,7 @@ Version: v{}",
                 app.open_list_selector(ListSelectorState {
                     title: "Permission Mode".to_string(), items, selected_idx: 0,
                     command_template: "/permission-mode {}".to_string(),
+                    action_hint_override: None,
                 });
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -1065,6 +1054,7 @@ Context Window: {max_context} tokens\n\n\
                     items,
                     selected_idx: 0,
                     command_template: "/restore-session {}".to_string(),
+                    action_hint_override: None,
                 });
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to list sessions: {e}"))),
@@ -1197,6 +1187,22 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
+    if lowered == "/drop" {
+        if app.pinned_context_files.is_empty() {
+            show_command_info_popup(app, raw, "No pinned context files to drop.".to_string());
+        } else {
+            let items: Vec<ListSelectorItem> = app.pinned_context_files.iter().map(|p| {
+                ListSelectorItem { label: p.clone(), value: p.clone() }
+            }).collect();
+            app.open_list_selector(ListSelectorState {
+                title: format!("Drop File ({})", items.len()), items, selected_idx: 0,
+                command_template: "/drop {}".to_string(),
+                action_hint_override: None,
+            });
+        }
+        return false;
+    }
+
     if lowered.starts_with("/drop ") {
         let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
         if spec.is_empty() {
@@ -1312,6 +1318,7 @@ Context Window: {max_context} tokens\n\n\
                             items,
                             selected_idx: 0,
                             command_template: "/workflow {}".to_string(),
+                            action_hint_override: None,
                         });
                     }
                 }
@@ -1338,9 +1345,27 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("status")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
+
+        if subcommand.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "status: Show MCP server status".into(), value: "status".into() },
+                ListSelectorItem { label: "enable: Enable an MCP server".into(), value: "enable".into() },
+                ListSelectorItem { label: "disable: Disable an MCP server".into(), value: "disable".into() },
+                ListSelectorItem { label: "allow: Allow tools on a server".into(), value: "allow".into() },
+                ListSelectorItem { label: "deny: Deny tools on a server".into(), value: "deny".into() },
+                ListSelectorItem { label: "clear-allow: Clear allow list".into(), value: "clear-allow".into() },
+                ListSelectorItem { label: "clear-deny: Clear deny list".into(), value: "clear-deny".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "MCP".into(), items, selected_idx: 0,
+                command_template: "/mcp {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
 
         if subcommand == "status" {
             match rpc_get_mcp_status_blocking(rpc_cmd_tx) {
@@ -1428,8 +1453,14 @@ Context Window: {max_context} tokens\n\n\
     if lowered == "/gc" {
         match rpc_gc_checkpoints_blocking(rpc_cmd_tx) {
             Ok(payload) => {
-                let msg = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| format!("{payload:?}"));
-                show_command_info_popup(app, raw, format!("Checkpoint GC complete:\n{msg}"));
+                let deleted = payload.get("deleted").and_then(|v| v.as_u64()).unwrap_or(0);
+                let freed = payload.get("freed_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+                let msg = if deleted == 0 {
+                    "No stale checkpoints. Storage is clean.".to_string()
+                } else {
+                    format!("Removed {} checkpoint(s), freed {}", deleted, format_bytes(freed))
+                };
+                show_command_info_popup(app, raw, msg);
             }
             Err(e) => app.push_message(ChatMessage::error(format!("GC failed: {e}"))),
         }
@@ -1472,6 +1503,7 @@ Context Window: {max_context} tokens\n\n\
             app.open_list_selector(ListSelectorState {
                 title: "Economy Preset".to_string(), items, selected_idx: 0,
                 command_template: "/economy {}".to_string(),
+                action_hint_override: None,
             });
         } else {
             match rpc_set_economy_preset_blocking(rpc_cmd_tx, arg) {
@@ -1504,6 +1536,7 @@ Context Window: {max_context} tokens\n\n\
                     app.open_list_selector(ListSelectorState {
                         title: "Ollama Models".to_string(), items, selected_idx: 0,
                         command_template: "/switch ollama {}".to_string(),
+                        action_hint_override: None,
                     });
                 }
             }
@@ -1552,10 +1585,26 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("show")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
         let usage = "Usage: /memory\n       /memory show\n       /memory edit\n       /memory set <text>\n       /memory append <text>\n       /memory clear";
+
+        if subcommand.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "show: Display repo memory".into(), value: "show".into() },
+                ListSelectorItem { label: "edit: Edit repo memory".into(), value: "edit".into() },
+                ListSelectorItem { label: "set: Replace repo memory".into(), value: "set".into() },
+                ListSelectorItem { label: "append: Append to repo memory".into(), value: "append".into() },
+                ListSelectorItem { label: "clear: Clear repo memory".into(), value: "clear".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Memory".into(), items, selected_idx: 0,
+                command_template: "/memory {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
 
         if subcommand == "show" {
             match load_repo_memory(app) {
@@ -1680,6 +1729,7 @@ Context Window: {max_context} tokens\n\n\
                 items,
                 selected_idx: 0,
                 command_template: "/profile {}".to_string(),
+                action_hint_override: None,
             });
             return false;
         }
@@ -1699,9 +1749,23 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("status")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
+
+        if subcommand.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "status: Show focus state".into(), value: "status".into() },
+                ListSelectorItem { label: "start: Start a focus session".into(), value: "start".into() },
+                ListSelectorItem { label: "done: End focus session".into(), value: "done".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Focus".into(), items, selected_idx: 0,
+                command_template: "/focus {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
 
         if subcommand == "status" {
             match load_focus_state(app) {
@@ -1988,9 +2052,22 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("status")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
+        if subcommand.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "status: Show autopilot status".into(), value: "status".into() },
+                ListSelectorItem { label: "start: Enable autopilot".into(), value: "start".into() },
+                ListSelectorItem { label: "stop: Disable autopilot".into(), value: "stop".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Autopilot".into(), items, selected_idx: 0,
+                command_template: "/autopilot {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
         if subcommand == "status" {
             show_command_info_popup(
                 app,
@@ -2087,28 +2164,25 @@ Context Window: {max_context} tokens\n\n\
     if lowered == "/sandbox" || lowered.starts_with("/sandbox ") {
         let selected = raw.split_whitespace().nth(1).unwrap_or("").trim();
         if selected.is_empty() {
-            match rpc_get_sandbox_status_blocking(rpc_cmd_tx) {
-                Ok(payload) => {
-                    let preset = payload
-                        .get("sandboxPreset")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or("workspace-write");
-                    let description = payload
-                        .get("description")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or("");
-                    show_command_info_popup(
-                        app,
-                        raw,
-                        format!(
-                            "**Sandbox**\n- Active preset: `{preset}`\n- {description}\n\nAvailable: `read-only`, `review-only`, `workspace-write`, `full-access`"
-                        ),
-                    );
-                }
-                Err(error) => {
-                    show_command_info_popup(app, raw, format!("Sandbox status failed: {error}"))
-                }
-            }
+            let current = rpc_get_sandbox_status_blocking(rpc_cmd_tx)
+                .ok()
+                .and_then(|p| p.get("sandboxPreset").and_then(|v| v.as_str()).map(String::from))
+                .unwrap_or_default();
+            let presets = [
+                ("read-only", "Restrict all file writes"),
+                ("review-only", "Read + review access only"),
+                ("workspace-write", "Write within workspace"),
+                ("full-access", "Unrestricted file access"),
+            ];
+            let items: Vec<ListSelectorItem> = presets.iter().map(|(name, desc)| {
+                let active = if *name == current { " (active)" } else { "" };
+                ListSelectorItem { label: format!("{name}{active}: {desc}"), value: name.to_string() }
+            }).collect();
+            app.open_list_selector(ListSelectorState {
+                title: "Sandbox Preset".into(), items, selected_idx: 0,
+                command_template: "/sandbox {}".to_string(),
+                action_hint_override: None,
+            });
             return false;
         }
         match rpc_set_config_blocking(
@@ -2161,6 +2235,7 @@ Context Window: {max_context} tokens\n\n\
                         items,
                         selected_idx: 0,
                         command_template: "/skills show {}".to_string(),
+                        action_hint_override: None,
                     });
                 }
                 Err(error) => {
@@ -2276,6 +2351,7 @@ Context Window: {max_context} tokens\n\n\
                         items,
                         selected_idx: 0,
                         command_template: "/commands show {}".to_string(),
+                        action_hint_override: None,
                     });
                 }
                 Err(error) => show_command_info_popup(
@@ -2369,6 +2445,7 @@ Context Window: {max_context} tokens\n\n\
                         items,
                         selected_idx: 0,
                         command_template: "/task open {}".to_string(),
+                        action_hint_override: None,
                     });
                 }
             }
@@ -2410,6 +2487,7 @@ Context Window: {max_context} tokens\n\n\
                             items,
                             selected_idx: 0,
                             command_template: "/task open {}".to_string(),
+                            action_hint_override: None,
                         });
                     }
                 }
@@ -2544,9 +2622,21 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("help")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
+        if subcommand.is_empty() || subcommand == "help" {
+            let items = vec![
+                ListSelectorItem { label: "history: View automation run history".into(), value: "history".into() },
+                ListSelectorItem { label: "replay: Replay an automation run".into(), value: "replay".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Automation".into(), items, selected_idx: 0,
+                command_template: "/automation {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
         if subcommand == "history" {
             let automation_id = args.get(2).copied().unwrap_or("").trim();
             if automation_id.is_empty() {
@@ -2761,7 +2851,40 @@ Context Window: {max_context} tokens\n\n\
             .to_ascii_lowercase();
 
         if args.len() == 1 || subcommand.is_empty() || subcommand == "help" {
-            show_command_info_popup(app, raw, collab_usage_text().to_string());
+            let hosting = app.pair.mode_active && app.pair.is_host;
+            let guest = app.multiplayer.enabled && !app.pair.is_host;
+            let (title, items) = if hosting {
+                ("Collaboration (Hosting)", vec![
+                    ListSelectorItem { label: "status: Show session status".into(), value: "status".into() },
+                    ListSelectorItem { label: "members: List session members".into(), value: "members".into() },
+                    ListSelectorItem { label: "share: Share invite code".into(), value: "share".into() },
+                    ListSelectorItem { label: "handoff: Hand off driver role".into(), value: "handoff".into() },
+                    ListSelectorItem { label: "agenda: View agenda".into(), value: "agenda list".into() },
+                    ListSelectorItem { label: "lobby: Lobby settings".into(), value: "lobby".into() },
+                    ListSelectorItem { label: "leave: End session".into(), value: "leave".into() },
+                ])
+            } else if guest {
+                ("Collaboration (Guest)", vec![
+                    ListSelectorItem { label: "status: Show session status".into(), value: "status".into() },
+                    ListSelectorItem { label: "members: List session members".into(), value: "members".into() },
+                    ListSelectorItem { label: "suggest: Send suggestion to driver".into(), value: "suggest".into() },
+                    ListSelectorItem { label: "hand raise: Raise your hand".into(), value: "hand raise".into() },
+                    ListSelectorItem { label: "agenda: View agenda".into(), value: "agenda list".into() },
+                    ListSelectorItem { label: "leave: Leave session".into(), value: "leave".into() },
+                ])
+            } else {
+                ("Collaboration", vec![
+                    ListSelectorItem { label: "start pair: Start pair programming".into(), value: "start pair".into() },
+                    ListSelectorItem { label: "start mob: Start mob session".into(), value: "start mob".into() },
+                    ListSelectorItem { label: "start review: Start code review".into(), value: "start review".into() },
+                    ListSelectorItem { label: "join: Join a session".into(), value: "join".into() },
+                ])
+            };
+            app.open_list_selector(ListSelectorState {
+                title: title.into(), items, selected_idx: 0,
+                command_template: "/collab {}".to_string(),
+                action_hint_override: None,
+            });
             return false;
         }
 
@@ -2783,7 +2906,7 @@ Context Window: {max_context} tokens\n\n\
                             cancel_token,
                             watch_state,
                             qa_watch_state,
-                            "/pair",
+                            "/pair start",
                         );
                     }
                     "mob" | "review" => {
@@ -2849,6 +2972,12 @@ Context Window: {max_context} tokens\n\n\
                             Some("viewer"),
                             Some(room_name.as_str()),
                         ));
+                        lines.push(String::new());
+                        lines.push("**Next steps:**".to_string());
+                        lines.push("- Share the viewer invite with participants".to_string());
+                        lines.push("- Use `/collab members` to check who joined".to_string());
+                        lines.push("- Use `/collab handoff` to rotate driver".to_string());
+                        lines.push("- Type `/collab` to see all session actions".to_string());
                         show_command_info_popup(app, raw, lines.join("\n"));
                         app.set_status(format!("{mode} room ready: {room_name}"));
                         return false;
@@ -2864,8 +2993,8 @@ Context Window: {max_context} tokens\n\n\
                 }
             }
             "join" => {
-                if args.len() == 2 {
-                    let join_command = format!("/join-server {}", args[1]);
+                if args.len() == 3 {
+                    let join_command = format!("/join-server {}", args[2]);
                     return handle_slash_command(
                         app,
                         tx,
@@ -2877,7 +3006,7 @@ Context Window: {max_context} tokens\n\n\
                         &join_command,
                     );
                 }
-                if args.len() > 2 {
+                if args.len() > 3 {
                     show_command_info_popup(
                         app,
                         raw,
@@ -3196,6 +3325,13 @@ Context Window: {max_context} tokens\n\n\
                 }
                 return false;
             }
+            "leave" => {
+                return handle_slash_command(app, tx, rpc_cmd_tx, launch, cancel_token, watch_state, qa_watch_state, "/leave");
+            }
+            "suggest" => {
+                show_command_info_popup(app, raw, "Type `/suggest <text>` to send a suggestion to the driver.".to_string());
+                return false;
+            }
             _ => {
                 show_command_info_popup(app, raw, collab_usage_text().to_string());
                 return false;
@@ -3206,6 +3342,10 @@ Context Window: {max_context} tokens\n\n\
     // ── Pair mode commands ─────────────────────────────────────────────
     if lowered == "/pair" || lowered.starts_with("/pair ") {
         let args: Vec<&str> = raw.split_whitespace().collect();
+        // bare /pair → redirect to /collab (canonical multiplayer entry)
+        if args.len() == 1 {
+            return handle_slash_command(app, tx, rpc_cmd_tx, launch, cancel_token, watch_state, qa_watch_state, "/collab");
+        }
         // pair host subcommands: /pair status, /pair members, /pair kick, /pair share
         if args.len() >= 2 && app.pair.mode_active && app.pair.is_host {
             let sub = args[1].to_ascii_lowercase();
@@ -3305,7 +3445,7 @@ Context Window: {max_context} tokens\n\n\
                 _ => {} // fall through to normal /pair logic
             }
         }
-        if args.len() == 1 {
+        if args.len() == 1 || (args.len() == 2 && args[1].eq_ignore_ascii_case("start")) {
             // host mode: start pair session
             let lobby = false;
             match rpc_pair_start_blocking(rpc_cmd_tx, lobby) {
@@ -3331,7 +3471,7 @@ Context Window: {max_context} tokens\n\n\
                             child.wait()
                         });
                     app.push_message(ChatMessage::system(format!(
-                        "Pair session started! Room: {short_code}\nInvite code copied to clipboard.\nShare it with: /pair <invite-code>"
+                        "Pair session started! Room: {short_code}\nInvite code copied to clipboard.\n\nNext steps:\n- Share the invite code with your partner\n- Use /collab members to see who joined\n- Use /collab handoff to pass driver control\n- Type /collab to see all session actions"
                     )));
                     app.set_status(format!("Pair session: {short_code}"));
                 }
@@ -3365,12 +3505,20 @@ Context Window: {max_context} tokens\n\n\
                             child.wait()
                         });
                     app.push_message(ChatMessage::system(format!(
-                        "Pair session started (lobby mode)! Room: {short_code}\nInvite code copied to clipboard."
+                        "Pair session started (lobby mode)! Room: {short_code}\nInvite code copied to clipboard.\n\nNext steps:\n- Share the invite code — joiners will wait in lobby\n- Use /collab approve or /collab deny to manage lobby\n- Type /collab to see all session actions"
                     )));
                 }
                 Err(e) => app.push_message(ChatMessage::error(format!("Failed to start pair session: {e}\nCheck that no other session is running. Try /leave first."))),
             }
             return false;
+        }
+        // /pair leave → delegate to /leave
+        if args[1].eq_ignore_ascii_case("leave") {
+            return handle_slash_command(app, tx, rpc_cmd_tx, launch, cancel_token, watch_state, qa_watch_state, "/leave");
+        }
+        // /pair join → open join wizard
+        if args[1].eq_ignore_ascii_case("join") {
+            return handle_slash_command(app, tx, rpc_cmd_tx, launch, cancel_token, watch_state, qa_watch_state, "/join-server");
         }
         // join mode: /pair <invite-code>
         let invite = args[1];
@@ -3638,6 +3786,38 @@ Context Window: {max_context} tokens\n\n\
         let args: Vec<&str> = raw.split_whitespace().collect();
         let subcommand = args.get(1).copied().unwrap_or("").trim();
         let lowered_subcommand = subcommand.to_ascii_lowercase();
+
+        if lowered_subcommand.is_empty() {
+            let server_running = rpc_get_host_server_status_blocking(rpc_cmd_tx).is_ok();
+            let items = if server_running {
+                vec![
+                    ListSelectorItem { label: "status: Show server status".into(), value: "status".into() },
+                    ListSelectorItem { label: "stop: Stop the server".into(), value: "stop".into() },
+                    ListSelectorItem { label: "members: List connected users".into(), value: "members".into() },
+                    ListSelectorItem { label: "kick: Remove a user".into(), value: "kick".into() },
+                    ListSelectorItem { label: "role: Manage user roles".into(), value: "role".into() },
+                    ListSelectorItem { label: "share: Show invite info".into(), value: "share".into() },
+                    ListSelectorItem { label: "lobby: Manage lobby".into(), value: "lobby".into() },
+                    ListSelectorItem { label: "approve: Approve lobby request".into(), value: "approve".into() },
+                    ListSelectorItem { label: "deny: Deny lobby request".into(), value: "deny".into() },
+                    ListSelectorItem { label: "rotate-token: Rotate invite token".into(), value: "rotate-token".into() },
+                    ListSelectorItem { label: "revoke: Revoke invite code".into(), value: "revoke".into() },
+                    ListSelectorItem { label: "handoff: Transfer host role".into(), value: "handoff".into() },
+                    ListSelectorItem { label: "preset: Set server preset".into(), value: "preset".into() },
+                    ListSelectorItem { label: "activity: Show activity log".into(), value: "activity".into() },
+                ]
+            } else {
+                vec![
+                    ListSelectorItem { label: "start: Start a new server".into(), value: "start".into() },
+                ]
+            };
+            app.open_list_selector(ListSelectorState {
+                title: "Host Server".into(), items, selected_idx: 0,
+                command_template: "/host-server {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
 
         if lowered_subcommand == "status" {
             if args.len() > 2 {
@@ -4161,6 +4341,16 @@ Context Window: {max_context} tokens\n\n\
             return false;
         }
 
+        if lowered_subcommand == "start" {
+            match rpc_start_host_server_blocking(rpc_cmd_tx, None) {
+                Ok(payload) => show_command_info_popup(app, raw, format_host_server_payload(&payload)),
+                Err(e) => app.push_message(ChatMessage::error(format!(
+                    "Failed to start host server: {e}"
+                ))),
+            }
+            return false;
+        }
+
         let room = if subcommand.is_empty() {
             None
         } else {
@@ -4185,12 +4375,23 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("status")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
 
         if subcommand.is_empty() || subcommand == "help" {
-            show_command_info_popup(app, raw, service_usage_text().to_string());
+            let items = vec![
+                ListSelectorItem { label: "status: Show service status".into(), value: "status".into() },
+                ListSelectorItem { label: "list: List all services".into(), value: "list".into() },
+                ListSelectorItem { label: "start: Start a service".into(), value: "start".into() },
+                ListSelectorItem { label: "stop: Stop a service".into(), value: "stop".into() },
+                ListSelectorItem { label: "logs: View service logs".into(), value: "logs".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Service".into(), items, selected_idx: 0,
+                command_template: "/service {}".to_string(),
+                action_hint_override: None,
+            });
             return false;
         }
 
@@ -4323,12 +4524,30 @@ Context Window: {max_context} tokens\n\n\
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("status")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
 
+        if subcommand.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "status: Show Ollama status".into(), value: "status".into() },
+                ListSelectorItem { label: "start: Start Ollama service".into(), value: "start".into() },
+                ListSelectorItem { label: "stop: Stop Ollama service".into(), value: "stop".into() },
+                ListSelectorItem { label: "list: List local models".into(), value: "list".into() },
+                ListSelectorItem { label: "pull: Pull a model".into(), value: "pull".into() },
+                ListSelectorItem { label: "logs: View Ollama logs".into(), value: "logs".into() },
+                ListSelectorItem { label: "ps: Show running models".into(), value: "ps".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Ollama".into(), items, selected_idx: 0,
+                command_template: "/ollama {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
+
         match subcommand.as_str() {
-            "" | "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
+            "status" => match rpc_get_service_status_blocking(rpc_cmd_tx, Some("ollama")) {
                 Ok(payload) => {
                     show_command_info_popup(app, raw, format_service_status_payload(&payload))
                 }
@@ -4570,12 +4789,14 @@ Context Window: {max_context} tokens\n\n\
 
                 let items: Vec<ListSelectorItem> = checkpoints.iter().map(|cp| {
                     let id = cp.get("checkpointId").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let short_id = if id.len() > 12 { &id[..12] } else { id };
                     let created = cp.get("createdAt").and_then(|v| v.as_str()).unwrap_or("-");
+                    let rel_time = format_relative_time(created);
                     let description = cp.get("description").and_then(|v| v.as_str()).unwrap_or("");
                     let file_count = cp.get("fileCount").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let total_size = cp.get("totalSizeBytes").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let desc_display = if description.is_empty() { "-".to_string() } else { description.to_string() };
                     ListSelectorItem {
-                        label: format!("{id} • {created} • {file_count} file(s) • {} • {description}", format_bytes(total_size)),
+                        label: format!("{short_id} \u{2502} {rel_time} \u{2502} {file_count} files \u{2502} {desc_display}"),
                         value: id.to_string(),
                     }
                 }).collect();
@@ -4583,7 +4804,8 @@ Context Window: {max_context} tokens\n\n\
                     title: format!("Checkpoints ({})", items.len()),
                     items,
                     selected_idx: 0,
-                    command_template: "/rewind {}".to_string(),
+                    command_template: "/checkpoint-preview {}".to_string(),
+                    action_hint_override: Some("enter preview \u{2502} c copy \u{2502} esc close".to_string()),
                 });
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
@@ -4593,13 +4815,51 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
-    if lowered == "/checkpoint" || lowered == "/save" {
-        let (description, operation_type) = if lowered == "/save" {
-            ("Quick save".to_string(), "manual".to_string())
-        } else {
-            ("Manual checkpoint".to_string(), "manual".to_string())
-        };
+    if lowered.starts_with("/checkpoint-preview ") {
+        let cp_id = raw.splitn(2, ' ').nth(1).unwrap_or("").trim();
+        if cp_id.is_empty() {
+            show_command_info_popup(app, raw, "Usage: /checkpoint-preview <id>".to_string());
+            return false;
+        }
+        match rpc_preview_checkpoint_blocking(rpc_cmd_tx, cp_id) {
+            Ok(payload) => {
+                let files = payload.get("files").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let mut lines = Vec::new();
+                let mut modified = 0u64;
+                let mut deleted = 0u64;
+                let mut unchanged = 0u64;
+                for f in &files {
+                    let path = f.get("filePath").and_then(|v| v.as_str()).unwrap_or("?");
+                    let status = f.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                    let marker = match status {
+                        "modified" => { modified += 1; "M" }
+                        "deleted" => { deleted += 1; "D" }
+                        "unchanged" => { unchanged += 1; "\u{00b7}" }
+                        _ => "?"
+                    };
+                    lines.push(format!("  {marker} {path}"));
+                }
+                let summary = format!(
+                    "**Restore preview** \u{2014} checkpoint `{}`\n\n{} modified, {} deleted, {} unchanged\n\n{}\n\nRun `/undo {}` to restore.",
+                    cp_id, modified, deleted, unchanged, lines.join("\n"), cp_id
+                );
+                app.pending_restore_checkpoint_id = Some(cp_id.to_string());
+                show_command_info_popup(app, raw, summary);
+            }
+            Err(e) => app.push_message(ChatMessage::error(format!("Preview failed: {e}"))),
+        }
+        return false;
+    }
 
+    if lowered == "/checkpoint" || lowered.starts_with("/checkpoint ") || lowered == "/save" || lowered.starts_with("/save ") {
+        let name_arg = raw.splitn(2, ' ').nth(1).unwrap_or("").trim();
+        let name_arg = name_arg.trim_matches('"').trim_matches('\'');
+        let description = if name_arg.is_empty() {
+            if lowered.starts_with("/save") { "Quick save".to_string() } else { "Manual checkpoint".to_string() }
+        } else {
+            name_arg.to_string()
+        };
+        let operation_type = "manual".to_string();
         match rpc_create_checkpoint_blocking(rpc_cmd_tx, &description, &operation_type) {
             Ok(payload) => {
                 let checkpoint_id = payload
@@ -4623,16 +4883,12 @@ Context Window: {max_context} tokens\n\n\
         return false;
     }
 
-    if lowered.starts_with("/rewind") || lowered == "/restore" || lowered == "/undo" {
-        let checkpoint_id = if lowered == "/restore" || lowered == "/undo" {
-            Some("last".to_string())
-        } else {
-            raw.split_whitespace()
-                .nth(1)
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .or_else(|| Some("last".to_string()))
-        };
+    if lowered.starts_with("/rewind") || lowered == "/restore" || lowered.starts_with("/restore ") || lowered == "/undo" || lowered.starts_with("/undo ") {
+        let checkpoint_id = raw.split_whitespace()
+            .nth(1)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| Some("last".to_string()));
 
         match rpc_restore_checkpoint_blocking(rpc_cmd_tx, checkpoint_id.as_deref()) {
             Ok(payload) => {
@@ -4684,8 +4940,21 @@ Context Window: {max_context} tokens\n\n\
         let export_format = raw
             .split_whitespace()
             .nth(1)
-            .unwrap_or("json")
+            .unwrap_or("")
             .to_lowercase();
+        if export_format.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "json: JSON format".into(), value: "json".into() },
+                ListSelectorItem { label: "md: Markdown format".into(), value: "md".into() },
+                ListSelectorItem { label: "txt: Plain text format".into(), value: "txt".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "Export Format".into(), items, selected_idx: 0,
+                command_template: "/export {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
         if !matches!(export_format.as_str(), "json" | "md" | "txt" | "markdown") {
             show_command_info_popup(app, raw, "Usage: /export [json|md|txt]".to_string());
             return false;
@@ -5040,6 +5309,7 @@ Submitting any slash command will cancel capture."
                     title: format!("Saved Prompts ({})", items.len()),
                     items, selected_idx: 0,
                     command_template: "/use {}".to_string(),
+                    action_hint_override: None,
                 });
             }
             Err(e) => app.push_message(ChatMessage::error(e)),
@@ -5086,9 +5356,23 @@ Submitting any slash command will cancel capture."
         let subcommand = args
             .get(1)
             .copied()
-            .unwrap_or("status")
+            .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
+
+        if subcommand.is_empty() {
+            let items = vec![
+                ListSelectorItem { label: "status: Show QA watch status".into(), value: "status".into() },
+                ListSelectorItem { label: "start: Start QA watch".into(), value: "start".into() },
+                ListSelectorItem { label: "stop: Stop QA watch".into(), value: "stop".into() },
+            ];
+            app.open_list_selector(ListSelectorState {
+                title: "QA Watch".into(), items, selected_idx: 0,
+                command_template: "/qa {}".to_string(),
+                action_hint_override: None,
+            });
+            return false;
+        }
 
         if subcommand == "status" {
             let status = if qa_watch_state.is_running() {

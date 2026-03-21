@@ -3615,6 +3615,22 @@ fn rpc_restore_checkpoint_blocking(
         .map_err(|_| "Timed out waiting for checkpoint restore".to_string())?
 }
 
+fn rpc_preview_checkpoint_blocking(
+    rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
+    checkpoint_id: &str,
+) -> Result<Value, String> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    rpc_cmd_tx
+        .send(RpcCommand::PreviewCheckpoint {
+            checkpoint_id: checkpoint_id.to_string(),
+            reply: reply_tx,
+        })
+        .map_err(|e| format!("Failed to request checkpoint preview: {e}"))?;
+    reply_rx
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Timed out waiting for checkpoint preview".to_string())?
+}
+
 fn rpc_compare_files_blocking(
     rpc_cmd_tx: &mpsc::Sender<RpcCommand>,
     file1: &str,
@@ -4220,6 +4236,38 @@ fn copy_with_command(bin: &str, args: &[&str], content: &str) -> Result<(), Stri
         Ok(())
     } else {
         Err(format!("`{bin}` exited with status {status}"))
+    }
+}
+
+fn format_relative_time(iso_str: &str) -> String {
+    // parse "YYYY-MM-DDTHH:MM:SS" prefix from ISO 8601 timestamp
+    fn parse_epoch(s: &str) -> Option<i64> {
+        let s = s.trim();
+        if s.len() < 19 { return None; }
+        let year: i64 = s[..4].parse().ok()?;
+        let month: i64 = s[5..7].parse().ok()?;
+        let day: i64 = s[8..10].parse().ok()?;
+        let hour: i64 = s[11..13].parse().ok()?;
+        let min: i64 = s[14..16].parse().ok()?;
+        let sec: i64 = s[17..19].parse().ok()?;
+        // rough epoch (ignores leap seconds, good enough for relative display)
+        let days = (year - 1970) * 365 + (year - 1969) / 4 - (year - 1901) / 100 + (year - 1601) / 400;
+        let month_days: [i64; 12] = [0,31,59,90,120,151,181,212,243,273,304,334];
+        let leap = if month > 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) { 1 } else { 0 };
+        let total_days = days + month_days[(month - 1) as usize] + day - 1 + leap;
+        Some(total_days * 86400 + hour * 3600 + min * 60 + sec)
+    }
+    let Some(then) = parse_epoch(iso_str) else { return iso_str.to_string() };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let secs = (now - then).max(0) as u64;
+    match secs {
+        0..=59 => "just now".to_string(),
+        60..=3599 => format!("{}m ago", secs / 60),
+        3600..=86399 => format!("{}h ago", secs / 3600),
+        _ => format!("{}d ago", secs / 86400),
     }
 }
 

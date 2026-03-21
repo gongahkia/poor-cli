@@ -13,5 +13,6 @@ pub mod multiplayer;
 pub mod provider_catalog;
 pub mod rpc;
 pub mod theme;
+pub mod onboarding;
 pub mod ui;
 pub mod watcher;

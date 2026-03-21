@@ -1539,6 +1539,12 @@ impl RpcClient {
         self.call("poor-cli/restoreCheckpoint", Value::Object(params))
     }
 
+    pub fn preview_checkpoint(&self, checkpoint_id: &str) -> Result<Value, String> {
+        let mut params = serde_json::Map::new();
+        params.insert("checkpointId".into(), Value::String(checkpoint_id.to_string()));
+        self.call("poor-cli/previewCheckpoint", Value::Object(params))
+    }
+
     pub fn compare_files(&self, file1: &str, file2: &str) -> Result<String, String> {
         let mut params = serde_json::Map::new();
         params.insert("file1".into(), Value::String(file1.to_string()));
@@ -2102,6 +2108,10 @@ pub enum RpcCommand {
         checkpoint_id: Option<String>,
         reply: SyncSender<Result<Value, String>>,
     },
+    PreviewCheckpoint {
+        checkpoint_id: String,
+        reply: SyncSender<Result<Value, String>>,
+    },
     CompareFiles {
         file1: String,
         file2: String,
@@ -2578,6 +2588,12 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                 reply,
             }) => {
                 let _ = reply.send(client.restore_checkpoint(checkpoint_id.as_deref()));
+            }
+            Ok(RpcCommand::PreviewCheckpoint {
+                checkpoint_id,
+                reply,
+            }) => {
+                let _ = reply.send(client.preview_checkpoint(&checkpoint_id));
             }
             Ok(RpcCommand::CompareFiles {
                 file1,

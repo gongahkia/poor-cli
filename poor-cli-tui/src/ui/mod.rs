@@ -64,6 +64,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Some(OverlayKind::JoinWizard) => overlays::draw_join_wizard(frame, app),
             Some(OverlayKind::GraphOverlay) => overlays::draw_graph_overlay(frame, app),
             Some(OverlayKind::ListSelector) => overlays::draw_list_selector(frame, app),
+            Some(OverlayKind::Onboarding) => overlays::draw_onboarding(frame, app),
             None => {}
         }
     }
@@ -262,6 +263,15 @@ fn draw_header_bar(frame: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::styled("  ", Style::default()));
         spans.push(Span::styled(
             format!("${total_cost:.2}"),
+            Style::default().fg(dim),
+        ));
+    }
+    // checkpoint count
+    let cp_count = app.recent_checkpoints.len();
+    if cp_count > 0 {
+        spans.push(Span::styled("  ", Style::default()));
+        spans.push(Span::styled(
+            format!("[{cp_count} cp]"),
             Style::default().fg(dim),
         ));
     }

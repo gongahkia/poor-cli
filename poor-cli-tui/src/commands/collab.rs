@@ -48,12 +48,15 @@ pub(super) fn collab_share_role(raw: &str) -> Option<&'static str> {
 }
 
 pub(super) fn collab_usage_text() -> &'static str {
-    "Usage: /collab start <pair|mob|review>\n\
+    "Usage: /collab                          (context-aware menu)\n\
+       /collab start <pair|mob|review>\n\
        /collab join [invite-code]\n\
+       /collab leave\n\
        /collab status\n\
        /collab summary\n\
        /collab members\n\
        /collab share [driver|viewer]\n\
+       /collab suggest\n\
        /collab handoff [next|#N|@name]\n\
        /collab remove [#N|@name|connection-id]\n\
        /collab lobby <on|off>\n\
@@ -64,7 +67,7 @@ pub(super) fn collab_usage_text() -> &'static str {
        /collab agenda done <item-id>\n\
        /collab hand raise\n\
        /collab hand lower\n\n\
-All collaboration features are accessed through /collab subcommands."
+Tip: bare /collab shows a context-aware menu based on session state."
 }
 
 pub(crate) fn format_collab_summary_payload(payload: &Value) -> String {

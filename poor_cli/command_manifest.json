@@ -205,32 +205,35 @@
     },
     {
       "command": "/checkpoints",
-      "description": "List available checkpoints",
-      "recommended": false,
+      "description": "Browse and manage checkpoints",
+      "recommended": true,
       "category": "Review & Safety"
     },
     {
       "command": "/checkpoint",
-      "description": "Create manual checkpoint",
-      "recommended": false,
+      "description": "Create named checkpoint (optional label)",
+      "recommended": true,
       "category": "Review & Safety"
     },
     {
       "command": "/save",
       "description": "Quick checkpoint alias",
       "recommended": false,
+      "hidden": true,
       "category": "Review & Safety"
     },
     {
       "command": "/rewind",
-      "description": "Restore checkpoint by id or latest",
+      "description": "Restore checkpoint (alias for /undo)",
       "recommended": false,
+      "hidden": true,
       "category": "Review & Safety"
     },
     {
       "command": "/restore",
-      "description": "Restore latest checkpoint",
+      "description": "Restore latest checkpoint (alias for /undo)",
       "recommended": false,
+      "hidden": true,
       "category": "Review & Safety"
     },
     {
@@ -241,7 +244,7 @@
     },
     {
       "command": "/undo",
-      "description": "Undo last file change (checkpoint)",
+      "description": "Undo file changes (restore last or specific checkpoint)",
       "recommended": true,
       "category": "Review & Safety"
     },
@@ -556,22 +559,19 @@
       "command": "/pass",
       "description": "Hand driver role to the next collaborator",
       "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
+      "category": "Collaboration"
     },
     {
       "command": "/suggest",
       "description": "Send suggestion to the active driver",
       "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
+      "category": "Collaboration"
     },
     {
       "command": "/leave",
       "description": "Disconnect from collaboration session",
       "recommended": false,
-      "category": "Collaboration",
-      "hidden": true
+      "category": "Collaboration"
     },
     {
       "command": "/cost",
@@ -581,9 +581,9 @@
     },
     {
       "command": "/gc",
-      "description": "Run checkpoint garbage collection",
+      "description": "Clean up stale checkpoints",
       "recommended": false,
-      "category": "Safety & Undo"
+      "category": "Review & Safety"
     },
     {
       "command": "/save-session",

@@ -394,6 +394,7 @@ pub(super) fn handle_server_message(
                     app.push_message(ChatMessage::system(format!(
                         "[checkpoint {short}] snapshot created before {tool_name}"
                     )));
+                    app.set_status("checkpoint saved \u{2014} /undo to revert".to_string());
                 }
                 if !diff.is_empty() {
                     app.push_message(ChatMessage::diff_view(&tool_name, diff.clone()));
@@ -403,6 +404,19 @@ pub(super) fn handle_server_message(
                 if let Some(ref checkpoint) = checkpoint_id {
                     app.last_mutation_checkpoint_id = Some(checkpoint.clone());
                     app.remember_recent_checkpoint(checkpoint);
+                    let cp_short = if checkpoint.len() > 8 { &checkpoint[..8] } else { checkpoint.as_str() };
+                    app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {
+                        kind: poor_cli_tui::app::TimelineEntryKind::Checkpoint,
+                        request_id: request_id.clone(),
+                        title: format!("checkpoint {cp_short}"),
+                        detail: format!("before {tool_name}"),
+                        diff: String::new(),
+                        paths: paths.clone(),
+                        checkpoint_id: Some(checkpoint.clone()),
+                        changed: None,
+                        review_summary: None,
+                        timestamp: std::time::Instant::now(),
+                    });
                 }
                 if !diff.is_empty() {
                     app.last_mutation_diff = diff.clone();
