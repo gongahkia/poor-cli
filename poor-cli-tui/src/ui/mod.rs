@@ -299,8 +299,13 @@ fn draw_chat_area(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.theme_mode;
     if app.messages.is_empty() {
         chat::clear_cache();
-        let empty = Paragraph::new("Start typing to begin a conversation...")
-            .style(Style::default().fg(theme::muted_fg(mode)))
+        let text = if app.mascot_enabled {
+            "          {o,o}/\n          /)__)\n          -\"-\"-\n\n   \"Hey! Type a message or\n    try /help to get started.\""
+        } else {
+            "Start typing to begin a conversation..."
+        };
+        let empty = Paragraph::new(text)
+            .style(Style::default().fg(if app.mascot_enabled { theme::accent(mode) } else { theme::muted_fg(mode) }))
             .block(
                 Block::default()
                     .borders(Borders::NONE)

@@ -697,6 +697,7 @@ pub struct App {
     pub pending_images: Vec<String>,
     pub pinned_context_files: Vec<String>,
     pub pending_prompt_save_name: Option<String>,
+    pub mascot_enabled: bool,
     pub onboarding_active: bool,
     pub onboarding_step: usize,
     pub onboarding_total_steps: usize,
@@ -809,6 +810,7 @@ impl Default for App {
             pending_images: Vec::new(),
             pinned_context_files: Vec::new(),
             pending_prompt_save_name: None,
+            mascot_enabled: true,
             onboarding_active: false,
             onboarding_step: 0,
             onboarding_total_steps: 0,
@@ -903,17 +905,23 @@ impl App {
 | |_) | | | | | | | |_) |    | |   | |    | |
 |  __/| |_| | |_| |  _ <     | |___| |___ | |
 |_|    \___/ \___/|_| \_\     \____|_____|___|"#;
+        let mascot_line = if self.mascot_enabled {
+            "\n\n  {o,o}   Welcome! Type /onboarding if you're new here.\n  /)__)\n  -\"-\"-"
+        } else {
+            ""
+        };
         format!(
             "{logo}\n\n\
              poor-cli (v{version})\n\
              {provider_summary}\n\
              {workspace}\n\n\
-             ? for shortcuts{setup_line}{last_session_line}",
+             ? for shortcuts{setup_line}{last_session_line}{mascot_line}",
             version = self.version,
             provider_summary = provider_summary,
             workspace = workspace,
             setup_line = setup_line,
             last_session_line = last_session_line,
+            mascot_line = mascot_line,
         )
     }
 

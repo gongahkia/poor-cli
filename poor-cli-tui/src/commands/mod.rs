@@ -781,6 +781,12 @@ Version: v{}",
         return false;
     }
 
+    if lowered == "/mascot" {
+        app.mascot_enabled = !app.mascot_enabled;
+        app.set_status(if app.mascot_enabled { "Penny enabled" } else { "Penny disabled" });
+        return false;
+    }
+
     if lowered == "/verbose" {
         match rpc_toggle_config_blocking(rpc_cmd_tx, "ui.verbose_logging") {
             Ok(result) => {
@@ -1189,7 +1195,8 @@ Context Window: {max_context} tokens\n\n\
 
     if lowered == "/drop" {
         if app.pinned_context_files.is_empty() {
-            show_command_info_popup(app, raw, "No pinned context files to drop.".to_string());
+            let msg = "No pinned context files to drop.";
+            show_command_info_popup(app, raw, if app.mascot_enabled { owl_message(1, msg) } else { msg.to_string() });
         } else {
             let items: Vec<ListSelectorItem> = app.pinned_context_files.iter().map(|p| {
                 ListSelectorItem { label: p.clone(), value: p.clone() }
@@ -1231,7 +1238,7 @@ Context Window: {max_context} tokens\n\n\
             show_command_info_popup(
                 app,
                 raw,
-                "No pinned context files.\nUse /add <path> or @path in a prompt.".to_string(),
+                if app.mascot_enabled { owl_message(0, "No pinned context files.\nUse /add <path> or @path in a prompt.") } else { "No pinned context files.\nUse /add <path> or @path in a prompt.".to_string() },
             );
         } else {
             let mut lines = vec![

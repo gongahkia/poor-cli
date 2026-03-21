@@ -107,6 +107,11 @@ pub fn owl_for_step(step: usize) -> &'static OwlExpression {
     OWL_EXPRESSIONS.get(step).unwrap_or(&OWL_EXPRESSIONS[0])
 }
 
+pub fn owl_message(expression_idx: usize, text: &str) -> String {
+    let owl = owl_for_step(expression_idx);
+    format!("{}\n{}\n{}\n\n{}", owl.lines[0], owl.lines[1], owl.lines[2], text)
+}
+
 pub fn onboarding_navigation_hint() -> &'static str {
     "Navigation: `/onboarding next` \u{2022} `/onboarding prev` \u{2022} `/onboarding <step>` \u{2022} `/onboarding exit`"
 }

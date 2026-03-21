@@ -280,7 +280,12 @@ pub(super) fn handle_server_message(
                 )));
                 app.set_status(format!("Queue paused after error ({remaining} remaining)"));
             }
-            app.push_message(ChatMessage::error(message));
+            let err_msg = if app.mascot_enabled {
+                crate::onboarding::owl_message(1, &message)
+            } else {
+                message
+            };
+            app.push_message(ChatMessage::error(err_msg));
             app.streaming.active_request_id.clear();
             app.streaming.active_request_started_at = None;
         }
