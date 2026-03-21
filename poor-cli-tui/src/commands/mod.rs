@@ -13,6 +13,14 @@ pub(crate) use context::{format_doctor_report_payload, format_status_view_payloa
 use provider::{format_instruction_stack, format_mcp_status, format_policy_status, parse_mcp_tool_names};
 pub(crate) use tasks::{format_runs_payload, format_task_detail, format_workflow_detail};
 
+fn sync_onboarding_metadata(app: &mut App) {
+    app.onboarding_total_steps = onboarding_step_count();
+    app.onboarding_try_now = ONBOARDING_STEPS
+        .get(app.onboarding_step)
+        .map(|s| s.try_now.to_string())
+        .unwrap_or_default();
+}
+
 // ── Slash command handler ─────────────────────────────────────────────
 
 pub(super) fn handle_slash_command(
@@ -65,14 +73,8 @@ pub(super) fn handle_slash_command(
         {
             app.onboarding_active = true;
             app.onboarding_step = 0;
-            show_command_info_popup(
-                app,
-                raw,
-                format!(
-                    "**Interactive onboarding started.**\n\n{}",
-                    format_onboarding_step(app.onboarding_step)
-                ),
-            );
+            sync_onboarding_metadata(app);
+            show_command_info_popup(app, raw, format!("**Interactive onboarding started.**\n\n{}", format_onboarding_step(app.onboarding_step)));
             return false;
         }
 
@@ -84,11 +86,7 @@ pub(super) fn handle_slash_command(
         if subcommand == "exit" || subcommand == "done" || subcommand == "quit" {
             app.onboarding_active = false;
             app.onboarding_step = 0;
-            show_command_info_popup(
-                app,
-                raw,
-                "Onboarding ended.\nRun `/onboarding` anytime to start again.".to_string(),
-            );
+            show_command_info_popup(app, raw, "Onboarding ended.\nRun `/onboarding` anytime to start again.".to_string());
             return false;
         }
 
@@ -97,6 +95,7 @@ pub(super) fn handle_slash_command(
                 app.onboarding_active = true;
                 app.onboarding_step = 0;
             }
+            sync_onboarding_metadata(app);
             show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
@@ -105,27 +104,16 @@ pub(super) fn handle_slash_command(
             if !app.onboarding_active {
                 app.onboarding_active = true;
                 app.onboarding_step = 0;
-                show_command_info_popup(
-                    app,
-                    raw,
-                    format!(
-                        "No active onboarding session found; started at step 1.\n\n{}",
-                        format_onboarding_step(app.onboarding_step)
-                    ),
-                );
+                sync_onboarding_metadata(app);
+                show_command_info_popup(app, raw, format!("No active onboarding session found; started at step 1.\n\n{}", format_onboarding_step(app.onboarding_step)));
                 return false;
             }
-
             if app.onboarding_step + 1 >= total_steps {
-                show_command_info_popup(
-                    app,
-                    raw,
-                    "You are already at the last onboarding step.\nUse `/onboarding exit` to end the onboarding session.".to_string(),
-                );
+                show_command_info_popup(app, raw, "You are already at the last onboarding step.\nUse `/onboarding exit` to end the onboarding session.".to_string());
                 return false;
             }
-
             app.onboarding_step += 1;
+            sync_onboarding_metadata(app);
             show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
@@ -134,45 +122,28 @@ pub(super) fn handle_slash_command(
             if !app.onboarding_active {
                 app.onboarding_active = true;
                 app.onboarding_step = 0;
-                show_command_info_popup(
-                    app,
-                    raw,
-                    format!(
-                        "No active onboarding session found; started at step 1.\n\n{}",
-                        format_onboarding_step(app.onboarding_step)
-                    ),
-                );
+                sync_onboarding_metadata(app);
+                show_command_info_popup(app, raw, format!("No active onboarding session found; started at step 1.\n\n{}", format_onboarding_step(app.onboarding_step)));
                 return false;
             }
-
             if app.onboarding_step == 0 {
-                show_command_info_popup(
-                    app,
-                    raw,
-                    "You are already at the first onboarding step.".to_string(),
-                );
+                show_command_info_popup(app, raw, "You are already at the first onboarding step.".to_string());
                 return false;
             }
-
             app.onboarding_step -= 1;
+            sync_onboarding_metadata(app);
             show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
 
         if let Ok(step_number) = subcommand.parse::<usize>() {
             if step_number == 0 || step_number > total_steps {
-                show_command_info_popup(
-                    app,
-                    raw,
-                    format!(
-                        "Step must be between 1 and {total_steps}.\n{}",
-                        onboarding_usage_text()
-                    ),
-                );
+                show_command_info_popup(app, raw, format!("Step must be between 1 and {total_steps}.\n{}", onboarding_usage_text()));
                 return false;
             }
             app.onboarding_active = true;
             app.onboarding_step = step_number - 1;
+            sync_onboarding_metadata(app);
             show_command_info_popup(app, raw, format_onboarding_step(app.onboarding_step));
             return false;
         }
@@ -253,25 +224,41 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/compact" || lowered.starts_with("/compact ") {
+    if lowered == "/compact" {
+        let items = vec![
+            ListSelectorItem { label: "compact: summarize conversation in-place".into(), value: "compact".into() },
+            ListSelectorItem { label: "compress: strip tool calls, keep text only".into(), value: "compress".into() },
+            ListSelectorItem { label: "handoff: new session with context summary".into(), value: "handoff".into() },
+        ];
+        app.open_list_selector(ListSelectorState {
+            title: "Compact Strategy".into(), items, selected_idx: 0,
+            command_template: "/compact {}".to_string(),
+        });
+        return false;
+    }
+
+    if lowered.starts_with("/compact ") {
         let arg = raw.split_whitespace().nth(1).unwrap_or("compact");
-        let strategy = match arg {
-            "compress" => "compress",
-            "handoff" => "handoff",
-            _ => "compact",
-        };
-        show_command_info_popup(
-            app,
-            raw,
-            format!(
-                "Applying context strategy: **{strategy}**\n\n\
-                 Available strategies:\n\
-                 - `compact` — Summarize conversation in-place\n\
-                 - `compress` — Strip tool calls, keep text only\n\
-                 - `handoff` — New session with context summary\n\n\
-                 Usage: `/compact [compact|compress|handoff]`"
-            ),
-        );
+        let strategy = match arg { "compress" => "compress", "handoff" => "handoff", _ => "compact" }.to_string();
+        app.set_status(format!("Applying context strategy: {strategy}..."));
+        let rpc = rpc_cmd_tx.clone();
+        let tx_clone = tx.clone();
+        thread::spawn(move || {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            let _ = rpc.send(RpcCommand::CompactContext { strategy: strategy.clone(), reply: reply_tx });
+            match reply_rx.recv_timeout(Duration::from_secs(60)) {
+                Ok(Ok(val)) => {
+                    let summary = val.get("summary").and_then(|v| v.as_str()).unwrap_or("done");
+                    let before = val.get("messages_before").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let after = val.get("messages_after").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let _ = tx_clone.send(ServerMsg::SystemMessage {
+                        content: format!("**Context {strategy}** applied: {before} -> {after} messages\n\n{summary}"),
+                    });
+                }
+                Ok(Err(e)) => { let _ = tx_clone.send(ServerMsg::SystemMessage { content: format!("Compact failed: {e}") }); }
+                Err(_) => { let _ = tx_clone.send(ServerMsg::SystemMessage { content: "Compact timed out".into() }); }
+            }
+        });
         return false;
     }
 
@@ -545,45 +532,7 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/providers" {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        if rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx }).is_err() {
-            app.push_message(ChatMessage::error("Failed to list providers: RPC worker unavailable"));
-            return false;
-        }
-        match reply_rx.recv_timeout(Duration::from_secs(15)) {
-            Ok(Ok(providers)) => {
-                let mut info = "**Available Providers:**\n\n".to_string();
-                for p in &providers {
-                    let status = if p.ready { "ready" } else { "not ready" };
-                    let local = if p.name == "ollama" { " [local]" } else { "" };
-                    let models = if p.models.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({})", p.models.join(", "))
-                    };
-                    let detail = if p.status_label.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" - {}", p.status_label)
-                    };
-                    info.push_str(&format!(
-                        "  {status} **{}**{local}{models}{detail}\n",
-                        p.name
-                    ));
-                }
-                info.push_str("\nUse /switch to change provider/model");
-                show_command_info_popup(app, raw, info);
-            }
-            Ok(Err(e)) => {
-                app.push_message(ChatMessage::error(format!("Failed to list providers: {e}")))
-            }
-            Err(_) => app.push_message(ChatMessage::error("Failed to list providers".to_string())),
-        }
-        return false;
-    }
-
-    if lowered == "/switch" || lowered.starts_with("/switch ") || lowered.starts_with("/providers ") {
+    if lowered == "/switch" || lowered == "/providers" || lowered.starts_with("/switch ") || lowered.starts_with("/providers ") {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         if rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx }).is_err() {
             app.push_message(ChatMessage::error("Failed to list providers: RPC worker unavailable"));
@@ -5084,11 +5033,14 @@ Submitting any slash command will cancel capture."
                 show_command_info_popup(app, raw, "No saved prompts.".to_string());
             }
             Ok(entries) => {
-                let mut lines = vec!["**Saved Prompts:**".to_string(), String::new()];
-                for (name, preview) in entries {
-                    lines.push(format!("- **{name}**: {preview}"));
-                }
-                show_command_info_popup(app, raw, lines.join("\n"));
+                let items: Vec<ListSelectorItem> = entries.iter().map(|(name, preview)| {
+                    ListSelectorItem { label: format!("{name}: {preview}"), value: name.clone() }
+                }).collect();
+                app.open_list_selector(ListSelectorState {
+                    title: format!("Saved Prompts ({})", items.len()),
+                    items, selected_idx: 0,
+                    command_template: "/use {}".to_string(),
+                });
             }
             Err(e) => app.push_message(ChatMessage::error(e)),
         }
