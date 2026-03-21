@@ -327,6 +327,12 @@ pub(crate) fn draw_info_popup(frame: &mut Frame, app: &App) {
 
     let annotated = annotate_copyable_items(&app.info_popup_content, app.info_popup_selected_idx);
     let markdown_lines = markdown::render_markdown(&annotated, mode);
+    let hint = if app.onboarding_active {
+        let try_now = if app.onboarding_try_now.is_empty() { "?" } else { &app.onboarding_try_now };
+        format!(" ←/→ steps ({}/{}) • Enter → {} • ↑↓ scroll • Esc exit ", app.onboarding_step + 1, app.onboarding_total_steps, try_now)
+    } else {
+        " ↑↓ navigate • Enter run/copy • c copy all • Esc close ".to_string()
+    };
     let popup = Paragraph::new(Text::from(markdown_lines))
         .wrap(Wrap { trim: false })
         .scroll((app.info_popup_scroll, 0))
@@ -338,6 +344,7 @@ pub(crate) fn draw_info_popup(frame: &mut Frame, app: &App) {
                         .fg(theme::accent(mode))
                         .add_modifier(Modifier::BOLD),
                 ))
+                .title_bottom(Span::styled(hint, Style::default().fg(theme::muted_fg(mode))))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme::accent(mode)))
                 .padding(Padding::new(1, 1, 1, 1)),
@@ -872,7 +879,10 @@ pub(crate) fn draw_list_selector(frame: &mut Frame, app: &App) {
         };
         ListItem::new(Line::from(Span::styled(format!("{marker}{}", item.label), style)))
     }).collect();
-    let hint = " ↑↓/jk navigate • Enter select • c copy • Esc close ";
+    let action_preview = state.items.get(state.selected_idx)
+        .map(|item| state.command_template.replace("{}", &item.value))
+        .unwrap_or_default();
+    let hint = format!(" ↑↓/jk navigate • Enter → {} • c copy • Esc close ", action_preview);
     let list = List::new(items).block(
         Block::default()
             .title(Span::styled(
