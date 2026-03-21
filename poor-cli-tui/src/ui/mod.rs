@@ -365,7 +365,7 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
         vec![Span::styled("  Enter select  Esc close  Type to filter", Style::default().fg(dim))]
     } else {
         // Normal mode
-        vec![Span::styled("  / commands  Ctrl+P palette  Esc cancel", Style::default().fg(dim))]
+        vec![Span::styled("  / commands  Ctrl+P palette  F2 provider  Esc cancel", Style::default().fg(dim))]
     };
     let hint = Paragraph::new(Line::from(spans)).style(theme::hint_style(mode));
     frame.render_widget(hint, area);

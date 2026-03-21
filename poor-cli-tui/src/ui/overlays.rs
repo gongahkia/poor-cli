@@ -932,40 +932,47 @@ pub(crate) fn draw_onboarding(frame: &mut Frame, app: &App) {
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
     // split into left (mascot) and right (content)
+    let show_mascot = app.mascot_enabled;
+    let constraints = if show_mascot {
+        vec![Constraint::Percentage(30), Constraint::Percentage(70)]
+    } else {
+        vec![Constraint::Percentage(100)]
+    };
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .constraints(constraints)
         .split(inner);
-    let left = cols[0];
-    let right = cols[1];
+    let right = if show_mascot { cols[1] } else { cols[0] };
     // ── left panel: owl + speech bubble ──
-    let mut left_lines: Vec<Line> = Vec::new();
-    left_lines.push(Line::raw(""));
-    for art_line in owl.lines {
-        left_lines.push(Line::from(Span::styled(*art_line, Style::default().fg(theme::accent(mode)))));
-    }
-    left_lines.push(Line::raw(""));
-    // speech bubble
-    let bubble_w = (left.width as usize).saturating_sub(2).max(8);
-    let wrapped = textwrap::fill(owl.speech, bubble_w.saturating_sub(4));
-    let speech_lines: Vec<&str> = wrapped.lines().collect();
-    let bar_w = speech_lines.iter().map(|l| l.len()).max().unwrap_or(4).max(4);
-    left_lines.push(Line::from(Span::styled(
-        format!(" .{}.  ", "-".repeat(bar_w + 2)),
-        Style::default().fg(theme::muted_fg(mode)),
-    )));
-    for sl in &speech_lines {
+    if show_mascot {
+        let left = cols[0];
+        let mut left_lines: Vec<Line> = Vec::new();
+        left_lines.push(Line::raw(""));
+        for art_line in owl.lines {
+            left_lines.push(Line::from(Span::styled(*art_line, Style::default().fg(theme::accent(mode)))));
+        }
+        left_lines.push(Line::raw(""));
+        let bubble_w = (left.width as usize).saturating_sub(2).max(8);
+        let wrapped = textwrap::fill(owl.speech, bubble_w.saturating_sub(4));
+        let speech_lines: Vec<&str> = wrapped.lines().collect();
+        let bar_w = speech_lines.iter().map(|l| l.len()).max().unwrap_or(4).max(4);
         left_lines.push(Line::from(Span::styled(
-            format!(" | {:<width$} | ", sl, width = bar_w),
+            format!(" .{}.  ", "-".repeat(bar_w + 2)),
             Style::default().fg(theme::muted_fg(mode)),
         )));
+        for sl in &speech_lines {
+            left_lines.push(Line::from(Span::styled(
+                format!(" | {:<width$} | ", sl, width = bar_w),
+                Style::default().fg(theme::muted_fg(mode)),
+            )));
+        }
+        left_lines.push(Line::from(Span::styled(
+            format!(" '{}'  ", "-".repeat(bar_w + 2)),
+            Style::default().fg(theme::muted_fg(mode)),
+        )));
+        let left_para = Paragraph::new(Text::from(left_lines));
+        frame.render_widget(left_para, left);
     }
-    left_lines.push(Line::from(Span::styled(
-        format!(" '{}'  ", "-".repeat(bar_w + 2)),
-        Style::default().fg(theme::muted_fg(mode)),
-    )));
-    let left_para = Paragraph::new(Text::from(left_lines));
-    frame.render_widget(left_para, left);
     // ── right panel: step content ──
     let mut right_lines: Vec<Line> = Vec::new();
     if let Some(s) = step_data {

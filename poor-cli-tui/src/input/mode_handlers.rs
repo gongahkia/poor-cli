@@ -15,6 +15,10 @@ pub(super) fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
         }
     }
 
+    if key.code == KeyCode::F(2) {
+        return InputAction::Submit("/provider switch".to_string());
+    }
+
     if app.at_path_completion.active {
         match key.code {
             KeyCode::Up => {

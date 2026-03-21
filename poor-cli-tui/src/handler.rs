@@ -281,7 +281,7 @@ pub(super) fn handle_server_message(
                 app.set_status(format!("Queue paused after error ({remaining} remaining)"));
             }
             let err_msg = if app.mascot_enabled {
-                crate::onboarding::owl_message(1, &message)
+                poor_cli_tui::onboarding::owl_message(1, &message)
             } else {
                 message
             };

@@ -3320,8 +3320,8 @@ fn save_api_key_editor(
     .map_err(|e| format!("Saved .env but failed to apply initialization result: {e}"))?;
 
     Ok(format!(
-        "Saved {} and retried backend initialization.",
-        env_path.display()
+        "Saved {} \u{2014} now using **{}/{}**",
+        env_path.display(), provider, model
     ))
 }
 

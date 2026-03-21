@@ -1,41 +1,5 @@
 use super::super::*;
 
-pub(crate) fn format_task_list(payload: &Value, title: &str) -> String {
-    let tasks = payload
-        .get("tasks")
-        .and_then(|value| value.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if tasks.is_empty() {
-        return format!("{title}\n\nNo tasks found.");
-    }
-
-    let mut lines = vec![format!("{title}\n")];
-    for task in tasks {
-        let task_id = task
-            .get("taskId")
-            .and_then(|value| value.as_str())
-            .unwrap_or("(unknown)");
-        let status = task
-            .get("status")
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown");
-        let summary = task
-            .get("summary")
-            .and_then(|value| value.as_str())
-            .unwrap_or("");
-        let title = task
-            .get("title")
-            .and_then(|value| value.as_str())
-            .unwrap_or("(untitled)");
-        lines.push(format!("- `{task_id}` [{status}] {title}"));
-        if !summary.is_empty() {
-            lines.push(format!("  {}", truncate_line(summary, 160)));
-        }
-    }
-    lines.join("\n")
-}
-
 pub(crate) fn format_task_detail(payload: &Value) -> String {
     let task = payload.get("task").unwrap_or(payload);
     let task_id = task
@@ -155,42 +119,6 @@ pub(crate) fn format_runs_payload(payload: &Value, title: &str) -> String {
             lines.push(format!("  error class: `{error_class}`"));
         }
     }
-    lines.join("\n")
-}
-
-pub(crate) fn format_workflows_payload(payload: &Value) -> String {
-    let workflows = payload
-        .get("workflows")
-        .and_then(|value| value.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if workflows.is_empty() {
-        return "**Workflows**\n\nNo workflows available.".to_string();
-    }
-
-    let recommended = payload
-        .get("recommended")
-        .and_then(|value| value.as_str())
-        .unwrap_or("");
-    let mut lines = vec!["**Workflows**".to_string(), String::new()];
-    for workflow in workflows {
-        let name = workflow
-            .get("name")
-            .and_then(|value| value.as_str())
-            .unwrap_or("unknown");
-        let description = workflow
-            .get("description")
-            .and_then(|value| value.as_str())
-            .unwrap_or("");
-        let marker = if name == recommended {
-            " (recommended)"
-        } else {
-            ""
-        };
-        lines.push(format!("- `{name}`{marker}: {description}"));
-    }
-    lines.push(String::new());
-    lines.push("Inspect one with `/workflow <name>`.".to_string());
     lines.join("\n")
 }
 

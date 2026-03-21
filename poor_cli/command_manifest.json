@@ -256,20 +256,22 @@
     },
     {
       "command": "/provider",
-      "description": "Show active provider",
+      "description": "Show provider info, models, or switch (F2)",
       "recommended": true,
       "category": "Providers & Config"
     },
     {
       "command": "/switch",
-      "description": "Switch provider/model",
+      "description": "Switch provider/model (alias for /provider switch)",
       "recommended": false,
+      "hidden": true,
       "category": "Providers & Config"
     },
     {
       "command": "/providers",
-      "description": "List providers and models",
+      "description": "List providers (alias for /provider switch)",
       "recommended": false,
+      "hidden": true,
       "category": "Providers & Config"
     },
     {
@@ -280,8 +282,9 @@
     },
     {
       "command": "/model-info",
-      "description": "Show model capabilities",
+      "description": "Show model capabilities (alias for /provider)",
       "recommended": false,
+      "hidden": true,
       "category": "Providers & Config"
     },
     {
@@ -294,14 +297,14 @@
       "command": "/broke",
       "description": "Set poor mode (terse responses)",
       "recommended": false,
-      "category": "Providers & Config",
+      "category": "Economy & Output",
       "hidden": true
     },
     {
       "command": "/my-treat",
       "description": "Set rich mode (comprehensive responses)",
       "recommended": false,
-      "category": "Providers & Config",
+      "category": "Economy & Output",
       "hidden": true
     },
     {
@@ -318,8 +321,9 @@
     },
     {
       "command": "/env",
-      "description": "Open the guided API key and .env editor",
+      "description": "API key editor (alias for /setup)",
       "recommended": false,
+      "hidden": true,
       "category": "Providers & Config"
     },
     {
@@ -613,13 +617,13 @@
       "command": "/economy",
       "description": "Show or switch economy preset (frugal|balanced|quality)",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Economy & Output"
     },
     {
       "command": "/savings",
       "description": "Show economy savings dashboard",
       "recommended": false,
-      "category": "Providers & Config"
+      "category": "Economy & Output"
     }
   ]
 }

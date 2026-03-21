@@ -27,8 +27,8 @@ pub const ONBOARDING_STEPS: &[OnboardingStep] = &[
     },
     OnboardingStep {
         title: "Choose Provider + Model",
-        objective: "Inspect your active model, switch when needed, and configure provider auth without leaving the TUI.",
-        commands: &["/setup", "/provider", "/providers", "/switch", "/api-key status"],
+        objective: "Configure API keys with /setup, then inspect or switch providers with /provider. Press F2 for quick access.",
+        commands: &["/setup", "/provider", "/provider switch", "/api-key status"],
         try_now: "/setup",
     },
     OnboardingStep {
