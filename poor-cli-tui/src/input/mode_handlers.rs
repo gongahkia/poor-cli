@@ -229,34 +229,42 @@ pub(super) fn extract_copyable_items(content: &str) -> Vec<String> {
 }
 
 pub(super) fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction {
+    let items = extract_copyable_items(&app.info_popup_content);
+    let item_count = items.len();
     match key.code {
-        KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
             app.close_info_popup();
             InputAction::Redraw
         }
+        KeyCode::Enter => {
+            if let Some(item) = items.get(app.info_popup_selected_idx) {
+                InputAction::CopyToClipboard(item.clone())
+            } else {
+                app.close_info_popup();
+                InputAction::Redraw
+            }
+        }
         KeyCode::Char('c') | KeyCode::Char('C') => {
-            let items = extract_copyable_items(&app.info_popup_content);
             if !items.is_empty() {
                 InputAction::CopyToClipboard(items.join("\n"))
             } else {
                 InputAction::CopyToClipboard(app.info_popup_content.clone())
             }
         }
-        KeyCode::Char(ch) if ch.is_ascii_digit() && ch != '0' => {
-            let idx = (ch as usize) - ('1' as usize);
-            let items = extract_copyable_items(&app.info_popup_content);
-            if let Some(item) = items.get(idx) {
-                InputAction::CopyToClipboard(item.clone())
-            } else {
-                InputAction::None
-            }
-        }
         KeyCode::Up => {
-            app.scroll_info_popup_up(1);
+            if item_count > 0 {
+                app.move_info_popup_selection(false, item_count);
+            } else {
+                app.scroll_info_popup_up(1);
+            }
             InputAction::Redraw
         }
         KeyCode::Down => {
-            app.scroll_info_popup_down(1);
+            if item_count > 0 {
+                app.move_info_popup_selection(true, item_count);
+            } else {
+                app.scroll_info_popup_down(1);
+            }
             InputAction::Redraw
         }
         KeyCode::PageUp => {
@@ -270,6 +278,49 @@ pub(super) fn handle_key_info_popup(app: &mut App, key: KeyEvent) -> InputAction
         KeyCode::Home => {
             app.info_popup_scroll = 0;
             InputAction::Redraw
+        }
+        _ => InputAction::None,
+    }
+}
+
+pub(super) fn handle_key_list_selector(app: &mut App, key: KeyEvent) -> InputAction {
+    let Some(state) = app.list_selector.as_mut() else {
+        return InputAction::None;
+    };
+    let count = state.items.len();
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.close_list_selector();
+            InputAction::Redraw
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if count > 0 {
+                state.selected_idx = state.selected_idx.saturating_sub(1);
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if count > 0 && state.selected_idx + 1 < count {
+                state.selected_idx += 1;
+            }
+            InputAction::Redraw
+        }
+        KeyCode::Enter => {
+            if let Some(item) = state.items.get(state.selected_idx) {
+                let cmd = state.command_template.replace("{}", &item.value);
+                app.close_list_selector();
+                InputAction::Submit(cmd)
+            } else {
+                app.close_list_selector();
+                InputAction::Redraw
+            }
+        }
+        KeyCode::Char('c') | KeyCode::Char('C') => {
+            if let Some(item) = state.items.get(state.selected_idx) {
+                InputAction::CopyToClipboard(item.value.clone())
+            } else {
+                InputAction::None
+            }
         }
         _ => InputAction::None,
     }

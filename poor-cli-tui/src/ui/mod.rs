@@ -63,6 +63,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Some(OverlayKind::ApiKeyEditor) => overlays::draw_api_key_editor(frame, app),
             Some(OverlayKind::JoinWizard) => overlays::draw_join_wizard(frame, app),
             Some(OverlayKind::GraphOverlay) => overlays::draw_graph_overlay(frame, app),
+            Some(OverlayKind::ListSelector) => overlays::draw_list_selector(frame, app),
             None => {}
         }
     }
@@ -358,7 +359,7 @@ fn draw_hint_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_command_palette(frame: &mut Frame, app: &App) {
     let mode = app.theme_mode;
-    if app.waiting || !app.input_buffer.starts_with('/') || app.at_path_completion.active {
+    if !app.input_buffer.starts_with('/') || app.at_path_completion.active {
         return;
     }
 

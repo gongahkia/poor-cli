@@ -11,7 +11,7 @@ use core::{resolve_close_slash_command, show_command_info_popup};
 pub(crate) use collab::format_collab_summary_payload;
 pub(crate) use context::{format_doctor_report_payload, format_status_view_payload, format_trust_view_payload};
 use provider::{format_instruction_stack, format_mcp_status, format_policy_status, parse_mcp_tool_names};
-pub(crate) use tasks::{format_runs_payload, format_task_detail, format_task_list, format_workflow_detail, format_workflows_payload};
+pub(crate) use tasks::{format_runs_payload, format_task_detail, format_workflow_detail};
 
 // ── Slash command handler ─────────────────────────────────────────────
 
@@ -547,7 +547,10 @@ pub(super) fn handle_slash_command(
 
     if lowered == "/providers" {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        let _ = rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx });
+        if rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx }).is_err() {
+            app.push_message(ChatMessage::error("Failed to list providers: RPC worker unavailable"));
+            return false;
+        }
         match reply_rx.recv_timeout(Duration::from_secs(15)) {
             Ok(Ok(providers)) => {
                 let mut info = "**Available Providers:**\n\n".to_string();
@@ -580,24 +583,39 @@ pub(super) fn handle_slash_command(
         return false;
     }
 
-    if lowered == "/switch" || lowered.starts_with("/switch ") || lowered == "/providers" || lowered.starts_with("/providers ") {
+    if lowered == "/switch" || lowered.starts_with("/switch ") || lowered.starts_with("/providers ") {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        let _ = rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx });
+        if rpc_cmd_tx.send(RpcCommand::ListProviders { reply: reply_tx }).is_err() {
+            app.push_message(ChatMessage::error("Failed to list providers: RPC worker unavailable"));
+            return false;
+        }
         let tx2 = tx.clone();
         thread::spawn(move || {
-            if let Ok(Ok(providers)) = reply_rx.recv() {
-                let _ = tx2.send(ServerMsg::Providers {
-                    providers: providers
-                        .into_iter()
-                        .map(|p| ProviderEntry {
-                            name: p.name,
-                            available: p.available,
-                            ready: p.ready,
-                            status_label: p.status_label,
-                            models: p.models,
-                        })
-                        .collect(),
-                });
+            match reply_rx.recv_timeout(Duration::from_secs(15)) {
+                Ok(Ok(providers)) => {
+                    let _ = tx2.send(ServerMsg::Providers {
+                        providers: providers
+                            .into_iter()
+                            .map(|p| ProviderEntry {
+                                name: p.name,
+                                available: p.available,
+                                ready: p.ready,
+                                status_label: p.status_label,
+                                models: p.models,
+                            })
+                            .collect(),
+                    });
+                }
+                Ok(Err(e)) => {
+                    let _ = tx2.send(ServerMsg::SystemMessage {
+                        content: format!("⚠ Failed to list providers: {e}"),
+                    });
+                }
+                Err(_) => {
+                    let _ = tx2.send(ServerMsg::SystemMessage {
+                        content: "⚠ Timed out listing providers".to_string(),
+                    });
+                }
             }
         });
         return false;
@@ -1090,30 +1108,23 @@ Context Window: {max_context} tokens\n\n\
                     return false;
                 }
 
-                let mut lines = vec!["**Recent Sessions:**".to_string(), String::new()];
-                for session in sessions {
-                    let session_id = session
-                        .get("sessionId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let started = session
-                        .get("startedAt")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("-");
-                    let message_count = session
-                        .get("messageCount")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    let active = session
-                        .get("isActive")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
+                let items: Vec<ListSelectorItem> = sessions.iter().map(|session| {
+                    let session_id = session.get("sessionId").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let started = session.get("startedAt").and_then(|v| v.as_str()).unwrap_or("-");
+                    let message_count = session.get("messageCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let active = session.get("isActive").and_then(|v| v.as_bool()).unwrap_or(false);
                     let marker = if active { " (active)" } else { "" };
-                    lines.push(format!(
-                        "- `{session_id}`{marker} • {started} • {message_count} message(s)"
-                    ));
-                }
-                show_command_info_popup(app, raw, lines.join("\n"));
+                    ListSelectorItem {
+                        label: format!("{session_id}{marker} • {started} • {message_count} message(s)"),
+                        value: session_id.to_string(),
+                    }
+                }).collect();
+                app.open_list_selector(ListSelectorState {
+                    title: "Recent Sessions".to_string(),
+                    items,
+                    selected_idx: 0,
+                    command_template: "/restore-session {}".to_string(),
+                });
             }
             Err(e) => app.push_message(ChatMessage::error(format!("Failed to list sessions: {e}"))),
         }
@@ -1341,7 +1352,27 @@ Context Window: {max_context} tokens\n\n\
         if selected.is_empty() {
             match rpc_list_workflows_blocking(rpc_cmd_tx) {
                 Ok(payload) => {
-                    show_command_info_popup(app, raw, format_workflows_payload(&payload))
+                    let workflows = payload.get("workflows").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    if workflows.is_empty() {
+                        show_command_info_popup(app, raw, "No workflows available.".to_string());
+                    } else {
+                        let recommended = payload.get("recommended").and_then(|v| v.as_str()).unwrap_or("");
+                        let items: Vec<ListSelectorItem> = workflows.iter().map(|w| {
+                            let name = w.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let description = w.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                            let marker = if name == recommended { " (recommended)" } else { "" };
+                            ListSelectorItem {
+                                label: format!("{name}{marker}: {description}"),
+                                value: name.to_string(),
+                            }
+                        }).collect();
+                        app.open_list_selector(ListSelectorState {
+                            title: "Workflows".to_string(),
+                            items,
+                            selected_idx: 0,
+                            command_template: "/workflow {}".to_string(),
+                        });
+                    }
                 }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to load workflows: {error}"))
@@ -1674,16 +1705,24 @@ Context Window: {max_context} tokens\n\n\
             .map(|value| value.trim().to_ascii_lowercase())
             .unwrap_or_else(|| "status".to_string());
         if selected == "status" {
-            show_command_info_popup(
-                app,
-                raw,
-                format!(
-                    "**Execution Profile**\n- Active: `{}`\n- Response mode: `{}`\n- Context budget: {} tokens\n\nAvailable profiles:\n- `speed`: smaller context, terse output, faster loop\n- `safe`: balanced defaults, review-oriented safety\n- `deep-review`: larger context, richer analysis depth\n\nSet with `/profile <name>`",
-                    app.execution_profile,
-                    app.response_mode.as_str(),
-                    app.context_budget_tokens
-                ),
-            );
+            let profiles = vec![
+                ("speed", "smaller context, terse output, faster loop"),
+                ("safe", "balanced defaults, review-oriented safety"),
+                ("deep-review", "larger context, richer analysis depth"),
+            ];
+            let items: Vec<ListSelectorItem> = profiles.iter().map(|(name, desc)| {
+                let active = if *name == app.execution_profile.as_str() { " (active)" } else { "" };
+                ListSelectorItem {
+                    label: format!("{name}{active}: {desc}"),
+                    value: name.to_string(),
+                }
+            }).collect();
+            app.open_list_selector(ListSelectorState {
+                title: "Execution Profile".to_string(),
+                items,
+                selected_idx: 0,
+                command_template: "/profile {}".to_string(),
+            });
             return false;
         }
 
@@ -2150,23 +2189,21 @@ Context Window: {max_context} tokens\n\n\
                         show_command_info_popup(app, raw, "No skills found.".to_string());
                         return false;
                     }
-                    let mut lines = vec!["**Skills**".to_string(), String::new()];
-                    for skill in skills {
-                        let name = skill
-                            .get("name")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("(unknown)");
-                        let description = skill
-                            .get("description")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("");
-                        let scope = skill
-                            .get("scope")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("user");
-                        lines.push(format!("- `{name}` ({scope}) {description}"));
-                    }
-                    show_command_info_popup(app, raw, lines.join("\n"));
+                    let items: Vec<ListSelectorItem> = skills.iter().map(|skill| {
+                        let name = skill.get("name").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+                        let description = skill.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                        let scope = skill.get("scope").and_then(|v| v.as_str()).unwrap_or("user");
+                        ListSelectorItem {
+                            label: format!("{name} ({scope}) {description}"),
+                            value: name.to_string(),
+                        }
+                    }).collect();
+                    app.open_list_selector(ListSelectorState {
+                        title: "Skills".to_string(),
+                        items,
+                        selected_idx: 0,
+                        command_template: "/skills show {}".to_string(),
+                    });
                 }
                 Err(error) => {
                     show_command_info_popup(app, raw, format!("Failed to list skills: {error}"))
@@ -2267,23 +2304,21 @@ Context Window: {max_context} tokens\n\n\
                         show_command_info_popup(app, raw, "No custom commands found.".to_string());
                         return false;
                     }
-                    let mut lines = vec!["**Custom Commands**".to_string(), String::new()];
-                    for command in commands {
-                        let name = command
-                            .get("name")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("(unknown)");
-                        let description = command
-                            .get("description")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("");
-                        let scope = command
-                            .get("scope")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("user");
-                        lines.push(format!("- `{name}` ({scope}) {description}"));
-                    }
-                    show_command_info_popup(app, raw, lines.join("\n"));
+                    let items: Vec<ListSelectorItem> = commands.iter().map(|command| {
+                        let name = command.get("name").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+                        let description = command.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                        let scope = command.get("scope").and_then(|v| v.as_str()).unwrap_or("user");
+                        ListSelectorItem {
+                            label: format!("{name} ({scope}) {description}"),
+                            value: name.to_string(),
+                        }
+                    }).collect();
+                    app.open_list_selector(ListSelectorState {
+                        title: "Custom Commands".to_string(),
+                        items,
+                        selected_idx: 0,
+                        command_template: "/commands show {}".to_string(),
+                    });
                 }
                 Err(error) => show_command_info_popup(
                     app,
@@ -2357,7 +2392,28 @@ Context Window: {max_context} tokens\n\n\
 
     if lowered == "/inbox" {
         match rpc_list_tasks_blocking(rpc_cmd_tx, true) {
-            Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "Inbox")),
+            Ok(payload) => {
+                let tasks = payload.get("tasks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                if tasks.is_empty() {
+                    show_command_info_popup(app, raw, "Inbox is empty.".to_string());
+                } else {
+                    let items: Vec<ListSelectorItem> = tasks.iter().map(|task| {
+                        let task_id = task.get("taskId").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+                        let status = task.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        let title = task.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+                        ListSelectorItem {
+                            label: format!("{task_id} [{status}] {title}"),
+                            value: task_id.to_string(),
+                        }
+                    }).collect();
+                    app.open_list_selector(ListSelectorState {
+                        title: "Inbox".to_string(),
+                        items,
+                        selected_idx: 0,
+                        command_template: "/task open {}".to_string(),
+                    });
+                }
+            }
             Err(error) => show_command_info_popup(app, raw, format!("Failed to load inbox: {error}")),
         }
         return false;
@@ -2377,7 +2433,28 @@ Context Window: {max_context} tokens\n\n\
             .to_ascii_lowercase();
         if subcommand == "list" {
             match rpc_list_tasks_blocking(rpc_cmd_tx, false) {
-                Ok(payload) => show_command_info_popup(app, raw, format_task_list(&payload, "Tasks")),
+                Ok(payload) => {
+                    let tasks = payload.get("tasks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    if tasks.is_empty() {
+                        show_command_info_popup(app, raw, "No tasks found.".to_string());
+                    } else {
+                        let items: Vec<ListSelectorItem> = tasks.iter().map(|task| {
+                            let task_id = task.get("taskId").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+                            let status = task.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let title = task.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+                            ListSelectorItem {
+                                label: format!("{task_id} [{status}] {title}"),
+                                value: task_id.to_string(),
+                            }
+                        }).collect();
+                        app.open_list_selector(ListSelectorState {
+                            title: "Tasks".to_string(),
+                            items,
+                            selected_idx: 0,
+                            command_template: "/task open {}".to_string(),
+                        });
+                    }
+                }
                 Err(error) => show_command_info_popup(app, raw, format!("Failed to load tasks: {error}")),
             }
             return false;
@@ -4533,38 +4610,23 @@ Context Window: {max_context} tokens\n\n\
                     return false;
                 }
 
-                let storage_bytes = payload
-                    .get("storageSizeBytes")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let storage_path = payload
-                    .get("storagePath")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-
-                let mut lines = vec![
-                    format!("**Checkpoints ({}):**", checkpoints.len()),
-                    format!("Storage: {} ({storage_path})", format_bytes(storage_bytes)),
-                    String::new(),
-                ];
-                for cp in checkpoints {
-                    let id = cp
-                        .get("checkpointId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
+                let items: Vec<ListSelectorItem> = checkpoints.iter().map(|cp| {
+                    let id = cp.get("checkpointId").and_then(|v| v.as_str()).unwrap_or("unknown");
                     let created = cp.get("createdAt").and_then(|v| v.as_str()).unwrap_or("-");
                     let description = cp.get("description").and_then(|v| v.as_str()).unwrap_or("");
                     let file_count = cp.get("fileCount").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let total_size = cp
-                        .get("totalSizeBytes")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    lines.push(format!(
-                        "- `{id}` • {created} • {file_count} file(s) • {} • {description}",
-                        format_bytes(total_size)
-                    ));
-                }
-                show_command_info_popup(app, raw, lines.join("\n"));
+                    let total_size = cp.get("totalSizeBytes").and_then(|v| v.as_u64()).unwrap_or(0);
+                    ListSelectorItem {
+                        label: format!("{id} • {created} • {file_count} file(s) • {} • {description}", format_bytes(total_size)),
+                        value: id.to_string(),
+                    }
+                }).collect();
+                app.open_list_selector(ListSelectorState {
+                    title: format!("Checkpoints ({})", items.len()),
+                    items,
+                    selected_idx: 0,
+                    command_template: "/rewind {}".to_string(),
+                });
             }
             Err(e) => app.push_message(ChatMessage::error(format!(
                 "Failed to list checkpoints: {e}"

@@ -405,6 +405,21 @@ pub enum OverlayKind {
     ApiKeyEditor,
     JoinWizard,
     GraphOverlay,
+    ListSelector,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListSelectorItem {
+    pub label: String, // display text
+    pub value: String, // ID/name passed to the action command
+}
+
+#[derive(Debug, Clone)]
+pub struct ListSelectorState {
+    pub title: String,
+    pub items: Vec<ListSelectorItem>,
+    pub selected_idx: usize,
+    pub command_template: String, // e.g. "/rewind {}" — {} replaced with selected value
 }
 
 #[derive(Debug, Clone)]
@@ -614,8 +629,10 @@ pub struct App {
     pub info_popup_title: String,
     pub info_popup_content: String,
     pub info_popup_scroll: u16,
+    pub info_popup_selected_idx: usize,
     pub info_popup_return_mode: Option<AppMode>,
     pub api_key_editor: Option<ApiKeyEditorState>,
+    pub list_selector: Option<ListSelectorState>,
     pub startup_first_launch: bool,
 
     // ── Session info ───
@@ -736,8 +753,10 @@ impl Default for App {
             info_popup_title: String::new(),
             info_popup_content: String::new(),
             info_popup_scroll: 0,
+            info_popup_selected_idx: 0,
             info_popup_return_mode: None,
             api_key_editor: None,
+            list_selector: None,
             startup_first_launch: false,
             streaming_enabled: true,
             version: "0.4.0".into(),
@@ -1649,6 +1668,7 @@ impl App {
         self.info_popup_title = title.into();
         self.info_popup_content = content.into();
         self.info_popup_scroll = 0;
+        self.info_popup_selected_idx = 0;
         self.info_popup_return_mode = return_mode;
         self.mode = AppMode::Overlay;
         self.overlay_kind = Some(OverlayKind::InfoPopup);
@@ -1658,6 +1678,7 @@ impl App {
         self.info_popup_title.clear();
         self.info_popup_content.clear();
         self.info_popup_scroll = 0;
+        self.info_popup_selected_idx = 0;
         self.overlay_kind = None;
         self.mode = self
             .info_popup_return_mode
@@ -1684,6 +1705,16 @@ impl App {
             self.overlay_kind = None;
         }
     }
+    pub fn open_list_selector(&mut self, state: ListSelectorState) {
+        self.list_selector = Some(state);
+        self.mode = AppMode::Overlay;
+        self.overlay_kind = Some(OverlayKind::ListSelector);
+    }
+    pub fn close_list_selector(&mut self) {
+        self.list_selector = None;
+        self.mode = AppMode::Normal;
+        self.overlay_kind = None;
+    }
 
     pub fn scroll_info_popup_up(&mut self, amount: u16) {
         self.info_popup_scroll = self.info_popup_scroll.saturating_sub(amount);
@@ -1691,6 +1722,16 @@ impl App {
 
     pub fn scroll_info_popup_down(&mut self, amount: u16) {
         self.info_popup_scroll = self.info_popup_scroll.saturating_add(amount);
+    }
+    pub fn move_info_popup_selection(&mut self, down: bool, item_count: usize) {
+        if item_count == 0 { return; }
+        if down {
+            if self.info_popup_selected_idx + 1 < item_count {
+                self.info_popup_selected_idx += 1;
+            }
+        } else {
+            self.info_popup_selected_idx = self.info_popup_selected_idx.saturating_sub(1);
+        }
     }
 
     /// Clear status if it's older than 3 seconds.

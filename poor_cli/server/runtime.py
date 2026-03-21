@@ -1302,7 +1302,7 @@ class PoorCLIServer:
         Returns:
             Dictionary of provider name -> {available, models, ...}
         """
-        from .providers.provider_factory import ProviderFactory
+        from ..providers.provider_factory import ProviderFactory
 
         config_manager, config = self._ensure_config_loaded()
         result: Dict[str, Any] = {}
@@ -1669,7 +1669,7 @@ class PoorCLIServer:
         return {"providers": status}
 
     def _get_repo_config(self):
-        from .repo_config import get_repo_config
+        from ..repo_config import get_repo_config
 
         auto_migrate = True
         if self.core.config is not None:
@@ -4279,7 +4279,7 @@ class PoorCLIServer:
         """Discover models available on the local Ollama server."""
         self._ensure_initialized()
         try:
-            from .providers.ollama_provider import OllamaProvider
+            from ..providers.ollama_provider import OllamaProvider
             base_url = str(params.get("baseUrl", "http://localhost:11434")).strip()
             models = await OllamaProvider.discover_models(base_url)
             return {"models": models, "count": len(models)}

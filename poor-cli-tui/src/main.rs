@@ -22,7 +22,8 @@ use serde_json::Value;
 
 use poor_cli_tui::app::{
     ApiKeyEditorField, ApiKeyEditorState, App, AppMode, ChatMessage,
-    ContextInspectorFile, ContextInspectorState, MessageRole, OverlayKind, ProviderEntry,
+    ContextInspectorFile, ContextInspectorState, ListSelectorItem, ListSelectorState,
+    MessageRole, OverlayKind, ProviderEntry,
     QueuedPrompt, QuickOpenItem, QuickOpenItemKind, ResponseMode, ThemeMode, TimelineEntry,
     TimelineEntryKind,
 };
@@ -470,36 +471,43 @@ fn run_app(
                         app.set_status(format!("Switching to {name}..."));
                         let tx2 = tx.clone();
                         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-                        let _ = rpc_cmd_tx.borrow().send(RpcCommand::SwitchProvider {
+                        if rpc_cmd_tx.borrow().send(RpcCommand::SwitchProvider {
                             provider: name.clone(),
                             model,
                             reply: reply_tx,
-                        });
-                        thread::spawn(move || match reply_rx.recv() {
-                            Ok(Ok((prov, mdl))) => {
-                                let _ = tx2.send(ServerMsg::ProviderSwitched {
-                                    provider: prov,
-                                    model: mdl,
-                                });
-                            }
-                            Ok(Err(error)) => {
-                                let mut message =
-                                    format!("Failed to switch provider `{name}`: {error}");
-                                if name.eq_ignore_ascii_case("ollama") {
-                                    message.push_str(
-                                        "\nTry `/ollama start`, then `/ollama pull <model>`, and switch again.",
-                                    );
+                        }).is_err() {
+                            app.push_message(ChatMessage::error(
+                                format!("Failed to switch provider `{name}`: RPC worker unavailable")
+                            ));
+                        } else {
+                            thread::spawn(move || match reply_rx.recv_timeout(Duration::from_secs(30)) {
+                                Ok(Ok((prov, mdl))) => {
+                                    let _ = tx2.send(ServerMsg::ProviderSwitched {
+                                        provider: prov,
+                                        model: mdl,
+                                    });
                                 }
-                                let _ = tx2.send(ServerMsg::Error { message });
-                            }
-                            Err(_) => {
-                                let _ = tx2.send(ServerMsg::Error {
-                                    message: format!(
-                                        "Failed to switch provider `{name}`: backend response channel closed"
-                                    ),
-                                });
-                            }
-                        });
+                                Ok(Err(error)) => {
+                                    let mut message =
+                                        format!("Failed to switch provider `{name}`: {error}");
+                                    if name.eq_ignore_ascii_case("ollama") {
+                                        message.push_str(
+                                            "\nTry `/ollama start`, then `/ollama pull <model>`, and switch again.",
+                                        );
+                                    }
+                                    let _ = tx2.send(ServerMsg::SystemMessage {
+                                        content: format!("⚠ {message}"),
+                                    });
+                                }
+                                Err(_) => {
+                                    let _ = tx2.send(ServerMsg::SystemMessage {
+                                        content: format!(
+                                            "⚠ Timed out switching provider `{name}`"
+                                        ),
+                                    });
+                                }
+                            });
+                        }
                     }
                 }
                 InputAction::PermissionAnswered(allowed) => {

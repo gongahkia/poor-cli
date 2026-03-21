@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -313,7 +313,7 @@ pub struct RpcClient {
     child: Mutex<Child>,
     next_id: AtomicU64,
     pending_requests: Arc<Mutex<HashMap<u64, SyncSender<Result<Value, String>>>>>,
-    notification_tx: Option<Sender<ServerNotification>>,
+    use_async: bool, // true when reader thread handles responses (spawn_with_notifications path)
     #[allow(dead_code)]
     reader_handle: Option<thread::JoinHandle<()>>,
     stdin_lock: Arc<Mutex<()>>, // serialize writes
@@ -785,7 +785,7 @@ impl RpcClient {
                 child: Mutex::new(child),
                 next_id: AtomicU64::new(1),
                 pending_requests,
-                notification_tx: Some(notification_tx),
+                use_async: true,
                 reader_handle: Some(reader_handle),
                 stdin_lock: Arc::new(Mutex::new(())),
             },
@@ -803,7 +803,7 @@ impl RpcClient {
             child: Mutex::new(child),
             next_id: AtomicU64::new(1),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
-            notification_tx: None,
+            use_async: false,
             reader_handle: None,
             stdin_lock: Arc::new(Mutex::new(())),
         })
@@ -826,6 +826,19 @@ impl RpcClient {
     /// Send a request and wait for response via the reader thread.
     /// Used when spawn_with_notifications was used.
     fn call_async(&self, method: &str, params: Value) -> Result<Value, String> {
+        let reply_rx = self.send_request_nonblocking(method, params)?;
+        reply_rx
+            .recv_timeout(std::time::Duration::from_secs(120))
+            .map_err(|e| format!("RPC timeout/error: {e}"))?
+    }
+
+    /// Send a JSON-RPC request without waiting for the response.
+    /// Returns a receiver that will deliver the result when the backend responds.
+    pub fn send_request_nonblocking(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<mpsc::Receiver<Result<Value, String>>, String> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let request = RpcRequest {
             jsonrpc: "2.0",
@@ -834,18 +847,13 @@ impl RpcClient {
             params,
         };
         let body = serde_json::to_string(&request).map_err(|e| e.to_string())?;
-
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         {
             let mut pending = self.pending_requests.lock().map_err(|e| e.to_string())?;
             pending.insert(id, reply_tx);
         }
-
         self.write_raw(&body)?;
-
-        reply_rx
-            .recv_timeout(std::time::Duration::from_secs(120))
-            .map_err(|e| format!("RPC timeout/error: {e}"))?
+        Ok(reply_rx)
     }
 
     /// Send a JSON-RPC request and read the response (blocking, inline reader).
@@ -917,7 +925,7 @@ impl RpcClient {
 
     /// Unified call: routes to async or blocking based on how client was spawned.
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
-        if self.notification_tx.is_some() {
+        if self.use_async {
             self.call_async(method, params)
         } else {
             self.call_blocking(method, params)
@@ -957,14 +965,14 @@ impl RpcClient {
             params.insert("permissionMode".into(), Value::String(pm.into()));
         }
         // Enable streaming notifications
-        if self.notification_tx.is_some() {
+        if self.use_async {
             params.insert("streaming".into(), Value::Bool(true));
         }
         params.insert(
             "clientCapabilities".into(),
             serde_json::json!({
                 "uiSurface": "tui",
-                "streaming": self.notification_tx.is_some(),
+                "streaming": self.use_async,
                 "reviewFlows": {
                     "permissionRequests": true,
                     "planReview": true,
@@ -2252,7 +2260,10 @@ pub enum RpcCommand {
 }
 
 /// Blocks the calling thread, dispatching RPC commands until Shutdown or channel drop.
+/// Chat and ChatStreaming are dispatched to background threads so the worker
+/// remains responsive to other commands (e.g. /switch, /config) during streaming.
 pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
+    let client = Arc::new(client);
     loop {
         match rx.recv() {
             Ok(RpcCommand::Chat {
@@ -2262,15 +2273,18 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                 context_budget_tokens,
                 reply,
             }) => {
-                let result = client
-                    .chat(
-                        &message,
-                        &context_files,
-                        &pinned_context_files,
-                        context_budget_tokens,
-                    )
-                    .map(|r| r.content.unwrap_or_default());
-                let _ = reply.send(result);
+                let c = Arc::clone(&client);
+                thread::spawn(move || {
+                    let result = c
+                        .chat(
+                            &message,
+                            &context_files,
+                            &pinned_context_files,
+                            context_budget_tokens,
+                        )
+                        .map(|r| r.content.unwrap_or_default());
+                    let _ = reply.send(result);
+                });
             }
             Ok(RpcCommand::ChatStreaming {
                 message,
@@ -2280,16 +2294,19 @@ pub fn run_rpc_worker(client: RpcClient, rx: Receiver<RpcCommand>) {
                 context_budget_tokens,
                 reply,
             }) => {
-                let result = client
-                    .chat_streaming(
-                        &message,
-                        &request_id,
-                        &context_files,
-                        &pinned_context_files,
-                        context_budget_tokens,
-                    )
-                    .map(|r| r.content.unwrap_or_default());
-                let _ = reply.send(result);
+                let c = Arc::clone(&client);
+                thread::spawn(move || {
+                    let result = c
+                        .chat_streaming(
+                            &message,
+                            &request_id,
+                            &context_files,
+                            &pinned_context_files,
+                            context_budget_tokens,
+                        )
+                        .map(|r| r.content.unwrap_or_default());
+                    let _ = reply.send(result);
+                });
             }
             Ok(RpcCommand::PreviewContext {
                 message,

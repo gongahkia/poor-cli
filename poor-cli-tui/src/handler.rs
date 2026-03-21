@@ -91,23 +91,26 @@ pub(super) fn handle_server_message(
                             app.set_status("Opened onboarding for first-launch setup");
                         } else if ready_provider_count > 1 {
                             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-                            let _ = rpc_cmd_tx
+                            if rpc_cmd_tx
                                 .borrow()
-                                .send(RpcCommand::ListProviders { reply: reply_tx });
-                            if let Ok(Ok(providers)) = reply_rx.recv_timeout(Duration::from_secs(15))
+                                .send(RpcCommand::ListProviders { reply: reply_tx })
+                                .is_ok()
                             {
-                                app.provider.list = providers
-                                    .into_iter()
-                                    .map(|provider| ProviderEntry {
-                                        name: provider.name,
-                                        available: provider.available,
-                                        ready: provider.ready,
-                                        status_label: provider.status_label,
-                                        models: provider.models,
-                                    })
-                                    .collect();
-                                app.open_provider_select();
-                                app.set_status("Select a startup provider");
+                                if let Ok(Ok(providers)) = reply_rx.recv_timeout(Duration::from_secs(15))
+                                {
+                                    app.provider.list = providers
+                                        .into_iter()
+                                        .map(|provider| ProviderEntry {
+                                            name: provider.name,
+                                            available: provider.available,
+                                            ready: provider.ready,
+                                            status_label: provider.status_label,
+                                            models: provider.models,
+                                        })
+                                        .collect();
+                                    app.open_provider_select();
+                                    app.set_status("Select a startup provider");
+                                }
                             }
                         }
                     }

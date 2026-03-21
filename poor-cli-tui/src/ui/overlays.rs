@@ -293,23 +293,16 @@ pub(crate) fn draw_provider_select(frame: &mut Frame, app: &App) {
     frame.render_widget(details, chunks[1]);
 }
 
-pub(crate) fn annotate_copyable_items(content: &str) -> String {
+pub(crate) fn annotate_copyable_items(content: &str, selected_idx: usize) -> String {
     let parts: Vec<&str> = content.split('`').collect();
-    if parts.len() < 3 {
-        return content.to_string();
-    } // no backtick pairs
+    if parts.len() < 3 { return content.to_string(); }
     let mut result = String::with_capacity(content.len() + 64);
     let mut copy_idx = 0usize;
     for (i, part) in parts.iter().enumerate() {
         if i % 2 == 1 && !part.trim().is_empty() {
+            let marker = if copy_idx == selected_idx { "> " } else { "  " };
+            result.push_str(&format!("{marker}`{part}`"));
             copy_idx += 1;
-            if copy_idx <= 9 {
-                result.push_str(&format!("[{copy_idx}]`{part}`"));
-            } else {
-                result.push('`');
-                result.push_str(part);
-                result.push('`');
-            }
         } else if i % 2 == 1 {
             result.push('`');
             result.push_str(part);
@@ -332,7 +325,7 @@ pub(crate) fn draw_info_popup(frame: &mut Frame, app: &App) {
         app.info_popup_title.as_str()
     };
 
-    let annotated = annotate_copyable_items(&app.info_popup_content);
+    let annotated = annotate_copyable_items(&app.info_popup_content, app.info_popup_selected_idx);
     let markdown_lines = markdown::render_markdown(&annotated, mode);
     let popup = Paragraph::new(Text::from(markdown_lines))
         .wrap(Wrap { trim: false })
@@ -860,4 +853,36 @@ fn interpolate_numbers(s: &str, progress: f64) -> String {
         }
     }
     result
+}
+
+// ── List selector overlay ───────────────────────────────────────────
+
+pub(crate) fn draw_list_selector(frame: &mut Frame, app: &App) {
+    let Some(state) = app.list_selector.as_ref() else { return; };
+    let mode = app.theme_mode;
+    let area = centered_rect(72, 68, frame.area());
+    render_popup_surface(frame, area, mode);
+    let items: Vec<ListItem> = state.items.iter().enumerate().map(|(i, item)| {
+        let selected = i == state.selected_idx;
+        let marker = if selected { "> " } else { "  " };
+        let style = if selected {
+            Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::base_fg(mode))
+        };
+        ListItem::new(Line::from(Span::styled(format!("{marker}{}", item.label), style)))
+    }).collect();
+    let hint = " ↑↓/jk navigate • Enter select • c copy • Esc close ";
+    let list = List::new(items).block(
+        Block::default()
+            .title(Span::styled(
+                format!(" {} ", state.title),
+                Style::default().fg(theme::accent(mode)).add_modifier(Modifier::BOLD),
+            ))
+            .title_bottom(Span::styled(hint, Style::default().fg(theme::muted_fg(mode))))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(theme::accent(mode)))
+            .padding(Padding::new(1, 1, 1, 1)),
+    );
+    frame.render_widget(list, area);
 }
