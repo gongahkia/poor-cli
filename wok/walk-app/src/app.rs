@@ -74,39 +74,65 @@ impl WalkApp {
         }
     }
 
-    /// Dispatch a resolved action.
-    pub fn handle_action(&mut self, action: &Action) {
+    /// Dispatch a resolved action. Returns optional bytes to send to PTY.
+    pub fn handle_action(&mut self, action: &Action) -> Option<Vec<u8>> {
         match action {
             Action::Copy => {
-                // Copy selected text or block output
+                if let Some((_, _)) = self.selection.selection_range() {
+                    // Selection copy handled by caller with grid access
+                }
+                None
             }
             Action::Paste => {
                 if let Ok(text) = self.clipboard.paste() {
-                    let _ = text; // Would send to terminal
+                    return Some(text.into_bytes());
                 }
-            }
-            Action::ZoomIn => self.zoom.zoom_in(),
-            Action::ZoomOut => self.zoom.zoom_out(),
-            Action::ZoomReset => self.zoom.zoom_reset(),
-            Action::BlockPrev => {
-                self.block_navigator
-                    .select_prev(self.block_manager.len());
-            }
-            Action::BlockNext => {
-                self.block_navigator
-                    .select_next(self.block_manager.len());
-            }
-            Action::BlockCollapse => {
-                self.block_navigator
-                    .toggle_collapse(&mut self.block_manager);
-            }
-            Action::SearchGlobal => {
-                self.global_search.activate();
+                None
             }
             Action::SelectAll => {
                 self.input_editor.handle_key(EditorKey::SelectAll);
+                None
             }
-            _ => {}
+            Action::ZoomIn => { self.zoom.zoom_in(); None }
+            Action::ZoomOut => { self.zoom.zoom_out(); None }
+            Action::ZoomReset => { self.zoom.zoom_reset(); None }
+            Action::BlockPrev => {
+                self.block_navigator.select_prev(self.block_manager.len());
+                None
+            }
+            Action::BlockNext => {
+                self.block_navigator.select_next(self.block_manager.len());
+                None
+            }
+            Action::BlockCollapse => {
+                self.block_navigator.toggle_collapse(&mut self.block_manager);
+                None
+            }
+            Action::BlockCopy | Action::BlockSearch | Action::SearchInBlock => None,
+            Action::SearchGlobal => {
+                self.global_search.activate();
+                None
+            }
+            Action::ToggleInputPosition => {
+                let new_pos = match self.input_editor.render_data().position {
+                    InputPosition::Top => InputPosition::Bottom,
+                    InputPosition::Bottom => InputPosition::Top,
+                };
+                self.input_editor.set_position(new_pos);
+                None
+            }
+            Action::ClearScreen => Some(b"\x1b[2J\x1b[H".to_vec()),
+            Action::SendEof => Some(b"\x04".to_vec()),
+            Action::ScrollUp | Action::ScrollDown
+            | Action::ScrollPageUp | Action::ScrollPageDown
+            | Action::ScrollToTop | Action::ScrollToBottom => None,
+            Action::NewTab | Action::CloseTab | Action::NextTab
+            | Action::PrevTab | Action::SwitchToTab(_) => None,
+            Action::SplitVertical | Action::SplitHorizontal | Action::CloseSplit => None,
+            Action::FocusLeft | Action::FocusRight
+            | Action::FocusUp | Action::FocusDown => None,
+            Action::ResizeSplitLeft | Action::ResizeSplitRight
+            | Action::ResizeSplitUp | Action::ResizeSplitDown => None,
         }
     }
 }

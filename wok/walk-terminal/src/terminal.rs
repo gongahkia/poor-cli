@@ -129,6 +129,7 @@ impl Terminal {
         while count < 64 {
             match self.pty.try_recv() {
                 Some(PtyEvent::Data(bytes)) => {
+                    self.scan_osc_markers(&bytes);
                     self.state.process_bytes(&bytes);
                     self.dirty = true;
                     count += 1;
@@ -155,8 +156,64 @@ impl Terminal {
                     self.title = title.clone();
                     self.events.push(SemanticEvent::TitleChanged(title));
                 }
-                _ => {}
+                TermEvent::PtyWrite(_) | TermEvent::Bell
+                | TermEvent::Exit | TermEvent::ChildExit(_)
+                | TermEvent::ClipboardStore(_) | TermEvent::CursorBlinkingChange => {}
             }
+        }
+    }
+
+    /// Scan raw bytes for OSC 133 semantic markers.
+    ///
+    /// Looks for `\x1b]133;X\x07` patterns where X is A, B, C, or D.
+    fn scan_osc_markers(&mut self, bytes: &[u8]) {
+        let cursor_row = self.state.cursor_position().1 as u16;
+        let mut i = 0;
+        while i + 6 < bytes.len() {
+            // Look for ESC ] 133 ;
+            if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b']') {
+                // Find the ST (BEL \x07 or ESC \\ )
+                if let Some(end) = bytes[i..].iter().position(|&b| b == 0x07) {
+                    let payload = &bytes[i + 2..i + end];
+                    if let Ok(s) = std::str::from_utf8(payload) {
+                        if let Some(rest) = s.strip_prefix("133;") {
+                            match rest.chars().next() {
+                                Some('A') => {
+                                    self.events.push(SemanticEvent::PromptStart { line: cursor_row });
+                                }
+                                Some('B') => {
+                                    self.events.push(SemanticEvent::CommandStart { line: cursor_row });
+                                }
+                                Some('C') => {
+                                    self.events.push(SemanticEvent::OutputStart { line: cursor_row });
+                                }
+                                Some('D') => {
+                                    let exit_code = rest.get(2..)
+                                        .and_then(|s| s.trim_start_matches(';').parse::<i32>().ok());
+                                    self.events.push(SemanticEvent::CommandEnd {
+                                        line: cursor_row,
+                                        exit_code,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        } else if let Some(rest) = s.strip_prefix("7;") {
+                            // OSC 7: CWD reporting
+                            if let Some(path) = rest.strip_prefix("file://") {
+                                // Strip hostname: file://hostname/path
+                                if let Some(slash) = path.find('/') {
+                                    self.events.push(SemanticEvent::CwdChanged(
+                                        PathBuf::from(&path[slash..]),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    i += end + 1;
+                    continue;
+                }
+            }
+            i += 1;
         }
     }
 
