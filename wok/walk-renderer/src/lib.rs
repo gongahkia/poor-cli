@@ -8,3 +8,9 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::similar_names)]
+
+pub mod atlas;
+pub mod damage;
+pub mod font;
+pub mod gpu;
+pub mod text_layout;
