@@ -1,0 +1,12 @@
+[package]
+name = "walk-blocks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Block detection, navigation, search, and metadata for Walk terminal"
+
+[dependencies]
+walk-terminal = { path = "../walk-terminal" }
+thiserror = "2"
+tracing = "0.1"

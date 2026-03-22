@@ -1,0 +1,14 @@
+[package]
+name = "walk-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Terminal emulation and PTY management for Walk terminal"
+
+[dependencies]
+alacritty_terminal = "0.24"
+portable-pty = "0.8"
+crossbeam-channel = "0.5"
+thiserror = "2"
+tracing = "0.1"

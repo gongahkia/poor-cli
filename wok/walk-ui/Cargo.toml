@@ -1,0 +1,18 @@
+[package]
+name = "walk-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Layout, tabs, splits, viewport, theme, clipboard, selection, and search for Walk terminal"
+
+[dependencies]
+walk-renderer = { path = "../walk-renderer" }
+walk-terminal = { path = "../walk-terminal" }
+walk-blocks = { path = "../walk-blocks" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+arboard = "3"
+notify = "6"
+thiserror = "2"
+tracing = "0.1"
