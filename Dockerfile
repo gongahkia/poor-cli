@@ -4,6 +4,7 @@ FROM rust:1-slim-bookworm AS rust-builder
 WORKDIR /src
 COPY poor-cli-tui ./poor-cli-tui
 COPY poor_cli/command_manifest.json ./poor_cli/command_manifest.json
+COPY poor_cli/provider_catalog.json ./poor_cli/provider_catalog.json
 RUN cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
 
 FROM python:3.11-slim AS builder

@@ -186,27 +186,26 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/timeline` - Open agent timeline and diffs
 - `/explain-diff` - Explain behavior and risk in current diff
 - `/fix-failures` - Analyze latest test/lint failure output
-- `/checkpoints` - List available checkpoints
-- `/checkpoint` - Create manual checkpoint
+- `/checkpoints` - Browse and manage checkpoints
+- `/checkpoint` - Create named checkpoint (optional label)
 - `/save` - Quick checkpoint alias
-- `/rewind` - Restore checkpoint by id or latest
-- `/restore` - Restore latest checkpoint
+- `/rewind` - Restore checkpoint (alias for /undo)
+- `/restore` - Restore latest checkpoint (alias for /undo)
 - `/diff` - Compare two files
-- `/undo` - Undo last file change (checkpoint)
+- `/undo` - Undo file changes (restore last or specific checkpoint)
 - `/plan-mode` - Toggle plan-first execution guidance
+- `/gc` - Clean up stale checkpoints
 
 **Providers & Config:**
-- `/provider` - Show active provider
-- `/switch` - Switch provider/model
-- `/providers` - List providers and models
+- `/provider` - Show provider info, models, or switch (F2)
+- `/switch` - Switch provider/model (alias for /provider switch)
+- `/providers` - List providers (alias for /provider switch)
 - `/config` - Show active configuration
-- `/model-info` - Show model capabilities
+- `/model-info` - Show model capabilities (alias for /provider)
 - `/profile` - Set execution profile (speed|safe|deep-review)
-- `/broke` - Set poor mode (terse responses)
-- `/my-treat` - Set rich mode (comprehensive responses)
 - `/settings` - List editable config settings
 - `/setup` - Open the guided setup summary and recommended first workflow
-- `/env` - Open the guided API key and .env editor
+- `/env` - API key editor (alias for /setup)
 - `/api-key` - Open the API key editor or use `/api-key status`
 - `/verbose` - Toggle verbose logging
 - `/toggle` - Toggle boolean config value
@@ -214,6 +213,12 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/theme` - Show or set UI theme (dark/light)
 - `/tools` - List backend tools
 - `/mcp` - Inspect or control MCP servers and tools
+
+**Economy & Output:**
+- `/broke` - Set poor mode (terse responses)
+- `/my-treat` - Set rich mode (comprehensive responses)
+- `/economy` - Show or switch economy preset (frugal|balanced|quality)
+- `/savings` - Show economy savings dashboard
 
 **Context & Reuse:**
 - `/files` - List pinned context files
@@ -238,7 +243,6 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 - `/task` - Manage durable background tasks, including retry and replay
 - `/automation` - Inspect automation run history and replay automations
 - `/inbox` - Show pending and actionable tasks
-- `/tasks` - Legacy alias for /task
 - `/skills` - Inspect or run repo and user skills
 - `/commands` - Inspect or run repo and user commands
 - `/watch` - Watch directory for changes
@@ -258,19 +262,9 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 
 **Collaboration:**
 - `/collab` - Start, join, summarize, and manage collaboration sessions
-- `/pair` - Legacy pair alias for collaboration sessions
 - `/pass` - Hand driver role to the next collaborator
 - `/suggest` - Send suggestion to the active driver
 - `/leave` - Disconnect from collaboration session
-- `/host-server` - Legacy advanced host controls for collaboration
-- `/join-server` - Legacy join alias for invite/manual room entry
-- `/kick` - Remove a room member from collaboration
-- `/who` - Show room members and roles
-- `/members` - Alias for /who
-
-**Safety & Undo:**
-- `/gc` - Run checkpoint garbage collection
-
 ## Available Tools
 
 `poor-cli` can currently use these tools.

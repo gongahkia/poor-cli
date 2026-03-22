@@ -93,7 +93,7 @@ jobs:
           import tempfile
           import venv
 
-          venv_dir = pathlib.Path("wheel-smoke-venv")
+          venv_dir = pathlib.Path("wheel-smoke-venv").resolve()
           venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
           scripts_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
           pip = scripts_dir / ("pip.exe" if os.name == "nt" else "pip")
@@ -203,14 +203,18 @@ jobs:
 
       - name: Byte-compile Emacs client
         run: |
-          emacs --batch -L emacs-poor-cli -L emacs-poor-cli/test \
+          emacs --batch \
+            --eval "(package-initialize)" \
+            -L emacs-poor-cli -L emacs-poor-cli/test \
             -f batch-byte-compile \
             emacs-poor-cli/*.el \
             emacs-poor-cli/test/*.el
 
       - name: Run Emacs client tests
         run: |
-          emacs --batch -L emacs-poor-cli -L emacs-poor-cli/test \
+          emacs --batch \
+            --eval "(package-initialize)" \
+            -L emacs-poor-cli -L emacs-poor-cli/test \
             -l emacs-poor-cli/test/poor-cli-tests.el \
             -f ert-run-tests-batch-and-exit
 
