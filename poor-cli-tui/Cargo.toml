@@ -1,6 +1,6 @@
 [package]
 name = "poor-cli-tui"
-version = "0.4.0"
+version = "5.0.0"
 edition = "2021"
 description = "Rust TUI for poor-cli - Claude Code / Codex inspired terminal interface"
 license = "MIT"
