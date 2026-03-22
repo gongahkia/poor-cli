@@ -134,10 +134,7 @@ Use the direct tools instead when you need:
 
 ```bash
 npm install
-npm run build
-npm test
-npm run lint
-npm run test:smoke:packaging
+npm run verify
 ```
 
 ## Related APIs Not Covered Here

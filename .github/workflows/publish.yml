@@ -17,13 +17,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
-      - run: npm run lint
-      - run: npm run build
-      - run: npm test
-        env:
-          MOCK_API_BASE_URL: "http://localhost:0"
-          SG_APIS_LOG_LEVEL: "error"
-      - run: npm run test:smoke:packaging
+      - run: npm run verify
 
       - name: Publish shared package
         run: npm publish --access public

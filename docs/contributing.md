@@ -47,6 +47,7 @@ Pattern: `sg_<api>_<operation>` (e.g., `sg_singstat_search`)
 Always include a `// WHY:` comment for TTL values.
 
 ## Testing
+- Run `npm run verify` before shipping changes. It is the canonical local and CI verification entrypoint.
 - Mock `fetch` with `vi.stubGlobal`
 - Use `:memory:` for SQLite in tests
 - No real HTTP requests in tests
