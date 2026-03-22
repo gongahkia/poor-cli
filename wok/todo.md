@@ -53,8 +53,8 @@
 5. Integrate `FrameClock` into the event loop from Task 1: only call `on_redraw()` when `should_render()` returns true, and request a new frame via `window.request_redraw()`.
 
 **DONE WHEN**
-- [ ] With an empty `on_redraw()`, CPU usage stays below 5% at idle (no spinning). — WHY 5% threshold: above this users notice battery drain / fan noise; idle terminals should be near-zero CPU.
-- [ ] `FrameClock::fps()` reports a value within +/-2 of the target FPS when the window is focused.
+- [x] With an empty `on_redraw()`, CPU usage stays below 5% at idle (no spinning). — WHY 5% threshold: above this users notice battery drain / fan noise; idle terminals should be near-zero CPU.
+- [x] `FrameClock::fps()` reports a value within +/-2 of the target FPS when the window is focused.
 
 ---
 
@@ -71,8 +71,8 @@
 5. Wire `translate_key_event` into the event loop from Task 1 so `AppHandler::on_key_event` receives `InputEvent` instead of raw winit events.
 
 **DONE WHEN**
-- [ ] Pressing Cmd+C on macOS, Ctrl+C on Linux, and Ctrl+C on Windows all produce `InputEvent { action: KeyAction::Copy, modifiers: Modifiers { ctrl: true, .. }, .. }` (with `meta: true` on macOS).
-- [ ] Arrow keys, function keys F1-F12, and modifier-only presses are correctly translated or filtered.
+- [x] Pressing Cmd+C on macOS, Ctrl+C on Linux, and Ctrl+C on Windows all produce `InputEvent { action: KeyAction::Copy, modifiers: Modifiers { ctrl: true, .. }, .. }` (with `meta: true` on macOS).
+- [x] Arrow keys, function keys F1-F12, and modifier-only presses are correctly translated or filtered.
 
 ---
 
@@ -89,8 +89,8 @@
 5. All downstream rendering and layout code must use `ScaleContext` for coordinate conversion — enforce this by making `ScaleContext` a required parameter in the renderer's `begin_frame()`.
 
 **DONE WHEN**
-- [ ] Moving the window between a 1x and 2x display triggers `on_scale_factor_changed` with the correct new scale factor.
-- [ ] Text rendered at 14pt logical size appears identical in physical sharpness on both 1x and 2x displays.
+- [x] Moving the window between a 1x and 2x display triggers `on_scale_factor_changed` with the correct new scale factor.
+- [x] Text rendered at 14pt logical size appears identical in physical sharpness on both 1x and 2x displays.
 
 ---
 
@@ -537,10 +537,10 @@
 7. Implement multi-cursor support: `add_cursor(&mut self, position: usize)`, `remove_cursor(&mut self, idx: usize)`. When inserting/deleting, apply the operation at every cursor, adjusting positions after each application.
 
 **DONE WHEN**
-- [ ] `insert_at(0, "hello")` then `text()` returns `"hello"`, cursor is at position 5.
-- [ ] With two cursors at positions 0 and 5 in `"helloworld"`, inserting `"_"` at both produces `"_hello_world"`.
-- [ ] `delete_range(2, 4)` on `"abcdef"` produces `"abef"`.
-- [ ] `line_count()` returns 3 for `"a\nb\nc"`.
+- [x] `insert_at(0, "hello")` then `text()` returns `"hello"`, cursor is at position 5.
+- [x] With two cursors at positions 0 and 5 in `"helloworld"`, inserting `"_"` at both produces `"_hello_world"`.
+- [x] `delete_range(2, 4)` on `"abcdef"` produces `"abef"`.
+- [x] `line_count()` returns 3 for `"a\nb\nc"`.
 
 ---
 
@@ -694,9 +694,9 @@
 5. Implement `fn build_default_layout(input_position: InputPosition) -> LayoutNode`: constructs the column layout. If `InputPosition::Bottom`: TabBar (fixed 32px — WHY 32px: fits one row of tab text at 14px with 9px vertical padding, matching browser tab bar conventions) -> Viewport (flex 1.0) -> InputEditor (min 40px — WHY 40px: fits one line of input text at 14px with padding, expanding for multi-line; smaller causes text clipping, flex 0) -> StatusBar (fixed 24px — WHY 24px: fits status text at 12px with 6px vertical padding, compact but readable). If `Top`: TabBar -> InputEditor -> Viewport -> StatusBar.
 
 **DONE WHEN**
-- [ ] `compute_layout` with a 1200x800 available rect and default bottom layout produces: TabBar at (0,0,1200,32), Viewport at (0,32,1200,704), InputEditor at (0,736,1200,40), StatusBar at (0,776,1200,24).
-- [ ] Resizing to 600x400 still allocates correctly with the viewport shrinking.
-- [ ] `build_default_layout(Top)` places InputEditor before Viewport.
+- [x] `compute_layout` with a 1200x800 available rect and default bottom layout produces: TabBar at (0,0,1200,32), Viewport at (0,32,1200,704), InputEditor at (0,736,1200,40), StatusBar at (0,776,1200,24).
+- [x] Resizing to 600x400 still allocates correctly with the viewport shrinking.
+- [x] `build_default_layout(Top)` places InputEditor before Viewport.
 
 ---
 
@@ -872,8 +872,8 @@
 3. Implement the standard ANSI 16-color palette as constants.
 
 **DONE WHEN**
-- [ ] `Theme::default()` returns a valid theme with all 16 ANSI colors set, `opacity == 1.0`, `font_size == 14.0`. — WHY 14.0 default font size: readable on both 1x and 2x displays; 12px is too small for Retina, 16px wastes space; 14px is the most common default across VS Code, Warp, iTerm2.
-- [ ] All `Color` fields have alpha values in `[0.0, 1.0]`.
+- [x] `Theme::default()` returns a valid theme with all 16 ANSI colors set, `opacity == 1.0`, `font_size == 14.0`. — WHY 14.0 default font size: readable on both 1x and 2x displays; 12px is too small for Retina, 16px wastes space; 14px is the most common default across VS Code, Warp, iTerm2.
+- [x] All `Color` fields have alpha values in `[0.0, 1.0]`.
 
 ---
 
