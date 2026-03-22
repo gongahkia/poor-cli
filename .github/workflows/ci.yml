@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build
         run: npm run build
 
@@ -33,3 +36,6 @@ jobs:
         env:
           MOCK_API_BASE_URL: "http://localhost:0"
           SG_APIS_LOG_LEVEL: "error"
+
+      - name: Packaging smoke test
+        run: npm run test:smoke:packaging
