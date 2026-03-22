@@ -1,5 +1,6 @@
 [![](https://img.shields.io/badge/poor_cli_0.4.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/v0.4.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
+![](https://github.com/gongahkia/poor-cli/actions/workflows/release.yml/badge.svg)
 
 # `poor-cli`
 
