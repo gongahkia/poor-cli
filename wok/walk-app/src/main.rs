@@ -5,13 +5,15 @@ use std::error::Error;
 use std::sync::Arc;
 
 use clap::Parser;
+use mlua::Value;
 use tracing::{info, warn};
 use walk_app::app::WalkApp;
 use walk_app::config::WalkConfig;
 use walk_app::event_loop::run_event_loop;
 use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
-use walk_app::keybindings::Action;
+use walk_app::keybindings::{Action, Context, KeyCombo};
+use walk_app::scripting::LuaRuntime;
 use walk_app::session::{
     default_session_path, load_session, save_session, split_node_from_state, split_node_to_state,
     PaneState, WorkspaceSessionState, WorkspaceTabState,
@@ -115,6 +117,7 @@ struct WalkHandler {
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
+    lua: Option<LuaRuntime>,
     font: FontSystem,
     render: Option<RenderState>,
     window: Option<Arc<Window>>,
@@ -126,12 +129,19 @@ impl WalkHandler {
     fn new(config: WalkConfig) -> Self {
         let font = FontSystem::new(&config.font_family, config.font_size);
         let (workspace, _) = WorkspaceState::new("Walk");
+        let mut lua = LuaRuntime::new().ok();
+        if let Some(runtime) = lua.as_mut() {
+            if let Err(error) = runtime.init(&WalkConfig::config_dir()) {
+                warn!("failed to initialize Lua runtime: {error}");
+            }
+        }
 
         Self {
             config,
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
+            lua,
             font,
             render: None,
             window: None,
@@ -163,6 +173,7 @@ impl WalkHandler {
             pane_config.shell = shell;
         }
         let mut app = WalkApp::new(pane_config.clone());
+        self.apply_lua_keybindings(&mut app);
         if let Some(pane_state) = &restore {
             app.input_editor.buffer.set_text(&pane_state.input_draft);
             if !pane_state.search_query.is_empty() {
@@ -535,6 +546,52 @@ impl WalkHandler {
         }
     }
 
+    fn apply_lua_keybindings(&self, app: &mut WalkApp) {
+        let Some(lua) = &self.lua else {
+            return;
+        };
+        let bindings = lua.state.keybindings.lock().unwrap().clone();
+        for binding in bindings {
+            let Some(combo) = parse_lua_key_combo(&binding.key) else {
+                continue;
+            };
+            let Some(action) = parse_lua_action(&binding.action) else {
+                continue;
+            };
+            let Some(context) = parse_lua_context(&binding.mode) else {
+                continue;
+            };
+            app.keybindings
+                .context_bindings
+                .entry(context)
+                .or_default()
+                .insert(combo, action);
+        }
+    }
+
+    fn run_lua_hook(&mut self, hook: &str) {
+        let Some(lua) = &self.lua else {
+            return;
+        };
+        if let Err(error) = lua.trigger_hook(hook, Value::Nil) {
+            warn!("lua hook '{hook}' failed: {error}");
+        }
+        self.drain_lua_side_effects();
+    }
+
+    fn drain_lua_side_effects(&mut self) {
+        let Some(lua) = &self.lua else {
+            return;
+        };
+        for notification in lua.take_notifications() {
+            info!("lua: {notification}");
+        }
+        for command in lua.take_exec_requests() {
+            let payload = format!("{command}\r");
+            self.send_to_pty(payload.as_bytes());
+        }
+    }
+
     fn send_to_pty(&mut self, data: &[u8]) {
         if let Some(active_pane) = self.active_pane() {
             if let Err(error) = active_pane.terminal.send_input(data) {
@@ -557,6 +614,11 @@ impl WalkHandler {
             }
             if let Some(pane) = self.panes.get_mut(&pane_id) {
                 pane.app.handle_semantic_event(&event);
+            }
+            match event {
+                SemanticEvent::CommandEnd { .. } => self.run_lua_hook("block_finished"),
+                SemanticEvent::CwdChanged(_) => self.run_lua_hook("cwd_changed"),
+                _ => {}
             }
         }
     }
@@ -588,6 +650,7 @@ impl WalkHandler {
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                self.run_lua_hook("tab_opened");
             }
             Action::CloseTab => {
                 if let Some(removed) = self.workspace.close_active_tab() {
@@ -624,6 +687,7 @@ impl WalkHandler {
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                self.run_lua_hook("pane_opened");
             }
             Action::SplitHorizontal => {
                 let _ = self
@@ -632,6 +696,7 @@ impl WalkHandler {
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                self.run_lua_hook("pane_opened");
             }
             Action::CloseSplit => {
                 if let Some(removed_pane) = self.workspace.close_active_pane() {
@@ -780,6 +845,7 @@ impl WalkHandler {
                 self.send_to_pty(command.as_bytes());
             }
             self.send_to_pty(b"\r");
+            self.run_lua_hook("command_submitted");
         }
         if send_eof {
             self.send_to_pty(b"\x04");
@@ -956,6 +1022,7 @@ impl AppHandler for WalkHandler {
             }
         }
         self.needs_redraw = true;
+        self.run_lua_hook("app_start");
         info!("GPU initialized");
     }
 
@@ -1113,6 +1180,7 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_close_requested(&mut self) {
+        self.run_lua_hook("app_exit");
         let session = self.snapshot_session();
         let _ = save_session(&session, &default_session_path());
         info!("walk closing");
@@ -1837,6 +1905,74 @@ fn parse_shell_type(value: &str) -> ShellType {
 
 fn shell_quote_path(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\"'\"'"))
+}
+
+fn parse_lua_context(mode: &str) -> Option<Context> {
+    match mode {
+        "normal" | "terminal" => Some(Context::Terminal),
+        "input" => Some(Context::InputEditor),
+        "block" => Some(Context::BlockSelected),
+        "search" => Some(Context::SearchActive),
+        _ => None,
+    }
+}
+
+fn parse_lua_action(action: &str) -> Option<Action> {
+    match action {
+        "new_tab" => Some(Action::NewTab),
+        "close_tab" => Some(Action::CloseTab),
+        "next_tab" => Some(Action::NextTab),
+        "prev_tab" => Some(Action::PrevTab),
+        "split_vertical" => Some(Action::SplitVertical),
+        "split_horizontal" => Some(Action::SplitHorizontal),
+        "close_split" => Some(Action::CloseSplit),
+        "focus_left" => Some(Action::FocusLeft),
+        "focus_right" => Some(Action::FocusRight),
+        "focus_up" => Some(Action::FocusUp),
+        "focus_down" => Some(Action::FocusDown),
+        "search_global" => Some(Action::SearchGlobal),
+        "block_prev" => Some(Action::BlockPrev),
+        "block_next" => Some(Action::BlockNext),
+        "block_copy" => Some(Action::BlockCopy),
+        "block_collapse" => Some(Action::BlockCollapse),
+        "zoom_in" => Some(Action::ZoomIn),
+        "zoom_out" => Some(Action::ZoomOut),
+        "zoom_reset" => Some(Action::ZoomReset),
+        "clear_screen" => Some(Action::ClearScreen),
+        "send_eof" => Some(Action::SendEof),
+        _ => None,
+    }
+}
+
+fn parse_lua_key_combo(key: &str) -> Option<KeyCombo> {
+    let mut modifiers = walk_app::input::Modifiers::default();
+    let mut key_action = None;
+
+    for part in key.split('+') {
+        match part.trim().to_ascii_lowercase().as_str() {
+            "ctrl" => modifiers.ctrl = true,
+            "alt" => modifiers.alt = true,
+            "shift" => modifiers.shift = true,
+            "cmd" | "meta" => modifiers.meta = true,
+            "left" => key_action = Some(KeyAction::ArrowLeft),
+            "right" => key_action = Some(KeyAction::ArrowRight),
+            "up" => key_action = Some(KeyAction::ArrowUp),
+            "down" => key_action = Some(KeyAction::ArrowDown),
+            "enter" => key_action = Some(KeyAction::Enter),
+            "tab" => key_action = Some(KeyAction::Tab),
+            "escape" | "esc" => key_action = Some(KeyAction::Escape),
+            "backspace" => key_action = Some(KeyAction::Backspace),
+            "delete" => key_action = Some(KeyAction::Delete),
+            "home" => key_action = Some(KeyAction::Home),
+            "end" => key_action = Some(KeyAction::End),
+            value if value.len() == 1 => {
+                key_action = value.chars().next().map(KeyAction::Char);
+            }
+            _ => {}
+        }
+    }
+
+    key_action.map(|key| KeyCombo { key, modifiers })
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

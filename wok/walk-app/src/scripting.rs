@@ -1,10 +1,12 @@
 //! Lua scripting runtime for user configuration and extensions.
 
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use mlua::{Function, Lua, Result as LuaResult, Table, Value};
+use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Table, Value};
 use tracing::{info, warn};
 
 /// Collected keybinding overrides from Lua.
@@ -18,13 +20,6 @@ pub struct LuaKeybinding {
     pub action: String,
 }
 
-/// Collected event callbacks from Lua.
-#[derive(Debug, Clone)]
-pub struct LuaEventHook {
-    /// Event name.
-    pub event: String,
-}
-
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -34,6 +29,10 @@ pub struct LuaState {
     pub theme_overrides: Arc<Mutex<HashMap<String, String>>>,
     /// Status messages from Lua.
     pub notifications: Arc<Mutex<Vec<String>>>,
+    /// Pending shell commands requested by Lua.
+    pub exec_requests: Arc<Mutex<Vec<String>>>,
+    /// Named commands registered from Lua as action aliases.
+    pub commands: Arc<Mutex<HashMap<String, String>>>,
 }
 
 /// Lua scripting runtime for Walk.
@@ -42,6 +41,7 @@ pub struct LuaRuntime {
     init_path: Option<PathBuf>,
     /// Shared state accessible from Lua callbacks.
     pub state: LuaState,
+    hooks: Rc<RefCell<HashMap<String, Vec<RegistryKey>>>>,
 }
 
 impl LuaRuntime {
@@ -57,6 +57,7 @@ impl LuaRuntime {
             lua,
             init_path: None,
             state,
+            hooks: Rc::new(RefCell::new(HashMap::new())),
         })
     }
 
@@ -95,9 +96,9 @@ impl LuaRuntime {
         config.set("scrollback_lines", 10_000)?;
         walk.set("config", config)?;
 
-        // walk.keymap(mode, key, action) — register keybinding
+        // walk.bind_key(mode, key, action) — register keybinding
         let kb_state = self.state.keybindings.clone();
-        let keymap_fn =
+        let bind_key_fn =
             self.lua
                 .create_function(move |_, (mode, key, action): (String, String, Value)| {
                     let action_str = match action {
@@ -114,7 +115,8 @@ impl LuaRuntime {
                     });
                     Ok(())
                 })?;
-        walk.set("keymap", keymap_fn)?;
+        walk.set("bind_key", bind_key_fn.clone())?;
+        walk.set("keymap", bind_key_fn)?;
 
         // walk.theme table with set() and load()
         let theme_table = self.lua.create_table()?;
@@ -138,16 +140,31 @@ impl LuaRuntime {
         walk.set("theme", theme_table)?;
 
         // walk.on(event, callback) — register event hook
-        let on_fn = self
-            .lua
-            .create_function(|_, (event, _callback): (String, Function)| {
-                info!("registered event hook: {event}");
-                Ok(())
-            })?;
+        let hook_state = self.hooks.clone();
+        let on_fn = self.lua.create_function(move |lua, (event, callback): (String, Function)| {
+            let key = lua.create_registry_value(callback)?;
+            hook_state.borrow_mut().entry(event.clone()).or_default().push(key);
+            info!("registered event hook: {event}");
+            Ok(())
+        })?;
         walk.set("on", on_fn)?;
 
-        // walk.exec(command) — execute shell command
-        let exec_fn = self.lua.create_function(|_, _command: String| Ok(()))?;
+        // walk.register_command(name, action) — register named action aliases
+        let command_state = self.state.commands.clone();
+        let register_command_fn = self.lua.create_function(
+            move |_, (name, action): (String, String)| {
+                command_state.lock().unwrap().insert(name, action);
+                Ok(())
+            },
+        )?;
+        walk.set("register_command", register_command_fn)?;
+
+        // walk.exec(command) — queue a shell command for the active pane
+        let exec_state = self.state.exec_requests.clone();
+        let exec_fn = self.lua.create_function(move |_, command: String| {
+            exec_state.lock().unwrap().push(command);
+            Ok(())
+        })?;
         walk.set("exec", exec_fn)?;
 
         // walk.notify(message) — show status message
@@ -189,5 +206,30 @@ impl LuaRuntime {
     /// Returns a Lua error on syntax or runtime errors.
     pub fn exec(&self, code: &str) -> LuaResult<()> {
         self.lua.load(code).exec()
+    }
+
+    /// Trigger a lifecycle hook with optional JSON-like payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns a Lua error if any registered callback fails.
+    pub fn trigger_hook(&self, event: &str, payload: Value) -> LuaResult<()> {
+        if let Some(callbacks) = self.hooks.borrow().get(event) {
+            for callback_key in callbacks {
+                let callback: Function = self.lua.registry_value(callback_key)?;
+                callback.call::<()>(payload.clone())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Drain pending shell commands queued from Lua.
+    pub fn take_exec_requests(&self) -> Vec<String> {
+        std::mem::take(&mut *self.state.exec_requests.lock().unwrap())
+    }
+
+    /// Drain pending notifications queued from Lua.
+    pub fn take_notifications(&self) -> Vec<String> {
+        std::mem::take(&mut *self.state.notifications.lock().unwrap())
     }
 }
