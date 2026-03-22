@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use cosmic_text::{
-    Attrs, Buffer, Family, FontSystem as CosmicFontSystem, Metrics, Shaping, SwashCache,
+    Attrs, Buffer, FamilyOwned, FontSystem as CosmicFontSystem, Metrics, Shaping, SwashCache,
 };
 
 /// Font metrics for cell grid layout.
@@ -41,22 +41,26 @@ pub struct FontSystem {
     pub metrics: CellMetrics,
     /// Font size in pixels.
     pub font_size: f32,
+    /// Requested font family.
+    pub font_family: FamilyOwned,
     /// Cached rasterized glyphs.
     glyph_cache: HashMap<char, Option<RasterizedGlyph>>,
 }
 
 impl FontSystem {
     /// Create a new font system with the given font family and size.
-    pub fn new(_font_family: &str, font_size: f32) -> Self {
-        let inner = CosmicFontSystem::new();
+    pub fn new(font_family: &str, font_size: f32) -> Self {
+        let mut inner = CosmicFontSystem::new();
         let swash_cache = SwashCache::new();
-        let metrics = compute_metrics(&inner, font_size);
+        let family = parse_family(font_family);
+        let metrics = compute_metrics(&mut inner, font_size, &family);
 
         Self {
             inner,
             swash_cache,
             metrics,
             font_size,
+            font_family: family,
             glyph_cache: HashMap::new(),
         }
     }
@@ -64,7 +68,7 @@ impl FontSystem {
     /// Update the font size and recompute metrics.
     pub fn set_font_size(&mut self, size: f32) {
         self.font_size = size;
-        self.metrics = compute_metrics(&self.inner, size);
+        self.metrics = compute_metrics(&mut self.inner, size, &self.font_family);
         self.glyph_cache.clear();
     }
 
@@ -88,7 +92,7 @@ impl FontSystem {
 
     fn rasterize_inner(&mut self, ch: char) -> Option<RasterizedGlyph> {
         let metrics = Metrics::new(self.font_size, self.font_size * 1.2);
-        let attrs = Attrs::new().family(Family::Monospace);
+        let attrs = Attrs::new().family(self.font_family.as_family());
         let mut buffer = Buffer::new(&mut self.inner, metrics);
         buffer.set_text(&mut self.inner, &ch.to_string(), attrs, Shaping::Advanced);
         buffer.shape_until_scroll(&mut self.inner, false);
@@ -147,20 +151,49 @@ impl FontSystem {
     }
 }
 
-fn compute_metrics(_font_system: &CosmicFontSystem, font_size: f32) -> CellMetrics {
-    // Use cosmic-text to measure an 'M' character for accurate metrics
-    let line_height = font_size * 1.2;
+fn compute_metrics(
+    font_system: &mut CosmicFontSystem,
+    font_size: f32,
+    font_family: &FamilyOwned,
+) -> CellMetrics {
+    let metrics = Metrics::new(font_size, font_size * 1.2);
+    let attrs = Attrs::new().family(font_family.as_family());
+    let mut buffer = Buffer::new(font_system, metrics);
+    buffer.set_text(font_system, "M", attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(font_system, false);
 
-    // Approximate cell width: monospace fonts have roughly 0.6x ratio
-    // This will be refined when we shape an actual character
-    let cell_width = (font_size * 0.6).ceil();
-    let cell_height = line_height.ceil();
-    let baseline = (font_size * 0.85).ceil();
+    let (cell_width, cell_height, baseline) = buffer.layout_runs().next().map_or_else(
+        || {
+            (
+                (font_size * 0.6).ceil(),
+                metrics.line_height.ceil(),
+                (font_size * 0.85).ceil(),
+            )
+        },
+        |run| {
+            (
+                run.line_w.max(font_size * 0.5).ceil(),
+                run.line_height.max(metrics.line_height).ceil(),
+                run.line_y.max(font_size * 0.75).ceil(),
+            )
+        },
+    );
 
     CellMetrics {
         cell_width,
         cell_height,
         baseline,
+    }
+}
+
+fn parse_family(font_family: &str) -> FamilyOwned {
+    match font_family.trim().to_ascii_lowercase().as_str() {
+        "serif" => FamilyOwned::Serif,
+        "sans" | "sans-serif" | "sansserif" => FamilyOwned::SansSerif,
+        "cursive" => FamilyOwned::Cursive,
+        "fantasy" => FamilyOwned::Fantasy,
+        "mono" | "monospace" => FamilyOwned::Monospace,
+        _ => FamilyOwned::Name(font_family.to_string()),
     }
 }
 
@@ -181,6 +214,15 @@ mod tests {
         let font = FontSystem::new("monospace", 14.0);
         assert!(font.metrics.cell_width > 0.0);
         assert!(font.metrics.cell_height > font.metrics.cell_width);
+    }
+
+    #[test]
+    fn test_custom_font_family_is_stored() {
+        let font = FontSystem::new("JetBrains Mono", 14.0);
+        assert_eq!(
+            font.font_family,
+            FamilyOwned::Name("JetBrains Mono".to_string())
+        );
     }
 
     #[test]

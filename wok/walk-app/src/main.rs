@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Instant;
 
 use clap::Parser;
 use serde::Serialize;
@@ -27,12 +28,14 @@ use walk_input::editor::{EditorAction, EditorKey};
 use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::font::FontSystem;
 use walk_renderer::gpu::GpuContext;
+use walk_renderer::pipeline::CursorShape;
 use walk_renderer::pipeline::QuadBatch;
 use walk_renderer::render_pipeline::TerminalRenderPipeline;
 use walk_terminal::shell::ShellType;
 use walk_terminal::state::CellColor;
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
+use walk_ui::background::{BackgroundImage, BackgroundRenderer};
 use walk_ui::layout::Rect;
 use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
@@ -121,11 +124,15 @@ struct WalkHandler {
     pending_pane_restore: HashMap<PaneId, PaneState>,
     lua: Option<LuaRuntime>,
     status_message: Option<String>,
+    background: BackgroundRenderer,
     font: FontSystem,
     render: Option<RenderState>,
     window: Option<Arc<Window>>,
     chrome_rects: ChromeRects,
     needs_redraw: bool,
+    started_at: Instant,
+    last_cursor_visible: bool,
+    pending_close_confirmation: Option<Instant>,
 }
 
 impl WalkHandler {
@@ -138,6 +145,15 @@ impl WalkHandler {
                 warn!("failed to initialize Lua runtime: {error}");
             }
         }
+        let background = {
+            let mut background = BackgroundRenderer::new();
+            if let Some(path) = resolve_background_image_path(&config) {
+                if let Err(error) = background.load_image(&path) {
+                    warn!("failed to load background image: {error}");
+                }
+            }
+            background
+        };
 
         Self {
             config,
@@ -146,11 +162,15 @@ impl WalkHandler {
             pending_pane_restore: HashMap::new(),
             lua,
             status_message: None,
+            background,
             font,
             render: None,
             window: None,
             chrome_rects: ChromeRects::default(),
             needs_redraw: true,
+            started_at: Instant::now(),
+            last_cursor_visible: true,
+            pending_close_confirmation: None,
         }
     }
 
@@ -436,17 +456,29 @@ impl WalkHandler {
             }
         });
         let workspace_search = self.active_search_state();
+        let cursor_shape = self.cursor_shape();
+        let cursor_visible = self.cursor_visible();
+        let window_opacity = self.config.window_opacity.clamp(0.0, 1.0);
+        let background_image = self.background.image.clone();
+        let background_loaded = background_image.is_some();
+        let full_height =
+            self.chrome_rects.content.y + self.chrome_rects.content.h + self.chrome_rects.status.h;
+        let full_rect = Rect::new(0.0, 0.0, self.chrome_rects.content.w, full_height);
         let Some(render) = self.render.as_mut() else {
             return;
         };
 
         render.batch.clear();
+        if let Some(image) = background_image.as_ref() {
+            push_background_image(&mut render.batch, image, full_rect, window_opacity);
+        }
         if self.config.tab_bar_visible {
             render_tab_bar(
                 render,
                 &mut self.font,
                 self.chrome_rects.tab_bar,
                 &tab_labels,
+                window_opacity,
             );
         }
         if self.config.status_bar_visible {
@@ -455,6 +487,7 @@ impl WalkHandler {
                 &mut self.font,
                 self.chrome_rects.status,
                 status_text.as_deref(),
+                window_opacity,
             );
         }
 
@@ -480,18 +513,26 @@ impl WalkHandler {
                 .map(|block| block.id);
             let cw = self.font.metrics.cell_width;
             let ch = self.font.metrics.cell_height;
+            let terminal_surface_alpha = if background_loaded {
+                (window_opacity * theme.opacity * 0.72).clamp(0.18, 1.0)
+            } else {
+                (window_opacity * theme.opacity).clamp(0.0, 1.0)
+            };
 
             render.batch.push_bg_quad(
                 viewport.x,
                 viewport.y,
                 viewport.w,
                 viewport.h,
-                [
-                    theme.background.r,
-                    theme.background.g,
-                    theme.background.b,
-                    theme.background.a,
-                ],
+                with_opacity(
+                    [
+                        theme.background.r,
+                        theme.background.g,
+                        theme.background.b,
+                        theme.background.a,
+                    ],
+                    terminal_surface_alpha,
+                ),
             );
 
             for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
@@ -507,6 +548,9 @@ impl WalkHandler {
 
                     if cell.is_inverse {
                         std::mem::swap(&mut bg, &mut fg);
+                    }
+                    if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
+                        bg[3] *= terminal_surface_alpha;
                     }
 
                     render.batch.push_bg_quad(x, y, cw, ch, bg);
@@ -598,13 +642,21 @@ impl WalkHandler {
                     .and_then(|row| *row)
                     .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
                 let cursor_y = viewport.y + cursor_row as f32 * ch;
-                render.batch.push_bg_quad(
-                    cursor_x,
-                    cursor_y,
-                    cw,
-                    ch,
-                    [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.7],
-                );
+                if cursor_visible {
+                    render.batch.push_cursor(
+                        cursor_x,
+                        cursor_y,
+                        cw,
+                        ch,
+                        cursor_shape,
+                        [
+                            theme.cursor.r,
+                            theme.cursor.g,
+                            theme.cursor.b,
+                            0.7 * window_opacity,
+                        ],
+                    );
+                }
             }
 
             if focused {
@@ -614,6 +666,9 @@ impl WalkHandler {
                     theme,
                     pane.ui_rects.input,
                     &pane.app.input_editor.render_data(),
+                    cursor_shape,
+                    cursor_visible,
+                    window_opacity,
                 );
                 let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
                 if search.is_active {
@@ -623,6 +678,7 @@ impl WalkHandler {
                         theme,
                         pane.ui_rects.viewport,
                         search,
+                        window_opacity,
                     );
                 }
             }
@@ -759,6 +815,22 @@ impl WalkHandler {
             ));
         }
         lines
+    }
+
+    fn cursor_shape(&self) -> CursorShape {
+        match self.config.cursor_style {
+            walk_app::config::CursorStyle::Block => CursorShape::Block,
+            walk_app::config::CursorStyle::Bar => CursorShape::Bar,
+            walk_app::config::CursorStyle::Underline => CursorShape::Underline,
+        }
+    }
+
+    fn cursor_visible(&self) -> bool {
+        !self.config.cursor_blink || ((self.started_at.elapsed().as_millis() / 600) % 2 == 0)
+    }
+
+    fn has_running_processes(&self) -> bool {
+        self.panes.values().any(|pane| !pane.terminal.exited)
     }
 
     fn run_lua_hook<T>(&mut self, hook: &str, payload: &T)
@@ -1331,6 +1403,25 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_frame_tick(&mut self) -> bool {
+        let cursor_visible = self.cursor_visible();
+        if cursor_visible != self.last_cursor_visible {
+            self.last_cursor_visible = cursor_visible;
+            self.needs_redraw = true;
+        }
+
+        if self
+            .pending_close_confirmation
+            .is_some_and(|instant| instant.elapsed().as_secs_f32() > 2.0)
+        {
+            self.pending_close_confirmation = None;
+            if self.status_message.as_deref()
+                == Some("Running processes detected. Close again within 2s to exit.")
+            {
+                self.status_message = None;
+            }
+            self.needs_redraw = true;
+        }
+
         let pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
         for pane_id in pane_ids {
             let mut semantic_events = Vec::new();
@@ -1363,12 +1454,15 @@ impl AppHandler for WalkHandler {
             .map(|pane| pane.app.theme.clone())
             .unwrap_or_default();
         if let Some(ref mut render) = self.render {
-            let clear = [
-                clear_theme.background.r,
-                clear_theme.background.g,
-                clear_theme.background.b,
-                clear_theme.background.a,
-            ];
+            let clear = with_opacity(
+                [
+                    clear_theme.background.r,
+                    clear_theme.background.g,
+                    clear_theme.background.b,
+                    clear_theme.background.a,
+                ],
+                self.config.window_opacity.clamp(0.0, 1.0),
+            );
             if let Err(e) =
                 render
                     .pipeline
@@ -1483,12 +1577,27 @@ impl AppHandler for WalkHandler {
         }
     }
 
-    fn on_close_requested(&mut self) {
+    fn on_close_requested(&mut self) -> bool {
+        if self.config.confirm_close_with_running_process && self.has_running_processes() {
+            let confirmed = self
+                .pending_close_confirmation
+                .is_some_and(|instant| instant.elapsed().as_secs_f32() <= 2.0);
+            if !confirmed {
+                self.pending_close_confirmation = Some(Instant::now());
+                self.status_message =
+                    Some("Running processes detected. Close again within 2s to exit.".to_string());
+                self.needs_redraw = true;
+                return false;
+            }
+        }
+
+        self.pending_close_confirmation = None;
         let payload = self.workspace_hook_payload();
         self.run_lua_hook("app_exit", &payload);
         let session = self.snapshot_session();
         let _ = save_session(&session, &default_session_path());
         info!("walk closing");
+        true
     }
 }
 
@@ -1560,10 +1669,15 @@ fn render_tab_bar(
     font: &mut FontSystem,
     rect: Rect,
     tabs: &[(bool, String)],
+    surface_opacity: f32,
 ) {
-    render
-        .batch
-        .push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity([0.08, 0.09, 0.13, 1.0], surface_opacity),
+    );
     if tabs.is_empty() {
         return;
     }
@@ -1576,16 +1690,20 @@ fn render_tab_bar(
         } else {
             [0.10, 0.11, 0.15, 1.0]
         };
-        render
-            .batch
-            .push_bg_quad(x, rect.y, tab_width, rect.h, background);
+        render.batch.push_bg_quad(
+            x,
+            rect.y,
+            tab_width,
+            rect.h,
+            with_opacity(background, surface_opacity),
+        );
         push_text(
             render,
             font,
             x + 12.0,
             rect.y + 8.0,
             label,
-            [0.75, 0.79, 0.96, 1.0],
+            with_opacity([0.75, 0.79, 0.96, 1.0], surface_opacity),
         );
     }
 }
@@ -1595,10 +1713,15 @@ fn render_status_bar(
     font: &mut FontSystem,
     rect: Rect,
     status_text: Option<&str>,
+    surface_opacity: f32,
 ) {
-    render
-        .batch
-        .push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity([0.08, 0.09, 0.13, 1.0], surface_opacity),
+    );
     let Some(status_text) = status_text else {
         return;
     };
@@ -1608,40 +1731,50 @@ fn render_status_bar(
         rect.x + 10.0,
         rect.y + 4.0,
         status_text,
-        [0.54, 0.58, 0.65, 1.0],
+        with_opacity([0.54, 0.58, 0.65, 1.0], surface_opacity),
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_input_editor(
     render: &mut RenderState,
     font: &mut FontSystem,
     theme: &Theme,
     rect: Rect,
     input: &walk_input::editor::InputRenderData,
+    cursor_shape: CursorShape,
+    cursor_visible: bool,
+    surface_opacity: f32,
 ) {
     render.batch.push_bg_quad(
         rect.x,
         rect.y,
         rect.w,
         rect.h,
-        [
-            theme.input_bg.r,
-            theme.input_bg.g,
-            theme.input_bg.b,
-            theme.input_bg.a,
-        ],
+        with_opacity(
+            [
+                theme.input_bg.r,
+                theme.input_bg.g,
+                theme.input_bg.b,
+                theme.input_bg.a,
+            ],
+            surface_opacity,
+        ),
     );
     render.batch.push_bg_quad(
         rect.x,
         rect.y,
         rect.w,
         1.0,
-        [
-            theme.block_separator.r,
-            theme.block_separator.g,
-            theme.block_separator.b,
-            0.9,
-        ],
+        with_opacity(
+            [
+                theme.block_separator.r,
+                theme.block_separator.g,
+                theme.block_separator.b,
+                0.9,
+            ],
+            surface_opacity,
+        ),
     );
 
     let padding_x = 12.0;
@@ -1662,12 +1795,15 @@ fn render_input_editor(
             base_x,
             base_y,
             "Type a command and press Enter",
-            [
-                theme.status_bar_text.r,
-                theme.status_bar_text.g,
-                theme.status_bar_text.b,
-                0.8,
-            ],
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.8,
+                ],
+                surface_opacity,
+            ),
         );
     } else {
         for (index, line) in input.lines.iter().enumerate() {
@@ -1677,21 +1813,27 @@ fn render_input_editor(
                 base_x,
                 base_y + index as f32 * font.metrics.cell_height,
                 line,
-                text_color,
+                with_opacity(text_color, surface_opacity),
             );
         }
     }
 
-    if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
-        let cursor_x = base_x + cursor_col as f32 * font.metrics.cell_width;
-        let cursor_y = base_y + cursor_row as f32 * font.metrics.cell_height;
-        render.batch.push_bg_quad(
-            cursor_x,
-            cursor_y,
-            2.0,
-            font.metrics.cell_height,
-            [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.95],
-        );
+    if cursor_visible {
+        if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
+            let cursor_x = base_x + cursor_col as f32 * font.metrics.cell_width;
+            let cursor_y = base_y + cursor_row as f32 * font.metrics.cell_height;
+            render.batch.push_cursor(
+                cursor_x,
+                cursor_y,
+                font.metrics.cell_width,
+                font.metrics.cell_height,
+                cursor_shape,
+                with_opacity(
+                    [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.95],
+                    surface_opacity,
+                ),
+            );
+        }
     }
 }
 
@@ -1701,6 +1843,7 @@ fn render_search_overlay(
     theme: &Theme,
     viewport: Rect,
     search: &walk_ui::search::GlobalSearch,
+    surface_opacity: f32,
 ) {
     let width = (viewport.w * 0.38).clamp(220.0, 420.0);
     let height = font.metrics.cell_height * 2.0 + 16.0;
@@ -1712,24 +1855,30 @@ fn render_search_overlay(
         y,
         width,
         height,
-        [
-            theme.tab_bar_bg.r,
-            theme.tab_bar_bg.g,
-            theme.tab_bar_bg.b,
-            0.96,
-        ],
+        with_opacity(
+            [
+                theme.tab_bar_bg.r,
+                theme.tab_bar_bg.g,
+                theme.tab_bar_bg.b,
+                0.96,
+            ],
+            surface_opacity,
+        ),
     );
     render.batch.push_bg_quad(
         x,
         y,
         width,
         1.0,
-        [
-            theme.highlight_current_match.r,
-            theme.highlight_current_match.g,
-            theme.highlight_current_match.b,
-            0.85,
-        ],
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.85,
+            ],
+            surface_opacity,
+        ),
     );
 
     push_text(
@@ -1738,12 +1887,15 @@ fn render_search_overlay(
         x + 10.0,
         y + 6.0,
         &format!("Search: {}", search.search_input),
-        [
-            theme.foreground.r,
-            theme.foreground.g,
-            theme.foreground.b,
-            theme.foreground.a,
-        ],
+        with_opacity(
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ],
+            surface_opacity,
+        ),
     );
     push_text(
         render,
@@ -1751,13 +1903,73 @@ fn render_search_overlay(
         x + 10.0,
         y + 6.0 + font.metrics.cell_height,
         &search.match_count_display(),
-        [
-            theme.status_bar_text.r,
-            theme.status_bar_text.g,
-            theme.status_bar_text.b,
-            theme.status_bar_text.a,
-        ],
+        with_opacity(
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                theme.status_bar_text.a,
+            ],
+            surface_opacity,
+        ),
     );
+}
+
+fn with_opacity(mut color: [f32; 4], opacity: f32) -> [f32; 4] {
+    color[3] *= opacity.clamp(0.0, 1.0);
+    color
+}
+
+fn push_background_image(batch: &mut QuadBatch, image: &BackgroundImage, rect: Rect, opacity: f32) {
+    if image.width == 0 || image.height == 0 || rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+
+    let grid_cols = 48usize;
+    let aspect_ratio = if rect.w > 0.0 { rect.h / rect.w } else { 1.0 };
+    let grid_rows = ((grid_cols as f32 * aspect_ratio).round() as usize).clamp(18, 64);
+    let tile_w = rect.w / grid_cols as f32;
+    let tile_h = rect.h / grid_rows as f32;
+
+    for row in 0..grid_rows {
+        for col in 0..grid_cols {
+            let sample_x = ((col as f32 + 0.5) / grid_cols as f32 * image.width as f32)
+                .floor()
+                .clamp(0.0, image.width.saturating_sub(1) as f32)
+                as usize;
+            let sample_y = ((row as f32 + 0.5) / grid_rows as f32 * image.height as f32)
+                .floor()
+                .clamp(0.0, image.height.saturating_sub(1) as f32)
+                as usize;
+            let pixel_index = (sample_y * image.width as usize + sample_x) * 4;
+            let Some(pixel) = image.pixels.get(pixel_index..pixel_index + 4) else {
+                continue;
+            };
+
+            batch.push_bg_quad(
+                rect.x + col as f32 * tile_w,
+                rect.y + row as f32 * tile_h,
+                tile_w + 0.5,
+                tile_h + 0.5,
+                [
+                    f32::from(pixel[0]) / 255.0,
+                    f32::from(pixel[1]) / 255.0,
+                    f32::from(pixel[2]) / 255.0,
+                    (f32::from(pixel[3]) / 255.0) * opacity.clamp(0.0, 1.0),
+                ],
+            );
+        }
+    }
+}
+
+fn resolve_background_image_path(config: &WalkConfig) -> Option<std::path::PathBuf> {
+    config.background_image.clone().or_else(|| {
+        config.theme_path.as_ref().and_then(|path| {
+            walk_ui::theme_loader::load_theme(path)
+                .ok()
+                .and_then(|theme| theme.background_image)
+        })
+    })
 }
 
 fn search_match_at_cell(
@@ -2339,12 +2551,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::env::set_current_dir(dir)?;
     }
 
-    let handler = WalkHandler::new(config);
-
     let window_config = WindowConfig {
         title: cli.title,
+        opacity: config.window_opacity,
+        transparent: config.window_opacity < 1.0,
         ..WindowConfig::default()
     };
+    let handler = WalkHandler::new(config);
 
     run_event_loop(window_config, handler)?;
     Ok(())

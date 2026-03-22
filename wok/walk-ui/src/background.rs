@@ -1,6 +1,7 @@
 //! Background image and transparency support.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -15,10 +16,11 @@ pub enum BackgroundError {
     UnsupportedFormat,
 }
 
+#[derive(Clone)]
 /// Background image data loaded into CPU memory.
 pub struct BackgroundImage {
     /// RGBA pixel data.
-    pub pixels: Vec<u8>,
+    pub pixels: Arc<[u8]>,
     /// Image width.
     pub width: u32,
     /// Image height.
@@ -48,7 +50,7 @@ impl BackgroundRenderer {
         let (width, height) = rgba.dimensions();
 
         self.image = Some(BackgroundImage {
-            pixels: rgba.into_raw(),
+            pixels: rgba.into_raw().into(),
             width,
             height,
         });

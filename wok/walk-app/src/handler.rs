@@ -38,5 +38,9 @@ pub trait AppHandler {
     fn on_focus_change(&mut self, _focused: bool) {}
 
     /// Called when the window close is requested.
-    fn on_close_requested(&mut self) {}
+    ///
+    /// Return `true` to allow the window to close, or `false` to keep it open.
+    fn on_close_requested(&mut self) -> bool {
+        true
+    }
 }

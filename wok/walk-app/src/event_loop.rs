@@ -105,8 +105,11 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
         match event {
             WindowEvent::CloseRequested => {
                 info!("close requested");
-                self.handler.on_close_requested();
-                event_loop.exit();
+                if self.handler.on_close_requested() {
+                    event_loop.exit();
+                } else if let Some(win) = &self.window {
+                    win.window.request_redraw();
+                }
             }
             WindowEvent::Resized(size) => {
                 debug!(?size, "window resized");

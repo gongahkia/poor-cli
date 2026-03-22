@@ -27,6 +27,10 @@ pub struct WindowConfig {
     pub width: u32,
     /// Initial logical height.
     pub height: u32,
+    /// Requested window opacity.
+    pub opacity: f32,
+    /// Whether the window should request a transparent surface.
+    pub transparent: bool,
 }
 
 impl Default for WindowConfig {
@@ -35,6 +39,8 @@ impl Default for WindowConfig {
             title: "Walk".to_string(),
             width: 1_200,
             height: 800,
+            opacity: 1.0,
+            transparent: false,
         }
     }
 }
@@ -82,5 +88,6 @@ impl WalkWindow {
             .with_inner_size(logical_size)
             .with_min_inner_size(min_size)
             .with_resizable(true)
+            .with_transparent(config.transparent || config.opacity < 1.0)
     }
 }
