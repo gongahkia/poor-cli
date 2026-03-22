@@ -1,1 +1,5 @@
-node_modules/\ndist/\n*.db\n.sg-apis/
+node_modules/
+dist/
+*.db
+.sg-apis/
+*.tsbuildinfo
