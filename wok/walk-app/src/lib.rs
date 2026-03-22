@@ -9,9 +9,11 @@
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::too_many_lines)]
 
+pub mod config;
 pub mod dpi;
 pub mod event_loop;
 pub mod frame_clock;
 pub mod handler;
 pub mod input;
+pub mod keybindings;
 pub mod window;

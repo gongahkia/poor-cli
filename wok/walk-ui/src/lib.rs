@@ -8,6 +8,10 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
 
+pub mod clipboard;
 pub mod layout;
+pub mod search;
+pub mod selection;
 pub mod theme;
 pub mod theme_loader;
+pub mod zoom;
