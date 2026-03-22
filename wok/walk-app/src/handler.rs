@@ -15,6 +15,13 @@ pub trait AppHandler {
     /// Called when the window is first created (provides Arc<Window> for GPU surface).
     fn on_init(&mut self, _window: Arc<Window>) {}
 
+    /// Called on the frame clock cadence before any redraw is requested.
+    ///
+    /// Return `true` to request a redraw for this frame.
+    fn on_frame_tick(&mut self) -> bool {
+        false
+    }
+
     /// Called when the window should be redrawn.
     fn on_redraw(&mut self) {}
 

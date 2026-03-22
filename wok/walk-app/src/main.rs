@@ -61,6 +61,7 @@ struct WalkHandler {
     window: Option<Arc<Window>>,
     cols: u16,
     rows: u16,
+    needs_redraw: bool,
 }
 
 impl WalkHandler {
@@ -77,6 +78,7 @@ impl WalkHandler {
             window: None,
             cols: 80,
             rows: 24,
+            needs_redraw: true,
         }
     }
 
@@ -237,14 +239,24 @@ impl AppHandler for WalkHandler {
 
         // Spawn the terminal
         self.spawn_terminal();
+        self.needs_redraw = true;
 
         info!("GPU initialized, grid: {}x{}", cols, rows);
     }
 
-    fn on_redraw(&mut self) {
+    fn on_frame_tick(&mut self) -> bool {
         // Process PTY output
         if let Some(ref mut terminal) = self.terminal {
             terminal.process_pty_output();
+            self.needs_redraw |= terminal.is_dirty();
+        }
+
+        self.needs_redraw
+    }
+
+    fn on_redraw(&mut self) {
+        if !self.needs_redraw {
+            return;
         }
 
         // Build vertex data from terminal grid
@@ -276,6 +288,11 @@ impl AppHandler for WalkHandler {
                 }
             }
         }
+
+        if let Some(ref mut terminal) = self.terminal {
+            terminal.mark_clean();
+        }
+        self.needs_redraw = false;
     }
 
     fn on_resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -294,6 +311,7 @@ impl AppHandler for WalkHandler {
         if let Some(ref mut terminal) = self.terminal {
             terminal.resize(cols, rows);
         }
+        self.needs_redraw = true;
     }
 
     fn on_key_event(&mut self, event: InputEvent) {

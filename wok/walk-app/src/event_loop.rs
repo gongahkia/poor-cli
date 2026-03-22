@@ -1,11 +1,14 @@
 //! Event loop: runs the winit event loop and dispatches events to the AppHandler.
 
+use std::time::Instant;
+
 use tracing::{debug, info, warn};
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
+use crate::frame_clock::FrameClock;
 use crate::handler::AppHandler;
 use crate::input::{translate_key_event, MouseEvent};
 use crate::window::{PlatformError, WalkWindow, WindowConfig};
@@ -22,14 +25,14 @@ pub fn run_event_loop<H: AppHandler + 'static>(
     let event_loop = EventLoop::new()
         .map_err(|e| PlatformError::EventLoopCreation(e.to_string()))?;
 
-    // Use Poll for continuous rendering (terminal needs to check for PTY output)
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
     let mut app = WinitApp {
         config,
         window: None,
         handler,
         current_modifiers: winit::event::Modifiers::default(),
+        frame_clock: FrameClock::new(60),
         initialized: false,
     };
 
@@ -45,6 +48,7 @@ struct WinitApp<H: AppHandler> {
     window: Option<WalkWindow>,
     handler: H,
     current_modifiers: winit::event::Modifiers,
+    frame_clock: FrameClock,
     initialized: bool,
 }
 
@@ -73,6 +77,22 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
     }
 
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {}
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if !self.initialized {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
+
+        let next_frame_at = Instant::now() + self.frame_clock.time_until_next_frame();
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(next_frame_at));
+
+        if self.frame_clock.should_render() && self.handler.on_frame_tick() {
+            if let Some(win) = &self.window {
+                win.window.request_redraw();
+            }
+        }
+    }
 
     fn window_event(
         &mut self,
@@ -161,10 +181,6 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             }
             WindowEvent::RedrawRequested => {
                 self.handler.on_redraw();
-                // Request continuous redraws for terminal updates
-                if let Some(win) = &self.window {
-                    win.window.request_redraw();
-                }
             }
             _ => {}
         }
