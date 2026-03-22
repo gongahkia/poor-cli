@@ -5,7 +5,8 @@ use std::error::Error;
 use std::sync::Arc;
 
 use clap::Parser;
-use mlua::Value;
+use serde::Serialize;
+use serde_json::json;
 use tracing::{info, warn};
 use walk_app::app::WalkApp;
 use walk_app::config::WalkConfig;
@@ -623,11 +624,80 @@ impl WalkHandler {
         }
     }
 
-    fn run_lua_hook(&mut self, hook: &str) {
+    fn workspace_hook_payload(&self) -> serde_json::Value {
+        json!({
+            "active_tab_index": self.workspace.active_tab,
+            "active_tab_id": self.workspace.active_tab().map(|tab| tab.id),
+            "tab_count": self.workspace.tabs.len(),
+            "pane_count": self.workspace.pane_count(),
+            "active_pane_id": self.active_pane_id(),
+        })
+    }
+
+    fn pane_hook_payload(&self, pane_id: PaneId) -> serde_json::Value {
+        let tab_index = self.workspace.find_tab_index_for_pane(pane_id);
+        let tab = tab_index.and_then(|index| self.workspace.tabs.get(index));
+        let pane = self.panes.get(&pane_id);
+        let cwd = pane
+            .and_then(|pane| {
+                pane.app
+                    .block_manager
+                    .blocks
+                    .last()
+                    .map(|block| block.cwd.display().to_string())
+            })
+            .unwrap_or_default();
+
+        json!({
+            "pane_id": pane_id,
+            "tab_index": tab_index,
+            "tab_id": tab.map(|tab| tab.id),
+            "tab_title": tab.map(|tab| tab.title.clone()),
+            "shell": pane.map(|pane| pane.app.config.shell.to_string()),
+            "title": pane.map(|pane| pane.terminal.title.clone()),
+            "cwd": cwd,
+            "is_active_pane": self.active_pane_id() == Some(pane_id),
+        })
+    }
+
+    fn block_hook_payload(&self, pane_id: PaneId, exit_code: Option<i32>) -> serde_json::Value {
+        let mut payload = self.pane_hook_payload(pane_id);
+        if let Some(object) = payload.as_object_mut() {
+            if let Some(block) = self
+                .panes
+                .get(&pane_id)
+                .and_then(|pane| pane.app.block_manager.blocks.last())
+            {
+                object.insert("block_id".to_string(), json!(block.id));
+                object.insert("command".to_string(), json!(block.command_text));
+                object.insert(
+                    "exit_code".to_string(),
+                    json!(block.exit_code.or(exit_code)),
+                );
+                object.insert(
+                    "duration_ms".to_string(),
+                    json!(block.duration.map(|duration| duration.as_millis() as u64)),
+                );
+                object.insert(
+                    "output_start_row".to_string(),
+                    json!(block.output_start_row),
+                );
+                object.insert("output_end_row".to_string(), json!(block.output_end_row));
+            } else {
+                object.insert("exit_code".to_string(), json!(exit_code));
+            }
+        }
+        payload
+    }
+
+    fn run_lua_hook<T>(&mut self, hook: &str, payload: &T)
+    where
+        T: Serialize + ?Sized,
+    {
         let Some(lua) = &self.lua else {
             return;
         };
-        if let Err(error) = lua.trigger_hook(hook, &Value::Nil) {
+        if let Err(error) = lua.trigger_hook(hook, payload) {
             warn!("lua hook '{hook}' failed: {error}");
         }
         self.drain_lua_side_effects();
@@ -671,8 +741,17 @@ impl WalkHandler {
                 pane.app.handle_semantic_event(&event);
             }
             match event {
-                SemanticEvent::CommandEnd { .. } => self.run_lua_hook("block_finished"),
-                SemanticEvent::CwdChanged(_) => self.run_lua_hook("cwd_changed"),
+                SemanticEvent::CommandEnd { exit_code, .. } => {
+                    let payload = self.block_hook_payload(pane_id, exit_code);
+                    self.run_lua_hook("block_finished", &payload);
+                }
+                SemanticEvent::CwdChanged(path) => {
+                    let mut payload = self.pane_hook_payload(pane_id);
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert("path".to_string(), json!(path.display().to_string()));
+                    }
+                    self.run_lua_hook("cwd_changed", &payload);
+                }
                 _ => {}
             }
         }
@@ -721,11 +800,12 @@ impl WalkHandler {
                 }
             }
             Action::NewTab => {
-                self.workspace.new_tab("Shell");
+                let pane_id = self.workspace.new_tab("Shell");
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
-                self.run_lua_hook("tab_opened");
+                let payload = self.pane_hook_payload(pane_id);
+                self.run_lua_hook("tab_opened", &payload);
             }
             Action::CloseTab => {
                 if let Some(removed) = self.workspace.close_active_tab() {
@@ -756,22 +836,34 @@ impl WalkHandler {
                 }
             }
             Action::SplitVertical => {
-                let _ = self
+                let new_pane = self
                     .workspace
                     .split_active(walk_ui::splits::SplitDirection::Horizontal);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
-                self.run_lua_hook("pane_opened");
+                if let Some(new_pane) = new_pane {
+                    let mut payload = self.pane_hook_payload(new_pane);
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert("direction".to_string(), json!("vertical"));
+                    }
+                    self.run_lua_hook("pane_opened", &payload);
+                }
             }
             Action::SplitHorizontal => {
-                let _ = self
+                let new_pane = self
                     .workspace
                     .split_active(walk_ui::splits::SplitDirection::Vertical);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
-                self.run_lua_hook("pane_opened");
+                if let Some(new_pane) = new_pane {
+                    let mut payload = self.pane_hook_payload(new_pane);
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert("direction".to_string(), json!("horizontal"));
+                    }
+                    self.run_lua_hook("pane_opened", &payload);
+                }
             }
             Action::CloseSplit => {
                 if let Some(removed_pane) = self.workspace.close_active_pane() {
@@ -916,11 +1008,18 @@ impl WalkHandler {
         }
 
         if let Some(command) = submitted {
+            let active_pane_id = self.active_pane_id();
             if !command.is_empty() {
                 self.send_to_pty(command.as_bytes());
             }
             self.send_to_pty(b"\r");
-            self.run_lua_hook("command_submitted");
+            if let Some(pane_id) = active_pane_id {
+                let mut payload = self.pane_hook_payload(pane_id);
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert("command".to_string(), json!(command));
+                }
+                self.run_lua_hook("command_submitted", &payload);
+            }
         }
         if send_eof {
             self.send_to_pty(b"\x04");
@@ -1098,7 +1197,8 @@ impl AppHandler for WalkHandler {
             }
         }
         self.needs_redraw = true;
-        self.run_lua_hook("app_start");
+        let payload = self.workspace_hook_payload();
+        self.run_lua_hook("app_start", &payload);
         info!("GPU initialized");
     }
 
@@ -1256,7 +1356,8 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_close_requested(&mut self) {
-        self.run_lua_hook("app_exit");
+        let payload = self.workspace_hook_payload();
+        self.run_lua_hook("app_exit", &payload);
         let session = self.snapshot_session();
         let _ = save_session(&session, &default_session_path());
         info!("walk closing");

@@ -22,10 +22,12 @@ walk.on("app_start", function()
     walk.notify("Walk started")
 end)
 
-walk.on("block_finished", function()
-    walk.notify("Command block finished")
+walk.on("block_finished", function(event)
+    if event.exit_code ~= 0 then
+        walk.notify("Command failed: " .. event.command)
+    end
 end)
 
-walk.on("cwd_changed", function()
-    walk.notify("Working directory changed")
+walk.on("cwd_changed", function(event)
+    walk.notify("Working directory changed to " .. event.path)
 end)

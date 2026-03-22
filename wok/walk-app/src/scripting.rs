@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
+use serde::Serialize;
 use tracing::{info, warn};
 
 /// Collected keybinding overrides from Lua.
@@ -219,7 +220,11 @@ impl LuaRuntime {
     /// # Errors
     ///
     /// Returns a Lua error if any registered callback fails.
-    pub fn trigger_hook(&self, event: &str, payload: &Value) -> LuaResult<()> {
+    pub fn trigger_hook<T>(&self, event: &str, payload: &T) -> LuaResult<()>
+    where
+        T: Serialize + ?Sized,
+    {
+        let payload = self.lua.to_value(payload)?;
         if let Some(callbacks) = self.hooks.borrow().get(event) {
             for callback_key in callbacks {
                 let callback: Function = self.lua.registry_value(callback_key)?;
@@ -237,5 +242,31 @@ impl LuaRuntime {
     /// Drain pending notifications queued from Lua.
     pub fn take_notifications(&self) -> Vec<String> {
         std::mem::take(&mut *self.state.notifications.lock().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_trigger_hook_passes_structured_payload() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                walk.on("demo", function(event)
+                    walk.notify(event.message .. ":" .. tostring(event.code))
+                end)
+                "#,
+            )
+            .expect("register hook");
+
+        runtime
+            .trigger_hook("demo", &serde_json::json!({"message": "ok", "code": 7}))
+            .expect("hook should run");
+
+        assert_eq!(runtime.take_notifications(), vec!["ok:7".to_string()]);
     }
 }

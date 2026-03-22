@@ -90,7 +90,31 @@ walk.on("block_finished", function()
 end)
 ```
 
-Hook payloads are currently `nil`. The stable contract today is the event name itself.
+Hook payloads are structured tables. Common fields include:
+
+- `pane_id`
+- `tab_id`
+- `tab_index`
+- `tab_title`
+- `shell`
+- `title`
+- `cwd`
+
+Event-specific fields include:
+
+- `command_submitted`: `command`
+- `block_finished`: `block_id`, `command`, `exit_code`, `duration_ms`, `output_start_row`, `output_end_row`
+- `cwd_changed`: `path`
+
+Example:
+
+```lua
+walk.on("block_finished", function(event)
+    if event.exit_code ~= 0 then
+        walk.notify("Failed command: " .. event.command)
+    end
+end)
+```
 
 ### `walk.exec(command)`
 

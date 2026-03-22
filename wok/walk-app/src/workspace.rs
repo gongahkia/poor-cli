@@ -216,6 +216,34 @@ impl WorkspaceState {
         self.active_tab()
             .map_or_else(Vec::new, |tab| collect_leaf_ids(&tab.split_manager.root))
     }
+
+    /// Find the index of the tab containing the given pane.
+    pub fn find_tab_index_for_pane(&self, pane_id: PaneId) -> Option<usize> {
+        self.tabs
+            .iter()
+            .position(|tab| contains_pane(&tab.split_manager.root, pane_id))
+    }
+
+    /// Focus a pane anywhere in the workspace and switch to its tab.
+    pub fn focus_pane(&mut self, pane_id: PaneId) -> bool {
+        let Some(tab_index) = self.find_tab_index_for_pane(pane_id) else {
+            return false;
+        };
+        self.active_tab = tab_index;
+        if let Some(tab) = self.tabs.get_mut(tab_index) {
+            tab.split_manager.focused_leaf = pane_id;
+            return true;
+        }
+        false
+    }
+
+    /// Return the total number of panes in the workspace.
+    pub fn pane_count(&self) -> usize {
+        self.tabs
+            .iter()
+            .map(|tab| collect_leaf_ids(&tab.split_manager.root).len())
+            .sum()
+    }
 }
 
 impl Default for WorkspaceState {
@@ -272,6 +300,15 @@ fn directional_distance(
             (candidate_center_y - current_center_y) + (candidate_center_x - current_center_x).abs(),
         ),
         _ => None,
+    }
+}
+
+fn contains_pane(node: &SplitNode, target: PaneId) -> bool {
+    match node {
+        SplitNode::Leaf { tab_id } => *tab_id == target,
+        SplitNode::Split { first, second, .. } => {
+            contains_pane(first, target) || contains_pane(second, target)
+        }
     }
 }
 
