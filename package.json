@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run",
+    "lint": "eslint packages/*/src/**/*.ts",
+    "dev": "tsc --build --watch",
+    "mock-server": "tsx packages/mcp-server/src/__tests__/mock-server/index.ts"
+  }
+}
