@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse } from "@sg-apis/shared";
-import type { ToolResult, OutputFormat } from "@sg-apis/shared";
+import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import type { ToolResult } from "@sg-apis/shared";
 import { getPropertyTransactions, uraFetch } from "../apis/ura/client.js";
 import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { registerTool } from "./registry.js";
@@ -14,7 +14,7 @@ export const registerUraTools = (server: McpServer): void => {
       const { propertyType, area, period, format } = validateInput(UraPropertyTransactionsSchema, input);
       const raw = await getPropertyTransactions(propertyType, area, period);
       const normalized = normalizeTransactions(raw);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text }] };
     },

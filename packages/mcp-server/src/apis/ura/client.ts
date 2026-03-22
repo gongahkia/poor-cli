@@ -1,12 +1,15 @@
-import { httpGet, TTL, ApiError, Keystore, createLogger } from "@sg-apis/shared";
+import { httpGet, ApiError, Keystore, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
 import type { UraTransactionResponse, UraRawTransaction } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("ura-client");
 
-const BASE_URL = process.env["MOCK_API_BASE_URL"]
-  ? `${process.env["MOCK_API_BASE_URL"]}/ura`
-  : "https://www.ura.gov.sg/uraDataService";
+const getBaseUrl = (): string => {
+  const mockApiBaseUrl = getMockApiBaseUrl();
+  return mockApiBaseUrl !== undefined
+    ? `${mockApiBaseUrl}/ura`
+    : "https://www.ura.gov.sg/uraDataService";
+};
 
 let keystoreInstance: Keystore | null = null;
 const getKeystore = (): Keystore => {
@@ -43,7 +46,7 @@ export const getDailyToken = async (): Promise<string> => {
   }
 
   const apiKey = getApiKey();
-  const response = await fetch(`${BASE_URL}/insertNewToken.action`, {
+  const response = await fetch(`${getBaseUrl()}/insertNewToken.action`, {
     headers: { AccessKey: apiKey },
   });
 
@@ -84,7 +87,7 @@ export const uraFetch = async <T>(
   const apiKey = getApiKey();
   const token = await getDailyToken();
 
-  let url = `${BASE_URL}/invokeUraDS?service=${encodeURIComponent(service)}`;
+  let url = `${getBaseUrl()}/invokeUraDS?service=${encodeURIComponent(service)}`;
   if (params !== undefined) {
     for (const [key, value] of Object.entries(params)) {
       url += `&${key}=${encodeURIComponent(value)}`;
@@ -114,7 +117,7 @@ export const getPropertyTransactions = async (
   if (period !== undefined) cacheParams["period"] = period;
 
   const cacheKey = buildCacheKey("ura", "transactions", cacheParams);
-  const { data } = await withCache(cacheKey, TTL.DAILY, async () => {
+  const { data } = await withCache(cacheKey, "DAILY", async () => {
     const response = await uraFetch<UraTransactionResponse>(service);
     let results = [...response.Result];
 

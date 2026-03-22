@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, QuerySchema, ApiError } from "@sg-apis/shared";
-import type { ToolResult, OutputFormat } from "@sg-apis/shared";
+import { validateInput, QuerySchema, ApiError, resolveOutputFormat } from "@sg-apis/shared";
+import type { ToolResult } from "@sg-apis/shared";
 import { classifyIntent } from "../router/classifier.js";
 import { planQuery } from "../router/planner.js";
 import { aggregateResults, formatAggregated } from "../router/aggregator.js";
@@ -84,7 +84,7 @@ export const registerQueryTool = (server: McpServer): void => {
     inputSchema: QuerySchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { query, format } = validateInput(QuerySchema, input);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
 
       const intent = classifyIntent(query);
       const plan = planQuery(query);

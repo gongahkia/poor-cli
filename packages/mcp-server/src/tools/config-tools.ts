@@ -2,7 +2,16 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, ConfigSetSchema, loadConfig, formatResponse } from "@sg-apis/shared";
+import {
+  validateInput,
+  ConfigSetSchema,
+  ValidationError,
+  loadConfig,
+  formatResponse,
+  parseMutableConfigValue,
+  resetConfigCache,
+  resetRateLimiters,
+} from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
 import { registerTool } from "./registry.js";
 
@@ -24,6 +33,15 @@ export const registerConfigTools = (server: McpServer): void => {
     inputSchema: ConfigSetSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { key, value } = validateInput(ConfigSetSchema, input);
+      let parsedValue: string | number;
+      try {
+        parsedValue = parseMutableConfigValue(key, value);
+      } catch (error) {
+        throw new ValidationError(
+          error instanceof Error ? error.message : String(error),
+          [],
+        );
+      }
       const configDir = join(homedir(), ".sg-apis");
       const configPath = join(configDir, "config.json");
       mkdirSync(configDir, { recursive: true });
@@ -44,10 +62,11 @@ export const registerConfigTools = (server: McpServer): void => {
         current = current[part] as Record<string, unknown>;
       }
       const lastPart = parts[parts.length - 1]!;
-      const numVal = Number(value);
-      current[lastPart] = isNaN(numVal) ? value : numVal;
+      current[lastPart] = parsedValue;
 
       writeFileSync(configPath, JSON.stringify(existing, null, 2));
+      resetConfigCache();
+      resetRateLimiters();
       return { content: [{ type: "text", text: `Config updated: ${key} = ${value}` }] };
     },
   });

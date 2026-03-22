@@ -2,15 +2,18 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import Database from "better-sqlite3";
-import { httpGet, TTL, ApiError, createLogger } from "@sg-apis/shared";
+import { httpGet, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
 import type { DatagovV2ListResponse, DatagovDataset } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("datagov-client");
 
-const BASE_URL = process.env["MOCK_API_BASE_URL"]
-  ? `${process.env["MOCK_API_BASE_URL"]}/datagov`
-  : "https://api-production.data.gov.sg/v2/public/api";
+const getBaseUrl = (): string => {
+  const mockApiBaseUrl = getMockApiBaseUrl();
+  return mockApiBaseUrl !== undefined
+    ? `${mockApiBaseUrl}/datagov`
+    : "https://api-production.data.gov.sg/v2/public/api";
+};
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
 
@@ -74,7 +77,7 @@ export const buildLocalIndex = async (): Promise<void> => {
 
   for (let page = 0; page < MAX_PAGES; page++) {
     try {
-      const url = `${BASE_URL}/datasets?page=${page}&resultSize=${PAGE_SIZE}`;
+      const url = `${getBaseUrl()}/datasets?page=${page}&resultSize=${PAGE_SIZE}`;
       const response = await httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
       if (response.code !== 0 || response.data.datasets.length === 0) break;
       allDatasets.push(...response.data.datasets);
@@ -166,8 +169,8 @@ export const searchDatasets = async (keyword: string, limit = 10): Promise<Datag
 
   // Fallback to API search
   const cacheKey = buildCacheKey("datagov", "search", { keyword, limit });
-  const { data } = await withCache(cacheKey, TTL.DAILY, async () => {
-    const url = `${BASE_URL}/datasets?page=0&resultSize=50`;
+  const { data } = await withCache(cacheKey, "DAILY", async () => {
+    const url = `${getBaseUrl()}/datasets?page=0&resultSize=50`;
     const response = await httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
 
     if (response.code !== 0) {
@@ -193,7 +196,7 @@ export const searchDatasets = async (keyword: string, limit = 10): Promise<Datag
 
 export const getDataset = async (datasetId: string): Promise<DatagovDataset | null> => {
   const cacheKey = buildCacheKey("datagov", "dataset", { datasetId });
-  const { data } = await withCache(cacheKey, TTL.DAILY, async () => {
+  const { data } = await withCache(cacheKey, "DAILY", async () => {
     // Try local index first
     try {
       const db = getIndexDb();
@@ -226,7 +229,7 @@ export const getDataset = async (datasetId: string): Promise<DatagovDataset | nu
 
     // Fetch from API
     try {
-      const url = `${BASE_URL}/datasets/${datasetId}/metadata`;
+      const url = `${getBaseUrl()}/datasets/${datasetId}/metadata`;
       const response = await httpGet<{
         code: number;
         data: {
@@ -260,8 +263,8 @@ export const getDataset = async (datasetId: string): Promise<DatagovDataset | nu
 
 export const listCollections = async (): Promise<{ id: string; name: string; description: string }[]> => {
   const cacheKey = buildCacheKey("datagov", "collections", {});
-  const { data } = await withCache(cacheKey, TTL.DAILY, async () => {
-    const url = `${BASE_URL}/datasets?page=0&resultSize=50`;
+  const { data } = await withCache(cacheKey, "DAILY", async () => {
+    const url = `${getBaseUrl()}/datasets?page=0&resultSize=50`;
     const response = await httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
 
     const agencies = new Map<string, { count: number }>();

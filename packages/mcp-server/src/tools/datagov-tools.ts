@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, DatagovSearchSchema, DatagovGetSchema, DatagovBrowseSchema, formatResponse } from "@sg-apis/shared";
-import type { ToolResult, OutputFormat } from "@sg-apis/shared";
+import { validateInput, DatagovSearchSchema, DatagovGetSchema, DatagovBrowseSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import type { ToolResult } from "@sg-apis/shared";
 import { searchDatasets, getDataset, listCollections } from "../apis/datagov/client.js";
 import { registerTool } from "./registry.js";
 
@@ -27,7 +27,7 @@ export const registerDatagovTools = (server: McpServer): void => {
       if (result === null) {
         return { content: [{ type: "text", text: "Dataset not found." }] };
       }
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(result as unknown as Record<string, unknown>, fmt);
       return { content: [{ type: "text", text }] };
     },

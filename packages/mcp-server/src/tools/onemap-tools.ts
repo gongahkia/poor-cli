@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, OneMapGeocodeSchema, OneMapReverseGeocodeSchema, OneMapRouteSchema, OneMapPopulationSchema, OneMapConvertCoordsSchema, formatResponse } from "@sg-apis/shared";
-import type { ToolResult, OutputFormat } from "@sg-apis/shared";
+import { validateInput, OneMapGeocodeSchema, OneMapReverseGeocodeSchema, OneMapRouteSchema, OneMapPopulationSchema, OneMapConvertCoordsSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import type { ToolResult } from "@sg-apis/shared";
 import { geocode, reverseGeocode, getRoute, getPopulationData, convertSVY21toWGS84, convertWGS84toSVY21 } from "../apis/onemap/client.js";
 import { registerTool } from "./registry.js";
 
@@ -52,7 +52,7 @@ export const registerOneMapTools = (server: McpServer): void => {
     handler: async (input: unknown): Promise<ToolResult> => {
       const { planningArea, year, dataType, format } = validateInput(OneMapPopulationSchema, input);
       const result = await getPopulationData(planningArea, year, dataType);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(result.data as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text: `## ${result.planningArea} (${result.year})\n\n${text}` }] };
     },

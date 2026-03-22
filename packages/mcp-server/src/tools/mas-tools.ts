@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, MasExchangeRateSchema, MasInterestRateSchema, MasFinancialStatsSchema, MasDataset, formatResponse } from "@sg-apis/shared";
-import type { ToolResult, OutputFormat } from "@sg-apis/shared";
+import { validateInput, MasExchangeRateSchema, MasInterestRateSchema, MasFinancialStatsSchema, MasDataset, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import type { ToolResult } from "@sg-apis/shared";
 import { query } from "../apis/mas/client.js";
 import { normalizeMasRecord } from "../apis/mas/normalizer.js";
 import { registerTool } from "./registry.js";
@@ -27,7 +27,7 @@ export const registerMasTools = (server: McpServer): void => {
         }));
       }
 
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text }] };
     },
@@ -45,7 +45,7 @@ export const registerMasTools = (server: McpServer): void => {
       if (Object.keys(filters).length > 0) params.filters = filters;
       const records = await query(MasDataset.INTEREST_RATES_SORA, params);
       const normalized = records.map(normalizeMasRecord);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text }] };
     },
@@ -64,7 +64,7 @@ export const registerMasTools = (server: McpServer): void => {
       if (Object.keys(filters).length > 0) params.filters = filters;
       const records = await query(resourceId, params);
       const normalized = records.map(normalizeMasRecord);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text }] };
     },

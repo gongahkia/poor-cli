@@ -55,7 +55,8 @@ export type KeyInfo = {
 
 export type HealthStatus = {
   readonly api: string;
-  readonly keyConfigured: boolean;
+  readonly authRequired: boolean;
+  readonly configured: boolean;
   readonly reachable: boolean;
   readonly latencyMs: number;
   readonly error?: string;

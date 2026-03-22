@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, SingStatSearchSchema, SingStatTableSchema, SingStatTimeseriesSchema, SingStatCompareSchema, SingStatBrowseSchema, formatResponse } from "@sg-apis/shared";
-import type { ToolResult, OutputFormat } from "@sg-apis/shared";
+import { validateInput, SingStatSearchSchema, SingStatTableSchema, SingStatTimeseriesSchema, SingStatCompareSchema, SingStatBrowseSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import type { ToolResult } from "@sg-apis/shared";
 import { searchDatasets, getTableData, getTimeSeries } from "../apis/singstat/client.js";
 import { compareIndicators } from "../apis/singstat/compare.js";
 import { registerTool } from "./registry.js";
@@ -28,7 +28,7 @@ export const registerSingStatTools = (server: McpServer): void => {
       if (timeFilter !== undefined) opts["timeFilter"] = timeFilter;
       if (variables !== undefined) opts["variables"] = variables;
       const data = await getTableData(tableId, opts as { timeFilter?: string; variables?: readonly string[] });
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(data.rows as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text: `## ${data.metadata.title}\n\n${text}` }] };
     },
@@ -41,7 +41,7 @@ export const registerSingStatTools = (server: McpServer): void => {
     handler: async (input: unknown): Promise<ToolResult> => {
       const { tableId, indicator, startYear, endYear, format } = validateInput(SingStatTimeseriesSchema, input);
       const results = await getTimeSeries(tableId, indicator, startYear, endYear);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const text = formatResponse(results as unknown as Record<string, unknown>[], fmt);
       return { content: [{ type: "text", text }] };
     },
@@ -54,7 +54,7 @@ export const registerSingStatTools = (server: McpServer): void => {
     handler: async (input: unknown): Promise<ToolResult> => {
       const { queries, startYear, endYear, format } = validateInput(SingStatCompareSchema, input);
       const result = await compareIndicators(queries, startYear, endYear);
-      const fmt = (format ?? "markdown") as OutputFormat;
+      const fmt = resolveOutputFormat(format);
       const rows = result.periods.map((period, i) => {
         const row: Record<string, unknown> = { period };
         for (const s of result.series) {

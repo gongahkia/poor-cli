@@ -1,4 +1,4 @@
-import { RATE_LIMITS } from "./config/rate-limits.js";
+import { getRateLimit } from "./config/index.js";
 
 export class RateLimiter {
   private tokens: number;
@@ -38,12 +38,16 @@ export class RateLimiter {
 
 const limiters = new Map<string, RateLimiter>();
 
+export const resetRateLimiters = (): void => {
+  limiters.clear();
+};
+
 export const getRateLimiter = (apiName: string): RateLimiter => {
   const existing = limiters.get(apiName);
   if (existing !== undefined) {
     return existing;
   }
-  const config = RATE_LIMITS[apiName] ?? { maxTokens: 10, refillPerSecond: 2 };
+  const config = getRateLimit(apiName);
   const limiter = new RateLimiter(config.maxTokens, config.refillPerSecond);
   limiters.set(apiName, limiter);
   return limiter;
