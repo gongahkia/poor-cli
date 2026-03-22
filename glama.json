@@ -1,0 +1,7 @@
+{
+  "name": "sg-apis-mcp",
+  "description": "Singapore government data — SingStat, MAS, OneMap, URA, data.gov.sg",
+  "transport": "stdio",
+  "install": "npx sg-apis-mcp",
+  "repository": "https://github.com/gongahkia/sg-skills"
+}
