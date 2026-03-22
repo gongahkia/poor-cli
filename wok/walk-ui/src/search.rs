@@ -3,6 +3,10 @@
 /// A searchable line in the terminal experience.
 #[derive(Debug, Clone)]
 pub struct SearchLine {
+    /// Pane containing the line.
+    pub pane_id: u64,
+    /// Tab containing the line.
+    pub tab_id: u64,
     /// Absolute row anchor for the line.
     pub row: usize,
     /// Block owning the line when the source is block metadata.
@@ -16,6 +20,10 @@ pub struct SearchLine {
 /// A global search match.
 #[derive(Debug, Clone)]
 pub struct GlobalMatch {
+    /// Pane containing the match.
+    pub pane_id: u64,
+    /// Tab containing the match.
+    pub tab_id: u64,
     /// Absolute row anchor for the match.
     pub row: usize,
     /// Block owning the match when it came from block command text.
@@ -29,6 +37,7 @@ pub struct GlobalMatch {
 }
 
 /// Global search state.
+#[derive(Clone)]
 pub struct GlobalSearch {
     /// The current search query.
     pub query: String,
@@ -83,6 +92,8 @@ impl GlobalSearch {
                 let col_start = (start + pos) as u16;
                 let col_end = col_start + query.len() as u16;
                 self.matches.push(GlobalMatch {
+                    pane_id: line.pane_id,
+                    tab_id: line.tab_id,
                     row: line.row,
                     block_id: line.block_id,
                     is_command: line.is_command,
@@ -141,18 +152,24 @@ mod tests {
         let mut search = GlobalSearch::new();
         let lines = vec![
             SearchLine {
+                pane_id: 1,
+                tab_id: 1,
                 row: 0,
                 block_id: None,
                 is_command: false,
                 text: "hello world".to_string(),
             },
             SearchLine {
+                pane_id: 1,
+                tab_id: 1,
                 row: 1,
                 block_id: None,
                 is_command: false,
                 text: "foo bar".to_string(),
             },
             SearchLine {
+                pane_id: 2,
+                tab_id: 3,
                 row: 2,
                 block_id: None,
                 is_command: false,
@@ -167,6 +184,8 @@ mod tests {
     fn test_match_count_display() {
         let mut search = GlobalSearch::new();
         let lines = vec![SearchLine {
+            pane_id: 1,
+            tab_id: 1,
             row: 0,
             block_id: None,
             is_command: false,
@@ -180,6 +199,8 @@ mod tests {
     fn test_next_match_wraps() {
         let mut search = GlobalSearch::new();
         let lines = vec![SearchLine {
+            pane_id: 1,
+            tab_id: 1,
             row: 0,
             block_id: None,
             is_command: false,

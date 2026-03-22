@@ -13,11 +13,11 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers; Bash/Zsh/Fish remain the most battle-tested path |
 | Tabs, splits, sessions | Shipped | IDE-style workspace with autosave/restore, manual snapshot save/load, and per-pane metadata restore |
 | Input bar | Shipped | Pane-local bottom input editor with multiline draft, history recall, submit, cancel, and paste |
-| Search | Shipped | Focused-pane overlay, match counts, next/prev navigation, passive highlight across scrollback and block commands |
+| Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
 | Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, hooks, `exec`, and `notify` |
 | Theme loading | Shipped | `theme_path` is loaded at startup |
-| Remaining limits | Honest gap | No cross-workspace search, Lua is action/hook scoped rather than a full plugin API, and PowerShell/WSL need broader runtime soak time |
+| Remaining limits | Honest gap | Lua is action/hook scoped rather than a full plugin API, and PowerShell/WSL need broader runtime soak time |
 
 ## Run Locally
 
@@ -55,7 +55,7 @@ Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 4. Use `Mod+Up` / `Mod+Down` to move across blocks in the focused pane.
 5. Use `Mod+Shift+E` to collapse the selected block.
 6. Use `Mod+Shift+C` to copy the selected block.
-7. Use `Mod+F` to search the focused pane.
+7. Use `Mod+F` to search across the workspace and jump between panes.
 8. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
 
 Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.

@@ -357,17 +357,8 @@ impl WalkHandler {
             let _ = window.request_inner_size(PhysicalSize::new(window_size.0, window_size.1));
             self.sync_workspace_layout(window.inner_size());
         }
-        if let Some(active_pane) = self.active_pane_mut() {
-            if active_pane.app.global_search.is_active {
-                let lines = collect_search_lines(
-                    &active_pane.terminal,
-                    &active_pane.app.block_manager.blocks,
-                );
-                active_pane
-                    .app
-                    .global_search
-                    .search(&active_pane.app.global_search.search_input.clone(), &lines);
-            }
+        if self.active_search_state().is_some() {
+            self.refresh_global_search();
         }
     }
 
@@ -406,6 +397,7 @@ impl WalkHandler {
                 None => format!("{cwd}  |  {}", active_pane.app.config.shell),
             }
         });
+        let workspace_search = self.active_search_state();
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -480,8 +472,9 @@ impl WalkHandler {
                     }
 
                     render.batch.push_bg_quad(x, y, cw, ch, bg);
+                    let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
                     if let Some(current_match) =
-                        search_match_at_cell(&pane.app.global_search, absolute_row, col_idx as u16)
+                        search_match_at_cell(search, pane_id, absolute_row, col_idx as u16)
                     {
                         let highlight = if current_match {
                             theme.highlight_current_match
@@ -508,7 +501,8 @@ impl WalkHandler {
                 theme,
                 &pane.app.block_manager.blocks,
                 selected_block_id,
-                &pane.app.global_search,
+                workspace_search.as_ref().unwrap_or(&pane.app.global_search),
+                pane_id,
                 &visible_rows,
                 &row_positions,
                 total_cols,
@@ -583,13 +577,14 @@ impl WalkHandler {
                     pane.ui_rects.input,
                     &pane.app.input_editor.render_data(),
                 );
-                if pane.app.global_search.is_active {
+                let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
+                if search.is_active {
                     render_search_overlay(
                         render,
                         &mut self.font,
                         theme,
                         pane.ui_rects.viewport,
-                        &pane.app.global_search,
+                        search,
                     );
                 }
             }
@@ -688,6 +683,44 @@ impl WalkHandler {
             }
         }
         payload
+    }
+
+    fn active_search_state(&self) -> Option<walk_ui::search::GlobalSearch> {
+        self.active_pane().and_then(|pane| {
+            pane.app
+                .global_search
+                .is_active
+                .then(|| pane.app.global_search.clone())
+        })
+    }
+
+    fn install_search_state_on_active_pane(&mut self, search: walk_ui::search::GlobalSearch) {
+        for pane in self.panes.values_mut() {
+            if pane.app.global_search.is_active {
+                pane.app.global_search.deactivate();
+            }
+        }
+        if let Some(active_pane) = self.active_pane_mut() {
+            active_pane.app.global_search = search;
+        }
+    }
+
+    fn collect_workspace_search_lines(&self) -> Vec<SearchLine> {
+        let mut lines = Vec::new();
+        for (pane_id, pane) in &self.panes {
+            let tab_index = self.workspace.find_tab_index_for_pane(*pane_id);
+            let tab_id = tab_index
+                .and_then(|index| self.workspace.tabs.get(index))
+                .map(|tab| tab.id)
+                .unwrap_or_default();
+            lines.extend(collect_search_lines(
+                &pane.terminal,
+                &pane.app.block_manager.blocks,
+                *pane_id,
+                tab_id,
+            ));
+        }
+        lines
     }
 
     fn run_lua_hook<T>(&mut self, hook: &str, payload: &T)
@@ -808,6 +841,7 @@ impl WalkHandler {
                 self.run_lua_hook("tab_opened", &payload);
             }
             Action::CloseTab => {
+                let search = self.active_search_state();
                 if let Some(removed) = self.workspace.close_active_tab() {
                     for pane_id in removed {
                         self.panes.remove(&pane_id);
@@ -815,24 +849,43 @@ impl WalkHandler {
                     if let Some(window) = &self.window {
                         self.sync_workspace_layout(window.inner_size());
                     }
+                    if let Some(search) = search {
+                        self.install_search_state_on_active_pane(search);
+                        self.refresh_global_search();
+                    }
                 }
             }
             Action::NextTab => {
+                let search = self.active_search_state();
                 self.workspace.next_tab();
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
+                }
             }
             Action::PrevTab => {
+                let search = self.active_search_state();
                 self.workspace.prev_tab();
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
+                }
             }
             Action::SwitchToTab(index) => {
+                let search = self.active_search_state();
                 self.workspace.switch_tab(index.saturating_sub(1) as usize);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
+                }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
                 }
             }
             Action::SplitVertical => {
@@ -866,39 +919,64 @@ impl WalkHandler {
                 }
             }
             Action::CloseSplit => {
+                let search = self.active_search_state();
                 if let Some(removed_pane) = self.workspace.close_active_pane() {
                     self.panes.remove(&removed_pane);
                     if let Some(window) = &self.window {
                         self.sync_workspace_layout(window.inner_size());
                     }
+                    if let Some(search) = search {
+                        self.install_search_state_on_active_pane(search);
+                        self.refresh_global_search();
+                    }
                 }
             }
             Action::FocusLeft => {
+                let search = self.active_search_state();
                 self.workspace
                     .focus_in_direction(FocusDirection::Left, self.chrome_rects.content);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
+                }
             }
             Action::FocusRight => {
+                let search = self.active_search_state();
                 self.workspace
                     .focus_in_direction(FocusDirection::Right, self.chrome_rects.content);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
+                }
             }
             Action::FocusUp => {
+                let search = self.active_search_state();
                 self.workspace
                     .focus_in_direction(FocusDirection::Up, self.chrome_rects.content);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
+                }
             }
             Action::FocusDown => {
+                let search = self.active_search_state();
                 self.workspace
                     .focus_in_direction(FocusDirection::Down, self.chrome_rects.content);
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
+                }
+                if let Some(search) = search {
+                    self.install_search_state_on_active_pane(search);
+                    self.refresh_global_search();
                 }
             }
             Action::ResizeSplitLeft => {
@@ -1055,39 +1133,51 @@ impl WalkHandler {
     }
 
     fn refresh_global_search(&mut self) {
-        let Some(active_pane) = self.active_pane_mut() else {
+        let query = self.active_pane().and_then(|pane| {
+            pane.app
+                .global_search
+                .is_active
+                .then(|| pane.app.global_search.search_input.clone())
+        });
+        let Some(query) = query else {
             return;
         };
-        if !active_pane.app.global_search.is_active {
-            return;
-        }
-
-        if active_pane.app.global_search.search_input.is_empty() {
+        if query.is_empty() {
+            let Some(active_pane) = self.active_pane_mut() else {
+                return;
+            };
             active_pane.app.global_search.matches.clear();
             active_pane.app.global_search.current = 0;
             active_pane.app.global_search.query.clear();
             return;
         }
 
-        let lines =
-            collect_search_lines(&active_pane.terminal, &active_pane.app.block_manager.blocks);
-        active_pane
-            .app
-            .global_search
-            .search(&active_pane.app.global_search.search_input.clone(), &lines);
+        let lines = self.collect_workspace_search_lines();
+        let Some(active_pane) = self.active_pane_mut() else {
+            return;
+        };
+        active_pane.app.global_search.search(&query, &lines);
         self.scroll_to_current_search_match();
     }
 
     fn scroll_to_current_search_match(&mut self) {
-        let Some(active_pane) = self.active_pane_mut() else {
+        let Some(search) = self.active_search_state() else {
             return;
         };
-        let Some(target) = active_pane
-            .app
-            .global_search
-            .matches
-            .get(active_pane.app.global_search.current)
-        else {
+        let Some(target) = search.matches.get(search.current).cloned() else {
+            return;
+        };
+
+        if self.active_pane_id() != Some(target.pane_id)
+            && self.workspace.focus_pane(target.pane_id)
+        {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.install_search_state_on_active_pane(search);
+        }
+
+        let Some(active_pane) = self.active_pane_mut() else {
             return;
         };
 
@@ -1634,6 +1724,7 @@ fn render_search_overlay(
 
 fn search_match_at_cell(
     search: &walk_ui::search::GlobalSearch,
+    pane_id: PaneId,
     absolute_row: usize,
     column: u16,
 ) -> Option<bool> {
@@ -1642,7 +1733,10 @@ fn search_match_at_cell(
     }
 
     for (index, search_match) in search.matches.iter().enumerate() {
-        if search_match.is_command || search_match.row != absolute_row {
+        if search_match.is_command
+            || search_match.pane_id != pane_id
+            || search_match.row != absolute_row
+        {
             continue;
         }
         if (search_match.col_start..search_match.col_end).contains(&column) {
@@ -1655,6 +1749,7 @@ fn search_match_at_cell(
 
 fn search_match_for_block_command(
     search: &walk_ui::search::GlobalSearch,
+    pane_id: PaneId,
     block_id: u64,
 ) -> Option<bool> {
     if search.matches.is_empty() {
@@ -1666,7 +1761,9 @@ fn search_match_for_block_command(
         .iter()
         .enumerate()
         .find(|(_, search_match)| {
-            search_match.is_command && search_match.block_id == Some(block_id)
+            search_match.is_command
+                && search_match.pane_id == pane_id
+                && search_match.block_id == Some(block_id)
         })
         .map(|(index, _)| index == search.current)
 }
@@ -1795,12 +1892,19 @@ fn input_event_to_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
     }
 }
 
-fn collect_search_lines(terminal: &Terminal, blocks: &[Block]) -> Vec<SearchLine> {
+fn collect_search_lines(
+    terminal: &Terminal,
+    blocks: &[Block],
+    pane_id: PaneId,
+    tab_id: u64,
+) -> Vec<SearchLine> {
     let mut lines: Vec<SearchLine> = terminal
         .state
         .text_rows()
         .into_iter()
         .map(|row| SearchLine {
+            pane_id,
+            tab_id,
             row: row.absolute_row,
             block_id: None,
             is_command: false,
@@ -1813,6 +1917,8 @@ fn collect_search_lines(terminal: &Terminal, blocks: &[Block]) -> Vec<SearchLine
             continue;
         }
         lines.push(SearchLine {
+            pane_id,
+            tab_id,
             row: block.output_start_row,
             block_id: Some(block.id),
             is_command: true,
@@ -1911,6 +2017,7 @@ fn push_block_decorations(
     blocks: &[Block],
     selected_block_id: Option<u64>,
     global_search: &walk_ui::search::GlobalSearch,
+    pane_id: PaneId,
     visible_rows: &[usize],
     row_positions: &[Option<usize>],
     total_cols: usize,
@@ -1985,7 +2092,9 @@ fn push_block_decorations(
             );
         }
 
-        if let Some(current_match) = search_match_for_block_command(global_search, block.id) {
+        if let Some(current_match) =
+            search_match_for_block_command(global_search, pane_id, block.id)
+        {
             let highlight = if current_match {
                 theme.highlight_current_match
             } else {

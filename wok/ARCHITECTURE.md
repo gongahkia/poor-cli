@@ -135,7 +135,7 @@ The shell layer emits OSC markers and cwd/title updates that feed the block mode
 
 The current runtime is coherent, but a few edges are still intentionally narrow:
 
-- search is focused-pane only
+- search is workspace-global, but the overlay is still rendered in the focused pane
 - Lua hooks are lifecycle notifications, not rich structured events
 - font family selection is plumbed but still relies on the renderer's current monospace fallback path
 - close-confirmation and richer compositor features remain deferred
