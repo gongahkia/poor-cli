@@ -16,8 +16,9 @@ use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::{Action, Context, KeyCombo};
 use walk_app::scripting::LuaRuntime;
 use walk_app::session::{
-    default_session_path, load_session, named_session_path, save_session, split_node_from_state,
-    split_node_to_state, PaneState, WorkspaceSessionState, WorkspaceTabState,
+    block_from_state, block_to_state, default_session_path, load_session, named_session_path,
+    save_session, split_node_from_state, split_node_to_state, PaneState, WorkspaceSessionState,
+    WorkspaceTabState,
 };
 use walk_app::window::WindowConfig;
 use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
@@ -196,6 +197,9 @@ impl WalkHandler {
             .font
             .grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
         let env = HashMap::new();
+        let initial_cwd = restore.as_ref().and_then(|pane_state| {
+            (!pane_state.cwd.as_os_str().is_empty()).then_some(pane_state.cwd.as_path())
+        });
 
         match Terminal::new(
             &pane_config.shell,
@@ -203,8 +207,13 @@ impl WalkHandler {
             rows,
             pane_config.scrollback_lines,
             env,
+            initial_cwd,
         ) {
-            Ok(terminal) => {
+            Ok(mut terminal) => {
+                if let Some(pane_state) = &restore {
+                    terminal.restore_scrollback(&pane_state.buffer_lines);
+                    terminal.restore_display_offset(pane_state.display_offset);
+                }
                 let pane_runtime = PaneRuntime {
                     app,
                     terminal,
@@ -216,13 +225,22 @@ impl WalkHandler {
                 if let Some(pane_state) = restore {
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.terminal.title = pane_state.title;
-                        if !pane_state.cwd.as_os_str().is_empty() {
-                            let command = format!(
-                                "cd -- {}\r",
-                                shell_quote_path(&pane_state.cwd.display().to_string())
-                            );
-                            let _ = pane.terminal.send_input(command.as_bytes());
-                        }
+                        let blocks = pane_state
+                            .blocks
+                            .iter()
+                            .map(block_from_state)
+                            .collect::<Vec<_>>();
+                        pane.app
+                            .block_manager
+                            .restore_blocks(blocks, pane_state.selected_block);
+                        pane.app.block_navigator.selected_block_index =
+                            pane_state.selected_block.and_then(|selected_id| {
+                                pane.app
+                                    .block_manager
+                                    .blocks
+                                    .iter()
+                                    .position(|block| block.id == selected_id)
+                            });
                     }
                 }
             }
@@ -302,6 +320,26 @@ impl WalkHandler {
                 title: pane.terminal.title.clone(),
                 input_draft: pane.app.input_editor.buffer.text(),
                 search_query: pane.app.global_search.search_input.clone(),
+                buffer_lines: pane
+                    .terminal
+                    .state
+                    .text_rows()
+                    .into_iter()
+                    .map(|row| row.text)
+                    .collect(),
+                display_offset: pane.terminal.state.display_offset(),
+                blocks: pane
+                    .app
+                    .block_manager
+                    .blocks
+                    .iter()
+                    .map(block_to_state)
+                    .collect(),
+                selected_block: pane
+                    .app
+                    .block_navigator
+                    .selected_block(&pane.app.block_manager)
+                    .map(|block| block.id),
             })
             .collect();
 
@@ -2194,10 +2232,6 @@ fn parse_shell_type(value: &str) -> ShellType {
         "powershell" => ShellType::PowerShell,
         _ => ShellType::Bash,
     }
-}
-
-fn shell_quote_path(path: &str) -> String {
-    format!("'{}'", path.replace('\'', "'\"'\"'"))
 }
 
 fn parse_lua_context(mode: &str) -> Option<Context> {

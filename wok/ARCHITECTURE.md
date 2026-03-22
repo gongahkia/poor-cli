@@ -89,13 +89,14 @@ What is persisted:
 - pane title
 - input draft
 - search query
+- restored plain-text terminal transcript
+- restored block timeline and collapsed state
+- viewport scroll position
 - window size and position
 
 What is intentionally not persisted:
 
 - live PTY process state
-- scrollback contents
-- block history from previous shell processes
 
 Autosave is written to `~/.config/walk/session.json`. Named snapshots live under `~/.config/walk/sessions/`.
 

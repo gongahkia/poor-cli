@@ -1,6 +1,7 @@
 //! Terminal: connects the PTY async reader to alacritty_terminal.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 
 use thiserror::Error;
@@ -90,9 +91,10 @@ impl Terminal {
         rows: u16,
         scrollback: usize,
         env: HashMap<String, String>,
+        cwd: Option<&Path>,
     ) -> Result<Self, TerminalError> {
         let manager = PtyManager::new();
-        let spawned = manager.spawn(shell, cols, rows, &env)?;
+        let spawned = manager.spawn(shell, cols, rows, &env, cwd)?;
         let pty = PtyIoHandle::new(spawned);
         let state = TerminalState::new(cols as usize, rows as usize, scrollback);
 
@@ -236,6 +238,30 @@ impl Terminal {
         self.state.resize(cols as usize, rows as usize);
         self.dirty = true;
         Ok(())
+    }
+
+    /// Restore plain-text terminal history into the emulator buffer.
+    pub fn restore_scrollback(&mut self, lines: &[String]) {
+        if lines.is_empty() {
+            return;
+        }
+
+        let mut bytes = Vec::new();
+        for (index, line) in lines.iter().enumerate() {
+            bytes.extend_from_slice(line.as_bytes());
+            if index + 1 != lines.len() {
+                bytes.extend_from_slice(b"\r\n");
+            }
+        }
+
+        self.state.process_bytes(&bytes);
+        self.dirty = true;
+    }
+
+    /// Restore the viewport scroll position.
+    pub fn restore_display_offset(&mut self, offset: usize) {
+        self.state.set_display_offset(offset);
+        self.dirty = true;
     }
 
     /// Drain semantic events collected during the most recent PTY processing pass.

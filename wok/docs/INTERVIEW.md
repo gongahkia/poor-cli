@@ -68,7 +68,7 @@ Because viewport-relative bookkeeping breaks after scrollback growth, search jum
 
 ### Why does session restore respawn shells instead of reviving them?
 
-Because reviving live PTY state is brittle and platform-specific. Restoring layout, cwd, shell choice, search query, and input draft is a clean boundary that keeps sessions reliable and explainable.
+Because reviving live PTY state is brittle and platform-specific. Walk restores layout, cwd, shell choice, search query, input draft, transcript text, and block history, then respawns a fresh PTY in the right working directory. That preserves user-facing continuity without pretending a dead shell process can be serialized safely.
 
 ### What is the weakest part of the current implementation?
 

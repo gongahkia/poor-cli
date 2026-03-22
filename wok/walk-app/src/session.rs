@@ -1,9 +1,11 @@
 //! Session persistence for workspace tabs and panes.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use walk_blocks::block::Block;
 use walk_ui::splits::{SplitDirection, SplitNode};
 
 use crate::workspace::PaneId;
@@ -34,6 +36,47 @@ pub struct PaneState {
     pub input_draft: String,
     /// Active search query for the pane.
     pub search_query: String,
+    /// Persisted plain-text terminal rows.
+    #[serde(default)]
+    pub buffer_lines: Vec<String>,
+    /// Persisted viewport scroll offset.
+    #[serde(default)]
+    pub display_offset: usize,
+    /// Persisted block timeline.
+    #[serde(default)]
+    pub blocks: Vec<BlockState>,
+    /// Persisted selected block.
+    #[serde(default)]
+    pub selected_block: Option<u64>,
+}
+
+/// Serializable block state used for session restore.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockState {
+    /// Unique block identifier.
+    pub id: u64,
+    /// Prompt text displayed before the command.
+    pub prompt_text: String,
+    /// Command text submitted by the user.
+    pub command_text: String,
+    /// First output row for the block.
+    pub output_start_row: usize,
+    /// Last output row for the block.
+    pub output_end_row: usize,
+    /// Exit code if the command completed.
+    pub exit_code: Option<i32>,
+    /// Execution duration in milliseconds when known.
+    pub duration_ms: Option<u64>,
+    /// Whether the block is collapsed.
+    pub is_collapsed: bool,
+    /// Scroll offset within the block.
+    pub scroll_offset: usize,
+    /// Working directory captured for the block.
+    pub cwd: PathBuf,
+    /// Git branch metadata when available.
+    pub git_branch: Option<String>,
+    /// Dirty flag metadata when available.
+    pub git_dirty: Option<bool>,
 }
 
 /// Saved split tree node.
@@ -111,6 +154,48 @@ pub fn named_session_path(name: &str) -> PathBuf {
     crate::config::WalkConfig::config_dir()
         .join("sessions")
         .join(format!("{name}.json"))
+}
+
+/// Convert a runtime block into serializable session state.
+pub fn block_to_state(block: &Block) -> BlockState {
+    BlockState {
+        id: block.id,
+        prompt_text: block.prompt_text.clone(),
+        command_text: block.command_text.clone(),
+        output_start_row: block.output_start_row,
+        output_end_row: block.output_end_row,
+        exit_code: block.exit_code,
+        duration_ms: block.duration.map(|duration| duration.as_millis() as u64),
+        is_collapsed: block.is_collapsed,
+        scroll_offset: block.scroll_offset,
+        cwd: block.cwd.clone(),
+        git_branch: block.git_branch.clone(),
+        git_dirty: block.git_dirty,
+    }
+}
+
+/// Convert a serialized block back into runtime state.
+pub fn block_from_state(block: &BlockState) -> Block {
+    let duration = block.duration_ms.map(Duration::from_millis);
+    let start_time = Instant::now();
+    let end_time = duration.and_then(|duration| start_time.checked_add(duration));
+
+    Block {
+        id: block.id,
+        prompt_text: block.prompt_text.clone(),
+        command_text: block.command_text.clone(),
+        output_start_row: block.output_start_row,
+        output_end_row: block.output_end_row,
+        exit_code: block.exit_code,
+        start_time,
+        end_time,
+        duration,
+        is_collapsed: block.is_collapsed,
+        scroll_offset: block.scroll_offset,
+        cwd: block.cwd.clone(),
+        git_branch: block.git_branch.clone(),
+        git_dirty: block.git_dirty,
+    }
 }
 
 /// Convert a runtime split tree into a serializable shape.
@@ -210,6 +295,23 @@ mod tests {
                 title: "demo".to_string(),
                 input_draft: "echo hello".to_string(),
                 search_query: "hello".to_string(),
+                buffer_lines: vec!["echo hello".to_string(), "hello".to_string()],
+                display_offset: 3,
+                blocks: vec![BlockState {
+                    id: 1,
+                    prompt_text: "$".to_string(),
+                    command_text: "echo hello".to_string(),
+                    output_start_row: 0,
+                    output_end_row: 1,
+                    exit_code: Some(0),
+                    duration_ms: Some(12),
+                    is_collapsed: false,
+                    scroll_offset: 0,
+                    cwd: PathBuf::from("/tmp"),
+                    git_branch: Some("main".to_string()),
+                    git_dirty: Some(false),
+                }],
+                selected_block: Some(1),
             }],
             active_tab: 0,
             window_size: (1280, 800),
@@ -224,5 +326,35 @@ mod tests {
         assert_eq!(loaded.panes.len(), 1);
         assert_eq!(loaded.panes[0].shell, "zsh");
         assert_eq!(loaded.window_size, (1280, 800));
+        assert_eq!(loaded.panes[0].buffer_lines.len(), 2);
+        assert_eq!(loaded.panes[0].blocks.len(), 1);
+    }
+
+    #[test]
+    fn test_block_round_trip() {
+        let runtime_block = Block {
+            id: 4,
+            prompt_text: "$".to_string(),
+            command_text: "cargo test".to_string(),
+            output_start_row: 10,
+            output_end_row: 14,
+            exit_code: Some(0),
+            start_time: Instant::now(),
+            end_time: None,
+            duration: Some(Duration::from_millis(250)),
+            is_collapsed: true,
+            scroll_offset: 2,
+            cwd: PathBuf::from("/repo"),
+            git_branch: Some("main".to_string()),
+            git_dirty: Some(true),
+        };
+
+        let state = block_to_state(&runtime_block);
+        let restored = block_from_state(&state);
+
+        assert_eq!(restored.id, runtime_block.id);
+        assert_eq!(restored.command_text, runtime_block.command_text);
+        assert_eq!(restored.output_end_row, runtime_block.output_end_row);
+        assert_eq!(restored.duration, Some(Duration::from_millis(250)));
     }
 }

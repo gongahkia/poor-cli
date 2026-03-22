@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::Path;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize, PtySystem};
 use thiserror::Error;
@@ -84,6 +85,7 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         env: &HashMap<String, String>,
+        cwd: Option<&Path>,
     ) -> Result<SpawnedPty, PtyError> {
         let mut config = shell_spawn_config(shell_type);
         let shell_bootstrap = prepare_shell_bootstrap(shell_type, &mut config)
@@ -104,6 +106,9 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(&config.shell);
         for arg in &config.args {
             cmd.arg(arg);
+        }
+        if let Some(cwd) = cwd {
+            cmd.cwd(cwd);
         }
 
         // Set environment variables

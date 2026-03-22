@@ -184,6 +184,15 @@ impl BlockManager {
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
     }
+
+    /// Restore a previously serialized block timeline.
+    pub fn restore_blocks(&mut self, blocks: Vec<Block>, active_block: Option<u64>) {
+        self.next_id = blocks.iter().map(|block| block.id).max().unwrap_or(0) + 1;
+        self.active_block = active_block;
+        self.blocks = blocks;
+        self.pending_command_text = None;
+        self.state = BlockBuildState::WaitingForPrompt;
+    }
 }
 
 impl Default for BlockManager {
