@@ -11,6 +11,8 @@ import { registerHealthCheckTool } from "./health-check.js";
 import { registerCacheTools } from "./cache-tools.js";
 import { registerKeystoreTools } from "./keystore-tools.js";
 import { registerConfigTools } from "./config-tools.js";
+import { registerQueryTool } from "./query-tool.js";
+import { registerResources } from "./resources.js";
 
 export type ToolDefinition = {
   readonly name: string;
@@ -39,4 +41,6 @@ export const registerAllTools = (server: McpServer): void => {
   registerCacheTools(server);
   registerKeystoreTools(server);
   registerConfigTools(server);
+  registerQueryTool(server);
+  registerResources(server);
 };
