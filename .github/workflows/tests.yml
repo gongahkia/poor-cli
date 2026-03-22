@@ -98,13 +98,13 @@ jobs:
           venv_dir = pathlib.Path("wheel-smoke-venv").resolve()
           venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
           scripts_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
-          pip = scripts_dir / ("pip.exe" if os.name == "nt" else "pip")
+          python = scripts_dir / ("python.exe" if os.name == "nt" else "python")
           poor_cli = scripts_dir / ("poor-cli.exe" if os.name == "nt" else "poor-cli")
           poor_cli_server = scripts_dir / ("poor-cli-server.exe" if os.name == "nt" else "poor-cli-server")
           wheel_path = next(pathlib.Path("dist").glob("*.whl"))
 
-          subprocess.check_call([str(pip), "install", "--upgrade", "pip"])
-          subprocess.check_call([str(pip), "install", str(wheel_path)])
+          subprocess.check_call([str(python), "-m", "pip", "install", "--upgrade", "pip"])
+          subprocess.check_call([str(python), "-m", "pip", "install", str(wheel_path)])
 
           with tempfile.TemporaryDirectory() as tmpdir:
               subprocess.check_call([str(poor_cli), "--help"], cwd=tmpdir)
