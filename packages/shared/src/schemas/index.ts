@@ -115,11 +115,13 @@ export const UraPropertyTransactionsSchema = z.object({
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
 });
 
-export const UraPlanningAreaSchema = z.object({
+export const UraPlanningAreaBaseSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   planningArea: z.string().optional(),
-}).refine(
+});
+
+export const UraPlanningAreaSchema = UraPlanningAreaBaseSchema.refine(
   ({ lat, lng, planningArea }) =>
     planningArea !== undefined || (lat !== undefined && lng !== undefined),
   {

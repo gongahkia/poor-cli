@@ -33,6 +33,7 @@ export {
   OneMapPopulationSchema,
   OneMapConvertCoordsSchema,
   UraPropertyTransactionsSchema,
+  UraPlanningAreaBaseSchema,
   UraPlanningAreaSchema,
   UraDevChargesSchema,
   DatagovSearchSchema,

@@ -5,7 +5,7 @@ import { geocode, reverseGeocode, getRoute, getPopulationData, convertSVY21toWGS
 import { registerTool } from "./registry.js";
 
 export const handleOneMapGeocode = async (
-  params: Readonly<{ searchVal: string; limit?: number }>,
+  params: Readonly<{ searchVal: string; limit?: number | undefined }>,
 ): Promise<ToolResult> => {
   const results = await geocode(params.searchVal, params.limit);
   const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
@@ -13,7 +13,7 @@ export const handleOneMapGeocode = async (
 };
 
 export const handleOneMapPopulation = async (
-  params: Readonly<{ planningArea: string; year?: string; dataType?: string; format?: OutputFormat }>,
+  params: Readonly<{ planningArea: string; year?: string | undefined; dataType?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const result = await getPopulationData(
     params.planningArea,

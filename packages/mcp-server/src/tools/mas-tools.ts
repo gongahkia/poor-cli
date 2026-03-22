@@ -6,7 +6,7 @@ import { normalizeMasRecord } from "../apis/mas/normalizer.js";
 import { registerTool } from "./registry.js";
 
 export const handleMasExchangeRates = async (
-  params: Readonly<{ currency?: string; date?: string; format?: OutputFormat }>,
+  params: Readonly<{ currency?: string | undefined; date?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const { currency, date, format } = params;
   const filters: Record<string, string> = {};
@@ -30,7 +30,7 @@ export const handleMasExchangeRates = async (
 };
 
 export const handleMasInterestRates = async (
-  params: Readonly<{ date?: string; format?: OutputFormat }>,
+  params: Readonly<{ date?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const { date, format } = params;
   const filters: Record<string, string> = {};
@@ -45,7 +45,7 @@ export const handleMasInterestRates = async (
 };
 
 export const handleMasFinancialStats = async (
-  params: Readonly<{ date?: string; format?: OutputFormat }>,
+  params: Readonly<{ date?: string | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const { date, format } = params;
   const filters: Record<string, string> = {};

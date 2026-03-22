@@ -66,10 +66,10 @@ describe("sg_query parity", () => {
 
   it("matches the direct MAS exchange-rate handler", async () => {
     vi.mocked(masQuery).mockResolvedValue([
-      { _id: 1, end_of_day: "2024-01-31", usd_sgd: "1.35" },
+      { _id: 1, end_of_day: "2024-01-31", preliminary: "N", usd_sgd: "1.35" },
     ]);
 
-    const input = { currency: "USD", date: "2024-01-31", format: "json" };
+    const input = { currency: "USD", date: "2024-01-31", format: "json" } as const;
 
     await expect(executeQueryStep("sg_mas_exchange_rates", input)).resolves.toEqual(
       await handleMasExchangeRates(input),
@@ -78,10 +78,10 @@ describe("sg_query parity", () => {
 
   it("matches the direct MAS interest-rate handler", async () => {
     vi.mocked(masQuery).mockResolvedValue([
-      { _id: 1, end_of_day: "2024-01-31", sora: "3.56" },
+      { _id: 1, end_of_day: "2024-01-31", preliminary: "N", sora: "3.56" },
     ]);
 
-    const input = { date: "2024-01-31", format: "json" };
+    const input = { date: "2024-01-31", format: "json" } as const;
 
     await expect(executeQueryStep("sg_mas_interest_rates", input)).resolves.toEqual(
       await handleMasInterestRates(input),
@@ -119,7 +119,7 @@ describe("sg_query parity", () => {
       planningArea: "Tampines",
       dataType: "getPopulationAgeGroup",
       format: "json",
-    };
+    } as const;
 
     await expect(executeQueryStep("sg_onemap_population", input)).resolves.toEqual(
       await handleOneMapPopulation(input),

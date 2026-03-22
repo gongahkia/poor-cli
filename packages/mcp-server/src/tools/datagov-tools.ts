@@ -5,7 +5,7 @@ import { searchDatasets, getDataset, listCollections } from "../apis/datagov/cli
 import { registerTool } from "./registry.js";
 
 export const handleDatagovSearch = async (
-  params: Readonly<{ keyword: string; limit?: number }>,
+  params: Readonly<{ keyword: string; limit?: number | undefined }>,
 ): Promise<ToolResult> => {
   const results = await searchDatasets(params.keyword, params.limit);
   const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
