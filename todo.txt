@@ -27,10 +27,10 @@ blockedBy: none
 7. Add root scripts: `build`, `test`, `lint`, `dev` (runs mcp-server in watch mode).
 
 **DONE WHEN**
-- [ ] `npm install` from root succeeds with no errors
-- [ ] `npx tsc --build` compiles all three workspaces
-- [ ] `npm test` runs vitest (even if 0 tests yet)
-- [ ] Directory tree matches: `packages/{mcp-server,skill,shared}/src/index.ts` all exist
+- [x] `npm install` from root succeeds with no errors
+- [x] `npx tsc --build` compiles all three workspaces
+- [x] `npm test` runs vitest (even if 0 tests yet)
+- [x] Directory tree matches: `packages/{mcp-server,skill,shared}/src/index.ts` all exist
 
 ### Task 1 (A) +scaffolding
 blockedBy: [0]
