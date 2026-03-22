@@ -1,7 +1,5 @@
 //! Terminal viewport renderer: draws the terminal grid, cursor, and block decorations.
 
-use crate::layout::Rect;
-
 /// Viewport scroll state.
 pub struct ViewportRenderer {
     /// Current scroll position (fractional for smooth scrolling).

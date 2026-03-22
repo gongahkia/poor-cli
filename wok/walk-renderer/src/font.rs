@@ -45,7 +45,7 @@ pub struct FontSystem {
 
 impl FontSystem {
     /// Create a new font system with the given font family and size.
-    pub fn new(font_family: &str, font_size: f32) -> Self {
+    pub fn new(_font_family: &str, font_size: f32) -> Self {
         let inner = CosmicFontSystem::new();
         let swash_cache = SwashCache::new();
         let metrics = compute_metrics(&inner, font_size);
@@ -134,7 +134,7 @@ impl FontSystem {
     }
 }
 
-fn compute_metrics(font_system: &CosmicFontSystem, font_size: f32) -> CellMetrics {
+fn compute_metrics(_font_system: &CosmicFontSystem, font_size: f32) -> CellMetrics {
     // Use cosmic-text to measure an 'M' character for accurate metrics
     let line_height = font_size * 1.2;
 

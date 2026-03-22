@@ -2,9 +2,8 @@
 
 use walk_blocks::block::BlockManager;
 use walk_blocks::block_nav::BlockNavigator;
-use walk_input::editor::{EditorAction, EditorKey, InputEditor, InputPosition};
+use walk_input::editor::{EditorKey, InputEditor, InputPosition};
 use walk_input::history::CommandHistory;
-use walk_terminal::shell::ShellType;
 use walk_ui::clipboard::ClipboardManager;
 use walk_ui::search::GlobalSearch;
 use walk_ui::selection::SelectionManager;

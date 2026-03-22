@@ -16,12 +16,12 @@ struct Uniforms {
 /// The GPU render pipeline for terminal rendering.
 pub struct TerminalRenderPipeline {
     pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
+    _bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
     atlas_texture: wgpu::Texture,
-    atlas_view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
+    _atlas_view: wgpu::TextureView,
+    _sampler: wgpu::Sampler,
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
 }
@@ -217,12 +217,12 @@ impl TerminalRenderPipeline {
 
         Self {
             pipeline,
-            bind_group_layout,
+            _bind_group_layout: bind_group_layout,
             bind_group,
             uniform_buffer,
             atlas_texture,
-            atlas_view,
-            sampler,
+            _atlas_view: atlas_view,
+            _sampler: sampler,
             vertex_buffer: None,
             index_buffer: None,
         }

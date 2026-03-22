@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::theme::{Color, SyntaxColors, Theme};
+use crate::theme::{Color, Theme};
 
 /// Errors during theme loading.
 #[derive(Debug, Error)]
@@ -159,6 +159,21 @@ pub fn load_theme(path: &Path) -> Result<Theme, ThemeError> {
     }
     if let Some(p) = toml_theme.background_image {
         theme.background_image = Some(PathBuf::from(p));
+    }
+    if let Some(c) = toml_theme.tab_bar_bg {
+        theme.tab_bar_bg = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.tab_active_bg {
+        theme.tab_active_bg = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.tab_inactive_bg {
+        theme.tab_inactive_bg = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.status_bar_bg {
+        theme.status_bar_bg = parse_hex_color(&c)?;
+    }
+    if let Some(c) = toml_theme.input_bg {
+        theme.input_bg = parse_hex_color(&c)?;
     }
 
     // Apply ANSI overrides
