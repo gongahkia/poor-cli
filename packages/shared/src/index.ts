@@ -16,6 +16,7 @@ export { Keystore } from "./keystore.js";
 export { createLogger } from "./logger.js";
 export type { Logger } from "./logger.js";
 export { getRateLimiter, RateLimiter } from "./rate-limiter.js";
+export { resetRateLimiters } from "./rate-limiter.js";
 export { validateInput } from "./schemas/index.js";
 export {
   SingStatSearchSchema,
@@ -32,6 +33,7 @@ export {
   OneMapPopulationSchema,
   OneMapConvertCoordsSchema,
   UraPropertyTransactionsSchema,
+  UraPlanningAreaBaseSchema,
   UraPlanningAreaSchema,
   UraDevChargesSchema,
   DatagovSearchSchema,
@@ -49,7 +51,18 @@ export {
 } from "./schemas/index.js";
 export { loadConfig } from "./config/index.js";
 export type { Config } from "./config/index.js";
+export {
+  getCacheTtl,
+  getMockApiBaseUrl,
+  getRateLimit,
+  getSupportedConfigKeys,
+  getTimeout,
+  parseMutableConfigValue,
+  resetConfigCache,
+  resolveOutputFormat,
+} from "./config/index.js";
 export { TTL } from "./config/ttl.js";
+export type { TTLKey } from "./config/ttl.js";
 export { RATE_LIMITS } from "./config/rate-limits.js";
 export { TIMEOUTS, HARD_CAP_TIMEOUT } from "./config/timeouts.js";
 

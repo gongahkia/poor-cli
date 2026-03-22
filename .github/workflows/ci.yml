@@ -25,11 +25,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
-        env:
-          MOCK_API_BASE_URL: "http://localhost:0"
-          SG_APIS_LOG_LEVEL: "error"
+      - name: Verify
+        run: npm run verify

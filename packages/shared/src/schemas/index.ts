@@ -41,42 +41,28 @@ export const SingStatCompareSchema = z.object({
 
 export const MasExchangeRateSchema = z.object({
   currency: z.string().length(3).optional(),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
+  date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const MasInterestRateSchema = z.object({
-  rateType: z.enum(["sora", "prime", "fixed_deposit"]).optional(),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
+  date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const MasFinancialStatsSchema = z.object({
-  category: z.enum(["banking", "insurance", "monetary"]),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
+  date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const OneMapGeocodeSchema = z.object({
   searchVal: z.string().min(1),
@@ -129,11 +115,19 @@ export const UraPropertyTransactionsSchema = z.object({
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
 });
 
-export const UraPlanningAreaSchema = z.object({
+export const UraPlanningAreaBaseSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   planningArea: z.string().optional(),
 });
+
+export const UraPlanningAreaSchema = UraPlanningAreaBaseSchema.refine(
+  ({ lat, lng, planningArea }) =>
+    planningArea !== undefined || (lat !== undefined && lng !== undefined),
+  {
+    message: "Provide planningArea or both lat and lng",
+  },
+);
 
 export const UraDevChargesSchema = z.object({
   useGroup: z.string().optional(),
@@ -147,12 +141,8 @@ export const DatagovSearchSchema = z.object({
 
 export const DatagovGetSchema = z.object({
   datasetId: z.string().min(1),
-  resourceIndex: z.number().int().nonnegative().optional(),
-  limit: z.number().int().positive().optional(),
-  offset: z.number().int().nonnegative().optional(),
-  filters: z.record(z.string()).optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const DatagovBrowseSchema = z.object({
   collection: z.string().optional(),

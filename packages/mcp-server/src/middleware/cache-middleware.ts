@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { Cache } from "@sg-apis/shared";
+import { Cache, getCacheTtl } from "@sg-apis/shared";
+import type { TTLKey } from "@sg-apis/shared";
 
 let cacheInstance: Cache | null = null;
 
@@ -29,7 +30,7 @@ export const buildCacheKey = (
 
 export const withCache = async <T>(
   key: string,
-  ttl: number,
+  ttlKey: TTLKey,
   fetcher: () => Promise<T>,
 ): Promise<{ data: T; cached: boolean }> => {
   const cache = getCache();
@@ -39,6 +40,6 @@ export const withCache = async <T>(
   }
 
   const data = await fetcher();
-  cache.set(key, JSON.stringify(data), ttl);
+  cache.set(key, JSON.stringify(data), getCacheTtl(ttlKey));
   return { data, cached: false };
 };

@@ -1,13 +1,13 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, CacheClearSchema, formatResponse } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
 import { getCache } from "../middleware/cache-middleware.js";
-import { registerTool } from "./registry.js";
+import type { RegisteredToolDefinition } from "./tool-definition.js";
 
-export const registerCacheTools = (server: McpServer): void => {
-  registerTool(server, {
+export const cacheToolDefinitions: readonly RegisteredToolDefinition[] = [
+  {
     name: "sg_cache_stats",
     description: "Show cache statistics including hit rate, entry count, and disk usage.",
+    surface: "operational",
     inputSchema: {},
     handler: async (_input: unknown): Promise<ToolResult> => {
       const stats = getCache().stats();
@@ -15,11 +15,12 @@ export const registerCacheTools = (server: McpServer): void => {
       const text = formatResponse({ ...stats, hitRate: `${hitRate}%` } as unknown as Record<string, unknown>, "markdown");
       return { content: [{ type: "text", text }] };
     },
-  });
+  },
 
-  registerTool(server, {
+  {
     name: "sg_cache_clear",
     description: "Clear cached data. Specify an API name to clear only that API's cache, or omit to clear all.",
+    surface: "operational",
     inputSchema: CacheClearSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { api } = validateInput(CacheClearSchema, input);
@@ -31,5 +32,5 @@ export const registerCacheTools = (server: McpServer): void => {
       cache.clear();
       return { content: [{ type: "text", text: "All cache cleared." }] };
     },
-  });
-};
+  },
+];

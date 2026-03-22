@@ -1,7 +1,8 @@
 import { ApiError } from "./errors.js";
 import { getRateLimiter } from "./rate-limiter.js";
 import { createLogger } from "./logger.js";
-import { TIMEOUTS, HARD_CAP_TIMEOUT } from "./config/timeouts.js";
+import { getTimeout } from "./config/index.js";
+import { HARD_CAP_TIMEOUT } from "./config/timeouts.js";
 
 const logger = createLogger("http-client");
 
@@ -21,7 +22,7 @@ const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> => {
   const retries = options.retries ?? DEFAULT_RETRIES;
-  const apiTimeout = options.timeout ?? TIMEOUTS[options.apiName] ?? 10000;
+  const apiTimeout = options.timeout ?? getTimeout(options.apiName);
   const timeout = Math.min(apiTimeout, HARD_CAP_TIMEOUT);
 
   await getRateLimiter(options.apiName).acquire();

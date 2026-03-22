@@ -1,10 +1,13 @@
-import { httpGet, TTL, MasDataset, ApiError } from "@sg-apis/shared";
+import { httpGet, MasDataset, ApiError, getMockApiBaseUrl } from "@sg-apis/shared";
 import type { MasResponse, MasQueryParams, MasRecord } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
-const BASE_URL = process.env["MOCK_API_BASE_URL"]
-  ? `${process.env["MOCK_API_BASE_URL"]}/mas`
-  : "https://eservices.mas.gov.sg/api/action/datastore";
+const getBaseUrl = (): string => {
+  const mockApiBaseUrl = getMockApiBaseUrl();
+  return mockApiBaseUrl !== undefined
+    ? `${mockApiBaseUrl}/mas`
+    : "https://eservices.mas.gov.sg/api/action/datastore";
+};
 
 export const getResourceId = (dataset: string): string => {
   const id = MasDataset[dataset as keyof typeof MasDataset];
@@ -27,8 +30,8 @@ export const query = async (
   const offset = params?.offset ?? 0;
 
   const cacheKey = buildCacheKey("mas", "query", { resourceId, limit, offset, ...params?.filters });
-  const { data } = await withCache(cacheKey, TTL.NEAR_REALTIME, async () => {
-    let url = `${BASE_URL}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${offset}`;
+  const { data } = await withCache(cacheKey, "NEAR_REALTIME", async () => {
+    let url = `${getBaseUrl()}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${offset}`;
     if (params?.filters !== undefined) {
       url += `&filters=${encodeURIComponent(JSON.stringify(params.filters))}`;
     }
@@ -52,7 +55,7 @@ export const query = async (
     const total = response.result.total;
     let currentOffset = offset + limit;
     while (currentOffset < total) {
-      const nextUrl = `${BASE_URL}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${currentOffset}`;
+      const nextUrl = `${getBaseUrl()}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${currentOffset}`;
       const nextResponse = await httpGet<MasResponse>(nextUrl, { apiName: "mas" });
       if (nextResponse.success) {
         allRecords = [...allRecords, ...nextResponse.result.records];

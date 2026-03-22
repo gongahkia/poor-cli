@@ -1,3 +1,5 @@
+import { loadConfig } from "./config/index.js";
+
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 type LogLevel = keyof typeof LOG_LEVELS;
 
@@ -9,17 +11,20 @@ export type Logger = {
 };
 
 const getConfiguredLevel = (): LogLevel => {
-  const env = process.env["SG_APIS_LOG_LEVEL"];
-  if (env !== undefined && env !== "" && env in LOG_LEVELS) {
-    return env as LogLevel;
+  try {
+    const configured = loadConfig().logLevel;
+    if (configured in LOG_LEVELS) {
+      return configured as LogLevel;
+    }
+  } catch {
+    return "info";
   }
   return "info";
 };
 
 export const createLogger = (module: string): Logger => {
-  const minLevel = LOG_LEVELS[getConfiguredLevel()];
-
   const log = (level: LogLevel, msg: string, extra?: Readonly<Record<string, unknown>>): void => {
+    const minLevel = LOG_LEVELS[getConfiguredLevel()];
     if (LOG_LEVELS[level] < minLevel) return;
     const entry = {
       ts: new Date().toISOString(),

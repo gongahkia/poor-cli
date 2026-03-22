@@ -1,5 +1,16 @@
 # Contributing Guide
 
+## Scope First
+
+This pilot currently prioritizes depth and contract honesty across the existing five API families:
+- SingStat
+- MAS
+- OneMap
+- URA
+- data.gov.sg
+
+Before adding a new API, prefer asking whether the user goal can be served by making an existing tool contract more truthful, more testable, or more complete.
+
 ## Adding a New API
 
 1. **Create client**: `packages/mcp-server/src/apis/<api>/client.ts`
@@ -26,6 +37,8 @@
    - Include fixtures in `__tests__/fixtures/`
 
 7. **Update SKILL.md**: Add tool documentation
+8. **Update MCP resources and README**: Keep public positioning in sync with the actual surface
+9. **Add parity coverage**: Schema, handler, docs, and MCP resource descriptions must agree on supported inputs and behavior
 
 ## Tool Naming
 Pattern: `sg_<api>_<operation>` (e.g., `sg_singstat_search`)
@@ -34,6 +47,8 @@ Pattern: `sg_<api>_<operation>` (e.g., `sg_singstat_search`)
 Always include a `// WHY:` comment for TTL values.
 
 ## Testing
+- Run `npm run verify` before shipping changes. It is the canonical local and CI verification entrypoint.
 - Mock `fetch` with `vi.stubGlobal`
 - Use `:memory:` for SQLite in tests
 - No real HTTP requests in tests
+- Add contract-parity tests when you narrow or expand a public tool schema

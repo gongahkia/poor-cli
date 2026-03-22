@@ -1,38 +1,66 @@
 # API Authentication Guide
 
-## SingStat
-No authentication required. All endpoints are publicly accessible.
+This repo has two authenticated upstreams:
+- OneMap requires an email and password
+- URA requires an API key
 
-## MAS (Monetary Authority of Singapore)
-No authentication required. Subject to fair use rate limits.
+The recommended precedence is:
+1. environment variables for production and CI
+2. the local keystore helpers for development fallback
+
+## Environment Variables
+
+```bash
+export SG_API_ONEMAP_EMAIL="you@example.com"
+export SG_API_ONEMAP_PASSWORD="your-password"
+export SG_API_URA_KEY="your-ura-api-key"
+```
+
+## Local MCP Keystore Fallback
+
+```text
+sg_key_set { "apiName": "onemap_email", "key": "you@example.com" }
+sg_key_set { "apiName": "onemap_password", "key": "your-password" }
+sg_key_set { "apiName": "ura", "key": "your-ura-api-key" }
+```
+
+The local keystore is convenient for local development only. It is not an encrypted secret-management system.
+
+## Public APIs
+
+These tool families do not require credentials:
+- SingStat
+- MAS
+- data.gov.sg
 
 ## OneMap
-**Registration required.** OneMap requires email + password authentication.
 
-1. Register at [onemap.gov.sg](https://www.onemap.gov.sg)
-2. Configure credentials:
-   ```
-   sg_key_set { "apiName": "onemap_email", "key": "your@email.com" }
-   sg_key_set { "apiName": "onemap_password", "key": "your-password" }
-   ```
-   Or via env vars: `SG_API_ONEMAP_EMAIL`, `SG_API_ONEMAP_PASSWORD`
+Registration is required at [onemap.gov.sg](https://www.onemap.gov.sg/).
 
-**Troubleshooting:**
-- `401 Unauthorized` → Credentials incorrect or expired. Re-register.
-- `Token expired` → Token auto-refreshes. If persistent, delete and re-set credentials.
+Expected keys:
+- `onemap_email`
+- `onemap_password`
 
-## URA (Urban Redevelopment Authority)
-**API key required.**
+Health-check behavior:
+- `sg_health_check` reports OneMap as `configured: true` only when both email and password are present
+- reachability is reported separately from credential presence
 
-1. Register at [ura.gov.sg/maps](https://www.ura.gov.sg/maps)
-2. Apply for API access key
-3. Configure: `sg_key_set { "apiName": "ura", "key": "your-api-key" }`
-   Or: `SG_API_URA_KEY=your-api-key`
+Common failures:
+- `401 Unauthorized`: the email or password is wrong
+- token-related failures: OneMap token issuance or refresh failed upstream
 
-**Troubleshooting:**
-- `Missing API key` → Key not configured. Run `sg_key_set`.
-- `Invalid token` → Daily token refresh failed. Check API key validity.
-- `Rate limited` → URA has strict limits. Wait and retry.
+## URA
 
-## data.gov.sg
-No authentication required for basic access. Optional API key available for higher rate limits.
+Registration is required at [ura.gov.sg/maps](https://www.ura.gov.sg/maps/).
+
+Expected key:
+- `ura`
+
+Health-check behavior:
+- `sg_health_check` reports URA as `configured: true` only when the URA key is present
+- reachability is reported separately from credential presence
+
+Common failures:
+- missing key: configure `SG_API_URA_KEY` or `sg_key_set`
+- invalid token: URA token refresh failed because the upstream key is invalid
+- rate limiting: URA is the tightest upstream in this repo, so retry later

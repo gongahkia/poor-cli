@@ -1,14 +1,25 @@
 {
   "name": "@sg-apis/shared",
   "version": "0.1.0",
+  "description": "Shared runtime utilities and types for sg-apis-mcp",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",
