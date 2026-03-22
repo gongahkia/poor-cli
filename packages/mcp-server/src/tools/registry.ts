@@ -2,6 +2,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShape } from "zod";
 import type { ToolResult } from "@sg-apis/shared";
 import { wrapHandler } from "../middleware/error-handler.js";
+import { registerSingStatTools } from "./singstat-tools.js";
+import { registerMasTools } from "./mas-tools.js";
+import { registerOneMapTools } from "./onemap-tools.js";
+import { registerUraTools } from "./ura-tools.js";
+import { registerDatagovTools } from "./datagov-tools.js";
+import { registerHealthCheckTool } from "./health-check.js";
+import { registerCacheTools } from "./cache-tools.js";
+import { registerKeystoreTools } from "./keystore-tools.js";
+import { registerConfigTools } from "./config-tools.js";
 
 export type ToolDefinition = {
   readonly name: string;
@@ -21,6 +30,13 @@ export const registerTool = (server: McpServer, def: ToolDefinition): void => {
 };
 
 export const registerAllTools = (server: McpServer): void => {
-  // Tool modules will be imported and registered here as they are created
-  void server; // placeholder
+  registerSingStatTools(server);
+  registerMasTools(server);
+  registerOneMapTools(server);
+  registerUraTools(server);
+  registerDatagovTools(server);
+  registerHealthCheckTool(server);
+  registerCacheTools(server);
+  registerKeystoreTools(server);
+  registerConfigTools(server);
 };
