@@ -3399,7 +3399,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "walk-app"
+name = "walk"
 version = "0.1.0"
 dependencies = [
  "clap",
