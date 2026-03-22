@@ -50,6 +50,7 @@ jobs:
   python-package:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -84,6 +85,7 @@ jobs:
         run: python -m build --wheel
 
       - name: Wheel install smoke test
+        shell: bash
         run: |
           python - <<'PY'
           import json
