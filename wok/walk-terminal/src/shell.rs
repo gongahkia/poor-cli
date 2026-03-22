@@ -185,6 +185,33 @@ mod tests {
     }
 
     #[test]
+    fn test_shell_spawn_config_powershell_uses_interactive_shell() {
+        let config = shell_spawn_config(&ShellType::PowerShell);
+        assert!(
+            config.shell.ends_with("pwsh")
+                || config.shell.ends_with("powershell")
+                || config.shell.ends_with("powershell.exe")
+        );
+        assert_eq!(config.args, vec!["-NoLogo".to_string()]);
+    }
+
+    #[test]
+    fn test_shell_spawn_config_wsl_preserves_distro_and_bash_login() {
+        let config = shell_spawn_config(&ShellType::Wsl("Ubuntu".to_string()));
+        assert_eq!(config.shell, "wsl.exe");
+        assert_eq!(
+            config.args,
+            vec![
+                "-d".to_string(),
+                "Ubuntu".to_string(),
+                "--".to_string(),
+                "bash".to_string(),
+                "--login".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn test_available_shells_not_empty() {
         let shells = available_shells();
         assert!(!shells.is_empty());

@@ -10,14 +10,14 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | --- | --- | --- |
 | Core terminal | Shipped | GPU-rendered terminal, PTY-backed shell process, resize propagation, copy/paste, zoom, scrollback-backed buffer |
 | Blocks on Bash/Zsh/Fish | Shipped | Automatic shell bootstrap, OSC 133 parsing, separators, exit-status accents, collapse, and block copy |
-| PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers; Bash/Zsh/Fish remain the most battle-tested path |
+| PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers, source user profiles deterministically, restore startup cwd, and now have explicit regression coverage |
 | Tabs, splits, sessions | Shipped | IDE-style workspace with autosave/restore, manual snapshot save/load, and restored transcript/block continuity |
 | Input bar | Shipped | Pane-local bottom input editor with multiline draft, history recall, submit, cancel, and paste |
 | Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
 | Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, hooks, `exec`, and `notify` |
 | Theme loading | Shipped | `theme_path` is loaded at startup |
-| Remaining limits | Honest gap | Lua is action/hook scoped rather than a full plugin API, and PowerShell/WSL need broader runtime soak time |
+| Remaining limits | Honest gap | Lua is action/hook scoped rather than a full plugin API |
 
 ## Run Locally
 

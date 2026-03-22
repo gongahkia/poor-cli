@@ -50,7 +50,7 @@ That split keeps the systems boundary, the product boundary, and the rendering b
 - Search is scoped to the focused pane, not the full workspace.
 - Lua is not a plugin API with custom renderers or arbitrary runtime mutation.
 - `walk.on(...)` hooks are lifecycle notifications; today they carry `nil` payloads rather than rich structured event objects.
-- PowerShell and WSL are supported, but Bash/Zsh/Fish remain the most battle-tested shells for the block workflow.
+- PowerShell and WSL are supported through explicit bootstrap wrappers with regression coverage, though Bash/Zsh/Fish remain the cleanest first-run demo shells.
 
 ## Questions You Should Expect
 
@@ -72,7 +72,7 @@ Because reviving live PTY state is brittle and platform-specific. Walk restores 
 
 ### What is the weakest part of the current implementation?
 
-The weakest part is runtime hardening rather than missing architecture. The code now covers tabs, splits, search, sessions, Lua, and multiple shells, but the next engineering step is heavier end-to-end smoke coverage and broader shell/runtime soak testing, especially for PowerShell and WSL.
+The weakest part is not architecture coverage anymore; it is product-fit iteration. The code now covers tabs, splits, search, sessions, Lua, and multiple shells with wrapper-level regression coverage, so the next engineering step is deeper end-to-end UI smoke coverage and polish rather than basic shell correctness gaps.
 
 ### How would you scale this next?
 

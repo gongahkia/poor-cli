@@ -208,16 +208,30 @@ fn prepare_fish_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std:
 
 fn prepare_powershell_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std::io::Error> {
     let mut profile = NamedTempFile::new()?;
-    write!(profile, "{POWERSHELL_INTEGRATION}")?;
+    write!(profile, "{}", powershell_profile_script())?;
 
     config.args = vec![
         "-NoLogo".to_string(),
+        "-NoProfile".to_string(),
         "-NoExit".to_string(),
         "-File".to_string(),
         profile.path().to_string_lossy().into_owned(),
     ];
 
     Ok(ShellBootstrap::PowerShell(profile))
+}
+
+/// Insert a WSL `--cd` argument before the command delimiter when a startup cwd is known.
+pub fn apply_wsl_cwd(config: &mut PtyConfig, cwd: &Path) {
+    if config.args.iter().any(|arg| arg == "--cd") {
+        return;
+    }
+
+    if let Some(delimiter_index) = config.args.iter().position(|arg| arg == "--") {
+        let translated = host_path_to_wsl(cwd);
+        config.args.insert(delimiter_index, translated);
+        config.args.insert(delimiter_index, "--cd".to_string());
+    }
 }
 
 fn prepare_wsl_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std::io::Error> {
@@ -268,6 +282,34 @@ fn fish_source_if_exists(path: &Path) -> String {
 
 fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+}
+
+fn powershell_profile_script() -> String {
+    format!(
+        r#"
+$walkProfiles = @()
+if ($PROFILE) {{
+    $walkProfiles += $PROFILE
+    foreach ($name in @("AllUsersAllHosts", "AllUsersCurrentHost", "CurrentUserAllHosts", "CurrentUserCurrentHost")) {{
+        $property = $PROFILE.PSObject.Properties[$name]
+        if ($property -and $property.Value) {{
+            $walkProfiles += $property.Value
+        }}
+    }}
+}}
+
+$walkProfiles |
+    Where-Object {{ $_ }} |
+    Select-Object -Unique |
+    ForEach-Object {{
+        if (Test-Path $_) {{
+            . $_
+        }}
+    }}
+
+{POWERSHELL_INTEGRATION}
+"#
+    )
 }
 
 fn host_path_to_wsl(path: &Path) -> String {
@@ -372,7 +414,15 @@ mod tests {
         let mut config = test_config("pwsh");
         let bootstrap = prepare_shell_bootstrap(&ShellType::PowerShell, &mut config).unwrap();
         assert!(matches!(bootstrap, Some(ShellBootstrap::PowerShell(_))));
+        assert!(config.args.iter().any(|arg| arg == "-NoProfile"));
         assert!(config.args.iter().any(|arg| arg == "-File"));
+        let Some(ShellBootstrap::PowerShell(profile)) = bootstrap else {
+            panic!("expected powershell bootstrap");
+        };
+        let contents = fs::read_to_string(profile.path()).unwrap();
+        assert!(contents.contains("$PROFILE"));
+        assert!(contents.contains("Select-Object -Unique"));
+        assert!(contents.contains("Set-PSReadLineKeyHandler"));
     }
 
     #[test]
@@ -392,5 +442,32 @@ mod tests {
             prepare_shell_bootstrap(&ShellType::Wsl("Ubuntu".to_string()), &mut config).unwrap();
         assert!(matches!(bootstrap, Some(ShellBootstrap::Wsl(_))));
         assert!(config.args.iter().any(|arg| arg == "--rcfile"));
+        assert_eq!(config.args[0], "-d");
+        assert_eq!(config.args[1], "Ubuntu");
+    }
+
+    #[test]
+    fn test_apply_wsl_cwd_inserts_cd_before_command_delimiter() {
+        let mut config = PtyConfig {
+            shell: "wsl.exe".to_string(),
+            args: vec![
+                "-d".to_string(),
+                "Ubuntu".to_string(),
+                "--".to_string(),
+                "bash".to_string(),
+                "--login".to_string(),
+            ],
+            env: HashMap::new(),
+        };
+
+        apply_wsl_cwd(&mut config, Path::new("/tmp/project"));
+
+        let delimiter = config.args.iter().position(|arg| arg == "--").unwrap();
+        assert_eq!(config.args[delimiter - 2], "--cd");
+        assert_eq!(
+            config.args[delimiter - 1],
+            host_path_to_wsl(Path::new("/tmp/project"))
+        );
+        assert_eq!(config.args[delimiter + 1], "bash");
     }
 }

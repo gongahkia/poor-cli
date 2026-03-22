@@ -9,7 +9,7 @@ use thiserror::Error;
 use tracing::{debug, info, instrument};
 
 use crate::shell::{shell_spawn_config, ShellType};
-use crate::shell_integration::{prepare_shell_bootstrap, ShellBootstrap};
+use crate::shell_integration::{apply_wsl_cwd, prepare_shell_bootstrap, ShellBootstrap};
 
 /// Errors that can occur during PTY operations.
 #[derive(Debug, Error)]
@@ -88,6 +88,9 @@ impl PtyManager {
         cwd: Option<&Path>,
     ) -> Result<SpawnedPty, PtyError> {
         let mut config = shell_spawn_config(shell_type);
+        if let (ShellType::Wsl(_), Some(cwd)) = (shell_type, cwd) {
+            apply_wsl_cwd(&mut config, cwd);
+        }
         let shell_bootstrap = prepare_shell_bootstrap(shell_type, &mut config)
             .map_err(|e| PtyError::BootstrapFailed(e.to_string()))?;
 
