@@ -1,6 +1,9 @@
 //! Application handler trait for dispatching window events.
 
+use std::sync::Arc;
+
 use winit::dpi::PhysicalSize;
+use winit::window::Window;
 
 use crate::input::{InputEvent, MouseEvent};
 
@@ -9,6 +12,9 @@ use crate::input::{InputEvent, MouseEvent};
 /// All methods have default no-op implementations so handlers can
 /// selectively override only the events they care about.
 pub trait AppHandler {
+    /// Called when the window is first created (provides Arc<Window> for GPU surface).
+    fn on_init(&mut self, _window: Arc<Window>) {}
+
     /// Called when the window should be redrawn.
     fn on_redraw(&mut self) {}
 

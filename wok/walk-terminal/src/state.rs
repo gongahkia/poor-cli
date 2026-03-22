@@ -4,10 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::{Dimensions, Grid};
-use alacritty_terminal::term::cell::Cell;
+use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{self, Config, Term};
-use alacritty_terminal::vte::ansi;
+use alacritty_terminal::vte::ansi::{self, Color};
 
 /// Collected events from the terminal emulator.
 #[derive(Debug, Clone)]
@@ -134,5 +135,77 @@ impl TerminalState {
     /// Scroll the display.
     pub fn scroll_display(&mut self, scroll: alacritty_terminal::grid::Scroll) {
         self.term.scroll_display(scroll);
+    }
+
+    /// Get the number of visible screen lines.
+    pub fn screen_lines(&self) -> usize {
+        self.term.grid().screen_lines()
+    }
+
+    /// Get the number of columns.
+    pub fn columns(&self) -> usize {
+        self.term.grid().columns()
+    }
+
+    /// Get the cursor position as (column, row).
+    pub fn cursor_position(&self) -> (usize, usize) {
+        let point = self.term.grid().cursor.point;
+        (point.column.0, point.line.0 as usize)
+    }
+
+    /// Read a cell at the given (row, col) and return its rendering data.
+    pub fn cell_at(&self, row: usize, col: usize) -> CellRenderData {
+        let grid = self.term.grid();
+        let line = Line(row as i32);
+        let column = Column(col);
+        let cell = &grid[line][column];
+
+        CellRenderData {
+            character: cell.c,
+            fg: color_to_rgba(&cell.fg),
+            bg: color_to_rgba(&cell.bg),
+            is_inverse: cell.flags.contains(Flags::INVERSE),
+            is_bold: cell.flags.contains(Flags::BOLD),
+            is_italic: cell.flags.contains(Flags::ITALIC),
+            is_underline: cell.flags.contains(Flags::UNDERLINE),
+        }
+    }
+}
+
+/// Rendering data for a single terminal cell.
+#[derive(Debug, Clone, Copy)]
+pub struct CellRenderData {
+    /// The character in this cell.
+    pub character: char,
+    /// Foreground color as [r, g, b, a] in 0-255 range (or named).
+    pub fg: CellColor,
+    /// Background color.
+    pub bg: CellColor,
+    /// Whether fg/bg should be swapped.
+    pub is_inverse: bool,
+    /// Bold flag.
+    pub is_bold: bool,
+    /// Italic flag.
+    pub is_italic: bool,
+    /// Underline flag.
+    pub is_underline: bool,
+}
+
+/// A color resolved from the terminal, abstracting over Named/Indexed/Spec.
+#[derive(Debug, Clone, Copy)]
+pub enum CellColor {
+    /// A named ANSI color index (0-15 for standard, 256=fg, 257=bg).
+    Named(u8),
+    /// An indexed 256-color palette entry.
+    Indexed(u8),
+    /// A direct RGB color.
+    Rgb(u8, u8, u8),
+}
+
+fn color_to_rgba(color: &Color) -> CellColor {
+    match color {
+        Color::Named(named) => CellColor::Named(*named as u8),
+        Color::Indexed(idx) => CellColor::Indexed(*idx),
+        Color::Spec(rgb) => CellColor::Rgb(rgb.r, rgb.g, rgb.b),
     }
 }

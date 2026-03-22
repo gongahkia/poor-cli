@@ -15,4 +15,5 @@ pub mod damage;
 pub mod font;
 pub mod gpu;
 pub mod pipeline;
+pub mod render_pipeline;
 pub mod text_layout;

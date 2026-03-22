@@ -1,5 +1,7 @@
 //! Window management: creates and configures the Walk application window.
 
+use std::sync::Arc;
+
 use thiserror::Error;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::window::Window;
@@ -39,8 +41,8 @@ impl Default for WindowConfig {
 
 /// Wraps a winit window with Walk-specific state.
 pub struct WalkWindow {
-    /// The underlying winit window.
-    pub window: Window,
+    /// The underlying winit window (Arc for sharing with wgpu surface).
+    pub window: Arc<Window>,
     /// Window title.
     pub title: String,
     /// Current physical size.
@@ -62,7 +64,7 @@ impl WalkWindow {
         let scale_factor = window.scale_factor();
         let title = "Walk".to_string();
         Self {
-            window,
+            window: Arc::new(window),
             title,
             size,
             scale_factor,

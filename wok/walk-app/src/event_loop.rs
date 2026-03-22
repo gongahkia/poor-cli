@@ -22,13 +22,15 @@ pub fn run_event_loop<H: AppHandler + 'static>(
     let event_loop = EventLoop::new()
         .map_err(|e| PlatformError::EventLoopCreation(e.to_string()))?;
 
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    // Use Poll for continuous rendering (terminal needs to check for PTY output)
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
     let mut app = WinitApp {
         config,
         window: None,
         handler,
         current_modifiers: winit::event::Modifiers::default(),
+        initialized: false,
     };
 
     event_loop
@@ -43,6 +45,7 @@ struct WinitApp<H: AppHandler> {
     window: Option<WalkWindow>,
     handler: H,
     current_modifiers: winit::event::Modifiers,
+    initialized: bool,
 }
 
 impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
@@ -56,7 +59,11 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             Ok(window) => {
                 info!("window created successfully");
                 let walk_window = WalkWindow::from_winit(window);
+                let arc_window = walk_window.window.clone();
                 self.window = Some(walk_window);
+                // Notify handler with the Arc<Window> for GPU init
+                self.handler.on_init(arc_window);
+                self.initialized = true;
             }
             Err(e) => {
                 warn!("failed to create window: {e}");
@@ -65,13 +72,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
         }
     }
 
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, cause: StartCause) {
-        if matches!(cause, StartCause::ResumeTimeReached { .. }) {
-            if let Some(win) = &self.window {
-                win.window.request_redraw();
-            }
-        }
-    }
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {}
 
     fn window_event(
         &mut self,
@@ -127,7 +128,6 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                 button,
                 ..
             } => {
-                // We don't track position here; use the last CursorMoved
                 match state {
                     winit::event::ElementState::Pressed => {
                         self.handler.on_mouse_event(MouseEvent::Press {
@@ -161,6 +161,10 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
             }
             WindowEvent::RedrawRequested => {
                 self.handler.on_redraw();
+                // Request continuous redraws for terminal updates
+                if let Some(win) = &self.window {
+                    win.window.request_redraw();
+                }
             }
             _ => {}
         }
