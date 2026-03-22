@@ -171,19 +171,31 @@ impl Default for KeybindingConfig {
 
         // Tab management
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('t'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('t'),
+                modifiers: pm,
+            },
             Action::NewTab,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('w'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('w'),
+                modifiers: pm,
+            },
             Action::CloseTab,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Tab, modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Tab,
+                modifiers: pm,
+            },
             Action::NextTab,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Tab, modifiers: pms },
+            KeyCombo {
+                key: KeyAction::Tab,
+                modifiers: pms,
+            },
             Action::PrevTab,
         );
 
@@ -191,102 +203,165 @@ impl Default for KeybindingConfig {
         for i in 1..=9u8 {
             let ch = char::from(b'0' + i);
             bindings.insert(
-                KeyCombo { key: KeyAction::Char(ch), modifiers: pm },
+                KeyCombo {
+                    key: KeyAction::Char(ch),
+                    modifiers: pm,
+                },
                 Action::SwitchToTab(i),
             );
         }
 
         // Split panes
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('d'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('d'),
+                modifiers: pm,
+            },
             Action::SplitVertical,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('d'), modifiers: pms },
+            KeyCombo {
+                key: KeyAction::Char('d'),
+                modifiers: pms,
+            },
             Action::SplitHorizontal,
         );
 
         // Focus direction
         bindings.insert(
-            KeyCombo { key: KeyAction::ArrowLeft, modifiers: pma },
+            KeyCombo {
+                key: KeyAction::ArrowLeft,
+                modifiers: pma,
+            },
             Action::FocusLeft,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::ArrowRight, modifiers: pma },
+            KeyCombo {
+                key: KeyAction::ArrowRight,
+                modifiers: pma,
+            },
             Action::FocusRight,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::ArrowUp, modifiers: pma },
+            KeyCombo {
+                key: KeyAction::ArrowUp,
+                modifiers: pma,
+            },
             Action::FocusUp,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::ArrowDown, modifiers: pma },
+            KeyCombo {
+                key: KeyAction::ArrowDown,
+                modifiers: pma,
+            },
             Action::FocusDown,
         );
 
         // Clipboard
         bindings.insert(
-            KeyCombo { key: KeyAction::Copy, modifiers: Modifiers::default() },
+            KeyCombo {
+                key: KeyAction::Copy,
+                modifiers: Modifiers::default(),
+            },
             Action::Copy,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Paste, modifiers: Modifiers::default() },
+            KeyCombo {
+                key: KeyAction::Paste,
+                modifiers: Modifiers::default(),
+            },
             Action::Paste,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::SelectAll, modifiers: Modifiers::default() },
+            KeyCombo {
+                key: KeyAction::SelectAll,
+                modifiers: Modifiers::default(),
+            },
             Action::SelectAll,
         );
 
         // Block navigation
         bindings.insert(
-            KeyCombo { key: KeyAction::ArrowUp, modifiers: pm },
+            KeyCombo {
+                key: KeyAction::ArrowUp,
+                modifiers: pm,
+            },
             Action::BlockPrev,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::ArrowDown, modifiers: pm },
+            KeyCombo {
+                key: KeyAction::ArrowDown,
+                modifiers: pm,
+            },
             Action::BlockNext,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('c'), modifiers: pms },
+            KeyCombo {
+                key: KeyAction::Char('c'),
+                modifiers: pms,
+            },
             Action::BlockCopy,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('e'), modifiers: pms },
+            KeyCombo {
+                key: KeyAction::Char('e'),
+                modifiers: pms,
+            },
             Action::BlockCollapse,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('f'), modifiers: pms },
+            KeyCombo {
+                key: KeyAction::Char('f'),
+                modifiers: pms,
+            },
             Action::SearchInBlock,
         );
 
         // Search
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('f'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('f'),
+                modifiers: pm,
+            },
             Action::SearchGlobal,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('i'), modifiers: pms },
+            KeyCombo {
+                key: KeyAction::Char('i'),
+                modifiers: pms,
+            },
             Action::ToggleInputPosition,
         );
 
         // Zoom
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('='), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('='),
+                modifiers: pm,
+            },
             Action::ZoomIn,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('-'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('-'),
+                modifiers: pm,
+            },
             Action::ZoomOut,
         );
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('0'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('0'),
+                modifiers: pm,
+            },
             Action::ZoomReset,
         );
 
         // Clear screen
         bindings.insert(
-            KeyCombo { key: KeyAction::Char('k'), modifiers: pm },
+            KeyCombo {
+                key: KeyAction::Char('k'),
+                modifiers: pm,
+            },
             Action::ClearScreen,
         );
 
@@ -335,6 +410,9 @@ mod tests {
             key: KeyAction::Char('c'),
             modifiers: platform_mod_shift(),
         };
-        assert_eq!(config.resolve(&combo, &Context::Terminal), Some(&Action::BlockCopy));
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::BlockCopy)
+        );
     }
 }

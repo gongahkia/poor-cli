@@ -121,17 +121,17 @@ pub struct Theme {
 impl Default for SyntaxColors {
     fn default() -> Self {
         Self {
-            command: Color::rgb(0.478, 0.635, 0.969),   // #7aa2f7
-            argument: Color::rgb(0.753, 0.792, 0.961),  // #c0caf5
-            flag: Color::rgb(0.514, 0.580, 0.961),      // #838af6
-            path: Color::rgb(0.451, 0.812, 0.592),      // #73cf97
-            string: Color::rgb(0.631, 0.824, 0.435),    // #a1d26f
-            number: Color::rgb(1.0, 0.612, 0.529),      // #ff9c87
-            pipe: Color::rgb(0.537, 0.576, 0.647),      // #899ba5
-            redirect: Color::rgb(0.537, 0.576, 0.647),  // #899ba5
-            variable: Color::rgb(0.965, 0.643, 0.310),  // #f6a44e
-            comment: Color::rgb(0.337, 0.373, 0.459),   // #565f75
-            error: Color::rgb(0.969, 0.467, 0.557),     // #f7778e
+            command: Color::rgb(0.478, 0.635, 0.969),  // #7aa2f7
+            argument: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
+            flag: Color::rgb(0.514, 0.580, 0.961),     // #838af6
+            path: Color::rgb(0.451, 0.812, 0.592),     // #73cf97
+            string: Color::rgb(0.631, 0.824, 0.435),   // #a1d26f
+            number: Color::rgb(1.0, 0.612, 0.529),     // #ff9c87
+            pipe: Color::rgb(0.537, 0.576, 0.647),     // #899ba5
+            redirect: Color::rgb(0.537, 0.576, 0.647), // #899ba5
+            variable: Color::rgb(0.965, 0.643, 0.310), // #f6a44e
+            comment: Color::rgb(0.337, 0.373, 0.459),  // #565f75
+            error: Color::rgb(0.969, 0.467, 0.557),    // #f7778e
         }
     }
 }
@@ -140,25 +140,25 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             name: "Walk Dark".to_string(),
-            background: Color::rgb(0.102, 0.106, 0.149),   // #1a1b26
-            foreground: Color::rgb(0.753, 0.792, 0.961),    // #c0caf5
-            cursor: Color::rgb(0.969, 0.467, 0.557),        // #f7768e
+            background: Color::rgb(0.102, 0.106, 0.149), // #1a1b26
+            foreground: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
+            cursor: Color::rgb(0.969, 0.467, 0.557),     // #f7768e
             selection: Color::new(0.478, 0.635, 0.969, 0.3), // #7aa2f7 semi-transparent
             ansi_colors: default_ansi_colors(),
-            tab_bar_bg: Color::rgb(0.082, 0.086, 0.125),    // #151620
+            tab_bar_bg: Color::rgb(0.082, 0.086, 0.125), // #151620
             tab_active_bg: Color::rgb(0.141, 0.149, 0.200), // #242633
             tab_inactive_bg: Color::rgb(0.102, 0.106, 0.149), // #1a1b26
-            tab_text: Color::rgb(0.753, 0.792, 0.961),      // #c0caf5
+            tab_text: Color::rgb(0.753, 0.792, 0.961),   // #c0caf5
             status_bar_bg: Color::rgb(0.082, 0.086, 0.125), // #151620
             status_bar_text: Color::rgb(0.537, 0.576, 0.647), // #899ba5
-            input_bg: Color::rgb(0.122, 0.129, 0.176),      // #1f2130
-            input_text: Color::rgb(0.753, 0.792, 0.961),    // #c0caf5
+            input_bg: Color::rgb(0.122, 0.129, 0.176),   // #1f2130
+            input_text: Color::rgb(0.753, 0.792, 0.961), // #c0caf5
             block_separator: Color::rgb(0.180, 0.192, 0.259), // #2e3142
             block_success_accent: Color::rgb(0.451, 0.812, 0.592), // #73cf97
-            block_error_accent: Color::rgb(0.969, 0.467, 0.557),   // #f7768e
+            block_error_accent: Color::rgb(0.969, 0.467, 0.557), // #f7768e
             highlight_match: Color::new(0.965, 0.820, 0.310, 0.3), // yellow semi-transparent
             highlight_current_match: Color::new(1.0, 0.647, 0.0, 0.5), // orange semi-transparent
-            bracket_match: Color::new(0.478, 0.635, 0.969, 0.4),   // blue semi-transparent
+            bracket_match: Color::new(0.478, 0.635, 0.969, 0.4), // blue semi-transparent
             syntax: SyntaxColors::default(),
             font_family: "JetBrains Mono".to_string(),
             font_size: 14.0,
@@ -172,23 +172,23 @@ impl Default for Theme {
 fn default_ansi_colors() -> [Color; 16] {
     [
         // Normal colors
-        Color::rgb(0.082, 0.086, 0.118),  // 0 Black   #15161e
-        Color::rgb(0.969, 0.467, 0.557),  // 1 Red     #f7768e
-        Color::rgb(0.451, 0.812, 0.592),  // 2 Green   #73cf97
-        Color::rgb(0.878, 0.773, 0.463),  // 3 Yellow  #e0c576
-        Color::rgb(0.478, 0.635, 0.969),  // 4 Blue    #7aa2f7
-        Color::rgb(0.733, 0.506, 0.969),  // 5 Magenta #bb81f7
-        Color::rgb(0.478, 0.827, 0.843),  // 6 Cyan    #7ad3d7
-        Color::rgb(0.753, 0.792, 0.961),  // 7 White   #c0caf5
+        Color::rgb(0.082, 0.086, 0.118), // 0 Black   #15161e
+        Color::rgb(0.969, 0.467, 0.557), // 1 Red     #f7768e
+        Color::rgb(0.451, 0.812, 0.592), // 2 Green   #73cf97
+        Color::rgb(0.878, 0.773, 0.463), // 3 Yellow  #e0c576
+        Color::rgb(0.478, 0.635, 0.969), // 4 Blue    #7aa2f7
+        Color::rgb(0.733, 0.506, 0.969), // 5 Magenta #bb81f7
+        Color::rgb(0.478, 0.827, 0.843), // 6 Cyan    #7ad3d7
+        Color::rgb(0.753, 0.792, 0.961), // 7 White   #c0caf5
         // Bright colors
-        Color::rgb(0.337, 0.373, 0.459),  // 8  Bright Black   #565f75
-        Color::rgb(0.969, 0.467, 0.557),  // 9  Bright Red     #f7768e
-        Color::rgb(0.451, 0.812, 0.592),  // 10 Bright Green   #73cf97
-        Color::rgb(0.878, 0.773, 0.463),  // 11 Bright Yellow  #e0c576
-        Color::rgb(0.478, 0.635, 0.969),  // 12 Bright Blue    #7aa2f7
-        Color::rgb(0.733, 0.506, 0.969),  // 13 Bright Magenta #bb81f7
-        Color::rgb(0.478, 0.827, 0.843),  // 14 Bright Cyan    #7ad3d7
-        Color::rgb(0.878, 0.914, 0.992),  // 15 Bright White   #e0e9fd
+        Color::rgb(0.337, 0.373, 0.459), // 8  Bright Black   #565f75
+        Color::rgb(0.969, 0.467, 0.557), // 9  Bright Red     #f7768e
+        Color::rgb(0.451, 0.812, 0.592), // 10 Bright Green   #73cf97
+        Color::rgb(0.878, 0.773, 0.463), // 11 Bright Yellow  #e0c576
+        Color::rgb(0.478, 0.635, 0.969), // 12 Bright Blue    #7aa2f7
+        Color::rgb(0.733, 0.506, 0.969), // 13 Bright Magenta #bb81f7
+        Color::rgb(0.478, 0.827, 0.843), // 14 Bright Cyan    #7ad3d7
+        Color::rgb(0.878, 0.914, 0.992), // 15 Bright White   #e0e9fd
     ]
 }
 

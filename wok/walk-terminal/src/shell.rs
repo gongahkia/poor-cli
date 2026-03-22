@@ -55,7 +55,6 @@ pub fn detect_default_shell() -> ShellType {
             return match basename {
                 "zsh" => ShellType::Zsh,
                 "fish" => ShellType::Fish,
-                "bash" => ShellType::Bash,
                 _ => ShellType::Bash,
             };
         }
@@ -140,11 +139,7 @@ pub fn available_shells() -> Vec<ShellType> {
 /// Find a shell binary in PATH.
 fn find_shell(name: &str) -> Option<String> {
     // Check common paths first
-    let common_paths: &[&str] = &[
-        "/bin/",
-        "/usr/bin/",
-        "/usr/local/bin/",
-    ];
+    let common_paths: &[&str] = &["/bin/", "/usr/bin/", "/usr/local/bin/"];
 
     for prefix in common_paths {
         let path = format!("{prefix}{name}");
@@ -197,6 +192,9 @@ mod tests {
     fn test_shell_display() {
         assert_eq!(ShellType::Bash.to_string(), "bash");
         assert_eq!(ShellType::Zsh.to_string(), "zsh");
-        assert_eq!(ShellType::Wsl("Ubuntu".to_string()).to_string(), "wsl:Ubuntu");
+        assert_eq!(
+            ShellType::Wsl("Ubuntu".to_string()).to_string(),
+            "wsl:Ubuntu"
+        );
     }
 }

@@ -239,11 +239,7 @@ pub fn discover_themes(config_dir: &Path) -> Vec<PathBuf> {
         .map(|entries| {
             entries
                 .filter_map(Result::ok)
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .is_some_and(|ext| ext == "toml")
-                })
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
                 .map(|e| e.path())
                 .collect()
         })

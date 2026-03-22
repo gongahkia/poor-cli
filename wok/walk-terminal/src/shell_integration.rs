@@ -166,11 +166,7 @@ fn prepare_fish_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std:
     fs::create_dir_all(&fish_dir)?;
     fs::write(
         fish_dir.join("config.fish"),
-        format!(
-            "{}{}",
-            fish_source_if_exists(&original),
-            FISH_INTEGRATION
-        ),
+        format!("{}{}", fish_source_if_exists(&original), FISH_INTEGRATION),
     )?;
 
     config.args = vec!["-i".to_string(), "--login".to_string()];
@@ -197,21 +193,15 @@ fn shell_quote(path: &Path) -> String {
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+    std::env::var("HOME").map_or_else(|_| PathBuf::from("."), PathBuf::from)
 }
 
 fn original_zdotdir() -> PathBuf {
-    std::env::var("ZDOTDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home_dir())
+    std::env::var("ZDOTDIR").map_or_else(|_| home_dir(), PathBuf::from)
 }
 
 fn xdg_config_home() -> PathBuf {
-    std::env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home_dir().join(".config"))
+    std::env::var("XDG_CONFIG_HOME").map_or_else(|_| home_dir().join(".config"), PathBuf::from)
 }
 
 #[cfg(test)]

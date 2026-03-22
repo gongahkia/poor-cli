@@ -32,7 +32,9 @@ impl ClipboardManager {
             cb.set_text(text)
                 .map_err(|e| ClipboardError::Access(e.to_string()))
         } else {
-            Err(ClipboardError::Access("clipboard not available".to_string()))
+            Err(ClipboardError::Access(
+                "clipboard not available".to_string(),
+            ))
         }
     }
 
@@ -46,7 +48,9 @@ impl ClipboardManager {
             cb.get_text()
                 .map_err(|e| ClipboardError::Access(e.to_string()))
         } else {
-            Err(ClipboardError::Access("clipboard not available".to_string()))
+            Err(ClipboardError::Access(
+                "clipboard not available".to_string(),
+            ))
         }
     }
 }

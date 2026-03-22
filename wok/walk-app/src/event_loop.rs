@@ -22,8 +22,8 @@ pub fn run_event_loop<H: AppHandler + 'static>(
     config: WindowConfig,
     handler: H,
 ) -> Result<(), PlatformError> {
-    let event_loop = EventLoop::new()
-        .map_err(|e| PlatformError::EventLoopCreation(e.to_string()))?;
+    let event_loop =
+        EventLoop::new().map_err(|e| PlatformError::EventLoopCreation(e.to_string()))?;
 
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
@@ -146,11 +146,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                     y: position.y,
                 });
             }
-            WindowEvent::MouseInput {
-                state,
-                button,
-                ..
-            } => {
+            WindowEvent::MouseInput { state, button, .. } => {
                 let (x, y) = self.cursor_position.unwrap_or((0.0, 0.0));
                 let modifiers = crate::input::Modifiers {
                     ctrl: self.current_modifiers.state().control_key(),
@@ -168,26 +164,20 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                         });
                     }
                     winit::event::ElementState::Released => {
-                        self.handler.on_mouse_event(MouseEvent::Release {
-                            button,
-                            x,
-                            y,
-                        });
+                        self.handler
+                            .on_mouse_event(MouseEvent::Release { button, x, y });
                     }
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let (dx, dy) = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
-                        (f64::from(x), f64::from(y))
-                    }
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (f64::from(x), f64::from(y)),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
                 };
-                self.handler
-                    .on_mouse_event(MouseEvent::Scroll {
-                        delta_x: dx,
-                        delta_y: dy,
-                    });
+                self.handler.on_mouse_event(MouseEvent::Scroll {
+                    delta_x: dx,
+                    delta_y: dy,
+                });
             }
             WindowEvent::RedrawRequested => {
                 self.handler.on_redraw();

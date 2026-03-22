@@ -115,6 +115,7 @@ impl PtyIoHandle {
             .map_err(|_| PtyError::ChannelDisconnected)?;
         writer.write_all(data)?;
         writer.flush()?;
+        drop(writer);
         Ok(())
     }
 

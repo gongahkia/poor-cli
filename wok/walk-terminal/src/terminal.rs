@@ -92,7 +92,7 @@ impl Terminal {
         env: HashMap<String, String>,
     ) -> Result<Self, TerminalError> {
         let manager = PtyManager::new();
-        let spawned = manager.spawn(shell, cols, rows, env)?;
+        let spawned = manager.spawn(shell, cols, rows, &env)?;
         let pty = PtyIoHandle::new(spawned);
         let state = TerminalState::new(cols as usize, rows as usize, scrollback);
 
@@ -144,12 +144,15 @@ impl Terminal {
         for event in self.state.drain_events() {
             match event {
                 TermEvent::TitleChanged(title) => {
-                    self.title = title.clone();
+                    self.title.clone_from(&title);
                     self.events.push(SemanticEvent::TitleChanged(title));
                 }
-                TermEvent::PtyWrite(_) | TermEvent::Bell
-                | TermEvent::Exit | TermEvent::ChildExit(_)
-                | TermEvent::ClipboardStore(_) | TermEvent::CursorBlinkingChange => {}
+                TermEvent::PtyWrite(_)
+                | TermEvent::Bell
+                | TermEvent::Exit
+                | TermEvent::ChildExit(_)
+                | TermEvent::ClipboardStore(_)
+                | TermEvent::CursorBlinkingChange => {}
             }
         }
     }
@@ -170,17 +173,21 @@ impl Terminal {
                         if let Some(rest) = s.strip_prefix("133;") {
                             match rest.chars().next() {
                                 Some('A') => {
-                                    self.events.push(SemanticEvent::PromptStart { line: cursor_row });
+                                    self.events
+                                        .push(SemanticEvent::PromptStart { line: cursor_row });
                                 }
                                 Some('B') => {
-                                    self.events.push(SemanticEvent::CommandStart { line: cursor_row });
+                                    self.events
+                                        .push(SemanticEvent::CommandStart { line: cursor_row });
                                 }
                                 Some('C') => {
-                                    self.events.push(SemanticEvent::OutputStart { line: cursor_row });
+                                    self.events
+                                        .push(SemanticEvent::OutputStart { line: cursor_row });
                                 }
                                 Some('D') => {
-                                    let exit_code = rest.get(2..)
-                                        .and_then(|s| s.trim_start_matches(';').parse::<i32>().ok());
+                                    let exit_code = rest.get(2..).and_then(|s| {
+                                        s.trim_start_matches(';').parse::<i32>().ok()
+                                    });
                                     self.events.push(SemanticEvent::CommandEnd {
                                         line: cursor_row,
                                         exit_code,
@@ -193,9 +200,9 @@ impl Terminal {
                             if let Some(path) = rest.strip_prefix("file://") {
                                 // Strip hostname: file://hostname/path
                                 if let Some(slash) = path.find('/') {
-                                    self.events.push(SemanticEvent::CwdChanged(
-                                        PathBuf::from(&path[slash..]),
-                                    ));
+                                    self.events.push(SemanticEvent::CwdChanged(PathBuf::from(
+                                        &path[slash..],
+                                    )));
                                 }
                             }
                         }

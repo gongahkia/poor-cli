@@ -29,12 +29,7 @@ impl TabBarRenderer {
     }
 
     /// Determine which tab bar action (if any) corresponds to a click position.
-    pub fn handle_click(
-        &self,
-        pos_x: f32,
-        rect: &Rect,
-        tabs: &TabManager,
-    ) -> Option<TabBarAction> {
+    pub fn handle_click(&self, pos_x: f32, rect: &Rect, tabs: &TabManager) -> Option<TabBarAction> {
         if tabs.is_empty() {
             return Some(TabBarAction::NewTab);
         }

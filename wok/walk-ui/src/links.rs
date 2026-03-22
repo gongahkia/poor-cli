@@ -41,12 +41,13 @@ pub fn detect_urls(line_text: &str) -> Vec<UrlSpan> {
 }
 
 fn find_url_start(text: &str) -> Option<usize> {
-    text.find("https://")
-        .or_else(|| text.find("http://"))
+    text.find("https://").or_else(|| text.find("http://"))
 }
 
 fn find_url_end(text: &str) -> usize {
-    let url_chars: &[char] = &[' ', '\t', '\n', '"', '\'', '<', '>', '{', '}', '|', '\\', '^', '[', ']', '`'];
+    let url_chars: &[char] = &[
+        ' ', '\t', '\n', '"', '\'', '<', '>', '{', '}', '|', '\\', '^', '[', ']', '`',
+    ];
     text.find(url_chars).unwrap_or(text.len())
 }
 

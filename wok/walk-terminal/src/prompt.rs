@@ -30,9 +30,7 @@ pub fn detect_prompt_framework(_shell: &ShellType) -> Option<PromptFramework> {
     }
 
     // Check for P10k
-    if std::env::var("P10K_PROMPT").is_ok()
-        || home_file_exists(".p10k.zsh")
-    {
+    if std::env::var("P10K_PROMPT").is_ok() || home_file_exists(".p10k.zsh") {
         return Some(PromptFramework::P10k);
     }
 
@@ -55,10 +53,8 @@ pub fn configure_env_for_prompt(framework: &PromptFramework) -> HashMap<String, 
     env.insert("TERM".to_string(), "xterm-256color".to_string());
     env.insert("COLORTERM".to_string(), "truecolor".to_string());
 
-    if *framework == PromptFramework::Starship {
-        if std::env::var("STARSHIP_SHELL").is_err() {
-            env.insert("STARSHIP_SHELL".to_string(), "bash".to_string());
-        }
+    if *framework == PromptFramework::Starship && std::env::var("STARSHIP_SHELL").is_err() {
+        env.insert("STARSHIP_SHELL".to_string(), "bash".to_string());
     }
 
     env

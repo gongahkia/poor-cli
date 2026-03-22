@@ -45,22 +45,36 @@ impl QuadBatch {
     }
 
     /// Add a background quad for a cell.
-    pub fn push_bg_quad(
-        &mut self,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        color: [f32; 4],
-    ) {
+    pub fn push_bg_quad(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) {
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&[
-            Vertex { position: [x, y], tex_coords: [0.0, 0.0], fg_color: [0.0; 4], bg_color: color },
-            Vertex { position: [x + w, y], tex_coords: [1.0, 0.0], fg_color: [0.0; 4], bg_color: color },
-            Vertex { position: [x + w, y + h], tex_coords: [1.0, 1.0], fg_color: [0.0; 4], bg_color: color },
-            Vertex { position: [x, y + h], tex_coords: [0.0, 1.0], fg_color: [0.0; 4], bg_color: color },
+            Vertex {
+                position: [x, y],
+                tex_coords: [0.0, 0.0],
+                fg_color: [0.0; 4],
+                bg_color: color,
+            },
+            Vertex {
+                position: [x + w, y],
+                tex_coords: [1.0, 0.0],
+                fg_color: [0.0; 4],
+                bg_color: color,
+            },
+            Vertex {
+                position: [x + w, y + h],
+                tex_coords: [1.0, 1.0],
+                fg_color: [0.0; 4],
+                bg_color: color,
+            },
+            Vertex {
+                position: [x, y + h],
+                tex_coords: [0.0, 1.0],
+                fg_color: [0.0; 4],
+                bg_color: color,
+            },
         ]);
-        self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
     /// Add a textured glyph quad.
@@ -75,12 +89,33 @@ impl QuadBatch {
     ) {
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&[
-            Vertex { position: [x, y], tex_coords: [region.u_min, region.v_min], fg_color, bg_color: [0.0; 4] },
-            Vertex { position: [x + w, y], tex_coords: [region.u_max, region.v_min], fg_color, bg_color: [0.0; 4] },
-            Vertex { position: [x + w, y + h], tex_coords: [region.u_max, region.v_max], fg_color, bg_color: [0.0; 4] },
-            Vertex { position: [x, y + h], tex_coords: [region.u_min, region.v_max], fg_color, bg_color: [0.0; 4] },
+            Vertex {
+                position: [x, y],
+                tex_coords: [region.u_min, region.v_min],
+                fg_color,
+                bg_color: [0.0; 4],
+            },
+            Vertex {
+                position: [x + w, y],
+                tex_coords: [region.u_max, region.v_min],
+                fg_color,
+                bg_color: [0.0; 4],
+            },
+            Vertex {
+                position: [x + w, y + h],
+                tex_coords: [region.u_max, region.v_max],
+                fg_color,
+                bg_color: [0.0; 4],
+            },
+            Vertex {
+                position: [x, y + h],
+                tex_coords: [region.u_min, region.v_max],
+                fg_color,
+                bg_color: [0.0; 4],
+            },
         ]);
-        self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
     /// Add a cursor quad.

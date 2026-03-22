@@ -87,8 +87,14 @@ impl GlyphAtlas {
     fn allocate(&mut self, width: u32, height: u32) -> Option<AtlasRegion> {
         if width == 0 || height == 0 {
             return Some(AtlasRegion {
-                x: 0, y: 0, width: 0, height: 0,
-                u_min: 0.0, v_min: 0.0, u_max: 0.0, v_max: 0.0,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                u_min: 0.0,
+                v_min: 0.0,
+                u_max: 0.0,
+                v_max: 0.0,
             });
         }
 
@@ -114,7 +120,10 @@ impl GlyphAtlas {
         let atlas_h = self.height as f32;
 
         Some(AtlasRegion {
-            x, y, width, height,
+            x,
+            y,
+            width,
+            height,
             u_min: x as f32 / atlas_w,
             v_min: y as f32 / atlas_h,
             u_max: (x + width) as f32 / atlas_w,
@@ -148,7 +157,11 @@ mod tests {
     #[test]
     fn test_insert_and_retrieve() {
         let mut atlas = GlyphAtlas::new(2_048, 2_048);
-        let key = GlyphKey { font_id: 0, glyph_id: 65, font_size_tenths: 140 };
+        let key = GlyphKey {
+            font_id: 0,
+            glyph_id: 65,
+            font_size_tenths: 140,
+        };
         let region = atlas.get_or_insert(key, 10, 16).unwrap();
         assert_eq!(region.x, 0);
         assert_eq!(region.y, 0);
@@ -164,7 +177,11 @@ mod tests {
         let mut atlas = GlyphAtlas::new(2_048, 2_048);
         let mut regions = Vec::new();
         for i in 0..100 {
-            let key = GlyphKey { font_id: 0, glyph_id: i, font_size_tenths: 140 };
+            let key = GlyphKey {
+                font_id: 0,
+                glyph_id: i,
+                font_size_tenths: 140,
+            };
             let region = atlas.get_or_insert(key, 10, 16).unwrap();
             regions.push(region);
         }
@@ -186,11 +203,19 @@ mod tests {
         let mut atlas = GlyphAtlas::new(100, 100);
         // Fill first shelf
         for i in 0..10 {
-            let key = GlyphKey { font_id: 0, glyph_id: i, font_size_tenths: 140 };
+            let key = GlyphKey {
+                font_id: 0,
+                glyph_id: i,
+                font_size_tenths: 140,
+            };
             atlas.get_or_insert(key, 10, 16).unwrap();
         }
         // Next one should wrap to a new shelf
-        let key = GlyphKey { font_id: 0, glyph_id: 10, font_size_tenths: 140 };
+        let key = GlyphKey {
+            font_id: 0,
+            glyph_id: 10,
+            font_size_tenths: 140,
+        };
         let region = atlas.get_or_insert(key, 10, 16).unwrap();
         assert_eq!(region.x, 0);
         assert_eq!(region.y, 16); // second shelf starts at y=16

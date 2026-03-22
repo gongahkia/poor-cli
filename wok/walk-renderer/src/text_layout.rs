@@ -64,8 +64,14 @@ pub fn layout_line(
 
         glyphs.push(PositionedGlyph {
             atlas_entry: AtlasRegion {
-                x: 0, y: 0, width: 0, height: 0,
-                u_min: 0.0, v_min: 0.0, u_max: 0.0, v_max: 0.0,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                u_min: 0.0,
+                v_min: 0.0,
+                u_max: 0.0,
+                v_max: 0.0,
             },
             x,
             y: baseline_y,
@@ -108,7 +114,12 @@ mod tests {
 
     #[test]
     fn test_layout_line_positions() {
-        let color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+        let color = Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
         let run = layout_line("Hello", 0.0, 20.0, 10.0, color);
         assert_eq!(run.glyphs.len(), 5);
         // Positions should be strictly increasing
@@ -119,7 +130,12 @@ mod tests {
 
     #[test]
     fn test_wide_char_occupies_two_cells() {
-        let color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+        let color = Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
         // CJK character U+6F22 (漢) is double-width
         let run = layout_line("a漢b", 0.0, 0.0, 10.0, color);
         assert_eq!(run.glyphs.len(), 3);
@@ -130,7 +146,12 @@ mod tests {
 
     #[test]
     fn test_layout_grid() {
-        let color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+        let color = Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
         let lines = vec!["Hello".to_string(), "World".to_string()];
         let runs = layout_grid(&lines, 0.0, 0.0, 10.0, 20.0, color);
         assert_eq!(runs.len(), 2);

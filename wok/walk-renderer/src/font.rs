@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use cosmic_text::{Attrs, Buffer, Family, FontSystem as CosmicFontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{
+    Attrs, Buffer, Family, FontSystem as CosmicFontSystem, Metrics, Shaping, SwashCache,
+};
 
 /// Font metrics for cell grid layout.
 #[derive(Debug, Clone, Copy)]
@@ -95,7 +97,10 @@ impl FontSystem {
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
                 let physical = glyph.physical((0.0, 0.0), 1.0);
-                if let Some(image) = self.swash_cache.get_image(&mut self.inner, physical.cache_key) {
+                if let Some(image) = self
+                    .swash_cache
+                    .get_image(&mut self.inner, physical.cache_key)
+                {
                     let width = image.placement.width;
                     let height = image.placement.height;
                     if width == 0 || height == 0 {
@@ -107,16 +112,24 @@ impl FontSystem {
                         cosmic_text::SwashContent::Mask => image.data.clone(),
                         cosmic_text::SwashContent::Color => {
                             // RGBA -> take alpha channel
-                            image.data.chunks(4).map(|px| px.get(3).copied().unwrap_or(255)).collect()
+                            image
+                                .data
+                                .chunks(4)
+                                .map(|px| px.get(3).copied().unwrap_or(255))
+                                .collect()
                         }
                         cosmic_text::SwashContent::SubpixelMask => {
                             // RGB subpixel -> average to grayscale
-                            image.data.chunks(3).map(|px| {
-                                let r = u16::from(px.first().copied().unwrap_or(0));
-                                let g = u16::from(px.get(1).copied().unwrap_or(0));
-                                let b = u16::from(px.get(2).copied().unwrap_or(0));
-                                ((r + g + b) / 3) as u8
-                            }).collect()
+                            image
+                                .data
+                                .chunks(3)
+                                .map(|px| {
+                                    let r = u16::from(px.first().copied().unwrap_or(0));
+                                    let g = u16::from(px.get(1).copied().unwrap_or(0));
+                                    let b = u16::from(px.get(2).copied().unwrap_or(0));
+                                    ((r + g + b) / 3) as u8
+                                })
+                                .collect()
                         }
                     };
 

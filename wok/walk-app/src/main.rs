@@ -12,17 +12,17 @@ use walk_app::event_loop::run_event_loop;
 use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
+use walk_app::window::WindowConfig;
 use walk_blocks::block::Block;
 use walk_input::editor::{EditorAction, EditorKey};
-use walk_terminal::state::CellColor;
-use walk_terminal::terminal::SemanticEvent;
-use walk_app::window::WindowConfig;
 use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::font::FontSystem;
 use walk_renderer::gpu::GpuContext;
 use walk_renderer::pipeline::QuadBatch;
 use walk_renderer::render_pipeline::TerminalRenderPipeline;
 use walk_terminal::shell::ShellType;
+use walk_terminal::state::CellColor;
+use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::theme::Theme;
@@ -99,9 +99,7 @@ impl WalkHandler {
             Ok(term) => {
                 info!(
                     "terminal spawned: {} ({}x{})",
-                    self.app.config.shell,
-                    self.cols,
-                    self.rows
+                    self.app.config.shell, self.cols, self.rows
                 );
                 self.terminal = Some(term);
             }
@@ -186,12 +184,7 @@ impl WalkHandler {
                             let glyph_x = x + ox as f32;
                             let glyph_y = y + (self.font.metrics.baseline - oy as f32);
                             render.batch.push_glyph_quad(
-                                glyph_x,
-                                glyph_y,
-                                gw as f32,
-                                gh as f32,
-                                &region,
-                                fg,
+                                glyph_x, glyph_y, gw as f32, gh as f32, &region, fg,
                             );
                         }
                     }
@@ -223,7 +216,9 @@ impl WalkHandler {
             self.app.theme.cursor.b,
             0.7,
         ];
-        render.batch.push_bg_quad(cursor_x, cursor_y, cw, ch, cursor_color);
+        render
+            .batch
+            .push_bg_quad(cursor_x, cursor_y, cw, ch, cursor_color);
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
@@ -480,12 +475,11 @@ impl AppHandler for WalkHandler {
                 self.app.theme.background.b,
                 self.app.theme.background.a,
             ];
-            if let Err(e) = render.pipeline.render_frame(
-                &render.gpu,
-                &render.surface,
-                &render.batch,
-                clear,
-            ) {
+            if let Err(e) =
+                render
+                    .pipeline
+                    .render_frame(&render.gpu, &render.surface, &render.batch, clear)
+            {
                 match e {
                     wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
                         let (w, h) = render.gpu.dimensions();
@@ -511,7 +505,9 @@ impl AppHandler for WalkHandler {
         }
 
         if let Some(ref mut render) = self.render {
-            render.gpu.resize(&render.surface, new_size.width, new_size.height);
+            render
+                .gpu
+                .resize(&render.surface, new_size.width, new_size.height);
         }
 
         self.update_grid(new_size);
@@ -555,7 +551,8 @@ impl AppHandler for WalkHandler {
                 button: MouseButton::Left,
                 ..
             } => {
-                let was_selecting = matches!(self.app.selection.state, SelectionState::Selecting { .. });
+                let was_selecting =
+                    matches!(self.app.selection.state, SelectionState::Selecting { .. });
                 self.app.selection.handle_mouse_up();
                 if was_selecting && self.app.config.copy_on_select {
                     if let Some(text) = self.selection_text() {
@@ -590,7 +587,9 @@ fn input_event_to_editor_key(event: &InputEvent) -> Option<EditorKey> {
         {
             Some(EditorKey::Char(*ch))
         }
-        KeyAction::Char('d') if event.modifiers.ctrl && !event.modifiers.alt => Some(EditorKey::CtrlD),
+        KeyAction::Char('d') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlD)
+        }
         KeyAction::Enter => Some(EditorKey::Enter),
         KeyAction::Backspace => Some(EditorKey::Backspace),
         KeyAction::Delete => Some(EditorKey::Delete),
@@ -709,8 +708,12 @@ fn build_row_positions(total_lines: usize, blocks: &[Block]) -> Vec<Option<usize
         }
 
         let end_row = block.output_end_line.min(total_lines.saturating_sub(1));
-        for row in (block.output_start_line + 1)..=end_row {
-            hidden_rows[row] = true;
+        for hidden_row in hidden_rows
+            .iter_mut()
+            .take(end_row + 1)
+            .skip(block.output_start_line + 1)
+        {
+            *hidden_row = true;
         }
     }
 
@@ -729,6 +732,7 @@ fn build_row_positions(total_lines: usize, blocks: &[Block]) -> Vec<Option<usize
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_block_decorations(
     batch: &mut QuadBatch,
     theme: &Theme,
@@ -751,7 +755,7 @@ fn push_block_decorations(
 
         let end_row = (block.output_start_line..=block.output_end_line)
             .filter_map(|row| row_positions.get(row).and_then(|mapped| *mapped))
-            .last()
+            .next_back()
             .unwrap_or(start_row);
 
         let y = start_row as f32 * cell_height;
@@ -762,35 +766,48 @@ fn push_block_decorations(
             theme.block_error_accent
         };
 
-        batch.push_bg_quad(0.0, y, viewport_width, 1.0, [
-            theme.block_separator.r,
-            theme.block_separator.g,
-            theme.block_separator.b,
-            0.65,
-        ]);
-        batch.push_bg_quad(0.0, y, 4.0, height, [
-            accent.r,
-            accent.g,
-            accent.b,
-            0.9,
-        ]);
-
-        if selected_block_id == Some(block.id) {
-            batch.push_bg_quad(0.0, y, viewport_width, height, [
-                theme.selection.r,
-                theme.selection.g,
-                theme.selection.b,
-                0.12,
-            ]);
-        }
-
-        if block.is_collapsed {
-            batch.push_bg_quad(4.0, y, viewport_width - 4.0, cell_height, [
+        batch.push_bg_quad(
+            0.0,
+            y,
+            viewport_width,
+            1.0,
+            [
                 theme.block_separator.r,
                 theme.block_separator.g,
                 theme.block_separator.b,
-                0.25,
-            ]);
+                0.65,
+            ],
+        );
+        batch.push_bg_quad(0.0, y, 4.0, height, [accent.r, accent.g, accent.b, 0.9]);
+
+        if selected_block_id == Some(block.id) {
+            batch.push_bg_quad(
+                0.0,
+                y,
+                viewport_width,
+                height,
+                [
+                    theme.selection.r,
+                    theme.selection.g,
+                    theme.selection.b,
+                    0.12,
+                ],
+            );
+        }
+
+        if block.is_collapsed {
+            batch.push_bg_quad(
+                4.0,
+                y,
+                viewport_width - 4.0,
+                cell_height,
+                [
+                    theme.block_separator.r,
+                    theme.block_separator.g,
+                    theme.block_separator.b,
+                    0.25,
+                ],
+            );
         }
     }
 }
@@ -830,9 +847,19 @@ fn resolve_cell_color(color: &CellColor, theme: &Theme, is_bg: bool) -> [f32; 4]
                 let c = &theme.ansi_colors[i];
                 [c.r, c.g, c.b, c.a]
             } else if is_bg {
-                [theme.background.r, theme.background.g, theme.background.b, theme.background.a]
+                [
+                    theme.background.r,
+                    theme.background.g,
+                    theme.background.b,
+                    theme.background.a,
+                ]
             } else {
-                [theme.foreground.r, theme.foreground.g, theme.foreground.b, theme.foreground.a]
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    theme.foreground.a,
+                ]
             }
         }
         CellColor::Rgb(r, g, b) => [
@@ -871,13 +898,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                if cfg!(debug_assertions) {
-                    "warn".into()
-                } else {
-                    "warn".into()
-                }
-            }),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
         )
         .init();
 

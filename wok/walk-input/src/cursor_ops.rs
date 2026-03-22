@@ -93,7 +93,10 @@ pub fn move_line_start(buf: &mut InputBuffer, cursor_idx: usize, extend_selectio
 
     // Find first non-whitespace on this line
     let mut first_non_ws = line_start;
-    while first_non_ws < chars.len() && chars[first_non_ws] != '\n' && chars[first_non_ws].is_whitespace() {
+    while first_non_ws < chars.len()
+        && chars[first_non_ws] != '\n'
+        && chars[first_non_ws].is_whitespace()
+    {
         first_non_ws += 1;
     }
 

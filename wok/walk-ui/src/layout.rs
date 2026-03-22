@@ -137,9 +137,7 @@ fn compute_flex(
     let mut flex_total = 0.0_f32;
     for child in children {
         match child {
-            LayoutNode::Leaf {
-                min_size, flex, ..
-            } => {
+            LayoutNode::Leaf { min_size, flex, .. } => {
                 if *flex == 0.0 {
                     fixed_total += if horizontal { min_size.w } else { min_size.h };
                 } else {
@@ -159,9 +157,7 @@ fn compute_flex(
 
     for child in children {
         let size = match child {
-            LayoutNode::Leaf {
-                min_size, flex, ..
-            } => {
+            LayoutNode::Leaf { min_size, flex, .. } => {
                 if *flex == 0.0 {
                     if horizontal {
                         min_size.w
@@ -227,10 +223,7 @@ pub fn build_default_layout(input_position: InputPosition) -> LayoutNode {
         InputPosition::Top => vec![tab_bar, input_editor, viewport, status_bar],
     };
 
-    LayoutNode::Column {
-        children,
-        gap: 0.0,
-    }
+    LayoutNode::Column { children, gap: 0.0 }
 }
 
 #[cfg(test)]

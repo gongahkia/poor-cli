@@ -248,10 +248,7 @@ impl InputBuffer {
     /// Return the text of the given line (0-indexed).
     pub fn line_text(&self, line: usize) -> String {
         let txt = self.text();
-        txt.split('\n')
-            .nth(line)
-            .unwrap_or("")
-            .to_string()
+        txt.split('\n').nth(line).unwrap_or("").to_string()
     }
 
     /// Return all cursor positions as (row, col) pairs.

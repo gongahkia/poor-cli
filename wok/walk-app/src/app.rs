@@ -56,11 +56,7 @@ impl WalkApp {
             crate::config::InputPosition::Bottom => InputPosition::Bottom,
         };
 
-        let input_editor = InputEditor::new(
-            config.shell.clone(),
-            history,
-            input_position,
-        );
+        let input_editor = InputEditor::new(config.shell.clone(), history, input_position);
 
         Self {
             zoom: ZoomManager::new(config.font_size),
@@ -125,9 +121,18 @@ impl WalkApp {
                 self.input_editor.handle_key(EditorKey::SelectAll);
                 None
             }
-            Action::ZoomIn => { self.zoom.zoom_in(); None }
-            Action::ZoomOut => { self.zoom.zoom_out(); None }
-            Action::ZoomReset => { self.zoom.zoom_reset(); None }
+            Action::ZoomIn => {
+                self.zoom.zoom_in();
+                None
+            }
+            Action::ZoomOut => {
+                self.zoom.zoom_out();
+                None
+            }
+            Action::ZoomReset => {
+                self.zoom.zoom_reset();
+                None
+            }
             Action::BlockPrev => {
                 self.block_navigator.select_prev(self.block_manager.len());
                 self.sync_active_block();
@@ -139,7 +144,8 @@ impl WalkApp {
                 None
             }
             Action::BlockCollapse => {
-                self.block_navigator.toggle_collapse(&mut self.block_manager);
+                self.block_navigator
+                    .toggle_collapse(&mut self.block_manager);
                 None
             }
             Action::BlockCopy | Action::BlockSearch | Action::SearchInBlock => None,
@@ -157,16 +163,23 @@ impl WalkApp {
             }
             Action::ClearScreen => Some(b"\x1b[2J\x1b[H".to_vec()),
             Action::SendEof => Some(b"\x04".to_vec()),
-            Action::ScrollUp | Action::ScrollDown
-            | Action::ScrollPageUp | Action::ScrollPageDown
-            | Action::ScrollToTop | Action::ScrollToBottom => None,
-            Action::NewTab | Action::CloseTab | Action::NextTab
-            | Action::PrevTab | Action::SwitchToTab(_) => None,
+            Action::ScrollUp
+            | Action::ScrollDown
+            | Action::ScrollPageUp
+            | Action::ScrollPageDown
+            | Action::ScrollToTop
+            | Action::ScrollToBottom => None,
+            Action::NewTab
+            | Action::CloseTab
+            | Action::NextTab
+            | Action::PrevTab
+            | Action::SwitchToTab(_) => None,
             Action::SplitVertical | Action::SplitHorizontal | Action::CloseSplit => None,
-            Action::FocusLeft | Action::FocusRight
-            | Action::FocusUp | Action::FocusDown => None,
-            Action::ResizeSplitLeft | Action::ResizeSplitRight
-            | Action::ResizeSplitUp | Action::ResizeSplitDown => None,
+            Action::FocusLeft | Action::FocusRight | Action::FocusUp | Action::FocusDown => None,
+            Action::ResizeSplitLeft
+            | Action::ResizeSplitRight
+            | Action::ResizeSplitUp
+            | Action::ResizeSplitDown => None,
         }
     }
 

@@ -7,6 +7,20 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::many_single_char_names)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::map_unwrap_or)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::use_self)]
+#![allow(clippy::match_wildcard_for_single_variants)]
 
 pub mod background;
 pub mod bell;

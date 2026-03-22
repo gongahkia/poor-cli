@@ -86,8 +86,14 @@ impl SelectionManager {
             _ => {
                 // Triple-click: line selection (handled by caller)
                 self.state = SelectionState::Selected {
-                    start: CellPos { row: cell.row, col: 0 },
-                    end: CellPos { row: cell.row, col: u16::MAX },
+                    start: CellPos {
+                        row: cell.row,
+                        col: 0,
+                    },
+                    end: CellPos {
+                        row: cell.row,
+                        col: u16::MAX,
+                    },
                 };
             }
         }
@@ -96,10 +102,7 @@ impl SelectionManager {
     /// Handle mouse drag, updating the selection end point.
     pub fn handle_mouse_drag(&mut self, cell: CellPos) {
         if let SelectionState::Selecting { start, .. } = self.state {
-            self.state = SelectionState::Selecting {
-                start,
-                end: cell,
-            };
+            self.state = SelectionState::Selecting { start, end: cell };
         }
     }
 
@@ -123,15 +126,13 @@ impl SelectionManager {
     /// Get the selection range (normalized so start <= end).
     pub fn selection_range(&self) -> Option<(CellPos, CellPos)> {
         match &self.state {
-            SelectionState::Selected { start, end }
-            | SelectionState::Selecting { start, end } => {
-                let (s, e) = if start.row < end.row
-                    || (start.row == end.row && start.col <= end.col)
-                {
-                    (*start, *end)
-                } else {
-                    (*end, *start)
-                };
+            SelectionState::Selected { start, end } | SelectionState::Selecting { start, end } => {
+                let (s, e) =
+                    if start.row < end.row || (start.row == end.row && start.col <= end.col) {
+                        (*start, *end)
+                    } else {
+                        (*end, *start)
+                    };
                 Some((s, e))
             }
             SelectionState::None => None,

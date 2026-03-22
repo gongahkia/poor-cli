@@ -91,9 +91,7 @@ impl BlockManager {
         match event {
             SemanticEvent::PromptStart { line } => {
                 self.pending_command_text = None;
-                self.state = BlockBuildState::InPrompt {
-                    start_line: *line,
-                };
+                self.state = BlockBuildState::InPrompt { start_line: *line };
             }
             SemanticEvent::CommandStart { .. } => {
                 if let BlockBuildState::InPrompt { .. } = &self.state {
@@ -143,7 +141,7 @@ impl BlockManager {
                 // Update the current block's CWD if in progress
                 if let BlockBuildState::InOutput { block_id } = &self.state {
                     if let Some(block) = self.blocks.iter_mut().find(|b| b.id == *block_id) {
-                        block.cwd = path.clone();
+                        block.cwd.clone_from(path);
                     }
                 }
             }

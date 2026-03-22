@@ -43,8 +43,7 @@ impl BackgroundRenderer {
     ///
     /// Returns [`BackgroundError`] if the image cannot be loaded.
     pub fn load_image(&mut self, path: &Path) -> Result<(), BackgroundError> {
-        let img = image::open(path)
-            .map_err(|e| BackgroundError::ImageLoad(e.to_string()))?;
+        let img = image::open(path).map_err(|e| BackgroundError::ImageLoad(e.to_string()))?;
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
 

@@ -97,19 +97,23 @@ impl LuaRuntime {
 
         // walk.keymap(mode, key, action) — register keybinding
         let kb_state = self.state.keybindings.clone();
-        let keymap_fn = self.lua.create_function(move |_, (mode, key, action): (String, String, Value)| {
-            let action_str = match action {
-                Value::String(s) => s.to_string_lossy().to_string(),
-                Value::Function(_) => "lua_callback".to_string(),
-                _ => return Err(mlua::Error::runtime("action must be a string or function")),
-            };
-            kb_state.lock().unwrap().push(LuaKeybinding {
-                mode,
-                key,
-                action: action_str,
-            });
-            Ok(())
-        })?;
+        let keymap_fn =
+            self.lua
+                .create_function(move |_, (mode, key, action): (String, String, Value)| {
+                    let action_str = match action {
+                        Value::String(s) => s.to_string_lossy().to_string(),
+                        Value::Function(_) => "lua_callback".to_string(),
+                        _ => {
+                            return Err(mlua::Error::runtime("action must be a string or function"))
+                        }
+                    };
+                    kb_state.lock().unwrap().push(LuaKeybinding {
+                        mode,
+                        key,
+                        action: action_str,
+                    });
+                    Ok(())
+                })?;
         walk.set("keymap", keymap_fn)?;
 
         // walk.theme table with set() and load()
@@ -134,16 +138,16 @@ impl LuaRuntime {
         walk.set("theme", theme_table)?;
 
         // walk.on(event, callback) — register event hook
-        let on_fn = self.lua.create_function(|_, (event, _callback): (String, Function)| {
-            info!("registered event hook: {event}");
-            Ok(())
-        })?;
+        let on_fn = self
+            .lua
+            .create_function(|_, (event, _callback): (String, Function)| {
+                info!("registered event hook: {event}");
+                Ok(())
+            })?;
         walk.set("on", on_fn)?;
 
         // walk.exec(command) — execute shell command
-        let exec_fn = self.lua.create_function(|_, _command: String| {
-            Ok(())
-        })?;
+        let exec_fn = self.lua.create_function(|_, _command: String| Ok(()))?;
         walk.set("exec", exec_fn)?;
 
         // walk.notify(message) — show status message

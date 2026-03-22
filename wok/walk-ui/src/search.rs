@@ -133,9 +133,7 @@ mod tests {
     #[test]
     fn test_match_count_display() {
         let mut search = GlobalSearch::new();
-        let lines = vec![
-            (0, "a b a".to_string()),
-        ];
+        let lines = vec![(0, "a b a".to_string())];
         search.search("a", &lines);
         assert_eq!(search.match_count_display(), "1 of 2");
     }

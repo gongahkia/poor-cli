@@ -83,7 +83,7 @@ impl PtyManager {
         shell_type: &ShellType,
         cols: u16,
         rows: u16,
-        env: HashMap<String, String>,
+        env: &HashMap<String, String>,
     ) -> Result<SpawnedPty, PtyError> {
         let mut config = shell_spawn_config(shell_type);
         let shell_bootstrap = prepare_shell_bootstrap(shell_type, &mut config)
@@ -110,7 +110,7 @@ impl PtyManager {
         for (key, val) in &config.env {
             cmd.env(key, val);
         }
-        for (key, val) in &env {
+        for (key, val) in env {
             cmd.env(key, val);
         }
 
@@ -123,9 +123,10 @@ impl PtyManager {
                 source: e.into(),
             })?;
 
-        let reader = pair.master.try_clone_reader().map_err(|e| {
-            PtyError::SystemCreation(format!("failed to clone PTY reader: {e}"))
-        })?;
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| PtyError::SystemCreation(format!("failed to clone PTY reader: {e}")))?;
         let writer = pair
             .master
             .take_writer()

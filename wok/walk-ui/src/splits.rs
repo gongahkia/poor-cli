@@ -80,12 +80,7 @@ impl SplitManager {
     }
 }
 
-fn split_node(
-    node: SplitNode,
-    target: u64,
-    direction: SplitDirection,
-    new_id: u64,
-) -> SplitNode {
+fn split_node(node: SplitNode, target: u64, direction: SplitDirection, new_id: u64) -> SplitNode {
     match node {
         SplitNode::Leaf { tab_id } if tab_id == target => SplitNode::Split {
             direction,
@@ -112,9 +107,7 @@ fn remove_leaf(node: SplitNode, target: u64) -> Option<SplitNode> {
     match node {
         SplitNode::Leaf { tab_id } if tab_id == target => None,
         SplitNode::Leaf { .. } => Some(node),
-        SplitNode::Split {
-            first, second, ..
-        } => {
+        SplitNode::Split { first, second, .. } => {
             let f = remove_leaf(*first, target);
             let s = remove_leaf(*second, target);
             match (f, s) {
@@ -165,11 +158,7 @@ fn contains_leaf(node: &SplitNode, target: u64) -> bool {
     }
 }
 
-fn compute_rects_recursive(
-    node: &SplitNode,
-    available: Rect,
-    rects: &mut HashMap<u64, Rect>,
-) {
+fn compute_rects_recursive(node: &SplitNode, available: Rect, rects: &mut HashMap<u64, Rect>) {
     match node {
         SplitNode::Leaf { tab_id } => {
             rects.insert(*tab_id, available);
