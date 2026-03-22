@@ -133,12 +133,8 @@ export const DatagovSearchSchema = z.object({
 
 export const DatagovGetSchema = z.object({
   datasetId: z.string().min(1),
-  resourceIndex: z.number().int().nonnegative().optional(),
-  limit: z.number().int().positive().optional(),
-  offset: z.number().int().nonnegative().optional(),
-  filters: z.record(z.string()).optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const DatagovBrowseSchema = z.object({
   collection: z.string().optional(),

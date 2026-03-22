@@ -208,7 +208,7 @@ Search data.gov.sg for datasets matching a keyword. Covers 2,000+ Singapore gove
 ```
 
 #### `sg_datagov_get`
-Get data from a specific data.gov.sg dataset.
+Get metadata for a specific data.gov.sg dataset.
 
 **Input:**
 - `datasetId` (string, required) — Dataset ID from search results

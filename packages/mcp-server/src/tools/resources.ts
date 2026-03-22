@@ -56,7 +56,7 @@ const TOOL_INFO = [
   { name: "sg_ura_planning_area", description: "Get URA master plan data for a location" },
   { name: "sg_ura_dev_charges", description: "Get URA development charge rates" },
   { name: "sg_datagov_search", description: "Search data.gov.sg for datasets" },
-  { name: "sg_datagov_get", description: "Get data from a specific data.gov.sg dataset" },
+  { name: "sg_datagov_get", description: "Get metadata for a specific data.gov.sg dataset" },
   { name: "sg_datagov_browse", description: "Browse data.gov.sg collections" },
   { name: "sg_health_check", description: "Check connectivity for all APIs" },
   { name: "sg_key_set", description: "Store an API key" },

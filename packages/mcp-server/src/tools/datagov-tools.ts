@@ -19,7 +19,7 @@ export const registerDatagovTools = (server: McpServer): void => {
 
   registerTool(server, {
     name: "sg_datagov_get",
-    description: "Get data from a specific data.gov.sg dataset. Use sg_datagov_search first to find dataset IDs.",
+    description: "Get metadata for a specific data.gov.sg dataset. Use sg_datagov_search first to find dataset IDs.",
     inputSchema: DatagovGetSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { datasetId, format } = validateInput(DatagovGetSchema, input);
