@@ -1,79 +1,68 @@
-name: Poor-CLI Release
+name: Poor-CLI Release on push
 
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: read
 
 jobs:
-  python-tests:
-    name: Python Test Suite
+  integration:
+    name: Integration Tests
+    uses: ./.github/workflows/tests.yml
+
+  build:
+    name: Build Package
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.14"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install multimedia dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg pkg-config libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev
-
-      - name: Install Python package and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-
-      - name: Run Python test suite
-        run: |
-          python -m unittest discover -s tests
-
-  python-sdist:
-    name: Build Python Source Distribution
-    runs-on: ubuntu-latest
-
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+
+      - name: Validate tag version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(python - <<'PY'
+          import poor_cli
+          print(poor_cli.__version__)
+          PY
+          )"
+
+          if [[ "${TAG_VERSION}" != "${PACKAGE_VERSION}" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match poor_cli.__version__ ${PACKAGE_VERSION}"
+            exit 1
+          fi
 
       - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
+        run: python -m pip install --upgrade pip build twine
 
-      - name: Build source distribution
+      - name: Build package
         run: python -m build --sdist
 
-      - name: Validate distributions
+      - name: Check package metadata
         run: twine check dist/*.tar.gz
 
-      - name: Upload Python distributions
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: python-sdist
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  python-wheels:
-    name: Build Python Wheel (${{ matrix.asset_suffix }})
+  wheels:
+    name: Build Wheel (${{ matrix.asset_suffix }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -93,13 +82,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine
 
       - name: Build Rust TUI
         run: cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
@@ -110,7 +97,7 @@ jobs:
       - name: Validate wheel
         run: twine check dist/*.whl
 
-      - name: Upload Python wheel
+      - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: python-wheel-${{ matrix.asset_suffix }}
@@ -120,6 +107,7 @@ jobs:
   tui-binaries:
     name: Build TUI (${{ matrix.asset_suffix }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -152,6 +140,7 @@ jobs:
         run: cargo build --manifest-path poor-cli-tui/Cargo.toml --release --locked
 
       - name: Package release archive
+        shell: bash
         env:
           ARCHIVE_FORMAT: ${{ matrix.archive_format }}
           ASSET_SUFFIX: ${{ matrix.asset_suffix }}
@@ -205,65 +194,14 @@ jobs:
           path: release-artifacts/*
           if-no-files-found: error
 
-  publish-release:
-    name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs:
-      - python-tests
-      - python-sdist
-      - python-wheels
-      - tui-binaries
+  docker:
+    name: Build & Push Docker Image
     runs-on: ubuntu-latest
-
-    steps:
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Build consolidated checksums
-        run: |
-          cat release-assets/*.sha256 > release-assets/SHA256SUMS
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release-assets/*
-          generate_release_notes: true
-
-  publish-pypi:
-    name: Publish PyPI Distributions
-    if: startsWith(github.ref, 'refs/tags/')
-    needs:
-      - python-tests
-      - python-sdist
-      - python-wheels
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [integration]
     permissions:
-      id-token: write
-
-    steps:
-      - name: Download Python distributions
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: python-*
-          merge-multiple: true
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish-container:
-    name: Publish Container Image
-    if: startsWith(github.ref, 'refs/tags/')
-    needs:
-      - python-tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
       packages: write
-
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -294,3 +232,55 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - integration
+      - build
+      - wheels
+      - tui-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Build consolidated checksums
+        run: |
+          cat release-assets/*.sha256 > release-assets/SHA256SUMS
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [integration, build, wheels]
+    environment:
+      name: pypi
+      url: https://pypi.org/project/poor-cli/
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: python-*
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
