@@ -12,5 +12,6 @@ pub mod async_io;
 pub mod config;
 pub mod pty;
 pub mod shell;
+pub mod shell_integration;
 pub mod state;
 pub mod terminal;

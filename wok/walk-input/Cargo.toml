@@ -10,3 +10,4 @@ description = "Gap buffer editor, cursor ops, syntax highlighting, and history f
 walk-terminal = { path = "../walk-terminal" }
 thiserror = "2"
 tracing = "0.1"
+

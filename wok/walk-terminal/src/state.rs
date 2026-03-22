@@ -102,9 +102,7 @@ impl TerminalState {
 
     /// Feed raw bytes from the PTY into the terminal emulator.
     pub fn process_bytes(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
-            self.parser.advance(&mut self.term, byte);
-        }
+        self.parser.advance(&mut self.term, bytes);
     }
 
     /// Get the terminal grid (for reading cell contents).

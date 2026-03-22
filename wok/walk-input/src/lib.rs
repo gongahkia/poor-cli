@@ -8,4 +8,9 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_precision_loss)]
 
+pub mod brackets;
 pub mod buffer;
+pub mod cursor_ops;
+pub mod editor;
+pub mod highlighter;
+pub mod history;
