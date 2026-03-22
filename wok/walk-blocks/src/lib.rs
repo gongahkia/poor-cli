@@ -11,4 +11,3 @@
 pub mod block;
 pub mod block_nav;
 pub mod block_search;
-pub mod semantic;

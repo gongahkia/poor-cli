@@ -3,6 +3,8 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use walk_terminal::terminal::SemanticEvent;
+
 /// A single command block: prompt + command + output.
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -82,9 +84,7 @@ impl BlockManager {
     }
 
     /// Handle a semantic event, potentially creating or completing a block.
-    pub fn handle_event(&mut self, event: &super::semantic::SemanticEvent) {
-        use super::semantic::SemanticEvent;
-
+    pub fn handle_event(&mut self, event: &SemanticEvent) {
         match event {
             SemanticEvent::PromptStart { line } => {
                 self.state = BlockBuildState::InPrompt {
@@ -142,6 +142,7 @@ impl BlockManager {
                     }
                 }
             }
+            SemanticEvent::TitleChanged(_) => {}
         }
     }
 
@@ -189,7 +190,6 @@ impl Default for BlockManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::SemanticEvent;
 
     #[test]
     fn test_single_command_block() {

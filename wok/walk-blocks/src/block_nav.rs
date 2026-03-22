@@ -69,7 +69,7 @@ impl Default for BlockNavigator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::SemanticEvent;
+    use walk_terminal::terminal::SemanticEvent;
 
     fn make_manager_with_blocks(n: usize) -> BlockManager {
         let mut mgr = BlockManager::new();

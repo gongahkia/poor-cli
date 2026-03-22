@@ -29,22 +29,22 @@ pub enum SemanticEvent {
     /// Shell prompt started (OSC 133;A).
     PromptStart {
         /// Line number where the prompt starts.
-        line: u16,
+        line: usize,
     },
     /// Command input started (OSC 133;B).
     CommandStart {
         /// Line number where command input starts.
-        line: u16,
+        line: usize,
     },
     /// Command output started (OSC 133;C).
     OutputStart {
         /// Line number where output starts.
-        line: u16,
+        line: usize,
     },
     /// Command finished (OSC 133;D).
     CommandEnd {
         /// Line number.
-        line: u16,
+        line: usize,
         /// Exit code if available.
         exit_code: Option<i32>,
     },
@@ -65,7 +65,7 @@ pub struct Terminal {
     /// Whether the terminal has new output since last render.
     dirty: bool,
     /// Semantic events collected this frame.
-    pub events: Vec<SemanticEvent>,
+    events: Vec<SemanticEvent>,
     /// Number of columns.
     cols: u16,
     /// Number of rows.
@@ -158,7 +158,7 @@ impl Terminal {
     ///
     /// Looks for `\x1b]133;X\x07` patterns where X is A, B, C, or D.
     fn scan_osc_markers(&mut self, bytes: &[u8]) {
-        let cursor_row = self.state.cursor_position().1 as u16;
+        let cursor_row = self.state.cursor_position().1;
         let mut i = 0;
         while i + 6 < bytes.len() {
             // Look for ESC ] 133 ;
@@ -229,6 +229,11 @@ impl Terminal {
         self.state.resize(cols as usize, rows as usize);
         self.dirty = true;
         Ok(())
+    }
+
+    /// Drain semantic events collected during the most recent PTY processing pass.
+    pub fn drain_semantic_events(&mut self) -> Vec<SemanticEvent> {
+        std::mem::take(&mut self.events)
     }
 
     /// Check if the terminal has new output to render.
