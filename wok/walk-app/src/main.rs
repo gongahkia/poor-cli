@@ -128,13 +128,22 @@ impl WalkHandler {
         let total_lines = terminal.state.screen_lines();
         let total_cols = terminal.state.columns();
         let (cursor_col, cursor_row) = terminal.state.cursor_position();
+        let row_positions = build_row_positions(total_lines, &self.app.block_manager.blocks);
+        let selected_block_id = self
+            .app
+            .block_navigator
+            .selected_block(&self.app.block_manager)
+            .map(|block| block.id);
 
         for row_idx in 0..total_lines {
+            let Some(render_row) = row_positions.get(row_idx).and_then(|row| *row) else {
+                continue;
+            };
             for col_idx in 0..total_cols {
                 let cell = terminal.state.cell_at(row_idx, col_idx);
 
                 let x = col_idx as f32 * cw;
-                let y = row_idx as f32 * ch;
+                let y = render_row as f32 * ch;
 
                 let mut bg = resolve_cell_color(&cell.bg, &self.app.theme, true);
                 let mut fg = resolve_cell_color(&cell.fg, &self.app.theme, false);
@@ -190,8 +199,23 @@ impl WalkHandler {
             }
         }
 
+        push_block_decorations(
+            &mut render.batch,
+            &self.app.theme,
+            &self.app.block_manager.blocks,
+            selected_block_id,
+            &row_positions,
+            total_cols,
+            cw,
+            ch,
+        );
+
         // Draw cursor
         let cursor_x = cursor_col as f32 * cw;
+        let cursor_row = row_positions
+            .get(cursor_row)
+            .and_then(|row| *row)
+            .unwrap_or(cursor_row);
         let cursor_y = cursor_row as f32 * ch;
         let cursor_color = [
             self.app.theme.cursor.r,
@@ -674,6 +698,101 @@ fn extract_block_text(terminal: &Terminal, block: &Block) -> String {
     }
 
     lines.join("\n")
+}
+
+fn build_row_positions(total_lines: usize, blocks: &[Block]) -> Vec<Option<usize>> {
+    let mut hidden_rows = vec![false; total_lines];
+
+    for block in blocks {
+        if !block.is_collapsed || block.output_start_line >= total_lines {
+            continue;
+        }
+
+        let end_row = block.output_end_line.min(total_lines.saturating_sub(1));
+        for row in (block.output_start_line + 1)..=end_row {
+            hidden_rows[row] = true;
+        }
+    }
+
+    let mut next_visible_row = 0;
+    hidden_rows
+        .into_iter()
+        .map(|hidden| {
+            if hidden {
+                None
+            } else {
+                let visible_row = Some(next_visible_row);
+                next_visible_row += 1;
+                visible_row
+            }
+        })
+        .collect()
+}
+
+fn push_block_decorations(
+    batch: &mut QuadBatch,
+    theme: &Theme,
+    blocks: &[Block],
+    selected_block_id: Option<u64>,
+    row_positions: &[Option<usize>],
+    total_cols: usize,
+    cell_width: f32,
+    cell_height: f32,
+) {
+    let viewport_width = total_cols as f32 * cell_width;
+
+    for block in blocks {
+        let Some(start_row) = row_positions
+            .get(block.output_start_line)
+            .and_then(|row| *row)
+        else {
+            continue;
+        };
+
+        let end_row = (block.output_start_line..=block.output_end_line)
+            .filter_map(|row| row_positions.get(row).and_then(|mapped| *mapped))
+            .last()
+            .unwrap_or(start_row);
+
+        let y = start_row as f32 * cell_height;
+        let height = (end_row.saturating_sub(start_row) + 1) as f32 * cell_height;
+        let accent = if block.exit_code.unwrap_or(0) == 0 {
+            theme.block_success_accent
+        } else {
+            theme.block_error_accent
+        };
+
+        batch.push_bg_quad(0.0, y, viewport_width, 1.0, [
+            theme.block_separator.r,
+            theme.block_separator.g,
+            theme.block_separator.b,
+            0.65,
+        ]);
+        batch.push_bg_quad(0.0, y, 4.0, height, [
+            accent.r,
+            accent.g,
+            accent.b,
+            0.9,
+        ]);
+
+        if selected_block_id == Some(block.id) {
+            batch.push_bg_quad(0.0, y, viewport_width, height, [
+                theme.selection.r,
+                theme.selection.g,
+                theme.selection.b,
+                0.12,
+            ]);
+        }
+
+        if block.is_collapsed {
+            batch.push_bg_quad(4.0, y, viewport_width - 4.0, cell_height, [
+                theme.block_separator.r,
+                theme.block_separator.g,
+                theme.block_separator.b,
+                0.25,
+            ]);
+        }
+    }
 }
 
 fn selection_end_col(terminal: &Terminal, end_col: u16) -> usize {
