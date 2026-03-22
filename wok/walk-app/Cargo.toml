@@ -1,10 +1,15 @@
 [package]
-name = "walk-app"
+name = "walk"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Entry point and application shell for Walk terminal"
+description = "Walk terminal emulator"
+default-run = "walk"
+
+[lib]
+name = "walk_app"
+path = "src/lib.rs"
 
 [dependencies]
 walk-renderer = { path = "../walk-renderer" }
