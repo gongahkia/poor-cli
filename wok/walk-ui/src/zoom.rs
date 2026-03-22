@@ -46,6 +46,11 @@ impl ZoomManager {
         self.current_size
     }
 
+    /// Set the current font size directly, clamping to valid bounds.
+    pub fn set_current_size(&mut self, size: f32) {
+        self.current_size = size.clamp(self.min_size, self.max_size);
+    }
+
     /// Check if zoom has changed from base.
     pub fn is_zoomed(&self) -> bool {
         (self.current_size - self.base_size).abs() > f32::EPSILON

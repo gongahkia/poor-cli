@@ -38,3 +38,4 @@ pub mod keybindings;
 pub mod scripting;
 pub mod session;
 pub mod window;
+pub mod workspace;

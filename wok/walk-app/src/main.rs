@@ -12,7 +12,12 @@ use walk_app::event_loop::run_event_loop;
 use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
+use walk_app::session::{
+    default_session_path, load_session, save_session, split_node_from_state, split_node_to_state,
+    PaneState, WorkspaceSessionState, WorkspaceTabState,
+};
 use walk_app::window::WindowConfig;
+use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
 use walk_blocks::block::Block;
 use walk_input::editor::{EditorAction, EditorKey};
 use walk_renderer::atlas::GlyphAtlas;
@@ -27,6 +32,7 @@ use walk_terminal::terminal::Terminal;
 use walk_ui::layout::Rect;
 use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
+use walk_ui::splits::SplitManager;
 use walk_ui::theme::Theme;
 use winit::dpi::PhysicalSize;
 use winit::event::MouseButton;
@@ -76,198 +82,482 @@ impl Default for UiRects {
     }
 }
 
-/// Walk application handler.
-struct WalkHandler {
+/// Global window chrome rectangles shared by the workspace.
+#[derive(Clone, Copy)]
+struct ChromeRects {
+    tab_bar: Rect,
+    content: Rect,
+    status: Rect,
+}
+
+impl Default for ChromeRects {
+    fn default() -> Self {
+        Self {
+            tab_bar: Rect::new(0.0, 0.0, 0.0, 0.0),
+            content: Rect::new(0.0, 0.0, 0.0, 0.0),
+            status: Rect::new(0.0, 0.0, 0.0, 0.0),
+        }
+    }
+}
+
+/// Runtime state for a pane.
+struct PaneRuntime {
     app: WalkApp,
-    font: FontSystem,
-    terminal: Option<Terminal>,
-    render: Option<RenderState>,
-    window: Option<Arc<Window>>,
+    terminal: Terminal,
     ui_rects: UiRects,
     cols: u16,
     rows: u16,
+}
+
+/// Walk application handler.
+struct WalkHandler {
+    config: WalkConfig,
+    workspace: WorkspaceState,
+    panes: HashMap<PaneId, PaneRuntime>,
+    pending_pane_restore: HashMap<PaneId, PaneState>,
+    font: FontSystem,
+    render: Option<RenderState>,
+    window: Option<Arc<Window>>,
+    chrome_rects: ChromeRects,
     needs_redraw: bool,
 }
 
 impl WalkHandler {
     fn new(config: WalkConfig) -> Self {
-        let app = WalkApp::new(config);
-        let font = FontSystem::new(&app.config.font_family, app.zoom.current_size());
+        let font = FontSystem::new(&config.font_family, config.font_size);
+        let (workspace, _) = WorkspaceState::new("Walk");
 
         Self {
-            app,
+            config,
+            workspace,
+            panes: HashMap::new(),
+            pending_pane_restore: HashMap::new(),
             font,
-            terminal: None,
             render: None,
             window: None,
-            ui_rects: UiRects::default(),
-            cols: 80,
-            rows: 24,
+            chrome_rects: ChromeRects::default(),
             needs_redraw: true,
         }
     }
 
-    fn spawn_terminal(&mut self) {
-        let env = HashMap::new();
-        match Terminal::new(
-            &self.app.config.shell,
-            self.cols,
-            self.rows,
-            self.app.config.scrollback_lines,
-            env,
-        ) {
-            Ok(term) => {
-                info!(
-                    "terminal spawned: {} ({}x{})",
-                    self.app.config.shell, self.cols, self.rows
-                );
-                self.terminal = Some(term);
+    fn active_pane_id(&self) -> Option<PaneId> {
+        self.workspace.active_pane_id()
+    }
+
+    fn active_pane(&self) -> Option<&PaneRuntime> {
+        self.active_pane_id().and_then(|pane_id| self.panes.get(&pane_id))
+    }
+
+    fn active_pane_mut(&mut self) -> Option<&mut PaneRuntime> {
+        let pane_id = self.active_pane_id()?;
+        self.panes.get_mut(&pane_id)
+    }
+
+    fn spawn_pane(&mut self, pane_id: PaneId, rect: Rect, focused: bool) {
+        let restore = self.pending_pane_restore.remove(&pane_id);
+        let mut pane_config = self.config.clone();
+        if let Some(shell) = restore
+            .as_ref()
+            .map(|pane_state| parse_shell_type(&pane_state.shell))
+        {
+            pane_config.shell = shell;
+        }
+        let mut app = WalkApp::new(pane_config.clone());
+        if let Some(pane_state) = &restore {
+            app.input_editor.buffer.set_text(&pane_state.input_draft);
+            if !pane_state.search_query.is_empty() {
+                app.global_search.activate();
+                app.global_search.search_input = pane_state.search_query.clone();
             }
-            Err(e) => {
-                warn!("failed to spawn terminal: {e}");
+        }
+        let ui_rects = compute_pane_ui_rects(
+            rect,
+            app.input_editor.render_data().position,
+            app.input_editor.buffer.line_count(),
+            self.font.metrics.cell_height,
+            focused,
+        );
+        let (cols, rows) = self.font.grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
+        let env = HashMap::new();
+
+        match Terminal::new(&pane_config.shell, cols, rows, pane_config.scrollback_lines, env) {
+            Ok(terminal) => {
+                let pane_runtime = PaneRuntime {
+                    app,
+                    terminal,
+                    ui_rects,
+                    cols,
+                    rows,
+                };
+                self.panes.insert(
+                    pane_id,
+                    pane_runtime,
+                );
+                if let Some(pane_state) = restore {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        pane.terminal.title = pane_state.title;
+                        if !pane_state.cwd.as_os_str().is_empty() {
+                            let command =
+                                format!("cd -- {}\r", shell_quote_path(&pane_state.cwd.display().to_string()));
+                            let _ = pane.terminal.send_input(command.as_bytes());
+                        }
+                    }
+                }
+            }
+            Err(error) => warn!("failed to spawn pane terminal: {error}"),
+        }
+    }
+
+    fn sync_workspace_layout(&mut self, size: PhysicalSize<u32>) {
+        self.chrome_rects = compute_chrome_rects(size);
+        let active_pane_id = self.active_pane_id();
+        let pane_rects = self.workspace.active_pane_rects(self.chrome_rects.content);
+
+        for (pane_id, rect) in pane_rects {
+            let focused = active_pane_id == Some(pane_id);
+            if !self.panes.contains_key(&pane_id) {
+                self.spawn_pane(pane_id, rect, focused);
+                continue;
+            }
+
+            let Some(pane) = self.panes.get_mut(&pane_id) else {
+                continue;
+            };
+            let ui_rects = compute_pane_ui_rects(
+                rect,
+                pane.app.input_editor.render_data().position,
+                pane.app.input_editor.buffer.line_count(),
+                self.font.metrics.cell_height,
+                focused,
+            );
+            let (cols, rows) = self.font.grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
+            pane.ui_rects = ui_rects;
+            if pane.cols != cols || pane.rows != rows {
+                if let Err(error) = pane.terminal.resize(cols, rows) {
+                    warn!("failed to resize pane terminal: {error}");
+                }
+                pane.cols = cols;
+                pane.rows = rows;
+            }
+        }
+    }
+
+    fn snapshot_session(&self) -> WorkspaceSessionState {
+        let window_size = self
+            .window
+            .as_ref()
+            .map(|window| {
+                let size = window.inner_size();
+                (size.width, size.height)
+            })
+            .unwrap_or((1280, 800));
+        let window_position = self
+            .window
+            .as_ref()
+            .and_then(|window| window.outer_position().ok())
+            .map(|position| (position.x, position.y))
+            .unwrap_or((0, 0));
+
+        let panes = self
+            .panes
+            .iter()
+            .map(|(pane_id, pane)| PaneState {
+                id: *pane_id,
+                cwd: pane
+                    .app
+                    .block_manager
+                    .blocks
+                    .last()
+                    .map(|block| block.cwd.clone())
+                    .unwrap_or_default(),
+                shell: pane.app.config.shell.to_string(),
+                title: pane.terminal.title.clone(),
+                input_draft: pane.app.input_editor.buffer.text(),
+                search_query: pane.app.global_search.search_input.clone(),
+            })
+            .collect();
+
+        let tabs = self
+            .workspace
+            .tabs
+            .iter()
+            .map(|tab| WorkspaceTabState {
+                id: tab.id,
+                title: tab.title.clone(),
+                focused_pane: tab.split_manager.focused_leaf,
+                split_tree: split_node_to_state(&tab.split_manager.root),
+            })
+            .collect();
+
+        WorkspaceSessionState {
+            tabs,
+            panes,
+            active_tab: self.workspace.active_tab,
+            window_size,
+            window_position,
+        }
+    }
+
+    fn restore_session(&mut self, session: WorkspaceSessionState) {
+        self.pending_pane_restore = session
+            .panes
+            .into_iter()
+            .map(|pane_state| (pane_state.id, pane_state))
+            .collect();
+        let tabs = session
+            .tabs
+            .into_iter()
+            .map(|tab| WorkspaceTab {
+                id: tab.id,
+                title: tab.title,
+                split_manager: SplitManager {
+                    root: split_node_from_state(&tab.split_tree),
+                    focused_leaf: tab.focused_pane,
+                },
+            })
+            .collect();
+        self.workspace = WorkspaceState::from_tabs(tabs, session.active_tab);
+        self.panes.clear();
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        if let Some(active_pane) = self.active_pane_mut() {
+            if active_pane.app.global_search.is_active {
+                let lines = collect_search_lines(
+                    &active_pane.terminal,
+                    &active_pane.app.block_manager.blocks,
+                );
+                active_pane
+                    .app
+                    .global_search
+                    .search(&active_pane.app.global_search.search_input.clone(), &lines);
             }
         }
     }
 
     fn build_quads(&mut self) {
-        let render = match self.render.as_mut() {
-            Some(r) => r,
-            None => return,
-        };
-        let terminal = match self.terminal.as_ref() {
-            Some(t) => t,
-            None => return,
+        let active_pane_id = self.active_pane_id();
+        let tab_labels: Vec<(bool, String)> = self
+            .workspace
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let label = if index == self.workspace.active_tab {
+                    active_pane_id
+                        .and_then(|pane_id| self.panes.get(&pane_id))
+                        .map(|pane| format!("{}  [{}x{}]", tab.title, pane.cols, pane.rows))
+                        .unwrap_or_else(|| tab.title.clone())
+                } else {
+                    tab.title.clone()
+                };
+                (index == self.workspace.active_tab, label)
+            })
+            .collect();
+        let status_text = self.active_pane().map(|active_pane| {
+            let cwd = active_pane
+                .app
+                .block_manager
+                .blocks
+                .last()
+                .map(|block| block.cwd.display().to_string())
+                .filter(|cwd| !cwd.is_empty())
+                .unwrap_or_else(|| "~".to_string());
+            format!("{cwd}  |  {}", active_pane.app.config.shell)
+        });
+        let Some(render) = self.render.as_mut() else {
+            return;
         };
 
         render.batch.clear();
-
-        let cw = self.font.metrics.cell_width;
-        let ch = self.font.metrics.cell_height;
-        let visible_rows = terminal.state.visible_rows();
-        let total_cols = terminal.state.columns();
-        let (cursor_col, _) = terminal.state.cursor_position();
-        let cursor_row = terminal.state.absolute_cursor_row();
-        let row_positions = build_visible_row_positions(&visible_rows, &self.app.block_manager.blocks);
-        let viewport = self.ui_rects.viewport;
-        let selected_block_id = self
-            .app
-            .block_navigator
-            .selected_block(&self.app.block_manager)
-            .map(|block| block.id);
-
-        for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
-            let Some(render_row) = row_positions.get(row_idx).and_then(|row| *row) else {
-                continue;
-            };
-            for col_idx in 0..total_cols {
-                let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
-
-                let x = viewport.x + col_idx as f32 * cw;
-                let y = viewport.y + render_row as f32 * ch;
-
-                let mut bg = resolve_cell_color(&cell.bg, &self.app.theme, true);
-                let mut fg = resolve_cell_color(&cell.fg, &self.app.theme, false);
-
-                if cell.is_inverse {
-                    std::mem::swap(&mut bg, &mut fg);
-                }
-
-                // Push background quad
-                render.batch.push_bg_quad(x, y, cw, ch, bg);
-                if let Some(current_match) =
-                    search_match_at_cell(&self.app.global_search, absolute_row, col_idx as u16)
-                {
-                    let highlight = if current_match {
-                        self.app.theme.highlight_current_match
-                    } else {
-                        self.app.theme.highlight_match
-                    };
-                    render.batch.push_bg_quad(
-                        x,
-                        y,
-                        cw,
-                        ch,
-                        [highlight.r, highlight.g, highlight.b, highlight.a],
-                    );
-                }
-
-                // Push character glyph
-                let c = cell.character;
-                if c != ' ' && c != '\0' {
-                    push_glyph(render, &mut self.font, x, y, c, fg);
-                }
-            }
-        }
-
-        push_block_decorations(
-            &mut render.batch,
-            &self.app.theme,
-            &self.app.block_manager.blocks,
-            selected_block_id,
-            &self.app.global_search,
-            &visible_rows,
-            &row_positions,
-            total_cols,
-            viewport.x,
-            viewport.y,
-            cw,
-            ch,
-        );
-
-        if !self.app.input_editor.is_active {
-            let cursor_x = viewport.x + cursor_col as f32 * cw;
-            let cursor_row = visible_rows
-                .iter()
-                .position(|row| *row == cursor_row)
-                .and_then(|idx| row_positions.get(idx))
-                .and_then(|row| *row)
-                .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
-            let cursor_y = viewport.y + cursor_row as f32 * ch;
-            let cursor_color = [
-                self.app.theme.cursor.r,
-                self.app.theme.cursor.g,
-                self.app.theme.cursor.b,
-                0.7,
-            ];
-            render
-                .batch
-                .push_bg_quad(cursor_x, cursor_y, cw, ch, cursor_color);
-        }
-
-        render_input_editor(
+        render_tab_bar(
             render,
             &mut self.font,
-            &self.app.theme,
-            self.ui_rects.input,
-            &self.app.input_editor.render_data(),
+            self.chrome_rects.tab_bar,
+            &tab_labels,
         );
-        if self.app.global_search.is_active {
-            render_search_overlay(
-                render,
-                &mut self.font,
-                &self.app.theme,
-                self.ui_rects.viewport,
-                &self.app.global_search,
+        render_status_bar(
+            render,
+            &mut self.font,
+            self.chrome_rects.status,
+            status_text.as_deref(),
+        );
+
+        let pane_ids = self.workspace.active_pane_ids();
+        for pane_id in pane_ids {
+            let focused = active_pane_id == Some(pane_id);
+            let Some(pane) = self.panes.get_mut(&pane_id) else {
+                continue;
+            };
+
+            let theme = &pane.app.theme;
+            let viewport = pane.ui_rects.viewport;
+            let visible_rows = pane.terminal.state.visible_rows();
+            let total_cols = pane.terminal.state.columns();
+            let (cursor_col, _) = pane.terminal.state.cursor_position();
+            let cursor_row = pane.terminal.state.absolute_cursor_row();
+            let row_positions = build_visible_row_positions(&visible_rows, &pane.app.block_manager.blocks);
+            let selected_block_id = pane
+                .app
+                .block_navigator
+                .selected_block(&pane.app.block_manager)
+                .map(|block| block.id);
+            let cw = self.font.metrics.cell_width;
+            let ch = self.font.metrics.cell_height;
+
+            render.batch.push_bg_quad(
+                viewport.x,
+                viewport.y,
+                viewport.w,
+                viewport.h,
+                [theme.background.r, theme.background.g, theme.background.b, theme.background.a],
             );
+
+            for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
+                let Some(render_row) = row_positions.get(row_idx).and_then(|row| *row) else {
+                    continue;
+                };
+                for col_idx in 0..total_cols {
+                    let cell = pane.terminal.state.cell_at_absolute(absolute_row, col_idx);
+                    let x = viewport.x + col_idx as f32 * cw;
+                    let y = viewport.y + render_row as f32 * ch;
+                    let mut bg = resolve_cell_color(&cell.bg, theme, true);
+                    let mut fg = resolve_cell_color(&cell.fg, theme, false);
+
+                    if cell.is_inverse {
+                        std::mem::swap(&mut bg, &mut fg);
+                    }
+
+                    render.batch.push_bg_quad(x, y, cw, ch, bg);
+                    if let Some(current_match) =
+                        search_match_at_cell(&pane.app.global_search, absolute_row, col_idx as u16)
+                    {
+                        let highlight = if current_match {
+                            theme.highlight_current_match
+                        } else {
+                            theme.highlight_match
+                        };
+                        render.batch.push_bg_quad(
+                            x,
+                            y,
+                            cw,
+                            ch,
+                            [highlight.r, highlight.g, highlight.b, highlight.a],
+                        );
+                    }
+
+                    if cell.character != ' ' && cell.character != '\0' {
+                        push_glyph(render, &mut self.font, x, y, cell.character, fg);
+                    }
+                }
+            }
+
+            push_block_decorations(
+                &mut render.batch,
+                theme,
+                &pane.app.block_manager.blocks,
+                selected_block_id,
+                &pane.app.global_search,
+                &visible_rows,
+                &row_positions,
+                total_cols,
+                viewport.x,
+                viewport.y,
+                cw,
+                ch,
+            );
+
+            render.batch.push_bg_quad(
+                viewport.x,
+                viewport.y,
+                viewport.w,
+                1.0,
+                [theme.block_separator.r, theme.block_separator.g, theme.block_separator.b, 0.9],
+            );
+            render.batch.push_bg_quad(
+                viewport.x,
+                viewport.y,
+                1.0,
+                viewport.h,
+                [theme.block_separator.r, theme.block_separator.g, theme.block_separator.b, 0.9],
+            );
+            if focused {
+                render.batch.push_bg_quad(
+                    viewport.x,
+                    viewport.y,
+                    viewport.w,
+                    2.0,
+                    [
+                        theme.highlight_current_match.r,
+                        theme.highlight_current_match.g,
+                        theme.highlight_current_match.b,
+                        0.8,
+                    ],
+                );
+            }
+
+            if focused && !pane.app.input_editor.is_active {
+                let cursor_x = viewport.x + cursor_col as f32 * cw;
+                let cursor_row = visible_rows
+                    .iter()
+                    .position(|row| *row == cursor_row)
+                    .and_then(|idx| row_positions.get(idx))
+                    .and_then(|row| *row)
+                    .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
+                let cursor_y = viewport.y + cursor_row as f32 * ch;
+                render.batch.push_bg_quad(
+                    cursor_x,
+                    cursor_y,
+                    cw,
+                    ch,
+                    [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.7],
+                );
+            }
+
+            if focused {
+                render_input_editor(
+                    render,
+                    &mut self.font,
+                    theme,
+                    pane.ui_rects.input,
+                    &pane.app.input_editor.render_data(),
+                );
+                if pane.app.global_search.is_active {
+                    render_search_overlay(
+                        render,
+                        &mut self.font,
+                        theme,
+                        pane.ui_rects.viewport,
+                        &pane.app.global_search,
+                    );
+                }
+            }
         }
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
-        if let Some(ref terminal) = self.terminal {
-            if let Err(e) = terminal.send_input(data) {
-                warn!("failed to send to PTY: {e}");
+        if let Some(active_pane) = self.active_pane() {
+            if let Err(error) = active_pane.terminal.send_input(data) {
+                warn!("failed to send to PTY: {error}");
             }
         }
     }
 
-    fn handle_semantic_events(&mut self, events: Vec<SemanticEvent>) {
+    fn handle_semantic_events(&mut self, pane_id: PaneId, events: Vec<SemanticEvent>) {
         for event in events {
             if let SemanticEvent::TitleChanged(title) = &event {
-                if let Some(window) = &self.window {
-                    window.set_title(title);
+                if self.active_pane_id() == Some(pane_id) {
+                    if let Some(window) = &self.window {
+                        window.set_title(title);
+                    }
+                    if let Some(active_tab) = self.workspace.active_tab_mut() {
+                        active_tab.title = title.clone();
+                    }
                 }
             }
-            self.app.handle_semantic_event(&event);
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                pane.app.handle_semantic_event(&event);
+            }
         }
     }
 
@@ -275,25 +565,153 @@ impl WalkHandler {
         match action {
             Action::Copy => {
                 if let Some(text) = self.selection_text() {
-                    let _ = self.app.clipboard.copy(&text);
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        let _ = active_pane.app.clipboard.copy(&text);
+                    }
                 }
             }
             Action::BlockCopy => {
                 if let Some(text) = self.selected_block_text() {
-                    let _ = self.app.clipboard.copy(&text);
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        let _ = active_pane.app.clipboard.copy(&text);
+                    }
                 }
             }
             Action::SearchGlobal | Action::BlockSearch | Action::SearchInBlock => {
-                self.app.global_search.activate();
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.global_search.activate();
+                }
                 self.refresh_global_search();
             }
+            Action::NewTab => {
+                self.workspace.new_tab("Shell");
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::CloseTab => {
+                if let Some(removed) = self.workspace.close_active_tab() {
+                    for pane_id in removed {
+                        self.panes.remove(&pane_id);
+                    }
+                    if let Some(window) = &self.window {
+                        self.sync_workspace_layout(window.inner_size());
+                    }
+                }
+            }
+            Action::NextTab => {
+                self.workspace.next_tab();
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::PrevTab => {
+                self.workspace.prev_tab();
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::SwitchToTab(index) => {
+                self.workspace.switch_tab(index.saturating_sub(1) as usize);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::SplitVertical => {
+                let _ = self
+                    .workspace
+                    .split_active(walk_ui::splits::SplitDirection::Horizontal);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::SplitHorizontal => {
+                let _ = self
+                    .workspace
+                    .split_active(walk_ui::splits::SplitDirection::Vertical);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::CloseSplit => {
+                if let Some(removed_pane) = self.workspace.close_active_pane() {
+                    self.panes.remove(&removed_pane);
+                    if let Some(window) = &self.window {
+                        self.sync_workspace_layout(window.inner_size());
+                    }
+                }
+            }
+            Action::FocusLeft => {
+                self.workspace
+                    .focus_in_direction(FocusDirection::Left, self.chrome_rects.content);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::FocusRight => {
+                self.workspace
+                    .focus_in_direction(FocusDirection::Right, self.chrome_rects.content);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::FocusUp => {
+                self.workspace
+                    .focus_in_direction(FocusDirection::Up, self.chrome_rects.content);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::FocusDown => {
+                self.workspace
+                    .focus_in_direction(FocusDirection::Down, self.chrome_rects.content);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::ResizeSplitLeft => {
+                self.workspace
+                    .resize_active_split(walk_ui::splits::SplitDirection::Horizontal, -0.05);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::ResizeSplitRight => {
+                self.workspace
+                    .resize_active_split(walk_ui::splits::SplitDirection::Horizontal, 0.05);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::ResizeSplitUp => {
+                self.workspace
+                    .resize_active_split(walk_ui::splits::SplitDirection::Vertical, -0.05);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            Action::ResizeSplitDown => {
+                self.workspace
+                    .resize_active_split(walk_ui::splits::SplitDirection::Vertical, 0.05);
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
             other => {
-                let previous_zoom = self.app.zoom.current_size();
-                if let Some(data) = self.app.handle_action(&other) {
+                let mut pty_data = None;
+                let mut target_zoom = None;
+                if let Some(active_pane) = self.active_pane_mut() {
+                    let previous_zoom = active_pane.app.zoom.current_size();
+                    pty_data = active_pane.app.handle_action(&other);
+                    if (active_pane.app.zoom.current_size() - previous_zoom).abs() > f32::EPSILON {
+                        target_zoom = Some(active_pane.app.zoom.current_size());
+                    }
+                }
+                if let Some(data) = pty_data {
                     self.send_to_pty(&data);
                 }
-                if (self.app.zoom.current_size() - previous_zoom).abs() > f32::EPSILON {
-                    self.apply_zoom();
+                if let Some(target_zoom) = target_zoom {
+                    self.apply_zoom(target_zoom);
                 }
             }
         }
@@ -302,28 +720,31 @@ impl WalkHandler {
     }
 
     fn handle_search_input(&mut self, event: &InputEvent) -> bool {
-        if !self.app.global_search.is_active {
+        let Some(active_pane) = self.active_pane_mut() else {
+            return false;
+        };
+        if !active_pane.app.global_search.is_active {
             return false;
         }
 
         match &event.action {
-            KeyAction::Escape => self.app.global_search.deactivate(),
+            KeyAction::Escape => active_pane.app.global_search.deactivate(),
             KeyAction::Enter | KeyAction::ArrowDown => {
-                self.app.global_search.next_match();
+                active_pane.app.global_search.next_match();
             }
             KeyAction::ArrowUp => {
-                self.app.global_search.prev_match();
+                active_pane.app.global_search.prev_match();
             }
             KeyAction::Backspace
                 if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
             {
-                self.app.global_search.search_input.pop();
+                active_pane.app.global_search.search_input.pop();
                 self.refresh_global_search();
             }
             KeyAction::Char(ch)
                 if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
             {
-                self.app.global_search.search_input.push(*ch);
+                active_pane.app.global_search.search_input.push(*ch);
                 self.refresh_global_search();
             }
             _ => {}
@@ -339,36 +760,49 @@ impl WalkHandler {
             return false;
         };
 
-        match self.app.input_editor.handle_key(editor_key) {
-            EditorAction::Submit(command) => {
-                self.app.block_manager.set_command_text(&command);
-                if !command.is_empty() {
-                    self.send_to_pty(command.as_bytes());
+        let mut submitted = None;
+        let mut send_eof = false;
+        if let Some(active_pane) = self.active_pane_mut() {
+            match active_pane.app.input_editor.handle_key(editor_key) {
+                EditorAction::Submit(command) => {
+                    active_pane.app.block_manager.set_command_text(&command);
+                    submitted = Some(command);
                 }
-                self.send_to_pty(b"\r");
+                EditorAction::SendEof => {
+                    send_eof = true;
+                }
+                EditorAction::None => {}
             }
-            EditorAction::SendEof => {
-                self.send_to_pty(b"\x04");
+        }
+
+        if let Some(command) = submitted {
+            if !command.is_empty() {
+                self.send_to_pty(command.as_bytes());
             }
-            EditorAction::None => {}
+            self.send_to_pty(b"\r");
+        }
+        if send_eof {
+            self.send_to_pty(b"\x04");
         }
 
         if let Some(window) = &self.window {
-            self.update_grid(window.inner_size());
+            self.sync_workspace_layout(window.inner_size());
         }
         self.needs_redraw = true;
         true
     }
 
-    fn apply_zoom(&mut self) {
-        let target_size = self.app.zoom.current_size();
+    fn apply_zoom(&mut self, target_size: f32) {
         if (self.font.font_size - target_size).abs() <= f32::EPSILON {
             return;
         }
 
         self.font.set_font_size(target_size);
+        for pane in self.panes.values_mut() {
+            pane.app.zoom.set_current_size(target_size);
+        }
         if let Some(window) = &self.window {
-            self.update_grid(window.inner_size());
+            self.sync_workspace_layout(window.inner_size());
         }
         self.needs_redraw = true;
     }
@@ -377,61 +811,51 @@ impl WalkHandler {
         if size.width == 0 || size.height == 0 {
             return;
         }
-
-        self.ui_rects = compute_ui_rects(
-            size,
-            self.app.input_editor.render_data().position,
-            self.app.input_editor.buffer.line_count(),
-            self.font.metrics.cell_height,
-        );
-        let (cols, rows) = self
-            .font
-            .grid_dimensions(self.ui_rects.viewport.w, self.ui_rects.viewport.h);
-        self.cols = cols;
-        self.rows = rows;
-
-        if let Some(ref mut terminal) = self.terminal {
-            if let Err(e) = terminal.resize(cols, rows) {
-                warn!("failed to resize terminal: {e}");
-            }
-        }
+        self.sync_workspace_layout(size);
     }
 
     fn refresh_global_search(&mut self) {
-        if !self.app.global_search.is_active {
+        let Some(active_pane) = self.active_pane_mut() else {
+            return;
+        };
+        if !active_pane.app.global_search.is_active {
             return;
         }
 
-        if self.app.global_search.search_input.is_empty() {
-            self.app.global_search.matches.clear();
-            self.app.global_search.current = 0;
-            self.app.global_search.query.clear();
+        if active_pane.app.global_search.search_input.is_empty() {
+            active_pane.app.global_search.matches.clear();
+            active_pane.app.global_search.current = 0;
+            active_pane.app.global_search.query.clear();
             return;
         }
 
-        if let Some(terminal) = &self.terminal {
-            let lines = collect_search_lines(terminal, &self.app.block_manager.blocks);
-            self.app
-                .global_search
-                .search(&self.app.global_search.search_input.clone(), &lines);
-        }
+        let lines = collect_search_lines(&active_pane.terminal, &active_pane.app.block_manager.blocks);
+        active_pane
+            .app
+            .global_search
+            .search(&active_pane.app.global_search.search_input.clone(), &lines);
         self.scroll_to_current_search_match();
     }
 
     fn scroll_to_current_search_match(&mut self) {
-        let Some(target) = self.app.global_search.matches.get(self.app.global_search.current) else {
+        let Some(active_pane) = self.active_pane_mut() else {
             return;
         };
-        let Some(terminal) = self.terminal.as_mut() else {
+        let Some(target) = active_pane
+            .app
+            .global_search
+            .matches
+            .get(active_pane.app.global_search.current)
+        else {
             return;
         };
 
-        let screen_lines = terminal.state.screen_lines();
+        let screen_lines = active_pane.terminal.state.screen_lines();
         if screen_lines == 0 {
             return;
         }
 
-        let visible_start = terminal.state.visible_start_row();
+        let visible_start = active_pane.terminal.state.visible_start_row();
         let visible_end = visible_start + screen_lines.saturating_sub(1);
         if (visible_start..=visible_end).contains(&target.row) {
             return;
@@ -442,17 +866,22 @@ impl WalkHandler {
         } else {
             target.row.saturating_sub(screen_lines.saturating_sub(1))
         };
-        let new_offset = terminal.state.scrollback_len().saturating_sub(desired_start);
-        terminal.state.set_display_offset(new_offset);
+        let new_offset = active_pane
+            .terminal
+            .state
+            .scrollback_len()
+            .saturating_sub(desired_start);
+        active_pane.terminal.state.set_display_offset(new_offset);
         self.needs_redraw = true;
     }
 
     fn pixel_to_cell(&self, x: f64, y: f64) -> Option<CellPos> {
-        if self.cols == 0 || self.rows == 0 {
+        let active_pane = self.active_pane()?;
+        if active_pane.cols == 0 || active_pane.rows == 0 {
             return None;
         }
 
-        let viewport = self.ui_rects.viewport;
+        let viewport = active_pane.ui_rects.viewport;
         if x < f64::from(viewport.x)
             || y < f64::from(viewport.y)
             || x > f64::from(viewport.x + viewport.w)
@@ -464,26 +893,26 @@ impl WalkHandler {
         let local_x = x - f64::from(viewport.x);
         let local_y = y - f64::from(viewport.y);
         let col = ((local_x / f64::from(self.font.metrics.cell_width)).floor() as i64)
-            .clamp(0, i64::from(self.cols.saturating_sub(1))) as u16;
+            .clamp(0, i64::from(active_pane.cols.saturating_sub(1))) as u16;
         let row = ((local_y / f64::from(self.font.metrics.cell_height)).floor() as i64)
-            .clamp(0, i64::from(self.rows.saturating_sub(1))) as u16;
+            .clamp(0, i64::from(active_pane.rows.saturating_sub(1))) as u16;
 
         Some(CellPos { row, col })
     }
 
     fn selection_text(&self) -> Option<String> {
-        let (start, end) = self.app.selection.selection_range()?;
-        let terminal = self.terminal.as_ref()?;
-        Some(extract_selection_text(terminal, start, end))
+        let active_pane = self.active_pane()?;
+        let (start, end) = active_pane.app.selection.selection_range()?;
+        Some(extract_selection_text(&active_pane.terminal, start, end))
     }
 
     fn selected_block_text(&self) -> Option<String> {
-        let selected = self
+        let active_pane = self.active_pane()?;
+        let selected = active_pane
             .app
             .block_navigator
-            .selected_block(&self.app.block_manager)?;
-        let terminal = self.terminal.as_ref()?;
-        Some(extract_block_text(terminal, selected))
+            .selected_block(&active_pane.app.block_manager)?;
+        Some(extract_block_text(&active_pane.terminal, selected))
     }
 }
 
@@ -520,20 +949,29 @@ impl AppHandler for WalkHandler {
 
         // Compute grid dimensions
         self.update_grid(size);
-
-        // Spawn the terminal
-        self.spawn_terminal();
+        if self.config.restore_session {
+            let path = default_session_path();
+            if let Ok(session) = load_session(&path) {
+                self.restore_session(session);
+            }
+        }
         self.needs_redraw = true;
-
-        info!("GPU initialized, grid: {}x{}", self.cols, self.rows);
+        info!("GPU initialized");
     }
 
     fn on_frame_tick(&mut self) -> bool {
-        if let Some(ref mut terminal) = self.terminal {
-            terminal.process_pty_output();
-            let semantic_events = terminal.drain_semantic_events();
-            let is_dirty = terminal.is_dirty();
-            self.handle_semantic_events(semantic_events);
+        let pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
+        for pane_id in pane_ids {
+            let mut semantic_events = Vec::new();
+            let mut is_dirty = false;
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                pane.terminal.process_pty_output();
+                semantic_events = pane.terminal.drain_semantic_events();
+                is_dirty = pane.terminal.is_dirty();
+            }
+            if !semantic_events.is_empty() {
+                self.handle_semantic_events(pane_id, semantic_events);
+            }
             self.needs_redraw |= is_dirty;
         }
 
@@ -549,12 +987,16 @@ impl AppHandler for WalkHandler {
         self.build_quads();
 
         // Render
+        let clear_theme = self
+            .active_pane()
+            .map(|pane| pane.app.theme.clone())
+            .unwrap_or_default();
         if let Some(ref mut render) = self.render {
             let clear = [
-                self.app.theme.background.r,
-                self.app.theme.background.g,
-                self.app.theme.background.b,
-                self.app.theme.background.a,
+                clear_theme.background.r,
+                clear_theme.background.g,
+                clear_theme.background.b,
+                clear_theme.background.a,
             ];
             if let Err(e) =
                 render
@@ -574,8 +1016,8 @@ impl AppHandler for WalkHandler {
             }
         }
 
-        if let Some(ref mut terminal) = self.terminal {
-            terminal.mark_clean();
+        for pane in self.panes.values_mut() {
+            pane.terminal.mark_clean();
         }
         self.needs_redraw = false;
     }
@@ -596,7 +1038,10 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_key_event(&mut self, event: InputEvent) {
-        if let Some(action) = self.app.resolve_action(&event) {
+        if let Some(action) = self
+            .active_pane()
+            .and_then(|pane| pane.app.resolve_action(&event))
+        {
             self.handle_action(action);
             return;
         }
@@ -624,7 +1069,9 @@ impl AppHandler for WalkHandler {
                 ..
             } => {
                 if let Some(cell) = self.pixel_to_cell(x, y) {
-                    self.app.selection.handle_mouse_down(cell);
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        active_pane.app.selection.handle_mouse_down(cell);
+                    }
                     self.needs_redraw = true;
                 }
             }
@@ -633,19 +1080,28 @@ impl AppHandler for WalkHandler {
                 ..
             } => {
                 let was_selecting =
-                    matches!(self.app.selection.state, SelectionState::Selecting { .. });
-                self.app.selection.handle_mouse_up();
-                if was_selecting && self.app.config.copy_on_select {
+                    self.active_pane().is_some_and(|pane| matches!(pane.app.selection.state, SelectionState::Selecting { .. }));
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.selection.handle_mouse_up();
+                }
+                if was_selecting && self.config.copy_on_select {
                     if let Some(text) = self.selection_text() {
-                        let _ = self.app.clipboard.copy(&text);
+                        if let Some(active_pane) = self.active_pane_mut() {
+                            let _ = active_pane.app.clipboard.copy(&text);
+                        }
                     }
                 }
                 self.needs_redraw = true;
             }
             walk_app::input::MouseEvent::Move { x, y } => {
-                if matches!(self.app.selection.state, SelectionState::Selecting { .. }) {
+                if self
+                    .active_pane()
+                    .is_some_and(|pane| matches!(pane.app.selection.state, SelectionState::Selecting { .. }))
+                {
                     if let Some(cell) = self.pixel_to_cell(x, y) {
-                        self.app.selection.handle_mouse_drag(cell);
+                        if let Some(active_pane) = self.active_pane_mut() {
+                            active_pane.app.selection.handle_mouse_drag(cell);
+                        }
                         self.needs_redraw = true;
                     }
                 }
@@ -657,31 +1113,115 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_close_requested(&mut self) {
+        let session = self.snapshot_session();
+        let _ = save_session(&session, &default_session_path());
         info!("walk closing");
     }
 }
 
-fn compute_ui_rects(
-    size: PhysicalSize<u32>,
+fn compute_chrome_rects(size: PhysicalSize<u32>) -> ChromeRects {
+    let width = size.width as f32;
+    let height = size.height as f32;
+    let tab_bar_height = 32.0;
+    let status_height = 24.0;
+
+    ChromeRects {
+        tab_bar: Rect::new(0.0, 0.0, width, tab_bar_height),
+        content: Rect::new(0.0, tab_bar_height, width, (height - tab_bar_height - status_height).max(0.0)),
+        status: Rect::new(0.0, (height - status_height).max(0.0), width, status_height),
+    }
+}
+
+fn compute_pane_ui_rects(
+    container: Rect,
     input_position: walk_input::editor::InputPosition,
     input_lines: usize,
     cell_height: f32,
+    show_input: bool,
 ) -> UiRects {
-    let width = size.width as f32;
-    let height = size.height as f32;
     let line_count = input_lines.max(1).min(8) as f32;
-    let input_height = (line_count * cell_height + 20.0).min((height * 0.45).max(cell_height));
+    let input_height = if show_input {
+        (line_count * cell_height + 20.0).min((container.h * 0.45).max(cell_height))
+    } else {
+        0.0
+    };
 
     match input_position {
         walk_input::editor::InputPosition::Top => UiRects {
-            viewport: Rect::new(0.0, input_height, width, (height - input_height).max(cell_height)),
-            input: Rect::new(0.0, 0.0, width, input_height),
+            viewport: Rect::new(
+                container.x,
+                container.y + input_height,
+                container.w,
+                (container.h - input_height).max(cell_height),
+            ),
+            input: Rect::new(container.x, container.y, container.w, input_height),
         },
         walk_input::editor::InputPosition::Bottom => UiRects {
-            viewport: Rect::new(0.0, 0.0, width, (height - input_height).max(cell_height)),
-            input: Rect::new(0.0, height - input_height, width, input_height),
+            viewport: Rect::new(
+                container.x,
+                container.y,
+                container.w,
+                (container.h - input_height).max(cell_height),
+            ),
+            input: Rect::new(
+                container.x,
+                container.y + container.h - input_height,
+                container.w,
+                input_height,
+            ),
         },
     }
+}
+
+fn render_tab_bar(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    rect: Rect,
+    tabs: &[(bool, String)],
+) {
+    render.batch.push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
+    if tabs.is_empty() {
+        return;
+    }
+
+    let tab_width = (rect.w / tabs.len() as f32).max(120.0).min(220.0);
+    for (index, (is_active, label)) in tabs.iter().enumerate() {
+        let x = rect.x + index as f32 * tab_width;
+        let background = if *is_active {
+            [0.14, 0.16, 0.22, 1.0]
+        } else {
+            [0.10, 0.11, 0.15, 1.0]
+        };
+        render.batch.push_bg_quad(x, rect.y, tab_width, rect.h, background);
+        push_text(
+            render,
+            font,
+            x + 12.0,
+            rect.y + 8.0,
+            label,
+            [0.75, 0.79, 0.96, 1.0],
+        );
+    }
+}
+
+fn render_status_bar(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    rect: Rect,
+    status_text: Option<&str>,
+) {
+    render.batch.push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
+    let Some(status_text) = status_text else {
+        return;
+    };
+    push_text(
+        render,
+        font,
+        rect.x + 10.0,
+        rect.y + 4.0,
+        status_text,
+        [0.54, 0.58, 0.65, 1.0],
+    );
 }
 
 fn render_input_editor(
@@ -1280,6 +1820,23 @@ fn resolve_cell_color(color: &CellColor, theme: &Theme, is_bg: bool) -> [f32; 4]
             }
         }
     }
+}
+
+fn parse_shell_type(value: &str) -> ShellType {
+    if let Some(distro) = value.strip_prefix("wsl:") {
+        return ShellType::Wsl(distro.to_string());
+    }
+
+    match value {
+        "zsh" => ShellType::Zsh,
+        "fish" => ShellType::Fish,
+        "powershell" => ShellType::PowerShell,
+        _ => ShellType::Bash,
+    }
+}
+
+fn shell_quote_path(path: &str) -> String {
+    format!("'{}'", path.replace('\'', "'\"'\"'"))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
