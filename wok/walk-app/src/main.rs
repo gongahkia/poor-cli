@@ -123,22 +123,23 @@ impl WalkHandler {
 
         let cw = self.font.metrics.cell_width;
         let ch = self.font.metrics.cell_height;
-        let total_lines = terminal.state.screen_lines();
+        let visible_rows = terminal.state.visible_rows();
         let total_cols = terminal.state.columns();
-        let (cursor_col, cursor_row) = terminal.state.cursor_position();
-        let row_positions = build_row_positions(total_lines, &self.app.block_manager.blocks);
+        let (cursor_col, _) = terminal.state.cursor_position();
+        let cursor_row = terminal.state.absolute_cursor_row();
+        let row_positions = build_visible_row_positions(&visible_rows, &self.app.block_manager.blocks);
         let selected_block_id = self
             .app
             .block_navigator
             .selected_block(&self.app.block_manager)
             .map(|block| block.id);
 
-        for row_idx in 0..total_lines {
+        for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
             let Some(render_row) = row_positions.get(row_idx).and_then(|row| *row) else {
                 continue;
             };
             for col_idx in 0..total_cols {
-                let cell = terminal.state.cell_at(row_idx, col_idx);
+                let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
 
                 let x = col_idx as f32 * cw;
                 let y = render_row as f32 * ch;
@@ -197,6 +198,7 @@ impl WalkHandler {
             &self.app.theme,
             &self.app.block_manager.blocks,
             selected_block_id,
+            &visible_rows,
             &row_positions,
             total_cols,
             cw,
@@ -205,10 +207,12 @@ impl WalkHandler {
 
         // Draw cursor
         let cursor_x = cursor_col as f32 * cw;
-        let cursor_row = row_positions
-            .get(cursor_row)
+        let cursor_row = visible_rows
+            .iter()
+            .position(|row| *row == cursor_row)
+            .and_then(|idx| row_positions.get(idx))
             .and_then(|row| *row)
-            .unwrap_or(cursor_row);
+            .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
         let cursor_y = cursor_row as f32 * ch;
         let cursor_color = [
             self.app.theme.cursor.r,
@@ -644,8 +648,11 @@ fn input_event_to_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
 }
 
 fn collect_visible_lines(terminal: &Terminal) -> Vec<(i64, String)> {
-    (0..terminal.state.screen_lines())
-        .map(|row| (row as i64, terminal_row_text(terminal, row)))
+    terminal
+        .state
+        .visible_rows()
+        .into_iter()
+        .map(|row| (row as i64, terminal.state.row_text(row)))
         .collect()
 }
 
@@ -661,6 +668,7 @@ fn extract_selection_text(terminal: &Terminal, start: CellPos, end: CellPos) -> 
     let mut lines = Vec::new();
 
     for row in start_row..=end_row {
+        let absolute_row = terminal.state.viewport_row_to_absolute(row);
         let row_start = if row == start_row {
             usize::from(start.col)
         } else {
@@ -671,21 +679,21 @@ fn extract_selection_text(terminal: &Terminal, start: CellPos, end: CellPos) -> 
         } else {
             terminal.state.columns()
         };
-        lines.push(terminal_row_slice(terminal, row, row_start, row_end));
+        lines.push(terminal.state.row_slice(absolute_row, row_start, row_end));
     }
 
     lines.join("\n")
 }
 
 fn extract_block_text(terminal: &Terminal, block: &Block) -> String {
-    let total_rows = terminal.state.screen_lines();
+    let total_rows = terminal.state.total_rows();
     if total_rows == 0 {
         return block.command_text.clone();
     }
 
     let max_row = total_rows.saturating_sub(1);
-    let start_row = block.output_start_line.min(max_row);
-    let end_row = block.output_end_line.min(max_row);
+    let start_row = block.output_start_row.min(max_row);
+    let end_row = block.output_end_row.min(max_row);
     let mut lines = Vec::new();
 
     if !block.command_text.is_empty() {
@@ -693,27 +701,24 @@ fn extract_block_text(terminal: &Terminal, block: &Block) -> String {
     }
 
     for row in start_row..=end_row {
-        lines.push(terminal_row_text(terminal, row));
+        lines.push(terminal.state.row_text(row));
     }
 
     lines.join("\n")
 }
 
-fn build_row_positions(total_lines: usize, blocks: &[Block]) -> Vec<Option<usize>> {
-    let mut hidden_rows = vec![false; total_lines];
+fn build_visible_row_positions(visible_rows: &[usize], blocks: &[Block]) -> Vec<Option<usize>> {
+    let mut hidden_rows = vec![false; visible_rows.len()];
 
     for block in blocks {
-        if !block.is_collapsed || block.output_start_line >= total_lines {
+        if !block.is_collapsed {
             continue;
         }
 
-        let end_row = block.output_end_line.min(total_lines.saturating_sub(1));
-        for hidden_row in hidden_rows
-            .iter_mut()
-            .take(end_row + 1)
-            .skip(block.output_start_line + 1)
-        {
-            *hidden_row = true;
+        for (index, absolute_row) in visible_rows.iter().copied().enumerate() {
+            if absolute_row > block.output_start_row && absolute_row <= block.output_end_row {
+                hidden_rows[index] = true;
+            }
         }
     }
 
@@ -738,6 +743,7 @@ fn push_block_decorations(
     theme: &Theme,
     blocks: &[Block],
     selected_block_id: Option<u64>,
+    visible_rows: &[usize],
     row_positions: &[Option<usize>],
     total_cols: usize,
     cell_width: f32,
@@ -746,15 +752,23 @@ fn push_block_decorations(
     let viewport_width = total_cols as f32 * cell_width;
 
     for block in blocks {
-        let Some(start_row) = row_positions
-            .get(block.output_start_line)
-            .and_then(|row| *row)
+        let Some(start_idx) = visible_rows
+            .iter()
+            .position(|absolute_row| *absolute_row == block.output_start_row)
         else {
             continue;
         };
+        let Some(start_row) = row_positions.get(start_idx).and_then(|row| *row) else {
+            continue;
+        };
 
-        let end_row = (block.output_start_line..=block.output_end_line)
-            .filter_map(|row| row_positions.get(row).and_then(|mapped| *mapped))
+        let end_row = visible_rows
+            .iter()
+            .enumerate()
+            .filter(|(_, absolute_row)| {
+                **absolute_row >= block.output_start_row && **absolute_row <= block.output_end_row
+            })
+            .filter_map(|(index, _)| row_positions.get(index).and_then(|mapped| *mapped))
             .next_back()
             .unwrap_or(start_row);
 
@@ -818,24 +832,6 @@ fn selection_end_col(terminal: &Terminal, end_col: u16) -> usize {
     } else {
         (usize::from(end_col) + 1).min(terminal.state.columns())
     }
-}
-
-fn terminal_row_text(terminal: &Terminal, row: usize) -> String {
-    terminal_row_slice(terminal, row, 0, terminal.state.columns())
-        .trim_end_matches(' ')
-        .to_string()
-}
-
-fn terminal_row_slice(terminal: &Terminal, row: usize, start_col: usize, end_col: usize) -> String {
-    let end_col = end_col.min(terminal.state.columns());
-    let mut text = String::new();
-
-    for col in start_col..end_col {
-        let ch = terminal.state.cell_at(row, col).character;
-        text.push(if ch == '\0' { ' ' } else { ch });
-    }
-
-    text
 }
 
 /// Resolve a CellColor to [r, g, b, a] using the Walk theme.

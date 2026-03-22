@@ -14,10 +14,10 @@ pub struct Block {
     pub prompt_text: String,
     /// The command that was executed.
     pub command_text: String,
-    /// Start line of output in the terminal grid.
-    pub output_start_line: usize,
-    /// End line of output in the terminal grid.
-    pub output_end_line: usize,
+    /// Start row of output in the terminal buffer.
+    pub output_start_row: usize,
+    /// End row of output in the terminal buffer.
+    pub output_end_row: usize,
     /// Exit code of the command (None if still running).
     pub exit_code: Option<i32>,
     /// When the command started.
@@ -45,8 +45,8 @@ pub enum BlockBuildState {
     WaitingForPrompt,
     /// Inside a prompt (between PromptStart and CommandStart).
     InPrompt {
-        /// Line where prompt started.
-        start_line: usize,
+        /// Row where prompt started.
+        start_row: usize,
     },
     /// Inside a command (between CommandStart and OutputStart).
     InCommand {
@@ -91,7 +91,7 @@ impl BlockManager {
         match event {
             SemanticEvent::PromptStart { row } => {
                 self.pending_command_text = None;
-                self.state = BlockBuildState::InPrompt { start_line: *row };
+                self.state = BlockBuildState::InPrompt { start_row: *row };
             }
             SemanticEvent::CommandStart { .. } => {
                 if let BlockBuildState::InPrompt { .. } = &self.state {
@@ -109,8 +109,8 @@ impl BlockManager {
                         id,
                         prompt_text: prompt_text.clone(),
                         command_text: self.pending_command_text.take().unwrap_or_default(),
-                        output_start_line: *row,
-                        output_end_line: *row,
+                        output_start_row: *row,
+                        output_end_row: *row,
                         exit_code: None,
                         start_time: Instant::now(),
                         end_time: None,
@@ -129,7 +129,7 @@ impl BlockManager {
             SemanticEvent::CommandEnd { row, exit_code } => {
                 if let BlockBuildState::InOutput { block_id } = &self.state {
                     if let Some(block) = self.blocks.iter_mut().find(|b| b.id == *block_id) {
-                        block.output_end_line = *row;
+                        block.output_end_row = *row;
                         block.exit_code = *exit_code;
                         block.end_time = Some(Instant::now());
                         block.duration = block.end_time.map(|end| end - block.start_time);
