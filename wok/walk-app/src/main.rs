@@ -24,6 +24,7 @@ use walk_terminal::shell::ShellType;
 use walk_terminal::state::CellColor;
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
+use walk_ui::layout::Rect;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::theme::Theme;
 use winit::dpi::PhysicalSize;
@@ -58,6 +59,22 @@ struct RenderState {
     atlas: GlyphAtlas,
 }
 
+/// Window sub-rectangles used by the single-pane runtime.
+#[derive(Clone, Copy)]
+struct UiRects {
+    viewport: Rect,
+    input: Rect,
+}
+
+impl Default for UiRects {
+    fn default() -> Self {
+        Self {
+            viewport: Rect::new(0.0, 0.0, 0.0, 0.0),
+            input: Rect::new(0.0, 0.0, 0.0, 0.0),
+        }
+    }
+}
+
 /// Walk application handler.
 struct WalkHandler {
     app: WalkApp,
@@ -65,6 +82,7 @@ struct WalkHandler {
     terminal: Option<Terminal>,
     render: Option<RenderState>,
     window: Option<Arc<Window>>,
+    ui_rects: UiRects,
     cols: u16,
     rows: u16,
     needs_redraw: bool,
@@ -81,6 +99,7 @@ impl WalkHandler {
             terminal: None,
             render: None,
             window: None,
+            ui_rects: UiRects::default(),
             cols: 80,
             rows: 24,
             needs_redraw: true,
@@ -128,6 +147,7 @@ impl WalkHandler {
         let (cursor_col, _) = terminal.state.cursor_position();
         let cursor_row = terminal.state.absolute_cursor_row();
         let row_positions = build_visible_row_positions(&visible_rows, &self.app.block_manager.blocks);
+        let viewport = self.ui_rects.viewport;
         let selected_block_id = self
             .app
             .block_navigator
@@ -141,8 +161,8 @@ impl WalkHandler {
             for col_idx in 0..total_cols {
                 let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
 
-                let x = col_idx as f32 * cw;
-                let y = render_row as f32 * ch;
+                let x = viewport.x + col_idx as f32 * cw;
+                let y = viewport.y + render_row as f32 * ch;
 
                 let mut bg = resolve_cell_color(&cell.bg, &self.app.theme, true);
                 let mut fg = resolve_cell_color(&cell.fg, &self.app.theme, false);
@@ -201,28 +221,39 @@ impl WalkHandler {
             &visible_rows,
             &row_positions,
             total_cols,
+            viewport.x,
+            viewport.y,
             cw,
             ch,
         );
 
-        // Draw cursor
-        let cursor_x = cursor_col as f32 * cw;
-        let cursor_row = visible_rows
-            .iter()
-            .position(|row| *row == cursor_row)
-            .and_then(|idx| row_positions.get(idx))
-            .and_then(|row| *row)
-            .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
-        let cursor_y = cursor_row as f32 * ch;
-        let cursor_color = [
-            self.app.theme.cursor.r,
-            self.app.theme.cursor.g,
-            self.app.theme.cursor.b,
-            0.7,
-        ];
-        render
-            .batch
-            .push_bg_quad(cursor_x, cursor_y, cw, ch, cursor_color);
+        if !self.app.input_editor.is_active {
+            let cursor_x = viewport.x + cursor_col as f32 * cw;
+            let cursor_row = visible_rows
+                .iter()
+                .position(|row| *row == cursor_row)
+                .and_then(|idx| row_positions.get(idx))
+                .and_then(|row| *row)
+                .unwrap_or_else(|| visible_rows.len().saturating_sub(1));
+            let cursor_y = viewport.y + cursor_row as f32 * ch;
+            let cursor_color = [
+                self.app.theme.cursor.r,
+                self.app.theme.cursor.g,
+                self.app.theme.cursor.b,
+                0.7,
+            ];
+            render
+                .batch
+                .push_bg_quad(cursor_x, cursor_y, cw, ch, cursor_color);
+        }
+
+        render_input_editor(
+            render,
+            &mut self.font,
+            &self.app.theme,
+            self.ui_rects.input,
+            &self.app.input_editor.render_data(),
+        );
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
@@ -314,18 +345,20 @@ impl WalkHandler {
         match self.app.input_editor.handle_key(editor_key) {
             EditorAction::Submit(command) => {
                 self.app.block_manager.set_command_text(&command);
+                if !command.is_empty() {
+                    self.send_to_pty(command.as_bytes());
+                }
                 self.send_to_pty(b"\r");
             }
             EditorAction::SendEof => {
                 self.send_to_pty(b"\x04");
             }
-            EditorAction::None => {
-                if let Some(data) = input_event_to_pty_bytes(event) {
-                    self.send_to_pty(&data);
-                }
-            }
+            EditorAction::None => {}
         }
 
+        if let Some(window) = &self.window {
+            self.update_grid(window.inner_size());
+        }
         self.needs_redraw = true;
         true
     }
@@ -348,9 +381,15 @@ impl WalkHandler {
             return;
         }
 
+        self.ui_rects = compute_ui_rects(
+            size,
+            self.app.input_editor.render_data().position,
+            self.app.input_editor.buffer.line_count(),
+            self.font.metrics.cell_height,
+        );
         let (cols, rows) = self
             .font
-            .grid_dimensions(size.width as f32, size.height as f32);
+            .grid_dimensions(self.ui_rects.viewport.w, self.ui_rects.viewport.h);
         self.cols = cols;
         self.rows = rows;
 
@@ -386,9 +425,20 @@ impl WalkHandler {
             return None;
         }
 
-        let col = ((x / f64::from(self.font.metrics.cell_width)).floor() as i64)
+        let viewport = self.ui_rects.viewport;
+        if x < f64::from(viewport.x)
+            || y < f64::from(viewport.y)
+            || x > f64::from(viewport.x + viewport.w)
+            || y > f64::from(viewport.y + viewport.h)
+        {
+            return None;
+        }
+
+        let local_x = x - f64::from(viewport.x);
+        let local_y = y - f64::from(viewport.y);
+        let col = ((local_x / f64::from(self.font.metrics.cell_width)).floor() as i64)
             .clamp(0, i64::from(self.cols.saturating_sub(1))) as u16;
-        let row = ((y / f64::from(self.font.metrics.cell_height)).floor() as i64)
+        let row = ((local_y / f64::from(self.font.metrics.cell_height)).floor() as i64)
             .clamp(0, i64::from(self.rows.saturating_sub(1))) as u16;
 
         Some(CellPos { row, col })
@@ -584,6 +634,178 @@ impl AppHandler for WalkHandler {
     }
 }
 
+fn compute_ui_rects(
+    size: PhysicalSize<u32>,
+    input_position: walk_input::editor::InputPosition,
+    input_lines: usize,
+    cell_height: f32,
+) -> UiRects {
+    let width = size.width as f32;
+    let height = size.height as f32;
+    let line_count = input_lines.max(1).min(8) as f32;
+    let input_height = (line_count * cell_height + 20.0).min((height * 0.45).max(cell_height));
+
+    match input_position {
+        walk_input::editor::InputPosition::Top => UiRects {
+            viewport: Rect::new(0.0, input_height, width, (height - input_height).max(cell_height)),
+            input: Rect::new(0.0, 0.0, width, input_height),
+        },
+        walk_input::editor::InputPosition::Bottom => UiRects {
+            viewport: Rect::new(0.0, 0.0, width, (height - input_height).max(cell_height)),
+            input: Rect::new(0.0, height - input_height, width, input_height),
+        },
+    }
+}
+
+fn render_input_editor(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    rect: Rect,
+    input: &walk_input::editor::InputRenderData,
+) {
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        [
+            theme.input_bg.r,
+            theme.input_bg.g,
+            theme.input_bg.b,
+            theme.input_bg.a,
+        ],
+    );
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        1.0,
+        [
+            theme.block_separator.r,
+            theme.block_separator.g,
+            theme.block_separator.b,
+            0.9,
+        ],
+    );
+
+    let padding_x = 12.0;
+    let padding_y = 10.0;
+    let base_x = rect.x + padding_x;
+    let base_y = rect.y + padding_y;
+    let text_color = [
+        theme.input_text.r,
+        theme.input_text.g,
+        theme.input_text.b,
+        theme.input_text.a,
+    ];
+
+    if input.lines.iter().all(String::is_empty) {
+        push_text(
+            render,
+            font,
+            base_x,
+            base_y,
+            "Type a command and press Enter",
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.8,
+            ],
+        );
+    } else {
+        for (index, line) in input.lines.iter().enumerate() {
+            push_text(
+                render,
+                font,
+                base_x,
+                base_y + index as f32 * font.metrics.cell_height,
+                line,
+                text_color,
+            );
+        }
+    }
+
+    if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
+        let cursor_x = base_x + cursor_col as f32 * font.metrics.cell_width;
+        let cursor_y = base_y + cursor_row as f32 * font.metrics.cell_height;
+        render.batch.push_bg_quad(
+            cursor_x,
+            cursor_y,
+            2.0,
+            font.metrics.cell_height,
+            [
+                theme.cursor.r,
+                theme.cursor.g,
+                theme.cursor.b,
+                0.95,
+            ],
+        );
+    }
+}
+
+fn push_text(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    x: f32,
+    y: f32,
+    text: &str,
+    color: [f32; 4],
+) {
+    let cell_width = font.metrics.cell_width;
+    for (index, ch) in text.chars().enumerate() {
+        push_glyph(render, font, x + index as f32 * cell_width, y, ch, color);
+    }
+}
+
+fn push_glyph(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    x: f32,
+    y: f32,
+    character: char,
+    color: [f32; 4],
+) {
+    if character == ' ' || character == '\0' {
+        return;
+    }
+
+    let glyph_key = walk_renderer::atlas::GlyphKey {
+        font_id: 0,
+        glyph_id: character as u32,
+        font_size_tenths: (font.font_size * 10.0) as u32,
+    };
+
+    if let Some(glyph) = font.rasterize(character) {
+        let width = glyph.width;
+        let height = glyph.height;
+        let data = glyph.data.clone();
+        let offset_x = glyph.offset_x;
+        let offset_y = glyph.offset_y;
+        if let Some(region) = render.atlas.get_or_insert(glyph_key, width, height) {
+            if width > 0 && height > 0 {
+                render.pipeline.upload_glyph(
+                    &render.gpu,
+                    region.x,
+                    region.y,
+                    width,
+                    height,
+                    &data,
+                );
+            }
+            render.batch.push_glyph_quad(
+                x + offset_x as f32,
+                y + (font.metrics.baseline - offset_y as f32),
+                width as f32,
+                height as f32,
+                &region,
+                color,
+            );
+        }
+    }
+}
+
 fn input_event_to_editor_key(event: &InputEvent) -> Option<EditorKey> {
     match &event.action {
         KeyAction::Char(ch)
@@ -594,9 +816,14 @@ fn input_event_to_editor_key(event: &InputEvent) -> Option<EditorKey> {
         KeyAction::Char('d') if event.modifiers.ctrl && !event.modifiers.alt => {
             Some(EditorKey::CtrlD)
         }
+        KeyAction::Char('u') if event.modifiers.ctrl && !event.modifiers.alt => {
+            Some(EditorKey::CtrlU)
+        }
+        KeyAction::Enter if event.modifiers.shift => Some(EditorKey::ShiftEnter),
         KeyAction::Enter => Some(EditorKey::Enter),
         KeyAction::Backspace => Some(EditorKey::Backspace),
         KeyAction::Delete => Some(EditorKey::Delete),
+        KeyAction::Escape => Some(EditorKey::Escape),
         KeyAction::Tab => Some(EditorKey::Tab),
         KeyAction::ArrowLeft if event.modifiers.ctrl => Some(EditorKey::WordLeft),
         KeyAction::ArrowLeft => Some(EditorKey::Left),
@@ -746,6 +973,8 @@ fn push_block_decorations(
     visible_rows: &[usize],
     row_positions: &[Option<usize>],
     total_cols: usize,
+    x_offset: f32,
+    y_offset: f32,
     cell_width: f32,
     cell_height: f32,
 ) {
@@ -772,7 +1001,7 @@ fn push_block_decorations(
             .next_back()
             .unwrap_or(start_row);
 
-        let y = start_row as f32 * cell_height;
+        let y = y_offset + start_row as f32 * cell_height;
         let height = (end_row.saturating_sub(start_row) + 1) as f32 * cell_height;
         let accent = if block.exit_code.unwrap_or(0) == 0 {
             theme.block_success_accent
@@ -781,7 +1010,7 @@ fn push_block_decorations(
         };
 
         batch.push_bg_quad(
-            0.0,
+            x_offset,
             y,
             viewport_width,
             1.0,
@@ -792,11 +1021,17 @@ fn push_block_decorations(
                 0.65,
             ],
         );
-        batch.push_bg_quad(0.0, y, 4.0, height, [accent.r, accent.g, accent.b, 0.9]);
+        batch.push_bg_quad(
+            x_offset,
+            y,
+            4.0,
+            height,
+            [accent.r, accent.g, accent.b, 0.9],
+        );
 
         if selected_block_id == Some(block.id) {
             batch.push_bg_quad(
-                0.0,
+                x_offset,
                 y,
                 viewport_width,
                 height,
@@ -811,7 +1046,7 @@ fn push_block_decorations(
 
         if block.is_collapsed {
             batch.push_bg_quad(
-                4.0,
+                x_offset + 4.0,
                 y,
                 viewport_width - 4.0,
                 cell_height,

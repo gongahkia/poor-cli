@@ -59,6 +59,10 @@ pub enum EditorKey {
     End,
     /// Ctrl+D.
     CtrlD,
+    /// Ctrl+U.
+    CtrlU,
+    /// Escape clears the current draft.
+    Escape,
     /// Ctrl+A (select all).
     SelectAll,
     /// Tab.
@@ -187,6 +191,10 @@ impl InputEditor {
                 } else {
                     EditorAction::None
                 }
+            }
+            EditorKey::CtrlU | EditorKey::Escape => {
+                self.buffer.clear();
+                EditorAction::None
             }
             EditorKey::SelectAll => {
                 cursor_ops::select_all(&mut self.buffer);

@@ -113,7 +113,6 @@ impl WalkApp {
             Action::Paste => {
                 if let Ok(text) = self.clipboard.paste() {
                     self.input_editor.buffer.insert_at(0, &text).ok();
-                    return Some(text.into_bytes());
                 }
                 None
             }
