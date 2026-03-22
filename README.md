@@ -8,7 +8,7 @@
 Provider-[agnostic](https://www.merriam-webster.com/dictionary/agnostic) & [BYOK](#model-support), [multiplayer](#multiplayer) coding agent for the [CLI](https://en.wikipedia.org/wiki/Command-line_interface), [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/). 
 
 <div align="center">
-    <img src="./asset/logo/1.png" width="30%">
+    <img src="./asset/logo/2.png" width="50%">
 </div>
 
 ## Stack
@@ -281,3 +281,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
 For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
+
+<div align="center">
+    <img src="./asset/logo/1.png" width="30%">
+</div>
