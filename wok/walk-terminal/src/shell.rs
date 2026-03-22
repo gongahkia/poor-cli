@@ -89,7 +89,9 @@ pub fn shell_spawn_config(shell: &ShellType) -> PtyConfig {
             env,
         },
         ShellType::PowerShell => PtyConfig {
-            shell: "powershell.exe".to_string(),
+            shell: find_shell("pwsh")
+                .or_else(|| find_shell("powershell"))
+                .unwrap_or_else(|| "powershell.exe".to_string()),
             args: vec!["-NoLogo".to_string()],
             env,
         },

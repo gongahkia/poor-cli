@@ -59,6 +59,29 @@ end
 printf '\033]133;A\007'
 ";
 
+/// PowerShell shell integration script (OSC 133 markers).
+pub const POWERSHELL_INTEGRATION: &str = r#"
+# Walk terminal shell integration (powershell)
+function global:prompt {
+    $exitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }
+    $hostName = [System.Net.Dns]::GetHostName()
+    $cwd = (Get-Location).Path
+    [Console]::Out.Write("`e]133;D;$exitCode`a")
+    [Console]::Out.Write("`e]133;A`a")
+    [Console]::Out.Write("`e]7;file://$hostName$cwd`a")
+    return "PS $cwd> "
+}
+if (Get-Module -ListAvailable -Name PSReadLine) {
+    Import-Module PSReadLine
+    Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
+        [Console]::Out.Write("`e]133;B`a")
+        [Console]::Out.Write("`e]133;C`a")
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+    }
+}
+[Console]::Out.Write("`e]133;A`a")
+"#;
+
 /// Temporary shell bootstrap artifacts that must remain alive for the shell lifetime.
 pub enum ShellBootstrap {
     /// Bash rcfile wrapper.
@@ -67,6 +90,10 @@ pub enum ShellBootstrap {
     Zsh(TempDir),
     /// Fish XDG config directory wrapper.
     Fish(TempDir),
+    /// PowerShell profile wrapper.
+    PowerShell(NamedTempFile),
+    /// WSL bash rcfile wrapper.
+    Wsl(NamedTempFile),
 }
 
 /// Prepare shell bootstrap files and mutate the shell config to use them.
@@ -80,7 +107,8 @@ pub fn prepare_shell_bootstrap(
         ShellType::Bash => prepare_bash_bootstrap(config).map(Some),
         ShellType::Zsh => prepare_zsh_bootstrap(config).map(Some),
         ShellType::Fish => prepare_fish_bootstrap(config).map(Some),
-        ShellType::PowerShell | ShellType::Wsl(_) => Ok(None),
+        ShellType::PowerShell => prepare_powershell_bootstrap(config).map(Some),
+        ShellType::Wsl(_) => prepare_wsl_bootstrap(config).map(Some),
     }
 }
 
@@ -178,6 +206,56 @@ fn prepare_fish_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std:
     Ok(ShellBootstrap::Fish(tempdir))
 }
 
+fn prepare_powershell_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std::io::Error> {
+    let mut profile = NamedTempFile::new()?;
+    write!(profile, "{POWERSHELL_INTEGRATION}")?;
+
+    config.args = vec![
+        "-NoLogo".to_string(),
+        "-NoExit".to_string(),
+        "-File".to_string(),
+        profile.path().to_string_lossy().into_owned(),
+    ];
+
+    Ok(ShellBootstrap::PowerShell(profile))
+}
+
+fn prepare_wsl_bootstrap(config: &mut PtyConfig) -> Result<ShellBootstrap, std::io::Error> {
+    let mut rcfile = NamedTempFile::new()?;
+    write!(
+        rcfile,
+        "\
+# Walk shell bootstrap (wsl bash)
+if [ -f \"$HOME/.bash_profile\" ]; then
+    . \"$HOME/.bash_profile\"
+elif [ -f \"$HOME/.bash_login\" ]; then
+    . \"$HOME/.bash_login\"
+elif [ -f \"$HOME/.profile\" ]; then
+    . \"$HOME/.profile\"
+fi
+if [ -f \"$HOME/.bashrc\" ]; then
+    . \"$HOME/.bashrc\"
+fi
+{BASH_INTEGRATION}
+"
+    )?;
+
+    if let Some(index) = config.args.iter().position(|arg| arg == "bash") {
+        config.args.splice(
+            index + 1..,
+            [
+                "--noprofile".to_string(),
+                "--norc".to_string(),
+                "--rcfile".to_string(),
+                host_path_to_wsl(rcfile.path()),
+                "-i".to_string(),
+            ],
+        );
+    }
+
+    Ok(ShellBootstrap::Wsl(rcfile))
+}
+
 fn zsh_source_if_exists(path: &Path) -> String {
     let quoted = shell_quote(path);
     format!("if [ -f {quoted} ]; then\n    source {quoted}\nfi\n")
@@ -190,6 +268,21 @@ fn fish_source_if_exists(path: &Path) -> String {
 
 fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+}
+
+fn host_path_to_wsl(path: &Path) -> String {
+    let path_string = path.to_string_lossy();
+    if cfg!(windows) {
+        let normalized = path_string.replace('\\', "/");
+        let mut chars = normalized.chars();
+        if let (Some(drive), Some(':')) = (chars.next(), chars.next()) {
+            let remainder = chars.as_str().trim_start_matches('/');
+            return format!("/mnt/{}/{}", drive.to_ascii_lowercase(), remainder);
+        }
+        normalized
+    } else {
+        path_string.into_owned()
+    }
 }
 
 fn home_dir() -> PathBuf {
@@ -243,6 +336,14 @@ mod tests {
     }
 
     #[test]
+    fn test_powershell_integration_has_osc_markers() {
+        assert!(POWERSHELL_INTEGRATION.contains("133;A"));
+        assert!(POWERSHELL_INTEGRATION.contains("133;B"));
+        assert!(POWERSHELL_INTEGRATION.contains("133;C"));
+        assert!(POWERSHELL_INTEGRATION.contains("133;D"));
+    }
+
+    #[test]
     fn test_prepare_bash_bootstrap_sets_rcfile() {
         let mut config = test_config("bash");
         let bootstrap = prepare_shell_bootstrap(&ShellType::Bash, &mut config).unwrap();
@@ -264,5 +365,32 @@ mod tests {
         let bootstrap = prepare_shell_bootstrap(&ShellType::Fish, &mut config).unwrap();
         assert!(matches!(bootstrap, Some(ShellBootstrap::Fish(_))));
         assert!(config.env.contains_key("XDG_CONFIG_HOME"));
+    }
+
+    #[test]
+    fn test_prepare_powershell_bootstrap_sets_file() {
+        let mut config = test_config("pwsh");
+        let bootstrap = prepare_shell_bootstrap(&ShellType::PowerShell, &mut config).unwrap();
+        assert!(matches!(bootstrap, Some(ShellBootstrap::PowerShell(_))));
+        assert!(config.args.iter().any(|arg| arg == "-File"));
+    }
+
+    #[test]
+    fn test_prepare_wsl_bootstrap_sets_rcfile() {
+        let mut config = PtyConfig {
+            shell: "wsl.exe".to_string(),
+            args: vec![
+                "-d".to_string(),
+                "Ubuntu".to_string(),
+                "--".to_string(),
+                "bash".to_string(),
+                "--login".to_string(),
+            ],
+            env: HashMap::new(),
+        };
+        let bootstrap =
+            prepare_shell_bootstrap(&ShellType::Wsl("Ubuntu".to_string()), &mut config).unwrap();
+        assert!(matches!(bootstrap, Some(ShellBootstrap::Wsl(_))));
+        assert!(config.args.iter().any(|arg| arg == "--rcfile"));
     }
 }
