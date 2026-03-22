@@ -106,9 +106,9 @@
 4. Apply theme colors to window decorations where possible.
 
 **DONE WHEN**
-- [ ] Window looks native on each platform with correct title bar behavior.
-- [ ] Titlebar transparency works on macOS with full-size content view.
-- [ ] Window chrome respects theme colors where the platform allows.
+- [x] Window looks native on each platform with correct title bar behavior.
+- [x] Titlebar transparency works on macOS with full-size content view.
+- [x] Window chrome respects theme colors where the platform allows.
 
 ---
 
@@ -274,9 +274,9 @@
 7. Handle resize by calling `term.resize(TermSize { columns, rows })`.
 
 **DONE WHEN**
-- [ ] Shell output renders correctly through alacritty_terminal (test with `ls --color`, `vim`, `htop`).
-- [ ] Title change events are captured via the EventListener.
-- [ ] Resize correctly updates the terminal grid dimensions.
+- [x] Shell output renders correctly through alacritty_terminal (test with `ls --color`, `vim`, `htop`).
+- [x] Title change events are captured via the EventListener.
+- [x] Resize correctly updates the terminal grid dimensions.
 
 ---
 
@@ -295,9 +295,9 @@
 7. Implement `resize(cols, rows)` to resize the PTY.
 
 **DONE WHEN**
-- [ ] A shell spawns and interactive commands work (type `echo hello`, see output).
-- [ ] Shell auto-detection works on all three platforms.
-- [ ] PTY resize correctly propagates to the shell process.
+- [x] A shell spawns and interactive commands work (type `echo hello`, see output).
+- [x] Shell auto-detection works on all three platforms.
+- [x] PTY resize correctly propagates to the shell process.
 
 ---
 
@@ -315,9 +315,9 @@
 6. Implement `PtyIoHandle::resize(&self, rows: u16, cols: u16) -> Result<(), PtyError>`: resize the PTY.
 
 **DONE WHEN**
-- [ ] `PtyIoHandle::try_recv()` returns `Some(PtyEvent::Data(...))` containing shell prompt output within 100ms of spawning.
-- [ ] Writing a command via `PtyIoHandle::write` and then polling `try_recv` yields the command output.
-- [ ] When the shell exits (`exit 0`), `PtyEvent::Exited(0)` is eventually received.
+- [x] `PtyIoHandle::try_recv()` returns `Some(PtyEvent::Data(...))` containing shell prompt output within 100ms of spawning.
+- [x] Writing a command via `PtyIoHandle::write` and then polling `try_recv` yields the command output.
+- [x] When the shell exits (`exit 0`), `PtyEvent::Exited(0)` is eventually received.
 
 ---
 
@@ -335,9 +335,9 @@
 6. Implement `Terminal::is_dirty(&self) -> bool` and `Terminal::mark_clean(&mut self)`.
 
 **DONE WHEN**
-- [ ] Creating a `Terminal` with bash spawns a shell and `process_pty_output` yields a visible prompt in the grid.
-- [ ] Calling `send_input(b"ls\n")` and then `process_pty_output` results in `ls` output appearing in the grid cells.
-- [ ] `is_dirty()` returns true after new output arrives and false after `mark_clean()`.
+- [x] Creating a `Terminal` with bash spawns a shell and `process_pty_output` yields a visible prompt in the grid.
+- [x] Calling `send_input(b"ls\n")` and then `process_pty_output` results in `ls` output appearing in the grid cells.
+- [x] `is_dirty()` returns true after new output arrives and false after `mark_clean()`.
 
 ---
 
@@ -356,10 +356,10 @@
 4. Ensure alternate screen buffer handling works correctly for programs like vim, less, htop (alacritty_terminal handles this, but verify the grid switching works with Walk's rendering).
 
 **DONE WHEN**
-- [ ] Setting `scrollback_lines = 50000` allows scrolling back through 50,000 lines of history.
-- [ ] Text wrapping correctly wraps long lines at the terminal width.
-- [ ] Wide characters (CJK) occupy two columns in the grid.
-- [ ] Opening and closing `vim` correctly switches between main and alternate screen buffers.
+- [x] Setting `scrollback_lines = 50000` allows scrolling back through 50,000 lines of history.
+- [x] Text wrapping correctly wraps long lines at the terminal width.
+- [x] Wide characters (CJK) occupy two columns in the grid.
+- [x] Opening and closing `vim` correctly switches between main and alternate screen buffers.
 
 ---
 
@@ -384,9 +384,9 @@
 4. Implement `fn available_shells() -> Vec<ShellType>`: scans the system for available shells (check `/etc/shells` on Unix, check PATH for powershell/wsl on Windows).
 
 **DONE WHEN**
-- [ ] On a macOS system with zsh as default, `detect_default_shell()` returns `Zsh`.
-- [ ] `shell_spawn_config(&ShellType::Bash)` returns a config where `shell` is a valid path to bash and `TERM` is set.
-- [ ] `available_shells()` returns at least one shell on every supported platform.
+- [x] On a macOS system with zsh as default, `detect_default_shell()` returns `Zsh`.
+- [x] `shell_spawn_config(&ShellType::Bash)` returns a config where `shell` is a valid path to bash and `TERM` is set.
+- [x] `available_shells()` returns at least one shell on every supported platform.
 
 ---
 
