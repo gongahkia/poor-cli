@@ -1,11 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { validateInput, QuerySchema, ApiError, resolveOutputFormat } from "@sg-apis/shared";
+import { validateInput, QuerySchema, ApiError, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
-import { classifyIntent } from "../router/classifier.js";
 import { planQuery } from "../router/planner.js";
-import { aggregateResults, formatAggregated } from "../router/aggregator.js";
-import type { StepResult } from "../router/aggregator.js";
-import { ConversationContext } from "../router/context.js";
 import { registerTool } from "./registry.js";
 
 // API execution imports
@@ -17,8 +13,7 @@ import { geocode, getPopulationData } from "../apis/onemap/client.js";
 import { getPropertyTransactions } from "../apis/ura/client.js";
 import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { searchDatasets as datagovSearch } from "../apis/datagov/client.js";
-
-const context = new ConversationContext();
+import { lookupPlanningArea } from "./ura-tools.js";
 
 type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<unknown>;
 
@@ -38,16 +33,36 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     );
   },
   sg_mas_exchange_rates: async (params) => {
-    const records = await masQuery(MasDataset.EXCHANGE_RATES, { limit: 10 });
+    const filters: Record<string, string> = {};
+    if (typeof params["date"] === "string") filters["end_of_day"] = params["date"];
+    const queryParams: { limit: number; filters?: Readonly<Record<string, string>> } = { limit: 100 };
+    if (Object.keys(filters).length > 0) queryParams.filters = filters;
+    const records = await masQuery(MasDataset.EXCHANGE_RATES, queryParams);
     const normalized = records.map(normalizeMasRecord);
     if (params["currency"] !== undefined) {
-      const key = `${(params["currency"] as string).toLowerCase()}_sgd`;
-      return normalized.map((r) => ({ date: r.date, [key]: r[key] ?? "N/A" }));
+      const currency = (params["currency"] as string).toLowerCase();
+      const key = `${currency}_sgd`;
+      return normalized.map((r) => ({
+        date: r.date,
+        [key]: r[key] ?? r[`${currency}_sgd_100`] ?? "N/A",
+      }));
     }
     return normalized;
   },
-  sg_mas_interest_rates: async () => {
-    const records = await masQuery(MasDataset.INTEREST_RATES_SORA, { limit: 10 });
+  sg_mas_interest_rates: async (params) => {
+    const filters: Record<string, string> = {};
+    if (typeof params["date"] === "string") filters["end_of_day"] = params["date"];
+    const queryParams: { limit: number; filters?: Readonly<Record<string, string>> } = { limit: 100 };
+    if (Object.keys(filters).length > 0) queryParams.filters = filters;
+    const records = await masQuery(MasDataset.INTEREST_RATES_SORA, queryParams);
+    return records.map(normalizeMasRecord);
+  },
+  sg_mas_financial_stats: async (params) => {
+    const filters: Record<string, string> = {};
+    if (typeof params["date"] === "string") filters["end_of_day"] = params["date"];
+    const queryParams: { limit: number; filters?: Readonly<Record<string, string>> } = { limit: 100 };
+    if (Object.keys(filters).length > 0) queryParams.filters = filters;
+    const records = await masQuery(MasDataset.BANKING_STATS, queryParams);
     return records.map(normalizeMasRecord);
   },
   sg_onemap_geocode: async (params) => {
@@ -63,6 +78,13 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     );
     return normalizeTransactions(raw);
   },
+  sg_ura_planning_area: async (params) => {
+    return lookupPlanningArea({
+      lat: params["lat"] as number | undefined,
+      lng: params["lng"] as number | undefined,
+      planningArea: params["planningArea"] as string | undefined,
+    });
+  },
   sg_datagov_search: async (params) => {
     return datagovSearch((params["keyword"] as string) ?? "Singapore");
   },
@@ -76,54 +98,80 @@ const executeTool = async (toolName: string, input: Readonly<Record<string, unkn
   return executor(input);
 };
 
+const formatUnsupportedQuery = (
+  reason: string,
+  suggestion: string,
+  format: ReturnType<typeof resolveOutputFormat>,
+): string => {
+  if (format === "json") {
+    return formatResponse({ status: "unsupported", reason, suggestion }, format);
+  }
+
+  return [
+    "**sg_query is experimental.**",
+    reason,
+    `Try this instead: ${suggestion}`,
+  ].join("\n\n");
+};
+
+const formatQueryData = (
+  toolName: string,
+  data: unknown,
+  format: ReturnType<typeof resolveOutputFormat>,
+): string => {
+  if (
+    toolName === "sg_onemap_population"
+    && data !== null
+    && typeof data === "object"
+    && "planningArea" in data
+    && "year" in data
+    && "data" in data
+  ) {
+    const payload = data as { planningArea: string; year: string; data: Record<string, unknown>[] };
+    const body = formatResponse(payload.data, format);
+    if (format === "json") {
+      return formatResponse(payload, format);
+    }
+    return `**Source:** ${toolName}\n\n## ${payload.planningArea} (${payload.year})\n\n${body}`;
+  }
+
+  const body = formatResponse(data, format);
+  if (format === "json") {
+    return formatResponse({ source: toolName, data }, format);
+  }
+  return `**Source:** ${toolName}\n\n${body}`;
+};
+
 export const registerQueryTool = (server: McpServer): void => {
   registerTool(server, {
     name: "sg_query",
     description:
-      "Natural language query interface for Singapore government data. Automatically determines which APIs to query and how to combine results.",
+      "Experimental natural language router for Singapore data. Routes supported single-step requests to one direct tool and returns a limitation message for compound requests.",
     inputSchema: QuerySchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { query, format } = validateInput(QuerySchema, input);
       const fmt = resolveOutputFormat(format);
-
-      const intent = classifyIntent(query);
       const plan = planQuery(query);
 
-      // Execute plan steps — run parallel steps concurrently
-      const stepPromises = plan.steps.map(async (step): Promise<StepResult> => {
-        try {
-          const data = await executeTool(step.tool, step.input as Record<string, unknown>);
-          return { tool: step.tool, data, cached: false };
-        } catch (error) {
-          return {
-            tool: step.tool,
-            data: null,
-            cached: false,
-            error: new ApiError({
-              apiName: step.tool,
-              statusCode: 500,
-              message: error instanceof Error ? error.message : String(error),
-              retryable: false,
-            }),
-          };
-        }
-      });
+      if (!plan.supported) {
+        return {
+          content: [{ type: "text", text: formatUnsupportedQuery(plan.reason, plan.suggestion, fmt) }],
+        };
+      }
 
-      const results = plan.parallel
-        ? await Promise.all(stepPromises)
-        : await (async () => {
-            const sequential: StepResult[] = [];
-            for (const p of stepPromises) {
-              sequential.push(await p);
-            }
-            return sequential;
-          })();
-
-      const aggregated = aggregateResults(results);
-      context.update(query, plan, intent.extractedParams);
-
-      const text = formatAggregated(aggregated, fmt);
-      return { content: [{ type: "text", text }] };
+      try {
+        const data = await executeTool(plan.step.tool, plan.step.input as Record<string, unknown>);
+        return {
+          content: [{ type: "text", text: formatQueryData(plan.step.tool, data, fmt) }],
+        };
+      } catch (error) {
+        throw new ApiError({
+          apiName: plan.step.tool,
+          statusCode: 500,
+          message: error instanceof Error ? error.message : String(error),
+          retryable: false,
+        });
+      }
     },
   });
 };

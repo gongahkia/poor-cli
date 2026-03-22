@@ -2,6 +2,7 @@ import { resolveAlias } from "./aliases.js";
 
 export type IntentResult = {
   readonly intent: string;
+  readonly tool: string;
   readonly apis: readonly string[];
   readonly confidence: number;
   readonly extractedParams: Readonly<Record<string, unknown>>;
@@ -19,6 +20,8 @@ const PLANNING_AREAS = [
   "woodlands", "yishun",
 ] as const;
 
+const CURRENCY_STOPWORDS = new Set(["GDP", "CPI", "MRT", "HDB"]);
+
 const extractPostalCode = (query: string): string | null => {
   const match = query.match(/\b(\d{6})\b/);
   return match?.[1] ?? null;
@@ -35,11 +38,29 @@ const extractPlanningArea = (query: string): string | null => {
 };
 
 const extractCurrency = (query: string): string | null => {
-  const match = query.match(/\b([A-Z]{3})\b/);
-  if (match !== null && match[1] !== "GDP" && match[1] !== "CPI" && match[1] !== "MRT" && match[1] !== "HDB") {
-    return match[1] ?? null;
+  const upper = query.toUpperCase();
+  const directionalMatch = upper.match(/\b(?:TO|AGAINST|VS\.?|VERSUS)\s+([A-Z]{3})\b/);
+  if (directionalMatch !== null && !CURRENCY_STOPWORDS.has(directionalMatch[1]!)) {
+    return directionalMatch[1] ?? null;
   }
-  return null;
+
+  const codes = Array.from(
+    new Set((upper.match(/\b([A-Z]{3})\b/g) ?? []).filter((code) => !CURRENCY_STOPWORDS.has(code))),
+  );
+
+  if (codes.length > 1) {
+    const nonSgd = codes.find((code) => code !== "SGD");
+    if (nonSgd !== undefined) {
+      return nonSgd;
+    }
+  }
+
+  return codes[0] ?? null;
+};
+
+const extractIsoDate = (query: string): string | null => {
+  const match = query.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  return match?.[1] ?? null;
 };
 
 const extractYearRange = (query: string): { startYear?: number; endYear?: number } => {
@@ -55,6 +76,27 @@ const extractYearRange = (query: string): { startYear?: number; endYear?: number
   return {};
 };
 
+const getApiForTool = (tool: string): string => {
+  if (tool.startsWith("sg_mas_")) return "mas";
+  if (tool.startsWith("sg_onemap_")) return "onemap";
+  if (tool.startsWith("sg_ura_")) return "ura";
+  if (tool.startsWith("sg_singstat_")) return "singstat";
+  return "datagov";
+};
+
+const buildIntentResult = (
+  intent: string,
+  tool: string,
+  confidence: number,
+  params: Readonly<Record<string, unknown>>,
+): IntentResult => ({
+  intent,
+  tool,
+  apis: [getApiForTool(tool)],
+  confidence,
+  extractedParams: params,
+});
+
 export const classifyIntent = (query: string): IntentResult => {
   const lower = query.toLowerCase();
   const params: Record<string, unknown> = {};
@@ -68,6 +110,9 @@ export const classifyIntent = (query: string): IntentResult => {
   const currency = extractCurrency(query);
   if (currency !== null) params["currency"] = currency;
 
+  const date = extractIsoDate(query);
+  if (date !== null) params["date"] = date;
+
   const yearRange = extractYearRange(query);
   if (yearRange.startYear !== undefined) params["startYear"] = yearRange.startYear;
   if (yearRange.endYear !== undefined) params["endYear"] = yearRange.endYear;
@@ -77,80 +122,102 @@ export const classifyIntent = (query: string): IntentResult => {
 
   // Financial intent
   if (aliasedTool?.includes("mas") || /exchange\s*rate|forex|sgd|currency\s*rate|sora|interest\s*rate/i.test(lower)) {
-    return { intent: "financial", apis: ["mas"], confidence: 0.9, extractedParams: params };
+    const tool = aliasedTool
+      ?? (/sora|interest\s*rate/i.test(lower)
+        ? "sg_mas_interest_rates"
+        : /banking|bank\s+loan|deposit|financial\s*stat/i.test(lower)
+          ? "sg_mas_financial_stats"
+          : "sg_mas_exchange_rates");
+    return buildIntentResult("financial", tool, 0.9, params);
   }
 
   // Property intent
-  if (aliasedTool?.includes("ura") || /property|resale|rental|condo|transaction|plot\s*ratio|zoning/i.test(lower)) {
-    return { intent: "property", apis: ["ura"], confidence: 0.85, extractedParams: params };
+  if (aliasedTool?.includes("ura") || /property|resale|rental|condo|transaction|plot\s*ratio|zoning|master\s*plan/i.test(lower)) {
+    const tool = aliasedTool
+      ?? (/plot\s*ratio|zoning|master\s*plan|planning\s*area/i.test(lower)
+        ? "sg_ura_planning_area"
+        : "sg_ura_property_transactions");
+    return buildIntentResult("property", tool, 0.85, params);
   }
 
   // Geospatial intent
   if (postalCode !== null || aliasedTool?.includes("onemap_geocode") || aliasedTool?.includes("onemap_route") || /address|geocode|directions|route|nearest|where\s*is|how\s*to\s*get/i.test(lower)) {
-    return { intent: "geospatial", apis: ["onemap"], confidence: 0.9, extractedParams: params };
+    const tool = aliasedTool ?? "sg_onemap_geocode";
+    return buildIntentResult("geospatial", tool, 0.9, params);
   }
 
   // Demographic intent
   if ((planningArea !== null && /population|demographic|age|income|ethnic|dwelling/i.test(lower)) || aliasedTool?.includes("onemap_population")) {
-    return { intent: "demographic", apis: ["onemap"], confidence: 0.85, extractedParams: params };
+    return buildIntentResult("demographic", "sg_onemap_population", 0.85, params);
   }
 
   // Economic intent
   if (aliasedTool?.includes("singstat") || /gdp|cpi|inflation|unemployment|trade|export|import|economy|economic/i.test(lower)) {
-    return { intent: "economic", apis: ["singstat"], confidence: 0.85, extractedParams: params };
+    return buildIntentResult("economic", "sg_singstat_search", 0.85, params);
   }
 
   // Fallback to data.gov.sg
-  return { intent: "general", apis: ["datagov"], confidence: 0.5, extractedParams: params };
+  return buildIntentResult("general", "sg_datagov_search", 0.5, params);
 };
 
-export const resolveTools = (intent: IntentResult): { tool: string; input: Record<string, unknown> }[] => {
-  const tools: { tool: string; input: Record<string, unknown> }[] = [];
+export const resolveToolInput = (
+  intent: IntentResult,
+  query: string,
+): { tool: string; input: Record<string, unknown> } => {
   const params = intent.extractedParams;
 
-  switch (intent.intent) {
-    case "financial":
-      tools.push({
-        tool: "sg_mas_exchange_rates",
+  switch (intent.tool) {
+    case "sg_mas_exchange_rates":
+      return {
+        tool: intent.tool,
         input: {
           ...(params["currency"] !== undefined ? { currency: params["currency"] } : {}),
+          ...(params["date"] !== undefined ? { date: params["date"] } : {}),
         },
-      });
-      break;
-    case "property":
-      tools.push({
-        tool: "sg_ura_property_transactions",
+      };
+    case "sg_mas_interest_rates":
+    case "sg_mas_financial_stats":
+      return {
+        tool: intent.tool,
+        input: {
+          ...(params["date"] !== undefined ? { date: params["date"] } : {}),
+        },
+      };
+    case "sg_ura_property_transactions":
+      return {
+        tool: intent.tool,
         input: {
           ...(params["planningArea"] !== undefined ? { area: params["planningArea"] } : {}),
         },
-      });
-      break;
-    case "geospatial":
-      tools.push({
-        tool: "sg_onemap_geocode",
-        input: { searchVal: (params["postalCode"] ?? params["planningArea"] ?? "") as string },
-      });
-      break;
-    case "demographic":
-      tools.push({
-        tool: "sg_onemap_population",
+      };
+    case "sg_ura_planning_area":
+      return {
+        tool: intent.tool,
+        input: {
+          ...(params["planningArea"] !== undefined ? { planningArea: params["planningArea"] } : {}),
+        },
+      };
+    case "sg_onemap_geocode":
+      return {
+        tool: intent.tool,
+        input: { searchVal: (params["postalCode"] ?? params["planningArea"] ?? query) as string },
+      };
+    case "sg_onemap_population":
+      return {
+        tool: intent.tool,
         input: {
           planningArea: (params["planningArea"] ?? "") as string,
         },
-      });
-      break;
-    case "economic":
-      tools.push({
-        tool: "sg_singstat_search",
-        input: { keyword: "GDP" },
-      });
-      break;
+      };
+    case "sg_singstat_search":
+      return {
+        tool: intent.tool,
+        input: { keyword: query },
+      };
     default:
-      tools.push({
-        tool: "sg_datagov_search",
-        input: { keyword: "Singapore" },
-      });
+      return {
+        tool: intent.tool,
+        input: { keyword: query },
+      };
   }
-
-  return tools;
 };

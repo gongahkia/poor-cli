@@ -66,7 +66,7 @@ const TOOL_INFO = [
   { name: "sg_cache_clear", description: "Clear cached data" },
   { name: "sg_config_get", description: "Show current configuration" },
   { name: "sg_config_set", description: "Update configuration" },
-  { name: "sg_query", description: "Natural language query interface for Singapore data" },
+  { name: "sg_query", description: "Experimental natural language router for supported single-step Singapore data queries" },
 ];
 
 export const registerResources = (server: McpServer): void => {

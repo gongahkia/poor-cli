@@ -1,51 +1,72 @@
-import { classifyIntent, resolveTools } from "./classifier.js";
+import { classifyIntent, resolveToolInput } from "./classifier.js";
 
 export type QueryStep = {
   readonly tool: string;
   readonly input: Readonly<Record<string, unknown>>;
-  readonly dependsOn?: number;
 };
 
-export type QueryPlan = {
-  readonly steps: readonly QueryStep[];
-  readonly parallel: boolean;
-};
+export type QueryPlan =
+  | {
+      readonly supported: true;
+      readonly step: QueryStep;
+    }
+  | {
+      readonly supported: false;
+      readonly reason: string;
+      readonly suggestion: string;
+    };
+
+const buildUnsupportedPlan = (reason: string, suggestion: string): QueryPlan => ({
+  supported: false,
+  reason,
+  suggestion,
+});
 
 export const planQuery = (query: string): QueryPlan => {
   const intent = classifyIntent(query);
-  const tools = resolveTools(intent);
-
-  // Check for comparison queries
   const lower = query.toLowerCase();
-  const isComparison = /compare|vs\.?|versus|between.*and/i.test(lower);
+  const isComparison = /compare|vs\.?|versus|between\s+.+\s+and\s+.+/i.test(lower);
 
-  if (isComparison && intent.extractedParams["planningArea"] !== undefined) {
-    // Extract multiple areas
-    const areas = lower.match(/(?:between\s+)?(\w+)\s+(?:and|vs\.?|versus)\s+(\w+)/i);
-    if (areas !== null) {
-      return {
-        steps: [
-          { tool: tools[0]?.tool ?? "sg_datagov_search", input: { ...tools[0]?.input, area: areas[1] } },
-          { tool: tools[0]?.tool ?? "sg_datagov_search", input: { ...tools[0]?.input, area: areas[2] } },
-        ],
-        parallel: true,
-      };
-    }
+  if (isComparison) {
+    return buildUnsupportedPlan(
+      "sg_query only routes one direct tool call at a time and does not run comparisons for you.",
+      "Call the relevant direct tool separately for each item you want to compare.",
+    );
   }
 
-  // Check for sequential dependency (geocode then population)
-  if (intent.intent === "geospatial" && /population|demographic/i.test(lower)) {
-    return {
-      steps: [
-        { tool: "sg_onemap_geocode", input: { searchVal: (intent.extractedParams["postalCode"] ?? "") as string } },
-        { tool: "sg_onemap_population", input: { planningArea: "" }, dependsOn: 0 },
-      ],
-      parallel: false,
-    };
+  if (
+    intent.extractedParams["postalCode"] !== undefined
+    && /population|demographic|age|income|ethnic|dwelling/i.test(lower)
+  ) {
+    return buildUnsupportedPlan(
+      "sg_query does not chain geocoding into population lookups.",
+      "Call sg_onemap_geocode first, then pass the resolved planning area into sg_onemap_population.",
+    );
+  }
+
+  if (intent.tool === "sg_onemap_route") {
+    return buildUnsupportedPlan(
+      "sg_query cannot infer route endpoints or route type from free-form text reliably enough.",
+      "Call sg_onemap_route directly with explicit start/end coordinates and a route type.",
+    );
+  }
+
+  if (intent.tool === "sg_onemap_population" && intent.extractedParams["planningArea"] === undefined) {
+    return buildUnsupportedPlan(
+      "sg_query needs a planning area name before it can request demographic data.",
+      "Call sg_onemap_population directly with a planningArea value.",
+    );
+  }
+
+  if (intent.tool === "sg_ura_planning_area" && intent.extractedParams["planningArea"] === undefined) {
+    return buildUnsupportedPlan(
+      "sg_query needs a planning area name for URA master plan lookups.",
+      "Call sg_ura_planning_area directly with planningArea, or provide lat and lng yourself.",
+    );
   }
 
   return {
-    steps: tools.map((t) => ({ tool: t.tool, input: t.input })),
-    parallel: tools.length > 1,
+    supported: true,
+    step: resolveToolInput(intent, query),
   };
 };
