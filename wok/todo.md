@@ -35,8 +35,8 @@
 5. Define the `AppHandler` trait in `walk-app/src/handler.rs` with all six methods above, each with default no-op implementations.
 
 **DONE WHEN**
-- [ ] `cargo build --workspace` succeeds with zero errors on macOS, Linux, and Windows.
-- [ ] Running the binary opens a native window with the title "Walk" that responds to resize, focus, and close events (verified by logging each event to stdout).
+- [x] `cargo build --workspace` succeeds with zero errors on macOS, Linux, and Windows.
+- [x] Running the binary opens a native window with the title "Walk" that responds to resize, focus, and close events (verified by logging each event to stdout).
 
 ---
 
