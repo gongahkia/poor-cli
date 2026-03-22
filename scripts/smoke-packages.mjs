@@ -1,8 +1,9 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Buffer } from "node:buffer";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
@@ -49,115 +50,6 @@ const run = (args, cwd = root) => {
   }).trim();
 };
 
-class MessageBuffer {
-  #buffer = Buffer.alloc(0);
-  #queue = [];
-  #waiters = [];
-  #closedError = null;
-
-  push(chunk) {
-    this.#buffer = Buffer.concat([this.#buffer, chunk]);
-    this.#drain();
-  }
-
-  close(error) {
-    this.#closedError = error;
-    while (this.#waiters.length > 0) {
-      const waiter = this.#waiters.shift();
-      waiter.reject(error);
-    }
-  }
-
-  async next(timeoutMs = 5000) {
-    if (this.#queue.length > 0) {
-      return this.#queue.shift();
-    }
-    if (this.#closedError !== null) {
-      throw this.#closedError;
-    }
-
-    return await new Promise((resolvePromise, rejectPromise) => {
-      const waiter = {
-        resolve: (message) => {
-          clearTimeout(timer);
-          resolvePromise(message);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          rejectPromise(error);
-        },
-      };
-      const timer = setTimeout(() => {
-        this.#waiters = this.#waiters.filter((entry) => entry !== waiter);
-        rejectPromise(new Error(`Timed out waiting for MCP response after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      this.#waiters.push(waiter);
-    });
-  }
-
-  #drain() {
-    while (true) {
-      const headerEnd = this.#buffer.indexOf("\r\n\r\n");
-      if (headerEnd === -1) return;
-
-      const headerText = this.#buffer.subarray(0, headerEnd).toString("utf8");
-      const lengthMatch = headerText.match(/Content-Length:\s*(\d+)/i);
-      if (lengthMatch === null) {
-        this.close(new Error(`Missing Content-Length header in MCP frame: ${headerText}`));
-        return;
-      }
-
-      const contentLength = Number(lengthMatch[1]);
-      const messageStart = headerEnd + 4;
-      const messageEnd = messageStart + contentLength;
-      if (this.#buffer.length < messageEnd) return;
-
-      const payload = this.#buffer.subarray(messageStart, messageEnd).toString("utf8");
-      this.#buffer = this.#buffer.subarray(messageEnd);
-
-      let message;
-      try {
-        message = JSON.parse(payload);
-      } catch (error) {
-        this.close(new Error(`Failed to parse MCP payload: ${payload}\n${error instanceof Error ? error.message : String(error)}`));
-        return;
-      }
-
-      if (this.#waiters.length > 0) {
-        const waiter = this.#waiters.shift();
-        waiter.resolve(message);
-      } else {
-        this.#queue.push(message);
-      }
-    }
-  }
-}
-
-const writeMessage = (stdin, message) => {
-  const payload = JSON.stringify(message);
-  stdin.write(`Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`);
-};
-
-const request = async (child, buffer, id, method, params = {}) => {
-  writeMessage(child.stdin, {
-    jsonrpc: "2.0",
-    id,
-    method,
-    params,
-  });
-
-  while (true) {
-    const message = await buffer.next();
-    if (message.id === id) {
-      if (message.error !== undefined) {
-        throw new Error(`${method} failed: ${JSON.stringify(message.error)}`);
-      }
-      return message.result;
-    }
-  }
-};
-
 try {
   const packWorkspace = (workspace) => {
     const output = run(["pack", "--json", "--workspace", workspace]);
@@ -189,91 +81,93 @@ try {
   JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "package.json"), "utf8"));
   JSON.parse(readFileSync(join(tempDir, "node_modules", "@sg-apis", "shared", "package.json"), "utf8"));
 
-  await new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(join(tempDir, "node_modules", ".bin", "sg-apis-mcp"), [], {
-      cwd: tempDir,
-      env: { ...process.env, SG_APIS_LOG_LEVEL: "error" },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    const messages = new MessageBuffer();
-    let settled = false;
-
-    const finish = (callback, value) => {
-      if (settled) return;
-      settled = true;
-      child.kill("SIGTERM");
-      callback(value);
-    };
-
-    child.stdout.on("data", (chunk) => {
-      messages.push(chunk);
-    });
-
-    child.stderr.on("data", () => {
-      // Ignore structured server logs during smoke verification.
-    });
-
-    child.once("error", (error) => {
-      messages.close(error);
-      finish(rejectPromise, error);
-    });
-
-    child.once("exit", (code, signal) => {
-      const error =
-        signal === "SIGTERM" && settled
-          ? null
-          : new Error(`sg-apis-mcp exited unexpectedly during smoke verification: code=${code}, signal=${signal}`);
-      if (error !== null) {
-        messages.close(error);
-        finish(rejectPromise, error);
-      }
-    });
-
-    void (async () => {
-      try {
-        const initializeResult = await request(child, messages, 1, "initialize", {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: {
-            name: "sg-apis-smoke",
-            version: "0.1.0",
-          },
-        });
-
-        if (initializeResult.serverInfo?.name !== "sg-apis-mcp") {
-          throw new Error(`Unexpected MCP server name: ${JSON.stringify(initializeResult.serverInfo)}`);
-        }
-
-        writeMessage(child.stdin, {
-          jsonrpc: "2.0",
-          method: "notifications/initialized",
-        });
-
-        const toolsResult = await request(child, messages, 2, "tools/list");
-        const resourcesResult = await request(child, messages, 3, "resources/list");
-
-        const toolNames = new Set((toolsResult.tools ?? []).map((tool) => tool.name));
-        for (const toolName of EXPECTED_TOOL_NAMES) {
-          if (!toolNames.has(toolName)) {
-            throw new Error(`Packaged MCP server is missing tool: ${toolName}`);
-          }
-        }
-
-        const resourceUris = new Set((resourcesResult.resources ?? []).map((resource) => resource.uri));
-        for (const uri of EXPECTED_RESOURCE_URIS) {
-          if (!resourceUris.has(uri)) {
-            throw new Error(`Packaged MCP server is missing resource: ${uri}`);
-          }
-        }
-
-        finish(resolvePromise);
-      } catch (error) {
-        messages.close(error);
-        finish(rejectPromise, error);
-      }
-    })();
+  const transport = new StdioClientTransport({
+    command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
+    cwd: tempDir,
+    env: { ...process.env, SG_APIS_LOG_LEVEL: "error" },
+    stderr: "pipe",
   });
+  const stderrChunks = [];
+  transport.stderr?.on("data", (chunk) => {
+    stderrChunks.push(String(chunk));
+  });
+
+  const client = new Client(
+    {
+      name: "sg-apis-smoke",
+      version: "0.1.0",
+    },
+    { capabilities: {} },
+  );
+
+  const formatServerLogs = () => {
+    const logs = stderrChunks.join("").trim();
+    return logs.length > 0 ? `\nServer stderr:\n${logs}` : "";
+  };
+
+  try {
+    await client.connect(transport);
+
+    if (client.getServerVersion()?.name !== "sg-apis-mcp") {
+      throw new Error(`Unexpected MCP server name: ${JSON.stringify(client.getServerVersion())}${formatServerLogs()}`);
+    }
+
+    const toolsResult = await client.listTools();
+    const resourcesResult = await client.listResources();
+
+    const toolNames = new Set((toolsResult.tools ?? []).map((tool) => tool.name));
+    for (const toolName of EXPECTED_TOOL_NAMES) {
+      if (!toolNames.has(toolName)) {
+        throw new Error(`Packaged MCP server is missing tool: ${toolName}${formatServerLogs()}`);
+      }
+    }
+
+    const resourceUris = new Set((resourcesResult.resources ?? []).map((resource) => resource.uri));
+    for (const uri of EXPECTED_RESOURCE_URIS) {
+      if (!resourceUris.has(uri)) {
+        throw new Error(`Packaged MCP server is missing resource: ${uri}${formatServerLogs()}`);
+      }
+    }
+
+    for (const uri of EXPECTED_RESOURCE_URIS) {
+      const resource = await client.readResource({ uri });
+      const textContent = resource.contents.find((content) => "text" in content && typeof content.text === "string");
+      if (textContent === undefined) {
+        throw new Error(`Packaged MCP resource did not return text content: ${uri}${formatServerLogs()}`);
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(textContent.text);
+      } catch (error) {
+        throw new Error(
+          `Packaged MCP resource returned invalid JSON for ${uri}: ${error instanceof Error ? error.message : String(error)}${formatServerLogs()}`,
+        );
+      }
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error(`Packaged MCP resource returned empty catalog payload for ${uri}${formatServerLogs()}`);
+      }
+    }
+
+    const toolResult = await client.callTool({
+      name: "sg_config_get",
+      arguments: {},
+    });
+    const toolText = "content" in toolResult
+      ? toolResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (toolText === undefined || !toolText.includes("\"cache\"")) {
+      throw new Error(`Packaged MCP tool invocation failed to return config payload${formatServerLogs()}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && stderrChunks.length > 0 && !error.message.includes("Server stderr:")) {
+      error.message += formatServerLogs();
+    }
+    throw error;
+  } finally {
+    await client.close().catch(() => undefined);
+  }
 
   process.stdout.write("packaging smoke test passed\n");
 } finally {
