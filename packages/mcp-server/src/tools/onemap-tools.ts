@@ -1,8 +1,29 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, OneMapGeocodeSchema, OneMapReverseGeocodeSchema, OneMapRouteSchema, OneMapPopulationSchema, OneMapConvertCoordsSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import { geocode, reverseGeocode, getRoute, getPopulationData, convertSVY21toWGS84, convertWGS84toSVY21 } from "../apis/onemap/client.js";
 import { registerTool } from "./registry.js";
+
+export const handleOneMapGeocode = async (
+  params: Readonly<{ searchVal: string; limit?: number }>,
+): Promise<ToolResult> => {
+  const results = await geocode(params.searchVal, params.limit);
+  const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
+  return { content: [{ type: "text", text }] };
+};
+
+export const handleOneMapPopulation = async (
+  params: Readonly<{ planningArea: string; year?: string; dataType?: string; format?: OutputFormat }>,
+): Promise<ToolResult> => {
+  const result = await getPopulationData(
+    params.planningArea,
+    params.year,
+    params.dataType as Parameters<typeof getPopulationData>[2],
+  );
+  const fmt = resolveOutputFormat(params.format);
+  const text = formatResponse(result.data as unknown as Record<string, unknown>[], fmt);
+  return { content: [{ type: "text", text: `## ${result.planningArea} (${result.year})\n\n${text}` }] };
+};
 
 export const registerOneMapTools = (server: McpServer): void => {
   registerTool(server, {
@@ -10,10 +31,7 @@ export const registerOneMapTools = (server: McpServer): void => {
     description: "Convert a Singapore address, building name, or postal code to coordinates. Returns latitude, longitude, full address, and postal code.",
     inputSchema: OneMapGeocodeSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { searchVal, limit } = validateInput(OneMapGeocodeSchema, input);
-      const results = await geocode(searchVal, limit);
-      const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleOneMapGeocode(validateInput(OneMapGeocodeSchema, input));
     },
   });
 
@@ -50,11 +68,7 @@ export const registerOneMapTools = (server: McpServer): void => {
     description: "Get demographic data for a Singapore planning area. Includes population totals, age distribution, ethnicity, housing type, education, and income data.",
     inputSchema: OneMapPopulationSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { planningArea, year, dataType, format } = validateInput(OneMapPopulationSchema, input);
-      const result = await getPopulationData(planningArea, year, dataType);
-      const fmt = resolveOutputFormat(format);
-      const text = formatResponse(result.data as unknown as Record<string, unknown>[], fmt);
-      return { content: [{ type: "text", text: `## ${result.planningArea} (${result.year})\n\n${text}` }] };
+      return handleOneMapPopulation(validateInput(OneMapPopulationSchema, input));
     },
   });
 

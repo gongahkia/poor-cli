@@ -5,16 +5,21 @@ import { searchDatasets, getTableData, getTimeSeries } from "../apis/singstat/cl
 import { compareIndicators } from "../apis/singstat/compare.js";
 import { registerTool } from "./registry.js";
 
+export const handleSingStatSearch = async (
+  params: Readonly<{ keyword: string; limit?: number }>,
+): Promise<ToolResult> => {
+  const results = await searchDatasets(params.keyword, params.limit);
+  const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
+  return { content: [{ type: "text", text }] };
+};
+
 export const registerSingStatTools = (server: McpServer): void => {
   registerTool(server, {
     name: "sg_singstat_search",
     description: "Search SingStat Table Builder for datasets matching a keyword. Returns dataset IDs, titles, and update frequency.",
     inputSchema: SingStatSearchSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { keyword, limit } = validateInput(SingStatSearchSchema, input);
-      const results = await searchDatasets(keyword, limit);
-      const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleSingStatSearch(validateInput(SingStatSearchSchema, input));
     },
   });
 

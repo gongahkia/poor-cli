@@ -4,16 +4,21 @@ import type { ToolResult } from "@sg-apis/shared";
 import { searchDatasets, getDataset, listCollections } from "../apis/datagov/client.js";
 import { registerTool } from "./registry.js";
 
+export const handleDatagovSearch = async (
+  params: Readonly<{ keyword: string; limit?: number }>,
+): Promise<ToolResult> => {
+  const results = await searchDatasets(params.keyword, params.limit);
+  const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
+  return { content: [{ type: "text", text }] };
+};
+
 export const registerDatagovTools = (server: McpServer): void => {
   registerTool(server, {
     name: "sg_datagov_search",
     description: "Search data.gov.sg for datasets matching a keyword. Covers 2,000+ Singapore government datasets. Use this when no specific API covers the topic.",
     inputSchema: DatagovSearchSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { keyword, limit } = validateInput(DatagovSearchSchema, input);
-      const results = await searchDatasets(keyword, limit);
-      const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleDatagovSearch(validateInput(DatagovSearchSchema, input));
     },
   });
 

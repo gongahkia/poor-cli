@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import type { UraPlanningResponse } from "@sg-apis/shared";
 import { geocode } from "../apis/onemap/client.js";
 import { getPropertyTransactions, uraFetch } from "../apis/ura/client.js";
@@ -32,18 +32,31 @@ export const lookupPlanningArea = async (
   return result.Result.map(normalizePlanningData);
 };
 
+export const handleUraPropertyTransactions = async (
+  params: Readonly<{ propertyType?: string; area?: string; period?: string; format?: OutputFormat }>,
+): Promise<ToolResult> => {
+  const raw = await getPropertyTransactions(params.propertyType, params.area, params.period);
+  const normalized = normalizeTransactions(raw);
+  const fmt = resolveOutputFormat(params.format);
+  const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
+  return { content: [{ type: "text", text }] };
+};
+
+export const handleUraPlanningArea = async (
+  params: Readonly<{ lat?: number; lng?: number; planningArea?: string }>,
+): Promise<ToolResult> => {
+  const result = await lookupPlanningArea(params);
+  const text = formatResponse(result as unknown as Record<string, unknown>[], "markdown");
+  return { content: [{ type: "text", text }] };
+};
+
 export const registerUraTools = (server: McpServer): void => {
   registerTool(server, {
     name: "sg_ura_property_transactions",
     description: "Get property transaction data from URA. Includes resale and rental prices for private residential, commercial, and industrial properties.",
     inputSchema: UraPropertyTransactionsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { propertyType, area, period, format } = validateInput(UraPropertyTransactionsSchema, input);
-      const raw = await getPropertyTransactions(propertyType, area, period);
-      const normalized = normalizeTransactions(raw);
-      const fmt = resolveOutputFormat(format);
-      const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
-      return { content: [{ type: "text", text }] };
+      return handleUraPropertyTransactions(validateInput(UraPropertyTransactionsSchema, input));
     },
   });
 
@@ -52,10 +65,7 @@ export const registerUraTools = (server: McpServer): void => {
     description: "Get URA master plan data for a location or planning area. Returns zoning information, gross plot ratio, and land use designations.",
     inputSchema: UraPlanningAreaSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { lat, lng, planningArea } = validateInput(UraPlanningAreaSchema, input);
-      const result = await lookupPlanningArea({ lat, lng, planningArea });
-      const text = formatResponse(result as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleUraPlanningArea(validateInput(UraPlanningAreaSchema, input));
     },
   });
 
