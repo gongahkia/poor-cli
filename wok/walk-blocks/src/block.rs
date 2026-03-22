@@ -89,9 +89,9 @@ impl BlockManager {
     /// Handle a semantic event, potentially creating or completing a block.
     pub fn handle_event(&mut self, event: &SemanticEvent) {
         match event {
-            SemanticEvent::PromptStart { line } => {
+            SemanticEvent::PromptStart { row } => {
                 self.pending_command_text = None;
-                self.state = BlockBuildState::InPrompt { start_line: *line };
+                self.state = BlockBuildState::InPrompt { start_line: *row };
             }
             SemanticEvent::CommandStart { .. } => {
                 if let BlockBuildState::InPrompt { .. } = &self.state {
@@ -100,7 +100,7 @@ impl BlockManager {
                     };
                 }
             }
-            SemanticEvent::OutputStart { line } => {
+            SemanticEvent::OutputStart { row } => {
                 if let BlockBuildState::InCommand { prompt_text } = &self.state {
                     let id = self.next_id;
                     self.next_id += 1;
@@ -109,8 +109,8 @@ impl BlockManager {
                         id,
                         prompt_text: prompt_text.clone(),
                         command_text: self.pending_command_text.take().unwrap_or_default(),
-                        output_start_line: *line,
-                        output_end_line: *line,
+                        output_start_line: *row,
+                        output_end_line: *row,
                         exit_code: None,
                         start_time: Instant::now(),
                         end_time: None,
@@ -126,10 +126,10 @@ impl BlockManager {
                     self.state = BlockBuildState::InOutput { block_id: id };
                 }
             }
-            SemanticEvent::CommandEnd { line, exit_code } => {
+            SemanticEvent::CommandEnd { row, exit_code } => {
                 if let BlockBuildState::InOutput { block_id } = &self.state {
                     if let Some(block) = self.blocks.iter_mut().find(|b| b.id == *block_id) {
-                        block.output_end_line = *line;
+                        block.output_end_line = *row;
                         block.exit_code = *exit_code;
                         block.end_time = Some(Instant::now());
                         block.duration = block.end_time.map(|end| end - block.start_time);
@@ -199,12 +199,12 @@ mod tests {
     #[test]
     fn test_single_command_block() {
         let mut mgr = BlockManager::new();
-        mgr.handle_event(&SemanticEvent::PromptStart { line: 0 });
-        mgr.handle_event(&SemanticEvent::CommandStart { line: 1 });
-        mgr.handle_event(&SemanticEvent::OutputStart { line: 2 });
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
         mgr.set_command_text("echo hello");
         mgr.handle_event(&SemanticEvent::CommandEnd {
-            line: 3,
+            row: 3,
             exit_code: Some(0),
         });
 
@@ -220,11 +220,11 @@ mod tests {
         let mut mgr = BlockManager::new();
         for i in 0..3 {
             let base = i * 4;
-            mgr.handle_event(&SemanticEvent::PromptStart { line: base });
-            mgr.handle_event(&SemanticEvent::CommandStart { line: base + 1 });
-            mgr.handle_event(&SemanticEvent::OutputStart { line: base + 2 });
+            mgr.handle_event(&SemanticEvent::PromptStart { row: base });
+            mgr.handle_event(&SemanticEvent::CommandStart { row: base + 1 });
+            mgr.handle_event(&SemanticEvent::OutputStart { row: base + 2 });
             mgr.handle_event(&SemanticEvent::CommandEnd {
-                line: base + 3,
+                row: base + 3,
                 exit_code: Some(0),
             });
         }
@@ -234,11 +234,11 @@ mod tests {
     #[test]
     fn test_failed_command() {
         let mut mgr = BlockManager::new();
-        mgr.handle_event(&SemanticEvent::PromptStart { line: 0 });
-        mgr.handle_event(&SemanticEvent::CommandStart { line: 1 });
-        mgr.handle_event(&SemanticEvent::OutputStart { line: 2 });
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
         mgr.handle_event(&SemanticEvent::CommandEnd {
-            line: 3,
+            row: 3,
             exit_code: Some(1),
         });
 
@@ -248,12 +248,12 @@ mod tests {
     #[test]
     fn test_command_text_recorded_before_output_start() {
         let mut mgr = BlockManager::new();
-        mgr.handle_event(&SemanticEvent::PromptStart { line: 0 });
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
         mgr.set_command_text("cargo test");
-        mgr.handle_event(&SemanticEvent::CommandStart { line: 1 });
-        mgr.handle_event(&SemanticEvent::OutputStart { line: 2 });
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
         mgr.handle_event(&SemanticEvent::CommandEnd {
-            line: 3,
+            row: 3,
             exit_code: Some(0),
         });
 
@@ -265,22 +265,22 @@ mod tests {
         let mut mgr = BlockManager::new();
         // CommandEnd before CommandStart
         mgr.handle_event(&SemanticEvent::CommandEnd {
-            line: 0,
+            row: 0,
             exit_code: Some(0),
         });
         assert_eq!(mgr.len(), 0);
 
         // OutputStart without CommandStart
-        mgr.handle_event(&SemanticEvent::OutputStart { line: 0 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 0 });
         assert_eq!(mgr.len(), 0);
     }
 
     #[test]
     fn test_cwd_changed() {
         let mut mgr = BlockManager::new();
-        mgr.handle_event(&SemanticEvent::PromptStart { line: 0 });
-        mgr.handle_event(&SemanticEvent::CommandStart { line: 1 });
-        mgr.handle_event(&SemanticEvent::OutputStart { line: 2 });
+        mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
+        mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
         mgr.handle_event(&SemanticEvent::CwdChanged("/tmp".into()));
 
         assert_eq!(mgr.blocks[0].cwd, std::path::PathBuf::from("/tmp"));

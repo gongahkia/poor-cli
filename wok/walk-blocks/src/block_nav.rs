@@ -75,11 +75,11 @@ mod tests {
         let mut mgr = BlockManager::new();
         for i in 0..n {
             let base = i * 4;
-            mgr.handle_event(&SemanticEvent::PromptStart { line: base });
-            mgr.handle_event(&SemanticEvent::CommandStart { line: base + 1 });
-            mgr.handle_event(&SemanticEvent::OutputStart { line: base + 2 });
+            mgr.handle_event(&SemanticEvent::PromptStart { row: base });
+            mgr.handle_event(&SemanticEvent::CommandStart { row: base + 1 });
+            mgr.handle_event(&SemanticEvent::OutputStart { row: base + 2 });
             mgr.handle_event(&SemanticEvent::CommandEnd {
-                line: base + 3,
+                row: base + 3,
                 exit_code: Some(0),
             });
         }

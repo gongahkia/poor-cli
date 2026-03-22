@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
-use alacritty_terminal::grid::{Dimensions, Grid};
+use alacritty_terminal::grid::{Dimensions, Grid, Scroll};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::test::TermSize;
@@ -27,6 +27,20 @@ pub enum TermEvent {
     CursorBlinkingChange,
     /// Write bytes to PTY.
     PtyWrite(String),
+}
+
+/// Stable row index within the terminal buffer, including scrollback.
+pub type AbsoluteRow = usize;
+
+/// Text snapshot for a single terminal row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalTextRow {
+    /// Absolute row index within the terminal buffer.
+    pub absolute_row: AbsoluteRow,
+    /// Viewport-relative row if this line is currently visible.
+    pub viewport_row: Option<usize>,
+    /// Rendered text for the row with trailing spaces trimmed.
+    pub text: String,
 }
 
 /// Event listener that collects events into a shared vec.
@@ -137,9 +151,30 @@ impl TerminalState {
         self.term.scroll_display(scroll);
     }
 
+    /// Get the current viewport display offset into scrollback.
+    pub fn display_offset(&self) -> usize {
+        self.term.grid().display_offset()
+    }
+
+    /// Scroll the display to a concrete offset.
+    pub fn set_display_offset(&mut self, offset: usize) {
+        let current = self.display_offset();
+        if current == offset {
+            return;
+        }
+
+        let delta = offset as i32 - current as i32;
+        self.term.scroll_display(Scroll::Delta(delta));
+    }
+
     /// Get the number of visible screen lines.
     pub fn screen_lines(&self) -> usize {
         self.term.grid().screen_lines()
+    }
+
+    /// Get the total number of rows in the buffer, including scrollback.
+    pub fn total_rows(&self) -> usize {
+        self.scrollback_len() + self.screen_lines()
     }
 
     /// Get the number of columns.
@@ -153,11 +188,33 @@ impl TerminalState {
         (point.column.0, point.line.0 as usize)
     }
 
-    /// Read a cell at the given (row, col) and return its rendering data.
-    pub fn cell_at(&self, row: usize, col: usize) -> CellRenderData {
+    /// Get the cursor row as an absolute row index in the terminal buffer.
+    pub fn absolute_cursor_row(&self) -> AbsoluteRow {
+        self.scrollback_len() + self.term.grid().cursor.point.line.0 as usize
+    }
+
+    /// Get the absolute row at the top of the current viewport.
+    pub fn visible_start_row(&self) -> AbsoluteRow {
+        self.scrollback_len().saturating_sub(self.display_offset())
+    }
+
+    /// Convert a viewport-relative row to an absolute row.
+    pub fn viewport_row_to_absolute(&self, viewport_row: usize) -> AbsoluteRow {
+        self.visible_start_row() + viewport_row.min(self.screen_lines().saturating_sub(1))
+    }
+
+    /// Get all currently visible absolute rows.
+    pub fn visible_rows(&self) -> Vec<AbsoluteRow> {
+        let start = self.visible_start_row();
+        let end = (start + self.screen_lines()).min(self.total_rows());
+        (start..end).collect()
+    }
+
+    /// Read a cell at the given absolute row and column.
+    pub fn cell_at_absolute(&self, absolute_row: AbsoluteRow, col: usize) -> CellRenderData {
         let grid = self.term.grid();
-        let line = Line(row as i32);
-        let column = Column(col);
+        let line = self.absolute_row_to_grid_line(absolute_row);
+        let column = Column(col.min(grid.columns().saturating_sub(1)));
         let cell = &grid[line][column];
 
         CellRenderData {
@@ -169,6 +226,55 @@ impl TerminalState {
             is_italic: cell.flags.contains(Flags::ITALIC),
             is_underline: cell.flags.contains(Flags::UNDERLINE),
         }
+    }
+
+    /// Read the rendered text for a specific absolute row.
+    pub fn row_text(&self, absolute_row: AbsoluteRow) -> String {
+        self.row_slice(absolute_row, 0, self.columns())
+            .trim_end_matches(' ')
+            .to_string()
+    }
+
+    /// Read a column slice from a specific absolute row.
+    pub fn row_slice(&self, absolute_row: AbsoluteRow, start_col: usize, end_col: usize) -> String {
+        let end_col = end_col.min(self.columns());
+        let mut text = String::new();
+
+        for col in start_col..end_col {
+            let ch = self.cell_at_absolute(absolute_row, col).character;
+            text.push(if ch == '\0' { ' ' } else { ch });
+        }
+
+        text
+    }
+
+    /// Snapshot all text rows in the buffer.
+    pub fn text_rows(&self) -> Vec<TerminalTextRow> {
+        let visible_start = self.visible_start_row();
+        let visible_end = visible_start + self.screen_lines();
+
+        (0..self.total_rows())
+            .map(|absolute_row| TerminalTextRow {
+                absolute_row,
+                viewport_row: if (visible_start..visible_end).contains(&absolute_row) {
+                    Some(absolute_row - visible_start)
+                } else {
+                    None
+                },
+                text: self.row_text(absolute_row),
+            })
+            .collect()
+    }
+
+    /// Read a cell at the given (row, col) and return its rendering data.
+    pub fn cell_at(&self, row: usize, col: usize) -> CellRenderData {
+        self.cell_at_absolute(self.viewport_row_to_absolute(row), col)
+    }
+
+    fn absolute_row_to_grid_line(&self, absolute_row: AbsoluteRow) -> Line {
+        let history = self.scrollback_len() as i32;
+        let clamped = absolute_row.min(self.total_rows().saturating_sub(1)) as i32;
+        Line(clamped - history)
     }
 }
 

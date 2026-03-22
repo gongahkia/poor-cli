@@ -218,12 +218,12 @@ mod tests {
     #[test]
     fn test_handle_semantic_event_builds_blocks() {
         let mut app = WalkApp::new(WalkConfig::default());
-        app.handle_semantic_event(&SemanticEvent::PromptStart { line: 0 });
+        app.handle_semantic_event(&SemanticEvent::PromptStart { row: 0 });
         app.block_manager.set_command_text("echo hello");
-        app.handle_semantic_event(&SemanticEvent::CommandStart { line: 1 });
-        app.handle_semantic_event(&SemanticEvent::OutputStart { line: 2 });
+        app.handle_semantic_event(&SemanticEvent::CommandStart { row: 1 });
+        app.handle_semantic_event(&SemanticEvent::OutputStart { row: 2 });
         app.handle_semantic_event(&SemanticEvent::CommandEnd {
-            line: 3,
+            row: 3,
             exit_code: Some(0),
         });
 

@@ -9,7 +9,7 @@ use tracing::{debug, instrument};
 use crate::async_io::{PtyEvent, PtyIoHandle};
 use crate::pty::{PtyError, PtyManager};
 use crate::shell::ShellType;
-use crate::state::{TermEvent, TerminalState};
+use crate::state::{AbsoluteRow, TermEvent, TerminalState};
 
 /// Errors from terminal operations.
 #[derive(Debug, Error)]
@@ -28,23 +28,23 @@ pub enum TerminalError {
 pub enum SemanticEvent {
     /// Shell prompt started (OSC 133;A).
     PromptStart {
-        /// Line number where the prompt starts.
-        line: usize,
+        /// Absolute row where the prompt starts.
+        row: AbsoluteRow,
     },
     /// Command input started (OSC 133;B).
     CommandStart {
-        /// Line number where command input starts.
-        line: usize,
+        /// Absolute row where command input starts.
+        row: AbsoluteRow,
     },
     /// Command output started (OSC 133;C).
     OutputStart {
-        /// Line number where output starts.
-        line: usize,
+        /// Absolute row where command output starts.
+        row: AbsoluteRow,
     },
     /// Command finished (OSC 133;D).
     CommandEnd {
-        /// Line number.
-        line: usize,
+        /// Absolute row where command output ended.
+        row: AbsoluteRow,
         /// Exit code if available.
         exit_code: Option<i32>,
     },
@@ -161,7 +161,7 @@ impl Terminal {
     ///
     /// Looks for `\x1b]133;X\x07` patterns where X is A, B, C, or D.
     fn scan_osc_markers(&mut self, bytes: &[u8]) {
-        let cursor_row = self.state.cursor_position().1;
+        let cursor_row = self.state.absolute_cursor_row();
         let mut i = 0;
         while i + 6 < bytes.len() {
             // Look for ESC ] 133 ;
@@ -173,23 +173,20 @@ impl Terminal {
                         if let Some(rest) = s.strip_prefix("133;") {
                             match rest.chars().next() {
                                 Some('A') => {
-                                    self.events
-                                        .push(SemanticEvent::PromptStart { line: cursor_row });
+                                    self.events.push(SemanticEvent::PromptStart { row: cursor_row });
                                 }
                                 Some('B') => {
-                                    self.events
-                                        .push(SemanticEvent::CommandStart { line: cursor_row });
+                                    self.events.push(SemanticEvent::CommandStart { row: cursor_row });
                                 }
                                 Some('C') => {
-                                    self.events
-                                        .push(SemanticEvent::OutputStart { line: cursor_row });
+                                    self.events.push(SemanticEvent::OutputStart { row: cursor_row });
                                 }
                                 Some('D') => {
                                     let exit_code = rest.get(2..).and_then(|s| {
                                         s.trim_start_matches(';').parse::<i32>().ok()
                                     });
                                     self.events.push(SemanticEvent::CommandEnd {
-                                        line: cursor_row,
+                                        row: cursor_row,
                                         exit_code,
                                     });
                                 }
