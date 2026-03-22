@@ -20,6 +20,8 @@ This pilot goes deep on five sources only:
 
 This phase is not a general Singapore super-connector. It does not add LTA, weather, parliamentary, or other adjacent APIs.
 
+Architecture and tradeoff notes live in [docs/architecture.md](./docs/architecture.md).
+
 ## Stable Surface
 
 | API | Direct tools | Current scope | Auth |
