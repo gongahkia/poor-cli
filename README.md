@@ -1,9 +1,10 @@
-[![](https://img.shields.io/badge/poor_cli_0.4.0-passing-2E8B57)](https://github.com/gongahkia/poor-cli/releases/tag/v0.4.0)
+[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-light_green)](https://github.com/gongahkia/poor-cli/releases/tag/v4.0.0)
+[![](https://img.shields.io/badge/poor_cli_5.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/v5.0.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 
 # `poor-cli`
 
-Open, [multiplayer](#multiplayer), [BYOK](#model-support) coding agent for the terminal, [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/).
+Provider-[agnostic](https://www.merriam-webster.com/dictionary/agnostic) & [BYOK](#model-support), [multiplayer](#multiplayer) coding agent for the [CLI](https://en.wikipedia.org/wiki/Command-line_interface), [Neovim](https://neovim.io/), and [Emacs](https://www.gnu.org/software/emacs/). 
 
 <div align="center">
     <img src="./asset/logo/1.png" width="30%">
@@ -18,18 +19,18 @@ Open, [multiplayer](#multiplayer), [BYOK](#model-support) coding agent for the t
 
 ## Screenshots
 
-![](./asset/reference/1.png)
-![](./asset/reference/2.png)
+![](./asset/reference/v5/1.png)
+![](./asset/reference/v5/2.png)
+![](./asset/reference/v5/3.png)
+![](./asset/reference/v5/4.png)
+![](./asset/reference/v5/5.png)
+![](./asset/reference/v5/6.png)
 
 ## Usage
 
-Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
+The below instructions are for locally installing and running `poor-cli`.
 
-Published wheels are platform-specific and bundle the Rust `poor-cli-tui` binary for supported targets. After `pip install poor-cli`, bare `poor-cli` should launch the TUI directly, and `poor-cli install-info` will show which packaged launcher was selected.
-
-### Preferred install
-
-Install the published package when you want the normal end-user path.
+1. Ideally, install the published `poor-cli` package from [pip]() when you want the normal end-user path.
 
 ```console
 $ python3 -m pip install --upgrade poor-cli
@@ -37,24 +38,16 @@ $ poor-cli install-info
 $ poor-cli
 ```
 
-### Development install
-
-Use the repository checkout when you want to modify or test `poor-cli` itself.
+2. Alternatively, clone `poor-cli` to modify and build it from source.
 
 ```console
-$ git clone https://github.com/gongahkia/poor-cli.git
-$ cd poor-cli
+$ git clone https://github.com/gongahkia/poor-cli.git && cd poor-cli
 $ python3 -m venv .venv && source .venv/bin/activate
-$ pip install ".[all]"
+$ pip install uv
+$ uv pip install ".[all]"
 ```
 
-Optionally configure providers in `.env` or do it directly within `poor-cli`'s TUI.
-
-```console
-$ cp .env.example .env
-```
-
-Then run any of the below to begin using `poor-cli`'s TUI.
+3. Then run any of the below commands to start `poor-cli`'s TUI.
 
 ```console
 $ poor-cli                 
@@ -67,9 +60,7 @@ $ docker build -t poor-cli .
 $ docker run -it --env-file .env poor-cli
 ```
 
-For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
-
-Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) package manager.
+4. To use `poor-cli`'s [Neovim plugin](https://neovim.io/), the easiest way to install this is with the [lazy.nvim](https://github.com/folke/lazy.nvim) package manager.
 
 ```lua
 {
@@ -86,7 +77,7 @@ Alternatively, use `poor-cli`'s [Neovim plugin](https://neovim.io/). The easiest
 }
 ```
 
-Vanilla Emacs 29+ is also supported through the first-party package in `emacs-poor-cli/`.
+5. To use `poor-cli`'s [Emacs](https://www.gnu.org/software/emacs/) package, call it directly within your Emacs configuration through the first-party package in `emacs-poor-cli/`.
 
 ```elisp
 (require 'package)
@@ -100,10 +91,24 @@ Vanilla Emacs 29+ is also supported through the first-party package in `emacs-po
 (global-poor-cli-mode 1)
 ```
 
+## Architecture
+
+![](./asset/reference/architecture.png)
+
+## Model support
+
+`poor-cli` supports provider/model selection via `/switch` (inside TUI) or `--provider/--model` flags. You can pass any model ID accepted by the provider SDK/API.
+
+| Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
+|---|---|---|---|---|
+| Gemini | `gemini` | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Streaming, function calling, system instructions, vision, JSON mode |
+| OpenAI | `openai` | `gpt-5.1` | `gpt-5.1`, `gpt-5`, `gpt-5-mini` | Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models |
+| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-sonnet-4-20250514` | `claude-sonnet-4-20250514`, `claude-3-7-sonnet-20250219`, `claude-3-5-haiku-20241022` | Streaming, function calling, system instructions, vision |
+| Ollama | `ollama` | `llama3.1` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3.1`, `qwen2.5-coder`, `mistral`, `codellama` | Streaming, system instructions, JSON mode, optional function calling for capable local models, local-only execution via `http://localhost:11434` |
+
 ## Multiplayer
 
-`poor-cli-server` runs multiplayer as an invite-only, owner-authoritative P2P
-session over WebRTC DataChannels. The host prints signed viewer and prompter
+`poor-cli-server` runs multiplayer as an invite-only, owner-authoritative [P2P](https://en.wikipedia.org/wiki/Peer-to-peer) session over [WebRTC DataChannels](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Using_data_channels). The host prints signed viewer and prompter
 invite codes for each room it serves.
 
 ### Start host
@@ -135,23 +140,7 @@ require("poor-cli").setup({
 })
 ```
 
-Full protocol details, failure behavior, and compatibility notes live in
-[`docs/MULTIPLAYER.md`](./docs/MULTIPLAYER.md).
-
-## Model support
-
-`poor-cli` supports provider/model selection via `/switch` (inside TUI) or `--provider/--model` flags. You can pass any model ID accepted by the provider SDK/API.
-
-| Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
-|---|---|---|---|---|
-| Gemini | `gemini` | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Streaming, function calling, system instructions, vision, JSON mode |
-| OpenAI | `openai` | `gpt-5.1` | `gpt-5.1`, `gpt-5`, `gpt-5-mini` | Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models |
-| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-sonnet-4-20250514` | `claude-sonnet-4-20250514`, `claude-3-7-sonnet-20250219`, `claude-3-5-haiku-20241022` | Streaming, function calling, system instructions, vision |
-| Ollama | `ollama` | `llama3.1` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3.1`, `qwen2.5-coder`, `mistral`, `codellama` | Streaming, system instructions, JSON mode, optional function calling for capable local models, local-only execution via `http://localhost:11434` |
-
-## Architecture
-
-![](./asset/reference/architecture.png)
+Full protocol details, failure behavior, and compatibility notes are also available [here](./docs/MULTIPLAYER.md).
 
 ## Available Commands
 
@@ -281,6 +270,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 
 **Safety & Undo:**
 - `/gc` - Run checkpoint garbage collection
+
 ## Available Tools
 
 `poor-cli` can currently use these tools.
@@ -290,3 +280,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 * *Git Tools*: `git_status`, `git_diff`, `git_status_diff`, `apply_patch_unified`
 * *Network/Data Tools*: `fetch_url`, `web_search`, `json_yaml_edit`
 * *Optional GitHub Tools* *(available when `gh` CLI is installed)*: `gh_pr_list`, `gh_pr_view`, `gh_pr_create`, `gh_pr_comment`, `gh_issue_list`, `gh_issue_view`
+
+## Other notes
+
+For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.
