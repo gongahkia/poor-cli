@@ -1,5 +1,4 @@
-[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-light_green)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
-[![](https://img.shields.io/badge/poor_cli_5.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/5.0.0)
+[![](https://img.shields.io/badge/poor_cli_0.4.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/v0.4.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 
 # `poor-cli`
@@ -276,5 +275,7 @@ Run `!<command> [| optional question]` to execute local shell output and optiona
 * *Optional GitHub Tools* *(available when `gh` CLI is installed)*: `gh_pr_list`, `gh_pr_view`, `gh_pr_create`, `gh_pr_comment`, `gh_issue_list`, `gh_issue_view`
 
 ## Other notes
+
+Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
 For safety, `workspace-write` and `review-only` block shell commands that imply network access, including `curl`, `wget`, `gh`, and `git push`. Use `full-access` only when that network reach is intentional.

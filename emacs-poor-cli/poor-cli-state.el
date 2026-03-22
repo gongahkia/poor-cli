@@ -197,7 +197,9 @@
 
 (defun poor-cli-reset-session-state ()
   "Reset client-side session state."
-  (setq poor-cli--capabilities nil
+  (setq poor-cli--status-state 'stopped
+        poor-cli--status-message "Stopped"
+        poor-cli--capabilities nil
         poor-cli--last-error nil
         poor-cli--last-request nil
         poor-cli--current-inline-request-id nil

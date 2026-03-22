@@ -128,7 +128,6 @@
                         ["dev" "abc123" "Alice" "viewer" "approved" "no"])))
       (tabulated-list-print)
       (goto-char (point-min))
-      (forward-line 1)
       (cl-letf (((symbol-function 'poor-cli-pass-driver)
                  (lambda (&optional connection-id room)
                    (setq captured (list connection-id room))))
