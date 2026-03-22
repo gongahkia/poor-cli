@@ -80,8 +80,6 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_suffix: linux-x86_64
-          - os: macos-13
-            asset_suffix: macos-x86_64
           - os: macos-14
             asset_suffix: macos-arm64
           - os: windows-latest
@@ -128,10 +126,6 @@ jobs:
         include:
           - os: ubuntu-latest
             asset_suffix: linux-x86_64
-            archive_format: tar.gz
-            binary_name: poor-cli-tui
-          - os: macos-13
-            asset_suffix: macos-x86_64
             archive_format: tar.gz
             binary_name: poor-cli-tui
           - os: macos-14
