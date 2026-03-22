@@ -1,9 +1,36 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
+import type { UraPlanningResponse } from "@sg-apis/shared";
+import { geocode } from "../apis/onemap/client.js";
 import { getPropertyTransactions, uraFetch } from "../apis/ura/client.js";
-import { normalizeTransactions } from "../apis/ura/normalizer.js";
+import { normalizePlanningData, normalizeTransactions } from "../apis/ura/normalizer.js";
 import { registerTool } from "./registry.js";
+
+export const lookupPlanningArea = async (
+  params: Readonly<{ lat?: number; lng?: number; planningArea?: string }>,
+): Promise<{ planningArea: string; region: string }[]> => {
+  let coordinates: { lat: number; lng: number };
+
+  if (params.lat !== undefined && params.lng !== undefined) {
+    coordinates = { lat: params.lat, lng: params.lng };
+  } else if (params.planningArea !== undefined) {
+    const candidates = await geocode(params.planningArea, 1);
+    const match = candidates[0];
+    if (match === undefined) {
+      throw new Error(`Could not resolve planning area: ${params.planningArea}`);
+    }
+    coordinates = { lat: match.lat, lng: match.lng };
+  } else {
+    throw new Error("Provide planningArea or both lat and lng");
+  }
+
+  const result = await uraFetch<UraPlanningResponse>("GET_PLANNING_AREA", {
+    lat: String(coordinates.lat),
+    lng: String(coordinates.lng),
+  });
+  return result.Result.map(normalizePlanningData);
+};
 
 export const registerUraTools = (server: McpServer): void => {
   registerTool(server, {
@@ -26,12 +53,9 @@ export const registerUraTools = (server: McpServer): void => {
     inputSchema: UraPlanningAreaSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { lat, lng, planningArea } = validateInput(UraPlanningAreaSchema, input);
-      if (lat !== undefined && lng !== undefined) {
-        const result = await uraFetch<{ Status: string; Result: { pln_area_n: string; region: string }[] }>("GET_PLANNING_AREA", { lat: String(lat), lng: String(lng) });
-        const text = formatResponse(result.Result as unknown as Record<string, unknown>[], "markdown");
-        return { content: [{ type: "text", text }] };
-      }
-      return { content: [{ type: "text", text: `Planning area: ${planningArea ?? "Not specified"}` }] };
+      const result = await lookupPlanningArea({ lat, lng, planningArea });
+      const text = formatResponse(result as unknown as Record<string, unknown>[], "markdown");
+      return { content: [{ type: "text", text }] };
     },
   });
 

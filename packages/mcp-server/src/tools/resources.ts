@@ -53,7 +53,7 @@ const TOOL_INFO = [
   { name: "sg_onemap_population", description: "Get demographic data for a planning area" },
   { name: "sg_onemap_convert_coords", description: "Convert between SVY21 and WGS84 coordinates" },
   { name: "sg_ura_property_transactions", description: "Get property transaction data from URA" },
-  { name: "sg_ura_planning_area", description: "Get URA master plan data for a location" },
+  { name: "sg_ura_planning_area", description: "Get URA master plan data for coordinates or a planning area name" },
   { name: "sg_ura_dev_charges", description: "Get URA development charge rates" },
   { name: "sg_datagov_search", description: "Search data.gov.sg for datasets" },
   { name: "sg_datagov_get", description: "Get metadata for a specific data.gov.sg dataset" },

@@ -186,6 +186,11 @@ Get URA master plan data for a location or planning area.
 - `lat` / `lng` (number, optional) — Coordinates to look up
 - `planningArea` (string, optional) — Planning area name
 
+**Example:**
+```json
+{ "planningArea": "Tampines" }
+```
+
 #### `sg_ura_dev_charges`
 Get URA development charge rates by use group and sector.
 

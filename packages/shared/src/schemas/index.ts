@@ -119,7 +119,13 @@ export const UraPlanningAreaSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   planningArea: z.string().optional(),
-});
+}).refine(
+  ({ lat, lng, planningArea }) =>
+    planningArea !== undefined || (lat !== undefined && lng !== undefined),
+  {
+    message: "Provide planningArea or both lat and lng",
+  },
+);
 
 export const UraDevChargesSchema = z.object({
   useGroup: z.string().optional(),
