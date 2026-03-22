@@ -247,11 +247,27 @@ impl Default for KeybindingConfig {
             KeyCombo { key: KeyAction::ArrowDown, modifiers: pm },
             Action::BlockNext,
         );
+        bindings.insert(
+            KeyCombo { key: KeyAction::Char('c'), modifiers: pms },
+            Action::BlockCopy,
+        );
+        bindings.insert(
+            KeyCombo { key: KeyAction::Char('e'), modifiers: pms },
+            Action::BlockCollapse,
+        );
+        bindings.insert(
+            KeyCombo { key: KeyAction::Char('f'), modifiers: pms },
+            Action::SearchInBlock,
+        );
 
         // Search
         bindings.insert(
             KeyCombo { key: KeyAction::Char('f'), modifiers: pm },
             Action::SearchGlobal,
+        );
+        bindings.insert(
+            KeyCombo { key: KeyAction::Char('i'), modifiers: pms },
+            Action::ToggleInputPosition,
         );
 
         // Zoom
@@ -310,5 +326,15 @@ mod tests {
             modifiers: Modifiers::default(),
         };
         assert!(config.resolve(&combo, &Context::Terminal).is_none());
+    }
+
+    #[test]
+    fn test_block_copy_binding_exists() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('c'),
+            modifiers: platform_mod_shift(),
+        };
+        assert_eq!(config.resolve(&combo, &Context::Terminal), Some(&Action::BlockCopy));
     }
 }
