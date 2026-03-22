@@ -8,6 +8,7 @@ use thiserror::Error;
 use tracing::{debug, info, instrument};
 
 use crate::shell::{shell_spawn_config, ShellType};
+use crate::shell_integration::{prepare_shell_bootstrap, ShellBootstrap};
 
 /// Errors that can occur during PTY operations.
 #[derive(Debug, Error)]
@@ -37,6 +38,10 @@ pub enum PtyError {
     /// Failed to resize the PTY.
     #[error("failed to resize PTY: {0}")]
     ResizeFailed(String),
+
+    /// Failed to prepare shell bootstrap files.
+    #[error("failed to prepare shell bootstrap: {0}")]
+    BootstrapFailed(String),
 }
 
 /// A spawned PTY with the handles needed by Walk's runtime.
@@ -49,6 +54,8 @@ pub struct SpawnedPty {
     pub writer: Box<dyn Write + Send>,
     /// Child process running inside the PTY.
     pub child: Box<dyn Child + Send + Sync>,
+    /// Temporary bootstrap files that must remain alive for the shell lifetime.
+    pub shell_bootstrap: Option<ShellBootstrap>,
 }
 
 /// Manages creation of PTY processes.
@@ -78,7 +85,9 @@ impl PtyManager {
         rows: u16,
         env: HashMap<String, String>,
     ) -> Result<SpawnedPty, PtyError> {
-        let config = shell_spawn_config(shell_type);
+        let mut config = shell_spawn_config(shell_type);
+        let shell_bootstrap = prepare_shell_bootstrap(shell_type, &mut config)
+            .map_err(|e| PtyError::BootstrapFailed(e.to_string()))?;
 
         let size = PtySize {
             rows,
@@ -128,6 +137,7 @@ impl PtyManager {
             reader,
             writer,
             child,
+            shell_bootstrap,
         })
     }
 }

@@ -8,6 +8,7 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use tracing::{debug, warn};
 
 use crate::pty::{PtyError, SpawnedPty};
+use crate::shell_integration::ShellBootstrap;
 
 /// Events from the PTY reader thread.
 #[derive(Debug)]
@@ -29,6 +30,7 @@ pub struct PtyIoHandle {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     killer: Arc<Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>>,
     rx: Receiver<PtyEvent>,
+    _shell_bootstrap: Option<ShellBootstrap>,
     _reader_thread: JoinHandle<()>,
     _wait_thread: JoinHandle<()>,
 }
@@ -90,6 +92,7 @@ impl PtyIoHandle {
             writer,
             killer,
             rx,
+            _shell_bootstrap: spawned.shell_bootstrap,
             _reader_thread: reader_thread,
             _wait_thread: wait_thread,
         }
