@@ -36,7 +36,7 @@ export class Cache {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    if (now - row.cached_at > row.ttl_seconds) {
+    if (now - row.cached_at >= row.ttl_seconds) {
       this.misses++;
       this.db.prepare("DELETE FROM cache WHERE key = ?").run(key);
       return null;

@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "data": {
+    "datasets": [
+      { "datasetId": "d_abc123", "createdAt": "2023-01-01T00:00:00+08:00", "name": "Hawker Centres", "status": "active", "description": "List of hawker centres in Singapore", "format": "CSV", "lastUpdatedAt": "2025-01-01T00:00:00+08:00", "managedByAgencyName": "NEA" },
+      { "datasetId": "d_def456", "createdAt": "2023-06-01T00:00:00+08:00", "name": "HDB Resale Flat Prices", "status": "active", "description": "Resale flat prices by town and flat type", "format": "CSV", "lastUpdatedAt": "2025-03-01T00:00:00+08:00", "managedByAgencyName": "HDB" }
+    ],
+    "pages": 1,
+    "rowCount": 2,
+    "totalRowCount": 2
+  },
+  "errorMsg": ""
+}

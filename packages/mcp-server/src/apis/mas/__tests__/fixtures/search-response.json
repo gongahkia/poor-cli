@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "result": {
+    "resource_id": "95932927-c8bc-4e7a-b484-68a66a24edfe",
+    "total": 2,
+    "records": [
+      { "_id": 1, "end_of_day": "2025-01-02", "preliminary": "0", "usd_sgd": "1.3587", "eur_sgd": "1.4234", "gbp_sgd": "1.7012", "timestamp": "2025-01-02T16:00:00+08:00" },
+      { "_id": 2, "end_of_day": "2025-01-03", "preliminary": "0", "usd_sgd": "1.3590", "eur_sgd": "1.4240", "gbp_sgd": "1.7020", "timestamp": "2025-01-03T16:00:00+08:00" }
+    ],
+    "limit": 100,
+    "offset": 0,
+    "fields": [{ "type": "int4", "id": "_id" }, { "type": "text", "id": "end_of_day" }, { "type": "text", "id": "usd_sgd" }]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "Data": {
+    "generatedBy": "SingStat Table Builder",
+    "dateGenerated": "22/03/2026",
+    "total": 3,
+    "records": [
+      { "theme": "Economy & Prices", "subject": "National Accounts", "topic": "Gross Domestic Product (GDP)", "id": "M015631", "title": "Gross Domestic Product, Year On Year Growth Rate, Quarterly", "tableType": "time series" },
+      { "theme": "Economy & Prices", "subject": "National Accounts", "topic": "Gross Domestic Product (GDP)", "id": "M015731", "title": "Gross Domestic Product At Current Prices, By Industry (SSIC 2020), Annual", "tableType": "time series" },
+      { "theme": "Economy & Prices", "subject": "National Accounts", "topic": "Gross Domestic Product (GDP)", "id": "M015891", "title": "Per Capita GDP In Chained (2015) Dollars, Annual", "tableType": "time series" }
+    ]
+  },
+  "DataCount": 1,
+  "StatusCode": 200,
+  "Message": ""
+}

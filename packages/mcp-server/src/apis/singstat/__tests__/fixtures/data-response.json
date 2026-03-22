@@ -1,0 +1,38 @@
+{
+  "Data": {
+    "theme": "Economy & Prices",
+    "subject": "National Accounts",
+    "topic": "Gross Domestic Product (GDP)",
+    "id": "M015631",
+    "title": "GDP Growth Rate, Quarterly",
+    "footnote": "",
+    "frequency": "Quarterly",
+    "datasource": "SINGAPORE DEPARTMENT OF STATISTICS",
+    "generatedBy": "SingStat Table Builder",
+    "dataLastUpdated": "10/02/2026",
+    "dateGenerated": "22/03/2026",
+    "offset": null,
+    "limit": "5000",
+    "sortBy": null,
+    "timeFilter": null,
+    "between": null,
+    "search": null,
+    "row": [
+      {
+        "seriesNo": "1",
+        "rowText": "GDP Growth Rate",
+        "uoM": "Per Cent",
+        "footnote": "",
+        "columns": [
+          { "key": "2024 1Q", "value": "2.7" },
+          { "key": "2024 2Q", "value": "2.9" },
+          { "key": "2024 3Q", "value": "5.4" },
+          { "key": "2024 4Q", "value": "4.4" }
+        ]
+      }
+    ]
+  },
+  "DataCount": 1,
+  "StatusCode": 200,
+  "Message": ""
+}
