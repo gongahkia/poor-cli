@@ -73,10 +73,43 @@ export const registerSingStatTools = (server: McpServer): void => {
     inputSchema: SingStatBrowseSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { category } = validateInput(SingStatBrowseSchema, input);
-      const keyword = category ?? "economy";
-      const results = await searchDatasets(keyword, 20);
-      const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+
+      if (category === undefined) {
+        // Return top-level categories
+        const categories = [
+          { category: "Economy & Prices", description: "GDP, CPI, trade, prices, national accounts" },
+          { category: "Population & Land Area", description: "Population size, demographics, land use" },
+          { category: "Labour & Productivity", description: "Employment, wages, labour force, productivity" },
+          { category: "Society", description: "Education, health, housing, social indicators" },
+          { category: "Transport", description: "Vehicle registrations, traffic, public transport" },
+          { category: "Services", description: "Retail, food, accommodation, tourism" },
+          { category: "Manufacturing & Construction", description: "Industrial production, construction" },
+          { category: "Finance & Insurance", description: "Banking, insurance, capital markets" },
+          { category: "International Trade", description: "Imports, exports, trade partners" },
+        ];
+        const text = formatResponse(categories as unknown as Record<string, unknown>[], "markdown");
+        return { content: [{ type: "text", text: "## SingStat Categories\n\n" + text + "\n\nUse `sg_singstat_browse` with a category name to see its datasets." }] };
+      }
+
+      // Search within the specified category
+      const results = await searchDatasets(category, 20);
+      const grouped = results.reduce<Record<string, typeof results>>((acc, dataset) => {
+        const topic = dataset.topic;
+        if (acc[topic] === undefined) acc[topic] = [];
+        acc[topic].push(dataset);
+        return acc;
+      }, {});
+
+      const lines: string[] = [`## Datasets in "${category}"\n`];
+      for (const [topic, datasets] of Object.entries(grouped)) {
+        lines.push(`### ${topic}`);
+        for (const ds of datasets) {
+          lines.push(`- **${ds.id}**: ${ds.title} (${ds.frequency})`);
+        }
+        lines.push("");
+      }
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
     },
   });
 };

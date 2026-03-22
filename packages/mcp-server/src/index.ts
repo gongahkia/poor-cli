@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createLogger } from "@sg-apis/shared";
 import { registerAllTools } from "./tools/registry.js";
 import { closeCache } from "./middleware/cache-middleware.js";
+import { warmCache } from "./cache/warm.js";
 
 const logger = createLogger("server");
 
@@ -40,6 +41,13 @@ const main = async (): Promise<void> => {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info("sg-apis-mcp server started");
+
+  // Warm cache in background — do not block MCP handshake
+  void warmCache().catch((error: unknown) => {
+    logger.warn("cache warm-up failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 };
 
 void main();

@@ -3,11 +3,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+// Set mock mode to skip auth
+process.env["MOCK_API_BASE_URL"] = "http://mock";
+
 vi.mock("@sg-apis/shared", async () => {
   const actual = await vi.importActual<typeof import("@sg-apis/shared")>("@sg-apis/shared");
   return {
     ...actual,
     getRateLimiter: () => ({ acquire: vi.fn().mockResolvedValue(undefined) }),
+    createLogger: () => ({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }),
   };
 });
 
@@ -17,6 +26,11 @@ vi.mock("../../../middleware/cache-middleware.js", () => ({
     cached: false,
   })),
   buildCacheKey: vi.fn((...args: unknown[]) => args.join(":")),
+}));
+
+vi.mock("../auth.js", () => ({
+  authenticatedFetch: vi.fn(async (url: string) => mockFetch(url)),
+  getToken: vi.fn().mockResolvedValue("mock-token"),
 }));
 
 import { geocode, reverseGeocode } from "../client.js";
@@ -67,8 +81,23 @@ describe("OneMap client", () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        found: 1, totalNumPages: 1, pageNum: 1,
-        results: [{ SEARCHVAL: "TEST", BLK_NO: "", ROAD_NAME: "NIL", BUILDING: "TEST", ADDRESS: "TEST", POSTAL: "NIL", X: "30000", Y: "29000", LATITUDE: "1.28", LONGITUDE: "103.85" }],
+        found: 1,
+        totalNumPages: 1,
+        pageNum: 1,
+        results: [
+          {
+            SEARCHVAL: "TEST",
+            BLK_NO: "",
+            ROAD_NAME: "NIL",
+            BUILDING: "TEST",
+            ADDRESS: "TEST",
+            POSTAL: "NIL",
+            X: "30000",
+            Y: "29000",
+            LATITUDE: "1.28",
+            LONGITUDE: "103.85",
+          },
+        ],
       }),
     });
 
@@ -89,7 +118,21 @@ describe("OneMap client", () => {
   it("reverseGeocode returns null for no results", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ GeocodeInfo: [{ BUILDINGNAME: "", BLOCK: "", ROAD: "", POSTALCODE: "", XCOORD: "", YCOORD: "", LATITUDE: "", LONGITUDE: "", LONGTITUDE: "" }] }),
+      json: async () => ({
+        GeocodeInfo: [
+          {
+            BUILDINGNAME: "",
+            BLOCK: "",
+            ROAD: "",
+            POSTALCODE: "",
+            XCOORD: "",
+            YCOORD: "",
+            LATITUDE: "",
+            LONGITUDE: "",
+            LONGTITUDE: "",
+          },
+        ],
+      }),
     });
 
     const result = await reverseGeocode(1.28, 103.85);

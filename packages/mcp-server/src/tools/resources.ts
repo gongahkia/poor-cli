@@ -38,12 +38,53 @@ const API_INFO = [
   },
 ];
 
+const TOOL_INFO = [
+  { name: "sg_singstat_search", description: "Search SingStat Table Builder for datasets matching a keyword" },
+  { name: "sg_singstat_table", description: "Retrieve data from a specific SingStat table" },
+  { name: "sg_singstat_timeseries", description: "Get time series data for a specific indicator" },
+  { name: "sg_singstat_compare", description: "Compare multiple SingStat indicators side by side" },
+  { name: "sg_singstat_browse", description: "Browse SingStat dataset categories" },
+  { name: "sg_mas_exchange_rates", description: "Get MAS exchange rates for SGD against foreign currencies" },
+  { name: "sg_mas_interest_rates", description: "Get MAS interest rates (SORA, prime, fixed deposit)" },
+  { name: "sg_mas_financial_stats", description: "Get MAS financial sector statistics" },
+  { name: "sg_onemap_geocode", description: "Convert address/postal code to coordinates" },
+  { name: "sg_onemap_reverse_geocode", description: "Convert coordinates to address" },
+  { name: "sg_onemap_route", description: "Get routing directions between two locations" },
+  { name: "sg_onemap_population", description: "Get demographic data for a planning area" },
+  { name: "sg_onemap_convert_coords", description: "Convert between SVY21 and WGS84 coordinates" },
+  { name: "sg_ura_property_transactions", description: "Get property transaction data from URA" },
+  { name: "sg_ura_planning_area", description: "Get URA master plan data for a location" },
+  { name: "sg_ura_dev_charges", description: "Get URA development charge rates" },
+  { name: "sg_datagov_search", description: "Search data.gov.sg for datasets" },
+  { name: "sg_datagov_get", description: "Get data from a specific data.gov.sg dataset" },
+  { name: "sg_datagov_browse", description: "Browse data.gov.sg collections" },
+  { name: "sg_health_check", description: "Check connectivity for all APIs" },
+  { name: "sg_key_set", description: "Store an API key" },
+  { name: "sg_key_list", description: "List stored API keys (masked)" },
+  { name: "sg_key_delete", description: "Delete a stored API key" },
+  { name: "sg_cache_stats", description: "Show cache statistics" },
+  { name: "sg_cache_clear", description: "Clear cached data" },
+  { name: "sg_config_get", description: "Show current configuration" },
+  { name: "sg_config_set", description: "Update configuration" },
+  { name: "sg_query", description: "Natural language query interface for Singapore data" },
+];
+
 export const registerResources = (server: McpServer): void => {
   server.resource("sg-apis", "sg://apis", async () => ({
     contents: [
       {
         uri: "sg://apis",
         text: JSON.stringify(API_INFO, null, 2),
+        mimeType: "application/json",
+      },
+    ],
+  }));
+
+  server.resource("sg-tools", "sg://tools", async () => ({
+    contents: [
+      {
+        uri: "sg://tools",
+        text: JSON.stringify(TOOL_INFO, null, 2),
         mimeType: "application/json",
       },
     ],

@@ -1,16 +1,75 @@
-import { httpGet, TTL, ApiError } from "@sg-apis/shared";
-import type { OneMapSearchResponse, GeocodeResult, ReverseGeocodeResponse, ReverseGeocodeResult, RouteResult, PopulationData, PopulationDataType } from "@sg-apis/shared";
+import { TTL, ApiError, createLogger } from "@sg-apis/shared";
+import type {
+  OneMapSearchResponse,
+  GeocodeResult,
+  ReverseGeocodeResponse,
+  ReverseGeocodeResult,
+  RouteResult,
+  PopulationData,
+  PopulationDataType,
+} from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
+import { authenticatedFetch } from "./auth.js";
+
+const logger = createLogger("onemap-client");
 
 const BASE_URL = process.env["MOCK_API_BASE_URL"]
   ? `${process.env["MOCK_API_BASE_URL"]}/onemap`
   : "https://www.onemap.gov.sg/api";
 
+const isMockMode = (): boolean => process.env["MOCK_API_BASE_URL"] !== undefined;
+
+const onemapGet = async <T>(url: string): Promise<T> => {
+  if (isMockMode()) {
+    // In mock mode, skip auth
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new ApiError({
+        apiName: "onemap",
+        statusCode: response.status,
+        message: `OneMap request failed: ${response.statusText}`,
+        retryable: response.status >= 500,
+      });
+    }
+    return (await response.json()) as T;
+  }
+
+  // In real mode, use authenticated fetch
+  try {
+    const response = await authenticatedFetch(url);
+    if (!response.ok) {
+      throw new ApiError({
+        apiName: "onemap",
+        statusCode: response.status,
+        message: `OneMap request failed: ${response.statusText}`,
+        retryable: response.status >= 500,
+      });
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    // If auth fails (credentials not configured), fall back to unauthenticated
+    logger.warn("auth failed, attempting unauthenticated request", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new ApiError({
+        apiName: "onemap",
+        statusCode: response.status,
+        message: `OneMap request failed: ${response.statusText}`,
+        retryable: response.status >= 500,
+      });
+    }
+    return (await response.json()) as T;
+  }
+};
+
 export const geocode = async (searchVal: string, limit = 10): Promise<GeocodeResult[]> => {
   const cacheKey = buildCacheKey("onemap", "geocode", { searchVal });
   const { data } = await withCache(cacheKey, TTL.STATIC, async () => {
     const url = `${BASE_URL}/common/elastic/search?searchVal=${encodeURIComponent(searchVal)}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
-    const response = await httpGet<OneMapSearchResponse>(url, { apiName: "onemap" });
+    const response = await onemapGet<OneMapSearchResponse>(url);
 
     return response.results.slice(0, limit).map((r) => ({
       address: r.ADDRESS,
@@ -28,15 +87,15 @@ export const geocode = async (searchVal: string, limit = 10): Promise<GeocodeRes
 export const reverseGeocode = async (
   lat: number,
   lng: number,
-  buffer = 50,
+  buffer = 50, // WHY: 50 meters covers most block-level lookups in dense Singapore
 ): Promise<ReverseGeocodeResult | null> => {
   const cacheKey = buildCacheKey("onemap", "revgeocode", { lat, lng, buffer });
   const { data } = await withCache(cacheKey, TTL.STATIC, async () => {
     const url = `${BASE_URL}/public/revgeocode?location=${lat},${lng}&buffer=${buffer}&addressType=All`;
-    const response = await httpGet<ReverseGeocodeResponse>(url, { apiName: "onemap" });
+    const response = await onemapGet<ReverseGeocodeResponse>(url);
 
     const entry = response.GeocodeInfo?.[0];
-    if (entry === undefined || entry.BUILDINGNAME === "" ) {
+    if (entry === undefined || entry.BUILDINGNAME === "") {
       return null;
     }
 
@@ -59,13 +118,18 @@ export const getRoute = async (
   routeType: string,
 ): Promise<RouteResult> => {
   const url = `${BASE_URL}/public/routingsvc/route?start=${startLat},${startLng}&end=${endLat},${endLng}&routeType=${routeType}`;
-  const response = await httpGet<{
+  const response = await onemapGet<{
     status_message: string;
     status: number;
     route_instructions: unknown[][];
     route_name: string[];
-    route_summary: { start_point: string; end_point: string; total_time: number; total_distance: number };
-  }>(url, { apiName: "onemap" });
+    route_summary: {
+      start_point: string;
+      end_point: string;
+      total_time: number;
+      total_distance: number;
+    };
+  }>(url);
 
   if (response.status !== 0) {
     throw new ApiError({
@@ -95,15 +159,15 @@ export const getPopulationData = async (
 ): Promise<PopulationData> => {
   const type = dataType ?? "getPopulationAgeGroup";
   const yr = year ?? "2020";
-  const cacheKey = buildCacheKey("onemap", "population", { planningArea, year: yr, dataType: type });
+  const cacheKey = buildCacheKey("onemap", "population", {
+    planningArea,
+    year: yr,
+    dataType: type,
+  });
   const { data } = await withCache(cacheKey, TTL.STATIC, async () => {
     const url = `${BASE_URL}/public/popapi/${type}?planningArea=${encodeURIComponent(planningArea)}&year=${yr}`;
-    const response = await httpGet<Record<string, string>[]>(url, { apiName: "onemap" });
-    return {
-      planningArea,
-      year: yr,
-      data: response,
-    };
+    const response = await onemapGet<Record<string, string>[]>(url);
+    return { planningArea, year: yr, data: response };
   });
   return data;
 };
@@ -115,7 +179,7 @@ export const convertSVY21toWGS84 = async (
   const cacheKey = buildCacheKey("onemap", "convert", { from: "SVY21", x: easting, y: northing });
   const { data } = await withCache(cacheKey, TTL.STATIC, async () => {
     const url = `${BASE_URL}/common/convert/3414to4326?X=${easting}&Y=${northing}`;
-    const response = await httpGet<{ latitude: number; longitude: number }>(url, { apiName: "onemap" });
+    const response = await onemapGet<{ latitude: number; longitude: number }>(url);
     return { lat: response.latitude, lng: response.longitude };
   });
   return data;
@@ -128,7 +192,7 @@ export const convertWGS84toSVY21 = async (
   const cacheKey = buildCacheKey("onemap", "convert", { from: "WGS84", x: lat, y: lng });
   const { data } = await withCache(cacheKey, TTL.STATIC, async () => {
     const url = `${BASE_URL}/common/convert/4326to3414?latitude=${lat}&longitude=${lng}`;
-    const response = await httpGet<{ X: number; Y: number }>(url, { apiName: "onemap" });
+    const response = await onemapGet<{ X: number; Y: number }>(url);
     return { x: response.X, y: response.Y };
   });
   return data;
