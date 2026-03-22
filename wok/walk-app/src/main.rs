@@ -309,7 +309,9 @@ impl AppHandler for WalkHandler {
         self.rows = rows;
 
         if let Some(ref mut terminal) = self.terminal {
-            terminal.resize(cols, rows);
+            if let Err(e) = terminal.resize(cols, rows) {
+                warn!("failed to resize terminal: {e}");
+            }
         }
         self.needs_redraw = true;
     }

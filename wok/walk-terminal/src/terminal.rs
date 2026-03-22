@@ -92,17 +92,8 @@ impl Terminal {
         env: HashMap<String, String>,
     ) -> Result<Self, TerminalError> {
         let manager = PtyManager::new();
-        let pair = manager.spawn(shell, cols, rows, env)?;
-
-        let reader = pair.master.try_clone_reader().map_err(|e| {
-            PtyError::SystemCreation(format!("failed to clone PTY reader: {e}"))
-        })?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| PtyError::SystemCreation(format!("failed to take PTY writer: {e}")))?;
-
-        let pty = PtyIoHandle::new(reader, writer);
+        let spawned = manager.spawn(shell, cols, rows, env)?;
+        let pty = PtyIoHandle::new(spawned);
         let state = TerminalState::new(cols as usize, rows as usize, scrollback);
 
         debug!("terminal created");
@@ -227,11 +218,17 @@ impl Terminal {
     }
 
     /// Resize the terminal and PTY.
-    pub fn resize(&mut self, cols: u16, rows: u16) {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TerminalError`] if the PTY kernel size cannot be updated.
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), TerminalError> {
+        self.pty.resize(cols, rows)?;
         self.cols = cols;
         self.rows = rows;
         self.state.resize(cols as usize, rows as usize);
         self.dirty = true;
+        Ok(())
     }
 
     /// Check if the terminal has new output to render.

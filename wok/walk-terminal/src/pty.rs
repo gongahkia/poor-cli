@@ -1,8 +1,9 @@
 //! PTY management: spawns and manages shell processes using portable-pty.
 
 use std::collections::HashMap;
+use std::io::{Read, Write};
 
-use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize, PtySystem};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize, PtySystem};
 use thiserror::Error;
 use tracing::{debug, info, instrument};
 
@@ -32,6 +33,22 @@ pub enum PtyError {
     /// The PTY reader channel was disconnected.
     #[error("PTY reader channel disconnected")]
     ChannelDisconnected,
+
+    /// Failed to resize the PTY.
+    #[error("failed to resize PTY: {0}")]
+    ResizeFailed(String),
+}
+
+/// A spawned PTY with the handles needed by Walk's runtime.
+pub struct SpawnedPty {
+    /// The PTY master handle, retained for kernel-level resize.
+    pub master: Box<dyn MasterPty + Send>,
+    /// Read handle for PTY output.
+    pub reader: Box<dyn Read + Send>,
+    /// Write handle for PTY input.
+    pub writer: Box<dyn Write + Send>,
+    /// Child process running inside the PTY.
+    pub child: Box<dyn Child + Send + Sync>,
 }
 
 /// Manages creation of PTY processes.
@@ -60,7 +77,7 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         env: HashMap<String, String>,
-    ) -> Result<PtyPair, PtyError> {
+    ) -> Result<SpawnedPty, PtyError> {
         let config = shell_spawn_config(shell_type);
 
         let size = PtySize {
@@ -89,7 +106,7 @@ impl PtyManager {
         }
 
         info!(shell = %config.shell, "spawning shell process");
-        let _child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| PtyError::SpawnFailed {
@@ -97,8 +114,21 @@ impl PtyManager {
                 source: e.into(),
             })?;
 
+        let reader = pair.master.try_clone_reader().map_err(|e| {
+            PtyError::SystemCreation(format!("failed to clone PTY reader: {e}"))
+        })?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| PtyError::SystemCreation(format!("failed to take PTY writer: {e}")))?;
+
         debug!("shell process spawned successfully");
-        Ok(pair)
+        Ok(SpawnedPty {
+            master: pair.master,
+            reader,
+            writer,
+            child,
+        })
     }
 }
 
