@@ -46,9 +46,9 @@ blockedBy: [0]
 6. Add a shebang `#!/usr/bin/env node` to the entry point.
 
 **DONE WHEN**
-- [ ] Running `npx sg-apis-mcp` starts the process and accepts MCP protocol messages on stdin/stdout
-- [ ] Process exits cleanly on SIGINT/SIGTERM
-- [ ] No tools registered yet, but MCP handshake completes (testable with MCP inspector)
+- [x] Running `npx sg-apis-mcp` starts the process and accepts MCP protocol messages on stdin/stdout
+- [x] Process exits cleanly on SIGINT/SIGTERM
+- [x] No tools registered yet, but MCP handshake completes (testable with MCP inspector)
 
 ### Task 2 (A) +scaffolding
 blockedBy: [0]
@@ -71,9 +71,9 @@ blockedBy: [0]
 5. Under `## Context`, add Singapore-specific terminology stubs: HDB, MRT, planning area, postal code format (6-digit), SVY21.
 
 **DONE WHEN**
-- [ ] `packages/skill/SKILL.md` exists and is valid Markdown
-- [ ] Frontmatter parses correctly (test with any YAML parser)
-- [ ] All five API modules have at least one placeholder tool entry
+- [x] `packages/skill/SKILL.md` exists and is valid Markdown
+- [x] Frontmatter parses correctly (test with any YAML parser)
+- [x] All five API modules have at least one placeholder tool entry
 
 ### Task 3 (A) +scaffolding
 blockedBy: [0]
@@ -96,11 +96,11 @@ blockedBy: [0]
    - `ARCHIVAL = 604800` — WHY: historical time series never change, cache for 7 days
 
 **DONE WHEN**
-- [ ] `cache.set("test", "value", 60)` followed by `cache.get("test")` returns `"value"`
-- [ ] `cache.get("test")` returns `null` after TTL expiry (testable by setting TTL=0)
-- [ ] `cache.invalidate("singstat:%")` deletes only SingStat-prefixed keys
-- [ ] `cache.stats()` returns correct entry count
-- [ ] TTL constants exported and documented with WHY comments
+- [x] `cache.set("test", "value", 60)` followed by `cache.get("test")` returns `"value"`
+- [x] `cache.get("test")` returns `null` after TTL expiry (testable by setting TTL=0)
+- [x] `cache.invalidate("singstat:%")` deletes only SingStat-prefixed keys
+- [x] `cache.stats()` returns correct entry count
+- [x] TTL constants exported and documented with WHY comments
 
 ### Task 4 (B) +scaffolding
 blockedBy: [0]
@@ -116,9 +116,9 @@ blockedBy: [0]
 6. Respect `SG_APIS_LOG_LEVEL` env var, default to `"info"`.
 
 **DONE WHEN**
-- [ ] `createLogger("singstat").info("fetched", { rows: 42 })` writes JSON to stderr
-- [ ] Setting `SG_APIS_LOG_LEVEL=debug` enables debug messages
-- [ ] Setting `SG_APIS_LOG_LEVEL=error` suppresses info and warn
+- [x] `createLogger("singstat").info("fetched", { rows: 42 })` writes JSON to stderr
+- [x] Setting `SG_APIS_LOG_LEVEL=debug` enables debug messages
+- [x] Setting `SG_APIS_LOG_LEVEL=error` suppresses info and warn
 
 # ============================================================================
 # SECTION 2: MCP SERVER CORE
@@ -137,9 +137,9 @@ blockedBy: [1]
 5. Tool naming convention: `sg_<api>_<operation>` (e.g., `sg_singstat_search`, `sg_onemap_geocode`).
 
 **DONE WHEN**
-- [ ] `registerAllTools(server)` registers at least one placeholder tool
-- [ ] MCP inspector shows the registered tool with correct name, description, and input schema
-- [ ] Handler receives validated input (Zod rejects invalid input before handler runs)
+- [x] `registerAllTools(server)` registers at least one placeholder tool
+- [x] MCP inspector shows the registered tool with correct name, description, and input schema
+- [x] Handler receives validated input (Zod rejects invalid input before handler runs)
 
 ### Task 6 (A) +mcp-core
 blockedBy: [5]
@@ -157,9 +157,9 @@ blockedBy: [5]
    - Unknown error → return generic error with request ID for debugging.
 
 **DONE WHEN**
-- [ ] Passing invalid input to a tool returns a structured error, not a crash
-- [ ] `ApiError` with `retryable: true` includes "retryable" in the error message
-- [ ] Unknown errors are logged at error level and return a safe message (no stack trace leak)
+- [x] Passing invalid input to a tool returns a structured error, not a crash
+- [x] `ApiError` with `retryable: true` includes "retryable" in the error message
+- [x] Unknown errors are logged at error level and return a safe message (no stack trace leak)
 
 ### Task 7 (A) +mcp-core
 blockedBy: [5]
@@ -176,10 +176,10 @@ blockedBy: [5]
 7. Implement `formatResponse(data: unknown, format: OutputFormat): string` — dispatch to correct formatter.
 
 **DONE WHEN**
-- [ ] `formatMarkdown([{a: 1, b: 2}])` returns a valid Markdown table with header row
-- [ ] `formatCsv([{name: "test", value: 42}])` returns `name,value\ntest,42`
-- [ ] `formatGeoJson([{type: "Feature", geometry: {...}, properties: {...}}])` returns valid GeoJSON
-- [ ] `formatResponse(data, "json")` dispatches to `formatJson`
+- [x] `formatMarkdown([{a: 1, b: 2}])` returns a valid Markdown table with header row
+- [x] `formatCsv([{name: "test", value: 42}])` returns `name,value\ntest,42`
+- [x] `formatGeoJson([{type: "Feature", geometry: {...}, properties: {...}}])` returns valid GeoJSON
+- [x] `formatResponse(data, "json")` dispatches to `formatJson`
 
 ### Task 8 (B) +mcp-core
 blockedBy: [1]
@@ -199,9 +199,9 @@ blockedBy: [1]
 5. Export `getRateLimiter(apiName: string): RateLimiter` factory that returns cached singleton per API.
 
 **DONE WHEN**
-- [ ] 10 rapid `acquire()` calls to SingStat limiter: first 10 resolve immediately, 11th waits
-- [ ] After waiting ~1s, 2 more tokens are available (refill rate = 2/s)
-- [ ] Different API names return different limiter instances with correct config
+- [x] 10 rapid `acquire()` calls to SingStat limiter: first 10 resolve immediately, 11th waits
+- [x] After waiting ~1s, 2 more tokens are available (refill rate = 2/s)
+- [x] Different API names return different limiter instances with correct config
 
 ### Task 9 (A) +mcp-core
 blockedBy: [3]
@@ -217,10 +217,10 @@ blockedBy: [3]
 4. Implement `buildCacheKey(apiName: string, operation: string, params: Record<string, unknown>): string`.
 
 **DONE WHEN**
-- [ ] First call to `withCache("test:op:abc", 300, fetcher)` calls fetcher and returns `cached: false`
-- [ ] Second call with same key returns `cached: true` without calling fetcher
-- [ ] After TTL expiry, fetcher is called again
-- [ ] Different param order produces the same cache key (params are sorted before hashing)
+- [x] First call to `withCache("test:op:abc", 300, fetcher)` calls fetcher and returns `cached: false`
+- [x] Second call with same key returns `cached: true` without calling fetcher
+- [x] After TTL expiry, fetcher is called again
+- [x] Different param order produces the same cache key (params are sorted before hashing)
 
 ### Task 10 (B) +mcp-core
 blockedBy: [3]
@@ -239,10 +239,10 @@ blockedBy: [3]
 8. Register MCP tools `sg_key_set`, `sg_key_list`, `sg_key_delete` in `packages/mcp-server/src/tools/keystore-tools.ts`.
 
 **DONE WHEN**
-- [ ] `setKey("onemap", "abc123")` stores key, `getKey("onemap")` returns `"abc123"`
-- [ ] `listKeys()` shows `"onemap"` with masked value `"abc1****"`
-- [ ] Setting `SG_API_ONEMAP_KEY=xyz` env var makes `getKey("onemap")` return `"xyz"` instead of stored key
-- [ ] MCP tool `sg_key_list` returns key info via MCP protocol
+- [x] `setKey("onemap", "abc123")` stores key, `getKey("onemap")` returns `"abc123"`
+- [x] `listKeys()` shows `"onemap"` with masked value `"abc1****"`
+- [x] Setting `SG_API_ONEMAP_KEY=xyz` env var makes `getKey("onemap")` return `"xyz"` instead of stored key
+- [x] MCP tool `sg_key_list` returns key info via MCP protocol
 
 ### Task 11 (A) +mcp-core
 blockedBy: [1, 5]
@@ -260,10 +260,10 @@ blockedBy: [1, 5]
 5. Return formatted summary table.
 
 **DONE WHEN**
-- [ ] Tool returns status for all 5 APIs
-- [ ] Missing API key shows `keyConfigured: false` but still attempts request (some APIs are keyless)
-- [ ] Network timeout shows `reachable: false` with error message
-- [ ] Latency is measured in milliseconds
+- [x] Tool returns status for all 5 APIs
+- [x] Missing API key shows `keyConfigured: false` but still attempts request (some APIs are keyless)
+- [x] Network timeout shows `reachable: false` with error message
+- [x] Latency is measured in milliseconds
 
 ### Task 12 (B) +mcp-core
 blockedBy: [1, 6]
@@ -284,10 +284,10 @@ blockedBy: [1, 6]
 8. Integrate rate limiter: call `getRateLimiter(apiName).acquire()` before each request.
 
 **DONE WHEN**
-- [ ] 429 response triggers retry with exponential backoff
-- [ ] `Retry-After: 5` header causes 5-second wait
-- [ ] After max retries, throws `ApiError` with `retryable: true`
-- [ ] Rate limiter is consulted before each request attempt
+- [x] 429 response triggers retry with exponential backoff
+- [x] `Retry-After: 5` header causes 5-second wait
+- [x] After max retries, throws `ApiError` with `retryable: true`
+- [x] Rate limiter is consulted before each request attempt
 
 # ============================================================================
 # SECTION 3: SINGSTAT INTEGRATION
@@ -314,10 +314,10 @@ blockedBy: [3, 9, 12]
 6. Cache keys: `singstat:search:<keyword>` (TTL: DAILY), `singstat:data:<tableId>:<paramHash>` (TTL: DAILY).
 
 **DONE WHEN**
-- [ ] `searchDatasets("GDP")` returns an array of datasets with id and title
-- [ ] `getTableData("M212882")` returns rows with numerical values and period labels
-- [ ] Results are cached with DAILY TTL
-- [ ] Rate limiter is applied to all requests
+- [x] `searchDatasets("GDP")` returns an array of datasets with id and title
+- [x] `getTableData("M212882")` returns rows with numerical values and period labels
+- [x] Results are cached with DAILY TTL
+- [x] Rate limiter is applied to all requests
 
 ### Task 14 (A) +singstat
 blockedBy: [5, 13]
@@ -336,9 +336,9 @@ blockedBy: [5, 13]
    - Description: "Retrieve data from a specific SingStat table. Use sg_singstat_search first to find table IDs."
 
 **DONE WHEN**
-- [ ] MCP inspector shows both tools with correct descriptions and schemas
-- [ ] `sg_singstat_search` with `{"keyword": "population"}` returns formatted dataset list
-- [ ] `sg_singstat_table` with `{"tableId": "M810001"}` returns formatted data rows
+- [x] MCP inspector shows both tools with correct descriptions and schemas
+- [x] `sg_singstat_search` with `{"keyword": "population"}` returns formatted dataset list
+- [x] `sg_singstat_table` with `{"tableId": "M810001"}` returns formatted data rows
 
 ### Task 15 (B) +singstat
 blockedBy: [13]
@@ -355,9 +355,9 @@ blockedBy: [13]
    - Description: "Browse SingStat dataset categories. Call without arguments to see top-level categories, or provide a category to see its datasets."
 
 **DONE WHEN**
-- [ ] `sg_singstat_browse` with no args returns a list of categories (e.g., "Economy", "Population")
-- [ ] `sg_singstat_browse` with `{"category": "Economy"}` returns tables in that category
-- [ ] Variable definitions include name, code, and allowed values
+- [x] `sg_singstat_browse` with no args returns a list of categories (e.g., "Economy", "Population")
+- [x] `sg_singstat_browse` with `{"category": "Economy"}` returns tables in that category
+- [x] Variable definitions include name, code, and allowed values
 
 ### Task 16 (B) +singstat
 blockedBy: [13, 14]
@@ -374,9 +374,9 @@ blockedBy: [13, 14]
    - Description: "Get time series data for a specific indicator from a SingStat table. Returns values for each period in the specified year range."
 
 **DONE WHEN**
-- [ ] `sg_singstat_timeseries` with GDP table ID and year range returns annual values
-- [ ] Output includes period labels and values with units
-- [ ] Missing periods in the data are omitted (not filled with nulls)
+- [x] `sg_singstat_timeseries` with GDP table ID and year range returns annual values
+- [x] Output includes period labels and values with units
+- [x] Missing periods in the data are omitted (not filled with nulls)
 
 ### Task 17 (B) +singstat
 blockedBy: [13, 14]
@@ -395,9 +395,9 @@ blockedBy: [13, 14]
    - Description: "Compare multiple SingStat indicators side by side. Useful for correlating economic, demographic, or trade data."
 
 **DONE WHEN**
-- [ ] Comparing GDP and CPI tables returns aligned time series
-- [ ] Periods present in one table but not another show `null` in the missing series
-- [ ] Partial failures (one table unavailable) still return data for successful queries
+- [x] Comparing GDP and CPI tables returns aligned time series
+- [x] Periods present in one table but not another show `null` in the missing series
+- [x] Partial failures (one table unavailable) still return data for successful queries
 
 ### Task 18 (C) +singstat
 blockedBy: [13]
@@ -412,9 +412,9 @@ blockedBy: [13]
 3. Implement `detectUnit(raw: SingStatRawResponse): string` — extract unit from metadata (e.g., "Thousands", "Per Cent").
 
 **DONE WHEN**
-- [ ] Multi-variable SingStat response normalizes to flat rows
-- [ ] Units are correctly extracted and attached to each row
-- [ ] Footnotes are preserved when present
+- [x] Multi-variable SingStat response normalizes to flat rows
+- [x] Units are correctly extracted and attached to each row
+- [x] Footnotes are preserved when present
 
 # ============================================================================
 # SECTION 4: MAS INTEGRATION
@@ -441,9 +441,9 @@ blockedBy: [3, 9, 12]
 5. Cache keys: `mas:<dataset>:<paramHash>` (TTL: NEAR_REALTIME for exchange rates, DAILY for statistics).
 
 **DONE WHEN**
-- [ ] `query(EXCHANGE_RATES_ID, { limit: 10 })` returns exchange rate records
-- [ ] Auto-pagination fetches all pages for large result sets
-- [ ] Results are cached with appropriate TTL per dataset
+- [x] `query(EXCHANGE_RATES_ID, { limit: 10 })` returns exchange rate records
+- [x] Auto-pagination fetches all pages for large result sets
+- [x] Results are cached with appropriate TTL per dataset
 
 ### Task 20 (A) +mas
 blockedBy: [5, 19]
@@ -460,9 +460,9 @@ blockedBy: [5, 19]
    - Description: "Get MAS exchange rates for SGD against foreign currencies. Specify a currency code (e.g., USD, EUR) and optional date range."
 
 **DONE WHEN**
-- [ ] `sg_mas_exchange_rates` with `{"currency": "USD"}` returns SGD/USD rates
-- [ ] Date range filtering works: `{"currency": "USD", "startDate": "2024-01-01", "endDate": "2024-12-31"}`
-- [ ] No currency specified returns all rates for latest available date
+- [x] `sg_mas_exchange_rates` with `{"currency": "USD"}` returns SGD/USD rates
+- [x] Date range filtering works: `{"currency": "USD", "startDate": "2024-01-01", "endDate": "2024-12-31"}`
+- [x] No currency specified returns all rates for latest available date
 
 ### Task 21 (B) +mas
 blockedBy: [5, 19]
@@ -478,9 +478,9 @@ blockedBy: [5, 19]
    - Description: "Get MAS interest rates (SORA, prime lending, fixed deposit). SORA is the default benchmark rate."
 
 **DONE WHEN**
-- [ ] `sg_mas_interest_rates` with default returns recent SORA rates
-- [ ] `{"rateType": "prime"}` returns prime lending rates
-- [ ] Date range filtering works correctly
+- [x] `sg_mas_interest_rates` with default returns recent SORA rates
+- [x] `{"rateType": "prime"}` returns prime lending rates
+- [x] Date range filtering works correctly
 
 ### Task 22 (B) +mas
 blockedBy: [5, 19]
@@ -495,9 +495,9 @@ blockedBy: [5, 19]
    - Description: "Get MAS financial sector statistics: banking (assets, loans), insurance (premiums, claims), monetary (money supply)."
 
 **DONE WHEN**
-- [ ] `sg_mas_financial_stats` with `{"category": "banking"}` returns banking statistics
-- [ ] Each category maps to the correct MAS resource ID
-- [ ] Results include period labels and numerical values
+- [x] `sg_mas_financial_stats` with `{"category": "banking"}` returns banking statistics
+- [x] Each category maps to the correct MAS resource ID
+- [x] Results include period labels and numerical values
 
 ### Task 23 (C) +mas
 blockedBy: [19]
@@ -510,9 +510,9 @@ blockedBy: [19]
 3. Implement `normalizeMasRecord(raw: MasRawRecord, dataset: MasDataset): NormalizedRecord` — type-coerce numeric fields from strings to numbers, normalize dates.
 
 **DONE WHEN**
-- [ ] `"2024-03"` normalizes to ISO8601 with Singapore timezone (+08:00)
-- [ ] Numeric strings like `"1.2345"` are converted to `number` type
-- [ ] Non-numeric fields are preserved as strings
+- [x] `"2024-03"` normalizes to ISO8601 with Singapore timezone (+08:00)
+- [x] Numeric strings like `"1.2345"` are converted to `number` type
+- [x] Non-numeric fields are preserved as strings
 
 # ============================================================================
 # SECTION 5: ONEMAP INTEGRATION
@@ -536,10 +536,10 @@ blockedBy: [3, 9, 12]
    - On 401 response, refresh token and retry once.
 
 **DONE WHEN**
-- [ ] `getToken()` returns a valid token string
-- [ ] Token is reused across calls (not fetched every time)
-- [ ] 401 response triggers automatic token refresh and retry
-- [ ] Missing credentials throw clear error: "OneMap credentials not configured. Run sg_key_set."
+- [x] `getToken()` returns a valid token string
+- [x] Token is reused across calls (not fetched every time)
+- [x] 401 response triggers automatic token refresh and retry
+- [x] Missing credentials throw clear error: "OneMap credentials not configured. Run sg_key_set."
 
 ### Task 25 (A) +onemap
 blockedBy: [5, 24]
@@ -559,9 +559,9 @@ blockedBy: [5, 24]
 4. Cache: `onemap:geocode:<searchVal>` (TTL: STATIC) — WHY: addresses rarely change.
 
 **DONE WHEN**
-- [ ] `sg_onemap_geocode` with `{"searchVal": "Raffles Place"}` returns coordinates and address
-- [ ] `{"searchVal": "168742"}` (postal code) returns the correct building/address
-- [ ] Results include both WGS84 (lat/lng) and SVY21 (x/y) coordinates
+- [x] `sg_onemap_geocode` with `{"searchVal": "Raffles Place"}` returns coordinates and address
+- [x] `{"searchVal": "168742"}` (postal code) returns the correct building/address
+- [x] Results include both WGS84 (lat/lng) and SVY21 (x/y) coordinates
 
 ### Task 26 (B) +onemap
 blockedBy: [24, 25]
@@ -580,9 +580,9 @@ blockedBy: [24, 25]
    - Description: "Convert coordinates to a Singapore address. Returns the nearest building, block, street, and postal code within the search radius."
 
 **DONE WHEN**
-- [ ] `sg_onemap_reverse_geocode` with MBS coordinates returns "Marina Bay Sands" or similar
-- [ ] Buffer parameter adjusts search radius
-- [ ] No result within buffer returns empty result (not an error)
+- [x] `sg_onemap_reverse_geocode` with MBS coordinates returns "Marina Bay Sands" or similar
+- [x] Buffer parameter adjusts search radius
+- [x] No result within buffer returns empty result (not an error)
 
 ### Task 27 (B) +onemap
 blockedBy: [24, 25]
@@ -602,9 +602,9 @@ blockedBy: [24, 25]
    - Description: "Get routing directions between two Singapore locations. Supports public transport (bus/MRT), driving, walking, and cycling."
 
 **DONE WHEN**
-- [ ] `sg_onemap_route` with Jurong East to Changi returns route with distance and time
-- [ ] Public transport route includes transfer instructions
-- [ ] Drive route includes distance in km and estimated time in minutes
+- [x] `sg_onemap_route` with Jurong East to Changi returns route with distance and time
+- [x] Public transport route includes transfer instructions
+- [x] Drive route includes distance in km and estimated time in minutes
 
 ### Task 28 (B) +onemap
 blockedBy: [24]
@@ -622,9 +622,9 @@ blockedBy: [24]
 3. Cache: `onemap:population:<area>:<year>:<type>` (TTL: STATIC) — WHY: population data is census-based, rarely updated.
 
 **DONE WHEN**
-- [ ] `sg_onemap_population` with `{"planningArea": "Tampines"}` returns population data
-- [ ] Different dataTypes return different demographic breakdowns
-- [ ] Year defaults to most recent available if not specified
+- [x] `sg_onemap_population` with `{"planningArea": "Tampines"}` returns population data
+- [x] Different dataTypes return different demographic breakdowns
+- [x] Year defaults to most recent available if not specified
 
 ### Task 29 (B) +onemap
 blockedBy: [24]
@@ -645,9 +645,9 @@ blockedBy: [24]
 3. Cache: `onemap:convert:<from>:<x>:<y>` (TTL: STATIC) — WHY: coordinate math is deterministic, never changes.
 
 **DONE WHEN**
-- [ ] SVY21 `(28983.788, 33554.568)` converts to approximately `(1.2868, 103.8545)` (Raffles Place area)
-- [ ] WGS84 `(1.2868, 103.8545)` converts back to approximately the same SVY21 values
-- [ ] Results are cached to avoid redundant API calls
+- [x] SVY21 `(28983.788, 33554.568)` converts to approximately `(1.2868, 103.8545)` (Raffles Place area)
+- [x] WGS84 `(1.2868, 103.8545)` converts back to approximately the same SVY21 values
+- [x] Results are cached to avoid redundant API calls
 
 # ============================================================================
 # SECTION 6: URA INTEGRATION
@@ -672,10 +672,10 @@ blockedBy: [3, 9, 12]
 5. API key from keystore: `getKey("ura")`.
 
 **DONE WHEN**
-- [ ] `getDailyToken()` returns a token string
-- [ ] Token is cached until midnight SGT (not fetched on every request)
-- [ ] `uraFetch("PMI_Resi_Transaction")` returns property transaction data
-- [ ] Missing API key throws clear error
+- [x] `getDailyToken()` returns a token string
+- [x] Token is cached until midnight SGT (not fetched on every request)
+- [x] `uraFetch("PMI_Resi_Transaction")` returns property transaction data
+- [x] Missing API key throws clear error
 
 ### Task 31 (A) +ura
 blockedBy: [5, 30]
@@ -692,9 +692,9 @@ blockedBy: [5, 30]
 3. Return fields: `{ project, street, type, area_sqm, price, price_psm, district, tenure, period }`.
 
 **DONE WHEN**
-- [ ] `sg_ura_property_transactions` with `{"propertyType": "residential"}` returns transaction records
-- [ ] Area filtering works (e.g., `{"area": "Orchard"}`)
-- [ ] Period filtering works (e.g., `{"period": "24q1"}`)
+- [x] `sg_ura_property_transactions` with `{"propertyType": "residential"}` returns transaction records
+- [x] Area filtering works (e.g., `{"area": "Orchard"}`)
+- [x] Period filtering works (e.g., `{"period": "24q1"}`)
 
 ### Task 32 (B) +ura
 blockedBy: [5, 30]
@@ -712,9 +712,9 @@ blockedBy: [5, 30]
 3. Cache: `ura:planning:<lat>:<lng>` or `ura:planning:<area>` (TTL: STATIC) — WHY: master plan updates are infrequent (every 5 years).
 
 **DONE WHEN**
-- [ ] Coordinates near Raffles Place return "Downtown Core" planning area
-- [ ] Planning area name query returns zones with plot ratios
-- [ ] Results are cached with STATIC TTL
+- [x] Coordinates near Raffles Place return "Downtown Core" planning area
+- [x] Planning area name query returns zones with plot ratios
+- [x] Results are cached with STATIC TTL
 
 ### Task 33 (B) +ura
 blockedBy: [5, 30]
@@ -731,9 +731,9 @@ blockedBy: [5, 30]
 3. Return: `{ useGroup, sector, rate, effectiveDate }[]`.
 
 **DONE WHEN**
-- [ ] `sg_ura_dev_charges` with no args returns all current rates
-- [ ] Filtering by useGroup returns only matching rows
-- [ ] Effective date is included in results
+- [x] `sg_ura_dev_charges` with no args returns all current rates
+- [x] Filtering by useGroup returns only matching rows
+- [x] Effective date is included in results
 
 ### Task 34 (C) +ura
 blockedBy: [30]
@@ -751,9 +751,9 @@ blockedBy: [30]
    - Parse GPR (Gross Plot Ratio) strings to numbers.
 
 **DONE WHEN**
-- [ ] Raw transaction data normalizes to consistent field names
-- [ ] Price and area fields are numeric, not strings
-- [ ] GPR values are parsed correctly (e.g., `"3.0"` → `3.0`)
+- [x] Raw transaction data normalizes to consistent field names
+- [x] Price and area fields are numeric, not strings
+- [x] GPR values are parsed correctly (e.g., `"3.0"` → `3.0`)
 
 # ============================================================================
 # SECTION 7: DATA.GOV.SG GENERIC GATEWAY
@@ -777,9 +777,9 @@ blockedBy: [3, 9, 12]
 5. Cache: `datagov:search:<keyword>` (TTL: DAILY), `datagov:dataset:<id>` (TTL: DAILY).
 
 **DONE WHEN**
-- [ ] `searchDatasets("hawker")` returns datasets about hawker centres
-- [ ] `getDataset("<id>")` returns full metadata with resource list
-- [ ] Results are cached with DAILY TTL
+- [x] `searchDatasets("hawker")` returns datasets about hawker centres
+- [x] `getDataset("<id>")` returns full metadata with resource list
+- [x] Results are cached with DAILY TTL
 
 ### Task 36 (A) +datagov
 blockedBy: [5, 35]
@@ -798,9 +798,9 @@ blockedBy: [5, 35]
    - Description: "Get data from a specific data.gov.sg dataset. Use sg_datagov_search first to find dataset IDs."
 
 **DONE WHEN**
-- [ ] `sg_datagov_search` with `{"keyword": "schools"}` returns matching datasets
-- [ ] `sg_datagov_get` with a valid dataset ID returns tabular data
-- [ ] Filters narrow down results (e.g., `{"filters": {"town": "Tampines"}}`)
+- [x] `sg_datagov_search` with `{"keyword": "schools"}` returns matching datasets
+- [x] `sg_datagov_get` with a valid dataset ID returns tabular data
+- [x] Filters narrow down results (e.g., `{"filters": {"town": "Tampines"}}`)
 
 ### Task 37 (C) +datagov
 blockedBy: [35, 36]
@@ -817,9 +817,9 @@ blockedBy: [35, 36]
    - Description: "Browse data.gov.sg collections. Call without arguments to see all collections, or provide a collection name to see its datasets."
 
 **DONE WHEN**
-- [ ] `sg_datagov_browse` with no args lists available collections
-- [ ] With a collection name, returns datasets in that collection
-- [ ] Collection descriptions are included in output
+- [x] `sg_datagov_browse` with no args lists available collections
+- [x] With a collection name, returns datasets in that collection
+- [x] Collection descriptions are included in output
 
 # ============================================================================
 # SECTION 8: AGENT SKILL (SKILL.MD)
@@ -842,10 +842,10 @@ blockedBy: [2, 14, 20, 25, 31, 36]
 4. Total: ~21 tools documented.
 
 **DONE WHEN**
-- [ ] Every registered MCP tool has an entry in SKILL.md
-- [ ] Each entry has description, input schema, and example
-- [ ] Tools are grouped by API module
-- [ ] AI agent reading SKILL.md can determine which tool to use for a given query
+- [x] Every registered MCP tool has an entry in SKILL.md
+- [x] Each entry has description, input schema, and example
+- [x] Tools are grouped by API module
+- [x] AI agent reading SKILL.md can determine which tool to use for a given query
 
 ### Task 39 (A) +skill
 blockedBy: [38]
@@ -864,10 +864,10 @@ blockedBy: [38]
 3. Each workflow: natural language trigger, step-by-step tool calls, expected output format.
 
 **DONE WHEN**
-- [ ] Six workflow templates defined
-- [ ] Each shows the exact tool calls with input JSON
-- [ ] Multi-step workflows show data flow between steps
-- [ ] An AI agent can follow these templates without ambiguity
+- [x] Six workflow templates defined
+- [x] Each shows the exact tool calls with input JSON
+- [x] Multi-step workflows show data flow between steps
+- [x] An AI agent can follow these templates without ambiguity
 
 ### Task 40 (A) +skill
 blockedBy: [38]
@@ -887,9 +887,9 @@ blockedBy: [38]
 3. Include a planning area → region mapping table (Central, East, North, North-East, West).
 
 **DONE WHEN**
-- [ ] All terms above are defined in SKILL.md
-- [ ] Planning area → region mapping is complete
-- [ ] An AI agent encountering "HDB 4-room in Tampines" knows to route to property data for planning area Tampines
+- [x] All terms above are defined in SKILL.md
+- [x] Planning area → region mapping is complete
+- [x] An AI agent encountering "HDB 4-room in Tampines" knows to route to property data for planning area Tampines
 
 ### Task 41 (B) +skill
 blockedBy: [38]
@@ -910,10 +910,10 @@ blockedBy: [38]
 4. Quick test: "After setup, ask your AI tool: 'What's the current SGD to USD exchange rate?' — this uses MAS (no key needed) to verify the MCP server is working."
 
 **DONE WHEN**
-- [ ] Setup instructions cover all supported AI tools (Claude Desktop, Claude Code, Cursor, etc.)
-- [ ] API key requirements are clear (which APIs need keys, which do not)
-- [ ] Quick test query is provided for verification
-- [ ] Instructions are copy-pasteable (no placeholders that require interpretation)
+- [x] Setup instructions cover all supported AI tools (Claude Desktop, Claude Code, Cursor, etc.)
+- [x] API key requirements are clear (which APIs need keys, which do not)
+- [x] Quick test query is provided for verification
+- [x] Instructions are copy-pasteable (no placeholders that require interpretation)
 
 ### Task 42 (B) +skill
 blockedBy: [39]
@@ -932,9 +932,9 @@ blockedBy: [39]
 4. Provide 3 multi-API workflow examples with expected tool call sequences.
 
 **DONE WHEN**
-- [ ] Fan-out decision rules are documented
-- [ ] Three multi-API examples show complete tool call sequences
-- [ ] Source attribution rules are defined
+- [x] Fan-out decision rules are documented
+- [x] Three multi-API examples show complete tool call sequences
+- [x] Source attribution rules are defined
 
 # ============================================================================
 # SECTION 9: NATURAL LANGUAGE ROUTER
@@ -967,10 +967,10 @@ blockedBy: [5, 14, 20, 25, 31, 36]
    - Map intent + extracted params to specific MCP tool names and input objects.
 
 **DONE WHEN**
-- [ ] "What's the SGD to USD rate?" classifies as `financial` with `currency: "USD"` extracted
-- [ ] "Population of Tampines" classifies as `demographic` with `planningArea: "Tampines"` extracted
-- [ ] "Find 168742" classifies as `geospatial` with `postalCode: "168742"` extracted
-- [ ] Ambiguous queries return multiple candidate APIs with confidence scores
+- [x] "What's the SGD to USD rate?" classifies as `financial` with `currency: "USD"` extracted
+- [x] "Population of Tampines" classifies as `demographic` with `planningArea: "Tampines"` extracted
+- [x] "Find 168742" classifies as `geospatial` with `postalCode: "168742"` extracted
+- [x] Ambiguous queries return multiple candidate APIs with confidence scores
 
 ### Task 44 (A) +router
 blockedBy: [43]
@@ -990,10 +990,10 @@ blockedBy: [43]
    - Description: "Natural language query interface for Singapore government data. Automatically determines which APIs to query and how to combine results."
 
 **DONE WHEN**
-- [ ] "GDP growth for the last 5 years" produces a single-step plan with SingStat
-- [ ] "Compare exchange rates for USD and EUR" produces a two-step parallel plan
-- [ ] "Population near postal code 168742" produces a two-step sequential plan (geocode → population)
-- [ ] `sg_query` tool executes the plan and returns formatted results
+- [x] "GDP growth for the last 5 years" produces a single-step plan with SingStat
+- [x] "Compare exchange rates for USD and EUR" produces a two-step parallel plan
+- [x] "Population near postal code 168742" produces a two-step sequential plan (geocode → population)
+- [x] `sg_query` tool executes the plan and returns formatted results
 
 ### Task 45 (B) +router
 blockedBy: [44]
@@ -1012,9 +1012,9 @@ blockedBy: [44]
    - For partial failures: append "Note: <api> query failed: <reason>".
 
 **DONE WHEN**
-- [ ] Two successful results merge into one response with both sources listed
-- [ ] One failure + one success still returns the successful result with failure note
-- [ ] Comparison data aligns by common dimension (time period, area)
+- [x] Two successful results merge into one response with both sources listed
+- [x] One failure + one success still returns the successful result with failure note
+- [x] Comparison data aligns by common dimension (time period, area)
 
 ### Task 46 (C) +router
 blockedBy: [44]
@@ -1032,9 +1032,9 @@ blockedBy: [44]
 3. Context TTL: `300000` ms (5 minutes) — WHY: after 5 minutes, context is likely stale, start fresh.
 
 **DONE WHEN**
-- [ ] After querying GDP, follow-up "for 2020 only" carries over table ID
-- [ ] After geocoding a postal code, follow-up "what's the population there?" uses the same coordinates
-- [ ] Context expires after 5 minutes of inactivity
+- [x] After querying GDP, follow-up "for 2020 only" carries over table ID
+- [x] After geocoding a postal code, follow-up "what's the population there?" uses the same coordinates
+- [x] Context expires after 5 minutes of inactivity
 
 # ============================================================================
 # SECTION 10: TESTING
@@ -1061,10 +1061,10 @@ blockedBy: [13, 19, 24, 30, 35]
 4. Create test fixtures in `packages/mcp-server/src/apis/<api>/__tests__/fixtures/` with sample API responses.
 
 **DONE WHEN**
-- [ ] Each API client has at least 5 tests covering happy path, error, and edge cases
-- [ ] All tests pass with `npm test`
-- [ ] No real network calls are made during testing
-- [ ] Test fixtures are realistic (based on actual API response structures)
+- [x] Each API client has at least 5 tests covering happy path, error, and edge cases
+- [x] All tests pass with `npm test`
+- [x] No real network calls are made during testing
+- [x] Test fixtures are realistic (based on actual API response structures)
 
 ### Task 48 (A) +testing
 blockedBy: [3, 9]
@@ -1088,9 +1088,9 @@ blockedBy: [3, 9]
    - Cache key is deterministic (same params → same key).
 
 **DONE WHEN**
-- [ ] All cache tests pass
-- [ ] TTL expiry is tested without `setTimeout` delays (manipulate timestamps)
-- [ ] Cache middleware correctly intercepts and stores results
+- [x] All cache tests pass
+- [x] TTL expiry is tested without `setTimeout` delays (manipulate timestamps)
+- [x] Cache middleware correctly intercepts and stores results
 
 ### Task 49 (B) +testing
 blockedBy: [44, 47]
@@ -1111,9 +1111,9 @@ blockedBy: [44, 47]
    - Partial failures produce degraded but valid output.
 
 **DONE WHEN**
-- [ ] Four E2E test scenarios pass
-- [ ] Tests use mock HTTP (no real API calls)
-- [ ] Each test verifies the full pipeline: NL → classify → plan → execute → format
+- [x] Four E2E test scenarios pass
+- [x] Tests use mock HTTP (no real API calls)
+- [x] Each test verifies the full pipeline: NL → classify → plan → execute → format
 
 ### Task 50 (B) +testing
 blockedBy: [0]
@@ -1132,10 +1132,10 @@ blockedBy: [0]
 5. Add `MOCK_API_BASE_URL` env var support in each API client to redirect requests to mock server.
 
 **DONE WHEN**
-- [ ] `npm run mock-server` starts a local HTTP server
-- [ ] Setting `MOCK_API_BASE_URL=http://localhost:3456` redirects all API calls to the mock
-- [ ] Mock returns realistic fixture data for at least 2 endpoints per API
-- [ ] Delay simulation works for testing timeout behavior
+- [x] `npm run mock-server` starts a local HTTP server
+- [x] Setting `MOCK_API_BASE_URL=http://localhost:3456` redirects all API calls to the mock
+- [x] Mock returns realistic fixture data for at least 2 endpoints per API
+- [x] Delay simulation works for testing timeout behavior
 
 ### Task 51 (C) +testing
 blockedBy: [47]
@@ -1157,9 +1157,9 @@ blockedBy: [47]
 3. Base fixtures on actual API documentation examples, adapted with realistic Singapore data.
 
 **DONE WHEN**
-- [ ] Each API has at least 3 fixture files
-- [ ] Fixtures parse as valid JSON
-- [ ] Fixture structures match actual API response schemas (verified against API docs)
+- [x] Each API has at least 3 fixture files
+- [x] Fixtures parse as valid JSON
+- [x] Fixture structures match actual API response schemas (verified against API docs)
 
 # ============================================================================
 # SECTION 11: CI/CD & DISTRIBUTION
@@ -1181,10 +1181,10 @@ blockedBy: [0, 47]
 5. Cache `node_modules` using `actions/cache` with `package-lock.json` hash.
 
 **DONE WHEN**
-- [ ] Pushing to main triggers the CI workflow
-- [ ] Build failure blocks merge
-- [ ] Test failure blocks merge
-- [ ] Workflow completes in under 3 minutes
+- [x] Pushing to main triggers the CI workflow
+- [x] Build failure blocks merge
+- [x] Test failure blocks merge
+- [x] Workflow completes in under 3 minutes
 
 ### Task 53 (B) +cicd
 blockedBy: [52]
@@ -1202,9 +1202,9 @@ blockedBy: [52]
 5. Package name: `sg-apis-mcp` (check availability on npm).
 
 **DONE WHEN**
-- [ ] Tagging `v0.1.0` and pushing triggers publish workflow
-- [ ] Package is published to npm
-- [ ] `npx sg-apis-mcp` works after publish
+- [x] Tagging `v0.1.0` and pushing triggers publish workflow
+- [x] Package is published to npm
+- [x] `npx sg-apis-mcp` works after publish
 
 ### Task 54 (B) +cicd
 blockedBy: [1, 52]
@@ -1221,9 +1221,9 @@ blockedBy: [1, 52]
 3. Document submission process in contributing guide.
 
 **DONE WHEN**
-- [ ] `smithery.yaml` is valid and contains correct metadata
-- [ ] `glama.json` is valid and contains correct metadata
-- [ ] Both files reference the npm package name
+- [x] `smithery.yaml` is valid and contains correct metadata
+- [x] `glama.json` is valid and contains correct metadata
+- [x] Both files reference the npm package name
 
 ### Task 55 (C) +cicd
 blockedBy: [38]
@@ -1240,9 +1240,9 @@ blockedBy: [38]
 3. Add to CI: run validation as part of the test job.
 
 **DONE WHEN**
-- [ ] Script exits 0 for valid SKILL.md, exits 1 with error details for invalid
-- [ ] CI runs validation on every push
-- [ ] Missing tool in SKILL.md is caught and reported
+- [x] Script exits 0 for valid SKILL.md, exits 1 with error details for invalid
+- [x] CI runs validation on every push
+- [x] Missing tool in SKILL.md is caught and reported
 
 # ============================================================================
 # SECTION 12: DOCUMENTATION
@@ -1268,10 +1268,10 @@ blockedBy: [38, 52]
    - **Not Covered**: LTA (use arjunkmrm/mcp-sg-lta), basic weather/carpark/dengue (use prezgamer/Singapore-Data-MCPs).
 
 **DONE WHEN**
-- [ ] README exists with all sections
-- [ ] Quickstart is copy-pasteable and correct
-- [ ] API coverage matrix is complete
-- [ ] Links to existing MCP servers for excluded APIs
+- [x] README exists with all sections
+- [x] Quickstart is copy-pasteable and correct
+- [x] API coverage matrix is complete
+- [x] Links to existing MCP servers for excluded APIs
 
 ### Task 57 (B) +docs
 blockedBy: [10, 24, 30]
@@ -1290,9 +1290,9 @@ blockedBy: [10, 24, 30]
 4. Troubleshooting: common auth errors and fixes.
 
 **DONE WHEN**
-- [ ] Each API's auth process is documented
-- [ ] Links to registration pages are included
-- [ ] Common errors have troubleshooting steps
+- [x] Each API's auth process is documented
+- [x] Links to registration pages are included
+- [x] Common errors have troubleshooting steps
 
 ### Task 58 (C) +docs
 blockedBy: [0, 5]
@@ -1310,9 +1310,9 @@ blockedBy: [0, 5]
 3. Include a template for a new API client module.
 
 **DONE WHEN**
-- [ ] A developer can follow the guide to add a new API without asking questions
-- [ ] Template files are provided
-- [ ] Naming conventions are explicit
+- [x] A developer can follow the guide to add a new API without asking questions
+- [x] Template files are provided
+- [x] Naming conventions are explicit
 
 # ============================================================================
 # SECTION 13: POLISH & HARDENING
@@ -1332,9 +1332,9 @@ blockedBy: [1]
 3. If timeout exceeded, force exit with code 1.
 
 **DONE WHEN**
-- [ ] `kill -TERM <pid>` causes clean shutdown with log message
-- [ ] SQLite connections are closed (no "database is locked" errors on next start)
-- [ ] Shutdown completes within 5 seconds
+- [x] `kill -TERM <pid>` causes clean shutdown with log message
+- [x] SQLite connections are closed (no "database is locked" errors on next start)
+- [x] Shutdown completes within 5 seconds
 
 ### Task 60 (B) +hardening
 blockedBy: [8, 12]
@@ -1354,10 +1354,10 @@ blockedBy: [8, 12]
 3. Integrate with `httpGet()`: wrap each API call in its API-specific circuit breaker.
 
 **DONE WHEN**
-- [ ] After 3 consecutive failures, circuit opens and calls are rejected immediately
-- [ ] After 60 seconds, one test call is allowed (half-open)
-- [ ] Successful test call closes the circuit (normal operation resumes)
-- [ ] Circuit state is logged at info level on transitions
+- [x] After 3 consecutive failures, circuit opens and calls are rejected immediately
+- [x] After 60 seconds, one test call is allowed (half-open)
+- [x] Successful test call closes the circuit (normal operation resumes)
+- [x] Circuit state is logged at info level on transitions
 
 ### Task 61 (B) +hardening
 blockedBy: [9, 12]
@@ -1373,9 +1373,9 @@ blockedBy: [9, 12]
 3. Integrate with `withCache`: before cache check, dedup by cache key.
 
 **DONE WHEN**
-- [ ] Two concurrent calls with the same key result in only one HTTP request
-- [ ] Both callers receive the same result
-- [ ] Failed requests are properly cleaned up (next call retries)
+- [x] Two concurrent calls with the same key result in only one HTTP request
+- [x] Both callers receive the same result
+- [x] Failed requests are properly cleaned up (next call retries)
 
 ### Task 62 (C) +hardening
 blockedBy: [6, 12]
@@ -1394,9 +1394,9 @@ blockedBy: [6, 12]
 2. Implement using `AbortController` with `setTimeout`.
 
 **DONE WHEN**
-- [ ] A request exceeding the per-API timeout throws `ApiError` with `retryable: true`
-- [ ] A request exceeding the hard cap (30s) throws regardless of per-API setting
-- [ ] The HTTP connection is actually aborted (not just ignored)
+- [x] A request exceeding the per-API timeout throws `ApiError` with `retryable: true`
+- [x] A request exceeding the hard cap (30s) throws regardless of per-API setting
+- [x] The HTTP connection is actually aborted (not just ignored)
 
 # ============================================================================
 # SECTION 14: ADVANCED FEATURES
@@ -1419,10 +1419,10 @@ blockedBy: [3, 35]
 3. Trigger index build on first search if index is empty or expired.
 
 **DONE WHEN**
-- [ ] First search triggers index build (may take 30-60 seconds)
-- [ ] Subsequent searches return results in <100ms
-- [ ] FTS5 fuzzy matching works (e.g., "hawker" matches "Hawker Centres")
-- [ ] Index rebuilds after 7 days
+- [x] First search triggers index build (may take 30-60 seconds)
+- [x] Subsequent searches return results in <100ms
+- [x] FTS5 fuzzy matching works (e.g., "hawker" matches "Hawker Centres")
+- [x] Index rebuilds after 7 days
 
 ### Task 64 (C) +advanced
 blockedBy: [43]
@@ -1446,9 +1446,9 @@ blockedBy: [43]
 4. Integrate with classifier: check aliases before keyword matching.
 
 **DONE WHEN**
-- [ ] "forex" resolves to `sg_mas_exchange_rates`
-- [ ] "HDB prices" resolves to data.gov.sg HDB resale dataset
-- [ ] Unknown terms return null (do not block classification)
+- [x] "forex" resolves to `sg_mas_exchange_rates`
+- [x] "HDB prices" resolves to data.gov.sg HDB resale dataset
+- [x] Unknown terms return null (do not block classification)
 
 ### Task 65 (C) +advanced
 blockedBy: [3]
@@ -1468,9 +1468,9 @@ blockedBy: [3]
 4. Log results at info level.
 
 **DONE WHEN**
-- [ ] Server starts immediately (warm-up runs in background)
-- [ ] After warm-up completes, first exchange rate query is served from cache
-- [ ] Failed warm-up items are logged but do not prevent server start
+- [x] Server starts immediately (warm-up runs in background)
+- [x] After warm-up completes, first exchange rate query is served from cache
+- [x] Failed warm-up items are logged but do not prevent server start
 
 ### Task 66 (C) +advanced
 blockedBy: [7]
@@ -1486,9 +1486,9 @@ blockedBy: [7]
 2. Integrate with MCP tool handlers: if result set exceeds `1000` rows — WHY: 1000 rows is a reasonable threshold where streaming becomes beneficial — use streaming output.
 
 **DONE WHEN**
-- [ ] Streaming a 10,000-row result uses constant memory (not proportional to row count)
-- [ ] CSV streaming produces valid CSV when concatenated
-- [ ] JSON streaming produces valid JSON when concatenated
+- [x] Streaming a 10,000-row result uses constant memory (not proportional to row count)
+- [x] CSV streaming produces valid CSV when concatenated
+- [x] JSON streaming produces valid JSON when concatenated
 
 # ============================================================================
 # SECTION 15: INTEGRATION TESTING ACROSS APIS
@@ -1510,10 +1510,10 @@ blockedBy: [14, 20, 25, 31, 36, 50]
 3. Each test starts a fresh MCP server instance connected to the mock server.
 
 **DONE WHEN**
-- [ ] All 5 cross-API test scenarios pass
-- [ ] Tests use mock server (no real API calls)
-- [ ] Cache isolation is verified (SingStat cache does not affect MAS cache)
-- [ ] Rate limiter isolation is verified
+- [x] All 5 cross-API test scenarios pass
+- [x] Tests use mock server (no real API calls)
+- [x] Cache isolation is verified (SingStat cache does not affect MAS cache)
+- [x] Rate limiter isolation is verified
 
 ### Task 68 (B) +integration
 blockedBy: [11, 47]
@@ -1529,9 +1529,9 @@ blockedBy: [11, 47]
    - Slow API (mock with delay): verify timeout is handled and reported.
 
 **DONE WHEN**
-- [ ] Health check correctly reports mixed status (some up, some down)
-- [ ] Timeout handling works for slow APIs
-- [ ] Missing key detection works
+- [x] Health check correctly reports mixed status (some up, some down)
+- [x] Timeout handling works for slow APIs
+- [x] Missing key detection works
 
 # ============================================================================
 # SECTION 16: ADDITIONAL MCP TOOLS
@@ -1555,9 +1555,9 @@ blockedBy: [3, 5, 10]
    - Description: "Clear cached data. Specify an API name to clear only that API's cache, or omit to clear all."
 
 **DONE WHEN**
-- [ ] `sg_cache_stats` returns accurate statistics
-- [ ] `sg_cache_clear` with `{"api": "singstat"}` clears only SingStat entries
-- [ ] `sg_cache_clear` with no args clears all entries
+- [x] `sg_cache_stats` returns accurate statistics
+- [x] `sg_cache_clear` with `{"api": "singstat"}` clears only SingStat entries
+- [x] `sg_cache_clear` with no args clears all entries
 
 ### Task 70 (B) +mcp-tools
 blockedBy: [1, 5]
@@ -1572,9 +1572,9 @@ blockedBy: [1, 5]
    - Returns JSON listing all registered tools with their descriptions and input schemas.
 
 **DONE WHEN**
-- [ ] MCP inspector shows `sg://apis` resource with all 5 APIs listed
-- [ ] MCP inspector shows `sg://tools` resource with all tools listed
-- [ ] Resources are accessible via the MCP protocol
+- [x] MCP inspector shows `sg://apis` resource with all 5 APIs listed
+- [x] MCP inspector shows `sg://tools` resource with all tools listed
+- [x] Resources are accessible via the MCP protocol
 
 # ============================================================================
 # SECTION 17: TYPE DEFINITIONS
@@ -1600,9 +1600,9 @@ blockedBy: [0]
 7. Create `packages/shared/src/types/datagov.ts` — data.gov.sg-specific types (Dataset, Resource, etc.).
 
 **DONE WHEN**
-- [ ] All types are exported from `packages/shared/src/types/index.ts`
-- [ ] Types are used by at least one API client (after that client is implemented)
-- [ ] No `any` types in the shared package
+- [x] All types are exported from `packages/shared/src/types/index.ts`
+- [x] Types are used by at least one API client (after that client is implemented)
+- [x] No `any` types in the shared package
 
 ### Task 72 (B) +types
 blockedBy: [71]
@@ -1619,9 +1619,9 @@ blockedBy: [71]
 3. Export `validateInput<T>(schema: ZodSchema<T>, input: unknown): T` — throws `ValidationError` on failure.
 
 **DONE WHEN**
-- [ ] Every MCP tool has a corresponding Zod schema
-- [ ] `validateInput` throws clear error messages for invalid input
-- [ ] Schema types are inferred correctly (no manual type duplication)
+- [x] Every MCP tool has a corresponding Zod schema
+- [x] `validateInput` throws clear error messages for invalid input
+- [x] Schema types are inferred correctly (no manual type duplication)
 
 # ============================================================================
 # SECTION 18: CONFIGURATION
@@ -1653,10 +1653,10 @@ blockedBy: [0]
 4. Validate config with Zod schema.
 
 **DONE WHEN**
-- [ ] `loadConfig()` returns merged config
-- [ ] Env var overrides work (e.g., `SG_APIS_CACHE_TTL_DAILY=7200`)
-- [ ] Missing config file uses defaults (no error)
-- [ ] Invalid config values are rejected with clear error messages
+- [x] `loadConfig()` returns merged config
+- [x] Env var overrides work (e.g., `SG_APIS_CACHE_TTL_DAILY=7200`)
+- [x] Missing config file uses defaults (no error)
+- [x] Invalid config values are rejected with clear error messages
 
 ### Task 74 (C) +config
 blockedBy: [5, 73]
@@ -1676,9 +1676,9 @@ blockedBy: [5, 73]
    - Description: "Update sg-apis-mcp configuration. Changes persist in ~/.sg-apis/config.json."
 
 **DONE WHEN**
-- [ ] `sg_config_get` returns current config
-- [ ] `sg_config_set` with `{"key": "defaultFormat", "value": "csv"}` updates config file
-- [ ] Next `sg_config_get` reflects the change
+- [x] `sg_config_get` returns current config
+- [x] `sg_config_set` with `{"key": "defaultFormat", "value": "csv"}` updates config file
+- [x] Next `sg_config_get` reflects the change
 
 # ============================================================================
 # SUMMARY
