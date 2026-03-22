@@ -1,4 +1,5 @@
-[![](https://img.shields.io/badge/poor_cli_5.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/v5.0.0)
+[![](https://img.shields.io/badge/poor_cli_4.0.0-passing-light_green)](https://github.com/gongahkia/poor-cli/releases/tag/4.0.0)
+[![](https://img.shields.io/badge/poor_cli_5.0.0-passing-green)](https://github.com/gongahkia/poor-cli/releases/tag/5.0.0)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml/badge.svg)
 ![](https://github.com/gongahkia/poor-cli/actions/workflows/release.yml/badge.svg)
 
