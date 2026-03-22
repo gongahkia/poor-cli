@@ -1,11 +1,10 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaBaseSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import type { UraPlanningResponse } from "@sg-apis/shared";
 import { geocode } from "../apis/onemap/client.js";
 import { getPropertyTransactions, uraFetch } from "../apis/ura/client.js";
 import { normalizePlanningData, normalizeTransactions } from "../apis/ura/normalizer.js";
-import { registerTool } from "./registry.js";
+import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 export const lookupPlanningArea = async (
   params: Readonly<{ lat?: number | undefined; lng?: number | undefined; planningArea?: string | undefined }>,
@@ -50,28 +49,31 @@ export const handleUraPlanningArea = async (
   return { content: [{ type: "text", text }] };
 };
 
-export const registerUraTools = (server: McpServer): void => {
-  registerTool(server, {
+export const uraToolDefinitions: readonly RegisteredToolDefinition[] = [
+  {
     name: "sg_ura_property_transactions",
     description: "Get property transaction data from URA. Includes resale and rental prices for private residential, commercial, and industrial properties.",
+    surface: "canonical",
     inputSchema: UraPropertyTransactionsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       return handleUraPropertyTransactions(validateInput(UraPropertyTransactionsSchema, input));
     },
-  });
+  },
 
-  registerTool(server, {
+  {
     name: "sg_ura_planning_area",
     description: "Get URA master plan data for a location or planning area. Returns zoning information, gross plot ratio, and land use designations.",
+    surface: "canonical",
     inputSchema: UraPlanningAreaBaseSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       return handleUraPlanningArea(validateInput(UraPlanningAreaSchema, input));
     },
-  });
+  },
 
-  registerTool(server, {
+  {
     name: "sg_ura_dev_charges",
     description: "Get URA development charge rates by use group and sector. Rates are updated semi-annually.",
+    surface: "canonical",
     inputSchema: UraDevChargesSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { useGroup, sector } = validateInput(UraDevChargesSchema, input);
@@ -82,5 +84,5 @@ export const registerUraTools = (server: McpServer): void => {
       const text = formatResponse(data as unknown as Record<string, unknown>[], "markdown");
       return { content: [{ type: "text", text }] };
     },
-  });
-};
+  },
+];

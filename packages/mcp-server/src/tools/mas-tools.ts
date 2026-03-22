@@ -1,9 +1,8 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, MasExchangeRateSchema, MasInterestRateSchema, MasFinancialStatsSchema, MasDataset, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import { query } from "../apis/mas/client.js";
 import { normalizeMasRecord } from "../apis/mas/normalizer.js";
-import { registerTool } from "./registry.js";
+import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 export const handleMasExchangeRates = async (
   params: Readonly<{ currency?: string | undefined; date?: string | undefined; format?: OutputFormat | undefined }>,
@@ -59,31 +58,34 @@ export const handleMasFinancialStats = async (
   return { content: [{ type: "text", text }] };
 };
 
-export const registerMasTools = (server: McpServer): void => {
-  registerTool(server, {
+export const masToolDefinitions: readonly RegisteredToolDefinition[] = [
+  {
     name: "sg_mas_exchange_rates",
     description: "Get MAS exchange rates for SGD against foreign currencies. Supports latest data or an exact date lookup.",
+    surface: "canonical",
     inputSchema: MasExchangeRateSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       return handleMasExchangeRates(validateInput(MasExchangeRateSchema, input));
     },
-  });
+  },
 
-  registerTool(server, {
+  {
     name: "sg_mas_interest_rates",
     description: "Get MAS interest rates. This phase supports SORA only, with latest data or an exact date lookup.",
+    surface: "canonical",
     inputSchema: MasInterestRateSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       return handleMasInterestRates(validateInput(MasInterestRateSchema, input));
     },
-  });
+  },
 
-  registerTool(server, {
+  {
     name: "sg_mas_financial_stats",
     description: "Get MAS banking statistics. This phase supports banking data only, with latest data or an exact date lookup.",
+    surface: "canonical",
     inputSchema: MasFinancialStatsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       return handleMasFinancialStats(validateInput(MasFinancialStatsSchema, input));
     },
-  });
-};
+  },
+];

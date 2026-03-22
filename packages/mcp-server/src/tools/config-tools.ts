@@ -1,7 +1,6 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   validateInput,
   ConfigSetSchema,
@@ -13,23 +12,25 @@ import {
   resetRateLimiters,
 } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
-import { registerTool } from "./registry.js";
+import type { RegisteredToolDefinition } from "./tool-definition.js";
 
-export const registerConfigTools = (server: McpServer): void => {
-  registerTool(server, {
+export const configToolDefinitions: readonly RegisteredToolDefinition[] = [
+  {
     name: "sg_config_get",
     description: "Show current sg-apis-mcp configuration including cache TTLs, rate limits, and timeouts.",
+    surface: "operational",
     inputSchema: {},
     handler: async (_input: unknown): Promise<ToolResult> => {
       const config = loadConfig();
       const text = formatResponse(config as unknown as Record<string, unknown>, "json");
       return { content: [{ type: "text", text }] };
     },
-  });
+  },
 
-  registerTool(server, {
+  {
     name: "sg_config_set",
     description: "Update sg-apis-mcp configuration. Changes persist in ~/.sg-apis/config.json.",
+    surface: "operational",
     inputSchema: ConfigSetSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { key, value } = validateInput(ConfigSetSchema, input);
@@ -69,5 +70,5 @@ export const registerConfigTools = (server: McpServer): void => {
       resetRateLimiters();
       return { content: [{ type: "text", text: `Config updated: ${key} = ${value}` }] };
     },
-  });
-};
+  },
+];

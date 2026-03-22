@@ -1,8 +1,6 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { validateInput, QuerySchema, ApiError, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
 import { planQuery } from "../router/planner.js";
-import { registerTool } from "./registry.js";
 import { handleDatagovSearch } from "./datagov-tools.js";
 import {
   handleMasExchangeRates,
@@ -11,6 +9,7 @@ import {
 } from "./mas-tools.js";
 import { handleOneMapGeocode, handleOneMapPopulation } from "./onemap-tools.js";
 import { handleSingStatSearch } from "./singstat-tools.js";
+import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { handleUraPlanningArea, handleUraPropertyTransactions } from "./ura-tools.js";
 
 type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
@@ -63,11 +62,12 @@ const formatUnsupportedQuery = (
   ].join("\n\n");
 };
 
-export const registerQueryTool = (server: McpServer): void => {
-  registerTool(server, {
+export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
+  {
     name: "sg_query",
     description:
       "Experimental natural language router for Singapore data. Routes supported single-step requests to one direct tool and returns a limitation message for compound requests.",
+    surface: "experimental",
     inputSchema: QuerySchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
       const { query, format } = validateInput(QuerySchema, input);
@@ -95,5 +95,5 @@ export const registerQueryTool = (server: McpServer): void => {
         });
       }
     },
-  });
-};
+  },
+];

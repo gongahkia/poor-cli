@@ -1,11 +1,6 @@
-export type ToolSurface = "canonical" | "operational" | "experimental";
-
-export type ToolCatalogEntry = {
-  readonly name: string;
-  readonly description: string;
-  readonly surface: ToolSurface;
-  readonly scopeNotes?: readonly string[];
-};
+import type { ToolCatalogEntry } from "./tool-definition.js";
+import { toToolCatalogEntry } from "./tool-definition.js";
+import { ALL_TOOL_DEFINITIONS } from "./tool-set.js";
 
 export type ApiCatalogEntry = {
   readonly name: string;
@@ -77,36 +72,7 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
   },
 ];
 
-export const TOOL_CATALOG: readonly ToolCatalogEntry[] = [
-  { name: "sg_singstat_search", description: "Search SingStat Table Builder for datasets matching a keyword", surface: "canonical" },
-  { name: "sg_singstat_table", description: "Retrieve data from a specific SingStat table", surface: "canonical" },
-  { name: "sg_singstat_timeseries", description: "Get time series data for a specific indicator", surface: "canonical" },
-  { name: "sg_singstat_compare", description: "Compare multiple SingStat indicators side by side", surface: "canonical" },
-  { name: "sg_singstat_browse", description: "Browse SingStat dataset categories", surface: "canonical" },
-  { name: "sg_mas_exchange_rates", description: "Get MAS exchange rates for SGD against foreign currencies by latest value or exact date", surface: "canonical" },
-  { name: "sg_mas_interest_rates", description: "Get MAS SORA interest rates by latest value or exact date", surface: "canonical" },
-  { name: "sg_mas_financial_stats", description: "Get MAS banking statistics by latest value or exact date", surface: "canonical" },
-  { name: "sg_onemap_geocode", description: "Convert address or postal code to coordinates", surface: "canonical" },
-  { name: "sg_onemap_reverse_geocode", description: "Convert coordinates to address", surface: "canonical" },
-  { name: "sg_onemap_route", description: "Get routing directions between two locations", surface: "canonical" },
-  { name: "sg_onemap_population", description: "Get demographic data for a planning area", surface: "canonical" },
-  { name: "sg_onemap_convert_coords", description: "Convert between SVY21 and WGS84 coordinates", surface: "canonical" },
-  { name: "sg_ura_property_transactions", description: "Get property transaction data from URA", surface: "canonical" },
-  { name: "sg_ura_planning_area", description: "Get URA master plan data for coordinates or a planning area name", surface: "canonical" },
-  { name: "sg_ura_dev_charges", description: "Get URA development charge rates", surface: "canonical" },
-  { name: "sg_datagov_search", description: "Search data.gov.sg for datasets", surface: "canonical" },
-  { name: "sg_datagov_get", description: "Get metadata for a specific data.gov.sg dataset", surface: "canonical", scopeNotes: ["Metadata only."] },
-  { name: "sg_datagov_browse", description: "Browse data.gov.sg collections", surface: "canonical" },
-  { name: "sg_health_check", description: "Check connectivity and credential presence for all APIs", surface: "operational" },
-  { name: "sg_key_set", description: "Store an API key or credential in the local keystore", surface: "operational" },
-  { name: "sg_key_list", description: "List stored API keys (masked)", surface: "operational" },
-  { name: "sg_key_delete", description: "Delete a stored API key", surface: "operational" },
-  { name: "sg_cache_stats", description: "Show cache statistics", surface: "operational" },
-  { name: "sg_cache_clear", description: "Clear cached data", surface: "operational" },
-  { name: "sg_config_get", description: "Show current configuration", surface: "operational" },
-  { name: "sg_config_set", description: "Update supported runtime configuration keys", surface: "operational" },
-  { name: "sg_query", description: "Experimental natural language router for supported single-step Singapore data queries", surface: "experimental" },
-];
+export const TOOL_CATALOG: readonly ToolCatalogEntry[] = ALL_TOOL_DEFINITIONS.map(toToolCatalogEntry);
 
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {

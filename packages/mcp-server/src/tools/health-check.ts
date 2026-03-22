@@ -1,7 +1,6 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { formatResponse, Keystore, getMockApiBaseUrl } from "@sg-apis/shared";
 import type { ToolResult, HealthStatus } from "@sg-apis/shared";
-import { registerTool } from "./registry.js";
+import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 type CredentialLookup = Pick<Keystore, "getKey">;
 
@@ -122,10 +121,11 @@ export const checkApiHealth = async (
   }
 };
 
-export const registerHealthCheckTool = (server: McpServer): void => {
-  registerTool(server, {
+export const healthCheckToolDefinitions: readonly RegisteredToolDefinition[] = [
+  {
     name: "sg_health_check",
     description: "Check connectivity and credential status for all Singapore government APIs.",
+    surface: "operational",
     inputSchema: {},
     handler: async (_input: unknown): Promise<ToolResult> => {
       const keystore = new Keystore();
@@ -139,5 +139,5 @@ export const registerHealthCheckTool = (server: McpServer): void => {
       const text = formatResponse(statuses as unknown as Record<string, unknown>[], "markdown");
       return { content: [{ type: "text", text }] };
     },
-  });
-};
+  },
+];
