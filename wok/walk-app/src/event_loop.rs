@@ -32,6 +32,7 @@ pub fn run_event_loop<H: AppHandler + 'static>(
         window: None,
         handler,
         current_modifiers: winit::event::Modifiers::default(),
+        cursor_position: None,
         frame_clock: FrameClock::new(60),
         initialized: false,
     };
@@ -48,6 +49,7 @@ struct WinitApp<H: AppHandler> {
     window: Option<WalkWindow>,
     handler: H,
     current_modifiers: winit::event::Modifiers,
+    cursor_position: Option<(f64, f64)>,
     frame_clock: FrameClock,
     initialized: bool,
 }
@@ -138,6 +140,7 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_position = Some((position.x, position.y));
                 self.handler.on_mouse_event(MouseEvent::Move {
                     x: position.x,
                     y: position.y,
@@ -148,20 +151,27 @@ impl<H: AppHandler> ApplicationHandler for WinitApp<H> {
                 button,
                 ..
             } => {
+                let (x, y) = self.cursor_position.unwrap_or((0.0, 0.0));
+                let modifiers = crate::input::Modifiers {
+                    ctrl: self.current_modifiers.state().control_key(),
+                    alt: self.current_modifiers.state().alt_key(),
+                    shift: self.current_modifiers.state().shift_key(),
+                    meta: self.current_modifiers.state().super_key(),
+                };
                 match state {
                     winit::event::ElementState::Pressed => {
                         self.handler.on_mouse_event(MouseEvent::Press {
                             button,
-                            x: 0.0,
-                            y: 0.0,
-                            modifiers: crate::input::Modifiers::default(),
+                            x,
+                            y,
+                            modifiers,
                         });
                     }
                     winit::event::ElementState::Released => {
                         self.handler.on_mouse_event(MouseEvent::Release {
                             button,
-                            x: 0.0,
-                            y: 0.0,
+                            x,
+                            y,
                         });
                     }
                 }

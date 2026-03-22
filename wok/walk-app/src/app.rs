@@ -4,6 +4,7 @@ use walk_blocks::block::BlockManager;
 use walk_blocks::block_nav::BlockNavigator;
 use walk_input::editor::{EditorKey, InputEditor, InputPosition};
 use walk_input::history::CommandHistory;
+use walk_terminal::terminal::SemanticEvent;
 use walk_ui::clipboard::ClipboardManager;
 use walk_ui::search::GlobalSearch;
 use walk_ui::selection::SelectionManager;
@@ -11,7 +12,8 @@ use walk_ui::theme::Theme;
 use walk_ui::zoom::ZoomManager;
 
 use crate::config::WalkConfig;
-use crate::keybindings::{Action, KeybindingConfig};
+use crate::input::InputEvent;
+use crate::keybindings::{Action, Context, KeyCombo, KeybindingConfig};
 
 /// The main Walk application state.
 pub struct WalkApp {
@@ -74,6 +76,35 @@ impl WalkApp {
         }
     }
 
+    /// Return the active keybinding context.
+    pub fn current_context(&self) -> Context {
+        if self.global_search.is_active {
+            Context::SearchActive
+        } else if self.block_navigator.selected_block_index.is_some() {
+            Context::BlockSelected
+        } else if self.input_editor.is_active {
+            Context::InputEditor
+        } else {
+            Context::Terminal
+        }
+    }
+
+    /// Resolve an input event through the active keybinding table.
+    pub fn resolve_action(&self, event: &InputEvent) -> Option<Action> {
+        let combo = KeyCombo {
+            key: event.action.clone(),
+            modifiers: event.modifiers,
+        };
+        self.keybindings
+            .resolve(&combo, &self.current_context())
+            .cloned()
+    }
+
+    /// Feed semantic events from the terminal into block state.
+    pub fn handle_semantic_event(&mut self, event: &SemanticEvent) {
+        self.block_manager.handle_event(event);
+    }
+
     /// Dispatch a resolved action. Returns optional bytes to send to PTY.
     pub fn handle_action(&mut self, action: &Action) -> Option<Vec<u8>> {
         match action {
@@ -85,6 +116,7 @@ impl WalkApp {
             }
             Action::Paste => {
                 if let Ok(text) = self.clipboard.paste() {
+                    self.input_editor.buffer.insert_at(0, &text).ok();
                     return Some(text.into_bytes());
                 }
                 None
@@ -98,10 +130,12 @@ impl WalkApp {
             Action::ZoomReset => { self.zoom.zoom_reset(); None }
             Action::BlockPrev => {
                 self.block_navigator.select_prev(self.block_manager.len());
+                self.sync_active_block();
                 None
             }
             Action::BlockNext => {
                 self.block_navigator.select_next(self.block_manager.len());
+                self.sync_active_block();
                 None
             }
             Action::BlockCollapse => {
@@ -134,5 +168,61 @@ impl WalkApp {
             Action::ResizeSplitLeft | Action::ResizeSplitRight
             | Action::ResizeSplitUp | Action::ResizeSplitDown => None,
         }
+    }
+
+    fn sync_active_block(&mut self) {
+        self.block_manager.active_block = self
+            .block_navigator
+            .selected_block(&self.block_manager)
+            .map(|block| block.id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::WalkConfig;
+    use crate::input::KeyAction;
+
+    #[test]
+    fn test_resolve_action_uses_active_context() {
+        let mut app = WalkApp::new(WalkConfig::default());
+        app.global_search.activate();
+
+        let action = app.resolve_action(&InputEvent {
+            action: KeyAction::Char('f'),
+            modifiers: crate::input::Modifiers {
+                ctrl: !cfg!(target_os = "macos"),
+                meta: cfg!(target_os = "macos"),
+                ..crate::input::Modifiers::default()
+            },
+            is_repeat: false,
+        });
+
+        assert_eq!(action, Some(Action::SearchGlobal));
+    }
+
+    #[test]
+    fn test_handle_semantic_event_builds_blocks() {
+        let mut app = WalkApp::new(WalkConfig::default());
+        app.handle_semantic_event(&SemanticEvent::PromptStart { line: 0 });
+        app.block_manager.set_command_text("echo hello");
+        app.handle_semantic_event(&SemanticEvent::CommandStart { line: 1 });
+        app.handle_semantic_event(&SemanticEvent::OutputStart { line: 2 });
+        app.handle_semantic_event(&SemanticEvent::CommandEnd {
+            line: 3,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(app.block_manager.len(), 1);
+    }
+
+    #[test]
+    fn test_select_all_routes_to_editor() {
+        let mut app = WalkApp::new(WalkConfig::default());
+        app.input_editor.handle_key(EditorKey::Char('x'));
+        let _ = app.handle_action(&Action::SelectAll);
+
+        assert_eq!(app.input_editor.buffer.cursors()[0].anchor, Some(0));
     }
 }

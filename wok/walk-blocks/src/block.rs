@@ -68,6 +68,8 @@ pub struct BlockManager {
     pub active_block: Option<u64>,
     /// Next block ID to assign.
     next_id: u64,
+    /// Command text submitted for the next block.
+    pending_command_text: Option<String>,
     /// Current build state.
     pub state: BlockBuildState,
 }
@@ -79,6 +81,7 @@ impl BlockManager {
             blocks: Vec::new(),
             active_block: None,
             next_id: 1,
+            pending_command_text: None,
             state: BlockBuildState::WaitingForPrompt,
         }
     }
@@ -87,6 +90,7 @@ impl BlockManager {
     pub fn handle_event(&mut self, event: &SemanticEvent) {
         match event {
             SemanticEvent::PromptStart { line } => {
+                self.pending_command_text = None;
                 self.state = BlockBuildState::InPrompt {
                     start_line: *line,
                 };
@@ -106,7 +110,7 @@ impl BlockManager {
                     let block = Block {
                         id,
                         prompt_text: prompt_text.clone(),
-                        command_text: String::new(),
+                        command_text: self.pending_command_text.take().unwrap_or_default(),
                         output_start_line: *line,
                         output_end_line: *line,
                         exit_code: None,
@@ -120,6 +124,7 @@ impl BlockManager {
                         git_dirty: None,
                     };
                     self.blocks.push(block);
+                    self.active_block = Some(id);
                     self.state = BlockBuildState::InOutput { block_id: id };
                 }
             }
@@ -148,6 +153,8 @@ impl BlockManager {
 
     /// Set the command text on the most recent in-progress block.
     pub fn set_command_text(&mut self, text: &str) {
+        self.pending_command_text = Some(text.to_string());
+
         if let Some(block) = self.blocks.last_mut() {
             if block.exit_code.is_none() {
                 block.command_text = text.to_string();
@@ -238,6 +245,21 @@ mod tests {
         });
 
         assert_eq!(mgr.blocks[0].exit_code, Some(1));
+    }
+
+    #[test]
+    fn test_command_text_recorded_before_output_start() {
+        let mut mgr = BlockManager::new();
+        mgr.handle_event(&SemanticEvent::PromptStart { line: 0 });
+        mgr.set_command_text("cargo test");
+        mgr.handle_event(&SemanticEvent::CommandStart { line: 1 });
+        mgr.handle_event(&SemanticEvent::OutputStart { line: 2 });
+        mgr.handle_event(&SemanticEvent::CommandEnd {
+            line: 3,
+            exit_code: Some(0),
+        });
+
+        assert_eq!(mgr.blocks[0].command_text, "cargo test");
     }
 
     #[test]
