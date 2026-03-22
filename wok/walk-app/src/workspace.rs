@@ -140,7 +140,9 @@ impl WorkspaceState {
     pub fn split_active(&mut self, direction: SplitDirection) -> Option<PaneId> {
         let new_pane_id = self.next_pane_id;
         let active_tab = self.active_tab_mut()?;
-        active_tab.split_manager.split_active(direction, new_pane_id);
+        active_tab
+            .split_manager
+            .split_active(direction, new_pane_id);
         self.next_pane_id += 1;
         Some(new_pane_id)
     }
@@ -186,9 +188,12 @@ impl WorkspaceState {
             .iter()
             .filter(|(pane_id, _)| **pane_id != current_id)
             .filter_map(|(pane_id, rect)| {
-                directional_distance(direction, current_rect, rect).map(|distance| (*pane_id, distance))
+                directional_distance(direction, current_rect, rect)
+                    .map(|distance| (*pane_id, distance))
             })
-            .min_by(|(_, left), (_, right)| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|(_, left), (_, right)| {
+                left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(pane_id, _)| pane_id);
 
         if let Some(pane_id) = next {
@@ -201,8 +206,9 @@ impl WorkspaceState {
 
     /// Compute pane rectangles for the active tab.
     pub fn active_pane_rects(&self, available: Rect) -> HashMap<PaneId, Rect> {
-        self.active_tab()
-            .map_or_else(HashMap::new, |tab| tab.split_manager.compute_rects(available))
+        self.active_tab().map_or_else(HashMap::new, |tab| {
+            tab.split_manager.compute_rects(available)
+        })
     }
 
     /// Get all pane ids for the active tab.
@@ -242,7 +248,11 @@ fn collect_leaf_ids(node: &SplitNode) -> Vec<PaneId> {
     }
 }
 
-fn directional_distance(direction: FocusDirection, current: &Rect, candidate: &Rect) -> Option<f32> {
+fn directional_distance(
+    direction: FocusDirection,
+    current: &Rect,
+    candidate: &Rect,
+) -> Option<f32> {
     let current_center_x = current.x + current.w / 2.0;
     let current_center_y = current.y + current.h / 2.0;
     let candidate_center_x = candidate.x + candidate.w / 2.0;
@@ -292,7 +302,9 @@ mod tests {
     fn test_close_active_tab_returns_removed_panes() {
         let (mut workspace, _) = WorkspaceState::new("Walk");
         let new_pane = workspace.new_tab("Second");
-        let removed = workspace.close_active_tab().expect("second tab should close");
+        let removed = workspace
+            .close_active_tab()
+            .expect("second tab should close");
         assert_eq!(removed, vec![new_pane]);
         assert_eq!(workspace.tabs.len(), 1);
     }

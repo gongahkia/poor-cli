@@ -15,8 +15,8 @@ use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::{Action, Context, KeyCombo};
 use walk_app::scripting::LuaRuntime;
 use walk_app::session::{
-    default_session_path, load_session, save_session, split_node_from_state, split_node_to_state,
-    PaneState, WorkspaceSessionState, WorkspaceTabState,
+    default_session_path, load_session, named_session_path, save_session, split_node_from_state,
+    split_node_to_state, PaneState, WorkspaceSessionState, WorkspaceTabState,
 };
 use walk_app::window::WindowConfig;
 use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
@@ -36,7 +36,7 @@ use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::splits::SplitManager;
 use walk_ui::theme::Theme;
-use winit::dpi::PhysicalSize;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::MouseButton;
 use winit::window::Window;
 
@@ -118,6 +118,7 @@ struct WalkHandler {
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
     lua: Option<LuaRuntime>,
+    status_message: Option<String>,
     font: FontSystem,
     render: Option<RenderState>,
     window: Option<Arc<Window>>,
@@ -142,6 +143,7 @@ impl WalkHandler {
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
             lua,
+            status_message: None,
             font,
             render: None,
             window: None,
@@ -155,7 +157,8 @@ impl WalkHandler {
     }
 
     fn active_pane(&self) -> Option<&PaneRuntime> {
-        self.active_pane_id().and_then(|pane_id| self.panes.get(&pane_id))
+        self.active_pane_id()
+            .and_then(|pane_id| self.panes.get(&pane_id))
     }
 
     fn active_pane_mut(&mut self) -> Option<&mut PaneRuntime> {
@@ -188,10 +191,18 @@ impl WalkHandler {
             self.font.metrics.cell_height,
             focused,
         );
-        let (cols, rows) = self.font.grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
+        let (cols, rows) = self
+            .font
+            .grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
         let env = HashMap::new();
 
-        match Terminal::new(&pane_config.shell, cols, rows, pane_config.scrollback_lines, env) {
+        match Terminal::new(
+            &pane_config.shell,
+            cols,
+            rows,
+            pane_config.scrollback_lines,
+            env,
+        ) {
             Ok(terminal) => {
                 let pane_runtime = PaneRuntime {
                     app,
@@ -200,16 +211,15 @@ impl WalkHandler {
                     cols,
                     rows,
                 };
-                self.panes.insert(
-                    pane_id,
-                    pane_runtime,
-                );
+                self.panes.insert(pane_id, pane_runtime);
                 if let Some(pane_state) = restore {
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.terminal.title = pane_state.title;
                         if !pane_state.cwd.as_os_str().is_empty() {
-                            let command =
-                                format!("cd -- {}\r", shell_quote_path(&pane_state.cwd.display().to_string()));
+                            let command = format!(
+                                "cd -- {}\r",
+                                shell_quote_path(&pane_state.cwd.display().to_string())
+                            );
                             let _ = pane.terminal.send_input(command.as_bytes());
                         }
                     }
@@ -220,7 +230,11 @@ impl WalkHandler {
     }
 
     fn sync_workspace_layout(&mut self, size: PhysicalSize<u32>) {
-        self.chrome_rects = compute_chrome_rects(size);
+        self.chrome_rects = compute_chrome_rects(
+            size,
+            self.config.tab_bar_visible,
+            self.config.status_bar_visible,
+        );
         let active_pane_id = self.active_pane_id();
         let pane_rects = self.workspace.active_pane_rects(self.chrome_rects.content);
 
@@ -241,7 +255,9 @@ impl WalkHandler {
                 self.font.metrics.cell_height,
                 focused,
             );
-            let (cols, rows) = self.font.grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
+            let (cols, rows) = self
+                .font
+                .grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
             pane.ui_rects = ui_rects;
             if pane.cols != cols || pane.rows != rows {
                 if let Err(error) = pane.terminal.resize(cols, rows) {
@@ -310,13 +326,19 @@ impl WalkHandler {
     }
 
     fn restore_session(&mut self, session: WorkspaceSessionState) {
-        self.pending_pane_restore = session
-            .panes
+        let WorkspaceSessionState {
+            tabs,
+            panes,
+            active_tab,
+            window_size,
+            window_position,
+        } = session;
+
+        self.pending_pane_restore = panes
             .into_iter()
             .map(|pane_state| (pane_state.id, pane_state))
             .collect();
-        let tabs = session
-            .tabs
+        let tabs = tabs
             .into_iter()
             .map(|tab| WorkspaceTab {
                 id: tab.id,
@@ -327,9 +349,11 @@ impl WalkHandler {
                 },
             })
             .collect();
-        self.workspace = WorkspaceState::from_tabs(tabs, session.active_tab);
+        self.workspace = WorkspaceState::from_tabs(tabs, active_tab);
         self.panes.clear();
         if let Some(window) = &self.window {
+            window.set_outer_position(PhysicalPosition::new(window_position.0, window_position.1));
+            let _ = window.request_inner_size(PhysicalSize::new(window_size.0, window_size.1));
             self.sync_workspace_layout(window.inner_size());
         }
         if let Some(active_pane) = self.active_pane_mut() {
@@ -374,25 +398,34 @@ impl WalkHandler {
                 .map(|block| block.cwd.display().to_string())
                 .filter(|cwd| !cwd.is_empty())
                 .unwrap_or_else(|| "~".to_string());
-            format!("{cwd}  |  {}", active_pane.app.config.shell)
+            match &self.status_message {
+                Some(message) => {
+                    format!("{cwd}  |  {}  |  {message}", active_pane.app.config.shell)
+                }
+                None => format!("{cwd}  |  {}", active_pane.app.config.shell),
+            }
         });
         let Some(render) = self.render.as_mut() else {
             return;
         };
 
         render.batch.clear();
-        render_tab_bar(
-            render,
-            &mut self.font,
-            self.chrome_rects.tab_bar,
-            &tab_labels,
-        );
-        render_status_bar(
-            render,
-            &mut self.font,
-            self.chrome_rects.status,
-            status_text.as_deref(),
-        );
+        if self.config.tab_bar_visible {
+            render_tab_bar(
+                render,
+                &mut self.font,
+                self.chrome_rects.tab_bar,
+                &tab_labels,
+            );
+        }
+        if self.config.status_bar_visible {
+            render_status_bar(
+                render,
+                &mut self.font,
+                self.chrome_rects.status,
+                status_text.as_deref(),
+            );
+        }
 
         let pane_ids = self.workspace.active_pane_ids();
         for pane_id in pane_ids {
@@ -407,7 +440,8 @@ impl WalkHandler {
             let total_cols = pane.terminal.state.columns();
             let (cursor_col, _) = pane.terminal.state.cursor_position();
             let cursor_row = pane.terminal.state.absolute_cursor_row();
-            let row_positions = build_visible_row_positions(&visible_rows, &pane.app.block_manager.blocks);
+            let row_positions =
+                build_visible_row_positions(&visible_rows, &pane.app.block_manager.blocks);
             let selected_block_id = pane
                 .app
                 .block_navigator
@@ -421,7 +455,12 @@ impl WalkHandler {
                 viewport.y,
                 viewport.w,
                 viewport.h,
-                [theme.background.r, theme.background.g, theme.background.b, theme.background.a],
+                [
+                    theme.background.r,
+                    theme.background.g,
+                    theme.background.b,
+                    theme.background.a,
+                ],
             );
 
             for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
@@ -483,14 +522,24 @@ impl WalkHandler {
                 viewport.y,
                 viewport.w,
                 1.0,
-                [theme.block_separator.r, theme.block_separator.g, theme.block_separator.b, 0.9],
+                [
+                    theme.block_separator.r,
+                    theme.block_separator.g,
+                    theme.block_separator.b,
+                    0.9,
+                ],
             );
             render.batch.push_bg_quad(
                 viewport.x,
                 viewport.y,
                 1.0,
                 viewport.h,
-                [theme.block_separator.r, theme.block_separator.g, theme.block_separator.b, 0.9],
+                [
+                    theme.block_separator.r,
+                    theme.block_separator.g,
+                    theme.block_separator.b,
+                    0.9,
+                ],
             );
             if focused {
                 render.batch.push_bg_quad(
@@ -551,11 +600,16 @@ impl WalkHandler {
             return;
         };
         let bindings = lua.state.keybindings.lock().unwrap().clone();
+        let commands = lua.state.commands.lock().unwrap().clone();
         for binding in bindings {
             let Some(combo) = parse_lua_key_combo(&binding.key) else {
                 continue;
             };
-            let Some(action) = parse_lua_action(&binding.action) else {
+            let action_name = commands
+                .get(&binding.action)
+                .map(String::as_str)
+                .unwrap_or(&binding.action);
+            let Some(action) = parse_lua_action(action_name) else {
                 continue;
             };
             let Some(context) = parse_lua_context(&binding.mode) else {
@@ -573,7 +627,7 @@ impl WalkHandler {
         let Some(lua) = &self.lua else {
             return;
         };
-        if let Err(error) = lua.trigger_hook(hook, Value::Nil) {
+        if let Err(error) = lua.trigger_hook(hook, &Value::Nil) {
             warn!("lua hook '{hook}' failed: {error}");
         }
         self.drain_lua_side_effects();
@@ -585,6 +639,7 @@ impl WalkHandler {
         };
         for notification in lua.take_notifications() {
             info!("lua: {notification}");
+            self.status_message = Some(notification);
         }
         for command in lua.take_exec_requests() {
             let payload = format!("{command}\r");
@@ -644,6 +699,26 @@ impl WalkHandler {
                     active_pane.app.global_search.activate();
                 }
                 self.refresh_global_search();
+            }
+            Action::SaveSession(name) => {
+                let session = self.snapshot_session();
+                let path = named_session_path(&name);
+                match save_session(&session, &path) {
+                    Ok(()) => {
+                        self.status_message = Some(format!("saved session snapshot '{}'", name));
+                    }
+                    Err(error) => warn!("failed to save session snapshot '{}': {error}", name),
+                }
+            }
+            Action::LoadSession(name) => {
+                let path = named_session_path(&name);
+                match load_session(&path) {
+                    Ok(session) => {
+                        self.restore_session(session);
+                        self.status_message = Some(format!("loaded session snapshot '{}'", name));
+                    }
+                    Err(error) => warn!("failed to load session snapshot '{}': {error}", name),
+                }
             }
             Action::NewTab => {
                 self.workspace.new_tab("Shell");
@@ -895,7 +970,8 @@ impl WalkHandler {
             return;
         }
 
-        let lines = collect_search_lines(&active_pane.terminal, &active_pane.app.block_manager.blocks);
+        let lines =
+            collect_search_lines(&active_pane.terminal, &active_pane.app.block_manager.blocks);
         active_pane
             .app
             .global_search
@@ -1146,8 +1222,9 @@ impl AppHandler for WalkHandler {
                 button: MouseButton::Left,
                 ..
             } => {
-                let was_selecting =
-                    self.active_pane().is_some_and(|pane| matches!(pane.app.selection.state, SelectionState::Selecting { .. }));
+                let was_selecting = self.active_pane().is_some_and(|pane| {
+                    matches!(pane.app.selection.state, SelectionState::Selecting { .. })
+                });
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.selection.handle_mouse_up();
                 }
@@ -1161,10 +1238,9 @@ impl AppHandler for WalkHandler {
                 self.needs_redraw = true;
             }
             walk_app::input::MouseEvent::Move { x, y } => {
-                if self
-                    .active_pane()
-                    .is_some_and(|pane| matches!(pane.app.selection.state, SelectionState::Selecting { .. }))
-                {
+                if self.active_pane().is_some_and(|pane| {
+                    matches!(pane.app.selection.state, SelectionState::Selecting { .. })
+                }) {
                     if let Some(cell) = self.pixel_to_cell(x, y) {
                         if let Some(active_pane) = self.active_pane_mut() {
                             active_pane.app.selection.handle_mouse_drag(cell);
@@ -1187,15 +1263,24 @@ impl AppHandler for WalkHandler {
     }
 }
 
-fn compute_chrome_rects(size: PhysicalSize<u32>) -> ChromeRects {
+fn compute_chrome_rects(
+    size: PhysicalSize<u32>,
+    tab_bar_visible: bool,
+    status_bar_visible: bool,
+) -> ChromeRects {
     let width = size.width as f32;
     let height = size.height as f32;
-    let tab_bar_height = 32.0;
-    let status_height = 24.0;
+    let tab_bar_height = if tab_bar_visible { 32.0 } else { 0.0 };
+    let status_height = if status_bar_visible { 24.0 } else { 0.0 };
 
     ChromeRects {
         tab_bar: Rect::new(0.0, 0.0, width, tab_bar_height),
-        content: Rect::new(0.0, tab_bar_height, width, (height - tab_bar_height - status_height).max(0.0)),
+        content: Rect::new(
+            0.0,
+            tab_bar_height,
+            width,
+            (height - tab_bar_height - status_height).max(0.0),
+        ),
         status: Rect::new(0.0, (height - status_height).max(0.0), width, status_height),
     }
 }
@@ -1207,7 +1292,7 @@ fn compute_pane_ui_rects(
     cell_height: f32,
     show_input: bool,
 ) -> UiRects {
-    let line_count = input_lines.max(1).min(8) as f32;
+    let line_count = input_lines.clamp(1, 8) as f32;
     let input_height = if show_input {
         (line_count * cell_height + 20.0).min((container.h * 0.45).max(cell_height))
     } else {
@@ -1247,12 +1332,14 @@ fn render_tab_bar(
     rect: Rect,
     tabs: &[(bool, String)],
 ) {
-    render.batch.push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
+    render
+        .batch
+        .push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
     if tabs.is_empty() {
         return;
     }
 
-    let tab_width = (rect.w / tabs.len() as f32).max(120.0).min(220.0);
+    let tab_width = (rect.w / tabs.len() as f32).clamp(120.0, 220.0);
     for (index, (is_active, label)) in tabs.iter().enumerate() {
         let x = rect.x + index as f32 * tab_width;
         let background = if *is_active {
@@ -1260,7 +1347,9 @@ fn render_tab_bar(
         } else {
             [0.10, 0.11, 0.15, 1.0]
         };
-        render.batch.push_bg_quad(x, rect.y, tab_width, rect.h, background);
+        render
+            .batch
+            .push_bg_quad(x, rect.y, tab_width, rect.h, background);
         push_text(
             render,
             font,
@@ -1278,7 +1367,9 @@ fn render_status_bar(
     rect: Rect,
     status_text: Option<&str>,
 ) {
-    render.batch.push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
+    render
+        .batch
+        .push_bg_quad(rect.x, rect.y, rect.w, rect.h, [0.08, 0.09, 0.13, 1.0]);
     let Some(status_text) = status_text else {
         return;
     };
@@ -1370,12 +1461,7 @@ fn render_input_editor(
             cursor_y,
             2.0,
             font.metrics.cell_height,
-            [
-                theme.cursor.r,
-                theme.cursor.g,
-                theme.cursor.b,
-                0.95,
-            ],
+            [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.95],
         );
     }
 }
@@ -1478,7 +1564,9 @@ fn search_match_for_block_command(
         .matches
         .iter()
         .enumerate()
-        .find(|(_, search_match)| search_match.is_command && search_match.block_id == Some(block_id))
+        .find(|(_, search_match)| {
+            search_match.is_command && search_match.block_id == Some(block_id)
+        })
         .map(|(index, _)| index == search.current)
 }
 
@@ -1522,14 +1610,9 @@ fn push_glyph(
         let offset_y = glyph.offset_y;
         if let Some(region) = render.atlas.get_or_insert(glyph_key, width, height) {
             if width > 0 && height > 0 {
-                render.pipeline.upload_glyph(
-                    &render.gpu,
-                    region.x,
-                    region.y,
-                    width,
-                    height,
-                    &data,
-                );
+                render
+                    .pipeline
+                    .upload_glyph(&render.gpu, region.x, region.y, width, height, &data);
             }
             render.batch.push_glyph_quad(
                 x + offset_x as f32,
@@ -1918,6 +2001,13 @@ fn parse_lua_context(mode: &str) -> Option<Context> {
 }
 
 fn parse_lua_action(action: &str) -> Option<Action> {
+    if let Some(name) = action.strip_prefix("save_session:") {
+        return (!name.trim().is_empty()).then(|| Action::SaveSession(name.trim().to_string()));
+    }
+    if let Some(name) = action.strip_prefix("load_session:") {
+        return (!name.trim().is_empty()).then(|| Action::LoadSession(name.trim().to_string()));
+    }
+
     match action {
         "new_tab" => Some(Action::NewTab),
         "close_tab" => Some(Action::CloseTab),
@@ -1925,16 +2015,16 @@ fn parse_lua_action(action: &str) -> Option<Action> {
         "prev_tab" => Some(Action::PrevTab),
         "split_vertical" => Some(Action::SplitVertical),
         "split_horizontal" => Some(Action::SplitHorizontal),
-        "close_split" => Some(Action::CloseSplit),
+        "close_split" | "close_pane" => Some(Action::CloseSplit),
         "focus_left" => Some(Action::FocusLeft),
         "focus_right" => Some(Action::FocusRight),
         "focus_up" => Some(Action::FocusUp),
         "focus_down" => Some(Action::FocusDown),
-        "search_global" => Some(Action::SearchGlobal),
+        "search_global" | "toggle_search" | "search" => Some(Action::SearchGlobal),
         "block_prev" => Some(Action::BlockPrev),
         "block_next" => Some(Action::BlockNext),
-        "block_copy" => Some(Action::BlockCopy),
-        "block_collapse" => Some(Action::BlockCollapse),
+        "block_copy" | "copy_block" => Some(Action::BlockCopy),
+        "block_collapse" | "collapse_block" => Some(Action::BlockCollapse),
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
@@ -1998,13 +2088,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Apply CLI overrides
     if let Some(shell) = cli.shell {
-        config.shell = match shell.as_str() {
-            "bash" => ShellType::Bash,
-            "zsh" => ShellType::Zsh,
-            "fish" => ShellType::Fish,
-            "powershell" => ShellType::PowerShell,
-            _ => config.shell,
-        };
+        config.shell = parse_shell_type(&shell);
     }
 
     if let Some(ref dir) = cli.working_dir {
@@ -2020,4 +2104,41 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     run_event_loop(window_config, handler)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_lua_action_supports_aliases() {
+        assert_eq!(parse_lua_action("close_pane"), Some(Action::CloseSplit));
+        assert_eq!(
+            parse_lua_action("toggle_search"),
+            Some(Action::SearchGlobal)
+        );
+        assert_eq!(parse_lua_action("copy_block"), Some(Action::BlockCopy));
+    }
+
+    #[test]
+    fn test_parse_lua_action_supports_named_sessions() {
+        assert_eq!(
+            parse_lua_action("save_session:demo"),
+            Some(Action::SaveSession("demo".to_string()))
+        );
+        assert_eq!(
+            parse_lua_action("load_session:demo"),
+            Some(Action::LoadSession("demo".to_string()))
+        );
+        assert_eq!(parse_lua_action("save_session:"), None);
+    }
+
+    #[test]
+    fn test_parse_lua_key_combo_supports_modifiers_and_named_keys() {
+        let combo = parse_lua_key_combo("ctrl+shift+up").expect("combo should parse");
+        assert_eq!(combo.key, KeyAction::ArrowUp);
+        assert!(combo.modifiers.ctrl);
+        assert!(combo.modifiers.shift);
+        assert!(!combo.modifiers.alt);
+    }
 }

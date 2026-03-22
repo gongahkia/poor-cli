@@ -159,6 +159,7 @@ pub fn split_node_from_state(node: &SplitNodeState) -> SplitNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_split_node_round_trip() {
@@ -173,9 +174,7 @@ mod tests {
 
         match restored {
             SplitNode::Split {
-                direction,
-                ratio,
-                ..
+                direction, ratio, ..
             } => {
                 assert_eq!(direction, SplitDirection::Horizontal);
                 assert!((ratio - 0.6).abs() < f32::EPSILON);
@@ -188,5 +187,42 @@ mod tests {
     fn test_named_session_path_uses_sessions_dir() {
         let path = named_session_path("demo");
         assert!(path.to_string_lossy().contains("sessions"));
+    }
+
+    #[test]
+    fn test_save_and_load_session_round_trip() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("walk-session-{unique}.json"));
+        let state = WorkspaceSessionState {
+            tabs: vec![WorkspaceTabState {
+                id: 1,
+                title: "Shell".to_string(),
+                focused_pane: 7,
+                split_tree: SplitNodeState::Leaf { pane_id: 7 },
+            }],
+            panes: vec![PaneState {
+                id: 7,
+                cwd: PathBuf::from("/tmp"),
+                shell: "zsh".to_string(),
+                title: "demo".to_string(),
+                input_draft: "echo hello".to_string(),
+                search_query: "hello".to_string(),
+            }],
+            active_tab: 0,
+            window_size: (1280, 800),
+            window_position: (32, 48),
+        };
+
+        save_session(&state, &path).expect("session should save");
+        let loaded = load_session(&path).expect("session should load");
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(loaded.tabs.len(), 1);
+        assert_eq!(loaded.panes.len(), 1);
+        assert_eq!(loaded.panes[0].shell, "zsh");
+        assert_eq!(loaded.window_size, (1280, 800));
     }
 }

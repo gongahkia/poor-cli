@@ -1,49 +1,116 @@
 # Walk Lua Scripting Guide
 
-> Status note: Lua support is currently scaffolding, not an active runtime feature in the shipped binary. The scripting module and API surface exist in the workspace, but `walk` does not yet wire Lua into the live event loop or product claims. Treat this document as the planned API direction, not current day-one behavior.
+Walk loads `~/.config/walk/init.lua` on startup and exposes a small action-oriented Lua surface for keybindings, command aliases, lifecycle hooks, shell execution, and notifications.
 
-Walk supports Lua 5.4 scripting for custom keybindings, themes, and event hooks.
+This API is intentionally constrained. Lua extends the existing action bus; it does not replace the renderer or bypass core runtime state.
 
 ## Getting Started
 
-Place your configuration in `~/.config/walk/init.lua`. Walk loads this file on startup.
+Create `~/.config/walk/init.lua`:
+
+```lua
+walk.bind_key("terminal", "ctrl+shift+t", "new_tab")
+walk.register_command("save_demo", "save_session:demo")
+walk.bind_key("terminal", "ctrl+shift+s", "save_demo")
+
+walk.on("app_start", function()
+    walk.notify("Walk started")
+end)
+```
+
+The `walk.keymap(...)` name is kept as an alias for `walk.bind_key(...)`.
 
 ## API Reference
 
 ### `walk.config`
 
-Read-only table of current configuration values.
+Read-only table of a few startup config values.
 
 ```lua
 local font_size = walk.config.font_size
 ```
 
-### `walk.keymap(mode, key, action)`
+### `walk.bind_key(mode, key, action)`
 
 Define a custom keybinding.
 
-- `mode`: `"normal"`, `"input"`, `"search"`
-- `key`: Key combo string like `"ctrl+t"`, `"ctrl+shift+d"`
-- `action`: Built-in action name or Lua function
+- `mode`: `"terminal"`, `"normal"`, `"input"`, `"block"`, or `"search"`
+- `key`: key combo string like `"ctrl+t"` or `"cmd+shift+d"`
+- `action`: built-in action string or a command alias registered through `walk.register_command(...)`
 
 ```lua
-walk.keymap("normal", "ctrl+shift+t", "new_tab")
-walk.keymap("normal", "ctrl+shift+e", function()
-    walk.exec("echo hello")
+walk.bind_key("terminal", "ctrl+shift+t", "new_tab")
+walk.bind_key("terminal", "ctrl+shift+s", "save_session:demo")
+```
+
+### `walk.register_command(name, action)`
+
+Register an action alias that can be reused from `walk.bind_key(...)`.
+
+```lua
+walk.register_command("restore_demo", "load_session:demo")
+walk.bind_key("terminal", "ctrl+shift+r", "restore_demo")
+```
+
+### Built-in Action Strings
+
+- `new_tab`, `close_tab`, `next_tab`, `prev_tab`
+- `split_vertical`, `split_horizontal`, `close_split`
+- `focus_left`, `focus_right`, `focus_up`, `focus_down`
+- `search_global`, `toggle_search`
+- `block_prev`, `block_next`, `block_copy`, `block_collapse`
+- `zoom_in`, `zoom_out`, `zoom_reset`
+- `clear_screen`, `send_eof`
+- `save_session:<name>`, `load_session:<name>`
+
+Aliases also accepted:
+
+- `close_pane`
+- `search`
+- `copy_block`
+- `collapse_block`
+
+### `walk.on(event, callback)`
+
+Register a lifecycle hook.
+
+Available hooks:
+
+- `app_start`
+- `app_exit`
+- `tab_opened`
+- `pane_opened`
+- `command_submitted`
+- `block_finished`
+- `cwd_changed`
+
+```lua
+walk.on("block_finished", function()
+    walk.notify("Command block finished")
 end)
 ```
 
-#### Built-in Actions
+Hook payloads are currently `nil`. The stable contract today is the event name itself.
 
-- `"new_tab"`, `"close_tab"`, `"next_tab"`, `"prev_tab"`
-- `"split_horizontal"`, `"split_vertical"`, `"close_pane"`
-- `"toggle_search"`, `"copy_block"`
-- `"scroll_up"`, `"scroll_down"`
-- `"zoom_in"`, `"zoom_out"`, `"zoom_reset"`
+### `walk.exec(command)`
+
+Queue a shell command to run in the focused pane.
+
+```lua
+walk.exec("echo hello from lua")
+```
+
+### `walk.notify(message)`
+
+Publish a status message. Walk logs it and mirrors the latest message into the status bar when the bar is visible.
+
+```lua
+walk.notify("Snapshot restored")
+```
 
 ### `walk.theme.set(table)`
 
-Apply theme colors immediately.
+Store theme overrides for future theme-aware surfaces.
 
 ```lua
 walk.theme.set({
@@ -55,42 +122,9 @@ walk.theme.set({
 
 ### `walk.theme.load(name)`
 
-Load a named theme from `~/.config/walk/themes/`.
-
-```lua
-walk.theme.load("catppuccin")
-```
-
-### `walk.on(event, callback)`
-
-Register an event hook.
-
-#### Events
-
-| Event | Context Fields | Description |
-|-------|---------------|-------------|
-| `"tab_created"` | `{id}` | New tab opened |
-| `"tab_closed"` | `{id}` | Tab closed |
-| `"command_finished"` | `{exit_code, duration_ms}` | Command completed |
-| `"directory_changed"` | `{path}` | CWD changed |
-| `"block_created"` | `{id, command}` | New block created |
-
-```lua
-walk.on("command_finished", function(e)
-    if e.exit_code ~= 0 then
-        walk.notify("Command failed!")
-    end
-end)
-```
-
-### `walk.exec(command)`
-
-Execute a shell command in the active terminal.
-
-### `walk.notify(message)`
-
-Display a message in the status bar.
+Placeholder hook for named theme loading.
 
 ## Examples
 
-See `docs/examples/minimal.lua` and `docs/examples/full.lua` for complete examples.
+- [docs/examples/minimal.lua](examples/minimal.lua)
+- [docs/examples/full.lua](examples/full.lua)

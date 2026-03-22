@@ -1,7 +1,7 @@
 //! Lua scripting runtime for user configuration and extensions.
 
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -141,22 +141,28 @@ impl LuaRuntime {
 
         // walk.on(event, callback) — register event hook
         let hook_state = self.hooks.clone();
-        let on_fn = self.lua.create_function(move |lua, (event, callback): (String, Function)| {
-            let key = lua.create_registry_value(callback)?;
-            hook_state.borrow_mut().entry(event.clone()).or_default().push(key);
-            info!("registered event hook: {event}");
-            Ok(())
-        })?;
+        let on_fn =
+            self.lua
+                .create_function(move |lua, (event, callback): (String, Function)| {
+                    let key = lua.create_registry_value(callback)?;
+                    hook_state
+                        .borrow_mut()
+                        .entry(event.clone())
+                        .or_default()
+                        .push(key);
+                    info!("registered event hook: {event}");
+                    Ok(())
+                })?;
         walk.set("on", on_fn)?;
 
         // walk.register_command(name, action) — register named action aliases
         let command_state = self.state.commands.clone();
-        let register_command_fn = self.lua.create_function(
-            move |_, (name, action): (String, String)| {
-                command_state.lock().unwrap().insert(name, action);
-                Ok(())
-            },
-        )?;
+        let register_command_fn =
+            self.lua
+                .create_function(move |_, (name, action): (String, String)| {
+                    command_state.lock().unwrap().insert(name, action);
+                    Ok(())
+                })?;
         walk.set("register_command", register_command_fn)?;
 
         // walk.exec(command) — queue a shell command for the active pane
@@ -213,7 +219,7 @@ impl LuaRuntime {
     /// # Errors
     ///
     /// Returns a Lua error if any registered callback fails.
-    pub fn trigger_hook(&self, event: &str, payload: Value) -> LuaResult<()> {
+    pub fn trigger_hook(&self, event: &str, payload: &Value) -> LuaResult<()> {
         if let Some(callbacks) = self.hooks.borrow().get(event) {
             for callback_key in callbacks {
                 let callback: Function = self.lua.registry_value(callback_key)?;

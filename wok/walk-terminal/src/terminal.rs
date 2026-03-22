@@ -173,13 +173,16 @@ impl Terminal {
                         if let Some(rest) = s.strip_prefix("133;") {
                             match rest.chars().next() {
                                 Some('A') => {
-                                    self.events.push(SemanticEvent::PromptStart { row: cursor_row });
+                                    self.events
+                                        .push(SemanticEvent::PromptStart { row: cursor_row });
                                 }
                                 Some('B') => {
-                                    self.events.push(SemanticEvent::CommandStart { row: cursor_row });
+                                    self.events
+                                        .push(SemanticEvent::CommandStart { row: cursor_row });
                                 }
                                 Some('C') => {
-                                    self.events.push(SemanticEvent::OutputStart { row: cursor_row });
+                                    self.events
+                                        .push(SemanticEvent::OutputStart { row: cursor_row });
                                 }
                                 Some('D') => {
                                     let exit_code = rest.get(2..).and_then(|s| {

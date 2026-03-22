@@ -83,6 +83,10 @@ pub enum Action {
     ClearScreen,
     /// Send EOF (Ctrl+D).
     SendEof,
+    /// Save the current workspace to a named session snapshot.
+    SaveSession(String),
+    /// Load a named workspace session snapshot.
+    LoadSession(String),
 }
 
 /// A key combination (key + modifiers).
@@ -364,6 +368,20 @@ impl Default for KeybindingConfig {
             },
             Action::ClearScreen,
         );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('s'),
+                modifiers: pms,
+            },
+            Action::SaveSession("manual".to_string()),
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('r'),
+                modifiers: pms,
+            },
+            Action::LoadSession("manual".to_string()),
+        );
 
         Self {
             bindings,
@@ -413,6 +431,29 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::BlockCopy)
+        );
+    }
+
+    #[test]
+    fn test_manual_session_bindings_exist() {
+        let config = KeybindingConfig::default();
+
+        let save_combo = KeyCombo {
+            key: KeyAction::Char('s'),
+            modifiers: platform_mod_shift(),
+        };
+        let load_combo = KeyCombo {
+            key: KeyAction::Char('r'),
+            modifiers: platform_mod_shift(),
+        };
+
+        assert_eq!(
+            config.resolve(&save_combo, &Context::Terminal),
+            Some(&Action::SaveSession("manual".to_string()))
+        );
+        assert_eq!(
+            config.resolve(&load_combo, &Context::Terminal),
+            Some(&Action::LoadSession("manual".to_string()))
         );
     }
 }

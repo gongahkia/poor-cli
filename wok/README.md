@@ -1,22 +1,23 @@
 # Walk
 
-Walk is a local-first terminal emulator for developers who spend most of their day in build, test, and git loops and want command output organized into visible blocks instead of an undifferentiated scrollback wall.
+Walk is a local-first workspace terminal for developers who live in build, test, and git loops and want terminal output organized into navigable command blocks instead of one undifferentiated scrollback wall.
 
-The project is intentionally opinionated: no AI, no login, no cloud dependency. The current v1 target is a single-window, single-terminal workflow with reliable PTY behavior and block-oriented review, not a full Warp/iTerm replacement yet.
+The product is intentionally opinionated: no AI, no login, no cloud dependency. The current v1 target is a trustworthy single-window workspace with pane-local terminals, block timelines, search, sessions, and scriptable actions.
 
 ## Current Scope
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Core terminal | Shipped | GPU-rendered terminal, PTY-backed shell process, resize propagation, copy/paste, zoom, history-backed input state |
-| Blocks on Bash/Zsh/Fish | Shipped | Automatic shell bootstrap, OSC 133 parsing, separators, exit-status accents, block selection, collapse, and block copy |
-| PowerShell / WSL | Partial | Terminal works, but block markers are not auto-injected yet |
+| Core terminal | Shipped | GPU-rendered terminal, PTY-backed shell process, resize propagation, copy/paste, zoom, scrollback-backed buffer |
+| Blocks on Bash/Zsh/Fish | Shipped | Automatic shell bootstrap, OSC 133 parsing, separators, exit-status accents, collapse, and block copy |
+| PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers; Bash/Zsh/Fish remain the most battle-tested path |
+| Tabs, splits, sessions | Shipped | IDE-style workspace with autosave/restore, manual snapshot save/load, and per-pane metadata restore |
+| Input bar | Shipped | Pane-local bottom input editor with multiline draft, history recall, submit, cancel, and paste |
+| Search | Shipped | Focused-pane overlay, match counts, next/prev navigation, passive highlight across scrollback and block commands |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
-| Search | Partial | Search state and key routing are wired, but the dedicated search UI/highlight layer is still pending |
+| Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, hooks, `exec`, and `notify` |
 | Theme loading | Shipped | `theme_path` is loaded at startup |
-| Tabs, splits, sessions | Deferred | Modules and types exist, but the active runtime is still single-terminal |
-| Lua scripting | Deferred | Runtime scaffolding exists, but the binary does not load scripting into the live event loop yet |
-| Status bar / tab bar / separate input bar | Deferred | Layout modules exist; the current renderer still prioritizes the terminal viewport and block layer |
+| Remaining limits | Honest gap | No cross-workspace search, Lua is action/hook scoped rather than a full plugin API, and PowerShell/WSL need broader runtime soak time |
 
 ## Run Locally
 
@@ -27,8 +28,9 @@ cargo run -p walk
 Useful variants:
 
 ```bash
-cargo run -p walk -- --shell bash
 cargo run -p walk -- --shell zsh
+cargo run -p walk -- --shell powershell
+cargo run -p walk -- --shell wsl:Ubuntu
 cargo build --release -p walk
 ```
 
@@ -38,39 +40,47 @@ Configuration search order:
 2. `~/.config/walk/config.toml`
 3. `~/.walk.toml`
 
-More detail: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+More detail:
+
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+- [docs/LUA_SCRIPTING.md](docs/LUA_SCRIPTING.md)
 
 ## Demo Flow
 
-Use `bash`, `zsh`, or `fish` for the cleanest block demo.
+Use `bash`, `zsh`, or `fish` for the cleanest first-run block demo.
 
 1. Launch Walk.
 2. Run `echo hello`, `pwd`, and `false`.
-3. Use the platform modifier (`Cmd` on macOS, `Ctrl` elsewhere) plus `Up` / `Down` to move across blocks.
-4. Use `Mod+Shift+E` to collapse the selected block.
-5. Use `Mod+Shift+C` to copy the selected block.
-6. Use `Mod+=`, `Mod+-`, and `Mod+0` to verify zoom.
+3. Split the workspace with `Mod+D` or `Mod+Shift+D`.
+4. Use `Mod+Up` / `Mod+Down` to move across blocks in the focused pane.
+5. Use `Mod+Shift+E` to collapse the selected block.
+6. Use `Mod+Shift+C` to copy the selected block.
+7. Use `Mod+F` to search the focused pane.
+8. Use `Mod+Shift+S` to save the `manual` session snapshot, then `Mod+Shift+R` to load it.
+
+Named snapshots are available through Lua action aliases such as `save_session:demo` and `load_session:demo`.
 
 ## Repo Map
 
-- `walk-app`: executable, event loop, runtime wiring, config loading
+- `walk-app`: executable, event loop, workspace orchestration, sessions, scripting
 - `walk-terminal`: PTY lifecycle, shell bootstrap, terminal state, semantic events
-- `walk-blocks`: block state machine, navigation, search helpers
-- `walk-input`: editor buffer, history, syntax-aware input state
+- `walk-blocks`: block state machine, navigation, block metadata
+- `walk-input`: editor buffer and command history
 - `walk-renderer`: wgpu pipeline, glyph atlas, font rasterization
-- `walk-ui`: clipboard, theme loading, search state, layout scaffolding
+- `walk-ui`: clipboard, search state, split layout, theme loading
 
 ## Interview Notes
 
-Start with: Walk is a crate-split Rust terminal that treats terminal correctness as the foundation and blocks as the product wedge.
+Start with: Walk is a crate-split Rust terminal that treats PTY correctness as the foundation and block-oriented command review as the product wedge.
 
 Then explain the runtime path:
 
 1. `winit` captures input and drives the frame loop.
-2. `WalkApp` resolves keybindings and UI state.
-3. `walk-terminal` owns PTY spawn, shell bootstrap, resize, and terminal emulation.
-4. Semantic events feed `walk-blocks`.
-5. `walk-renderer` turns terminal cells plus block decorations into one GPU batch.
+2. `WalkHandler` owns workspace tabs, split panes, sessions, and Lua side effects.
+3. Each pane owns a `WalkApp` state bundle plus a `walk-terminal::Terminal`.
+4. `walk-terminal` emits semantic events from shell markers and cwd/title changes.
+5. `walk-blocks` turns those events into pane-local block records.
+6. `walk-renderer` turns terminal cells, block decorations, search highlights, and chrome into one GPU batch.
 
 Use these docs when presenting the project:
 

@@ -178,7 +178,9 @@ impl WalkApp {
             Action::ResizeSplitLeft
             | Action::ResizeSplitRight
             | Action::ResizeSplitUp
-            | Action::ResizeSplitDown => None,
+            | Action::ResizeSplitDown
+            | Action::SaveSession(_)
+            | Action::LoadSession(_) => None,
         }
     }
 

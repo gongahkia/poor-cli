@@ -1,12 +1,8 @@
 # Walk Architecture
 
-Walk is a 6-crate Rust workspace implementing a GPU-accelerated terminal emulator. This document describes the dependency graph, data flow, threading model, rendering pipeline, key abstractions, and module organization.
+Walk is a 6-crate Rust workspace implementing a GPU-accelerated workspace terminal. This document describes the current runtime architecture rather than an aspirational one.
 
-> Status note: this file mixes the target architecture with the current one. For the current shipped-vs-deferred runtime boundary, start with [README.md](README.md).
-
----
-
-## Crate Dependency Graph
+## Crate Graph
 
 ```
                        walk-app
@@ -16,371 +12,132 @@ Walk is a 6-crate Rust workspace implementing a GPU-accelerated terminal emulato
                |  \       |            |
                |   \      |            |
         walk-renderer  walk-terminal --+
-               |           |
-               +-----+-----+
-                     |
-              (external crates only)
 ```
 
-Precise dependencies:
+## Runtime Model
 
-| Crate | Workspace Dependencies | Key External Dependencies |
-|---|---|---|
-| `walk-app` | walk-ui, walk-blocks, walk-input, walk-renderer, walk-terminal | winit, clap, tracing-subscriber, mlua |
-| `walk-ui` | walk-renderer, walk-terminal, walk-blocks | arboard, notify, toml, serde, image |
-| `walk-blocks` | walk-terminal | (none beyond std) |
-| `walk-input` | walk-terminal | unicode-width |
-| `walk-renderer` | (none) | wgpu, cosmic-text |
-| `walk-terminal` | (none) | alacritty_terminal, portable-pty, crossbeam-channel |
+The live runtime is an IDE-style workspace:
 
-`walk-renderer` and `walk-terminal` are **leaf crates** with no workspace-internal dependencies. They can be developed and tested independently.
+- one window
+- many tabs
+- one split tree per tab
+- one focused pane per tab
+- one `walk-terminal::Terminal` plus one `walk-app::WalkApp` state bundle per pane
 
----
+Each pane owns:
 
-## Data Flow Pipeline
+- PTY-backed shell process
+- terminal emulator state and scrollback
+- block timeline
+- input draft and command history state
+- pane-local search query and match state
+- selection state
+- zoom state
 
-```
-User Input (keyboard)
-       |
-       v
-  walk-app (winit event loop)
-       |
-       +---> Keybinding resolution -----> Action dispatch
-       |                                     |
-       +---> walk-input (InputEditor)        |
-       |         |                           |
-       |    EditorAction::Submit(cmd)        |
-       |         |                           |
-       +-------- + --------------------------+
-       |
-       v
-  PTY write (bytes to shell)
-       |
-       v
-  Shell Process (bash/zsh/fish/powershell)
-       |
-       v
-  PTY read (bytes from shell — reader thread)
-       |
-       v
-  crossbeam channel: PtyEvent::Data(bytes)
-       |
-       v
-  walk-terminal: Terminal::process_pty_output()
-       |
-       +---> alacritty_terminal::Term::advance(bytes)
-       |         |
-       |         v
-       |     Grid<Cell> updated (screen state)
-       |
-       +---> SemanticEvent detection (OSC 133 markers)
-       |         |
-       |         v
-       |     walk-blocks: BlockManager::handle_event()
-       |         |
-       |         v
-       |     Block records created/finalized
-       |
-       v
-  walk-ui: ViewportRenderer::render()
-       |
-       +---> walk-renderer: text_layout + glyph_atlas + render_pipeline
-       |
-       v
-  wgpu surface presentation ---> Screen
-```
+Workspace-level state owns:
 
-### Transition Details
+- tab/split structure
+- focused pane routing
+- autosave/restore session handling
+- Lua runtime and side effects
+- top tab bar and bottom status bar
 
-1. **Keyboard to PTY**: User keystrokes arrive via winit. `walk-app` resolves keybindings first. If no binding matches, the keystroke goes to `walk-input`'s `InputEditor`. On Enter, the editor emits `EditorAction::Submit(command_text)`, written to the PTY.
+## Data Flow
 
-2. **PTY to Terminal State**: A dedicated reader thread reads bytes from the PTY master and sends them through a `crossbeam_channel::bounded(256)`. The main thread calls `Terminal::process_pty_output()` each frame, draining up to 64 channel messages. Each message's bytes are fed to `alacritty_terminal::Term::advance()`, updating the internal `Grid<Cell>`.
+1. `winit` delivers keyboard, mouse, resize, and frame events into `walk-app`.
+2. `WalkHandler` resolves whether an event is workspace-scoped or focused-pane-scoped.
+3. Focused-pane `WalkApp` state resolves keybindings first, then search/input editing, then raw PTY fallback.
+4. `walk-terminal` writes to the PTY and drains PTY output during frame ticks.
+5. The terminal parser updates the emulator state and emits semantic events for:
+   - prompt start
+   - command start
+   - output start
+   - command end
+   - cwd changes
+   - title changes
+6. `walk-blocks` converts those semantic events into block records anchored to absolute scrollback rows.
+7. `walk-renderer` draws terminal cells, block accents, search highlights, the input bar, the search overlay, and workspace chrome into one batched frame.
 
-3. **Terminal State to Blocks**: During PTY processing, OSC 133 sequences are detected via the `EventListener` trait. These become `SemanticEvent` values. `BlockManager::handle_event()` processes them through a state machine to build `Block` records.
+## Terminal And Block Model
 
-4. **Terminal State to Screen**: Each frame, `ViewportRenderer` reads the `Grid<Cell>`, calls `walk-renderer`'s text layout to produce `GlyphRun`s, looks up each glyph in the `GlyphAtlas`, builds a vertex buffer of textured quads, and submits a single draw call to wgpu.
+Walk treats scrollback rows as the stable identity for block bookkeeping.
 
----
+- `walk-terminal` exposes visible rows and buffer text using absolute row ids.
+- semantic events carry absolute row anchors
+- block output ranges are stored as absolute rows
+- search, copy, and collapse read from logical buffer snapshots rather than viewport-relative rows
+
+That keeps block boundaries stable after scrolling, search jumps, and resize reflow.
 
 ## Threading Model
 
-```
-+-------------------+     crossbeam channel       +------------------+
-|  PTY Reader       | ---- PtyEvent::Data ------> |                  |
-|  Thread (per tab) |     bounded(256)            |  Main Thread     |
-+-------------------+                             |  (winit event    |
-                                                  |   loop)          |
-+-------------------+     notify channel          |                  |
-|  File Watcher     | ---- theme changed -------> |  - process PTY   |
-|  Thread (notify)  |                             |  - update state  |
-+-------------------+                             |  - compute layout|
-                                                  |  - render (wgpu) |
-                                                  |  - present frame |
-                                                  +------------------+
-```
+- The main thread owns mutable UI, workspace, renderer, and pane state.
+- Each terminal owns PTY I/O machinery and feeds output back to the main loop through channels.
+- There is no async runtime on the hot path.
+- Session restore always respawns fresh shells instead of attempting to serialize live PTY state.
 
-### Rules
+## Sessions
 
-- The **main thread** owns all mutable state: terminals, blocks, UI, renderer.
-- **Background threads** are readers only — they push events into channels.
-- No `Arc<Mutex<>>` on hot paths. The PTY writer is `Arc<Mutex<PtyWriter>>` because writes come from the main thread at any time, but reads are always on the dedicated thread.
-- **One reader thread per terminal/tab**. When a tab is closed, its reader thread terminates naturally (channel drops).
-- **No async runtime**. Concurrency is handled entirely through `std::thread` + `crossbeam_channel`.
+Session persistence lives in `walk-app/src/session.rs`.
 
----
+What is persisted:
 
-## Rendering Pipeline Stages
+- tabs and split layout
+- focused pane per tab
+- pane shell choice
+- pane cwd
+- pane title
+- input draft
+- search query
+- window size and position
 
-Each frame follows these stages in order:
+What is intentionally not persisted:
 
-| Stage | Description |
-|---|---|
-| 1. Frame Begin | `GpuContext::begin_frame()` acquires a `SurfaceTexture` |
-| 2. Layout | `walk-ui` computes `LayoutResult` — rects for tab bar, viewport, input editor, status bar |
-| 3. Background | Background image as full-viewport textured quad, or clear with `theme.background` |
-| 4. Cell Backgrounds | For each visible cell with non-default bg, emit a colored quad |
-| 5. Text Layout | Look up glyphs in `GlyphAtlas` (rasterize via cosmic-text SwashCache if missing), produce `PositionedGlyph` with atlas UV coords and screen position |
-| 6. Text Rendering | All glyph quads batched into single vertex buffer. Single draw call with atlas texture. Vertex format: `(x, y, u, v, fg_rgba, bg_rgba)` |
-| 7. Decorations | Underline, strikethrough, cursor (block/bar/underline shapes as thin rects) |
-| 8. Block Decorations | Left-side color bars (green = exit 0, red = nonzero), separator lines between blocks |
-| 9. Overlays | Selection highlights (semi-transparent blue), search match highlights, UI overlays (search bar) |
-| 10. UI Chrome | Tab bar, status bar, input editor — each rendered into their layout rect |
-| 11. Frame Present | `GpuContext::present(frame)` submits the surface texture |
+- live PTY process state
+- scrollback contents
+- block history from previous shell processes
 
-### Damage Tracking
+Autosave is written to `~/.config/walk/session.json`. Named snapshots live under `~/.config/walk/sessions/`.
 
-After the initial working render: implement `DirtyRegion` (one bit per row). Only rebuild vertex buffers for dirty rows. Scrollback position change marks everything dirty. Typing a single character should not cause a full-grid re-render.
+## Lua Surface
 
----
+Lua is loaded from `~/.config/walk/init.lua` and is deliberately scoped to the action bus.
 
-## Key Abstractions and Interfaces Between Crates
+Current capabilities:
 
-### walk-app → walk-terminal
+- bind keys to built-in actions
+- register reusable action aliases
+- run shell commands in the focused pane
+- receive lifecycle hooks
+- push status notifications
 
-```rust
-pub struct Terminal {
-    // Main interface
-    pub fn process_pty_output(&mut self);            // Drain PTY channel, feed to Term
-    pub fn send_input(&self, data: &[u8]);           // Write to PTY
-    pub fn resize(&mut self, rows: u16, cols: u16);  // Resize PTY + Term
-    pub fn is_dirty(&self) -> bool;                  // New output since last render?
-    pub fn mark_clean(&mut self);                    // Reset dirty flag
-    pub fn grid(&self) -> &Grid<Cell>;               // Current screen state
-    pub fn cursor(&self) -> CursorPosition;          // Cursor location
-    pub fn events(&self) -> &[SemanticEvent];        // Pending semantic events
-}
-```
+Current non-goals:
 
-### walk-app → walk-renderer
+- custom rendering
+- arbitrary mutation of internal runtime structures
+- bypassing the workspace/action pipeline
 
-```rust
-pub struct GpuContext { /* Device, Queue, Surface */ }
-    pub fn begin_frame(&mut self) -> SurfaceTexture;
-    pub fn present(&self, frame: SurfaceTexture);
-    pub fn resize(&mut self, width: u32, height: u32);
+## Shell Integration
 
-pub struct GlyphAtlas { /* GPU texture + shelf-packing */ }
-    pub fn get_or_insert(&mut self, key: GlyphKey) -> AtlasRegion;
+Walk bootstraps shells automatically through temporary wrappers rather than requiring manual dotfile edits.
 
-pub struct FontSystem { /* cosmic_text::FontSystem wrapper */ }
+Supported shells:
 
-pub fn layout_grid(grid: &Grid<Cell>, origin: Point, font: &FontSystem, atlas: &mut GlyphAtlas) -> Vec<GlyphRun>;
-```
+- Bash
+- Zsh
+- Fish
+- PowerShell
+- WSL via `wsl:<distro>`
 
-### walk-app → walk-blocks
+The shell layer emits OSC markers and cwd/title updates that feed the block model.
 
-```rust
-pub struct BlockManager { /* Block collection + state machine */ }
-    pub fn handle_event(&mut self, event: &SemanticEvent, grid: &Grid<Cell>);
-    pub fn visible_blocks(&self) -> &[Block];
-    pub fn get_block(&self, id: u64) -> Option<&Block>;
+## Current Boundaries
 
-pub struct BlockNavigator { /* Navigation state */ }
-    pub fn select_prev(&mut self);
-    pub fn select_next(&mut self);
-    pub fn selected_block(&self) -> Option<&Block>;
-    pub fn toggle_collapse(&mut self);
-```
+The current runtime is coherent, but a few edges are still intentionally narrow:
 
-### walk-app → walk-input
+- search is focused-pane only
+- Lua hooks are lifecycle notifications, not rich structured events
+- font family selection is plumbed but still relies on the renderer's current monospace fallback path
+- close-confirmation and richer compositor features remain deferred
 
-```rust
-pub struct InputEditor { /* Editor coordination */ }
-    pub fn handle_key(&mut self, event: &InputEvent) -> Option<EditorAction>;
-    pub fn render_data(&self) -> InputRenderData;
-
-pub struct CommandHistory { /* Persistent history */ }
-    pub fn prev(&mut self) -> Option<&str>;
-    pub fn next(&mut self) -> Option<&str>;
-    pub fn search(&mut self, query: &str) -> Vec<&str>;
-    pub fn push(&mut self, command: &str);
-```
-
-### walk-app → walk-ui
-
-```rust
-pub fn compute_layout(root: &LayoutNode, available: Rect) -> LayoutResult;
-
-pub struct TabManager { /* Tab collection */ }
-    pub fn new_tab(&mut self, shell: &ShellType) -> u64;
-    pub fn close_tab(&mut self, id: u64);
-    pub fn switch_tab(&mut self, index: usize);
-    pub fn active_terminal(&mut self) -> &mut Terminal;
-
-pub struct SplitManager { /* Binary tree of panes */ }
-    pub fn split_active(&mut self, direction: SplitDirection, new_tab_id: u64);
-    pub fn close_split(&mut self, tab_id: u64);
-    pub fn compute_rects(&self, available: Rect) -> HashMap<u64, Rect>;
-
-pub struct Theme { /* Complete color/style specification */ }
-pub struct ClipboardManager { /* arboard wrapper */ }
-    pub fn copy(&mut self, text: &str) -> Result<(), ClipboardError>;
-    pub fn paste(&mut self) -> Result<String, ClipboardError>;
-```
-
-### Cross-crate data dependencies
-
-- **walk-blocks → walk-terminal**: Reads `SemanticEvent` enum and `Grid<Cell>` for extracting prompt/command text.
-- **walk-input → walk-terminal**: Reads `ShellType` for syntax highlighting context.
-
----
-
-## Block Build State Machine
-
-The `BlockManager` uses a state machine driven by `SemanticEvent`s from shell integration (OSC 133):
-
-```
-WaitingForPrompt
-       |
-       | PromptStart { line }
-       v
-  InPrompt { start_line }
-       |
-       | CommandStart { line }
-       v
-  InCommand { prompt_text }
-       |
-       | OutputStart { line }
-       v
-  InOutput { block_id }
-       |
-       | CommandEnd { exit_code }
-       v
-WaitingForPrompt  (block finalized)
-```
-
-Each completed cycle creates one `Block` record containing: command text, output line range, exit code, duration, CWD, and optional git info.
-
----
-
-## Module Organization
-
-### walk-app/src/
-
-```
-lib.rs
-main.rs              — fn main(), CLI arg parsing, panic handler, tracing init
-app.rs               — WalkApp struct, AppHandler impl
-config.rs            — WalkConfig, TOML loading, config_dir()
-dpi.rs               — ScaleContext, coordinate conversion
-event_loop.rs        — run_event_loop()
-frame_clock.rs       — FrameClock, FPS tracking
-handler.rs           — AppHandler trait definition
-input.rs             — KeyAction, Modifiers, InputEvent, translate_key_event
-keybindings.rs       — Action enum, KeyCombo, KeybindingConfig
-session.rs           — SessionState, save/load
-scripting/
-  mod.rs             — LuaRuntime initialization
-  api.rs             — walk.* Lua API surface
-  keymaps.rs         — walk.keymap() implementation
-  themes.rs          — walk.theme.* implementation
-  events.rs          — walk.on() event hooks
-```
-
-### walk-renderer/src/
-
-```
-lib.rs
-atlas.rs             — GlyphAtlas, shelf-packing allocator
-compositor.rs        — Layer blending, alpha compositing
-damage.rs            — DirtyRegion bitmap
-gpu.rs               — GpuContext (Device, Queue, Surface)
-pipeline.rs          — wgpu render pipeline, vertex/fragment shaders
-text_layout.rs       — GlyphRun, PositionedGlyph, layout_line, layout_grid
-text_shaper.rs       — FontSystem, TextShaper wrapping cosmic-text
-```
-
-### walk-terminal/src/
-
-```
-lib.rs
-async_io.rs          — PtyIoHandle, PtyEvent, reader thread
-config.rs            — TerminalConfig (scrollback, wrapping, unicode width)
-prompt.rs            — PromptDetector, PromptFramework detection
-pty.rs               — PtyManager, shell process spawning
-semantic.rs          — SemanticEvent enum (or re-export from walk-blocks)
-shell.rs             — ShellType, detect_default_shell, shell_spawn_config
-shell_integration.rs — Embedded shell scripts (include_str!), integration_args
-state.rs             — TerminalState wrapping alacritty_terminal::Term
-terminal.rs          — Terminal struct (state + pty + dirty flag)
-```
-
-### walk-blocks/src/
-
-```
-lib.rs
-block.rs             — Block struct, BlockManager, BlockBuildState
-block_nav.rs         — BlockNavigator
-block_search.rs      — BlockSearch, SearchMatch
-metadata.rs          — GitInfo, detect_git_info
-semantic.rs          — SemanticEvent enum
-```
-
-### walk-input/src/
-
-```
-lib.rs
-brackets.rs          — find_matching_bracket
-buffer.rs            — InputBuffer (gap buffer)
-cursor_ops.rs        — move_left/right/word/line/up/down, select_*
-editor.rs            — InputEditor, EditorAction, InputRenderData
-highlighter.rs       — HighlightSpan, SpanKind, highlight()
-history.rs           — CommandHistory, file persistence
-```
-
-### walk-ui/src/
-
-```
-lib.rs
-background.rs        — BackgroundRenderer (image loading, textured quad)
-bell.rs              — BellHandler, BellStyle
-clipboard.rs         — ClipboardManager (arboard wrapper)
-layout/
-  mod.rs             — LayoutNode, LayoutResult, compute_layout, NodeId
-links.rs             — URL detection, UrlSpan
-search.rs            — GlobalSearch, GlobalMatch
-selection.rs         — SelectionManager, CellPos, TextSelection
-splits.rs            — SplitNode, SplitManager, SplitDirection
-status_bar.rs        — StatusBarRenderer, StatusBarState
-tab_bar.rs           — TabBarRenderer, TabBarAction
-tabs.rs              — TabManager, Tab
-theme.rs             — Theme, Color, SyntaxColors
-theme_loader.rs      — load_theme, parse_hex_color, ThemeToml
-theme_watcher.rs     — ThemeWatcher (notify-based hot-reload)
-viewport.rs          — ViewportRenderer, smooth scrolling
-zoom.rs              — ZoomManager
-```
-
----
-
-## Configuration Paths
-
-| Item | Path |
-|---|---|
-| Config file | `$WALK_CONFIG` or `~/.config/walk/config.toml` or `~/.walk.toml` |
-| Theme files | `~/.config/walk/themes/*.toml` |
-| History file | `~/.walk_history` |
-| Session state | `~/.config/walk/session.json` |
-| Log file | `~/.config/walk/walk.log` |
-| Lua init | `~/.config/walk/init.lua` |
-| Windows config | `%APPDATA%\Walk\config.toml` |
+For the product framing and demo script, use [README.md](README.md) and [docs/INTERVIEW.md](docs/INTERVIEW.md).

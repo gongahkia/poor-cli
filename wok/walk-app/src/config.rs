@@ -130,13 +130,7 @@ impl WalkConfig {
         let mut config = Self::default();
 
         if let Some(shell) = toml_config.shell {
-            config.shell = match shell.as_str() {
-                "bash" => ShellType::Bash,
-                "zsh" => ShellType::Zsh,
-                "fish" => ShellType::Fish,
-                "powershell" => ShellType::PowerShell,
-                _ => config.shell,
-            };
+            config.shell = parse_shell_config(&shell, &config.shell);
         }
         if let Some(p) = toml_config.theme_path {
             config.theme_path = Some(PathBuf::from(p));
@@ -225,6 +219,22 @@ fn config_search_paths() -> Vec<PathBuf> {
     paths
 }
 
+fn parse_shell_config(value: &str, fallback: &ShellType) -> ShellType {
+    if let Some(distro) = value.strip_prefix("wsl:") {
+        if !distro.trim().is_empty() {
+            return ShellType::Wsl(distro.trim().to_string());
+        }
+    }
+
+    match value {
+        "bash" => ShellType::Bash,
+        "zsh" => ShellType::Zsh,
+        "fish" => ShellType::Fish,
+        "powershell" => ShellType::PowerShell,
+        _ => fallback.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +259,11 @@ mod tests {
     fn test_config_dir() {
         let dir = WalkConfig::config_dir();
         assert!(!dir.to_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_shell_config_supports_wsl() {
+        let shell = parse_shell_config("wsl:Ubuntu", &ShellType::Bash);
+        assert_eq!(shell, ShellType::Wsl("Ubuntu".to_string()));
     }
 }
