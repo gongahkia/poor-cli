@@ -12,6 +12,7 @@ use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_terminal::state::CellColor;
 use walk_app::window::WindowConfig;
+use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::font::FontSystem;
 use walk_renderer::gpu::GpuContext;
 use walk_renderer::pipeline::QuadBatch;
@@ -41,11 +42,13 @@ struct Cli {
 
 /// GPU render state, initialized after window creation.
 struct RenderState {
+    #[allow(dead_code)]
     instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
     gpu: GpuContext,
     pipeline: TerminalRenderPipeline,
     batch: QuadBatch,
+    atlas: GlyphAtlas,
 }
 
 /// Walk application handler.
@@ -131,14 +134,46 @@ impl WalkHandler {
                 // Push background quad
                 render.batch.push_bg_quad(x, y, cw, ch, bg);
 
-                // Push character as colored rectangle
+                // Push character glyph
                 let c = cell.character;
                 if c != ' ' && c != '\0' {
-                    let glyph_x = x + cw * 0.15;
-                    let glyph_y = y + ch * 0.1;
-                    let glyph_w = cw * 0.7;
-                    let glyph_h = ch * 0.8;
-                    render.batch.push_bg_quad(glyph_x, glyph_y, glyph_w, glyph_h, fg);
+                    let glyph_key = walk_renderer::atlas::GlyphKey {
+                        font_id: 0,
+                        glyph_id: c as u32,
+                        font_size_tenths: (self.font.font_size * 10.0) as u32,
+                    };
+                    // Try to get cached atlas region, or rasterize and upload
+                    if let Some(glyph) = self.font.rasterize(c) {
+                        let gw = glyph.width;
+                        let gh = glyph.height;
+                        let data = glyph.data.clone();
+                        let ox = glyph.offset_x;
+                        let oy = glyph.offset_y;
+                        if let Some(region) = render.atlas.get_or_insert(glyph_key, gw, gh) {
+                            // Upload glyph bitmap to atlas texture (only on first insert)
+                            if gw > 0 && gh > 0 {
+                                render.pipeline.upload_glyph(
+                                    &render.gpu,
+                                    region.x,
+                                    region.y,
+                                    gw,
+                                    gh,
+                                    &data,
+                                );
+                            }
+                            // Draw textured glyph quad
+                            let glyph_x = x + ox as f32;
+                            let glyph_y = y + (self.font.metrics.baseline - oy as f32);
+                            render.batch.push_glyph_quad(
+                                glyph_x,
+                                glyph_y,
+                                gw as f32,
+                                gh as f32,
+                                &region,
+                                fg,
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -184,12 +219,15 @@ impl AppHandler for WalkHandler {
         let pipeline = TerminalRenderPipeline::new(&gpu);
         let batch = QuadBatch::new();
 
+        let atlas = GlyphAtlas::new(2_048, 2_048);
+
         self.render = Some(RenderState {
             instance,
             surface,
             gpu,
             pipeline,
             batch,
+            atlas,
         });
 
         // Compute grid dimensions
