@@ -1,5 +1,7 @@
 # Walk Configuration Reference
 
+> Status note: the config schema is ahead of the active runtime in a few places. Today the binary actively uses `shell`, `theme_path`, `font_family`, `font_size`, `scrollback_lines`, and `copy_on_select`. Other keys are parsed and retained for planned UI/runtime surfaces, but are not all visible in the current single-terminal v1.
+
 Walk is configured via a TOML file located at one of:
 
 1. `$WALK_CONFIG` (environment variable)
@@ -27,20 +29,20 @@ theme_path = "~/.config/walk/themes/catppuccin.toml"
 
 ## Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `shell` | string | auto-detected | Shell to use: `bash`, `zsh`, `fish`, `powershell` |
-| `font_family` | string | `"JetBrains Mono"` | Font family name |
-| `font_size` | float | `14.0` | Font size in points |
-| `input_position` | string | `"bottom"` | Input editor position: `top` or `bottom` |
-| `scrollback_lines` | integer | `10000` | Number of scrollback lines to retain |
-| `cursor_style` | string | `"block"` | Cursor shape: `block`, `bar`, `underline` |
-| `cursor_blink` | boolean | `true` | Whether the cursor blinks |
-| `tab_bar_visible` | boolean | `true` | Show the tab bar |
-| `status_bar_visible` | boolean | `true` | Show the status bar |
-| `window_opacity` | float | `1.0` | Window opacity (0.0-1.0) |
-| `copy_on_select` | boolean | `false` | Auto-copy selected text |
-| `confirm_close_with_running_process` | boolean | `true` | Confirm before closing with active processes |
-| `restore_session` | boolean | `false` | Auto-restore previous session on launch |
-| `theme_path` | string | none | Path to a custom theme TOML file |
-| `background_image` | string | none | Path to a background image |
+| Option | Type | Default | Runtime Status | Description |
+|--------|------|---------|----------------|-------------|
+| `shell` | string | auto-detected | Active | Shell to use: `bash`, `zsh`, `fish`, `powershell` |
+| `font_family` | string | `"JetBrains Mono"` | Active | Font family name |
+| `font_size` | float | `14.0` | Active | Font size in points |
+| `input_position` | string | `"bottom"` | Partial | Stored in app state, but the separate input bar is not fully rendered yet |
+| `scrollback_lines` | integer | `10000` | Active | Number of scrollback lines to retain |
+| `cursor_style` | string | `"block"` | Deferred | Parsed, but the renderer still uses a fixed block-style cursor overlay |
+| `cursor_blink` | boolean | `true` | Deferred | Parsed, but blink behavior is not yet surfaced in the active runtime |
+| `tab_bar_visible` | boolean | `true` | Deferred | Parsed for planned tab UI |
+| `status_bar_visible` | boolean | `true` | Deferred | Parsed for planned status bar UI |
+| `window_opacity` | float | `1.0` | Deferred | Parsed, but not yet wired into the live compositor path |
+| `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |
+| `confirm_close_with_running_process` | boolean | `true` | Deferred | Parsed, but close confirmation is not yet implemented |
+| `restore_session` | boolean | `false` | Deferred | Parsed, but session restore is not active in the current runtime |
+| `theme_path` | string | none | Active | Path to a custom theme TOML file |
+| `background_image` | string | none | Deferred | Parsed by theme/config loaders, not yet in the active runtime surface |

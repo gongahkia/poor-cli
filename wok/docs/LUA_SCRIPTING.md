@@ -1,5 +1,7 @@
 # Walk Lua Scripting Guide
 
+> Status note: Lua support is currently scaffolding, not an active runtime feature in the shipped binary. The scripting module and API surface exist in the workspace, but `walk` does not yet wire Lua into the live event loop or product claims. Treat this document as the planned API direction, not current day-one behavior.
+
 Walk supports Lua 5.4 scripting for custom keybindings, themes, and event hooks.
 
 ## Getting Started

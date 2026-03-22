@@ -2,6 +2,8 @@
 
 Walk is a 6-crate Rust workspace implementing a GPU-accelerated terminal emulator. This document describes the dependency graph, data flow, threading model, rendering pipeline, key abstractions, and module organization.
 
+> Status note: this file mixes the target architecture with the current one. For the current shipped-vs-deferred runtime boundary, start with [README.md](README.md).
+
 ---
 
 ## Crate Dependency Graph
