@@ -1,10 +1,27 @@
 //! Global terminal search: search across all terminal output.
 
+/// A searchable line in the terminal experience.
+#[derive(Debug, Clone)]
+pub struct SearchLine {
+    /// Absolute row anchor for the line.
+    pub row: usize,
+    /// Block owning the line when the source is block metadata.
+    pub block_id: Option<u64>,
+    /// Whether this line comes from block command text instead of terminal output.
+    pub is_command: bool,
+    /// Searchable text content.
+    pub text: String,
+}
+
 /// A global search match.
 #[derive(Debug, Clone)]
 pub struct GlobalMatch {
-    /// Row offset (negative = scrollback).
-    pub screen_row: i64,
+    /// Absolute row anchor for the match.
+    pub row: usize,
+    /// Block owning the match when it came from block command text.
+    pub block_id: Option<u64>,
+    /// Whether the match came from block command text.
+    pub is_command: bool,
     /// Start column.
     pub col_start: u16,
     /// End column (exclusive).
@@ -53,21 +70,22 @@ impl GlobalSearch {
 
     /// Execute a search over the given lines.
     ///
-    /// `lines` is a list of (row_offset, text) pairs.
-    pub fn search(&mut self, query: &str, lines: &[(i64, String)]) {
+    pub fn search(&mut self, query: &str, lines: &[SearchLine]) {
         self.query = query.to_string();
         self.matches.clear();
         self.current = 0;
 
         let query_lower = query.to_lowercase();
-        for (row, text) in lines {
-            let text_lower = text.to_lowercase();
+        for line in lines {
+            let text_lower = line.text.to_lowercase();
             let mut start = 0;
             while let Some(pos) = text_lower[start..].find(&query_lower) {
                 let col_start = (start + pos) as u16;
                 let col_end = col_start + query.len() as u16;
                 self.matches.push(GlobalMatch {
-                    screen_row: *row,
+                    row: line.row,
+                    block_id: line.block_id,
+                    is_command: line.is_command,
                     col_start,
                     col_end,
                 });
@@ -122,9 +140,24 @@ mod tests {
     fn test_search_finds_matches() {
         let mut search = GlobalSearch::new();
         let lines = vec![
-            (0, "hello world".to_string()),
-            (1, "foo bar".to_string()),
-            (2, "hello again".to_string()),
+            SearchLine {
+                row: 0,
+                block_id: None,
+                is_command: false,
+                text: "hello world".to_string(),
+            },
+            SearchLine {
+                row: 1,
+                block_id: None,
+                is_command: false,
+                text: "foo bar".to_string(),
+            },
+            SearchLine {
+                row: 2,
+                block_id: None,
+                is_command: false,
+                text: "hello again".to_string(),
+            },
         ];
         search.search("hello", &lines);
         assert_eq!(search.matches.len(), 2);
@@ -133,7 +166,12 @@ mod tests {
     #[test]
     fn test_match_count_display() {
         let mut search = GlobalSearch::new();
-        let lines = vec![(0, "a b a".to_string())];
+        let lines = vec![SearchLine {
+            row: 0,
+            block_id: None,
+            is_command: false,
+            text: "a b a".to_string(),
+        }];
         search.search("a", &lines);
         assert_eq!(search.match_count_display(), "1 of 2");
     }
@@ -141,7 +179,12 @@ mod tests {
     #[test]
     fn test_next_match_wraps() {
         let mut search = GlobalSearch::new();
-        let lines = vec![(0, "aa".to_string())];
+        let lines = vec![SearchLine {
+            row: 0,
+            block_id: None,
+            is_command: false,
+            text: "aa".to_string(),
+        }];
         search.search("a", &lines);
         assert_eq!(search.matches.len(), 2);
         search.next_match(); // moves to 1

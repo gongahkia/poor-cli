@@ -25,6 +25,7 @@ use walk_terminal::state::CellColor;
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::layout::Rect;
+use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::theme::Theme;
 use winit::dpi::PhysicalSize;
@@ -173,42 +174,27 @@ impl WalkHandler {
 
                 // Push background quad
                 render.batch.push_bg_quad(x, y, cw, ch, bg);
+                if let Some(current_match) =
+                    search_match_at_cell(&self.app.global_search, absolute_row, col_idx as u16)
+                {
+                    let highlight = if current_match {
+                        self.app.theme.highlight_current_match
+                    } else {
+                        self.app.theme.highlight_match
+                    };
+                    render.batch.push_bg_quad(
+                        x,
+                        y,
+                        cw,
+                        ch,
+                        [highlight.r, highlight.g, highlight.b, highlight.a],
+                    );
+                }
 
                 // Push character glyph
                 let c = cell.character;
                 if c != ' ' && c != '\0' {
-                    let glyph_key = walk_renderer::atlas::GlyphKey {
-                        font_id: 0,
-                        glyph_id: c as u32,
-                        font_size_tenths: (self.font.font_size * 10.0) as u32,
-                    };
-                    // Try to get cached atlas region, or rasterize and upload
-                    if let Some(glyph) = self.font.rasterize(c) {
-                        let gw = glyph.width;
-                        let gh = glyph.height;
-                        let data = glyph.data.clone();
-                        let ox = glyph.offset_x;
-                        let oy = glyph.offset_y;
-                        if let Some(region) = render.atlas.get_or_insert(glyph_key, gw, gh) {
-                            // Upload glyph bitmap to atlas texture (only on first insert)
-                            if gw > 0 && gh > 0 {
-                                render.pipeline.upload_glyph(
-                                    &render.gpu,
-                                    region.x,
-                                    region.y,
-                                    gw,
-                                    gh,
-                                    &data,
-                                );
-                            }
-                            // Draw textured glyph quad
-                            let glyph_x = x + ox as f32;
-                            let glyph_y = y + (self.font.metrics.baseline - oy as f32);
-                            render.batch.push_glyph_quad(
-                                glyph_x, glyph_y, gw as f32, gh as f32, &region, fg,
-                            );
-                        }
-                    }
+                    push_glyph(render, &mut self.font, x, y, c, fg);
                 }
             }
         }
@@ -218,6 +204,7 @@ impl WalkHandler {
             &self.app.theme,
             &self.app.block_manager.blocks,
             selected_block_id,
+            &self.app.global_search,
             &visible_rows,
             &row_positions,
             total_cols,
@@ -254,6 +241,15 @@ impl WalkHandler {
             self.ui_rects.input,
             &self.app.input_editor.render_data(),
         );
+        if self.app.global_search.is_active {
+            render_search_overlay(
+                render,
+                &mut self.font,
+                &self.app.theme,
+                self.ui_rects.viewport,
+                &self.app.global_search,
+            );
+        }
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
@@ -333,6 +329,7 @@ impl WalkHandler {
             _ => {}
         }
 
+        self.scroll_to_current_search_match();
         self.needs_redraw = true;
         true
     }
@@ -413,11 +410,41 @@ impl WalkHandler {
         }
 
         if let Some(terminal) = &self.terminal {
-            let lines = collect_visible_lines(terminal);
+            let lines = collect_search_lines(terminal, &self.app.block_manager.blocks);
             self.app
                 .global_search
                 .search(&self.app.global_search.search_input.clone(), &lines);
         }
+        self.scroll_to_current_search_match();
+    }
+
+    fn scroll_to_current_search_match(&mut self) {
+        let Some(target) = self.app.global_search.matches.get(self.app.global_search.current) else {
+            return;
+        };
+        let Some(terminal) = self.terminal.as_mut() else {
+            return;
+        };
+
+        let screen_lines = terminal.state.screen_lines();
+        if screen_lines == 0 {
+            return;
+        }
+
+        let visible_start = terminal.state.visible_start_row();
+        let visible_end = visible_start + screen_lines.saturating_sub(1);
+        if (visible_start..=visible_end).contains(&target.row) {
+            return;
+        }
+
+        let desired_start = if target.row < visible_start {
+            target.row
+        } else {
+            target.row.saturating_sub(screen_lines.saturating_sub(1))
+        };
+        let new_offset = terminal.state.scrollback_len().saturating_sub(desired_start);
+        terminal.state.set_display_offset(new_offset);
+        self.needs_redraw = true;
     }
 
     fn pixel_to_cell(&self, x: f64, y: f64) -> Option<CellPos> {
@@ -745,6 +772,108 @@ fn render_input_editor(
     }
 }
 
+fn render_search_overlay(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    search: &walk_ui::search::GlobalSearch,
+) {
+    let width = (viewport.w * 0.38).clamp(220.0, 420.0);
+    let height = font.metrics.cell_height * 2.0 + 16.0;
+    let x = viewport.x + viewport.w - width - 12.0;
+    let y = viewport.y + 12.0;
+
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        height,
+        [
+            theme.tab_bar_bg.r,
+            theme.tab_bar_bg.g,
+            theme.tab_bar_bg.b,
+            0.96,
+        ],
+    );
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        1.0,
+        [
+            theme.highlight_current_match.r,
+            theme.highlight_current_match.g,
+            theme.highlight_current_match.b,
+            0.85,
+        ],
+    );
+
+    push_text(
+        render,
+        font,
+        x + 10.0,
+        y + 6.0,
+        &format!("Search: {}", search.search_input),
+        [
+            theme.foreground.r,
+            theme.foreground.g,
+            theme.foreground.b,
+            theme.foreground.a,
+        ],
+    );
+    push_text(
+        render,
+        font,
+        x + 10.0,
+        y + 6.0 + font.metrics.cell_height,
+        &search.match_count_display(),
+        [
+            theme.status_bar_text.r,
+            theme.status_bar_text.g,
+            theme.status_bar_text.b,
+            theme.status_bar_text.a,
+        ],
+    );
+}
+
+fn search_match_at_cell(
+    search: &walk_ui::search::GlobalSearch,
+    absolute_row: usize,
+    column: u16,
+) -> Option<bool> {
+    if search.matches.is_empty() {
+        return None;
+    }
+
+    for (index, search_match) in search.matches.iter().enumerate() {
+        if search_match.is_command || search_match.row != absolute_row {
+            continue;
+        }
+        if (search_match.col_start..search_match.col_end).contains(&column) {
+            return Some(index == search.current);
+        }
+    }
+
+    None
+}
+
+fn search_match_for_block_command(
+    search: &walk_ui::search::GlobalSearch,
+    block_id: u64,
+) -> Option<bool> {
+    if search.matches.is_empty() {
+        return None;
+    }
+
+    search
+        .matches
+        .iter()
+        .enumerate()
+        .find(|(_, search_match)| search_match.is_command && search_match.block_id == Some(block_id))
+        .map(|(index, _)| index == search.current)
+}
+
 fn push_text(
     render: &mut RenderState,
     font: &mut FontSystem,
@@ -874,13 +1003,32 @@ fn input_event_to_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
     }
 }
 
-fn collect_visible_lines(terminal: &Terminal) -> Vec<(i64, String)> {
-    terminal
+fn collect_search_lines(terminal: &Terminal, blocks: &[Block]) -> Vec<SearchLine> {
+    let mut lines: Vec<SearchLine> = terminal
         .state
-        .visible_rows()
+        .text_rows()
         .into_iter()
-        .map(|row| (row as i64, terminal.state.row_text(row)))
-        .collect()
+        .map(|row| SearchLine {
+            row: row.absolute_row,
+            block_id: None,
+            is_command: false,
+            text: row.text,
+        })
+        .collect();
+
+    for block in blocks {
+        if block.command_text.is_empty() {
+            continue;
+        }
+        lines.push(SearchLine {
+            row: block.output_start_row,
+            block_id: Some(block.id),
+            is_command: true,
+            text: block.command_text.clone(),
+        });
+    }
+
+    lines
 }
 
 fn extract_selection_text(terminal: &Terminal, start: CellPos, end: CellPos) -> String {
@@ -970,6 +1118,7 @@ fn push_block_decorations(
     theme: &Theme,
     blocks: &[Block],
     selected_block_id: Option<u64>,
+    global_search: &walk_ui::search::GlobalSearch,
     visible_rows: &[usize],
     row_positions: &[Option<usize>],
     total_cols: usize,
@@ -1041,6 +1190,21 @@ fn push_block_decorations(
                     theme.selection.b,
                     0.12,
                 ],
+            );
+        }
+
+        if let Some(current_match) = search_match_for_block_command(global_search, block.id) {
+            let highlight = if current_match {
+                theme.highlight_current_match
+            } else {
+                theme.highlight_match
+            };
+            batch.push_bg_quad(
+                x_offset + 4.0,
+                y,
+                viewport_width - 4.0,
+                cell_height,
+                [highlight.r, highlight.g, highlight.b, highlight.a],
             );
         }
 
