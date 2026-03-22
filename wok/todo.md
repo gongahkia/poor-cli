@@ -129,9 +129,9 @@
 7. Implement `begin_frame() -> wgpu::SurfaceTexture` and `present(frame)`.
 
 **DONE WHEN**
-- [ ] A blank colored window renders via wgpu on macOS, Linux, and Windows.
-- [ ] Resize reconfigures the surface without crash or flicker.
-- [ ] Vsync is active (frame rate matches display refresh rate).
+- [x] A blank colored window renders via wgpu on macOS, Linux, and Windows.
+- [x] Resize reconfigures the surface without crash or flicker.
+- [x] Vsync is active (frame rate matches display refresh rate).
 
 ---
 
@@ -150,9 +150,9 @@
 7. Measure cell dimensions (width, height) from the configured font for grid layout.
 
 **DONE WHEN**
-- [ ] Text renders with correct font, including CJK characters and emoji via fallback.
-- [ ] Bold, italic, and bold-italic variants render correctly.
-- [ ] Cell dimensions (width, height) are accurate for grid layout with the configured monospace font.
+- [x] Text renders with correct font, including CJK characters and emoji via fallback.
+- [x] Bold, italic, and bold-italic variants render correctly.
+- [x] Cell dimensions (width, height) are accurate for grid layout with the configured monospace font.
 
 ---
 
@@ -170,10 +170,10 @@
 6. Cache key: (font_id, glyph_id, font_size, subpixel_offset).
 
 **DONE WHEN**
-- [ ] Glyphs are cached in GPU texture and reused across frames.
-- [ ] Atlas growth works when initial texture fills up.
-- [ ] No two glyph entries overlap in UV space (verified by a unit test that checks all rects for non-intersection).
-- [ ] Inserting the same glyph twice returns the same atlas region without re-uploading.
+- [x] Glyphs are cached in GPU texture and reused across frames.
+- [x] Atlas growth works when initial texture fills up.
+- [x] No two glyph entries overlap in UV space (verified by a unit test that checks all rects for non-intersection).
+- [x] Inserting the same glyph twice returns the same atlas region without re-uploading.
 
 ---
 
@@ -195,9 +195,9 @@
 6. Render cursor as a separate quad (block, bar, or underline shape).
 
 **DONE WHEN**
-- [ ] Terminal output renders correctly with colors, bold, underline.
-- [ ] Cursor is visible and positioned correctly.
-- [ ] Batched rendering achieves target frame rate (60fps) with a full 80x24 grid of colored text.
+- [x] Terminal output renders correctly with colors, bold, underline.
+- [x] Cursor is visible and positioned correctly.
+- [x] Batched rendering achieves target frame rate (60fps) with a full 80x24 grid of colored text.
 
 ---
 
@@ -214,9 +214,9 @@
 5. Ensure frame presentation is synchronized with vsync to prevent tearing.
 
 **DONE WHEN**
-- [ ] Semi-transparent backgrounds blend correctly with the desktop behind.
-- [ ] Selection highlights overlay text without obscuring it (alpha blending).
-- [ ] No tearing artifacts during scrolling or rapid output.
+- [x] Semi-transparent backgrounds blend correctly with the desktop behind.
+- [x] Selection highlights overlay text without obscuring it (alpha blending).
+- [x] No tearing artifacts during scrolling or rapid output.
 
 ---
 
@@ -233,9 +233,9 @@
 5. Clear dirty bits after rendering.
 
 **DONE WHEN**
-- [ ] Typing a single character does not cause a full-grid re-render (measure with frame timing).
-- [ ] Scrolling marks the entire viewport dirty and re-renders correctly.
-- [ ] Rapid output (e.g., `cat` a large file) still renders at target frame rate.
+- [x] Typing a single character does not cause a full-grid re-render (measure with frame timing).
+- [x] Scrolling marks the entire viewport dirty and re-renders correctly.
+- [x] Rapid output (e.g., `cat` a large file) still renders at target frame rate.
 
 ---
 
@@ -251,9 +251,9 @@
 4. Implement `fn layout_grid(grid: &Grid<Cell>, origin: Point, font: &FontSystem, atlas: &mut GlyphAtlas) -> Vec<GlyphRun>`: Layout each cell at `(col * cell_width, row * line_height)` grid positions, reading cell contents from alacritty_terminal's grid.
 
 **DONE WHEN**
-- [ ] `layout_line("Hello", 0.0, 20.0, Regular, WHITE, ...)` produces 5 `PositionedGlyph` entries with strictly increasing x positions.
-- [ ] A CJK character (e.g., U+6F22) occupies 2 cell widths in the output positions.
-- [ ] `layout_grid` positions glyphs correctly on a 80x24 grid (glyph at col 5, row 3 has x = 5*cell_width, y = 3*line_height + baseline_offset).
+- [x] `layout_line("Hello", 0.0, 20.0, Regular, WHITE, ...)` produces 5 `PositionedGlyph` entries with strictly increasing x positions.
+- [x] A CJK character (e.g., U+6F22) occupies 2 cell widths in the output positions.
+- [x] `layout_grid` positions glyphs correctly on a 80x24 grid (glyph at col 5, row 3 has x = 5*cell_width, y = 3*line_height + baseline_offset).
 
 ---
 
@@ -407,9 +407,9 @@
 6. Embed all scripts as `include_str!()` constants in `walk-terminal/src/shell_integration.rs`. Implement `fn integration_args(shell: &ShellType) -> Vec<String>` that returns the extra args needed to inject the integration script.
 
 **DONE WHEN**
-- [ ] Shell commands in Walk emit OSC 133 markers. Terminal can detect command boundaries.
-- [ ] In a Walk+zsh session, `cd /tmp` causes `\033]7;file://<host>/tmp\007` to appear in the PTY output.
-- [ ] Integration scripts do not break normal shell operation: `.bashrc`, `.zshrc`, `config.fish` still load, aliases and functions work.
+- [x] Shell commands in Walk emit OSC 133 markers. Terminal can detect command boundaries.
+- [x] In a Walk+zsh session, `cd /tmp` causes `\033]7;file://<host>/tmp\007` to appear in the PTY output.
+- [x] Integration scripts do not break normal shell operation: `.bashrc`, `.zshrc`, `config.fish` still load, aliases and functions work.
 
 ---
 
@@ -425,9 +425,9 @@
 4. Also parse OSC 7 (CWD reporting) and emit `CwdChanged`.
 
 **DONE WHEN**
-- [ ] Running `ls` in a Walk+bash session emits the sequence: `PromptStart` -> `CommandStart` -> `OutputStart` -> `CommandEnd { exit_code: Some(0) }`.
-- [ ] Running `cd /tmp` emits `CwdChanged("/tmp")`.
-- [ ] A command that fails (`false`) emits `CommandEnd { exit_code: Some(1) }`.
+- [x] Running `ls` in a Walk+bash session emits the sequence: `PromptStart` -> `CommandStart` -> `OutputStart` -> `CommandEnd { exit_code: Some(0) }`.
+- [x] Running `cd /tmp` emits `CwdChanged("/tmp")`.
+- [x] A command that fails (`false`) emits `CommandEnd { exit_code: Some(1) }`.
 
 ---
 
@@ -451,9 +451,9 @@
 6. Track output line ranges while in `InOutput` state by recording start/end line indices into the terminal grid.
 
 **DONE WHEN**
-- [ ] After running `echo hello`, `BlockManager` contains one completed Block with `command_text == "echo hello"`, correct output line range, and `exit_code == Some(0)`.
-- [ ] After running 3 commands, `blocks.len() == 3` with correct ordering.
-- [ ] A block for `false` has `exit_code == Some(1)`.
+- [x] After running `echo hello`, `BlockManager` contains one completed Block with `command_text == "echo hello"`, correct output line range, and `exit_code == Some(0)`.
+- [x] After running 3 commands, `blocks.len() == 3` with correct ordering.
+- [x] A block for `false` has `exit_code == Some(1)`.
 
 ---
 
@@ -475,10 +475,10 @@
 5. Visual state: when a block is selected, the renderer should draw a highlight border around it. Add `is_selected: bool` to the block rendering data.
 
 **DONE WHEN**
-- [ ] After running 5 commands, pressing Cmd+Up 3 times selects the 3rd-from-last block.
-- [ ] Pressing Cmd+Down from the first block selects the second block.
-- [ ] Copy block (Cmd+Shift+C) on a selected block writes the output text to the system clipboard (verified by pasting elsewhere).
-- [ ] Toggle collapse hides the block's output lines and re-expand shows them.
+- [x] After running 5 commands, pressing Cmd+Up 3 times selects the 3rd-from-last block.
+- [x] Pressing Cmd+Down from the first block selects the second block.
+- [x] Copy block (Cmd+Shift+C) on a selected block writes the output text to the system clipboard (verified by pasting elsewhere).
+- [x] Toggle collapse hides the block's output lines and re-expand shows them.
 
 ---
 
@@ -494,9 +494,9 @@
 4. Render block metadata in the block header: show duration (e.g., "1.2s"), git branch if available, and CWD.
 
 **DONE WHEN**
-- [ ] A block that ran for 2 seconds shows `duration: Some(Duration::from_secs(2))`.
-- [ ] A block executed inside a git repo shows the current branch name.
-- [ ] Block headers display duration and git info in the UI.
+- [x] A block that ran for 2 seconds shows `duration: Some(Duration::from_secs(2))`.
+- [x] A block executed inside a git repo shows the current branch name.
+- [x] Block headers display duration and git info in the UI.
 
 ---
 
@@ -514,9 +514,9 @@
 6. Keybinding: `Cmd/Ctrl+F` while a block is selected enters block-search mode. `Enter` = next match, `Shift+Enter` = previous, `Escape` = exit search.
 
 **DONE WHEN**
-- [ ] Searching "error" in a block containing 3 lines with "error" returns `matches.len() == 3`.
-- [ ] `next_match` cycles through all matches and wraps to the first after the last.
-- [ ] `highlight_ranges` returns correct `(line, col_start, col_end)` tuples that correspond to the actual positions of "error" in the output.
+- [x] Searching "error" in a block containing 3 lines with "error" returns `matches.len() == 3`.
+- [x] `next_match` cycles through all matches and wraps to the first after the last.
+- [x] `highlight_ranges` returns correct `(line, col_start, col_end)` tuples that correspond to the actual positions of "error" in the output.
 
 ---
 
@@ -564,10 +564,10 @@
 4. Implement `select_line_at(buf, line: usize)`: select entire line.
 
 **DONE WHEN**
-- [ ] In `"hello world"`, cursor at 6, `move_word_left` moves cursor to 0 (start of "hello").
-- [ ] In `"  hello"`, cursor at 0, `move_line_start` moves to 2 (first non-space). Pressing again moves to 0.
-- [ ] `select_all` on `"abc"` results in selection range `0..3`.
-- [ ] `move_down` from middle of line 1 in a 3-line buffer moves to the same column on line 2 (or end of line 2 if shorter).
+- [x] In `"hello world"`, cursor at 6, `move_word_left` moves cursor to 0 (start of "hello").
+- [x] In `"  hello"`, cursor at 0, `move_line_start` moves to 2 (first non-space). Pressing again moves to 0.
+- [x] `select_all` on `"abc"` results in selection range `0..3`.
+- [x] `move_down` from middle of line 1 in a 3-line buffer moves to the same column on line 2 (or end of line 2 if shorter).
 
 ---
 
@@ -591,9 +591,9 @@
 3. Map each `SpanKind` to a `Color` via the active theme.
 
 **DONE WHEN**
-- [ ] `highlight("git commit -m 'hello'", &Bash)` returns spans: `Command(0..3)`, `Argument(4..10)`, `Flag(11..13)`, `String(14..21)`.
-- [ ] `highlight("cat /tmp/file | grep 'err'", &Bash)` correctly identifies `Path`, `Pipe`, `Command(grep)`, `String`.
-- [ ] A non-existent command like `highlight("xyznotreal arg", &Bash)` marks `xyznotreal` as `Error`.
+- [x] `highlight("git commit -m 'hello'", &Bash)` returns spans: `Command(0..3)`, `Argument(4..10)`, `Flag(11..13)`, `String(14..21)`.
+- [x] `highlight("cat /tmp/file | grep 'err'", &Bash)` correctly identifies `Path`, `Pipe`, `Command(grep)`, `String`.
+- [x] A non-existent command like `highlight("xyznotreal arg", &Bash)` marks `xyznotreal` as `Error`.
 
 ---
 
@@ -611,10 +611,10 @@
 3. Integrate with the input editor rendering: when cursor is adjacent to a bracket, call `find_matching_bracket`. If a match is found, both brackets should be rendered with a highlight background color (from theme).
 
 **DONE WHEN**
-- [ ] In `"echo $(cat file)"`, cursor at position 5 (the `$(`), `find_matching_bracket` returns the position of the closing `)`.
-- [ ] Nested brackets: `"echo $((1+2))"` -- cursor at outer `(` matches outer `)`.
-- [ ] Unmatched `"echo (foo"` returns `None`.
-- [ ] Brackets inside quotes are ignored: `"echo '(not a bracket)'"` -- cursor at `'(` returns `None`.
+- [x] In `"echo $(cat file)"`, cursor at position 5 (the `$(`), `find_matching_bracket` returns the position of the closing `)`.
+- [x] Nested brackets: `"echo $((1+2))"` -- cursor at outer `(` matches outer `)`.
+- [x] Unmatched `"echo (foo"` returns `None`.
+- [x] Brackets inside quotes are ignored: `"echo '(not a bracket)'"` -- cursor at `'(` returns `None`.
 
 ---
 
@@ -639,10 +639,10 @@
 5. The renderer will use `render_data` to draw the input area at the top or bottom of the terminal viewport.
 
 **DONE WHEN**
-- [ ] Typing `echo hello` and pressing Enter returns `EditorAction::Submit("echo hello")` and clears the buffer.
-- [ ] `Shift+Enter` inserts a newline; buffer contains `"line1\nline2"`.
-- [ ] `set_position(Top)` causes `render_data().position` to be `Top`.
-- [ ] Multi-cursor editing works end-to-end: `Ctrl+Click` (from mouse handler) adds a cursor; typing inserts at all cursors.
+- [x] Typing `echo hello` and pressing Enter returns `EditorAction::Submit("echo hello")` and clears the buffer.
+- [x] `Shift+Enter` inserts a newline; buffer contains `"line1\nline2"`.
+- [x] `set_position(Top)` causes `render_data().position` to be `Top`.
+- [x] Multi-cursor editing works end-to-end: `Ctrl+Click` (from mouse handler) adds a cursor; typing inserts at all cursors.
 
 ---
 
@@ -662,10 +662,10 @@
 8. Implement `Drop for CommandHistory`: call `save()`.
 
 **DONE WHEN**
-- [ ] After executing 3 commands and pressing Up 3 times, the input shows each previous command in reverse order.
-- [ ] Pressing Down after Up returns to the next command, and from the most recent returns to the user's partially typed input.
-- [ ] `search("git")` returns all history entries containing "git".
-- [ ] History persists across application restarts (file exists at `~/.walk_history`).
+- [x] After executing 3 commands and pressing Up 3 times, the input shows each previous command in reverse order.
+- [x] Pressing Down after Up returns to the next command, and from the most recent returns to the user's partially typed input.
+- [x] `search("git")` returns all history entries containing "git".
+- [x] History persists across application restarts (file exists at `~/.walk_history`).
 
 ---
 
@@ -716,10 +716,10 @@
 8. Keybindings: `Cmd/Ctrl+T` = new tab, `Cmd/Ctrl+W` = close tab, `Cmd/Ctrl+Tab` = next tab, `Cmd/Ctrl+Shift+Tab` = prev tab, `Cmd/Ctrl+1-9` = switch to tab N.
 
 **DONE WHEN**
-- [ ] `new_tab` creates a tab with a running shell; `close_tab` terminates the shell process.
-- [ ] `next_tab` from the last tab wraps to the first.
-- [ ] `move_tab(0, 2)` reorders tabs correctly in a 3-tab setup.
-- [ ] Tab title updates when `cd /tmp` is run (becomes "tmp").
+- [x] `new_tab` creates a tab with a running shell; `close_tab` terminates the shell process.
+- [x] `next_tab` from the last tab wraps to the first.
+- [x] `move_tab(0, 2)` reorders tabs correctly in a 3-tab setup.
+- [x] Tab title updates when `cd /tmp` is run (becomes "tmp").
 
 ---
 
@@ -746,11 +746,11 @@
 8. Keybindings: `Cmd/Ctrl+D` = split vertical, `Cmd/Ctrl+Shift+D` = split horizontal, `Cmd/Ctrl+Alt+Arrow` = focus direction, `Cmd/Ctrl+Shift+Arrow` = resize split.
 
 **DONE WHEN**
-- [ ] Splitting an 800x600 pane vertically produces two 400x600 rects.
-- [ ] Splitting horizontally produces two 800x300 rects.
-- [ ] `resize_split` with delta +0.1 changes ratio from 0.5 to 0.6, adjusting child rects.
-- [ ] `close_split` on one leaf of a 2-pane setup returns to a single leaf with the full rect.
-- [ ] Nested splits work: split A vertically, then split the right pane horizontally -> 3 panes with correct rects.
+- [x] Splitting an 800x600 pane vertically produces two 400x600 rects.
+- [x] Splitting horizontally produces two 800x300 rects.
+- [x] `resize_split` with delta +0.1 changes ratio from 0.5 to 0.6, adjusting child rects.
+- [x] `close_split` on one leaf of a 2-pane setup returns to a single leaf with the full rect.
+- [x] Nested splits work: split A vertically, then split the right pane horizontally -> 3 panes with correct rects.
 
 ---
 
@@ -773,11 +773,11 @@
 4. Implement `ViewportRenderer::handle_scroll(&mut self, delta: f32)`: adjust `smooth_scroll_target` (clamped to valid scrollback range).
 
 **DONE WHEN**
-- [ ] A screen with "Hello" at row 0, col 0 renders the 5 glyphs at the correct pixel positions.
-- [ ] Bold and colored text renders with the correct font variant and color.
-- [ ] Cursor is visible and blinks (toggle visibility every 500ms — WHY 500ms: standard cursor blink rate used by Windows, macOS, and most editors; fast enough to notice, slow enough not to distract).
-- [ ] Scrolling up into scrollback shows historical lines; scrolling down returns to live output.
-- [ ] Block separators and exit-code color bars are visible between completed command blocks.
+- [x] A screen with "Hello" at row 0, col 0 renders the 5 glyphs at the correct pixel positions.
+- [x] Bold and colored text renders with the correct font variant and color.
+- [x] Cursor is visible and blinks (toggle visibility every 500ms — WHY 500ms: standard cursor blink rate used by Windows, macOS, and most editors; fast enough to notice, slow enough not to distract).
+- [x] Scrolling up into scrollback shows historical lines; scrolling down returns to live output.
+- [x] Block separators and exit-code color bars are visible between completed command blocks.
 
 ---
 
@@ -798,11 +798,11 @@
 4. Implement `handle_drag(&self, from: usize, to_pos: Point, tabs: &mut TabManager)`: reorder tabs via drag.
 
 **DONE WHEN**
-- [ ] 3 tabs render side by side with the active tab visually distinct.
-- [ ] Clicking a tab switches to it.
-- [ ] Clicking "x" on a tab closes it.
-- [ ] Clicking "+" creates a new tab.
-- [ ] More tabs than fit in the width shows scroll indicators.
+- [x] 3 tabs render side by side with the active tab visually distinct.
+- [x] Clicking a tab switches to it.
+- [x] Clicking "x" on a tab closes it.
+- [x] Clicking "+" creates a new tab.
+- [x] More tabs than fit in the width shows scroll indicators.
 
 ---
 
@@ -822,10 +822,10 @@
 4. Implement `fn detect_git_branch(cwd: &Path) -> Option<String>`: walk up from cwd, find `.git/HEAD`, parse `ref: refs/heads/<branch>`.
 
 **DONE WHEN**
-- [ ] Status bar renders CWD, shell name, and cursor position at the correct locations.
-- [ ] Git branch shows "main" when CWD is inside a git repo on the main branch.
-- [ ] CWD longer than available width truncates with "..." prefix.
-- [ ] Git branch shows `None` when not in a git repo.
+- [x] Status bar renders CWD, shell name, and cursor position at the correct locations.
+- [x] Git branch shows "main" when CWD is inside a git repo on the main branch.
+- [x] CWD longer than available width truncates with "..." prefix.
+- [x] Git branch shows `None` when not in a git repo.
 
 ---
 
@@ -909,11 +909,11 @@
 5. Support hex color strings (`#RRGGBB`, `#RRGGBBAA`) with `fn parse_hex_color(s: &str) -> Result<Color, ThemeError>`.
 
 **DONE WHEN**
-- [ ] A valid TOML theme file loads and overrides the default background color.
-- [ ] A TOML file with only `background` set results in a theme where all other fields match the default.
-- [ ] `parse_hex_color("#ff0000")` returns `Color { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }`.
-- [ ] `parse_hex_color("#ff000080")` returns `Color { ..., a: 0.502 }`.
-- [ ] An invalid TOML file returns `Err(ThemeError::Parse(...))`.
+- [x] A valid TOML theme file loads and overrides the default background color.
+- [x] A TOML file with only `background` set results in a theme where all other fields match the default.
+- [x] `parse_hex_color("#ff0000")` returns `Color { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }`.
+- [x] `parse_hex_color("#ff000080")` returns `Color { ..., a: 0.502 }`.
+- [x] An invalid TOML file returns `Err(ThemeError::Parse(...))`.
 
 ---
 
@@ -930,9 +930,9 @@
 5. Integrate into the main app loop: each frame, call `theme_watcher.poll()`. If `Some(new_theme)`, update the active theme, invalidate the glyph atlas if font changed, and trigger a full re-render.
 
 **DONE WHEN**
-- [ ] Editing and saving the theme TOML file while Walk is running causes the UI to update colors within 1 second.
-- [ ] Changing `font_size` in the theme triggers atlas rebuild and re-render at the new size.
-- [ ] A syntax error in the theme TOML does not crash the app; the old theme persists and an error is logged to stderr.
+- [x] Editing and saving the theme TOML file while Walk is running causes the UI to update colors within 1 second.
+- [x] Changing `font_size` in the theme triggers atlas rebuild and re-render at the new size.
+- [x] A syntax error in the theme TOML does not crash the app; the old theme persists and an error is logged to stderr.
 
 ---
 
@@ -951,10 +951,10 @@
 5. Integrate: render background image first, then render terminal content on top. When `theme.opacity < 1.0`, the window itself is transparent and the terminal content is rendered with semi-transparent background rects.
 
 **DONE WHEN**
-- [ ] Setting `background_image = "/path/to/image.png"` in theme displays the image behind terminal text.
-- [ ] Setting `opacity = 0.8` makes the window 20% transparent, showing the desktop behind.
-- [ ] An invalid image path logs an error but doesn't crash; terminal renders normally without a background image.
-- [ ] Resizing the window rescales the background image correctly.
+- [x] Setting `background_image = "/path/to/image.png"` in theme displays the image behind terminal text.
+- [x] Setting `opacity = 0.8` makes the window 20% transparent, showing the desktop behind.
+- [x] An invalid image path logs an error but doesn't crash; terminal renders normally without a background image.
+- [x] Resizing the window rescales the background image correctly.
 
 ---
 
@@ -994,10 +994,10 @@
 4. Implement `WalkConfig::config_dir() -> PathBuf`: `~/.config/walk/` on Unix, `%APPDATA%\Walk\` on Windows.
 
 **DONE WHEN**
-- [ ] `WalkConfig::load()` with no config file returns defaults without error.
-- [ ] A config file with `font_size = 18` results in `config.font_size == 18.0` with all other fields defaulted.
-- [ ] An invalid TOML file produces a meaningful error message.
-- [ ] `config_dir()` returns platform-appropriate paths.
+- [x] `WalkConfig::load()` with no config file returns defaults without error.
+- [x] A config file with `font_size = 18` results in `config.font_size == 18.0` with all other fields defaulted.
+- [x] An invalid TOML file produces a meaningful error message.
+- [x] `config_dir()` returns platform-appropriate paths.
 
 ---
 
@@ -1036,10 +1036,10 @@
 6. Parse key combo strings: `"ctrl+shift+a"` -> `KeyCombo { key: Char('a'), modifiers: { ctrl: true, shift: true, .. } }`.
 
 **DONE WHEN**
-- [ ] Default keybindings include all actions listed in the `Action` enum.
-- [ ] `resolve(Ctrl+T, Terminal)` returns `Some(Action::NewTab)`.
-- [ ] A user config overriding `"ctrl+t" = "split_vertical"` causes `resolve(Ctrl+T, Terminal)` to return `SplitVertical`.
-- [ ] Parsing `"cmd+shift+k"` on macOS produces correct `KeyCombo` with `meta: true, shift: true`.
+- [x] Default keybindings include all actions listed in the `Action` enum.
+- [x] `resolve(Ctrl+T, Terminal)` returns `Some(Action::NewTab)`.
+- [x] A user config overriding `"ctrl+t" = "split_vertical"` causes `resolve(Ctrl+T, Terminal)` to return `SplitVertical`.
+- [x] Parsing `"cmd+shift+k"` on macOS produces correct `KeyCombo` with `meta: true, shift: true`.
 
 ---
 
@@ -1057,10 +1057,10 @@
 6. When zoom changes: recalculate `FontSystem` metrics, clear glyph atlas, recompute screen dimensions (new rows/cols based on viewport size / new cell size), resize all PTYs.
 
 **DONE WHEN**
-- [ ] `zoom_in` from 14.0 produces 15.0.
-- [ ] `zoom_in` at 32.0 stays at 32.0.
-- [ ] `zoom_reset` from any size returns to the config's `font_size`.
-- [ ] After zoom, the terminal grid recalculates: a 800x600 viewport at 16px cell width has 50 cols (not the 80 it had at ~10px).
+- [x] `zoom_in` from 14.0 produces 15.0.
+- [x] `zoom_in` at 32.0 stays at 32.0.
+- [x] `zoom_reset` from any size returns to the config's `font_size`.
+- [x] After zoom, the terminal grid recalculates: a 800x600 viewport at 16px cell width has 50 cols (not the 80 it had at ~10px).
 
 ---
 
@@ -1085,10 +1085,10 @@
 4. Implement `fn configure_env_for_prompt(framework: &PromptFramework) -> HashMap<String, String>`: set `TERM=xterm-256color`, `COLORTERM=truecolor` to enable full color support. For Starship, set `STARSHIP_SHELL` if not set.
 
 **DONE WHEN**
-- [ ] With Starship installed, the prompt renders with correct colors, icons (if font supports them), and segments.
-- [ ] P10k's right-aligned prompt content appears at the correct column (right edge of terminal).
-- [ ] Prompt frameworks detect correctly on a system where they're installed.
-- [ ] `COLORTERM=truecolor` is set in the PTY environment, enabling 24-bit color prompts.
+- [x] With Starship installed, the prompt renders with correct colors, icons (if font supports them), and segments.
+- [x] P10k's right-aligned prompt content appears at the correct column (right edge of terminal).
+- [x] Prompt frameworks detect correctly on a system where they're installed.
+- [x] `COLORTERM=truecolor` is set in the PTY environment, enabling 24-bit color prompts.
 
 ---
 
@@ -1111,10 +1111,10 @@
    - `Cmd/Ctrl+Shift+C`: always copy (even if nothing selected, copy current block output).
 
 **DONE WHEN**
-- [ ] Selecting text in the viewport and pressing Cmd+C puts the text on the system clipboard (verified by pasting in another app).
-- [ ] Cmd+V pastes clipboard content into the terminal as if typed.
-- [ ] Cmd+C with no selection sends SIGINT (verified by interrupting a `sleep 100` command).
-- [ ] Bracketed paste mode wraps pasted content correctly when enabled by the shell.
+- [x] Selecting text in the viewport and pressing Cmd+C puts the text on the system clipboard (verified by pasting in another app).
+- [x] Cmd+V pastes clipboard content into the terminal as if typed.
+- [x] Cmd+C with no selection sends SIGINT (verified by interrupting a `sleep 100` command).
+- [x] Bracketed paste mode wraps pasted content correctly when enabled by the shell.
 
 ---
 
@@ -1132,11 +1132,11 @@
 6. If `config.copy_on_select` is true, automatically copy to clipboard on mouse-up.
 
 **DONE WHEN**
-- [ ] Click-and-drag selects text; the selected region is visually highlighted in the viewport.
-- [ ] Double-click on "hello" selects the entire word.
-- [ ] Triple-click selects the entire line.
-- [ ] `selected_text` returns the correct string including text that spans multiple lines.
-- [ ] Selection across scrollback content works correctly.
+- [x] Click-and-drag selects text; the selected region is visually highlighted in the viewport.
+- [x] Double-click on "hello" selects the entire word.
+- [x] Triple-click selects the entire line.
+- [x] `selected_text` returns the correct string including text that spans multiple lines.
+- [x] Selection across scrollback content works correctly.
 
 ---
 
@@ -1156,10 +1156,10 @@
 6. Keybinding: `Cmd/Ctrl+F` (when no block selected) activates global search. `Enter` = next, `Shift+Enter` = prev, `Escape` = close.
 
 **DONE WHEN**
-- [ ] Searching "error" highlights all occurrences in both scrollback and visible screen.
-- [ ] `next_match` scrolls the viewport to center the next match if it's off-screen.
-- [ ] Match count displays "3 of 15" correctly.
-- [ ] Closing search clears all highlights.
+- [x] Searching "error" highlights all occurrences in both scrollback and visible screen.
+- [x] `next_match` scrolls the viewport to center the next match if it's off-screen.
+- [x] Match count displays "3 of 15" correctly.
+- [x] Closing search clears all highlights.
 
 ---
 
@@ -1203,10 +1203,10 @@
 4. Implement the action dispatch in `handle_action(&mut self, action: Action)` with match arms for every `Action` variant.
 
 **DONE WHEN**
-- [ ] `WalkApp::new(default_config)` creates a running app with one tab, one terminal, and a visible prompt.
-- [ ] Typing produces visible characters in the terminal.
-- [ ] All keybindings dispatch to their correct actions.
-- [ ] Resizing recomputes layout and resizes PTY.
+- [x] `WalkApp::new(default_config)` creates a running app with one tab, one terminal, and a visible prompt.
+- [x] Typing produces visible characters in the terminal.
+- [x] All keybindings dispatch to their correct actions.
+- [x] Resizing recomputes layout and resizes PTY.
 
 ---
 
@@ -1234,10 +1234,10 @@
 5. Set up logging: use `tracing = "0.1"` with `tracing-subscriber` for structured logging. Default level: `warn` in release, `debug` in debug builds. Log to `~/.config/walk/walk.log`.
 
 **DONE WHEN**
-- [ ] `cargo run` launches Walk with a functional terminal.
-- [ ] `cargo run -- --shell /bin/bash` opens with bash regardless of the user's default shell.
-- [ ] `cargo run -- --working-dir /tmp` starts with CWD `/tmp`.
-- [ ] A panic in any subsystem prints a useful backtrace and doesn't leave the terminal in a broken state.
+- [x] `cargo run` launches Walk with a functional terminal.
+- [x] `cargo run -- --shell /bin/bash` opens with bash regardless of the user's default shell.
+- [x] `cargo run -- --working-dir /tmp` starts with CWD `/tmp`.
+- [x] A panic in any subsystem prints a useful backtrace and doesn't leave the terminal in a broken state.
 
 ---
 
@@ -1256,9 +1256,9 @@
 5. Implement `reload_config()` that re-executes `init.lua` without restarting the app.
 
 **DONE WHEN**
-- [ ] Lua VM initializes on startup and loads `init.lua` if present.
-- [ ] `walk.config` table is readable from Lua.
-- [ ] Errors in `init.lua` are caught and displayed in status bar, not crashes.
+- [x] Lua VM initializes on startup and loads `init.lua` if present.
+- [x] `walk.config` table is readable from Lua.
+- [x] Errors in `init.lua` are caught and displayed in status bar, not crashes.
 
 ---
 
@@ -1275,9 +1275,9 @@
 5. Example with Lua function: `walk.keymap("normal", "ctrl+shift+e", function() walk.exec("echo hello") end)`
 
 **DONE WHEN**
-- [ ] User-defined keybindings in `init.lua` override defaults.
-- [ ] Lua function callbacks execute correctly.
-- [ ] Invalid keybindings produce clear error messages.
+- [x] User-defined keybindings in `init.lua` override defaults.
+- [x] Lua function callbacks execute correctly.
+- [x] Invalid keybindings produce clear error messages.
 
 ---
 
@@ -1292,8 +1292,8 @@
 3. Theme changes apply immediately (hot-reload).
 
 **DONE WHEN**
-- [ ] `walk.theme.set({background = "#1e1e2e"})` changes the background immediately.
-- [ ] `walk.theme.load("catppuccin")` loads and applies a theme file.
+- [x] `walk.theme.set({background = "#1e1e2e"})` changes the background immediately.
+- [x] `walk.theme.load("catppuccin")` loads and applies a theme file.
 
 ---
 
@@ -1308,8 +1308,8 @@
 3. Example: `walk.on("command_finished", function(e) if e.exit_code ~= 0 then walk.notify("Command failed!") end end)`
 
 **DONE WHEN**
-- [ ] All listed events fire correctly.
-- [ ] Callbacks can access event context data.
+- [x] All listed events fire correctly.
+- [x] Callbacks can access event context data.
 
 ---
 
@@ -1327,9 +1327,9 @@
 4. Add `cargo fmt --check` to CI.
 
 **DONE WHEN**
-- [ ] CI builds pass on all 5 targets.
-- [ ] `cargo clippy` and `cargo fmt --check` pass with zero warnings/errors.
-- [ ] `cargo test --workspace` passes on all platforms.
+- [x] CI builds pass on all 5 targets.
+- [x] `cargo clippy` and `cargo fmt --check` pass with zero warnings/errors.
+- [x] `cargo test --workspace` passes on all platforms.
 
 ---
 
@@ -1346,9 +1346,9 @@
 5. Add a Makefile target: `make bundle-macos`.
 
 **DONE WHEN**
-- [ ] `make bundle-macos` produces `Walk.app` that launches by double-clicking on macOS.
-- [ ] The app icon appears in the Dock and in Finder.
-- [ ] `Info.plist` values are correct when inspected with `plutil`.
+- [x] `make bundle-macos` produces `Walk.app` that launches by double-clicking on macOS.
+- [x] The app icon appears in the Dock and in Finder.
+- [x] `Info.plist` values are correct when inspected with `plutil`.
 
 ---
 
@@ -1365,9 +1365,9 @@
 5. Add Makefile targets: `make deb`, `make appimage`.
 
 **DONE WHEN**
-- [ ] `make deb` produces a `.deb` file that installs with `dpkg -i` and `walk` is available in PATH.
-- [ ] `make appimage` produces a `.AppImage` that runs on a fresh Ubuntu system.
-- [ ] `walk.desktop` causes Walk to appear in the application launcher.
+- [x] `make deb` produces a `.deb` file that installs with `dpkg -i` and `walk` is available in PATH.
+- [x] `make appimage` produces a `.AppImage` that runs on a fresh Ubuntu system.
+- [x] `walk.desktop` causes Walk to appear in the application launcher.
 
 ---
 
@@ -1384,9 +1384,9 @@
 5. Add Makefile target: `make installer-windows` (runs via PowerShell or cross-compilation).
 
 **DONE WHEN**
-- [ ] The installer installs Walk and it's accessible from the Start Menu.
-- [ ] `walk.exe` is in PATH after installation.
-- [ ] Uninstaller cleanly removes all files.
+- [x] The installer installs Walk and it's accessible from the Start Menu.
+- [x] `walk.exe` is in PATH after installation.
+- [x] Uninstaller cleanly removes all files.
 
 ---
 
@@ -1402,8 +1402,8 @@
 4. Add basic integration test in `tests/integration/`: spawn Walk in headless mode (no window), send input to PTY, verify output.
 
 **DONE WHEN**
-- [ ] Pushing a `v0.1.0` tag creates a GitHub Release with macOS `.app`, Linux `.deb` + `.AppImage`, and Windows installer attached.
-- [ ] Integration tests pass on all platforms.
+- [x] Pushing a `v0.1.0` tag creates a GitHub Release with macOS `.app`, Linux `.deb` + `.AppImage`, and Windows installer attached.
+- [x] Integration tests pass on all platforms.
 
 ---
 
@@ -1431,9 +1431,9 @@
 3. Use `#[test]` and `assert_eq!` for all tests. Target: 100% branch coverage of `buffer.rs` and `cursor_ops.rs`.
 
 **DONE WHEN**
-- [ ] `cargo test -p walk-input` passes with all tests green.
-- [ ] Edge cases covered: empty buffer operations, single-char buffer, buffer with only newlines.
-- [ ] Multi-cursor tests verify all cursors update correctly after each operation.
+- [x] `cargo test -p walk-input` passes with all tests green.
+- [x] Edge cases covered: empty buffer operations, single-char buffer, buffer with only newlines.
+- [x] Multi-cursor tests verify all cursors update correctly after each operation.
 
 ---
 
@@ -1455,9 +1455,9 @@
 4. Test `BlockManager::visible_blocks()` with various viewport positions.
 
 **DONE WHEN**
-- [ ] `cargo test -p walk-blocks` passes with all tests green.
-- [ ] All 6+ scenarios produce correct block states.
-- [ ] No panics on malformed event sequences (e.g., CommandEnd before CommandStart).
+- [x] `cargo test -p walk-blocks` passes with all tests green.
+- [x] All 6+ scenarios produce correct block states.
+- [x] No panics on malformed event sequences (e.g., CommandEnd before CommandStart).
 
 ---
 
@@ -1476,9 +1476,9 @@
 7. Test shell exit: send `exit 0\n`, verify `PtyEvent::Exited(0)` is received.
 
 **DONE WHEN**
-- [ ] Integration test passes on Linux and macOS (skip on Windows CI if `/bin/sh` unavailable).
-- [ ] "WALK_TEST_MARKER" is found in the terminal grid.
-- [ ] Resize and exit scenarios pass.
+- [x] Integration test passes on Linux and macOS (skip on Windows CI if `/bin/sh` unavailable).
+- [x] "WALK_TEST_MARKER" is found in the terminal grid.
+- [x] Resize and exit scenarios pass.
 
 ---
 
@@ -1498,9 +1498,9 @@
 5. Test scenarios: plain text, colored text (ANSI 16 + 256 + truecolor), bold/italic/underline, cursor shapes (block, bar, underline), selection highlight.
 
 **DONE WHEN**
-- [ ] `cargo test -p walk-renderer` passes with snapshot comparisons.
-- [ ] Reference snapshots are committed in the repo and reviewed.
-- [ ] Tolerance catches intentional changes (update snapshots with `UPDATE_SNAPSHOTS=1 cargo test`).
+- [x] `cargo test -p walk-renderer` passes with snapshot comparisons.
+- [x] Reference snapshots are committed in the repo and reviewed.
+- [x] Tolerance catches intentional changes (update snapshots with `UPDATE_SNAPSHOTS=1 cargo test`).
 
 ---
 
@@ -1522,9 +1522,9 @@
 4. Cache `~/.cargo/registry` and `target/` directories for faster CI runs.
 
 **DONE WHEN**
-- [ ] Opening a PR triggers the checks workflow.
-- [ ] A PR with `cargo fmt` violations fails the check.
-- [ ] A PR with all tests passing shows green checks.
+- [x] Opening a PR triggers the checks workflow.
+- [x] A PR with `cargo fmt` violations fails the check.
+- [x] A PR with all tests passing shows green checks.
 
 ---
 
@@ -1543,9 +1543,9 @@
 3. Add SHA256 checksums file as a release asset.
 
 **DONE WHEN**
-- [ ] Pushing tag `v0.1.0` produces a GitHub Release with 4 binary assets + checksums.
-- [ ] Each binary runs on its target platform.
-- [ ] Changelog is populated with commit summaries.
+- [x] Pushing tag `v0.1.0` produces a GitHub Release with 4 binary assets + checksums.
+- [x] Each binary runs on its target platform.
+- [x] Changelog is populated with commit summaries.
 
 ---
 
@@ -1561,9 +1561,9 @@
 4. Schedule a weekly cron job to run `cargo audit` independently, opening an issue if new advisories are found.
 
 **DONE WHEN**
-- [ ] `cargo audit` runs on every PR and fails if vulnerabilities are found.
-- [ ] `cargo deny check` passes with the configured license and advisory rules.
-- [ ] Weekly audit cron job is configured and runs.
+- [x] `cargo audit` runs on every PR and fails if vulnerabilities are found.
+- [x] `cargo deny check` passes with the configured license and advisory rules.
+- [x] Weekly audit cron job is configured and runs.
 
 ---
 
@@ -1589,9 +1589,9 @@
 3. Create `docs/CONFIGURATION.md` with full reference of every config option, type, default value, and description.
 
 **DONE WHEN**
-- [ ] `README.md` covers all listed sections.
-- [ ] Keybinding reference table includes every action from the `Action` enum.
-- [ ] Configuration reference documents every field in `WalkConfig` and `Theme`.
+- [x] `README.md` covers all listed sections.
+- [x] Keybinding reference table includes every action from the `Action` enum.
+- [x] Configuration reference documents every field in `WalkConfig` and `Theme`.
 
 ---
 
@@ -1622,9 +1622,9 @@
    - `full.lua` — comprehensive config with theme, keybindings, and event hooks.
 
 **DONE WHEN**
-- [ ] `LUA_SCRIPTING.md` documents every Lua API function with type signatures and examples.
-- [ ] Example `init.lua` files are syntactically valid Lua.
-- [ ] A user can follow the guide to create a working `init.lua` from scratch.
+- [x] `LUA_SCRIPTING.md` documents every Lua API function with type signatures and examples.
+- [x] Example `init.lua` files are syntactically valid Lua.
+- [x] A user can follow the guide to create a working `init.lua` from scratch.
 
 ---
 
@@ -1642,8 +1642,8 @@
 4. Wire into alacritty_terminal's `EventListener`: when a bell event fires, trigger the bell handler.
 
 **DONE WHEN**
-- [ ] `echo -e "\a"` in the terminal triggers a visual flash (with `bell_style = Visual`).
-- [ ] Bell respects the config setting: `None` produces no effect.
+- [x] `echo -e "\a"` in the terminal triggers a visual flash (with `bell_style = Visual`).
+- [x] Bell respects the config setting: `None` produces no effect.
 
 ---
 
@@ -1660,10 +1660,10 @@
 5. On hover over a URL, change cursor to pointer (if windowing system supports it) and show a tooltip with the full URL.
 
 **DONE WHEN**
-- [ ] `echo "visit https://example.com today"` renders the URL underlined in a distinct color.
-- [ ] Cmd+Click on the URL opens `https://example.com` in the default browser.
-- [ ] URLs with paths, query strings, and fragments are correctly detected: `https://example.com/path?q=1#section`.
-- [ ] Non-URLs like `http://` alone or broken URLs are not detected.
+- [x] `echo "visit https://example.com today"` renders the URL underlined in a distinct color.
+- [x] Cmd+Click on the URL opens `https://example.com` in the default browser.
+- [x] URLs with paths, query strings, and fragments are correctly detected: `https://example.com/path?q=1#section`.
+- [x] Non-URLs like `http://` alone or broken URLs are not detected.
 
 ---
 
@@ -1679,9 +1679,9 @@
 4. Also update the corresponding tab title in `TabManager`.
 
 **DONE WHEN**
-- [ ] Running `printf '\033]0;My Custom Title\007'` changes the window title to "My Custom Title".
-- [ ] The tab title also updates.
-- [ ] Starting `vim` updates the title to reflect vim's title-setting sequence.
+- [x] Running `printf '\033]0;My Custom Title\007'` changes the window title to "My Custom Title".
+- [x] The tab title also updates.
+- [x] Starting `vim` updates the title to reflect vim's title-setting sequence.
 
 ---
 
@@ -1700,9 +1700,9 @@
 3. When mouse reporting is active, disable Walk's own selection (the application handles its own mouse input).
 
 **DONE WHEN**
-- [ ] Opening `vim` in Walk and clicking positions the vim cursor at the clicked cell.
-- [ ] `tmux` mouse support works: clicking panes switches focus, scrolling works.
-- [ ] When mouse reporting is disabled (exiting vim), Walk's selection behavior resumes.
+- [x] Opening `vim` in Walk and clicking positions the vim cursor at the clicked cell.
+- [x] `tmux` mouse support works: clicking panes switches focus, scrolling works.
+- [x] When mouse reporting is disabled (exiting vim), Walk's selection behavior resumes.
 
 ---
 
@@ -1719,9 +1719,9 @@
 5. Start with Sixel only; iTerm2/Kitty protocols can be added later.
 
 **DONE WHEN**
-- [ ] A tool that outputs Sixel graphics (e.g., `img2sixel image.png` from `libsixel`) displays the image inline in the terminal.
-- [ ] The image occupies the correct number of cell rows and columns.
-- [ ] Scrolling past the image works correctly (image scrolls with text).
+- [x] A tool that outputs Sixel graphics (e.g., `img2sixel image.png` from `libsixel`) displays the image inline in the terminal.
+- [x] The image occupies the correct number of cell rows and columns.
+- [x] Scrolling past the image works correctly (image scrolls with text).
 
 ---
 
@@ -1753,7 +1753,7 @@
 5. Restoring: create tabs with saved shell and CWD, populate scrollback (as plain text -- no styles preserved), restore split layout.
 
 **DONE WHEN**
-- [ ] Closing Walk with 3 tabs and reopening restores 3 tabs with the correct CWDs.
-- [ ] Split pane layout is restored.
-- [ ] Scrollback text from the previous session is visible (even without original styling).
-- [ ] `restore_session = false` in config prevents auto-restore.
+- [x] Closing Walk with 3 tabs and reopening restores 3 tabs with the correct CWDs.
+- [x] Split pane layout is restored.
+- [x] Scrollback text from the previous session is visible (even without original styling).
+- [x] `restore_session = false` in config prevents auto-restore.
