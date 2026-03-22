@@ -13,6 +13,7 @@ walk-blocks = { path = "../walk-blocks" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 arboard = "3"
+image = "0.25"
 notify = "6"
 thiserror = "2"
 tracing = "0.1"

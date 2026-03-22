@@ -8,6 +8,7 @@ description = "GPU rendering, glyph atlas, and text layout for Walk terminal"
 
 [dependencies]
 wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
 cosmic-text = "0.12"
 unicode-width = "0.2"
 image = "0.25"
