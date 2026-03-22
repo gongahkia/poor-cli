@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Walk
+Comment=GPU-accelerated terminal emulator with Blocks
+Exec=walk
+Icon=walk
+Type=Application
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupNotify=true

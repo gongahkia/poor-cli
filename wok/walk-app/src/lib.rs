@@ -18,4 +18,5 @@ pub mod handler;
 pub mod input;
 pub mod keybindings;
 pub mod scripting;
+pub mod session;
 pub mod window;
