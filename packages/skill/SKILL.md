@@ -84,34 +84,30 @@ Browse SingStat dataset categories.
 ### MAS (Finance & Monetary)
 
 #### `sg_mas_exchange_rates`
-Get MAS exchange rates for SGD against foreign currencies.
+Get MAS exchange rates for SGD against foreign currencies. Supports latest data or an exact date lookup.
 
 **Input:**
 - `currency` (string, optional) — 3-letter currency code (e.g., "USD", "EUR")
-- `startDate` (string, optional) — Start date (YYYY-MM-DD)
-- `endDate` (string, optional) — End date (YYYY-MM-DD)
+- `date` (string, optional) — Exact date (YYYY-MM-DD)
 - `format` (string, optional) — Output format
 
 **Example:**
 ```json
-{ "currency": "USD", "startDate": "2024-01-01", "endDate": "2024-12-31" }
+{ "currency": "USD", "date": "2024-01-01" }
 ```
 
 #### `sg_mas_interest_rates`
-Get MAS interest rates (SORA, prime lending, fixed deposit).
+Get MAS interest rates. This phase supports SORA only.
 
 **Input:**
-- `rateType` (string, optional) — "sora" | "prime" | "fixed_deposit" (default: "sora")
-- `startDate` (string, optional) — Start date (YYYY-MM-DD)
-- `endDate` (string, optional) — End date (YYYY-MM-DD)
+- `date` (string, optional) — Exact date (YYYY-MM-DD)
 - `format` (string, optional) — Output format
 
 #### `sg_mas_financial_stats`
-Get MAS financial sector statistics.
+Get MAS financial sector statistics. This phase supports banking data only.
 
 **Input:**
-- `category` (string, required) — "banking" | "insurance" | "monetary"
-- `startDate` / `endDate` (string, optional) — Date range
+- `date` (string, optional) — Exact date (YYYY-MM-DD)
 - `format` (string, optional) — Output format
 
 ### OneMap (Geospatial & Demographics)

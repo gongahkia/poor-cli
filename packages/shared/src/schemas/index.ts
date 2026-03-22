@@ -41,42 +41,28 @@ export const SingStatCompareSchema = z.object({
 
 export const MasExchangeRateSchema = z.object({
   currency: z.string().length(3).optional(),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
+  date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const MasInterestRateSchema = z.object({
-  rateType: z.enum(["sora", "prime", "fixed_deposit"]).optional(),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
+  date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const MasFinancialStatsSchema = z.object({
-  category: z.enum(["banking", "insurance", "monetary"]),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  endDate: z
+  date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+}).strict();
 
 export const OneMapGeocodeSchema = z.object({
   searchVal: z.string().min(1),
