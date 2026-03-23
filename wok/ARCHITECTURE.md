@@ -141,7 +141,7 @@ The current runtime is coherent, but a few edges are still intentionally narrow:
 
 - search is workspace-global, but the overlay is still rendered in the focused pane
 - plugins do not own custom rendering or arbitrary layout mutation
-- the renderer still rebuilds the live frame batch rather than consuming the dormant row-damage cache
+- the renderer now caches viewport row batches, but the runtime is still concentrated in `walk-app/src/main.rs` rather than a fully split module tree
 - runtime orchestration is still concentrated in `walk-app/src/main.rs`
 
 For the product framing and demo script, use [README.md](README.md) and [docs/INTERVIEW.md](docs/INTERVIEW.md).

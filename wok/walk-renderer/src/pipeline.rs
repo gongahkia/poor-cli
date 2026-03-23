@@ -38,12 +38,17 @@ pub struct QuadBatch {
 }
 
 impl QuadBatch {
+    /// Create a batch with explicit backing storage sizes.
+    pub fn with_capacity(vertex_capacity: usize, index_capacity: usize) -> Self {
+        Self {
+            vertices: Vec::with_capacity(vertex_capacity),
+            indices: Vec::with_capacity(index_capacity),
+        }
+    }
+
     /// Create a new empty batch.
     pub fn new() -> Self {
-        Self {
-            vertices: Vec::with_capacity(4_096),
-            indices: Vec::with_capacity(6_144),
-        }
+        Self::with_capacity(4_096, 6_144)
     }
 
     /// Add a background quad for a cell.
@@ -188,6 +193,14 @@ impl QuadBatch {
         self.indices.clear();
     }
 
+    /// Append another batch, offsetting its indices to match the current vertex base.
+    pub fn append(&mut self, other: &Self) {
+        let base = self.vertices.len() as u32;
+        self.vertices.extend_from_slice(&other.vertices);
+        self.indices
+            .extend(other.indices.iter().map(|index| index + base));
+    }
+
     /// Return the number of quads in the batch.
     pub fn quad_count(&self) -> usize {
         self.indices.len() / 6
@@ -228,5 +241,20 @@ mod tests {
         batch.push_bg_quad(0.0, 0.0, 10.0, 20.0, [1.0; 4]);
         batch.clear();
         assert_eq!(batch.quad_count(), 0);
+    }
+
+    #[test]
+    fn test_append_offsets_indices() {
+        let mut first = QuadBatch::with_capacity(8, 12);
+        let mut second = QuadBatch::with_capacity(8, 12);
+
+        first.push_bg_quad(0.0, 0.0, 10.0, 20.0, [1.0; 4]);
+        second.push_bg_quad(10.0, 0.0, 10.0, 20.0, [0.5; 4]);
+
+        first.append(&second);
+
+        assert_eq!(first.vertices.len(), 8);
+        assert_eq!(first.indices, vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+        assert_eq!(first.quad_count(), 2);
     }
 }

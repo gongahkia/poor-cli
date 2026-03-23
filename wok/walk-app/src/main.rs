@@ -31,13 +31,14 @@ use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
 use walk_blocks::block::Block;
 use walk_input::editor::{EditorAction, EditorKey};
 use walk_renderer::atlas::GlyphAtlas;
+use walk_renderer::damage::DirtyRegion;
 use walk_renderer::font::FontSystem;
 use walk_renderer::gpu::GpuContext;
 use walk_renderer::pipeline::CursorShape;
 use walk_renderer::pipeline::QuadBatch;
 use walk_renderer::render_pipeline::TerminalRenderPipeline;
 use walk_terminal::shell::ShellType;
-use walk_terminal::state::CellColor;
+use walk_terminal::state::{CellColor, CellRenderData};
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::background::BackgroundRenderer;
@@ -81,7 +82,7 @@ struct RenderState {
 }
 
 /// Window sub-rectangles used by the single-pane runtime.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct UiRects {
     viewport: Rect,
     input: Rect,
@@ -97,7 +98,7 @@ impl Default for UiRects {
 }
 
 /// Global window chrome rectangles shared by the workspace.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct ChromeRects {
     tab_bar: Rect,
     content: Rect,
@@ -114,6 +115,69 @@ impl Default for ChromeRects {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct PaneOverlaySignature {
+    selected_block_id: Option<u64>,
+    blocks: Vec<(u64, usize, usize, Option<i32>, bool)>,
+    search_query: String,
+    search_current: usize,
+    search_matches: Vec<(usize, u16, u16, Option<u64>, bool)>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct PaneRowSignature {
+    absolute_row: usize,
+    render_row: Option<usize>,
+    cells: Vec<CellRenderData>,
+}
+
+struct PaneRowCache {
+    dirty: DirtyRegion,
+    row_batches: Vec<QuadBatch>,
+    row_signatures: Vec<Option<PaneRowSignature>>,
+    overlay_signature: Option<PaneOverlaySignature>,
+    cols: usize,
+}
+
+impl PaneRowCache {
+    fn new(rows: usize, cols: usize) -> Self {
+        Self {
+            dirty: DirtyRegion::new(rows),
+            row_batches: (0..rows).map(|_| Self::row_batch(cols)).collect(),
+            row_signatures: vec![None; rows],
+            overlay_signature: None,
+            cols,
+        }
+    }
+
+    fn resize(&mut self, rows: usize, cols: usize) {
+        if self.row_batches.len() == rows && self.cols == cols {
+            return;
+        }
+
+        self.dirty = DirtyRegion::new(rows);
+        self.row_batches = (0..rows).map(|_| Self::row_batch(cols)).collect();
+        self.row_signatures = vec![None; rows];
+        self.overlay_signature = None;
+        self.cols = cols;
+    }
+
+    fn invalidate(&mut self) {
+        self.overlay_signature = None;
+        for signature in &mut self.row_signatures {
+            *signature = None;
+        }
+        self.dirty.mark_fully_damaged();
+    }
+
+    fn row_batch(cols: usize) -> QuadBatch {
+        QuadBatch::with_capacity(
+            cols.saturating_mul(8).max(64),
+            cols.saturating_mul(12).max(96),
+        )
+    }
+}
+
 /// Runtime state for a pane.
 struct PaneRuntime {
     app: WalkApp,
@@ -122,6 +186,7 @@ struct PaneRuntime {
     ui_rects: UiRects,
     cols: u16,
     rows: u16,
+    row_cache: PaneRowCache,
 }
 
 /// Walk application handler.
@@ -257,6 +322,7 @@ impl WalkHandler {
                     ui_rects,
                     cols,
                     rows,
+                    row_cache: PaneRowCache::new(rows as usize, cols as usize),
                 };
                 self.panes.insert(pane_id, pane_runtime);
                 if let Some(pane_state) = restore {
@@ -318,13 +384,17 @@ impl WalkHandler {
             let (cols, rows) = self
                 .font
                 .grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
-            pane.ui_rects = ui_rects;
+            if pane.ui_rects != ui_rects {
+                pane.row_cache.invalidate();
+                pane.ui_rects = ui_rects;
+            }
             if pane.cols != cols || pane.rows != rows {
                 if let Err(error) = pane.terminal.resize(cols, rows) {
                     warn!("failed to resize pane terminal: {error}");
                 }
                 pane.cols = cols;
                 pane.rows = rows;
+                pane.row_cache.resize(rows as usize, cols as usize);
             }
         }
     }
@@ -576,64 +646,66 @@ impl WalkHandler {
                 ),
             );
 
-            for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
-                let Some(render_row) = row_positions.get(row_idx).and_then(|row| *row) else {
-                    continue;
-                };
-                for col_idx in 0..total_cols {
-                    let cell = pane.terminal.state.cell_at_absolute(absolute_row, col_idx);
-                    let x = viewport.x + col_idx as f32 * cw;
-                    let y = viewport.y + render_row as f32 * ch;
-                    let mut bg = resolve_cell_color(&cell.bg, theme, true);
-                    let mut fg = resolve_cell_color(&cell.fg, theme, false);
+            let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
+            let overlay_signature = pane_overlay_signature(
+                &pane.app.block_manager.blocks,
+                selected_block_id,
+                search,
+                pane_id,
+            );
+            pane.row_cache.resize(visible_rows.len(), total_cols);
+            if pane.row_cache.overlay_signature.as_ref() != Some(&overlay_signature) {
+                pane.row_cache.overlay_signature = Some(overlay_signature);
+                pane.row_cache.dirty.mark_fully_damaged();
+            }
 
-                    if cell.is_inverse {
-                        std::mem::swap(&mut bg, &mut fg);
-                    }
-                    if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
-                        bg[3] *= terminal_surface_alpha;
-                    }
-
-                    render.batch.push_bg_quad(x, y, cw, ch, bg);
-                    let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
-                    if let Some(current_match) =
-                        search_match_at_cell(search, pane_id, absolute_row, col_idx as u16)
-                    {
-                        let highlight = if current_match {
-                            theme.highlight_current_match
-                        } else {
-                            theme.highlight_match
-                        };
-                        render.batch.push_bg_quad(
-                            x,
-                            y,
-                            cw,
-                            ch,
-                            [highlight.r, highlight.g, highlight.b, highlight.a],
-                        );
-                    }
-
-                    if cell.character != ' ' && cell.character != '\0' {
-                        push_glyph(render, &mut self.font, x, y, cell.character, fg);
+            if pane.terminal.is_dirty() || pane.viewport.needs_render() {
+                for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
+                    let signature = PaneRowSignature {
+                        absolute_row,
+                        render_row: row_positions.get(row_idx).copied().flatten(),
+                        cells: collect_row_cells(&pane.terminal, absolute_row, total_cols),
+                    };
+                    if pane.row_cache.row_signatures[row_idx].as_ref() != Some(&signature) {
+                        pane.row_cache.row_signatures[row_idx] = Some(signature);
+                        pane.row_cache.dirty.mark_row_dirty(row_idx);
                     }
                 }
             }
 
-            push_block_decorations(
-                &mut render.batch,
-                theme,
-                &pane.app.block_manager.blocks,
-                selected_block_id,
-                workspace_search.as_ref().unwrap_or(&pane.app.global_search),
-                pane_id,
-                &visible_rows,
-                &row_positions,
-                total_cols,
-                viewport.x,
-                viewport.y,
-                cw,
-                ch,
-            );
+            if pane.row_cache.dirty.has_damage() {
+                let blocks = &pane.app.block_manager.blocks;
+                let terminal = &pane.terminal;
+                let row_cache = &mut pane.row_cache;
+                for (row_idx, absolute_row) in visible_rows.iter().copied().enumerate() {
+                    if !row_cache.dirty.is_row_dirty(row_idx) {
+                        continue;
+                    }
+                    rebuild_visible_row_batch(
+                        &mut row_cache.row_batches[row_idx],
+                        render,
+                        &mut self.font,
+                        theme,
+                        blocks,
+                        selected_block_id,
+                        search,
+                        pane_id,
+                        terminal,
+                        absolute_row,
+                        row_positions.get(row_idx).copied().flatten(),
+                        total_cols,
+                        viewport,
+                        cw,
+                        ch,
+                        terminal_surface_alpha,
+                    );
+                }
+                row_cache.dirty.clear();
+            }
+
+            for row_batch in pane.row_cache.row_batches.iter().take(visible_rows.len()) {
+                render.batch.append(row_batch);
+            }
 
             render.batch.push_bg_quad(
                 viewport.x,
@@ -909,6 +981,12 @@ impl WalkHandler {
         self.panes.values().any(|pane| !pane.terminal.exited)
     }
 
+    fn invalidate_all_row_caches(&mut self) {
+        for pane in self.panes.values_mut() {
+            pane.row_cache.invalidate();
+        }
+    }
+
     fn refresh_plugin_snapshot(&self) {
         let Some(plugins) = &self.plugins else {
             return;
@@ -1106,6 +1184,7 @@ impl WalkHandler {
             pane.app.config.theme_path = self.config.theme_path.clone();
             pane.app.zoom = walk_ui::zoom::ZoomManager::new(theme.font_size);
         }
+        self.invalidate_all_row_caches();
         self.sync_background_renderer(Some(&theme));
         if let Some(window) = &self.window {
             self.sync_workspace_layout(window.inner_size());
@@ -1616,6 +1695,7 @@ impl WalkHandler {
             pane.app.zoom.set_current_size(target_size);
             pane.app.config.font_size = target_size;
         }
+        self.invalidate_all_row_caches();
         self.refresh_plugin_config();
         if let Some(window) = &self.window {
             self.sync_workspace_layout(window.inner_size());
@@ -2622,6 +2702,40 @@ fn push_glyph(
     character: char,
     color: [f32; 4],
 ) {
+    let (pipeline, gpu, atlas, batch) = (
+        &mut render.pipeline,
+        &render.gpu,
+        &mut render.atlas,
+        &mut render.batch,
+    );
+    push_glyph_impl(pipeline, gpu, atlas, batch, font, x, y, character, color);
+}
+
+fn push_glyph_to_batch(
+    render: &mut RenderState,
+    batch: &mut QuadBatch,
+    font: &mut FontSystem,
+    x: f32,
+    y: f32,
+    character: char,
+    color: [f32; 4],
+) {
+    let (pipeline, gpu, atlas) = (&mut render.pipeline, &render.gpu, &mut render.atlas);
+    push_glyph_impl(pipeline, gpu, atlas, batch, font, x, y, character, color);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_glyph_impl(
+    pipeline: &mut TerminalRenderPipeline,
+    gpu: &GpuContext,
+    atlas: &mut GlyphAtlas,
+    batch: &mut QuadBatch,
+    font: &mut FontSystem,
+    x: f32,
+    y: f32,
+    character: char,
+    color: [f32; 4],
+) {
     if character == ' ' || character == '\0' {
         return;
     }
@@ -2638,13 +2752,11 @@ fn push_glyph(
         let data = glyph.data.clone();
         let offset_x = glyph.offset_x;
         let offset_y = glyph.offset_y;
-        if let Some(region) = render.atlas.get_or_insert(glyph_key, width, height) {
+        if let Some(region) = atlas.get_or_insert(glyph_key, width, height) {
             if width > 0 && height > 0 {
-                render
-                    .pipeline
-                    .upload_glyph(&render.gpu, region.x, region.y, width, height, &data);
+                pipeline.upload_glyph(gpu, region.x, region.y, width, height, &data);
             }
-            render.batch.push_glyph_quad(
+            batch.push_glyph_quad(
                 x + offset_x as f32,
                 y + (font.metrics.baseline - offset_y as f32),
                 width as f32,
@@ -2842,79 +2954,154 @@ fn build_visible_row_positions(visible_rows: &[usize], blocks: &[Block]) -> Vec<
         .collect()
 }
 
+fn pane_overlay_signature(
+    blocks: &[Block],
+    selected_block_id: Option<u64>,
+    global_search: &walk_ui::search::GlobalSearch,
+    pane_id: PaneId,
+) -> PaneOverlaySignature {
+    PaneOverlaySignature {
+        selected_block_id,
+        blocks: blocks
+            .iter()
+            .map(|block| {
+                (
+                    block.id,
+                    block.output_start_row,
+                    block.output_end_row,
+                    block.exit_code,
+                    block.is_collapsed,
+                )
+            })
+            .collect(),
+        search_query: global_search.query.clone(),
+        search_current: global_search.current,
+        search_matches: global_search
+            .matches
+            .iter()
+            .filter(|search_match| search_match.pane_id == pane_id)
+            .map(|search_match| {
+                (
+                    search_match.row,
+                    search_match.col_start,
+                    search_match.col_end,
+                    search_match.block_id,
+                    search_match.is_command,
+                )
+            })
+            .collect(),
+    }
+}
+
+fn collect_row_cells(
+    terminal: &Terminal,
+    absolute_row: usize,
+    total_cols: usize,
+) -> Vec<CellRenderData> {
+    (0..total_cols)
+        .map(|col_idx| terminal.state.cell_at_absolute(absolute_row, col_idx))
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
-fn push_block_decorations(
+fn rebuild_visible_row_batch(
     batch: &mut QuadBatch,
+    render: &mut RenderState,
+    font: &mut FontSystem,
     theme: &Theme,
     blocks: &[Block],
     selected_block_id: Option<u64>,
     global_search: &walk_ui::search::GlobalSearch,
     pane_id: PaneId,
-    visible_rows: &[usize],
-    row_positions: &[Option<usize>],
+    terminal: &Terminal,
+    absolute_row: usize,
+    render_row: Option<usize>,
     total_cols: usize,
-    x_offset: f32,
-    y_offset: f32,
+    viewport: Rect,
     cell_width: f32,
     cell_height: f32,
+    terminal_surface_alpha: f32,
 ) {
-    let viewport_width = total_cols as f32 * cell_width;
+    batch.clear();
+    let Some(render_row) = render_row else {
+        return;
+    };
 
-    for block in blocks {
-        let Some(start_idx) = visible_rows
-            .iter()
-            .position(|absolute_row| *absolute_row == block.output_start_row)
-        else {
-            continue;
-        };
-        let Some(start_row) = row_positions.get(start_idx).and_then(|row| *row) else {
-            continue;
-        };
+    let row_y = viewport.y + render_row as f32 * cell_height;
+    for col_idx in 0..total_cols {
+        let cell = terminal.state.cell_at_absolute(absolute_row, col_idx);
+        let x = viewport.x + col_idx as f32 * cell_width;
+        let mut bg = resolve_cell_color(&cell.bg, theme, true);
+        let mut fg = resolve_cell_color(&cell.fg, theme, false);
 
-        let end_row = visible_rows
-            .iter()
-            .enumerate()
-            .filter(|(_, absolute_row)| {
-                **absolute_row >= block.output_start_row && **absolute_row <= block.output_end_row
-            })
-            .filter_map(|(index, _)| row_positions.get(index).and_then(|mapped| *mapped))
-            .next_back()
-            .unwrap_or(start_row);
+        if cell.is_inverse {
+            std::mem::swap(&mut bg, &mut fg);
+        }
+        if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
+            bg[3] *= terminal_surface_alpha;
+        }
 
-        let y = y_offset + start_row as f32 * cell_height;
-        let height = (end_row.saturating_sub(start_row) + 1) as f32 * cell_height;
+        batch.push_bg_quad(x, row_y, cell_width, cell_height, bg);
+        if let Some(current_match) =
+            search_match_at_cell(global_search, pane_id, absolute_row, col_idx as u16)
+        {
+            let highlight = if current_match {
+                theme.highlight_current_match
+            } else {
+                theme.highlight_match
+            };
+            batch.push_bg_quad(
+                x,
+                row_y,
+                cell_width,
+                cell_height,
+                [highlight.r, highlight.g, highlight.b, highlight.a],
+            );
+        }
+
+        if cell.character != ' ' && cell.character != '\0' {
+            push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
+        }
+    }
+
+    if let Some(block) = blocks.iter().find(|block| {
+        absolute_row >= block.output_start_row && absolute_row <= block.output_end_row
+    }) {
         let accent = if block.exit_code.unwrap_or(0) == 0 {
             theme.block_success_accent
         } else {
             theme.block_error_accent
         };
 
+        if absolute_row == block.output_start_row {
+            batch.push_bg_quad(
+                viewport.x,
+                row_y,
+                viewport.w,
+                1.0,
+                [
+                    theme.block_separator.r,
+                    theme.block_separator.g,
+                    theme.block_separator.b,
+                    0.65,
+                ],
+            );
+        }
+
         batch.push_bg_quad(
-            x_offset,
-            y,
-            viewport_width,
-            1.0,
-            [
-                theme.block_separator.r,
-                theme.block_separator.g,
-                theme.block_separator.b,
-                0.65,
-            ],
-        );
-        batch.push_bg_quad(
-            x_offset,
-            y,
+            viewport.x,
+            row_y,
             4.0,
-            height,
+            cell_height,
             [accent.r, accent.g, accent.b, 0.9],
         );
 
         if selected_block_id == Some(block.id) {
             batch.push_bg_quad(
-                x_offset,
-                y,
-                viewport_width,
-                height,
+                viewport.x,
+                row_y,
+                viewport.w,
+                cell_height,
                 [
                     theme.selection.r,
                     theme.selection.g,
@@ -2924,36 +3111,38 @@ fn push_block_decorations(
             );
         }
 
-        if let Some(current_match) =
-            search_match_for_block_command(global_search, pane_id, block.id)
-        {
-            let highlight = if current_match {
-                theme.highlight_current_match
-            } else {
-                theme.highlight_match
-            };
-            batch.push_bg_quad(
-                x_offset + 4.0,
-                y,
-                viewport_width - 4.0,
-                cell_height,
-                [highlight.r, highlight.g, highlight.b, highlight.a],
-            );
-        }
+        if absolute_row == block.output_start_row {
+            if let Some(current_match) =
+                search_match_for_block_command(global_search, pane_id, block.id)
+            {
+                let highlight = if current_match {
+                    theme.highlight_current_match
+                } else {
+                    theme.highlight_match
+                };
+                batch.push_bg_quad(
+                    viewport.x + 4.0,
+                    row_y,
+                    viewport.w - 4.0,
+                    cell_height,
+                    [highlight.r, highlight.g, highlight.b, highlight.a],
+                );
+            }
 
-        if block.is_collapsed {
-            batch.push_bg_quad(
-                x_offset + 4.0,
-                y,
-                viewport_width - 4.0,
-                cell_height,
-                [
-                    theme.block_separator.r,
-                    theme.block_separator.g,
-                    theme.block_separator.b,
-                    0.25,
-                ],
-            );
+            if block.is_collapsed {
+                batch.push_bg_quad(
+                    viewport.x + 4.0,
+                    row_y,
+                    viewport.w - 4.0,
+                    cell_height,
+                    [
+                        theme.block_separator.r,
+                        theme.block_separator.g,
+                        theme.block_separator.b,
+                        0.25,
+                    ],
+                );
+            }
         }
     }
 }

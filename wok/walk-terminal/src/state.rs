@@ -284,7 +284,7 @@ impl TerminalState {
 }
 
 /// Rendering data for a single terminal cell.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CellRenderData {
     /// The character in this cell.
     pub character: char,
@@ -303,7 +303,7 @@ pub struct CellRenderData {
 }
 
 /// A color resolved from the terminal, abstracting over Named/Indexed/Spec.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellColor {
     /// A named ANSI color index (0-15 for standard, 256=fg, 257=bg).
     Named(u8),

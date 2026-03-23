@@ -97,4 +97,4 @@ The weakest part is not architecture coverage anymore; it is product-fit iterati
 
 If asked whether this is production-ready, the strongest accurate answer is:
 
-Walk is a credible local-first v1 workspace terminal with a differentiated block workflow. The architecture and runtime are coherent enough to defend in an interview. The remaining gap is not conceptual clarity; it is deeper renderer/runtime hardening, especially row-damage caching, end-to-end coverage, and shell/platform soak time.
+Walk is a credible local-first v1 workspace terminal with a differentiated block workflow. The architecture and runtime are coherent enough to defend in an interview. The remaining gap is not conceptual clarity; it is deeper runtime hardening, end-to-end coverage, and shell/platform soak time.
