@@ -8,7 +8,12 @@ export const handleOneMapGeocode = async (
 ): Promise<ToolResult> => {
   const results = await geocode(params.searchVal, params.limit);
   const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: results,
+    },
+  };
 };
 
 export const handleOneMapPopulation = async (
@@ -21,7 +26,14 @@ export const handleOneMapPopulation = async (
   );
   const fmt = resolveOutputFormat(params.format);
   const text = formatResponse(result.data as unknown as Record<string, unknown>[], fmt);
-  return { content: [{ type: "text", text: `## ${result.planningArea} (${result.year})\n\n${text}` }] };
+  return {
+    content: [{ type: "text", text: `## ${result.planningArea} (${result.year})\n\n${text}` }],
+    structuredContent: {
+      planningArea: result.planningArea,
+      year: result.year,
+      records: result.data,
+    },
+  };
 };
 
 export const onemapToolDefinitions: readonly RegisteredToolDefinition[] = [

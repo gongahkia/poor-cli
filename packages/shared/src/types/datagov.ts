@@ -28,3 +28,28 @@ export type DatagovCollection = {
   readonly description: string;
   readonly datasetCount: number;
 };
+
+export type DatagovDatastoreField = {
+  readonly id: string;
+  readonly type: string;
+};
+
+export type DatagovDatastoreResult<TRecord extends Readonly<Record<string, unknown>>> = {
+  readonly fields: readonly DatagovDatastoreField[];
+  readonly records: readonly TRecord[];
+  readonly total: number;
+  readonly offset?: number;
+  readonly limit?: number;
+};
+
+export type DatagovDatastoreResponse<TRecord extends Readonly<Record<string, unknown>>> =
+  | {
+      readonly success: true;
+      readonly result: DatagovDatastoreResult<TRecord>;
+    }
+  | {
+      readonly code: number;
+      readonly name: string;
+      readonly data: null;
+      readonly errorMsg: string;
+    };

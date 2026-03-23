@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkApiHealth, hasOneMapCredentials, hasUraKey } from "../../tools/health-check.js";
+import { checkApiHealth, hasLtaKey, hasOneMapCredentials, hasUraKey } from "../../tools/health-check.js";
 
 const createLookup = (values: Readonly<Record<string, string>>) => ({
   getKey: (key: string) => values[key] ?? null,
@@ -9,6 +9,7 @@ afterEach(() => {
   delete process.env["SG_API_ONEMAP_EMAIL"];
   delete process.env["SG_API_ONEMAP_PASSWORD"];
   delete process.env["SG_API_URA_KEY"];
+  delete process.env["SG_API_LTA_KEY"];
 });
 
 describe("Health Check", () => {
@@ -27,6 +28,11 @@ describe("Health Check", () => {
   it("detects URA key from configured credentials", () => {
     expect(hasUraKey(createLookup({}))).toBe(false);
     expect(hasUraKey(createLookup({ ura: "ura-secret" }))).toBe(true);
+  });
+
+  it("detects LTA key from configured credentials", () => {
+    expect(hasLtaKey(createLookup({}))).toBe(false);
+    expect(hasLtaKey(createLookup({ lta: "lta-secret" }))).toBe(true);
   });
 
   it("treats HTTP errors as reachable services", async () => {

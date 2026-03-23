@@ -42,10 +42,11 @@ describe("tool catalog parity", () => {
     expect(catalogNames.slice().sort()).toEqual(registeredTools.slice().sort());
   });
 
-  it("marks sg_query as experimental in the catalog", () => {
+  it("marks sg_query as the preferred canonical interface in the catalog", () => {
     expect(TOOL_CATALOG.find((tool) => tool.name === "sg_query")).toMatchObject({
       name: "sg_query",
-      surface: "experimental",
+      surface: "canonical",
+      preferred: true,
     });
   });
 
@@ -76,7 +77,8 @@ describe("resource catalog parity", () => {
     expect(payload).toEqual(TOOL_CATALOG);
     expect(payload.find((tool: { name: string }) => tool.name === "sg_query")).toMatchObject({
       name: "sg_query",
-      surface: "experimental",
+      surface: "canonical",
+      preferred: true,
     });
   });
 

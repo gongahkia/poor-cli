@@ -19,18 +19,18 @@ describe("E2E Pipeline", () => {
     expect(intent.extractedParams["planningArea"]).toBe("Tampines");
   });
 
-  it("routes GDP query to SingStat", () => {
+  it("routes GDP dataset discovery queries to the dataset workflow", () => {
     const intent = classifyIntent("Search for GDP datasets");
-    expect(intent.intent).toBe("economic");
-    expect(intent.tool).toBe("sg_singstat_search");
-    expect(intent.apis).toContain("singstat");
+    expect(intent.intent).toBe("dataset");
+    expect(intent.workflow).toBe("dataset_discovery");
+    expect(intent.apis).toContain("datagov");
   });
 
   it("rejects comparison queries that need multiple direct calls", () => {
     const plan = planQuery("Compare property prices in Orchard and Tampines");
     expect(plan.supported).toBe(false);
     if (!plan.supported) {
-      expect(plan.reason).toContain("one direct tool call");
+      expect(plan.reason).toContain("comparison workflows");
     }
   });
 
@@ -47,11 +47,17 @@ describe("E2E Pipeline", () => {
     expect(intent.extractedParams["postalCode"]).toBe("168742");
   });
 
-  it("rejects chained geocode and population requests", () => {
-    const plan = planQuery("Population near postal code 168742");
-    expect(plan.supported).toBe(false);
-    if (!plan.supported) {
-      expect(plan.reason).toContain("does not chain geocoding");
+  it("builds a demographic workflow from a postal code", () => {
+    const plan = planQuery("Demographic profile for postal code 168742");
+    expect(plan.supported).toBe(true);
+    if (plan.supported) {
+      expect(plan.workflow).toBe("demographic_profile");
+      expect(plan.steps.map((step) => step.tool)).toEqual([
+        "sg_onemap_geocode",
+        "sg_ura_planning_area",
+        "sg_onemap_population",
+        "sg_onemap_population",
+      ]);
     }
   });
 
@@ -69,12 +75,37 @@ describe("E2E Pipeline", () => {
     expect(intent.extractedParams["planningArea"]).toBe("Bedok");
   });
 
-  it("builds a single-step search query plan", () => {
+  it("builds a dataset discovery query plan", () => {
     const plan = planQuery("Search for GDP datasets");
     expect(plan.supported).toBe(true);
     if (plan.supported) {
-      expect(plan.step.tool).toBe("sg_singstat_search");
-      expect(plan.step.input).toEqual({ keyword: "Search for GDP datasets" });
+      expect(plan.workflow).toBe("dataset_discovery");
+      expect(plan.steps).toHaveLength(2);
+      expect(plan.steps[0]!.tool).toBe("sg_datagov_search");
+      expect(plan.steps[1]!.tool).toBe("sg_datagov_get");
     }
+  });
+
+  it("routes live bus arrival queries to LTA", () => {
+    const intent = classifyIntent("Bus arrivals for stop 83139 service 851");
+    expect(intent.intent).toBe("transport");
+    expect(intent.tool).toBe("sg_lta_bus_arrivals");
+    expect(intent.extractedParams["busStopCode"]).toBe("83139");
+  });
+
+  it("routes forecast queries to NEA", () => {
+    const intent = classifyIntent("2 hour forecast for Tampines");
+    expect(intent.intent).toBe("environment");
+    expect(intent.tool).toBe("sg_nea_forecast_2hr");
+    expect(intent.extractedParams["planningArea"]).toBe("Tampines");
+  });
+
+  it("routes HDB resale queries to the curated HDB tool", () => {
+    const intent = classifyIntent("HDB resale prices in Bedok from 2026-01 to 2026-03");
+    expect(intent.intent).toBe("housing");
+    expect(intent.tool).toBe("sg_hdb_resale_prices");
+    expect(intent.extractedParams["planningArea"]).toBe("Bedok");
+    expect(intent.extractedParams["startMonth"]).toBe("2026-01");
+    expect(intent.extractedParams["endMonth"]).toBe("2026-03");
   });
 });

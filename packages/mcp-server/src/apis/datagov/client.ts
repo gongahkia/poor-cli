@@ -3,7 +3,11 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import Database from "better-sqlite3";
 import { httpGet, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
-import type { DatagovV2ListResponse, DatagovDataset } from "@sg-apis/shared";
+import type {
+  DatagovDatastoreResponse,
+  DatagovDataset,
+  DatagovV2ListResponse,
+} from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("datagov-client");
@@ -13,6 +17,20 @@ const getBaseUrl = (): string => {
   return mockApiBaseUrl !== undefined
     ? `${mockApiBaseUrl}/datagov`
     : "https://api-production.data.gov.sg/v2/public/api";
+};
+
+const getDatastoreBaseUrl = (): string => {
+  const mockApiBaseUrl = getMockApiBaseUrl();
+  return mockApiBaseUrl !== undefined
+    ? `${mockApiBaseUrl}/datagov/action`
+    : "https://data.gov.sg/api/action";
+};
+
+type DatastoreQueryOptions = {
+  readonly limit?: number;
+  readonly offset?: number;
+  readonly sort?: string;
+  readonly filters?: Readonly<Record<string, string>>;
 };
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
@@ -282,6 +300,56 @@ export const listCollections = async (): Promise<{ id: string; name: string; des
       name,
       description: `${count} datasets managed by ${name}`,
     }));
+  });
+  return data;
+};
+
+export const queryDatastore = async <TRecord extends Readonly<Record<string, unknown>>>(
+  resourceId: string,
+  options: DatastoreQueryOptions = {},
+): Promise<readonly TRecord[]> => {
+  const cacheKey = buildCacheKey("datagov", "datastore", {
+    resourceId,
+    ...options,
+  });
+  const { data } = await withCache(cacheKey, "DAILY", async () => {
+    const url = new URL(`${getDatastoreBaseUrl()}/datastore_search`);
+    url.searchParams.set("resource_id", resourceId);
+    if (options.limit !== undefined) {
+      url.searchParams.set("limit", String(options.limit));
+    }
+    if (options.offset !== undefined) {
+      url.searchParams.set("offset", String(options.offset));
+    }
+    if (options.sort !== undefined) {
+      url.searchParams.set("sort", options.sort);
+    }
+    if (options.filters !== undefined && Object.keys(options.filters).length > 0) {
+      url.searchParams.set("filters", JSON.stringify(options.filters));
+    }
+
+    const response = await httpGet<DatagovDatastoreResponse<TRecord>>(url.toString(), {
+      apiName: "datagov",
+    });
+
+    if ("success" in response && response.success === true) {
+      return response.result.records;
+    }
+
+    const errorResponse = response as Extract<DatagovDatastoreResponse<TRecord>, { readonly code: number }>;
+    throw new ApiError({
+      apiName: "datagov",
+      source: "data.gov.sg",
+      statusCode: errorResponse.code,
+      code: errorResponse.name,
+      message: errorResponse.errorMsg,
+      retryable: errorResponse.code === 429 || errorResponse.code >= 500,
+      suggestedAction:
+        errorResponse.code === 429
+          ? "Wait for the data.gov.sg rate limit window to reset, then retry."
+          : "Retry later or narrow the HDB query filters.",
+      details: errorResponse,
+    });
   });
   return data;
 };

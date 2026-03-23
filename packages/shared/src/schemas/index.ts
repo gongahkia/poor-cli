@@ -148,6 +148,58 @@ export const DatagovBrowseSchema = z.object({
   collection: z.string().optional(),
 });
 
+const MonthSchema = z.string().regex(/^\d{4}-\d{2}$/);
+
+export const LtaBusArrivalsSchema = z.object({
+  busStopCode: z.string().min(5),
+  serviceNo: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const LtaTrainAlertsSchema = z.object({
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const LtaTrafficIncidentsSchema = z.object({
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const NeaForecast2HrSchema = z.object({
+  area: z.string().min(1).optional(),
+  date: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const NeaAirQualitySchema = z.object({
+  region: z.string().min(1).optional(),
+  date: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const NeaRainfallSchema = z.object({
+  stationId: z.string().min(1).optional(),
+  date: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const HdbResalePricesSchema = z.object({
+  town: z.string().min(1).optional(),
+  flatType: z.string().min(1).optional(),
+  startMonth: MonthSchema.optional(),
+  endMonth: MonthSchema.optional(),
+  limit: z.number().int().positive().max(200).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const HdbRentalPricesSchema = z.object({
+  town: z.string().min(1).optional(),
+  flatType: z.string().min(1).optional(),
+  startMonth: MonthSchema.optional(),
+  endMonth: MonthSchema.optional(),
+  limit: z.number().int().positive().max(200).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
 export const HealthCheckSchema = z.object({}).optional();
 
 export const KeySetSchema = z.object({
@@ -177,7 +229,8 @@ export const ConfigSetSchema = z.object({
 export const QuerySchema = z.object({
   query: z.string().min(1),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-});
+  mode: z.enum(["execute", "plan"]).optional(),
+}).strict();
 
 export const validateInput = <T>(schema: ZodSchema<T>, input: unknown): T => {
   const result = schema.safeParse(input);

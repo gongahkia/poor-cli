@@ -9,6 +9,8 @@ export type ToolCatalogEntry = {
   readonly name: string;
   readonly description: string;
   readonly surface: ToolSurface;
+  readonly preferred?: boolean;
+  readonly positioning?: string;
   readonly scopeNotes?: readonly string[];
 };
 
@@ -18,21 +20,24 @@ export type RegisteredToolDefinition = ToolCatalogEntry & {
 };
 
 export const toToolCatalogEntry = (definition: RegisteredToolDefinition): ToolCatalogEntry => {
-  const { name, description, surface, scopeNotes } = definition;
+  const { name, description, surface, preferred, positioning, scopeNotes } = definition;
   return {
     name,
     description,
     surface,
+    ...(preferred === undefined ? {} : { preferred }),
+    ...(positioning === undefined ? {} : { positioning }),
     ...(scopeNotes === undefined ? {} : { scopeNotes }),
   };
 };
 
 export const registerToolDefinition = (server: McpServer, definition: RegisteredToolDefinition): void => {
   server.tool(definition.name, definition.description, definition.inputSchema, async (params) => {
-    const result = await wrapHandler(definition.handler)(params);
+    const result = await wrapHandler(definition.name, definition.handler)(params);
     return {
       content: result.content.map((content) => ({ type: content.type, text: content.text })),
       isError: result.isError,
+      ...(result.structuredContent === undefined ? {} : { structuredContent: result.structuredContent }),
     };
   });
 };

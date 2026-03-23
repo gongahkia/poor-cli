@@ -1,0 +1,27 @@
+{
+  "code": 0,
+  "errorMsg": "",
+  "data": {
+    "regionMetadata": [
+      {
+        "name": "east",
+        "labelLocation": {
+          "latitude": 1.35735,
+          "longitude": 103.94
+        }
+      }
+    ],
+    "items": [
+      {
+        "date": "2026-03-23",
+        "updatedTimestamp": "2026-03-23T08:00:00+08:00",
+        "timestamp": "2026-03-23T08:00:00+08:00",
+        "readings": {
+          "pm25_one_hourly": {
+            "east": 12
+          }
+        }
+      }
+    ]
+  }
+}

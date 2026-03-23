@@ -20,6 +20,50 @@ const DEFAULT_RETRIES = 3; // WHY: covers transient failures without excessive d
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+const parseErrorPayload = (
+  body: string,
+): { readonly message?: string; readonly code?: string; readonly details?: unknown } => {
+  if (body.trim() === "") {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const message =
+      typeof parsed["errorMsg"] === "string"
+        ? parsed["errorMsg"]
+        : typeof parsed["message"] === "string"
+          ? parsed["message"]
+          : typeof parsed["error"] === "string"
+            ? parsed["error"]
+            : undefined;
+    const code = typeof parsed["name"] === "string" ? parsed["name"] : undefined;
+    return {
+      ...(message === undefined ? {} : { message }),
+      ...(code === undefined ? {} : { code }),
+      details: parsed,
+    };
+  } catch {
+    return { details: body };
+  }
+};
+
+const suggestedActionForStatus = (status: number): string | undefined => {
+  if (status === 401 || status === 403) {
+    return "Check the required credentials or API key configuration, then retry.";
+  }
+  if (status === 404) {
+    return "Check the requested endpoint or identifier and retry with a supported value.";
+  }
+  if (status === 429) {
+    return "Wait for the upstream rate limit window to reset, then retry.";
+  }
+  if (status >= 500) {
+    return "Retry later. The upstream service appears to be unavailable.";
+  }
+  return undefined;
+};
+
 export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> => {
   const retries = options.retries ?? DEFAULT_RETRIES;
   const apiTimeout = options.timeout ?? getTimeout(options.apiName);
@@ -64,12 +108,18 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
       }
 
       const body = await response.text();
+      const parsedError = parseErrorPayload(body);
       throw new ApiError({
         apiName: options.apiName,
+        source: options.apiName,
         statusCode: response.status,
-        message: `${options.apiName} request failed: ${response.statusText}`,
+        code: parsedError.code ?? `HTTP_${response.status}`,
+        message: parsedError.message ?? `${options.apiName} request failed: ${response.statusText}`,
         retryable: RETRYABLE_STATUSES.has(response.status),
-        details: body,
+        ...(suggestedActionForStatus(response.status) === undefined
+          ? {}
+          : { suggestedAction: suggestedActionForStatus(response.status)! }),
+        details: parsedError.details ?? body,
       });
     } catch (error) {
       clearTimeout(timer);
@@ -85,9 +135,12 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
         }
         throw new ApiError({
           apiName: options.apiName,
+          source: options.apiName,
           statusCode: 408,
+          code: "TIMEOUT",
           message: `${options.apiName} request timed out after ${timeout}ms`,
           retryable: true,
+          suggestedAction: "Retry later or increase the configured timeout for this API.",
         });
       }
 
@@ -100,17 +153,23 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
 
       throw new ApiError({
         apiName: options.apiName,
+        source: options.apiName,
         statusCode: 0,
+        code: "NETWORK_ERROR",
         message: `${options.apiName} request failed: ${error instanceof Error ? error.message : String(error)}`,
         retryable: true,
+        suggestedAction: "Check network connectivity or the upstream service status, then retry.",
       });
     }
   }
 
   throw new ApiError({
     apiName: options.apiName,
+    source: options.apiName,
     statusCode: 0,
+    code: "RETRY_EXHAUSTED",
     message: `${options.apiName} request failed after ${retries} retries`,
     retryable: true,
+    suggestedAction: "Retry later. The upstream service did not recover within the retry budget.",
   });
 };
