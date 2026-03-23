@@ -29,6 +29,8 @@
 
 pub mod action_effects;
 pub mod app;
+pub mod block_query;
+pub mod command_search;
 pub mod config;
 pub mod dpi;
 pub mod event_loop;

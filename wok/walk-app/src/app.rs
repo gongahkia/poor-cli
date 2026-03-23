@@ -3,10 +3,11 @@
 use crate::action_effects::{
     ActionEffects, ClipboardEffect, OverlayEffect, RuntimeEffect, ViewportEffect, WorkspaceEffect,
 };
+use crate::block_query::{BlockQueryMode, BlockQueryState};
+use crate::command_search::CommandSearchState;
 use walk_blocks::block::BlockManager;
 use walk_blocks::block_nav::BlockNavigator;
 use walk_input::editor::{EditorKey, InputEditor, InputPosition};
-use walk_input::history::CommandHistory;
 use walk_terminal::terminal::SemanticEvent;
 use walk_ui::clipboard::ClipboardManager;
 use walk_ui::search::GlobalSearch;
@@ -23,6 +24,8 @@ use crate::keybindings::{Action, Context, KeyCombo, KeybindingConfig};
 pub enum InputMode {
     /// The shell prompt inside the PTY is the primary editor.
     ShellNative,
+    /// Walk's owned input editor is the primary command-entry path.
+    OwnedInput,
     /// The owned command palette / scratch editor is active.
     CommandPalette,
 }
@@ -47,6 +50,12 @@ pub struct WalkApp {
     pub selection: SelectionManager,
     /// Global search.
     pub global_search: GlobalSearch,
+    /// Command-history search overlay.
+    pub command_search: Option<CommandSearchState>,
+    /// Block-local find/filter overlay state.
+    pub block_query: Option<BlockQueryState>,
+    /// Draft to restore after dismissing the command palette.
+    pub saved_draft: Option<String>,
     /// Font zoom manager.
     pub zoom: ZoomManager,
     /// Keybinding configuration.
@@ -62,16 +71,25 @@ impl WalkApp {
             Theme::default()
         };
 
-        let history_path = CommandHistory::default_path();
-        let history = CommandHistory::load(&history_path, 10_000);
-
         let input_position = match config.input_position {
             crate::config::InputPosition::Top => InputPosition::Top,
             crate::config::InputPosition::Bottom => InputPosition::Bottom,
         };
 
-        let mut input_editor = InputEditor::new(config.shell.clone(), history, input_position);
-        input_editor.is_active = false;
+        let input_mode = if matches!(
+            config.command_entry_mode,
+            crate::config::CommandEntryMode::OwnedPrimary
+        ) {
+            InputMode::OwnedInput
+        } else {
+            InputMode::ShellNative
+        };
+
+        let mut input_editor = InputEditor::new(config.shell.clone(), input_position);
+        input_editor.is_active = matches!(
+            config.command_entry_mode,
+            crate::config::CommandEntryMode::OwnedPrimary
+        );
 
         Self {
             zoom: ZoomManager::new(config.font_size),
@@ -80,19 +98,27 @@ impl WalkApp {
             block_manager: BlockManager::new(),
             block_navigator: BlockNavigator::new(),
             input_editor,
-            input_mode: InputMode::ShellNative,
+            input_mode,
             clipboard: ClipboardManager::new(),
             selection: SelectionManager::new(),
             global_search: GlobalSearch::new(),
+            command_search: None,
+            block_query: None,
+            saved_draft: None,
             keybindings: KeybindingConfig::default(),
         }
     }
 
     /// Return the active keybinding context.
     pub fn current_context(&self) -> Context {
-        if self.global_search.is_active {
+        if self.global_search.is_active
+            || self.block_query.is_some()
+            || self.command_search.is_some()
+        {
             Context::SearchActive
-        } else if self.input_mode == InputMode::CommandPalette {
+        } else if self.input_mode == InputMode::CommandPalette
+            || (self.input_mode == InputMode::OwnedInput && self.input_editor.is_active)
+        {
             Context::InputEditor
         } else if self.block_navigator.selected_block_index.is_some() {
             Context::BlockSelected
@@ -129,7 +155,11 @@ impl WalkApp {
                 effects.push(RuntimeEffect::Clipboard(ClipboardEffect::Paste));
             }
             Action::SelectAll => {
-                if self.input_mode == InputMode::CommandPalette {
+                if matches!(
+                    self.input_mode,
+                    InputMode::CommandPalette | InputMode::OwnedInput
+                ) && self.input_editor.is_active
+                {
                     self.input_editor.handle_key(EditorKey::SelectAll);
                 }
             }
@@ -154,17 +184,113 @@ impl WalkApp {
                 self.sync_active_block();
             }
             Action::BlockCollapse => {
+                if let Some(block_id) = self.selected_or_latest_block_id() {
+                    self.select_block(block_id);
+                }
                 self.block_navigator
                     .toggle_collapse(&mut self.block_manager);
             }
             Action::BlockCopy => {
-                effects.push(RuntimeEffect::Clipboard(ClipboardEffect::CopySelectedBlock));
+                if self.selected_or_latest_block_id().is_some() {
+                    effects.push(RuntimeEffect::Clipboard(ClipboardEffect::CopySelectedBlock));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
             }
-            Action::BlockSearch | Action::SearchInBlock | Action::SearchGlobal => {
+            Action::BlockCopyCommand => {
+                if self.selected_or_latest_block_id().is_some() {
+                    effects.push(RuntimeEffect::Clipboard(
+                        ClipboardEffect::CopySelectedBlockCommand,
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
+            Action::BlockCopyOutput => {
+                if self.selected_or_latest_block_id().is_some() {
+                    effects.push(RuntimeEffect::Clipboard(
+                        ClipboardEffect::CopySelectedBlockOutput,
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
+            Action::BlockToggleBookmark => {
+                let target_block_id = self.selected_or_latest_block_id();
+                match self.block_manager.toggle_bookmark(target_block_id) {
+                    Some(_) => {
+                        if let Some(block_id) = target_block_id {
+                            self.select_block(block_id);
+                        }
+                    }
+                    None => effects.push(RuntimeEffect::Status("No block available".to_string())),
+                }
+            }
+            Action::BlockPrevBookmark => {
+                if let Some(block_id) = self
+                    .block_manager
+                    .prev_bookmark(self.selected_or_latest_block_id())
+                {
+                    self.select_block(block_id);
+                } else {
+                    effects.push(RuntimeEffect::Status("No bookmarked blocks".to_string()));
+                }
+            }
+            Action::BlockNextBookmark => {
+                if let Some(block_id) = self
+                    .block_manager
+                    .next_bookmark(self.selected_or_latest_block_id())
+                {
+                    self.select_block(block_id);
+                } else {
+                    effects.push(RuntimeEffect::Status("No bookmarked blocks".to_string()));
+                }
+            }
+            Action::BlockFind => {
+                if let Some(block_id) = self.selected_or_latest_block_id() {
+                    self.select_block(block_id);
+                    effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenBlockQuery {
+                        mode: BlockQueryMode::Find,
+                        target_block_id: block_id,
+                    }));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
+            Action::BlockFilter => {
+                if let Some(block_id) = self.selected_or_latest_block_id() {
+                    self.select_block(block_id);
+                    effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenBlockQuery {
+                        mode: BlockQueryMode::Filter,
+                        target_block_id: block_id,
+                    }));
+                } else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                }
+            }
+            Action::BlockRerun => {
+                let Some(block) = self.selected_or_latest_block() else {
+                    effects.push(RuntimeEffect::Status("No block available".to_string()));
+                    return effects;
+                };
+                if block.exit_code.is_none() || block.command_text.trim().is_empty() {
+                    effects.push(RuntimeEffect::Status(
+                        "Only completed blocks with commands can be rerun".to_string(),
+                    ));
+                } else {
+                    effects.push(RuntimeEffect::PtyWrite(
+                        format!("{}\r", block.command_text).into_bytes(),
+                    ));
+                }
+            }
+            Action::SearchGlobal => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
             }
             Action::CommandPalette => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandPalette));
+            }
+            Action::CommandSearch => {
+                effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandSearch));
             }
             Action::ToggleInputPosition => {
                 let new_pos = match self.input_editor.render_data().position {
@@ -264,15 +390,54 @@ impl WalkApp {
 
     /// Open the command palette input mode.
     pub fn open_command_palette(&mut self) {
+        if self.input_mode == InputMode::OwnedInput {
+            self.saved_draft = Some(self.input_editor.buffer.text());
+            self.input_editor.buffer.clear();
+        }
         self.input_mode = InputMode::CommandPalette;
         self.input_editor.is_active = true;
     }
 
     /// Close the command palette input mode.
     pub fn close_command_palette(&mut self) {
-        self.input_mode = InputMode::ShellNative;
-        self.input_editor.is_active = false;
-        self.input_editor.buffer.clear();
+        self.input_mode = if matches!(
+            self.config.command_entry_mode,
+            crate::config::CommandEntryMode::OwnedPrimary
+        ) {
+            InputMode::OwnedInput
+        } else {
+            InputMode::ShellNative
+        };
+        self.input_editor.is_active = self.input_mode == InputMode::OwnedInput;
+        if let Some(saved_draft) = self.saved_draft.take() {
+            self.input_editor.buffer.set_text(&saved_draft);
+        } else {
+            self.input_editor.buffer.clear();
+        }
+    }
+
+    /// Return the selected block when present, otherwise the latest block.
+    pub fn selected_or_latest_block(&self) -> Option<&walk_blocks::block::Block> {
+        self.block_navigator
+            .selected_block(&self.block_manager)
+            .or_else(|| self.block_manager.selected_or_latest_block())
+    }
+
+    /// Return the selected block id when present, otherwise the latest block id.
+    pub fn selected_or_latest_block_id(&self) -> Option<u64> {
+        self.selected_or_latest_block().map(|block| block.id)
+    }
+
+    /// Select a specific block by id.
+    pub fn select_block(&mut self, block_id: u64) -> bool {
+        if !self
+            .block_navigator
+            .select_block(&self.block_manager, block_id)
+        {
+            return false;
+        }
+        self.sync_active_block();
+        true
     }
 
     fn sync_active_block(&mut self) {
@@ -286,7 +451,7 @@ impl WalkApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::WalkConfig;
+    use crate::config::{CommandEntryMode, WalkConfig};
     use crate::input::KeyAction;
 
     #[test]
@@ -340,6 +505,17 @@ mod tests {
     }
 
     #[test]
+    fn test_owned_primary_mode_starts_in_owned_input() {
+        let mut config = WalkConfig::default();
+        config.command_entry_mode = CommandEntryMode::OwnedPrimary;
+
+        let app = WalkApp::new(config);
+
+        assert_eq!(app.input_mode, InputMode::OwnedInput);
+        assert!(app.input_editor.is_active);
+    }
+
+    #[test]
     fn test_search_action_emits_overlay_effect() {
         let mut app = WalkApp::new(WalkConfig::default());
         let effects = app.handle_action(&Action::SearchGlobal);
@@ -347,6 +523,68 @@ mod tests {
         assert_eq!(
             effects.effects,
             vec![RuntimeEffect::Overlay(OverlayEffect::OpenSearch)]
+        );
+    }
+
+    #[test]
+    fn test_command_search_action_emits_overlay_effect() {
+        let mut config = WalkConfig::default();
+        config.command_entry_mode = CommandEntryMode::OwnedPrimary;
+        let mut app = WalkApp::new(config);
+        let effects = app.handle_action(&Action::CommandSearch);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::Overlay(OverlayEffect::OpenCommandSearch)]
+        );
+    }
+
+    #[test]
+    fn test_block_find_targets_selected_or_latest_block() {
+        let mut app = WalkApp::new(WalkConfig::default());
+        app.handle_semantic_event(&SemanticEvent::PromptStart { row: 0 });
+        app.handle_semantic_event(&SemanticEvent::CommandStart { row: 1 });
+        app.handle_semantic_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "cargo test".to_string(),
+        });
+        app.handle_semantic_event(&SemanticEvent::OutputStart { row: 2 });
+        app.handle_semantic_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        let effects = app.handle_action(&Action::BlockFind);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::Overlay(OverlayEffect::OpenBlockQuery {
+                mode: BlockQueryMode::Find,
+                target_block_id: 1,
+            })]
+        );
+    }
+
+    #[test]
+    fn test_block_rerun_emits_pty_write() {
+        let mut app = WalkApp::new(WalkConfig::default());
+        app.handle_semantic_event(&SemanticEvent::PromptStart { row: 0 });
+        app.handle_semantic_event(&SemanticEvent::CommandStart { row: 1 });
+        app.handle_semantic_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "cargo test".to_string(),
+        });
+        app.handle_semantic_event(&SemanticEvent::OutputStart { row: 2 });
+        app.handle_semantic_event(&SemanticEvent::CommandEnd {
+            row: 3,
+            exit_code: Some(0),
+        });
+
+        let effects = app.handle_action(&Action::BlockRerun);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::PtyWrite(b"cargo test\r".to_vec())]
         );
     }
 }

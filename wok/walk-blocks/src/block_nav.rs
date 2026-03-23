@@ -50,6 +50,15 @@ impl BlockNavigator {
             .and_then(|idx| manager.blocks.get(idx))
     }
 
+    /// Select a specific block by id.
+    pub fn select_block(&mut self, manager: &BlockManager, block_id: u64) -> bool {
+        let Some(index) = manager.blocks.iter().position(|block| block.id == block_id) else {
+            return false;
+        };
+        self.selected_block_index = Some(index);
+        true
+    }
+
     /// Toggle collapse/expand on the selected block.
     pub fn toggle_collapse(&self, manager: &mut BlockManager) {
         if let Some(idx) = self.selected_block_index {

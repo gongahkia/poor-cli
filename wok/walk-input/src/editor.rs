@@ -4,7 +4,6 @@ use crate::brackets::find_matching_bracket;
 use crate::buffer::InputBuffer;
 use crate::cursor_ops;
 use crate::highlighter::{self, HighlightSpan};
-use crate::history::CommandHistory;
 
 use walk_terminal::shell::ShellType;
 
@@ -88,8 +87,6 @@ pub struct InputRenderData {
 pub struct InputEditor {
     /// Text buffer with gap buffer backing.
     pub buffer: InputBuffer,
-    /// Command history.
-    pub history: CommandHistory,
     /// Whether the editor is active (receiving input).
     pub is_active: bool,
     /// UI position.
@@ -100,10 +97,9 @@ pub struct InputEditor {
 
 impl InputEditor {
     /// Create a new input editor.
-    pub fn new(shell: ShellType, history: CommandHistory, position: InputPosition) -> Self {
+    pub fn new(shell: ShellType, position: InputPosition) -> Self {
         Self {
             buffer: InputBuffer::new(),
-            history,
             is_active: true,
             position,
             shell,
@@ -122,7 +118,6 @@ impl InputEditor {
                 if text.trim().is_empty() {
                     return EditorAction::Submit(String::new());
                 }
-                self.history.push(&text);
                 self.buffer.clear();
                 EditorAction::Submit(text)
             }
@@ -154,19 +149,11 @@ impl InputEditor {
                 EditorAction::None
             }
             EditorKey::Up => {
-                // Navigate history
-                let current = self.buffer.text();
-                if let Some(prev) = self.history.prev(&current) {
-                    let prev = prev.to_string();
-                    self.buffer.set_text(&prev);
-                }
+                cursor_ops::move_up(&mut self.buffer, 0, false);
                 EditorAction::None
             }
             EditorKey::Down => {
-                if let Some(next) = self.history.next() {
-                    let next = next.to_string();
-                    self.buffer.set_text(&next);
-                }
+                cursor_ops::move_down(&mut self.buffer, 0, false);
                 EditorAction::None
             }
             EditorKey::WordLeft => {
@@ -254,11 +241,9 @@ impl InputEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn make_editor() -> InputEditor {
-        let history = CommandHistory::load(&PathBuf::from("/dev/null"), 100);
-        InputEditor::new(ShellType::Bash, history, InputPosition::Bottom)
+        InputEditor::new(ShellType::Bash, InputPosition::Bottom)
     }
 
     #[test]

@@ -1,36 +1,109 @@
-//! Command history: persists and navigates previously executed commands.
+//! Command history: pane-local entries, global persistence, and search helpers.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tracing::{debug, warn};
 
-/// Manages command history with file persistence.
+/// A single command history entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryEntry {
+    /// Command text as entered by the user.
+    pub command: String,
+    /// Working directory captured for the command when known.
+    pub cwd: Option<PathBuf>,
+    /// Source pane for session-local ranking when known.
+    pub source_pane_id: Option<u64>,
+    /// Start timestamp in Unix milliseconds.
+    pub started_at_ms: u64,
+    /// Completion timestamp in Unix milliseconds when known.
+    pub completed_at_ms: Option<u64>,
+    /// Exit code when the command completed.
+    pub exit_code: Option<i32>,
+    /// Execution duration when known.
+    pub duration_ms: Option<u64>,
+}
+
+impl HistoryEntry {
+    /// Create a pending history entry for a just-submitted command.
+    pub fn pending(command: &str, cwd: Option<PathBuf>, source_pane_id: Option<u64>) -> Self {
+        Self {
+            command: command.trim().to_string(),
+            cwd,
+            source_pane_id,
+            started_at_ms: unix_time_ms(SystemTime::now()),
+            completed_at_ms: None,
+            exit_code: None,
+            duration_ms: None,
+        }
+    }
+
+    /// Create a text-only history entry loaded from the long-term history file.
+    pub fn from_command(command: &str) -> Self {
+        Self {
+            command: command.trim().to_string(),
+            cwd: None,
+            source_pane_id: None,
+            started_at_ms: 0,
+            completed_at_ms: None,
+            exit_code: None,
+            duration_ms: None,
+        }
+    }
+
+    /// Return whether the entry has enough information to be treated as completed.
+    pub fn is_completed(&self) -> bool {
+        self.completed_at_ms.is_some() || self.exit_code.is_some() || self.duration_ms.is_some()
+    }
+
+    /// Mark an entry as completed, refreshing its metadata from runtime state.
+    pub fn mark_completed(
+        &mut self,
+        exit_code: Option<i32>,
+        duration: Option<Duration>,
+        cwd: Option<PathBuf>,
+    ) {
+        self.completed_at_ms = Some(unix_time_ms(SystemTime::now()));
+        self.exit_code = exit_code;
+        self.duration_ms = duration.map(|value| value.as_millis() as u64);
+        if cwd.is_some() {
+            self.cwd = cwd;
+        }
+    }
+}
+
+/// Ranked fuzzy-search result for one history entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistorySearchMatch {
+    /// Matching entry.
+    pub entry: HistoryEntry,
+    /// Search relevance score. Higher is better.
+    pub score: i64,
+}
+
+/// File-backed long-term command history.
 pub struct CommandHistory {
-    /// History entries (oldest first).
-    entries: Vec<String>,
-    /// Current navigation position.
-    cursor: usize,
-    /// Path to the history file.
+    /// History entries, oldest first.
+    entries: Vec<HistoryEntry>,
+    /// Path to the plain-text history file.
     history_file: PathBuf,
-    /// Maximum number of entries to retain.
+    /// Maximum number of entries to retain in memory and on save.
     max_entries: usize,
-    /// Saved current input for navigation.
-    saved_current: Option<String>,
 }
 
 impl CommandHistory {
-    /// Load history from file, creating it if necessary.
+    /// Load history from file, creating an empty in-memory history if needed.
     pub fn load(path: &Path, max: usize) -> Self {
         let entries = if path.exists() {
             match fs::read_to_string(path) {
                 Ok(content) => content
                     .lines()
-                    .filter(|l| !l.is_empty())
-                    .map(String::from)
+                    .filter(|line| !line.trim().is_empty())
+                    .map(HistoryEntry::from_command)
                     .collect(),
-                Err(e) => {
-                    warn!("failed to read history file: {e}");
+                Err(error) => {
+                    warn!("failed to read history file: {error}");
                     Vec::new()
                 }
             }
@@ -38,15 +111,12 @@ impl CommandHistory {
             Vec::new()
         };
 
-        let len = entries.len();
-        debug!(count = len, "loaded history entries");
+        debug!(count = entries.len(), "loaded history entries");
 
         Self {
             entries,
-            cursor: len,
             history_file: path.to_path_buf(),
             max_entries: max,
-            saved_current: None,
         }
     }
 
@@ -55,83 +125,54 @@ impl CommandHistory {
         dirs_path().join(".walk_history")
     }
 
-    /// Push a new command to history.
+    /// Return all entries in chronological order.
+    pub fn entries(&self) -> &[HistoryEntry] {
+        &self.entries
+    }
+
+    /// Record a completed command in the long-term history.
     ///
-    /// Skips duplicates of the immediately previous entry.
-    pub fn push(&mut self, command: &str) {
-        let trimmed = command.trim();
-        if trimmed.is_empty() {
+    /// Immediate duplicate commands are coalesced to preserve the previous
+    /// behavior of the plain-text history file.
+    pub fn record_completed(&mut self, entry: HistoryEntry) {
+        if entry.command.trim().is_empty() {
             return;
         }
 
-        // Skip if duplicate of last entry
-        if self.entries.last().map(String::as_str) == Some(trimmed) {
-            self.cursor = self.entries.len();
-            self.saved_current = None;
+        let trimmed = entry.command.trim();
+        if self
+            .entries
+            .last()
+            .is_some_and(|last| last.command == trimmed)
+        {
+            if let Some(last) = self.entries.last_mut() {
+                *last = entry.clone();
+            }
+            self.save();
             return;
         }
 
-        self.entries.push(trimmed.to_string());
-
-        // Trim to max entries
-        if self.entries.len() > self.max_entries {
-            let excess = self.entries.len() - self.max_entries;
-            self.entries.drain(..excess);
-        }
-
-        self.cursor = self.entries.len();
-        self.saved_current = None;
-
-        // Append to file
+        self.entries.push(entry.clone());
+        self.trim_to_max();
         self.append_to_file(trimmed);
     }
 
-    /// Navigate to previous history entry (Up arrow).
-    pub fn prev(&mut self, current_input: &str) -> Option<&str> {
-        if self.entries.is_empty() || self.cursor == 0 {
-            return None;
-        }
-
-        // Save current input on first navigation
-        if self.cursor == self.entries.len() {
-            self.saved_current = Some(current_input.to_string());
-        }
-
-        self.cursor -= 1;
-        Some(&self.entries[self.cursor])
+    /// Search the global history with fuzzy ranking.
+    pub fn search(&self, query: &str, limit: usize) -> Vec<HistorySearchMatch> {
+        fuzzy_search_entries(&self.entries, query, limit)
     }
 
-    /// Navigate to next history entry (Down arrow).
-    pub fn next(&mut self) -> Option<&str> {
-        if self.cursor >= self.entries.len() {
-            return None;
-        }
-
-        self.cursor += 1;
-
-        if self.cursor == self.entries.len() {
-            // Return to saved current input
-            self.saved_current.as_deref()
-        } else {
-            Some(&self.entries[self.cursor])
-        }
-    }
-
-    /// Search history for entries containing the query (most recent first).
-    pub fn search(&self, query: &str) -> Vec<&str> {
-        self.entries
-            .iter()
-            .rev()
-            .filter(|e| e.contains(query))
-            .map(String::as_str)
-            .collect()
-    }
-
-    /// Save all entries to the history file.
+    /// Save all commands back to the plain-text history file.
     pub fn save(&self) {
-        let content = self.entries.join("\n");
-        if let Err(e) = fs::write(&self.history_file, content) {
-            warn!("failed to save history: {e}");
+        let content = self
+            .entries
+            .iter()
+            .map(|entry| entry.command.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if let Err(error) = fs::write(&self.history_file, content) {
+            warn!("failed to save history: {error}");
         }
     }
 
@@ -145,8 +186,18 @@ impl CommandHistory {
         self.entries.is_empty()
     }
 
+    fn trim_to_max(&mut self) {
+        if self.entries.len() <= self.max_entries {
+            return;
+        }
+
+        let excess = self.entries.len() - self.max_entries;
+        self.entries.drain(..excess);
+    }
+
     fn append_to_file(&self, command: &str) {
         use std::io::Write;
+
         if let Ok(mut file) = fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -161,6 +212,123 @@ impl Drop for CommandHistory {
     fn drop(&mut self) {
         self.save();
     }
+}
+
+/// Return prefix-matching entries ordered from most recent to oldest.
+pub fn prefix_matches<'a>(entries: &'a [HistoryEntry], prefix: &str) -> Vec<&'a HistoryEntry> {
+    let prefix = prefix.trim();
+    let prefix_lower = prefix.to_ascii_lowercase();
+
+    entries
+        .iter()
+        .rev()
+        .filter(|entry| {
+            if prefix_lower.is_empty() {
+                return true;
+            }
+            entry
+                .command
+                .to_ascii_lowercase()
+                .starts_with(&prefix_lower)
+        })
+        .collect()
+}
+
+/// Search the provided entries with simple Warp-like fuzzy ranking.
+pub fn fuzzy_search_entries(
+    entries: &[HistoryEntry],
+    query: &str,
+    limit: usize,
+) -> Vec<HistorySearchMatch> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return entries
+            .iter()
+            .rev()
+            .take(limit)
+            .map(|entry| HistorySearchMatch {
+                entry: entry.clone(),
+                score: 0,
+            })
+            .collect();
+    }
+
+    let mut matches = entries
+        .iter()
+        .rev()
+        .filter_map(|entry| fuzzy_score(&entry.command, trimmed).map(|score| (entry, score)))
+        .map(|(entry, score)| HistorySearchMatch {
+            entry: entry.clone(),
+            score,
+        })
+        .collect::<Vec<_>>();
+
+    matches.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then(right.entry.started_at_ms.cmp(&left.entry.started_at_ms))
+            .then(right.entry.completed_at_ms.cmp(&left.entry.completed_at_ms))
+    });
+    matches.truncate(limit);
+    matches
+}
+
+fn fuzzy_score(text: &str, query: &str) -> Option<i64> {
+    if query.is_empty() {
+        return Some(0);
+    }
+
+    let text_lower = text.to_ascii_lowercase();
+    let query_lower = query.to_ascii_lowercase();
+
+    if let Some(position) = text_lower.find(&query_lower) {
+        let prefix_bonus = if position == 0 { 150 } else { 0 };
+        let compact_bonus = 100_i64.saturating_sub(position as i64);
+        let length_bonus = 40_i64.saturating_sub((text.len().saturating_sub(query.len())) as i64);
+        return Some(1_000 + prefix_bonus + compact_bonus + length_bonus);
+    }
+
+    let mut score = 0_i64;
+    let mut query_chars = query_lower.chars();
+    let mut current = query_chars.next()?;
+    let mut consecutive = 0_i64;
+    let mut last_match_index = None;
+    let mut previous_char = None;
+
+    for (index, ch) in text_lower.chars().enumerate() {
+        if ch == current {
+            score += 20 + consecutive * 5;
+            if index == 0
+                || previous_char.is_some_and(|value: char| {
+                    value == ' ' || value == '/' || value == '-' || value == '_'
+                })
+            {
+                score += 25;
+            }
+            if let Some(last_index) = last_match_index {
+                score -= (index.saturating_sub(last_index + 1)) as i64;
+            }
+            consecutive += 1;
+            last_match_index = Some(index);
+            if let Some(next) = query_chars.next() {
+                current = next;
+            } else {
+                return Some(score - text.len() as i64);
+            }
+        } else {
+            consecutive = 0;
+        }
+        previous_char = Some(ch);
+    }
+
+    None
+}
+
+fn unix_time_ms(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn dirs_path() -> PathBuf {
@@ -180,64 +348,65 @@ mod tests {
     }
 
     #[test]
-    fn test_push_and_navigate() {
+    fn test_record_completed_skips_immediate_duplicate_command() {
         let mut history = temp_history();
-        history.push("cmd1");
-        history.push("cmd2");
-        history.push("cmd3");
+        history.record_completed(HistoryEntry::pending("git status", None, Some(1)));
+        history.record_completed(HistoryEntry::pending("git status", None, Some(2)));
 
-        assert_eq!(history.prev(""), Some("cmd3"));
-        assert_eq!(history.prev(""), Some("cmd2"));
-        assert_eq!(history.prev(""), Some("cmd1"));
-        assert_eq!(history.prev(""), None);
-    }
-
-    #[test]
-    fn test_next_returns_to_current() {
-        let mut history = temp_history();
-        history.push("cmd1");
-        history.push("cmd2");
-
-        assert_eq!(history.prev("current"), Some("cmd2"));
-        assert_eq!(history.prev("current"), Some("cmd1"));
-        assert_eq!(history.next(), Some("cmd2"));
-        assert_eq!(history.next(), Some("current"));
-    }
-
-    #[test]
-    fn test_skip_duplicate() {
-        let mut history = temp_history();
-        history.push("cmd1");
-        history.push("cmd1");
         assert_eq!(history.len(), 1);
     }
 
     #[test]
-    fn test_search() {
-        let mut history = temp_history();
-        history.push("git commit");
-        history.push("ls -la");
-        history.push("git push");
+    fn test_prefix_matches_returns_recent_entries_first() {
+        let entries = vec![
+            HistoryEntry::from_command("git status"),
+            HistoryEntry::from_command("git commit"),
+            HistoryEntry::from_command("ls"),
+        ];
 
-        let results = history.search("git");
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0], "git push");
-        assert_eq!(results[1], "git commit");
+        let matches = prefix_matches(&entries, "git");
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].command, "git commit");
+        assert_eq!(matches[1].command, "git status");
     }
 
     #[test]
-    fn test_persistence() {
-        let path = std::env::temp_dir().join(format!("walk_persist_test_{}", std::process::id()));
+    fn test_fuzzy_search_prefers_compact_prefix_matches() {
+        let entries = vec![
+            HistoryEntry::from_command("cargo test"),
+            HistoryEntry::from_command("git commit"),
+            HistoryEntry::from_command("cargo clippy"),
+        ];
 
-        {
-            let mut history = CommandHistory::load(&path, 10_000);
-            history.push("persistent_cmd");
-        } // Drop saves
+        let matches = fuzzy_search_entries(&entries, "ct", 10);
+        assert_eq!(matches[0].entry.command, "cargo test");
+    }
 
-        let history2 = CommandHistory::load(&path, 10_000);
-        assert_eq!(history2.len(), 1);
+    #[test]
+    fn test_mark_completed_hydrates_runtime_metadata() {
+        let mut entry = HistoryEntry::pending("cargo test", None, Some(7));
+        entry.mark_completed(
+            Some(1),
+            Some(Duration::from_secs(3)),
+            Some(PathBuf::from("/tmp")),
+        );
 
-        // Cleanup
-        let _ = std::fs::remove_file(&path);
+        assert_eq!(entry.exit_code, Some(1));
+        assert_eq!(entry.duration_ms, Some(3_000));
+        assert_eq!(entry.cwd, Some(PathBuf::from("/tmp")));
+        assert!(entry.is_completed());
+    }
+
+    #[test]
+    fn test_global_search_returns_recent_matches() {
+        let mut history = temp_history();
+        history.record_completed(HistoryEntry::pending("git status", None, Some(1)));
+        history.record_completed(HistoryEntry::pending("cargo test", None, Some(1)));
+        history.record_completed(HistoryEntry::pending("git commit", None, Some(2)));
+
+        let results = history.search("git", 10);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].entry.command, "git commit");
+        assert_eq!(results[1].entry.command, "git status");
     }
 }

@@ -1,8 +1,10 @@
 //! Walk terminal emulator entry point.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -14,6 +16,8 @@ use walk_app::action_effects::{
     ActionEffects, ClipboardEffect, OverlayEffect, RuntimeEffect, ViewportEffect, WorkspaceEffect,
 };
 use walk_app::app::{InputMode, WalkApp};
+use walk_app::block_query::{BlockQueryMode, BlockQueryState};
+use walk_app::command_search::{CommandSearchScope, CommandSearchState};
 use walk_app::config::WalkConfig;
 use walk_app::event_loop::run_event_loop;
 use walk_app::handler::AppHandler;
@@ -22,14 +26,15 @@ use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
 use walk_app::scripting::ThemeRequest;
 use walk_app::session::{
-    block_from_state, block_to_state, default_session_path, load_session, named_session_path,
-    save_session, split_node_from_state, split_node_to_state, PaneState, WorkspaceSessionState,
-    WorkspaceTabState,
+    block_from_state, block_to_state, default_session_path, history_entry_from_state,
+    history_entry_to_state, load_session, named_session_path, save_session, split_node_from_state,
+    split_node_to_state, PaneState, WorkspaceSessionState, WorkspaceTabState,
 };
 use walk_app::window::WindowConfig;
 use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
 use walk_blocks::block::Block;
 use walk_input::editor::{EditorAction, EditorKey};
+use walk_input::history::{prefix_matches, CommandHistory, HistoryEntry};
 use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::damage::DirtyRegion;
 use walk_renderer::font::FontSystem;
@@ -118,10 +123,21 @@ impl Default for ChromeRects {
 #[derive(Clone, PartialEq, Eq)]
 struct PaneOverlaySignature {
     selected_block_id: Option<u64>,
-    blocks: Vec<(u64, usize, usize, Option<i32>, bool)>,
+    blocks: Vec<(u64, usize, usize, Option<i32>, bool, bool)>,
     search_query: String,
     search_current: usize,
     search_matches: Vec<(usize, u16, u16, Option<u64>, bool)>,
+    block_query: Option<BlockQueryOverlaySignature>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct BlockQueryOverlaySignature {
+    mode: BlockQueryMode,
+    target_block_id: u64,
+    query: String,
+    current_match: usize,
+    overlay_scroll_offset: usize,
+    matches: Vec<(usize, usize, usize)>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -179,6 +195,13 @@ impl PaneRowCache {
 }
 
 /// Runtime state for a pane.
+#[derive(Debug, Clone, Default)]
+struct HistoryNavigationState {
+    base_query: String,
+    candidates: Vec<String>,
+    current: Option<usize>,
+}
+
 struct PaneRuntime {
     app: WalkApp,
     terminal: Terminal,
@@ -187,6 +210,11 @@ struct PaneRuntime {
     cols: u16,
     rows: u16,
     row_cache: PaneRowCache,
+    current_cwd: PathBuf,
+    prompt_ready: bool,
+    pane_history: Vec<HistoryEntry>,
+    pending_history: Option<HistoryEntry>,
+    history_nav: HistoryNavigationState,
 }
 
 /// Walk application handler.
@@ -195,6 +223,7 @@ struct WalkHandler {
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
+    global_history: CommandHistory,
     plugins: Option<PluginHost>,
     status_message: Option<String>,
     theme_watcher: Option<ThemeWatcher>,
@@ -229,12 +258,14 @@ impl WalkHandler {
             .theme_path
             .as_ref()
             .and_then(|path| ThemeWatcher::new(path).ok());
+        let global_history = CommandHistory::load(&CommandHistory::default_path(), 10_000);
 
         let handler = Self {
             config,
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
+            global_history,
             plugins,
             status_message: None,
             theme_watcher,
@@ -269,7 +300,42 @@ impl WalkHandler {
         self.panes.get_mut(&pane_id)
     }
 
-    fn spawn_pane(&mut self, pane_id: PaneId, rect: Rect, focused: bool) {
+    fn should_activate_owned_input(pane: &PaneRuntime) -> bool {
+        pane.app.input_mode == InputMode::OwnedInput
+            && pane.prompt_ready
+            && !pane.terminal.state.is_alt_screen()
+            && !pane.app.global_search.is_active
+            && pane.app.block_query.is_none()
+            && pane.app.command_search.is_none()
+    }
+
+    fn sync_owned_input_state_for_pane(&mut self, pane_id: PaneId) {
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.app.input_editor.is_active = Self::should_activate_owned_input(pane);
+            if !pane.app.input_editor.is_active {
+                pane.history_nav = HistoryNavigationState::default();
+            }
+        }
+    }
+
+    fn show_input_surface(pane: &PaneRuntime, focused: bool) -> bool {
+        focused
+            && (pane.app.input_mode == InputMode::CommandPalette
+                || pane.app.command_search.is_some()
+                || pane.app.input_editor.is_active)
+    }
+
+    fn pane_input_lines(pane: &PaneRuntime) -> usize {
+        if pane.app.input_mode == InputMode::CommandPalette {
+            pane.app.input_editor.buffer.line_count().max(1) + 6
+        } else if pane.app.command_search.is_some() {
+            9
+        } else {
+            pane.app.input_editor.buffer.line_count().max(1)
+        }
+    }
+
+    fn spawn_pane(&mut self, pane_id: PaneId, rect: Rect, _focused: bool) {
         let restore = self.pending_pane_restore.remove(&pane_id);
         let mut pane_config = self.config.clone();
         if let Some(shell) = restore
@@ -290,9 +356,9 @@ impl WalkHandler {
         let ui_rects = compute_pane_ui_rects(
             rect,
             app.input_editor.render_data().position,
-            palette_input_lines(&app),
+            1,
             self.font.metrics.cell_height,
-            focused && app.input_mode == InputMode::CommandPalette,
+            false,
         );
         let (cols, rows) = self
             .font
@@ -323,8 +389,25 @@ impl WalkHandler {
                     cols,
                     rows,
                     row_cache: PaneRowCache::new(rows as usize, cols as usize),
+                    current_cwd: restore
+                        .as_ref()
+                        .map_or_else(PathBuf::new, |pane_state| pane_state.cwd.clone()),
+                    prompt_ready: false,
+                    pane_history: restore
+                        .as_ref()
+                        .map(|pane_state| {
+                            pane_state
+                                .command_history
+                                .iter()
+                                .map(history_entry_from_state)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    pending_history: None,
+                    history_nav: HistoryNavigationState::default(),
                 };
                 self.panes.insert(pane_id, pane_runtime);
+                self.sync_owned_input_state_for_pane(pane_id);
                 if let Some(pane_state) = restore {
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.terminal.title = pane_state.title;
@@ -377,9 +460,9 @@ impl WalkHandler {
             let ui_rects = compute_pane_ui_rects(
                 rect,
                 pane.app.input_editor.render_data().position,
-                palette_input_lines(&pane.app),
+                Self::pane_input_lines(pane),
                 self.font.metrics.cell_height,
-                focused && pane.app.input_mode == InputMode::CommandPalette,
+                Self::show_input_surface(pane, focused),
             );
             let (cols, rows) = self
                 .font
@@ -420,17 +503,16 @@ impl WalkHandler {
             .iter()
             .map(|(pane_id, pane)| PaneState {
                 id: *pane_id,
-                cwd: pane
-                    .app
-                    .block_manager
-                    .blocks
-                    .last()
-                    .map(|block| block.cwd.clone())
-                    .unwrap_or_default(),
+                cwd: pane.current_cwd.clone(),
                 shell: pane.app.config.shell.to_string(),
                 title: pane.terminal.title.clone(),
                 input_draft: pane.app.input_editor.buffer.text(),
                 search_query: pane.app.global_search.search_input.clone(),
+                command_history: pane
+                    .pane_history
+                    .iter()
+                    .map(history_entry_to_state)
+                    .collect(),
                 buffer_lines: pane
                     .terminal
                     .state
@@ -647,10 +729,12 @@ impl WalkHandler {
             );
 
             let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
+            let block_query = pane.app.block_query.as_ref();
             let overlay_signature = pane_overlay_signature(
                 &pane.app.block_manager.blocks,
                 selected_block_id,
                 search,
+                block_query,
                 pane_id,
             );
             pane.row_cache.resize(visible_rows.len(), total_cols);
@@ -689,6 +773,7 @@ impl WalkHandler {
                         blocks,
                         selected_block_id,
                         search,
+                        pane.app.block_query.as_ref(),
                         pane_id,
                         terminal,
                         absolute_row,
@@ -746,7 +831,7 @@ impl WalkHandler {
                 );
             }
 
-            if focused && pane.app.input_mode == InputMode::ShellNative {
+            if focused && !pane.app.input_editor.is_active && pane.app.command_search.is_none() {
                 let cursor_x = viewport.x + cursor_col as f32 * cw;
                 let cursor_row = visible_rows
                     .iter()
@@ -772,6 +857,22 @@ impl WalkHandler {
                 }
             }
 
+            if focused
+                && pane.app.input_mode == InputMode::OwnedInput
+                && pane.app.input_editor.is_active
+            {
+                render_owned_input(
+                    render,
+                    &mut self.font,
+                    theme,
+                    pane.ui_rects.input,
+                    &pane.app.input_editor.render_data(),
+                    cursor_shape,
+                    cursor_visible,
+                    window_opacity,
+                );
+            }
+
             if focused && pane.app.input_mode == InputMode::CommandPalette {
                 let palette_commands = available_palette_commands(
                     &plugin_palette_aliases,
@@ -788,14 +889,72 @@ impl WalkHandler {
                     cursor_visible,
                     window_opacity,
                 );
-                let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
-                if search.is_active {
-                    render_search_overlay(
+            }
+
+            if focused {
+                if let Some(command_search) = pane.app.command_search.as_ref() {
+                    render_command_search(
+                        render,
+                        &mut self.font,
+                        theme,
+                        pane.ui_rects.input,
+                        command_search,
+                        cursor_shape,
+                        cursor_visible,
+                        window_opacity,
+                    );
+                }
+            }
+
+            if focused && search.is_active {
+                render_search_overlay(
+                    render,
+                    &mut self.font,
+                    theme,
+                    pane.ui_rects.viewport,
+                    search,
+                    window_opacity,
+                );
+            }
+
+            if focused {
+                if let Some(mut block_query_state) = pane.app.block_query.clone() {
+                    let Some(target_block) = pane
+                        .app
+                        .block_manager
+                        .get_block(block_query_state.target_block_id)
+                        .cloned()
+                    else {
+                        pane.app.block_query = None;
+                        continue;
+                    };
+                    let filtered_lines = if matches!(block_query_state.mode, BlockQueryMode::Filter)
+                    {
+                        let max_visible_lines = filter_overlay_visible_lines(
+                            pane.ui_rects.viewport,
+                            self.font.metrics.cell_height,
+                        );
+                        block_query_state.ensure_current_line_visible(max_visible_lines);
+                        block_query_state
+                            .filtered_line_indices()
+                            .into_iter()
+                            .filter_map(|line_idx| {
+                                let absolute_row = target_block.output_start_row + line_idx;
+                                (absolute_row <= target_block.output_end_row)
+                                    .then(|| (line_idx, pane.terminal.state.row_text(absolute_row)))
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    pane.app.block_query = Some(block_query_state.clone());
+                    render_block_query_overlay(
                         render,
                         &mut self.font,
                         theme,
                         pane.ui_rects.viewport,
-                        search,
+                        &block_query_state,
+                        &filtered_lines,
                         window_opacity,
                     );
                 }
@@ -825,13 +984,7 @@ impl WalkHandler {
         let tab = tab_index.and_then(|index| self.workspace.tabs.get(index));
         let pane = self.panes.get(&pane_id);
         let cwd = pane
-            .and_then(|pane| {
-                pane.app
-                    .block_manager
-                    .blocks
-                    .last()
-                    .map(|block| block.cwd.display().to_string())
-            })
+            .map(|pane| pane.current_cwd.display().to_string())
             .unwrap_or_default();
 
         json!({
@@ -894,6 +1047,50 @@ impl WalkHandler {
         if let Some(active_pane) = self.active_pane_mut() {
             active_pane.app.global_search = search;
         }
+    }
+
+    fn active_block_query_state(&self) -> Option<BlockQueryState> {
+        self.active_pane()
+            .and_then(|pane| pane.app.block_query.as_ref().cloned())
+    }
+
+    fn refresh_block_query(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        self.refresh_block_query_for_pane(pane_id);
+    }
+
+    fn refresh_block_query_for_pane(&mut self, pane_id: PaneId) {
+        let Some((target_block_id, query)) = self.panes.get(&pane_id).and_then(|pane| {
+            pane.app
+                .block_query
+                .as_ref()
+                .map(|state| (state.target_block_id, state.query.clone()))
+        }) else {
+            return;
+        };
+
+        let Some(output_lines) = self.panes.get(&pane_id).and_then(|pane| {
+            pane.app
+                .block_manager
+                .get_block(target_block_id)
+                .map(|block| collect_block_output_lines(&pane.terminal, block))
+        }) else {
+            if let Some(pane) = self.panes.get_mut(&pane_id) {
+                pane.app.block_query = None;
+            }
+            return;
+        };
+
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            if let Some(state) = pane.app.block_query.as_mut() {
+                if state.target_block_id == target_block_id {
+                    state.search(&query, &output_lines);
+                }
+            }
+        }
+        self.scroll_to_current_block_query_match();
     }
 
     fn collect_workspace_search_lines(&self) -> Vec<SearchLine> {
@@ -1228,6 +1425,8 @@ impl WalkHandler {
     }
 
     fn handle_semantic_events(&mut self, pane_id: PaneId, events: Vec<SemanticEvent>) {
+        let mut relayout = false;
+
         for event in events {
             if let SemanticEvent::TitleChanged(title) = &event {
                 if self.active_pane_id() == Some(pane_id) {
@@ -1243,11 +1442,84 @@ impl WalkHandler {
                 pane.app.handle_semantic_event(&event);
             }
             match event {
+                SemanticEvent::PromptStart { .. } => {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        pane.prompt_ready = true;
+                    }
+                    relayout = true;
+                }
+                SemanticEvent::CommandStart { .. } | SemanticEvent::OutputStart { .. } => {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        pane.prompt_ready = false;
+                    }
+                    relayout = true;
+                }
+                SemanticEvent::CommandText { text, .. } => {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        if let Some(pending) = pane.pending_history.as_mut() {
+                            pending.command = text.trim().to_string();
+                        } else if !text.trim().is_empty() {
+                            pane.pending_history = Some(HistoryEntry::pending(
+                                &text,
+                                (!pane.current_cwd.as_os_str().is_empty())
+                                    .then(|| pane.current_cwd.clone()),
+                                Some(pane_id),
+                            ));
+                        }
+                    }
+                }
                 SemanticEvent::CommandEnd { exit_code, .. } => {
+                    let completed_entry = if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        let mut entry = pane.pending_history.take().unwrap_or_else(|| {
+                            let command = pane
+                                .app
+                                .block_manager
+                                .blocks
+                                .last()
+                                .map(|block| block.command_text.clone())
+                                .unwrap_or_default();
+                            HistoryEntry::pending(
+                                &command,
+                                (!pane.current_cwd.as_os_str().is_empty())
+                                    .then(|| pane.current_cwd.clone()),
+                                Some(pane_id),
+                            )
+                        });
+
+                        let block = pane.app.block_manager.blocks.last();
+                        let cwd = block
+                            .and_then(|candidate| {
+                                (!candidate.cwd.as_os_str().is_empty())
+                                    .then(|| candidate.cwd.clone())
+                            })
+                            .or_else(|| {
+                                (!pane.current_cwd.as_os_str().is_empty())
+                                    .then(|| pane.current_cwd.clone())
+                            });
+                        let duration = block.and_then(|candidate| candidate.duration);
+
+                        entry.mark_completed(exit_code, duration, cwd);
+                        if !entry.command.is_empty() {
+                            pane.pane_history.push(entry.clone());
+                            Some(entry)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(entry) = completed_entry {
+                        self.global_history.record_completed(entry);
+                    }
                     let payload = self.block_hook_payload(pane_id, exit_code);
                     self.run_plugin_hook("block_finished", &payload);
+                    relayout = true;
                 }
                 SemanticEvent::CwdChanged(path) => {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        pane.current_cwd = path.clone();
+                    }
                     let mut payload = self.pane_hook_payload(pane_id);
                     if let Some(object) = payload.as_object_mut() {
                         object.insert("path".to_string(), json!(path.display().to_string()));
@@ -1255,6 +1527,14 @@ impl WalkHandler {
                     self.run_plugin_hook("cwd_changed", &payload);
                 }
                 _ => {}
+            }
+
+            self.sync_owned_input_state_for_pane(pane_id);
+        }
+
+        if relayout {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
             }
         }
     }
@@ -1267,11 +1547,18 @@ impl WalkHandler {
                     Action::BlockPrev
                         | Action::BlockNext
                         | Action::BlockCopy
+                        | Action::BlockCopyCommand
+                        | Action::BlockCopyOutput
                         | Action::BlockCollapse
-                        | Action::BlockSearch
-                        | Action::SearchInBlock
+                        | Action::BlockToggleBookmark
+                        | Action::BlockPrevBookmark
+                        | Action::BlockNextBookmark
+                        | Action::BlockFind
+                        | Action::BlockFilter
+                        | Action::BlockRerun
                         | Action::SearchGlobal
                         | Action::CommandPalette
+                        | Action::CommandSearch
                 )
         }) {
             return;
@@ -1293,6 +1580,7 @@ impl WalkHandler {
                 RuntimeEffect::Workspace(workspace) => self.apply_workspace_effect(workspace),
                 RuntimeEffect::Overlay(overlay) => self.apply_overlay_effect(overlay),
                 RuntimeEffect::Zoom(size) => self.apply_zoom(size),
+                RuntimeEffect::Status(message) => self.status_message = Some(message),
             }
         }
     }
@@ -1313,6 +1601,20 @@ impl WalkHandler {
                     }
                 }
             }
+            ClipboardEffect::CopySelectedBlockCommand => {
+                if let Some(text) = self.selected_block_command_text() {
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        let _ = active_pane.app.clipboard.copy(&text);
+                    }
+                }
+            }
+            ClipboardEffect::CopySelectedBlockOutput => {
+                if let Some(text) = self.selected_block_output_text() {
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        let _ = active_pane.app.clipboard.copy(&text);
+                    }
+                }
+            }
             ClipboardEffect::Paste => {
                 let Some(text) = self
                     .active_pane_mut()
@@ -1321,12 +1623,22 @@ impl WalkHandler {
                     return;
                 };
 
+                let mut refresh_command_search = false;
                 if let Some(active_pane) = self.active_pane_mut() {
-                    if active_pane.app.input_mode == InputMode::CommandPalette {
+                    if let Some(command_search) = active_pane.app.command_search.as_mut() {
+                        command_search.query.push_str(&text);
+                        refresh_command_search = true;
+                    } else if active_pane.app.input_mode == InputMode::CommandPalette
+                        || active_pane.app.input_editor.is_active
+                    {
                         let _ = active_pane.app.input_editor.buffer.insert_at(0, &text);
+                        active_pane.history_nav = HistoryNavigationState::default();
                     } else {
                         self.send_to_pty(text.as_bytes());
                     }
+                }
+                if refresh_command_search {
+                    self.refresh_command_search();
                 }
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
@@ -1572,6 +1884,8 @@ impl WalkHandler {
             OverlayEffect::OpenSearch => {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.close_command_palette();
+                    active_pane.app.command_search = None;
+                    active_pane.app.block_query = None;
                     active_pane.app.global_search.activate();
                 }
                 if let Some(window) = &self.window {
@@ -1584,10 +1898,15 @@ impl WalkHandler {
                     active_pane.app.global_search.deactivate();
                 }
                 self.refresh_global_search();
+                if let Some(active_pane_id) = self.active_pane_id() {
+                    self.sync_owned_input_state_for_pane(active_pane_id);
+                }
             }
             OverlayEffect::OpenCommandPalette => {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.global_search.deactivate();
+                    active_pane.app.command_search = None;
+                    active_pane.app.block_query = None;
                     active_pane.app.open_command_palette();
                 }
                 if let Some(window) = &self.window {
@@ -1598,8 +1917,84 @@ impl WalkHandler {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.close_command_palette();
                 }
+                if let Some(active_pane_id) = self.active_pane_id() {
+                    self.sync_owned_input_state_for_pane(active_pane_id);
+                }
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            OverlayEffect::OpenCommandSearch => {
+                if !self
+                    .active_pane()
+                    .is_some_and(Self::should_activate_owned_input)
+                {
+                    self.status_message = Some(
+                        "Command search is only available when owned input is active".to_string(),
+                    );
+                    return;
+                }
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.global_search.deactivate();
+                    active_pane.app.block_query = None;
+                    if active_pane.app.input_mode == InputMode::CommandPalette {
+                        active_pane.app.close_command_palette();
+                    }
+                    let mut command_search = CommandSearchState::new();
+                    command_search.query = active_pane.app.input_editor.buffer.text();
+                    active_pane.app.command_search = Some(command_search);
+                }
+                self.refresh_command_search();
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+                if let Some(active_pane_id) = self.active_pane_id() {
+                    self.sync_owned_input_state_for_pane(active_pane_id);
+                }
+            }
+            OverlayEffect::CloseCommandSearch => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.command_search = None;
+                }
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+                if let Some(active_pane_id) = self.active_pane_id() {
+                    self.sync_owned_input_state_for_pane(active_pane_id);
+                }
+            }
+            OverlayEffect::OpenBlockQuery {
+                mode,
+                target_block_id,
+            } => {
+                let Some(output_lines) = self.active_pane().and_then(|pane| {
+                    pane.app
+                        .block_manager
+                        .get_block(target_block_id)
+                        .map(|block| collect_block_output_lines(&pane.terminal, block))
+                }) else {
+                    self.status_message = Some("No block available".to_string());
+                    return;
+                };
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.close_command_palette();
+                    active_pane.app.global_search.deactivate();
+                    active_pane.app.command_search = None;
+                    active_pane.app.block_query = Some(BlockQueryState::new(mode, target_block_id));
+                    if let Some(block_query) = active_pane.app.block_query.as_mut() {
+                        block_query.search("", &output_lines);
+                    }
+                }
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+            }
+            OverlayEffect::CloseBlockQuery => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.block_query = None;
+                }
+                if let Some(active_pane_id) = self.active_pane_id() {
+                    self.sync_owned_input_state_for_pane(active_pane_id);
                 }
             }
         }
@@ -1636,7 +2031,214 @@ impl WalkHandler {
             _ => {}
         }
 
+        if let Some(active_pane_id) = self.active_pane_id() {
+            self.sync_owned_input_state_for_pane(active_pane_id);
+        }
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
         self.scroll_to_current_search_match();
+        self.needs_redraw = true;
+        true
+    }
+
+    fn handle_block_query_input(&mut self, event: &InputEvent) -> bool {
+        if !matches!(self.active_pane(), Some(pane) if pane.app.block_query.is_some()) {
+            return false;
+        }
+
+        let mut close_overlay = false;
+        let mut query_changed = false;
+        let mut navigated = false;
+
+        if let Some(active_pane) = self.active_pane_mut() {
+            let Some(block_query) = active_pane.app.block_query.as_mut() else {
+                return false;
+            };
+
+            match &event.action {
+                KeyAction::Escape => close_overlay = true,
+                KeyAction::Enter | KeyAction::ArrowDown => {
+                    block_query.next_match();
+                    navigated = true;
+                }
+                KeyAction::ArrowUp => {
+                    block_query.prev_match();
+                    navigated = true;
+                }
+                KeyAction::Backspace
+                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
+                    block_query.query.pop();
+                    query_changed = true;
+                }
+                KeyAction::Char(ch)
+                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
+                    block_query.query.push(*ch);
+                    query_changed = true;
+                }
+                _ => {}
+            }
+        }
+
+        if close_overlay {
+            if let Some(active_pane) = self.active_pane_mut() {
+                active_pane.app.block_query = None;
+            }
+            if let Some(active_pane_id) = self.active_pane_id() {
+                self.sync_owned_input_state_for_pane(active_pane_id);
+            }
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.needs_redraw = true;
+            return true;
+        }
+
+        if query_changed {
+            self.refresh_block_query();
+        } else if navigated {
+            self.scroll_to_current_block_query_match();
+        }
+
+        self.needs_redraw = true;
+        true
+    }
+
+    fn handle_command_search_input(&mut self, event: &InputEvent) -> bool {
+        if !matches!(self.active_pane(), Some(pane) if pane.app.command_search.is_some()) {
+            return false;
+        }
+
+        let mut close_overlay = false;
+        let mut query_changed = false;
+        let mut accepted_command = None;
+
+        if let Some(active_pane) = self.active_pane_mut() {
+            let Some(command_search) = active_pane.app.command_search.as_mut() else {
+                return false;
+            };
+
+            match &event.action {
+                KeyAction::Escape => close_overlay = true,
+                KeyAction::Enter => {
+                    accepted_command = command_search
+                        .current_match()
+                        .map(|candidate| candidate.entry.command.clone());
+                }
+                KeyAction::ArrowDown => {
+                    command_search.next_match();
+                }
+                KeyAction::ArrowUp => {
+                    command_search.prev_match();
+                }
+                KeyAction::Backspace
+                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
+                    command_search.query.pop();
+                    query_changed = true;
+                }
+                KeyAction::Char(ch)
+                    if !event.modifiers.ctrl && !event.modifiers.alt && !event.modifiers.meta =>
+                {
+                    command_search.query.push(*ch);
+                    query_changed = true;
+                }
+                _ => {}
+            }
+        }
+
+        if close_overlay {
+            if let Some(active_pane) = self.active_pane_mut() {
+                active_pane.app.command_search = None;
+            }
+            if let Some(active_pane_id) = self.active_pane_id() {
+                self.sync_owned_input_state_for_pane(active_pane_id);
+            }
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.needs_redraw = true;
+            return true;
+        }
+
+        if query_changed {
+            self.refresh_command_search();
+        }
+
+        if let Some(command) = accepted_command {
+            if let Some(active_pane) = self.active_pane_mut() {
+                active_pane.app.input_editor.buffer.set_text(&command);
+                active_pane.app.command_search = None;
+                active_pane.history_nav = HistoryNavigationState::default();
+            }
+            if let Some(active_pane_id) = self.active_pane_id() {
+                self.sync_owned_input_state_for_pane(active_pane_id);
+            }
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+        }
+
+        self.needs_redraw = true;
+        true
+    }
+
+    fn handle_owned_input(&mut self, event: &InputEvent) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        if !self
+            .panes
+            .get(&pane_id)
+            .is_some_and(Self::should_activate_owned_input)
+        {
+            return false;
+        }
+
+        if matches!(event.action, KeyAction::ArrowUp | KeyAction::ArrowDown)
+            && !event.modifiers.ctrl
+            && !event.modifiers.alt
+            && !event.modifiers.meta
+        {
+            let step_up = matches!(event.action, KeyAction::ArrowUp);
+            self.navigate_owned_history(pane_id, step_up);
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.needs_redraw = true;
+            return true;
+        }
+
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.history_nav = HistoryNavigationState::default();
+        }
+
+        let Some(editor_key) = input_event_to_editor_key(event) else {
+            return false;
+        };
+
+        let mut submitted = None;
+        let mut send_eof = false;
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            match active_pane.app.input_editor.handle_key(editor_key) {
+                EditorAction::Submit(command) => submitted = Some(command),
+                EditorAction::SendEof => send_eof = true,
+                EditorAction::None => {}
+            }
+        }
+
+        if let Some(command) = submitted {
+            self.submit_owned_input(pane_id, command);
+        }
+        if send_eof {
+            self.send_to_pty(b"\x04");
+        }
+
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
         self.needs_redraw = true;
         true
     }
@@ -1710,6 +2312,96 @@ impl WalkHandler {
         self.sync_workspace_layout(size);
     }
 
+    fn submit_owned_input(&mut self, pane_id: PaneId, command: String) {
+        let trimmed = command.trim().to_string();
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.history_nav = HistoryNavigationState::default();
+            pane.prompt_ready = false;
+            pane.app.input_editor.is_active = false;
+            pane.pending_history = if trimmed.is_empty() {
+                None
+            } else {
+                Some(HistoryEntry::pending(
+                    &command,
+                    (!pane.current_cwd.as_os_str().is_empty()).then(|| pane.current_cwd.clone()),
+                    Some(pane_id),
+                ))
+            };
+        }
+
+        if !command.is_empty() {
+            self.send_to_pty(command.as_bytes());
+        }
+        self.send_to_pty(b"\r");
+    }
+
+    fn navigate_owned_history(&mut self, pane_id: PaneId, step_up: bool) {
+        let base_query = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| {
+                if pane.history_nav.candidates.is_empty() && pane.history_nav.current.is_none() {
+                    pane.app.input_editor.buffer.text()
+                } else {
+                    pane.history_nav.base_query.clone()
+                }
+            })
+            .unwrap_or_default();
+
+        let mut seen = HashSet::new();
+        let mut candidates = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| {
+                prefix_matches(&pane.pane_history, &base_query)
+                    .into_iter()
+                    .filter_map(|entry| {
+                        seen.insert(entry.command.clone())
+                            .then(|| entry.command.clone())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        candidates.extend(
+            prefix_matches(self.global_history.entries(), &base_query)
+                .into_iter()
+                .filter_map(|entry| {
+                    seen.insert(entry.command.clone())
+                        .then(|| entry.command.clone())
+                }),
+        );
+
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.history_nav.base_query = base_query.clone();
+            pane.history_nav.candidates = candidates;
+
+            if pane.history_nav.candidates.is_empty() {
+                pane.history_nav.current = None;
+                return;
+            }
+
+            pane.history_nav.current = if step_up {
+                Some(pane.history_nav.current.map_or(0, |index| {
+                    (index + 1).min(pane.history_nav.candidates.len() - 1)
+                }))
+            } else {
+                match pane.history_nav.current {
+                    Some(index) if index > 0 => Some(index - 1),
+                    _ => None,
+                }
+            };
+
+            if let Some(index) = pane.history_nav.current {
+                if let Some(candidate) = pane.history_nav.candidates.get(index) {
+                    pane.app.input_editor.buffer.set_text(candidate);
+                }
+            } else {
+                pane.app.input_editor.buffer.set_text(&base_query);
+            }
+        }
+    }
+
     fn refresh_global_search(&mut self) {
         let query = self.active_pane().and_then(|pane| {
             pane.app
@@ -1736,6 +2428,85 @@ impl WalkHandler {
         };
         active_pane.app.global_search.search(&query, &lines);
         self.scroll_to_current_search_match();
+    }
+
+    fn refresh_command_search(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let Some(query) = self.panes.get(&pane_id).and_then(|pane| {
+            pane.app
+                .command_search
+                .as_ref()
+                .map(|command_search| command_search.query.clone())
+        }) else {
+            return;
+        };
+
+        let pane_entries = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| pane.pane_history.clone())
+            .unwrap_or_default();
+        let global_entries = self.global_history.entries().to_vec();
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            if let Some(command_search) = active_pane.app.command_search.as_mut() {
+                command_search.search(&query, &pane_entries, &global_entries);
+            }
+        }
+    }
+
+    fn scroll_to_current_block_query_match(&mut self) {
+        let Some(block_query) = self.active_block_query_state() else {
+            return;
+        };
+        let Some(current_match) = block_query.current_match().cloned() else {
+            return;
+        };
+        let Some(target_block) = self.active_pane().and_then(|pane| {
+            pane.app
+                .block_manager
+                .get_block(block_query.target_block_id)
+                .cloned()
+        }) else {
+            return;
+        };
+        let target_row = target_block.output_start_row + current_match.line;
+
+        let Some(active_pane) = self.active_pane_mut() else {
+            return;
+        };
+
+        let screen_lines = active_pane.terminal.state.screen_lines();
+        if screen_lines == 0 {
+            return;
+        }
+
+        let visible_start = active_pane.terminal.state.visible_start_row();
+        let visible_end = visible_start + screen_lines.saturating_sub(1);
+        if (visible_start..=visible_end).contains(&target_row) {
+            return;
+        }
+
+        let desired_start = if target_row < visible_start {
+            target_row
+        } else {
+            target_row.saturating_sub(screen_lines.saturating_sub(1))
+        };
+        let new_offset = active_pane
+            .terminal
+            .state
+            .scrollback_len()
+            .saturating_sub(desired_start);
+        active_pane
+            .viewport
+            .reveal_offset(new_offset, pane_max_scroll(active_pane));
+        active_pane
+            .terminal
+            .state
+            .set_display_offset(active_pane.viewport.display_offset());
+        self.needs_redraw = true;
     }
 
     fn scroll_to_current_search_match(&mut self) {
@@ -1862,11 +2633,22 @@ impl WalkHandler {
 
     fn selected_block_text(&self) -> Option<String> {
         let active_pane = self.active_pane()?;
-        let selected = active_pane
-            .app
-            .block_navigator
-            .selected_block(&active_pane.app.block_manager)?;
+        let selected = active_pane.app.selected_or_latest_block()?;
         Some(extract_block_text(&active_pane.terminal, selected))
+    }
+
+    fn selected_block_command_text(&self) -> Option<String> {
+        let active_pane = self.active_pane()?;
+        active_pane
+            .app
+            .selected_or_latest_block()
+            .map(extract_block_command_text)
+    }
+
+    fn selected_block_output_text(&self) -> Option<String> {
+        let active_pane = self.active_pane()?;
+        let selected = active_pane.app.selected_or_latest_block()?;
+        Some(extract_block_output_text(&active_pane.terminal, selected))
     }
 }
 
@@ -1962,9 +2744,15 @@ impl AppHandler for WalkHandler {
         }
 
         let pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
+        let mut relayout = false;
         for pane_id in pane_ids {
             let mut semantic_events = Vec::new();
             let mut is_dirty = false;
+            let previous_input_active = self
+                .panes
+                .get(&pane_id)
+                .map(|pane| pane.app.input_editor.is_active)
+                .unwrap_or(false);
             if let Some(pane) = self.panes.get_mut(&pane_id) {
                 pane.terminal.process_pty_output();
                 semantic_events = pane.terminal.drain_semantic_events();
@@ -1982,7 +2770,28 @@ impl AppHandler for WalkHandler {
             if !semantic_events.is_empty() {
                 self.handle_semantic_events(pane_id, semantic_events);
             }
+            self.sync_owned_input_state_for_pane(pane_id);
+            let input_active = self
+                .panes
+                .get(&pane_id)
+                .map(|pane| pane.app.input_editor.is_active)
+                .unwrap_or(false);
+            relayout |= input_active != previous_input_active;
+            if self
+                .panes
+                .get(&pane_id)
+                .is_some_and(|pane| pane.app.block_query.is_some())
+                && is_dirty
+            {
+                self.refresh_block_query_for_pane(pane_id);
+            }
             self.needs_redraw |= is_dirty;
+        }
+
+        if relayout {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
         }
 
         self.needs_redraw
@@ -2067,6 +2876,18 @@ impl AppHandler for WalkHandler {
         }
 
         if self.handle_search_input(&event) {
+            return;
+        }
+
+        if self.handle_block_query_input(&event) {
+            return;
+        }
+
+        if self.handle_command_search_input(&event) {
+            return;
+        }
+
+        if self.handle_owned_input(&event) {
             return;
         }
 
@@ -2238,14 +3059,6 @@ fn compute_pane_ui_rects(
     }
 }
 
-fn palette_input_lines(app: &WalkApp) -> usize {
-    if app.input_mode == InputMode::CommandPalette {
-        app.input_editor.buffer.line_count().max(1) + 6
-    } else {
-        1
-    }
-}
-
 fn pane_max_scroll(pane: &PaneRuntime) -> f32 {
     pane.terminal.state.scrollback_len() as f32
 }
@@ -2361,6 +3174,83 @@ fn render_debug_overlay(
             line,
             with_opacity([0.84, 0.88, 0.95, 1.0], surface_opacity),
         );
+    }
+}
+
+fn render_owned_input(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    rect: Rect,
+    input: &walk_input::editor::InputRenderData,
+    cursor_shape: CursorShape,
+    cursor_visible: bool,
+    surface_opacity: f32,
+) {
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity(
+            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        1.0,
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.9,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let padding_x = 12.0;
+    let padding_y = 8.0;
+    let base_x = rect.x + padding_x;
+    let base_y = rect.y + padding_y;
+
+    for (row, line) in input.lines.iter().enumerate() {
+        push_text(
+            render,
+            font,
+            base_x,
+            base_y + row as f32 * font.metrics.cell_height,
+            line,
+            with_opacity(
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    theme.foreground.a,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
+
+    if cursor_visible {
+        if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
+            render.batch.push_cursor(
+                base_x + cursor_col as f32 * font.metrics.cell_width,
+                base_y + cursor_row as f32 * font.metrics.cell_height,
+                font.metrics.cell_width,
+                font.metrics.cell_height,
+                cursor_shape,
+                with_opacity(
+                    [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.95],
+                    surface_opacity,
+                ),
+            );
+        }
     }
 }
 
@@ -2514,6 +3404,209 @@ fn render_command_palette(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_command_search(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    rect: Rect,
+    command_search: &CommandSearchState,
+    cursor_shape: CursorShape,
+    cursor_visible: bool,
+    surface_opacity: f32,
+) {
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        with_opacity(
+            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        rect.x,
+        rect.y,
+        rect.w,
+        1.0,
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.9,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let padding_x = 12.0;
+    let padding_y = 8.0;
+    let base_x = rect.x + padding_x;
+    let base_y = rect.y + padding_y;
+    let prefix = "History: ";
+    push_text(
+        render,
+        font,
+        base_x,
+        base_y,
+        &format!("{prefix}{}", command_search.query),
+        with_opacity(
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let counter = command_search.match_count_display();
+    push_text(
+        render,
+        font,
+        rect.x + rect.w - 100.0,
+        base_y,
+        &counter,
+        with_opacity(
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.85,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let mut row_y = base_y + font.metrics.cell_height + 6.0;
+    if command_search.results.is_empty() {
+        push_text(
+            render,
+            font,
+            base_x,
+            row_y,
+            "No matching commands",
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.85,
+                ],
+                surface_opacity,
+            ),
+        );
+    } else {
+        let mut last_scope = None;
+        for (index, result) in command_search.results.iter().take(6).enumerate() {
+            if last_scope != Some(result.scope) {
+                let section_title = match result.scope {
+                    CommandSearchScope::Pane => "Current Pane",
+                    CommandSearchScope::Global => "Global History",
+                };
+                push_text(
+                    render,
+                    font,
+                    base_x,
+                    row_y,
+                    section_title,
+                    with_opacity(
+                        [
+                            theme.highlight_current_match.r,
+                            theme.highlight_current_match.g,
+                            theme.highlight_current_match.b,
+                            0.95,
+                        ],
+                        surface_opacity,
+                    ),
+                );
+                row_y += font.metrics.cell_height;
+                last_scope = Some(result.scope);
+            }
+
+            if index == command_search.current {
+                render.batch.push_bg_quad(
+                    rect.x + 8.0,
+                    row_y - 2.0,
+                    rect.w - 16.0,
+                    font.metrics.cell_height + 4.0,
+                    with_opacity(
+                        [theme.selection.r, theme.selection.g, theme.selection.b, 0.2],
+                        surface_opacity,
+                    ),
+                );
+            }
+
+            push_text(
+                render,
+                font,
+                base_x,
+                row_y,
+                &result.entry.command,
+                with_opacity(
+                    [
+                        theme.foreground.r,
+                        theme.foreground.g,
+                        theme.foreground.b,
+                        theme.foreground.a,
+                    ],
+                    surface_opacity,
+                ),
+            );
+            push_text(
+                render,
+                font,
+                base_x + 260.0,
+                row_y,
+                &history_metadata_label(&result.entry),
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        0.9,
+                    ],
+                    surface_opacity,
+                ),
+            );
+            row_y += font.metrics.cell_height + 4.0;
+        }
+    }
+
+    if cursor_visible {
+        render.batch.push_cursor(
+            base_x
+                + prefix.chars().count() as f32 * font.metrics.cell_width
+                + command_search.query.chars().count() as f32 * font.metrics.cell_width,
+            base_y,
+            font.metrics.cell_width,
+            font.metrics.cell_height,
+            cursor_shape,
+            with_opacity(
+                [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.95],
+                surface_opacity,
+            ),
+        );
+    }
+}
+
+fn history_metadata_label(entry: &HistoryEntry) -> String {
+    let cwd = entry
+        .cwd
+        .as_ref()
+        .map_or_else(|| "~".to_string(), |path| path.display().to_string());
+    let exit = entry
+        .exit_code
+        .map_or_else(|| "exit ?".to_string(), |code| format!("exit {code}"));
+    let duration = entry
+        .duration_ms
+        .map_or_else(String::new, |ms| format!(" | {}ms", ms));
+    format!("{cwd} | {exit}{duration}")
+}
+
 fn render_search_overlay(
     render: &mut RenderState,
     font: &mut FontSystem,
@@ -2590,6 +3683,204 @@ fn render_search_overlay(
             surface_opacity,
         ),
     );
+}
+
+fn render_block_query_overlay(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    block_query: &BlockQueryState,
+    filtered_lines: &[(usize, String)],
+    surface_opacity: f32,
+) {
+    let is_filter = matches!(block_query.mode, BlockQueryMode::Filter);
+    let width = if is_filter {
+        (viewport.w * 0.48).clamp(280.0, 520.0)
+    } else {
+        (viewport.w * 0.4).clamp(240.0, 420.0)
+    };
+    let list_height = if is_filter {
+        (viewport.h * 0.42).clamp(
+            font.metrics.cell_height * 4.0,
+            font.metrics.cell_height * 12.0,
+        )
+    } else {
+        0.0
+    };
+    let height = font.metrics.cell_height * 2.0 + 16.0 + list_height;
+    let x = viewport.x + viewport.w - width - 12.0;
+    let y = viewport.y + 12.0;
+
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        height,
+        with_opacity(
+            [
+                theme.tab_bar_bg.r,
+                theme.tab_bar_bg.g,
+                theme.tab_bar_bg.b,
+                0.96,
+            ],
+            surface_opacity,
+        ),
+    );
+    render.batch.push_bg_quad(
+        x,
+        y,
+        width,
+        1.0,
+        with_opacity(
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.85,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    let title = match block_query.mode {
+        BlockQueryMode::Find => "Find Block",
+        BlockQueryMode::Filter => "Filter Block",
+    };
+    let header_text = if block_query.query.is_empty() {
+        title.to_string()
+    } else {
+        format!("{title}: {}", block_query.query)
+    };
+    push_text(
+        render,
+        font,
+        x + 10.0,
+        y + 6.0,
+        &header_text,
+        with_opacity(
+            [
+                theme.foreground.r,
+                theme.foreground.g,
+                theme.foreground.b,
+                theme.foreground.a,
+            ],
+            surface_opacity,
+        ),
+    );
+    push_text(
+        render,
+        font,
+        x + 10.0,
+        y + 6.0 + font.metrics.cell_height,
+        &block_query.match_count_display(),
+        with_opacity(
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                theme.status_bar_text.a,
+            ],
+            surface_opacity,
+        ),
+    );
+
+    if !is_filter {
+        return;
+    }
+
+    let lines_y = y + 12.0 + font.metrics.cell_height * 2.0;
+    let max_chars = ((width - 24.0) / font.metrics.cell_width).floor().max(8.0) as usize;
+    let max_visible_lines = filter_overlay_visible_lines(viewport, font.metrics.cell_height);
+    let current_filtered_line = block_query.current_filtered_line();
+
+    if filtered_lines.is_empty() {
+        let empty_text = if block_query.query.is_empty() {
+            "Type to filter block output"
+        } else {
+            "No lines matched"
+        };
+        push_text(
+            render,
+            font,
+            x + 10.0,
+            lines_y,
+            empty_text,
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    theme.status_bar_text.a,
+                ],
+                surface_opacity,
+            ),
+        );
+        return;
+    }
+
+    for (visible_idx, (line_idx, text)) in filtered_lines
+        .iter()
+        .skip(block_query.overlay_scroll_offset)
+        .take(max_visible_lines)
+        .enumerate()
+    {
+        let row_y = lines_y + visible_idx as f32 * font.metrics.cell_height;
+        if current_filtered_line == Some(*line_idx) {
+            render.batch.push_bg_quad(
+                x + 8.0,
+                row_y,
+                width - 16.0,
+                font.metrics.cell_height,
+                with_opacity(
+                    [
+                        theme.highlight_current_match.r,
+                        theme.highlight_current_match.g,
+                        theme.highlight_current_match.b,
+                        0.28,
+                    ],
+                    surface_opacity,
+                ),
+            );
+        }
+
+        let line_label = format!(
+            "{:>4} {}",
+            line_idx + 1,
+            truncate_overlay_text(text, max_chars)
+        );
+        push_text(
+            render,
+            font,
+            x + 10.0,
+            row_y,
+            &line_label,
+            with_opacity(
+                [
+                    theme.foreground.r,
+                    theme.foreground.g,
+                    theme.foreground.b,
+                    theme.foreground.a,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
+}
+
+fn filter_overlay_visible_lines(viewport: Rect, cell_height: f32) -> usize {
+    (((viewport.h * 0.42).clamp(cell_height * 4.0, cell_height * 12.0)) / cell_height)
+        .floor()
+        .max(1.0) as usize
+}
+
+fn truncate_overlay_text(text: &str, max_chars: usize) -> String {
+    let mut truncated = text.chars().take(max_chars).collect::<String>();
+    if text.chars().count() > max_chars && max_chars > 3 {
+        truncated.truncate(max_chars.saturating_sub(3));
+        truncated.push_str("...");
+    }
+    truncated
 }
 
 fn with_opacity(mut color: [f32; 4], opacity: f32) -> [f32; 4] {
@@ -2678,6 +3969,32 @@ fn search_match_for_block_command(
                 && search_match.block_id == Some(block_id)
         })
         .map(|(index, _)| index == search.current)
+}
+
+fn block_query_match_at_cell(
+    block_query: Option<&BlockQueryState>,
+    blocks: &[Block],
+    absolute_row: usize,
+    column: u16,
+) -> Option<bool> {
+    let query = block_query?;
+    let block = blocks
+        .iter()
+        .find(|block| block.id == query.target_block_id)?;
+    if absolute_row < block.output_start_row || absolute_row > block.output_end_row {
+        return None;
+    }
+
+    let line_index = absolute_row.saturating_sub(block.output_start_row);
+    query
+        .matches
+        .iter()
+        .enumerate()
+        .find(|(_, search_match)| {
+            search_match.line == line_index
+                && (search_match.col_start as u16..search_match.col_end as u16).contains(&column)
+        })
+        .map(|(index, _)| index == query.current_match)
 }
 
 fn push_text(
@@ -2903,9 +4220,28 @@ fn extract_selection_text(terminal: &Terminal, start: CellPos, end: CellPos) -> 
 }
 
 fn extract_block_text(terminal: &Terminal, block: &Block) -> String {
+    let mut lines = Vec::new();
+
+    if !block.command_text.is_empty() {
+        lines.push(block.command_text.clone());
+    }
+    lines.extend(collect_block_output_lines(terminal, block));
+
+    lines.join("\n")
+}
+
+fn extract_block_command_text(block: &Block) -> String {
+    block.command_text.clone()
+}
+
+fn extract_block_output_text(terminal: &Terminal, block: &Block) -> String {
+    collect_block_output_lines(terminal, block).join("\n")
+}
+
+fn collect_block_output_lines(terminal: &Terminal, block: &Block) -> Vec<String> {
     let total_rows = terminal.state.total_rows();
     if total_rows == 0 {
-        return block.command_text.clone();
+        return Vec::new();
     }
 
     let max_row = total_rows.saturating_sub(1);
@@ -2913,15 +4249,11 @@ fn extract_block_text(terminal: &Terminal, block: &Block) -> String {
     let end_row = block.output_end_row.min(max_row);
     let mut lines = Vec::new();
 
-    if !block.command_text.is_empty() {
-        lines.push(block.command_text.clone());
-    }
-
     for row in start_row..=end_row {
         lines.push(terminal.state.row_text(row));
     }
 
-    lines.join("\n")
+    lines
 }
 
 fn build_visible_row_positions(visible_rows: &[usize], blocks: &[Block]) -> Vec<Option<usize>> {
@@ -2958,6 +4290,7 @@ fn pane_overlay_signature(
     blocks: &[Block],
     selected_block_id: Option<u64>,
     global_search: &walk_ui::search::GlobalSearch,
+    block_query: Option<&BlockQueryState>,
     pane_id: PaneId,
 ) -> PaneOverlaySignature {
     PaneOverlaySignature {
@@ -2971,6 +4304,7 @@ fn pane_overlay_signature(
                     block.output_end_row,
                     block.exit_code,
                     block.is_collapsed,
+                    block.is_bookmarked,
                 )
             })
             .collect(),
@@ -2990,6 +4324,24 @@ fn pane_overlay_signature(
                 )
             })
             .collect(),
+        block_query: block_query.map(|query| BlockQueryOverlaySignature {
+            mode: query.mode,
+            target_block_id: query.target_block_id,
+            query: query.query.clone(),
+            current_match: query.current_match,
+            overlay_scroll_offset: query.overlay_scroll_offset,
+            matches: query
+                .matches
+                .iter()
+                .map(|search_match| {
+                    (
+                        search_match.line,
+                        search_match.col_start,
+                        search_match.col_end,
+                    )
+                })
+                .collect(),
+        }),
     }
 }
 
@@ -3012,6 +4364,7 @@ fn rebuild_visible_row_batch(
     blocks: &[Block],
     selected_block_id: Option<u64>,
     global_search: &walk_ui::search::GlobalSearch,
+    block_query: Option<&BlockQueryState>,
     pane_id: PaneId,
     terminal: &Terminal,
     absolute_row: usize,
@@ -3058,6 +4411,22 @@ fn rebuild_visible_row_batch(
                 [highlight.r, highlight.g, highlight.b, highlight.a],
             );
         }
+        if let Some(current_match) =
+            block_query_match_at_cell(block_query, blocks, absolute_row, col_idx as u16)
+        {
+            let highlight = if current_match {
+                theme.highlight_current_match
+            } else {
+                theme.highlight_match
+            };
+            batch.push_bg_quad(
+                x,
+                row_y,
+                cell_width,
+                cell_height,
+                [highlight.r, highlight.g, highlight.b, highlight.a * 0.9],
+            );
+        }
 
         if cell.character != ' ' && cell.character != '\0' {
             push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
@@ -3095,6 +4464,21 @@ fn rebuild_visible_row_batch(
             cell_height,
             [accent.r, accent.g, accent.b, 0.9],
         );
+
+        if block.is_bookmarked {
+            batch.push_bg_quad(
+                viewport.x + 4.0,
+                row_y,
+                3.0,
+                cell_height,
+                [
+                    theme.highlight_current_match.r,
+                    theme.highlight_current_match.g,
+                    theme.highlight_current_match.b,
+                    0.9,
+                ],
+            );
+        }
 
         if selected_block_id == Some(block.id) {
             batch.push_bg_quad(
@@ -3239,10 +4623,21 @@ fn parse_lua_action(action: &str) -> Option<Action> {
         "focus_down" => Some(Action::FocusDown),
         "search_global" | "toggle_search" | "search" => Some(Action::SearchGlobal),
         "command_palette" | "palette" => Some(Action::CommandPalette),
+        "command_search" | "history_search" => Some(Action::CommandSearch),
         "block_prev" => Some(Action::BlockPrev),
         "block_next" => Some(Action::BlockNext),
         "block_copy" | "copy_block" => Some(Action::BlockCopy),
+        "block_copy_command" | "copy_block_command" => Some(Action::BlockCopyCommand),
+        "block_copy_output" | "copy_block_output" => Some(Action::BlockCopyOutput),
         "block_collapse" | "collapse_block" => Some(Action::BlockCollapse),
+        "block_toggle_bookmark" | "toggle_block_bookmark" => Some(Action::BlockToggleBookmark),
+        "block_prev_bookmark" => Some(Action::BlockPrevBookmark),
+        "block_next_bookmark" => Some(Action::BlockNextBookmark),
+        "block_find" | "block_search" | "search_in_block" | "find_in_block" => {
+            Some(Action::BlockFind)
+        }
+        "block_filter" | "filter_block" => Some(Action::BlockFilter),
+        "block_rerun" | "rerun_block" => Some(Action::BlockRerun),
         "zoom_in" => Some(Action::ZoomIn),
         "zoom_out" => Some(Action::ZoomOut),
         "zoom_reset" => Some(Action::ZoomReset),
@@ -3309,8 +4704,28 @@ fn built_in_palette_commands() -> Vec<(String, String)> {
             "Search across panes, scrollback, and block commands".to_string(),
         ),
         (
+            "block_find".to_string(),
+            "Search within the selected or latest block".to_string(),
+        ),
+        (
+            "block_filter".to_string(),
+            "Filter the selected or latest block down to matching lines".to_string(),
+        ),
+        (
+            "block_toggle_bookmark".to_string(),
+            "Bookmark or unbookmark the selected or latest block".to_string(),
+        ),
+        (
+            "block_rerun".to_string(),
+            "Rerun the selected or latest completed block command".to_string(),
+        ),
+        (
             "command_palette".to_string(),
             "Open the command palette overlay".to_string(),
+        ),
+        (
+            "command_search".to_string(),
+            "Search pane-local and global command history".to_string(),
         ),
         (
             "zoom_reset".to_string(),

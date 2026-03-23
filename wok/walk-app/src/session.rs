@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use walk_blocks::block::Block;
+use walk_input::history::HistoryEntry;
 use walk_ui::splits::{SplitDirection, SplitNode};
 
 use crate::workspace::PaneId;
@@ -36,6 +37,9 @@ pub struct PaneState {
     pub input_draft: String,
     /// Active search query for the pane.
     pub search_query: String,
+    /// Restored pane-local command history.
+    #[serde(default)]
+    pub command_history: Vec<HistoryEntryState>,
     /// Persisted plain-text terminal rows.
     #[serde(default)]
     pub buffer_lines: Vec<String>,
@@ -80,6 +84,28 @@ pub struct BlockState {
     pub git_branch: Option<String>,
     /// Dirty flag metadata when available.
     pub git_dirty: Option<bool>,
+    /// Whether the block is bookmarked.
+    #[serde(default)]
+    pub is_bookmarked: bool,
+}
+
+/// Serializable pane-local command history entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntryState {
+    /// Command text as entered by the user.
+    pub command: String,
+    /// Working directory when known.
+    pub cwd: Option<PathBuf>,
+    /// Source pane identifier when known.
+    pub source_pane_id: Option<u64>,
+    /// Start timestamp in Unix milliseconds.
+    pub started_at_ms: u64,
+    /// Completion timestamp in Unix milliseconds when known.
+    pub completed_at_ms: Option<u64>,
+    /// Exit code when known.
+    pub exit_code: Option<i32>,
+    /// Duration in milliseconds when known.
+    pub duration_ms: Option<u64>,
 }
 
 /// Saved split tree node.
@@ -178,6 +204,7 @@ pub fn block_to_state(block: &Block) -> BlockState {
         cwd: block.cwd.clone(),
         git_branch: block.git_branch.clone(),
         git_dirty: block.git_dirty,
+        is_bookmarked: block.is_bookmarked,
     }
 }
 
@@ -202,6 +229,33 @@ pub fn block_from_state(block: &BlockState) -> Block {
         cwd: block.cwd.clone(),
         git_branch: block.git_branch.clone(),
         git_dirty: block.git_dirty,
+        is_bookmarked: block.is_bookmarked,
+    }
+}
+
+/// Convert a runtime history entry into serializable state.
+pub fn history_entry_to_state(entry: &HistoryEntry) -> HistoryEntryState {
+    HistoryEntryState {
+        command: entry.command.clone(),
+        cwd: entry.cwd.clone(),
+        source_pane_id: entry.source_pane_id,
+        started_at_ms: entry.started_at_ms,
+        completed_at_ms: entry.completed_at_ms,
+        exit_code: entry.exit_code,
+        duration_ms: entry.duration_ms,
+    }
+}
+
+/// Convert serialized history back into runtime form.
+pub fn history_entry_from_state(entry: &HistoryEntryState) -> HistoryEntry {
+    HistoryEntry {
+        command: entry.command.clone(),
+        cwd: entry.cwd.clone(),
+        source_pane_id: entry.source_pane_id,
+        started_at_ms: entry.started_at_ms,
+        completed_at_ms: entry.completed_at_ms,
+        exit_code: entry.exit_code,
+        duration_ms: entry.duration_ms,
     }
 }
 
@@ -302,6 +356,15 @@ mod tests {
                 title: "demo".to_string(),
                 input_draft: "echo hello".to_string(),
                 search_query: "hello".to_string(),
+                command_history: vec![HistoryEntryState {
+                    command: "echo hello".to_string(),
+                    cwd: Some(PathBuf::from("/tmp")),
+                    source_pane_id: Some(7),
+                    started_at_ms: 42,
+                    completed_at_ms: Some(54),
+                    exit_code: Some(0),
+                    duration_ms: Some(12),
+                }],
                 buffer_lines: vec!["echo hello".to_string(), "hello".to_string()],
                 display_offset: 3,
                 follow_output: false,
@@ -318,6 +381,7 @@ mod tests {
                     cwd: PathBuf::from("/tmp"),
                     git_branch: Some("main".to_string()),
                     git_dirty: Some(false),
+                    is_bookmarked: true,
                 }],
                 selected_block: Some(1),
             }],
@@ -336,6 +400,7 @@ mod tests {
         assert_eq!(loaded.window_size, (1280, 800));
         assert_eq!(loaded.panes[0].buffer_lines.len(), 2);
         assert_eq!(loaded.panes[0].blocks.len(), 1);
+        assert_eq!(loaded.panes[0].command_history.len(), 1);
         assert!(!loaded.panes[0].follow_output);
     }
 
@@ -356,6 +421,7 @@ mod tests {
             cwd: PathBuf::from("/repo"),
             git_branch: Some("main".to_string()),
             git_dirty: Some(true),
+            is_bookmarked: true,
         };
 
         let state = block_to_state(&runtime_block);
@@ -365,5 +431,70 @@ mod tests {
         assert_eq!(restored.command_text, runtime_block.command_text);
         assert_eq!(restored.output_end_row, runtime_block.output_end_row);
         assert_eq!(restored.duration, Some(Duration::from_millis(250)));
+        assert!(restored.is_bookmarked);
+    }
+
+    #[test]
+    fn test_load_session_defaults_missing_bookmark_state() {
+        let json = r#"{
+          "tabs": [{
+            "id": 1,
+            "title": "Shell",
+            "focused_pane": 7,
+            "split_tree": { "Leaf": { "pane_id": 7 } }
+          }],
+          "panes": [{
+            "id": 7,
+            "cwd": "/tmp",
+            "shell": "zsh",
+            "title": "demo",
+            "input_draft": "",
+            "search_query": "",
+            "buffer_lines": [],
+            "display_offset": 0,
+            "follow_output": true,
+            "blocks": [{
+              "id": 1,
+              "prompt_text": "$",
+              "command_text": "echo hello",
+              "output_start_row": 0,
+              "output_end_row": 1,
+              "exit_code": 0,
+              "duration_ms": 12,
+              "is_collapsed": false,
+              "scroll_offset": 0,
+              "cwd": "/tmp",
+              "git_branch": null,
+              "git_dirty": null
+            }],
+            "selected_block": 1
+          }],
+          "active_tab": 0,
+          "window_size": [1280, 800],
+          "window_position": [0, 0]
+        }"#;
+
+        let loaded: WorkspaceSessionState =
+            serde_json::from_str(json).expect("session should parse");
+
+        assert!(!loaded.panes[0].blocks[0].is_bookmarked);
+    }
+
+    #[test]
+    fn test_history_entry_round_trip() {
+        let entry = HistoryEntry {
+            command: "cargo test".to_string(),
+            cwd: Some(PathBuf::from("/repo")),
+            source_pane_id: Some(9),
+            started_at_ms: 100,
+            completed_at_ms: Some(150),
+            exit_code: Some(0),
+            duration_ms: Some(50),
+        };
+
+        let state = history_entry_to_state(&entry);
+        let restored = history_entry_from_state(&state);
+
+        assert_eq!(restored, entry);
     }
 }

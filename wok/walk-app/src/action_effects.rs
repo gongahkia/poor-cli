@@ -1,5 +1,7 @@
 //! Typed runtime effects produced by user actions and plugins.
 
+use crate::block_query::BlockQueryMode;
+
 /// A batch of typed runtime effects emitted while handling an action.
 #[derive(Debug, Clone, Default)]
 pub struct ActionEffects {
@@ -39,6 +41,8 @@ pub enum RuntimeEffect {
     Overlay(OverlayEffect),
     /// Apply a zoom level to the renderer.
     Zoom(f32),
+    /// Show a transient status message.
+    Status(String),
 }
 
 /// Clipboard work requested by an action or plugin.
@@ -48,6 +52,10 @@ pub enum ClipboardEffect {
     CopySelection,
     /// Copy the currently selected block.
     CopySelectedBlock,
+    /// Copy only the selected block command text.
+    CopySelectedBlockCommand,
+    /// Copy only the selected block output text.
+    CopySelectedBlockOutput,
     /// Paste clipboard contents into the active input target.
     Paste,
 }
@@ -119,4 +127,17 @@ pub enum OverlayEffect {
     OpenCommandPalette,
     /// Close the command palette overlay.
     CloseCommandPalette,
+    /// Open the command-history search overlay.
+    OpenCommandSearch,
+    /// Close the command-history search overlay.
+    CloseCommandSearch,
+    /// Open block-local find or filter for the given block.
+    OpenBlockQuery {
+        /// Query mode to activate.
+        mode: BlockQueryMode,
+        /// Target block id for the overlay.
+        target_block_id: u64,
+    },
+    /// Close the active block query overlay.
+    CloseBlockQuery,
 }

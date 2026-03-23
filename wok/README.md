@@ -12,7 +12,7 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | Blocks on Bash/Zsh/Fish | Shipped | Automatic shell bootstrap, OSC 133 parsing, separators, exit-status accents, collapse, and block copy |
 | PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers, source user profiles deterministically, restore startup cwd, and now have explicit regression coverage |
 | Tabs, splits, sessions | Shipped | IDE-style workspace with autosave/restore, manual snapshot save/load, and restored transcript/block continuity |
-| Input bar | Shipped | Bottom bar is now an explicit command palette / scratch editor; shell-native prompt editing remains the default path |
+| Input bar | Shipped | Bottom bar supports both the action palette and an owned-primary command editor behind `command_entry_mode = "owned_primary"` |
 | Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
 | Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
@@ -33,6 +33,14 @@ cargo run -p walk -- --shell powershell
 cargo run -p walk -- --shell wsl:Ubuntu
 cargo build --release -p walk
 ```
+
+Owned-primary input is opt-in for now:
+
+```toml
+command_entry_mode = "owned_primary"
+```
+
+In that mode, Walk owns prompt-time editing, `Up` / `Down` performs pane-first history recall, and `Ctrl+R` opens pane-first command history search.
 
 Configuration search order:
 

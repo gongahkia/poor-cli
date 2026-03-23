@@ -18,6 +18,15 @@ pub enum CursorStyle {
     Underline,
 }
 
+/// Command-entry routing mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum CommandEntryMode {
+    /// Send typing directly to the PTY-backed shell prompt.
+    ShellNative,
+    /// Use Walk's owned input editor whenever the shell is idle at a prompt.
+    OwnedPrimary,
+}
+
 /// Complete Walk configuration.
 #[derive(Debug, Clone)]
 pub struct WalkConfig {
@@ -31,6 +40,8 @@ pub struct WalkConfig {
     pub font_size: f32,
     /// Input editor position.
     pub input_position: InputPosition,
+    /// Command-entry routing mode.
+    pub command_entry_mode: CommandEntryMode,
     /// Scrollback line count.
     pub scrollback_lines: usize,
     /// Cursor display style.
@@ -72,6 +83,7 @@ struct ConfigToml {
     font_family: Option<String>,
     font_size: Option<f32>,
     input_position: Option<String>,
+    command_entry_mode: Option<String>,
     scrollback_lines: Option<usize>,
     cursor_style: Option<String>,
     cursor_blink: Option<bool>,
@@ -93,6 +105,7 @@ impl Default for WalkConfig {
             font_family: "JetBrains Mono".to_string(),
             font_size: 14.0,
             input_position: InputPosition::Bottom,
+            command_entry_mode: CommandEntryMode::ShellNative,
             scrollback_lines: 10_000,
             cursor_style: CursorStyle::Block,
             cursor_blink: true,
@@ -149,6 +162,12 @@ impl WalkConfig {
             config.input_position = match p.as_str() {
                 "top" => InputPosition::Top,
                 _ => InputPosition::Bottom,
+            };
+        }
+        if let Some(mode) = toml_config.command_entry_mode {
+            config.command_entry_mode = match mode.as_str() {
+                "owned_primary" => CommandEntryMode::OwnedPrimary,
+                _ => CommandEntryMode::ShellNative,
             };
         }
         if let Some(s) = toml_config.scrollback_lines {
@@ -253,6 +272,7 @@ mod tests {
         assert_eq!(config.scrollback_lines, 10_000);
         assert_eq!(config.cursor_style, CursorStyle::Block);
         assert_eq!(config.input_position, InputPosition::Bottom);
+        assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
     }
 
     #[test]
@@ -272,5 +292,11 @@ mod tests {
     fn test_parse_shell_config_supports_wsl() {
         let shell = parse_shell_config("wsl:Ubuntu", &ShellType::Bash);
         assert_eq!(shell, ShellType::Wsl("Ubuntu".to_string()));
+    }
+
+    #[test]
+    fn test_command_entry_mode_defaults_to_shell_native() {
+        let config = WalkConfig::default();
+        assert_eq!(config.command_entry_mode, CommandEntryMode::ShellNative);
     }
 }

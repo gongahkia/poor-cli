@@ -36,6 +36,8 @@ pub struct Block {
     pub git_branch: Option<String>,
     /// Whether git working tree was dirty.
     pub git_dirty: Option<bool>,
+    /// Whether the block is bookmarked for quick navigation.
+    pub is_bookmarked: bool,
 }
 
 /// State machine for building blocks from semantic events.
@@ -129,6 +131,7 @@ impl BlockManager {
                         cwd: PathBuf::new(),
                         git_branch: None,
                         git_dirty: None,
+                        is_bookmarked: false,
                     };
                     self.blocks.push(block);
                     self.active_block = Some(id);
@@ -202,6 +205,68 @@ impl BlockManager {
         self.pending_command_text = None;
         self.state = BlockBuildState::WaitingForPrompt;
     }
+
+    /// Return the selected block when known, otherwise the latest block.
+    pub fn selected_or_latest_block(&self) -> Option<&Block> {
+        self.active_block
+            .and_then(|block_id| self.get_block(block_id))
+            .or_else(|| self.blocks.last())
+    }
+
+    /// Toggle the bookmark state for the targeted block.
+    pub fn toggle_bookmark(&mut self, block_id: Option<u64>) -> Option<bool> {
+        let block_id = block_id.or(self.selected_or_latest_block().map(|block| block.id))?;
+        let block = self.get_block_mut(block_id)?;
+        block.is_bookmarked = !block.is_bookmarked;
+        Some(block.is_bookmarked)
+    }
+
+    /// Return the next bookmarked block id, wrapping when needed.
+    pub fn next_bookmark(&self, current_block_id: Option<u64>) -> Option<u64> {
+        let bookmarks = self
+            .blocks
+            .iter()
+            .filter(|block| block.is_bookmarked)
+            .map(|block| block.id)
+            .collect::<Vec<_>>();
+        if bookmarks.is_empty() {
+            return None;
+        }
+
+        let current_index = current_block_id.and_then(|block_id| {
+            bookmarks
+                .iter()
+                .position(|candidate_id| *candidate_id == block_id)
+        });
+        match current_index {
+            Some(index) => Some(bookmarks[(index + 1) % bookmarks.len()]),
+            None => bookmarks.first().copied(),
+        }
+    }
+
+    /// Return the previous bookmarked block id, wrapping when needed.
+    pub fn prev_bookmark(&self, current_block_id: Option<u64>) -> Option<u64> {
+        let bookmarks = self
+            .blocks
+            .iter()
+            .filter(|block| block.is_bookmarked)
+            .map(|block| block.id)
+            .collect::<Vec<_>>();
+        if bookmarks.is_empty() {
+            return None;
+        }
+
+        let current_index = current_block_id.and_then(|block_id| {
+            bookmarks
+                .iter()
+                .position(|candidate_id| *candidate_id == block_id)
+        });
+        match current_index {
+            Some(0) => bookmarks.last().copied(),
+            Some(index) => Some(bookmarks[index - 1]),
+            None => bookmarks.last().copied(),
+        }
+    }
 }
 
 impl Default for BlockManager {
@@ -234,6 +299,7 @@ mod tests {
         assert_eq!(block.command_text, "echo hello");
         assert_eq!(block.exit_code, Some(0));
         assert!(block.duration.is_some());
+        assert!(!block.is_bookmarked);
     }
 
     #[test]
@@ -264,6 +330,26 @@ mod tests {
         });
 
         assert_eq!(mgr.blocks[0].exit_code, Some(1));
+    }
+
+    #[test]
+    fn test_toggle_bookmark_and_wrap_navigation() {
+        let mut mgr = BlockManager::new();
+        for i in 0..3 {
+            let base = i * 4;
+            mgr.handle_event(&SemanticEvent::PromptStart { row: base });
+            mgr.handle_event(&SemanticEvent::CommandStart { row: base + 1 });
+            mgr.handle_event(&SemanticEvent::OutputStart { row: base + 2 });
+            mgr.handle_event(&SemanticEvent::CommandEnd {
+                row: base + 3,
+                exit_code: Some(0),
+            });
+        }
+
+        assert_eq!(mgr.toggle_bookmark(Some(1)), Some(true));
+        assert_eq!(mgr.toggle_bookmark(Some(3)), Some(true));
+        assert_eq!(mgr.next_bookmark(Some(3)), Some(1));
+        assert_eq!(mgr.prev_bookmark(Some(1)), Some(3));
     }
 
     #[test]

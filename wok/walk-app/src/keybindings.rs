@@ -63,16 +63,30 @@ pub enum Action {
     BlockNext,
     /// Copy selected block output.
     BlockCopy,
+    /// Copy the selected block command only.
+    BlockCopyCommand,
+    /// Copy the selected block output only.
+    BlockCopyOutput,
     /// Toggle collapse on selected block.
     BlockCollapse,
-    /// Search within selected block.
-    BlockSearch,
-    /// Search within selected block (alias).
-    SearchInBlock,
+    /// Bookmark or unbookmark the selected block.
+    BlockToggleBookmark,
+    /// Move to the previous bookmarked block.
+    BlockPrevBookmark,
+    /// Move to the next bookmarked block.
+    BlockNextBookmark,
+    /// Search within the selected block output.
+    BlockFind,
+    /// Filter the selected block output down to matching lines.
+    BlockFilter,
+    /// Re-run the selected block command in the active PTY.
+    BlockRerun,
     /// Global terminal search.
     SearchGlobal,
     /// Open the command palette.
     CommandPalette,
+    /// Open pane-local command history search.
+    CommandSearch,
     /// Toggle input position (top/bottom).
     ToggleInputPosition,
     /// Increase font size.
@@ -310,6 +324,13 @@ impl Default for KeybindingConfig {
         );
         bindings.insert(
             KeyCombo {
+                key: KeyAction::Char('o'),
+                modifiers: pms,
+            },
+            Action::BlockCopyOutput,
+        );
+        bindings.insert(
+            KeyCombo {
                 key: KeyAction::Char('e'),
                 modifiers: pms,
             },
@@ -320,7 +341,28 @@ impl Default for KeybindingConfig {
                 key: KeyAction::Char('f'),
                 modifiers: pms,
             },
-            Action::SearchInBlock,
+            Action::BlockFind,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('f'),
+                modifiers: pma,
+            },
+            Action::BlockFilter,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('b'),
+                modifiers: pms,
+            },
+            Action::BlockToggleBookmark,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('r'),
+                modifiers: pma,
+            },
+            Action::BlockRerun,
         );
 
         // Search
@@ -337,6 +379,16 @@ impl Default for KeybindingConfig {
                 modifiers: pm,
             },
             Action::CommandPalette,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('r'),
+                modifiers: Modifiers {
+                    ctrl: true,
+                    ..Modifiers::default()
+                },
+            },
+            Action::CommandSearch,
         );
         bindings.insert(
             KeyCombo {
@@ -392,9 +444,34 @@ impl Default for KeybindingConfig {
             Action::LoadSession("manual".to_string()),
         );
 
+        let mut context_bindings = HashMap::new();
+        let mut block_selected = HashMap::new();
+        block_selected.insert(
+            KeyCombo {
+                key: KeyAction::Char('i'),
+                modifiers: pms,
+            },
+            Action::BlockCopyCommand,
+        );
+        block_selected.insert(
+            KeyCombo {
+                key: KeyAction::ArrowUp,
+                modifiers: pma,
+            },
+            Action::BlockPrevBookmark,
+        );
+        block_selected.insert(
+            KeyCombo {
+                key: KeyAction::ArrowDown,
+                modifiers: pma,
+            },
+            Action::BlockNextBookmark,
+        );
+        context_bindings.insert(Context::BlockSelected, block_selected);
+
         Self {
             bindings,
-            context_bindings: HashMap::new(),
+            context_bindings,
         }
     }
 }
@@ -440,6 +517,42 @@ mod tests {
         assert_eq!(
             config.resolve(&combo, &Context::Terminal),
             Some(&Action::BlockCopy)
+        );
+    }
+
+    #[test]
+    fn test_block_copy_command_context_binding_overrides_toggle_input_position() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::Char('i'),
+            modifiers: platform_mod_shift(),
+        };
+
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::ToggleInputPosition)
+        );
+        assert_eq!(
+            config.resolve(&combo, &Context::BlockSelected),
+            Some(&Action::BlockCopyCommand)
+        );
+    }
+
+    #[test]
+    fn test_bookmark_navigation_is_block_selected_only() {
+        let config = KeybindingConfig::default();
+        let combo = KeyCombo {
+            key: KeyAction::ArrowDown,
+            modifiers: platform_mod_alt(),
+        };
+
+        assert_eq!(
+            config.resolve(&combo, &Context::Terminal),
+            Some(&Action::FocusDown)
+        );
+        assert_eq!(
+            config.resolve(&combo, &Context::BlockSelected),
+            Some(&Action::BlockNextBookmark)
         );
     }
 
