@@ -1,0 +1,106 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const root = resolve(import.meta.dirname, "..");
+const { API_CATALOG, TOOL_CATALOG, WORKFLOW_CATALOG } = await import(
+  pathToFileURL(resolve(root, "packages/mcp-server/dist/tools/catalog.js")).href
+);
+
+const totalTools = TOOL_CATALOG.length;
+const familyCount = API_CATALOG.length;
+const directToolCount = API_CATALOG.reduce((sum, api) => sum + api.tools.length, 0);
+const routedFamilyCount = API_CATALOG.filter((api) => api.preferredInterface === "sg_query").length;
+const authFamilies = API_CATALOG.filter((api) => api.authRequired).map((api) => api.name);
+const publicFamilies = API_CATALOG.filter((api) => !api.authRequired).map((api) => api.name);
+const familyNames = API_CATALOG.map((api) => api.name);
+const workflowNames = WORKFLOW_CATALOG.map((workflow) => workflow.name);
+const sgQuery = TOOL_CATALOG.find((tool) => tool.name === "sg_query");
+
+if (sgQuery?.preferred !== true) {
+  throw new Error("sg_query is no longer marked preferred in the built tool catalog.");
+}
+
+const read = (path) => readFileSync(resolve(root, path), "utf8");
+const ensureIncludes = (path, snippets) => {
+  const text = read(path);
+  for (const snippet of snippets) {
+    if (!text.includes(snippet)) {
+      throw new Error(`${path} is missing required snippet: ${snippet}`);
+    }
+  }
+};
+
+const ensureExcludes = (path, snippets) => {
+  const text = read(path);
+  for (const snippet of snippets) {
+    if (text.includes(snippet)) {
+      throw new Error(`${path} still includes stale snippet: ${snippet}`);
+    }
+  }
+};
+
+ensureIncludes("README.md", [
+  `${totalTools} \`sg_*\` tools total`,
+  `${familyCount} official data families`,
+  `bounded preferred interface across ${routedFamilyCount} routed families`,
+  "Business Registry Diligence",
+  "sg_acra_entities",
+  ...familyNames,
+]);
+ensureExcludes("README.md", [
+  "CEA and BCA are direct-only in this tranche",
+  "ACRA is the next business-diligence candidate",
+]);
+
+ensureIncludes("packages/skill/SKILL.md", [
+  `${totalTools} \`sg_*\` tools total`,
+  `${familyCount} official data families`,
+  `bounded preferred interface across ${routedFamilyCount} routed families`,
+  "Business Registry Diligence",
+  "sg_acra_entities",
+  ...familyNames,
+]);
+ensureExcludes("packages/skill/SKILL.md", [
+  "CEA and BCA are direct-only in this tranche",
+  "CEA and BCA direct tools in this tranche",
+]);
+
+ensureIncludes("docs/architecture.md", [
+  `${familyCount} official data families`,
+  `bounded preferred interface across ${routedFamilyCount} routed families`,
+  "business-registry workflows can route to ACRA, CEA, and BCA",
+  ...familyNames,
+]);
+ensureExcludes("docs/architecture.md", [
+  "ACRA remains deferred",
+  "CEA and BCA remain direct-only in this tranche",
+]);
+
+ensureIncludes("docs/api-auth-guide.md", [
+  `${authFamilies.length} authenticated upstreams`,
+  ...authFamilies,
+  ...publicFamilies,
+  "HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path",
+]);
+
+ensureIncludes("docs/contributing.md", [
+  `${familyCount} data families`,
+  "RegisteredToolDefinition[]",
+  "tool-set.ts",
+  "scripts/check-docs-parity.mjs",
+  `${directToolCount} direct data tools`,
+]);
+
+for (const workflowName of ["Business Registry Diligence", ...workflowNames.filter((name) => name === "Property Counterparty Diligence")]) {
+  ensureIncludes("README.md", [workflowName]);
+  ensureIncludes("packages/skill/SKILL.md", [workflowName]);
+}
+
+for (const path of ["smithery.yaml", "glama.json", "packages/mcp-server/package.json"]) {
+  ensureIncludes(path, familyNames);
+}
+
+process.stdout.write(
+  `Docs parity OK: ${totalTools} tools, ${familyCount} families, ${authFamilies.length} authenticated families, ${routedFamilyCount} sg_query-routed families.\n`,
+);

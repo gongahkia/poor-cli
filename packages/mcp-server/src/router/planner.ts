@@ -428,6 +428,99 @@ const buildPropertyDueDiligencePlan = (
   );
 };
 
+const buildBusinessRegistryPlan = (
+  params: Readonly<Record<string, unknown>>,
+): QueryPlan => {
+  const entityName = typeof params["entityName"] === "string" ? params["entityName"] : undefined;
+  const companyName = typeof params["companyName"] === "string" ? params["companyName"] : entityName;
+  const estateAgentName = typeof params["estateAgentName"] === "string" ? params["estateAgentName"] : undefined;
+  const acraName = estateAgentName ?? companyName;
+  const uen = typeof params["uen"] === "string" ? params["uen"] : undefined;
+  const salespersonName = typeof params["salespersonName"] === "string" ? params["salespersonName"] : undefined;
+  const registrationNo = typeof params["registrationNo"] === "string" ? params["registrationNo"] : undefined;
+  const estateAgentLicenseNo =
+    typeof params["estateAgentLicenseNo"] === "string" ? params["estateAgentLicenseNo"] : undefined;
+  const workhead = typeof params["workhead"] === "string" ? params["workhead"] : undefined;
+  const grade = typeof params["grade"] === "string" ? params["grade"] : undefined;
+  const classCode = typeof params["classCode"] === "string" ? params["classCode"] : undefined;
+
+  const steps: QueryStep[] = [];
+
+  if (
+    salespersonName !== undefined
+    || registrationNo !== undefined
+    || estateAgentName !== undefined
+    || estateAgentLicenseNo !== undefined
+  ) {
+    steps.push({
+      id: "registry_cea",
+      purpose: "Inspect CEA salesperson and estate-agent registration details.",
+      tool: "sg_cea_salespersons",
+      input: {
+        ...(salespersonName === undefined ? {} : { salespersonName }),
+        ...(registrationNo === undefined ? {} : { registrationNo }),
+        ...(estateAgentName === undefined ? {} : { estateAgentName }),
+        ...(estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo }),
+      },
+    });
+  }
+
+  if (acraName !== undefined || uen !== undefined) {
+    steps.push({
+      id: "registry_acra",
+      purpose: "Inspect ACRA corporate-entity registration details.",
+      tool: "sg_acra_entities",
+      input: {
+        ...(acraName === undefined ? {} : { entityName: acraName }),
+        ...(uen === undefined ? {} : { uen }),
+      },
+    });
+  }
+
+  if (companyName !== undefined || uen !== undefined || classCode !== undefined) {
+    steps.push({
+      id: "registry_bca_builders",
+      purpose: "Check whether the entity appears on the BCA licensed-builders register.",
+      tool: "sg_bca_licensed_builders",
+      input: {
+        ...(companyName === undefined ? {} : { companyName }),
+        ...(uen === undefined ? {} : { uenNo: uen }),
+        ...(classCode === undefined ? {} : { classCode }),
+      },
+    });
+  }
+
+  if (companyName !== undefined || uen !== undefined || workhead !== undefined || grade !== undefined) {
+    steps.push({
+      id: "registry_bca_contractors",
+      purpose: "Check whether the entity appears on the BCA registered-contractors register.",
+      tool: "sg_bca_registered_contractors",
+      input: {
+        ...(companyName === undefined ? {} : { companyName }),
+        ...(uen === undefined ? {} : { uenNo: uen }),
+        ...(workhead === undefined ? {} : { workhead }),
+        ...(grade === undefined ? {} : { grade }),
+      },
+    });
+  }
+
+  if (steps.length === 0) {
+    return buildUnsupportedPlan(
+      "sg_query needs a company name, entity name, UEN, salesperson, or estate-agent identifier to run registry diligence.",
+      "Provide an explicit company or salesperson identifier, or call the direct ACRA, CEA, or BCA tool yourself.",
+    );
+  }
+
+  return {
+    supported: true,
+    workflow: "business_registry_diligence",
+    intent: "business",
+    confidence: 0.9,
+    apis: Array.from(new Set(steps.map((step) => step.tool.split("_")[1]!))),
+    steps,
+  };
+};
+
 const buildDirectToolPlan = (query: string): QueryPlan => {
   const intent = classifyIntent(query);
   if (intent.tool === undefined) {
@@ -454,6 +547,34 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     return buildUnsupportedPlan(
       "sg_query needs a planning area name for a direct URA planning-area lookup.",
       "Call sg_ura_planning_area directly with planningArea, or provide lat and lng yourself.",
+    );
+  }
+
+  if (resolved.tool === "sg_cea_salespersons" && Object.keys(resolved.input).length === 0) {
+    return buildUnsupportedPlan(
+      "sg_query needs a salesperson, registration number, estate agent, or estate-agent licence number for CEA lookups.",
+      "Provide a salesperson or estate-agent identifier, or call sg_cea_salespersons directly.",
+    );
+  }
+
+  if (resolved.tool === "sg_bca_licensed_builders" && Object.keys(resolved.input).length === 0) {
+    return buildUnsupportedPlan(
+      "sg_query needs a company, UEN, or builder class identifier for BCA licensed-builder lookups.",
+      "Provide a company name, UEN, or builder class code, or call sg_bca_licensed_builders directly.",
+    );
+  }
+
+  if (resolved.tool === "sg_bca_registered_contractors" && Object.keys(resolved.input).length === 0) {
+    return buildUnsupportedPlan(
+      "sg_query needs a company, UEN, workhead, or grade for BCA registered-contractor lookups.",
+      "Provide a company name, UEN, workhead, or grade, or call sg_bca_registered_contractors directly.",
+    );
+  }
+
+  if (resolved.tool === "sg_acra_entities" && Object.keys(resolved.input).length === 0) {
+    return buildUnsupportedPlan(
+      "sg_query needs an entity name or UEN for ACRA lookups.",
+      "Provide an explicit company name or UEN, or call sg_acra_entities directly.",
     );
   }
 
@@ -495,6 +616,8 @@ export const planQuery = (query: string): QueryPlan => {
       );
     case "property_due_diligence":
       return buildPropertyDueDiligencePlan(query, intent.extractedParams);
+    case "business_registry_diligence":
+      return buildBusinessRegistryPlan(intent.extractedParams);
     case "dataset_discovery":
       return buildDatasetDiscoveryPlan(query);
     case "demographic_profile":

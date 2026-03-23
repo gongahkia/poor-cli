@@ -30,10 +30,29 @@ vi.mock("../../apis/datagov/client.js", () => ({
   listCollections: vi.fn(),
 }));
 
+vi.mock("../../apis/cea/client.js", () => ({
+  getCeaSalespersons: vi.fn(),
+}));
+
+vi.mock("../../apis/bca/client.js", () => ({
+  getBcaLicensedBuilders: vi.fn(),
+  getBcaRegisteredContractors: vi.fn(),
+}));
+
+vi.mock("../../apis/acra/client.js", () => ({
+  getAcraEntities: vi.fn(),
+}));
+
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData } from "../../apis/onemap/client.js";
 import { uraFetch } from "../../apis/ura/client.js";
 import { getDataset, searchDatasets as datagovSearch } from "../../apis/datagov/client.js";
+import { getCeaSalespersons } from "../../apis/cea/client.js";
+import {
+  getBcaLicensedBuilders,
+  getBcaRegisteredContractors,
+} from "../../apis/bca/client.js";
+import { getAcraEntities } from "../../apis/acra/client.js";
 import { queryToolDefinitions } from "../query-tool.js";
 
 const runQuery = async (input: Readonly<Record<string, unknown>>) => {
@@ -52,6 +71,10 @@ describe("sg_query workflows", () => {
     vi.mocked(uraFetch).mockReset();
     vi.mocked(datagovSearch).mockReset();
     vi.mocked(getDataset).mockReset();
+    vi.mocked(getCeaSalespersons).mockReset();
+    vi.mocked(getBcaLicensedBuilders).mockReset();
+    vi.mocked(getBcaRegisteredContractors).mockReset();
+    vi.mocked(getAcraEntities).mockReset();
   });
 
   it("returns a macro workflow plan without executing steps", async () => {
@@ -218,5 +241,102 @@ describe("sg_query workflows", () => {
         lng: 103.8392,
       },
     ]);
+  });
+
+  it("executes the business registry diligence workflow for a named company", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        uen: "201912345K",
+        issuanceAgencyId: "ACRA",
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        entityTypeDescription: "Local Company",
+        businessConstitutionDescription: null,
+        companyTypeDescription: "Private Company Limited by Shares",
+        pafConstitutionDescription: null,
+        entityStatusDescription: "Live Company",
+        registrationIncorporationDate: "2019-04-01",
+        uenIssueDate: "2019-04-01",
+        addressType: "LOCAL",
+        block: "1",
+        streetName: "MAIN STREET",
+        levelNo: "02",
+        unitNo: "01",
+        buildingName: "ABC BUILDING",
+        postalCode: "123456",
+        otherAddressLine1: null,
+        otherAddressLine2: null,
+        accountDueDate: "2026-04-01",
+        annualReturnDate: "2025-04-01",
+        primarySsicCode: "41001",
+        primarySsicDescription: "GENERAL CONTRACTORS",
+        primaryUserDescribedActivity: null,
+        secondarySsicCode: null,
+        secondarySsicDescription: null,
+        secondaryUserDescribedActivity: null,
+        noOfOfficers: 3,
+      },
+    ]);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        uenNo: "201912345K",
+        className: "General Builder Class 1",
+        classCode: "GB1",
+        additionalInfo: null,
+        expiryDate: "2026-12-31",
+        buildingNo: "1",
+        streetName: "MAIN STREET",
+        unitNo: null,
+        buildingName: null,
+        postalCode: "123456",
+        telNo: "61234567",
+      },
+    ]);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        uenNo: "201912345K",
+        workhead: "CW01",
+        grade: "C3",
+        additionalInfo: "CRS",
+        expiryDate: "2026-12-31",
+        buildingNo: null,
+        streetName: "MAIN STREET",
+        unitNo: null,
+        buildingName: null,
+        postalCode: "123456",
+        telNo: "61234567",
+      },
+    ]);
+
+    const result = await runQuery({
+      query: "Run registry diligence for company ABC CONSTRUCTION PTE LTD workhead CW01",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "business_registry_diligence",
+      toolsUsed: [
+        "sg_acra_entities",
+        "sg_bca_licensed_builders",
+        "sg_bca_registered_contractors",
+      ],
+    });
+    expect(vi.mocked(getAcraEntities)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        format: "markdown",
+      }),
+    );
+    expect(vi.mocked(getBcaRegisteredContractors)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        workhead: "CW01",
+        format: "markdown",
+      }),
+    );
+    expect(vi.mocked(getCeaSalespersons)).not.toHaveBeenCalled();
   });
 });

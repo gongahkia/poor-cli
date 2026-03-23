@@ -29,15 +29,26 @@ export const query = async (
   const limit = params?.limit ?? 100;
   const offset = params?.offset ?? 0;
 
-  const cacheKey = buildCacheKey("mas", "query", { resourceId, limit, offset, ...params?.filters });
+  const cacheKey = buildCacheKey("mas", "query", {
+    resourceId,
+    limit,
+    offset,
+    sort: params?.sort,
+    filters: params?.filters,
+  });
   const { data } = await withCache(cacheKey, "NEAR_REALTIME", async () => {
-    let url = `${getBaseUrl()}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${offset}`;
-    if (params?.filters !== undefined) {
-      url += `&filters=${encodeURIComponent(JSON.stringify(params.filters))}`;
-    }
-    if (params?.sort !== undefined) {
-      url += `&sort=${encodeURIComponent(params.sort)}`;
-    }
+    const buildSearchUrl = (currentOffset: number): string => {
+      let url = `${getBaseUrl()}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${currentOffset}`;
+      if (params?.filters !== undefined) {
+        url += `&filters=${encodeURIComponent(JSON.stringify(params.filters))}`;
+      }
+      if (params?.sort !== undefined) {
+        url += `&sort=${encodeURIComponent(params.sort)}`;
+      }
+      return url;
+    };
+
+    const url = buildSearchUrl(offset);
 
     const response = await httpGet<MasResponse>(url, { apiName: "mas" });
     if (!response.success) {
@@ -55,7 +66,7 @@ export const query = async (
     const total = response.result.total;
     let currentOffset = offset + limit;
     while (currentOffset < total) {
-      const nextUrl = `${getBaseUrl()}/search.json?resource_id=${resourceId}&limit=${limit}&offset=${currentOffset}`;
+      const nextUrl = buildSearchUrl(currentOffset);
       const nextResponse = await httpGet<MasResponse>(nextUrl, { apiName: "mas" });
       if (nextResponse.success) {
         allRecords = [...allRecords, ...nextResponse.result.records];

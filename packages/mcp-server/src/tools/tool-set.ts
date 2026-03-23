@@ -1,5 +1,8 @@
+import { acraToolDefinitions } from "./acra-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
+import { bcaToolDefinitions } from "./bca-tools.js";
 import { cacheToolDefinitions } from "./cache-tools.js";
+import { ceaToolDefinitions } from "./cea-tools.js";
 import { configToolDefinitions } from "./config-tools.js";
 import { datagovToolDefinitions } from "./datagov-tools.js";
 import { healthCheckToolDefinitions } from "./health-check.js";
@@ -22,6 +25,9 @@ export const ALL_TOOL_DEFINITIONS = [
   ...ltaToolDefinitions,
   ...neaToolDefinitions,
   ...hdbToolDefinitions,
+  ...ceaToolDefinitions,
+  ...bcaToolDefinitions,
+  ...acraToolDefinitions,
   ...healthCheckToolDefinitions,
   ...cacheToolDefinitions,
   ...keystoreToolDefinitions,

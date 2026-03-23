@@ -37,6 +37,7 @@ export const searchDatasets = async (keyword: string, limit = 20): Promise<Datas
 export const getTableData = async (tableId: string, options?: TableOptions): Promise<TableData> => {
   const params: Record<string, unknown> = { tableId };
   if (options?.timeFilter !== undefined) params["timeFilter"] = options.timeFilter;
+  if (options?.variables !== undefined) params["variables"] = options.variables;
   if (options?.limit !== undefined) params["limit"] = options.limit;
   if (options?.offset !== undefined) params["offset"] = options.offset;
 
@@ -59,6 +60,9 @@ export const getTableData = async (tableId: string, options?: TableOptions): Pro
       });
     }
 
+    const requestedVariables = new Set(
+      (options?.variables ?? []).map((variable) => variable.trim().toLowerCase()),
+    );
     const rows: NormalizedRow[] = response.Data.row.flatMap((row) =>
       row.columns.map((col) => ({
         period: col.key,
@@ -67,6 +71,10 @@ export const getTableData = async (tableId: string, options?: TableOptions): Pro
         unit: row.uoM,
         ...(row.footnote !== "" ? { footnote: row.footnote } : {}),
       })),
+    ).filter((row) =>
+      requestedVariables.size === 0
+        ? true
+        : requestedVariables.has(row.variable.trim().toLowerCase()),
     );
 
     const metadata: TableMetadata = {

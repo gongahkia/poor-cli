@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import Database from "better-sqlite3";
 import { httpGet, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
 import type {
+  DatagovDatastoreResult,
   DatagovDatastoreResponse,
   DatagovDataset,
   DatagovV2ListResponse,
@@ -30,10 +31,11 @@ type DatastoreQueryOptions = {
   readonly limit?: number;
   readonly offset?: number;
   readonly sort?: string;
-  readonly filters?: Readonly<Record<string, string>>;
+  readonly filters?: Readonly<Record<string, unknown>>;
 };
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
+const DATASETS_PAGE_SIZE = 100;
 
 let indexDb: Database.Database | null = null;
 
@@ -88,22 +90,7 @@ export const buildLocalIndex = async (): Promise<void> => {
   logger.info("building data.gov.sg local index...");
   const db = getIndexDb();
 
-  // Fetch datasets across multiple pages
-  const allDatasets: DatagovDataset[] = [];
-  const PAGE_SIZE = 50; // WHY: reasonable page size to avoid overloading API
-  const MAX_PAGES = 10; // WHY: cap at 500 datasets for index build time
-
-  for (let page = 0; page < MAX_PAGES; page++) {
-    try {
-      const url = `${getBaseUrl()}/datasets?page=${page}&resultSize=${PAGE_SIZE}`;
-      const response = await httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
-      if (response.code !== 0 || response.data.datasets.length === 0) break;
-      allDatasets.push(...response.data.datasets);
-      if (page >= response.data.pages - 1) break;
-    } catch {
-      break;
-    }
-  }
+  const allDatasets = await fetchAllDatasets();
 
   // Rebuild index
   const insertStmt = db.prepare(
@@ -131,6 +118,120 @@ export const buildLocalIndex = async (): Promise<void> => {
   transaction();
 
   logger.info("data.gov.sg local index built", { datasets: allDatasets.length });
+};
+
+const fetchDatasetsPage = async (page: number): Promise<DatagovV2ListResponse> => {
+  const url = `${getBaseUrl()}/datasets?page=${page}&resultSize=${DATASETS_PAGE_SIZE}`;
+  return httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
+};
+
+const fetchAllDatasets = async (): Promise<DatagovDataset[]> => {
+  const datasets: DatagovDataset[] = [];
+  let totalPages = 1;
+
+  for (let page = 0; page < totalPages; page++) {
+    const response = await fetchDatasetsPage(page);
+    if (response.code !== 0) {
+      throw new ApiError({
+        apiName: "datagov",
+        statusCode: 500,
+        message: response.errorMsg || "data.gov.sg query failed",
+        retryable: true,
+      });
+    }
+
+    datasets.push(...response.data.datasets);
+    totalPages = Math.max(totalPages, response.data.pages);
+    if (response.data.datasets.length === 0) {
+      break;
+    }
+  }
+
+  return datasets;
+};
+
+const loadIndexedCollections = (): { id: string; name: string; description: string }[] => {
+  const db = getIndexDb();
+  const rows = db
+    .prepare(
+      `SELECT org AS name, COUNT(*) AS datasetCount
+       FROM datagov_index
+       WHERE org != ''
+       GROUP BY org
+       ORDER BY datasetCount DESC, org ASC`,
+    )
+    .all() as { name: string; datasetCount: number }[];
+
+  return rows.map(({ name, datasetCount }) => ({
+    id: name.toLowerCase().replace(/\s+/g, "-"),
+    name,
+    description: `${datasetCount} datasets managed by ${name}`,
+  }));
+};
+
+const localSubstringSearch = (keyword: string, limit = 10): DatagovDataset[] => {
+  const db = getIndexDb();
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (normalizedKeyword === "") {
+    return [];
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT id, title, description, org, format, updated
+       FROM datagov_index
+       WHERE lower(title) LIKE ? OR lower(description) LIKE ?
+       ORDER BY updated DESC, title ASC
+       LIMIT ?`,
+    )
+    .all(`%${normalizedKeyword}%`, `%${normalizedKeyword}%`, limit) as {
+    id: string;
+    title: string;
+    description: string;
+    org: string;
+    format: string;
+    updated: string;
+  }[];
+
+  return rows.map((r) => ({
+    datasetId: r.id,
+    name: r.title,
+    description: r.description,
+    managedByAgencyName: r.org,
+    format: r.format,
+    lastUpdatedAt: r.updated,
+    createdAt: "",
+    status: "active",
+  }));
+};
+
+const getIndexedDatasetById = (datasetId: string): DatagovDataset | null => {
+  const db = getIndexDb();
+  const row = db
+    .prepare("SELECT id, title, description, org, format, updated FROM datagov_index WHERE id = ?")
+    .get(datasetId) as {
+    id: string;
+    title: string;
+    description: string;
+    org: string;
+    format: string;
+    updated: string;
+  } | undefined;
+
+  if (row === undefined) {
+    return null;
+  }
+
+  return {
+    datasetId: row.id,
+    name: row.title,
+    description: row.description,
+    managedByAgencyName: row.org,
+    format: row.format,
+    lastUpdatedAt: row.updated,
+    createdAt: "",
+    status: "active",
+  };
 };
 
 export const localSearch = (keyword: string, limit = 10): DatagovDataset[] => {
@@ -179,6 +280,11 @@ export const searchDatasets = async (keyword: string, limit = 10): Promise<Datag
     if (localResults.length > 0) {
       return localResults;
     }
+    const substringResults = localSubstringSearch(keyword, limit);
+    if (substringResults.length > 0) {
+      return substringResults;
+    }
+    return [];
   } catch (error) {
     logger.warn("local search failed, falling back to API", {
       error: error instanceof Error ? error.message : String(error),
@@ -188,20 +294,9 @@ export const searchDatasets = async (keyword: string, limit = 10): Promise<Datag
   // Fallback to API search
   const cacheKey = buildCacheKey("datagov", "search", { keyword, limit });
   const { data } = await withCache(cacheKey, "DAILY", async () => {
-    const url = `${getBaseUrl()}/datasets?page=0&resultSize=50`;
-    const response = await httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
-
-    if (response.code !== 0) {
-      throw new ApiError({
-        apiName: "datagov",
-        statusCode: 500,
-        message: response.errorMsg || "data.gov.sg query failed",
-        retryable: true,
-      });
-    }
-
+    const datasets = await fetchAllDatasets();
     const lowerKeyword = keyword.toLowerCase();
-    return response.data.datasets
+    return datasets
       .filter(
         (d) =>
           d.name.toLowerCase().includes(lowerKeyword) ||
@@ -217,29 +312,9 @@ export const getDataset = async (datasetId: string): Promise<DatagovDataset | nu
   const { data } = await withCache(cacheKey, "DAILY", async () => {
     // Try local index first
     try {
-      const db = getIndexDb();
-      const row = db
-        .prepare("SELECT id, title, description, org, format, updated FROM datagov_index WHERE id = ?")
-        .get(datasetId) as {
-        id: string;
-        title: string;
-        description: string;
-        org: string;
-        format: string;
-        updated: string;
-      } | undefined;
-
-      if (row !== undefined) {
-        return {
-          datasetId: row.id,
-          name: row.title,
-          description: row.description,
-          managedByAgencyName: row.org,
-          format: row.format,
-          lastUpdatedAt: row.updated,
-          createdAt: "",
-          status: "active",
-        } as DatagovDataset;
+      const indexed = getIndexedDatasetById(datasetId);
+      if (indexed !== null) {
+        return indexed;
       }
     } catch {
       // Fall through to API
@@ -280,13 +355,26 @@ export const getDataset = async (datasetId: string): Promise<DatagovDataset | nu
 };
 
 export const listCollections = async (): Promise<{ id: string; name: string; description: string }[]> => {
+  try {
+    if (!isIndexFresh()) {
+      await buildLocalIndex();
+    }
+    const indexedCollections = loadIndexedCollections();
+    if (indexedCollections.length > 0) {
+      return indexedCollections;
+    }
+  } catch (error) {
+    logger.warn("collection index lookup failed, falling back to API", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   const cacheKey = buildCacheKey("datagov", "collections", {});
   const { data } = await withCache(cacheKey, "DAILY", async () => {
-    const url = `${getBaseUrl()}/datasets?page=0&resultSize=50`;
-    const response = await httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
+    const datasets = await fetchAllDatasets();
 
     const agencies = new Map<string, { count: number }>();
-    for (const ds of response.data.datasets) {
+    for (const ds of datasets) {
       const existing = agencies.get(ds.managedByAgencyName);
       if (existing !== undefined) {
         existing.count++;
@@ -304,10 +392,10 @@ export const listCollections = async (): Promise<{ id: string; name: string; des
   return data;
 };
 
-export const queryDatastore = async <TRecord extends Readonly<Record<string, unknown>>>(
+export const queryDatastoreResult = async <TRecord extends Readonly<Record<string, unknown>>>(
   resourceId: string,
   options: DatastoreQueryOptions = {},
-): Promise<readonly TRecord[]> => {
+): Promise<DatagovDatastoreResult<TRecord>> => {
   const cacheKey = buildCacheKey("datagov", "datastore", {
     resourceId,
     ...options,
@@ -333,7 +421,7 @@ export const queryDatastore = async <TRecord extends Readonly<Record<string, unk
     });
 
     if ("success" in response && response.success === true) {
-      return response.result.records;
+      return response.result;
     }
 
     const errorResponse = response as Extract<DatagovDatastoreResponse<TRecord>, { readonly code: number }>;
@@ -347,9 +435,58 @@ export const queryDatastore = async <TRecord extends Readonly<Record<string, unk
       suggestedAction:
         errorResponse.code === 429
           ? "Wait for the data.gov.sg rate limit window to reset, then retry."
-          : "Retry later or narrow the HDB query filters.",
+          : "Retry later or narrow the data.gov.sg datastore query filters.",
       details: errorResponse,
     });
   });
   return data;
+};
+
+export const queryDatastore = async <TRecord extends Readonly<Record<string, unknown>>>(
+  resourceId: string,
+  options: DatastoreQueryOptions = {},
+): Promise<readonly TRecord[]> => {
+  const result = await queryDatastoreResult<TRecord>(resourceId, options);
+  return result.records;
+};
+
+export const queryDatastoreExactMatches = async <TRecord extends Readonly<Record<string, unknown>>>(
+  resourceId: string,
+  options: DatastoreQueryOptions & {
+    readonly exactMatch: (row: TRecord) => boolean;
+    readonly matchLimit: number;
+    readonly pageSize?: number;
+  },
+): Promise<readonly TRecord[]> => {
+  const matchLimit = Math.max(options.matchLimit, 1);
+  const pageSize = Math.max(options.pageSize ?? Math.min(Math.max(matchLimit * 2, 50), 100), 1);
+  const matches: TRecord[] = [];
+  let offset = options.offset ?? 0;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (offset < total && matches.length < matchLimit) {
+    const result = await queryDatastoreResult<TRecord>(resourceId, {
+      ...options,
+      limit: pageSize,
+      offset,
+    });
+
+    for (const row of result.records) {
+      if (options.exactMatch(row)) {
+        matches.push(row);
+        if (matches.length >= matchLimit) {
+          break;
+        }
+      }
+    }
+
+    if (result.records.length === 0) {
+      break;
+    }
+
+    total = result.total;
+    offset += result.records.length;
+  }
+
+  return matches;
 };

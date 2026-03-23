@@ -81,9 +81,7 @@ export const OneMapRouteSchema = z.object({
   endLat: z.number(),
   endLng: z.number(),
   routeType: z.enum(["walk", "drive", "pt", "cycle"]),
-  date: z.string().optional(),
-  time: z.string().optional(),
-});
+}).strict();
 
 export const OneMapPopulationSchema = z.object({
   planningArea: z.string().min(1),
@@ -199,6 +197,80 @@ export const HdbRentalPricesSchema = z.object({
   limit: z.number().int().positive().max(200).optional(),
   format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
 }).strict();
+
+export const CeaSalespersonsBaseSchema = z.object({
+  salespersonName: z.string().min(1).optional(),
+  registrationNo: z.string().min(1).optional(),
+  estateAgentName: z.string().min(1).optional(),
+  estateAgentLicenseNo: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const CeaSalespersonsSchema = CeaSalespersonsBaseSchema.refine(
+  ({ salespersonName, registrationNo, estateAgentName, estateAgentLicenseNo }) =>
+    salespersonName !== undefined
+    || registrationNo !== undefined
+    || estateAgentName !== undefined
+    || estateAgentLicenseNo !== undefined,
+  {
+    message: "Provide at least one exact-match filter.",
+  },
+);
+
+export const BcaLicensedBuildersBaseSchema = z.object({
+  companyName: z.string().min(1).optional(),
+  uenNo: z.string().min(1).optional(),
+  className: z.string().min(1).optional(),
+  classCode: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const BcaLicensedBuildersSchema = BcaLicensedBuildersBaseSchema.refine(
+  ({ companyName, uenNo, className, classCode }) =>
+    companyName !== undefined
+    || uenNo !== undefined
+    || className !== undefined
+    || classCode !== undefined,
+  {
+    message: "Provide at least one exact-match filter.",
+  },
+);
+
+export const BcaRegisteredContractorsBaseSchema = z.object({
+  companyName: z.string().min(1).optional(),
+  uenNo: z.string().min(1).optional(),
+  workhead: z.string().min(1).optional(),
+  grade: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const BcaRegisteredContractorsSchema = BcaRegisteredContractorsBaseSchema.refine(
+  ({ companyName, uenNo, workhead, grade }) =>
+    companyName !== undefined
+    || uenNo !== undefined
+    || workhead !== undefined
+    || grade !== undefined,
+  {
+    message: "Provide at least one exact-match filter.",
+  },
+);
+
+export const AcraEntitiesBaseSchema = z.object({
+  entityName: z.string().min(1).optional(),
+  uen: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(50).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const AcraEntitiesSchema = AcraEntitiesBaseSchema.refine(
+  ({ entityName, uen }) => entityName !== undefined || uen !== undefined,
+  {
+    message: "Provide an entityName or UEN.",
+  },
+);
 
 export const HealthCheckSchema = z.object({}).optional();
 

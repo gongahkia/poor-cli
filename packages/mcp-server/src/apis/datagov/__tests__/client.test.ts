@@ -1,7 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+const testHomeDir = mkdtempSync(join(tmpdir(), "sg-apis-datagov-test-"));
+
+vi.mock("node:os", async () => {
+  const actual = await vi.importActual<typeof import("node:os")>("node:os");
+  return {
+    ...actual,
+    homedir: () => testHomeDir,
+  };
+});
 
 vi.mock("@sg-apis/shared", async () => {
   const actual = await vi.importActual<typeof import("@sg-apis/shared")>("@sg-apis/shared");
@@ -19,11 +31,20 @@ vi.mock("../../../middleware/cache-middleware.js", () => ({
   buildCacheKey: vi.fn((...args: unknown[]) => args.join(":")),
 }));
 
-import { searchDatasets, listCollections } from "../client.js";
+import { listCollections, queryDatastoreExactMatches, searchDatasets } from "../client.js";
 
 describe("data.gov.sg client", () => {
+  let nowSpy: { mockRestore: () => void };
+  let nowSeed = Date.UTC(2099, 0, 1);
+
   beforeEach(() => {
     mockFetch.mockReset();
+    nowSeed += 8 * 24 * 60 * 60 * 1000;
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(nowSeed);
+  });
+
+  afterEach(() => {
+    nowSpy.mockRestore();
   });
 
   it("searches datasets by keyword", async () => {
@@ -55,24 +76,35 @@ describe("data.gov.sg client", () => {
 
   it("respects limit parameter", async () => {
     const fixture = await import("./fixtures/search-response.json");
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => fixture.default,
-    });
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => fixture.default,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => fixture.default,
+      });
 
     const results = await searchDatasets("a", 1);
     expect(results.length).toBeLessThanOrEqual(1);
   });
 
   it("returns empty for no matches", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        code: 0,
-        data: { datasets: [], pages: 0, rowCount: 0, totalRowCount: 0 },
-        errorMsg: "",
-      }),
-    });
+    const emptyResponse = {
+      code: 0,
+      data: { datasets: [], pages: 0, rowCount: 0, totalRowCount: 0 },
+      errorMsg: "",
+    };
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => emptyResponse,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => emptyResponse,
+      });
 
     const results = await searchDatasets("xyznonexistent");
     expect(results).toEqual([]);
@@ -89,6 +121,235 @@ describe("data.gov.sg client", () => {
     expect(collections.length).toBeGreaterThan(0);
     expect(collections[0]).toHaveProperty("id");
     expect(collections[0]).toHaveProperty("name");
+  });
+
+  it("indexes datasets across multiple pages before searching", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasets: [
+              {
+                datasetId: "d_page_1",
+                name: "Alpha Dataset",
+                description: "Page one result",
+                managedByAgencyName: "Agency A",
+                format: "CSV",
+                lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                createdAt: "2026-01-01T00:00:00+08:00",
+                status: "active",
+              },
+            ],
+            pages: 2,
+            rowCount: 1,
+            totalRowCount: 2,
+          },
+          errorMsg: "",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasets: [
+              {
+                datasetId: "d_page_2",
+                name: "Beta Maritime Dataset",
+                description: "Page two result",
+                managedByAgencyName: "Agency B",
+                format: "CSV",
+                lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                createdAt: "2026-01-01T00:00:00+08:00",
+                status: "active",
+              },
+            ],
+            pages: 2,
+            rowCount: 1,
+            totalRowCount: 2,
+          },
+          errorMsg: "",
+        }),
+      });
+
+    const results = await searchDatasets("maritime");
+
+    expect(results).toMatchObject([
+      {
+        datasetId: "d_page_2",
+        name: "Beta Maritime Dataset",
+      },
+    ]);
+  });
+
+  it("groups collections across the full paginated dataset index", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasets: [
+              {
+                datasetId: "d_page_1",
+                name: "Alpha Dataset",
+                description: "Page one result",
+                managedByAgencyName: "Agency A",
+                format: "CSV",
+                lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                createdAt: "2026-01-01T00:00:00+08:00",
+                status: "active",
+              },
+            ],
+            pages: 2,
+            rowCount: 1,
+            totalRowCount: 2,
+          },
+          errorMsg: "",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasets: [
+              {
+                datasetId: "d_page_2",
+                name: "Beta Dataset",
+                description: "Page two result",
+                managedByAgencyName: "Agency B",
+                format: "CSV",
+                lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                createdAt: "2026-01-01T00:00:00+08:00",
+                status: "active",
+              },
+            ],
+            pages: 2,
+            rowCount: 1,
+            totalRowCount: 2,
+          },
+          errorMsg: "",
+        }),
+      });
+
+    const collections = await listCollections();
+
+    expect(collections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Agency A" }),
+        expect.objectContaining({ name: "Agency B" }),
+      ]),
+    );
+  });
+
+  it("does not perform a second full remote scan after a clean indexed miss", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasets: [
+              {
+                datasetId: "d_page_1",
+                name: "Alpha Dataset",
+                description: "Page one result",
+                managedByAgencyName: "Agency A",
+                format: "CSV",
+                lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                createdAt: "2026-01-01T00:00:00+08:00",
+                status: "active",
+              },
+            ],
+            pages: 2,
+            rowCount: 1,
+            totalRowCount: 2,
+          },
+          errorMsg: "",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasets: [
+              {
+                datasetId: "d_page_2",
+                name: "Beta Dataset",
+                description: "Page two result",
+                managedByAgencyName: "Agency B",
+                format: "CSV",
+                lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                createdAt: "2026-01-01T00:00:00+08:00",
+                status: "active",
+              },
+            ],
+            pages: 2,
+            rowCount: 1,
+            totalRowCount: 2,
+          },
+          errorMsg: "",
+        }),
+      });
+
+    const results = await searchDatasets("definitelymissingterm");
+
+    expect(results).toEqual([]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("pages through datastore results until exact matches are exhausted", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          result: {
+            fields: [],
+            total: 3,
+            limit: 2,
+            offset: 0,
+            records: [
+              { company_name: "ABC CONSTRUCTION PTE LTD", grade: "A1" },
+              { company_name: "ABC CONSTRUCTION HOLDINGS", grade: "C3" },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          result: {
+            fields: [],
+            total: 3,
+            limit: 2,
+            offset: 2,
+            records: [
+              { company_name: "ABC CONSTRUCTION PTE LTD", grade: "C3" },
+            ],
+          },
+        }),
+      });
+
+    const matches = await queryDatastoreExactMatches<{ company_name: string; grade: string }>(
+      "resource-id",
+      {
+        matchLimit: 1,
+        pageSize: 2,
+        filters: { company_name: { ilike: "ABC CONSTRUCTION PTE LTD" } },
+        exactMatch: (row) => row.company_name === "ABC CONSTRUCTION PTE LTD" && row.grade === "C3",
+      },
+    );
+
+    expect(matches).toEqual([
+      { company_name: "ABC CONSTRUCTION PTE LTD", grade: "C3" },
+    ]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("handles API error response", async () => {

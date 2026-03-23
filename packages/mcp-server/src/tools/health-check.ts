@@ -97,6 +97,15 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       authRequired: false,
       configured: () => true,
     },
+    {
+      api: "NEA",
+      url: getHealthBaseUrl(
+        "nea/two-hr-forecast",
+        "https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast",
+      ),
+      authRequired: false,
+      configured: () => true,
+    },
   ];
 };
 

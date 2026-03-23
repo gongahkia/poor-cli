@@ -47,6 +47,14 @@ export {
   NeaRainfallSchema,
   HdbResalePricesSchema,
   HdbRentalPricesSchema,
+  CeaSalespersonsBaseSchema,
+  CeaSalespersonsSchema,
+  BcaLicensedBuildersBaseSchema,
+  BcaLicensedBuildersSchema,
+  BcaRegisteredContractorsBaseSchema,
+  BcaRegisteredContractorsSchema,
+  AcraEntitiesBaseSchema,
+  AcraEntitiesSchema,
   HealthCheckSchema,
   KeySetSchema,
   KeyListSchema,
@@ -146,11 +154,25 @@ export type {
   DatagovV2ListResponse,
 } from "./types/datagov.js";
 export type {
+  AcraEntityRecord,
+  AcraNormalizedEntityRecord,
+} from "./types/acra.js";
+export type {
   HdbNormalizedRentalRecord,
   HdbNormalizedResaleRecord,
   HdbRentalRecord,
   HdbResaleRecord,
 } from "./types/hdb.js";
+export type {
+  CeaNormalizedSalespersonRecord,
+  CeaSalespersonRecord,
+} from "./types/cea.js";
+export type {
+  BcaLicensedBuilderRecord,
+  BcaNormalizedLicensedBuilderRecord,
+  BcaNormalizedRegisteredContractorRecord,
+  BcaRegisteredContractorRecord,
+} from "./types/bca.js";
 export type {
   LtaBusArrivalResponse,
   LtaNormalizedBusArrival,

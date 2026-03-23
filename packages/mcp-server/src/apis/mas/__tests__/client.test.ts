@@ -83,4 +83,53 @@ describe("MAS client", () => {
       expect.any(Object),
     );
   });
+
+  it("preserves filters and sort when auto-paginating", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          result: {
+            resource_id: "95932927-c8bc-4e7a-b484-68a66a24edfe",
+            total: 2,
+            records: [{ _id: 1, end_of_day: "2025-01-02", usd_sgd: "1.35" }],
+            limit: 1,
+            offset: 0,
+            fields: [],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          result: {
+            resource_id: "95932927-c8bc-4e7a-b484-68a66a24edfe",
+            total: 2,
+            records: [{ _id: 2, end_of_day: "2025-01-03", usd_sgd: "1.36" }],
+            limit: 1,
+            offset: 1,
+            fields: [],
+          },
+        }),
+      });
+
+    await query("95932927-c8bc-4e7a-b484-68a66a24edfe", {
+      limit: 1,
+      sort: "end_of_day desc",
+      filters: { end_of_day: "2025-01-02" },
+    });
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("filters="),
+      expect.any(Object),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("sort=end_of_day%20desc"),
+      expect.any(Object),
+    );
+  });
 });

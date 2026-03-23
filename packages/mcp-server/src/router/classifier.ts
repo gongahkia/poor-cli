@@ -21,7 +21,7 @@ const PLANNING_AREAS = [
   "woodlands", "yishun",
 ] as const;
 
-const CURRENCY_STOPWORDS = new Set(["GDP", "CPI", "MRT", "HDB", "LTA", "NEA"]);
+const CURRENCY_STOPWORDS = new Set(["GDP", "CPI", "MRT", "HDB", "LTA", "NEA", "CEA", "BCA", "ACRA"]);
 const REGIONS = ["north", "south", "east", "west", "central"] as const;
 
 const extractPostalCode = (query: string): string | null => {
@@ -116,6 +116,105 @@ const extractStationId = (query: string): string | null => {
   return match?.[1]?.toUpperCase() ?? null;
 };
 
+const extractQuotedTerm = (query: string): string | null => {
+  const match = query.match(/["“”'`]\s*([^"“”'`]{2,}?)\s*["“”'`]/);
+  return match?.[1]?.trim() ?? null;
+};
+
+const stripTrailingBusinessContext = (value: string): string => {
+  return value
+    .replace(
+      /\s+(?:with|using|under|by|for)\s+(?:uen|registration|reg(?:istration)?|licen[cs]e|grade|workhead|builder\s*class|details|records?).*$/i,
+      "",
+    )
+    .replace(
+      /\s+(?:uen(?:\s*(?:number|no\.?))?\s*[:#]?\s*[0-9A-Z]{8,10}|registration(?:\s*(?:number|no\.?))?\s*[:#]?\s*[0-9A-Z-]{5,}|reg(?:istration)?\s*[:#]?\s*[0-9A-Z-]{5,}|licen[cs]e(?:\s*(?:number|no\.?))?\s*[:#]?\s*[0-9A-Z-]{5,}|workhead\s+[A-Z]{2}\d{2}|grade\s+[A-Z]\d|class\s+[A-Z]{2}\d|builder\s*class\s+[A-Z]{2}\d|details?|records?)$/i,
+      "",
+    )
+    .replace(/[.,;:!?]+$/, "")
+    .trim();
+};
+
+const extractNamedSubject = (
+  query: string,
+  patterns: readonly RegExp[],
+): string | null => {
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    const candidate = match?.[1];
+    if (candidate !== undefined) {
+      const cleaned = stripTrailingBusinessContext(candidate);
+      if (cleaned !== "") {
+        return cleaned;
+      }
+    }
+  }
+  return null;
+};
+
+const extractCompanyName = (query: string): string | null => {
+  return extractNamedSubject(query, [
+    /\b(?:company|entity|business|counterparty)\s+(.+?)(?=\s+(?:with|using|under)\b|[?.!,]|$)/i,
+    /\b(?:builder|contractor|vendor)\s+(.+?)(?=\s+(?:with|using|under)\b|[?.!,]|$)/i,
+  ]) ?? extractQuotedTerm(query);
+};
+
+const extractSalespersonName = (query: string): string | null => {
+  return extractNamedSubject(query, [
+    /\bsalesperson\s+(.+?)(?=\s+(?:with|using|under|registration|licen[cs]e|estate\s+agent)\b|[?.!,]|$)/i,
+  ]) ?? (/salesperson/i.test(query) ? extractQuotedTerm(query) : null);
+};
+
+const extractEstateAgentName = (query: string): string | null => {
+  return extractNamedSubject(query, [
+    /\bestate\s+agent\s+(.+?)(?=\s+(?:with|using|under|registration|licen[cs]e|salesperson)\b|[?.!,]|$)/i,
+  ]) ?? (/estate\s+agent/i.test(query) ? extractQuotedTerm(query) : null);
+};
+
+const extractUen = (query: string): string | null => {
+  const explicit = query.match(/\buen(?:\s*(?:number|no\.?))?\s*[:#]?\s*([0-9A-Z]{8,10})\b/i);
+  return explicit?.[1]?.toUpperCase() ?? null;
+};
+
+const extractRegistrationNo = (query: string): string | null => {
+  const direct = query.match(/\bR\d{6}[A-Z]\b/i);
+  if (direct !== null) {
+    return direct[0]?.toUpperCase() ?? null;
+  }
+
+  return query
+    .match(/\bregistration(?:\s*(?:number|no\.?))?\s*[:#]?\s*([0-9A-Z-]{5,})\b/i)?.[1]
+    ?.toUpperCase() ?? null;
+};
+
+const extractEstateAgentLicenseNo = (query: string): string | null => {
+  const direct = query.match(/\bL\d{7}[A-Z]\b/i);
+  if (direct !== null) {
+    return direct[0]?.toUpperCase() ?? null;
+  }
+
+  return query
+    .match(/\blicen[cs]e(?:\s*(?:number|no\.?))?\s*[:#]?\s*([0-9A-Z-]{5,})\b/i)?.[1]
+    ?.toUpperCase() ?? null;
+};
+
+const extractWorkhead = (query: string): string | null => {
+  return query.match(/\bworkhead\s+([A-Z]{2}\d{2})\b/i)?.[1]?.toUpperCase() ?? null;
+};
+
+const extractGrade = (query: string): string | null => {
+  return query.match(/\bgrade\s+([A-Z]\d)\b/i)?.[1]?.toUpperCase() ?? null;
+};
+
+const extractBuilderClassCode = (query: string): string | null => {
+  const explicit = query.match(/\b(GB[12])\b/i);
+  if (explicit !== null) {
+    return explicit[1]?.toUpperCase() ?? null;
+  }
+
+  return query.match(/\bclass\s+([A-Z]{2}\d)\b/i)?.[1]?.toUpperCase() ?? null;
+};
+
 const countMacroSignals = (lower: string): number => {
   return [
     /gdp/.test(lower),
@@ -134,6 +233,9 @@ const getApiForTool = (tool: string): string => {
   if (tool.startsWith("sg_lta_")) return "lta";
   if (tool.startsWith("sg_nea_")) return "nea";
   if (tool.startsWith("sg_hdb_")) return "hdb";
+  if (tool.startsWith("sg_cea_")) return "cea";
+  if (tool.startsWith("sg_bca_")) return "bca";
+  if (tool.startsWith("sg_acra_")) return "acra";
   return "datagov";
 };
 
@@ -190,6 +292,44 @@ export const classifyIntent = (query: string): IntentResult => {
   const stationId = extractStationId(query);
   if (stationId !== null) params["stationId"] = stationId;
 
+  const companyName = extractCompanyName(query);
+  if (companyName !== null) {
+    params["companyName"] = companyName;
+    params["entityName"] = companyName;
+  }
+
+  const salespersonName = extractSalespersonName(query);
+  if (salespersonName !== null) {
+    params["salespersonName"] = salespersonName;
+  }
+
+  const estateAgentName = extractEstateAgentName(query);
+  if (estateAgentName !== null) {
+    params["estateAgentName"] = estateAgentName;
+    params["entityName"] ??= estateAgentName;
+  }
+
+  const uen = extractUen(query);
+  if (uen !== null) {
+    params["uen"] = uen;
+    params["uenNo"] = uen;
+  }
+
+  const registrationNo = extractRegistrationNo(query);
+  if (registrationNo !== null) params["registrationNo"] = registrationNo;
+
+  const estateAgentLicenseNo = extractEstateAgentLicenseNo(query);
+  if (estateAgentLicenseNo !== null) params["estateAgentLicenseNo"] = estateAgentLicenseNo;
+
+  const workhead = extractWorkhead(query);
+  if (workhead !== null) params["workhead"] = workhead;
+
+  const grade = extractGrade(query);
+  if (grade !== null) params["grade"] = grade;
+
+  const classCode = extractBuilderClassCode(query);
+  if (classCode !== null) params["classCode"] = classCode;
+
   const aliasedTool = resolveAlias(lower);
   const macroSignals = countMacroSignals(lower);
 
@@ -197,6 +337,16 @@ export const classifyIntent = (query: string): IntentResult => {
     return {
       ...buildIntentResult("macro", "macro_snapshot", 0.92, params),
       apis: ["singstat", "mas"],
+    };
+  }
+
+  if (
+    /due\s*diligence|regulatory|registration\s*check|registry\s*check|registry\s*diligence|business\s*diligence|counterparty\s*diligence|licen[cs]e\s*check/i.test(lower)
+    && /acra|company|entity|uen|salesperson|estate\s*agent|builder|contractor|bca|cea/i.test(lower)
+  ) {
+    return {
+      ...buildIntentResult("business", "business_registry_diligence", 0.91, params),
+      apis: ["acra", "bca", "cea"],
     };
   }
 
@@ -244,6 +394,27 @@ export const classifyIntent = (query: string): IntentResult => {
   if (aliasedTool?.includes("hdb") || /hdb|flat\s*prices|resale\s*prices|rental\s*prices/i.test(lower)) {
     const tool = /rental/i.test(lower) ? "sg_hdb_rental_prices" : "sg_hdb_resale_prices";
     return buildIntentResult("housing", "direct_tool", 0.88, params, tool);
+  }
+
+  if (aliasedTool?.includes("cea") || /salesperson|estate\s*agent|real\s*estate/i.test(lower)) {
+    return buildIntentResult("business", "direct_tool", 0.9, params, "sg_cea_salespersons");
+  }
+
+  if (
+    aliasedTool?.includes("bca")
+    || /licensed\s*builder|registered\s*contractor|workhead|builder\s*class|contractor\s*grade/i.test(lower)
+  ) {
+    const tool = /licensed\s*builder|builder\s*class|gb1|gb2/i.test(lower)
+      ? "sg_bca_licensed_builders"
+      : "sg_bca_registered_contractors";
+    return buildIntentResult("business", "direct_tool", 0.9, params, tool);
+  }
+
+  if (
+    aliasedTool?.includes("acra")
+    || /acra|company\s*registration|corporate\s*entity|\buen\b|incorporat/i.test(lower)
+  ) {
+    return buildIntentResult("business", "direct_tool", 0.9, params, "sg_acra_entities");
   }
 
   if (aliasedTool?.includes("mas") || /exchange\s*rate|forex|sgd|currency\s*rate|sora|interest\s*rate/i.test(lower)) {
@@ -393,6 +564,43 @@ export const resolveToolInput = (
       return {
         tool,
         input: { keyword: query },
+      };
+    case "sg_cea_salespersons":
+      return {
+        tool,
+        input: {
+          ...(params["salespersonName"] !== undefined ? { salespersonName: params["salespersonName"] } : {}),
+          ...(params["registrationNo"] !== undefined ? { registrationNo: params["registrationNo"] } : {}),
+          ...(params["estateAgentName"] !== undefined ? { estateAgentName: params["estateAgentName"] } : {}),
+          ...(params["estateAgentLicenseNo"] !== undefined ? { estateAgentLicenseNo: params["estateAgentLicenseNo"] } : {}),
+        },
+      };
+    case "sg_bca_licensed_builders":
+      return {
+        tool,
+        input: {
+          ...(params["companyName"] !== undefined ? { companyName: params["companyName"] } : {}),
+          ...(params["uenNo"] !== undefined ? { uenNo: params["uenNo"] } : {}),
+          ...(params["classCode"] !== undefined ? { classCode: params["classCode"] } : {}),
+        },
+      };
+    case "sg_bca_registered_contractors":
+      return {
+        tool,
+        input: {
+          ...(params["companyName"] !== undefined ? { companyName: params["companyName"] } : {}),
+          ...(params["uenNo"] !== undefined ? { uenNo: params["uenNo"] } : {}),
+          ...(params["workhead"] !== undefined ? { workhead: params["workhead"] } : {}),
+          ...(params["grade"] !== undefined ? { grade: params["grade"] } : {}),
+        },
+      };
+    case "sg_acra_entities":
+      return {
+        tool,
+        input: {
+          ...(params["entityName"] !== undefined ? { entityName: params["entityName"] } : {}),
+          ...(params["uen"] !== undefined ? { uen: params["uen"] } : {}),
+        },
       };
     default:
       return {

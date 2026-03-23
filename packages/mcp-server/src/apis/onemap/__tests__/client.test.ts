@@ -33,6 +33,7 @@ vi.mock("../auth.js", () => ({
   getToken: vi.fn().mockResolvedValue("mock-token"),
 }));
 
+import { buildCacheKey } from "../../../middleware/cache-middleware.js";
 import { geocode, reverseGeocode } from "../client.js";
 
 describe("OneMap client", () => {
@@ -75,6 +76,10 @@ describe("OneMap client", () => {
 
     const results = await geocode("Raffles Place", 1);
     expect(results).toHaveLength(1);
+    expect(buildCacheKey).toHaveBeenCalledWith("onemap", "geocode", {
+      searchVal: "Raffles Place",
+      limit: 1,
+    });
   });
 
   it("geocode handles NIL postal code", async () => {

@@ -36,6 +36,32 @@ export const handleOneMapPopulation = async (
   };
 };
 
+export const handleOneMapRoute = async (
+  params: Readonly<{
+    startLat: number;
+    startLng: number;
+    endLat: number;
+    endLng: number;
+    routeType: "walk" | "drive" | "pt" | "cycle";
+  }>,
+): Promise<ToolResult> => {
+  const result = await getRoute(
+    params.startLat,
+    params.startLng,
+    params.endLat,
+    params.endLng,
+    params.routeType,
+  );
+  const summary = `Distance: ${(result.totalDistance / 1000).toFixed(1)}km | Time: ${Math.ceil(result.totalTime / 60)} min`;
+  const instructions = result.instructions.map((s) => `${s.instruction} on ${s.road} (${s.distance}m)`).join("\n");
+  return {
+    content: [{ type: "text", text: `${summary}\n\n${instructions}` }],
+    structuredContent: {
+      record: result,
+    },
+  };
+};
+
 export const onemapToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_onemap_geocode",
@@ -69,11 +95,7 @@ export const onemapToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: OneMapRouteSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { startLat, startLng, endLat, endLng, routeType } = validateInput(OneMapRouteSchema, input);
-      const result = await getRoute(startLat, startLng, endLat, endLng, routeType);
-      const summary = `Distance: ${(result.totalDistance / 1000).toFixed(1)}km | Time: ${Math.ceil(result.totalTime / 60)} min`;
-      const instructions = result.instructions.map((s) => `${s.instruction} on ${s.road} (${s.distance}m)`).join("\n");
-      return { content: [{ type: "text", text: `${summary}\n\n${instructions}` }] };
+      return handleOneMapRoute(validateInput(OneMapRouteSchema, input));
     },
   },
 

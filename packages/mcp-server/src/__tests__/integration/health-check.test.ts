@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkApiHealth, hasLtaKey, hasOneMapCredentials, hasUraKey } from "../../tools/health-check.js";
+import {
+  checkApiHealth,
+  getHealthCheckTargets,
+  hasLtaKey,
+  hasOneMapCredentials,
+  hasUraKey,
+} from "../../tools/health-check.js";
 
 const createLookup = (values: Readonly<Record<string, string>>) => ({
   getKey: (key: string) => values[key] ?? null,
@@ -74,5 +80,13 @@ describe("Health Check", () => {
 
     expect(status.reachable).toBe(false);
     expect(status.error).toContain("network down");
+  });
+
+  it("includes NEA in the public health-check targets", () => {
+    expect(getHealthCheckTargets()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ api: "NEA", authRequired: false }),
+      ]),
+    );
   });
 });

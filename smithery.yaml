@@ -1,4 +1,4 @@
 name: sg-apis-mcp
-description: Singapore government data — SingStat, MAS, OneMap, URA, data.gov.sg
+description: Singapore government data MCP server for SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg
 transport: stdio
 install: npx sg-apis-mcp

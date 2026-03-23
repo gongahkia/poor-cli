@@ -59,6 +59,41 @@ describe("tool catalog parity", () => {
       }
     }
   });
+
+  it("tracks the expected post-tranche public surface counts", () => {
+    expect(API_CATALOG).toHaveLength(11);
+    expect(TOOL_CATALOG).toHaveLength(40);
+  });
+
+  it("keeps the business-diligence tool families visible in catalog resources", () => {
+    expect(API_CATALOG).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "CEA",
+          tools: ["sg_cea_salespersons"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "BCA",
+          tools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "ACRA",
+          tools: ["sg_acra_entities"],
+          preferredInterface: "sg_query",
+        }),
+      ]),
+    );
+    expect(TOOL_CATALOG).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "sg_acra_entities", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_cea_salespersons", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_bca_licensed_builders", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_bca_registered_contractors", surface: "canonical" }),
+      ]),
+    );
+  });
 });
 
 describe("resource catalog parity", () => {

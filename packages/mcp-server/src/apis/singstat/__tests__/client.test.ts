@@ -71,6 +71,19 @@ describe("SingStat client", () => {
     expect(result.metadata.title).toBe("GDP Growth Rate, Quarterly");
   });
 
+  it("filters table rows by case-insensitive variable labels", async () => {
+    const fixture = await import("./fixtures/data-response.json");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => fixture.default,
+    });
+
+    const result = await getTableData("M015631", { variables: ["gdp growth rate"] });
+
+    expect(result.rows).toHaveLength(4);
+    expect(result.rows.every((row) => row.variable === "GDP Growth Rate")).toBe(true);
+  });
+
   it("handles empty results", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

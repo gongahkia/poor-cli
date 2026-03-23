@@ -47,6 +47,19 @@ vi.mock("../../apis/hdb/client.js", () => ({
   getHdbRentalPrices: vi.fn(),
 }));
 
+vi.mock("../../apis/cea/client.js", () => ({
+  getCeaSalespersons: vi.fn(),
+}));
+
+vi.mock("../../apis/bca/client.js", () => ({
+  getBcaLicensedBuilders: vi.fn(),
+  getBcaRegisteredContractors: vi.fn(),
+}));
+
+vi.mock("../../apis/acra/client.js", () => ({
+  getAcraEntities: vi.fn(),
+}));
+
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData } from "../../apis/onemap/client.js";
@@ -55,6 +68,12 @@ import { searchDatasets as datagovSearch } from "../../apis/datagov/client.js";
 import { getBusArrivals } from "../../apis/lta/client.js";
 import { getForecast2Hr } from "../../apis/nea/client.js";
 import { getHdbResalePrices } from "../../apis/hdb/client.js";
+import { getCeaSalespersons } from "../../apis/cea/client.js";
+import {
+  getBcaLicensedBuilders,
+  getBcaRegisteredContractors,
+} from "../../apis/bca/client.js";
+import { getAcraEntities } from "../../apis/acra/client.js";
 import { handleSingStatSearch } from "../singstat-tools.js";
 import { handleMasExchangeRates, handleMasInterestRates } from "../mas-tools.js";
 import { handleOneMapGeocode, handleOneMapPopulation } from "../onemap-tools.js";
@@ -63,6 +82,12 @@ import { handleDatagovSearch } from "../datagov-tools.js";
 import { handleLtaBusArrivals } from "../lta-tools.js";
 import { handleNeaForecast2Hr } from "../nea-tools.js";
 import { handleHdbResalePrices } from "../hdb-tools.js";
+import { handleCeaSalespersons } from "../cea-tools.js";
+import {
+  handleBcaLicensedBuilders,
+  handleBcaRegisteredContractors,
+} from "../bca-tools.js";
+import { handleAcraEntities } from "../acra-tools.js";
 import { executeQueryStep } from "../query-tool.js";
 
 describe("sg_query parity", () => {
@@ -76,6 +101,10 @@ describe("sg_query parity", () => {
     vi.mocked(getBusArrivals).mockReset();
     vi.mocked(getForecast2Hr).mockReset();
     vi.mocked(getHdbResalePrices).mockReset();
+    vi.mocked(getCeaSalespersons).mockReset();
+    vi.mocked(getBcaLicensedBuilders).mockReset();
+    vi.mocked(getBcaRegisteredContractors).mockReset();
+    vi.mocked(getAcraEntities).mockReset();
   });
 
   it("matches the direct SingStat search handler", async () => {
@@ -270,6 +299,116 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_hdb_resale_prices", input)).resolves.toEqual(
       await handleHdbResalePrices(input),
+    );
+  });
+
+  it("matches the direct CEA salesperson handler", async () => {
+    vi.mocked(getCeaSalespersons).mockResolvedValue([
+      {
+        salespersonName: "JANE TAN",
+        registrationNo: "R123456A",
+        registrationStartDate: "2011-01-01",
+        registrationEndDate: "2026-12-31",
+        estateAgentName: "ERA REALTY NETWORK PTE LTD",
+        estateAgentLicenseNo: "L3002382K",
+      },
+    ]);
+
+    const input = { registrationNo: "R123456A", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_cea_salespersons", input)).resolves.toEqual(
+      await handleCeaSalespersons(input),
+    );
+  });
+
+  it("matches the direct BCA licensed-builder handler", async () => {
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        uenNo: "201912345K",
+        className: "General Builder Class 1",
+        classCode: "GB1",
+        additionalInfo: null,
+        expiryDate: "2026-12-31",
+        buildingNo: "1",
+        streetName: "MAIN STREET",
+        unitNo: null,
+        buildingName: null,
+        postalCode: "123456",
+        telNo: "61234567",
+      },
+    ]);
+
+    const input = { companyName: "ABC CONSTRUCTION PTE LTD", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_bca_licensed_builders", input)).resolves.toEqual(
+      await handleBcaLicensedBuilders(input),
+    );
+  });
+
+  it("matches the direct BCA registered-contractor handler", async () => {
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        uenNo: "201912345K",
+        workhead: "CW01",
+        grade: "C3",
+        additionalInfo: "CRS",
+        expiryDate: "2026-12-31",
+        buildingNo: null,
+        streetName: "MAIN STREET",
+        unitNo: null,
+        buildingName: null,
+        postalCode: "123456",
+        telNo: "61234567",
+      },
+    ]);
+
+    const input = { workhead: "CW01", companyName: "ABC CONSTRUCTION PTE LTD", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_bca_registered_contractors", input)).resolves.toEqual(
+      await handleBcaRegisteredContractors(input),
+    );
+  });
+
+  it("matches the direct ACRA entity handler", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        uen: "201912345K",
+        issuanceAgencyId: "ACRA",
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        entityTypeDescription: "Local Company",
+        businessConstitutionDescription: null,
+        companyTypeDescription: "Private Company Limited by Shares",
+        pafConstitutionDescription: null,
+        entityStatusDescription: "Live Company",
+        registrationIncorporationDate: "2019-04-01",
+        uenIssueDate: "2019-04-01",
+        addressType: "LOCAL",
+        block: "1",
+        streetName: "MAIN STREET",
+        levelNo: "02",
+        unitNo: "01",
+        buildingName: "ABC BUILDING",
+        postalCode: "123456",
+        otherAddressLine1: null,
+        otherAddressLine2: null,
+        accountDueDate: "2026-04-01",
+        annualReturnDate: "2025-04-01",
+        primarySsicCode: "41001",
+        primarySsicDescription: "GENERAL CONTRACTORS",
+        primaryUserDescribedActivity: null,
+        secondarySsicCode: null,
+        secondarySsicDescription: null,
+        secondaryUserDescribedActivity: null,
+        noOfOfficers: 3,
+      },
+    ]);
+
+    const input = { entityName: "ABC CONSTRUCTION PTE LTD", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_acra_entities", input)).resolves.toEqual(
+      await handleAcraEntities(input),
     );
   });
 });

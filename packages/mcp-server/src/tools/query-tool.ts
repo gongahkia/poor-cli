@@ -3,6 +3,12 @@ import type { OutputFormat, ToolErrorPayload, ToolResult } from "@sg-apis/shared
 import { planQuery } from "../router/planner.js";
 import type { QueryExecutionContext, QueryPlan, QueryStep } from "../router/planner.js";
 import { toToolErrorPayload } from "../middleware/error-handler.js";
+import { handleAcraEntities } from "./acra-tools.js";
+import {
+  handleBcaLicensedBuilders,
+  handleBcaRegisteredContractors,
+} from "./bca-tools.js";
+import { handleCeaSalespersons } from "./cea-tools.js";
 import { handleDatagovBrowse, handleDatagovGet, handleDatagovSearch } from "./datagov-tools.js";
 import { handleHdbRentalPrices, handleHdbResalePrices } from "./hdb-tools.js";
 import { handleLtaBusArrivals, handleLtaTrafficIncidents, handleLtaTrainAlerts } from "./lta-tools.js";
@@ -12,7 +18,7 @@ import {
   handleMasInterestRates,
 } from "./mas-tools.js";
 import { handleNeaAirQuality, handleNeaForecast2Hr, handleNeaRainfall } from "./nea-tools.js";
-import { handleOneMapGeocode, handleOneMapPopulation } from "./onemap-tools.js";
+import { handleOneMapGeocode, handleOneMapPopulation, handleOneMapRoute } from "./onemap-tools.js";
 import { handleSingStatSearch } from "./singstat-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { handleUraPlanningArea, handleUraPropertyTransactions } from "./ura-tools.js";
@@ -38,6 +44,14 @@ type QueryFormatSupport =
   | { readonly supported: false; readonly reason: string; readonly suggestion: string };
 
 const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
+  sg_acra_entities: async (params) =>
+    handleAcraEntities(params as Parameters<typeof handleAcraEntities>[0]),
+  sg_bca_licensed_builders: async (params) =>
+    handleBcaLicensedBuilders(params as Parameters<typeof handleBcaLicensedBuilders>[0]),
+  sg_bca_registered_contractors: async (params) =>
+    handleBcaRegisteredContractors(params as Parameters<typeof handleBcaRegisteredContractors>[0]),
+  sg_cea_salespersons: async (params) =>
+    handleCeaSalespersons(params as Parameters<typeof handleCeaSalespersons>[0]),
   sg_singstat_search: async (params) =>
     handleSingStatSearch(params as Parameters<typeof handleSingStatSearch>[0]),
   sg_mas_exchange_rates: async (params) =>
@@ -48,6 +62,8 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleMasFinancialStats(params as Parameters<typeof handleMasFinancialStats>[0]),
   sg_onemap_geocode: async (params) =>
     handleOneMapGeocode(params as Parameters<typeof handleOneMapGeocode>[0]),
+  sg_onemap_route: async (params) =>
+    handleOneMapRoute(params as Parameters<typeof handleOneMapRoute>[0]),
   sg_onemap_population: async (params) =>
     handleOneMapPopulation(params as Parameters<typeof handleOneMapPopulation>[0]),
   sg_ura_property_transactions: async (params) =>
@@ -79,6 +95,10 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
 };
 
 const FORMAT_CAPABLE_TOOLS = new Set([
+  "sg_acra_entities",
+  "sg_bca_licensed_builders",
+  "sg_bca_registered_contractors",
+  "sg_cea_salespersons",
   "sg_mas_exchange_rates",
   "sg_mas_interest_rates",
   "sg_mas_financial_stats",

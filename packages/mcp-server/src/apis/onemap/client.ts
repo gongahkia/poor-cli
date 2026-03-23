@@ -69,7 +69,7 @@ const onemapGet = async <T>(url: string): Promise<T> => {
 };
 
 export const geocode = async (searchVal: string, limit = 10): Promise<GeocodeResult[]> => {
-  const cacheKey = buildCacheKey("onemap", "geocode", { searchVal });
+  const cacheKey = buildCacheKey("onemap", "geocode", { searchVal, limit });
   const { data } = await withCache(cacheKey, "STATIC", async () => {
     const url = `${getBaseUrl()}/common/elastic/search?searchVal=${encodeURIComponent(searchVal)}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
     const response = await onemapGet<OneMapSearchResponse>(url);
