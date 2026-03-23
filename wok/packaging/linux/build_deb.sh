@@ -3,11 +3,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="$(awk -F ' = ' '/^version = / { gsub(/"/, "", $2); print $2; exit }' "$ROOT_DIR/Cargo.toml")"
-ARCH="${ARCH:-amd64}"
+TARGET="${WALK_TARGET:-}"
+ARCH="${ARCH:-}"
 PACKAGE_NAME="walk_${VERSION}_${ARCH}"
 OUTPUT_DIR="${1:-"$ROOT_DIR/dist/linux"}"
 STAGE_DIR="$(mktemp -d)"
 PACKAGE_DIR="$STAGE_DIR/$PACKAGE_NAME"
+BINARY_PATH="$ROOT_DIR/target/release/walk"
 
 cleanup() {
     rm -rf "$STAGE_DIR"
@@ -19,7 +21,29 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
     exit 1
 fi
 
-cargo build --release -p walk --manifest-path "$ROOT_DIR/Cargo.toml"
+BUILD_ARGS=(build --release -p walk --manifest-path "$ROOT_DIR/Cargo.toml")
+if [[ -n "$TARGET" ]]; then
+    BUILD_ARGS+=(--target "$TARGET")
+    BINARY_PATH="$ROOT_DIR/target/$TARGET/release/walk"
+    if [[ -z "$ARCH" ]]; then
+        case "$TARGET" in
+            x86_64-unknown-linux-gnu) ARCH="amd64" ;;
+            aarch64-unknown-linux-gnu) ARCH="arm64" ;;
+        esac
+    fi
+    PACKAGE_NAME="walk_${VERSION}_${ARCH}"
+    PACKAGE_DIR="$STAGE_DIR/$PACKAGE_NAME"
+fi
+
+if [[ -z "$ARCH" ]]; then
+    ARCH="amd64"
+    PACKAGE_NAME="walk_${VERSION}_${ARCH}"
+    PACKAGE_DIR="$STAGE_DIR/$PACKAGE_NAME"
+fi
+
+if [[ "${WALK_SKIP_BUILD:-0}" != "1" ]]; then
+    cargo "${BUILD_ARGS[@]}"
+fi
 
 mkdir -p \
     "$PACKAGE_DIR/DEBIAN" \
@@ -28,7 +52,7 @@ mkdir -p \
     "$PACKAGE_DIR/usr/share/icons/hicolor/256x256/apps" \
     "$PACKAGE_DIR/usr/share/man/man1"
 
-cp "$ROOT_DIR/target/release/walk" "$PACKAGE_DIR/usr/bin/walk"
+cp "$BINARY_PATH" "$PACKAGE_DIR/usr/bin/walk"
 cp "$ROOT_DIR/packaging/linux/walk.desktop" \
     "$PACKAGE_DIR/usr/share/applications/walk.desktop"
 
