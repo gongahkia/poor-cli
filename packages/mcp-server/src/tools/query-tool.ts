@@ -154,7 +154,9 @@ const toGeoFeatures = (value: unknown): readonly Readonly<Record<string, unknown
       return null;
     }
 
-    const { lat: _lat, lng: _lng, ...properties } = row;
+    const properties = Object.fromEntries(
+      Object.entries(row).filter(([key]) => key !== "lat" && key !== "lng"),
+    );
     return {
       type: "Feature",
       geometry: {
