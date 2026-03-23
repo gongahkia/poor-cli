@@ -33,6 +33,10 @@ type ExecutedQueryStep = {
   readonly error?: ToolErrorPayload;
 };
 
+type QueryFormatSupport =
+  | { readonly supported: true }
+  | { readonly supported: false; readonly reason: string; readonly suggestion: string };
+
 const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
   sg_singstat_search: async (params) =>
     handleSingStatSearch(params as Parameters<typeof handleSingStatSearch>[0]),
@@ -116,6 +120,150 @@ const getResultErrorPayload = (result: ToolResult, tool: string): ToolErrorPaylo
     message: getTextContent(result) || `${tool} returned an error result.`,
     suggestedAction: `Call ${tool} directly to inspect and correct the failing input.`,
   };
+};
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const getRenderableStructuredData = (
+  step: ExecutedQueryStep,
+): unknown | undefined => {
+  const structured = step.structuredOutput;
+  if (structured === undefined) {
+    return undefined;
+  }
+  if (structured["records"] !== undefined) {
+    return structured["records"];
+  }
+  if (structured["record"] !== undefined) {
+    return structured["record"];
+  }
+  return structured;
+};
+
+const toGeoFeatures = (value: unknown): readonly Readonly<Record<string, unknown>>[] | null => {
+  const rows = Array.isArray(value) ? value : [value];
+  const features = rows.map((row) => {
+    if (!isRecord(row)) {
+      return null;
+    }
+    const lat = row["lat"];
+    const lng = row["lng"];
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      return null;
+    }
+
+    const { lat: _lat, lng: _lng, ...properties } = row;
+    return {
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [lng, lat],
+      },
+      properties,
+    };
+  });
+
+  if (features.some((feature) => feature === null)) {
+    return null;
+  }
+
+  return features as readonly Readonly<Record<string, unknown>>[];
+};
+
+const getSingleStepFormatSupport = (
+  step: ExecutedQueryStep,
+  format: OutputFormat,
+): QueryFormatSupport => {
+  if (format === "markdown") {
+    return { supported: true };
+  }
+
+  const data = getRenderableStructuredData(step);
+  if (data === undefined) {
+    return {
+      supported: false,
+      reason: `${step.tool} does not expose structured output for ${format} rendering through sg_query.`,
+      suggestion: `Call ${step.tool} directly in its default markdown format, or request json if the tool adds structured output later.`,
+    };
+  }
+
+  if (format === "json") {
+    return { supported: true };
+  }
+
+  if (format === "csv") {
+    return Array.isArray(data) || isRecord(data)
+      ? { supported: true }
+      : {
+          supported: false,
+          reason: `${step.tool} cannot be flattened into CSV safely for sg_query.`,
+          suggestion: `Use json for ${step.tool}, or call the direct tool in markdown.`,
+        };
+  }
+
+  return toGeoFeatures(data) !== null
+    ? { supported: true }
+    : {
+        supported: false,
+        reason: `${step.tool} did not return coordinate rows that can be converted into GeoJSON.`,
+        suggestion: `Use json for ${step.tool}, or call a geospatial direct tool that returns latitude and longitude.`,
+      };
+};
+
+const getWorkflowFormatSupport = (
+  mode: "plan" | "execute",
+  plan: Extract<QueryPlan, { supported: true }>,
+  format: OutputFormat,
+): QueryFormatSupport => {
+  if (format === "markdown" || format === "json") {
+    return { supported: true };
+  }
+
+  if (mode === "plan") {
+    return {
+      supported: false,
+      reason: `sg_query plan mode only supports markdown or json output, not ${format}.`,
+      suggestion: "Use mode=plan with markdown or json, then execute the chosen direct tools with csv or geojson if needed.",
+    };
+  }
+
+  if (plan.steps.length !== 1) {
+    return {
+      supported: false,
+      reason: `sg_query only supports ${format} for single-step direct executions, not multi-step workflows.`,
+      suggestion: "Use json or markdown for the workflow, or call the direct tool you need with csv or geojson.",
+    };
+  }
+
+  return { supported: true };
+};
+
+const renderSingleStepText = (
+  step: ExecutedQueryStep,
+  format: OutputFormat,
+): string | null => {
+  if (format === "markdown") {
+    return step.outputText ?? "";
+  }
+
+  const data = getRenderableStructuredData(step);
+  if (data === undefined) {
+    return null;
+  }
+
+  if (format === "json") {
+    return formatResponse(data, "json");
+  }
+
+  if (format === "csv") {
+    const rows = Array.isArray(data) ? data : isRecord(data) ? [data] : null;
+    return rows === null ? null : formatResponse(rows as Record<string, unknown>[], "csv");
+  }
+
+  const features = toGeoFeatures(data);
+  return features === null ? null : formatResponse(features as never, "geojson");
 };
 
 const withRequestedFormat = (
@@ -211,11 +359,6 @@ const formatExecutionText = (
   status: "completed" | "failed",
   format: OutputFormat,
 ): string => {
-  if (plan.steps.length === 1 && status === "completed" && format !== "markdown") {
-    const completed = steps[0];
-    return completed?.outputText ?? "";
-  }
-
   if (format !== "markdown") {
     return formatResponse(
       {
@@ -383,6 +526,21 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
         };
       }
 
+      const formatSupport = getWorkflowFormatSupport(mode, plan, resolvedFormat);
+      if (!formatSupport.supported) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: formatUnsupportedQuery(formatSupport.reason, formatSupport.suggestion, resolvedFormat) }],
+          structuredContent: {
+            status: "unsupported",
+            mode,
+            workflow: plan.workflow,
+            reason: formatSupport.reason,
+            suggestion: formatSupport.suggestion,
+          },
+        };
+      }
+
       if (mode === "plan") {
         return {
           content: [{ type: "text", text: formatPlanText(plan, resolvedFormat) }],
@@ -400,9 +558,40 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       }
 
       const execution = await executePlan(plan, resolvedFormat);
+      if (execution.status === "completed" && plan.steps.length === 1) {
+        const step = execution.steps[0];
+        if (step !== undefined) {
+          const singleStepFormatSupport = getSingleStepFormatSupport(step, resolvedFormat);
+          if (!singleStepFormatSupport.supported) {
+            return {
+              isError: true,
+              content: [{
+                type: "text",
+                text: formatUnsupportedQuery(
+                  singleStepFormatSupport.reason,
+                  singleStepFormatSupport.suggestion,
+                  resolvedFormat,
+                ),
+              }],
+              structuredContent: {
+                status: "unsupported",
+                mode,
+                workflow: plan.workflow,
+                reason: singleStepFormatSupport.reason,
+                suggestion: singleStepFormatSupport.suggestion,
+              },
+            };
+          }
+        }
+      }
+
+      const executionText =
+        execution.status === "completed" && plan.steps.length === 1
+          ? renderSingleStepText(execution.steps[0]!, resolvedFormat) ?? formatExecutionText(plan, execution.steps, execution.status, resolvedFormat)
+          : formatExecutionText(plan, execution.steps, execution.status, resolvedFormat);
       return {
         isError: execution.status === "failed",
-        content: [{ type: "text", text: formatExecutionText(plan, execution.steps, execution.status, resolvedFormat) }],
+        content: [{ type: "text", text: executionText }],
         structuredContent: {
           status: execution.status,
           mode,

@@ -173,4 +173,50 @@ describe("sg_query workflows", () => {
     });
     expect(JSON.stringify(result.structuredContent)).toContain("Broaden the dataset search terms");
   });
+
+  it("rejects csv output for multi-step workflows with a clear limitation message", async () => {
+    const result = await runQuery({
+      query: "Give me a macro snapshot of Singapore",
+      mode: "execute",
+      format: "csv",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "unsupported",
+      workflow: "macro_snapshot",
+    });
+    expect(JSON.stringify(result.structuredContent)).toContain("single-step direct executions");
+  });
+
+  it("renders single-step geocode queries in json when requested", async () => {
+    vi.mocked(geocode).mockResolvedValue([
+      {
+        address: "1 ORCHARD ROAD",
+        building: "TEST",
+        postal: "168742",
+        lat: 1.3001,
+        lng: 103.8392,
+        x: 0,
+        y: 0,
+      },
+    ]);
+
+    const result = await runQuery({
+      query: "Find 168742",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    const text = result.content.find((item) => item.type === "text")?.text;
+    expect(text).toBeDefined();
+    expect(JSON.parse(text!)).toMatchObject([
+      {
+        postal: "168742",
+        lat: 1.3001,
+        lng: 103.8392,
+      },
+    ]);
+  });
 });
