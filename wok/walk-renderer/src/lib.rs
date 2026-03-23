@@ -22,7 +22,6 @@
 #![allow(clippy::explicit_iter_loop)]
 
 pub mod atlas;
-pub mod compositor;
 pub mod damage;
 pub mod font;
 pub mod gpu;
