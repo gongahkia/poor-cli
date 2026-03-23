@@ -16,12 +16,14 @@ struct Uniforms {
 /// The GPU render pipeline for terminal rendering.
 pub struct TerminalRenderPipeline {
     pipeline: wgpu::RenderPipeline,
-    _bind_group_layout: wgpu::BindGroupLayout,
+    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
     atlas_texture: wgpu::Texture,
-    _atlas_view: wgpu::TextureView,
-    _sampler: wgpu::Sampler,
+    atlas_view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    background_texture: wgpu::Texture,
+    background_view: wgpu::TextureView,
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
 }
@@ -74,6 +76,7 @@ impl TerminalRenderPipeline {
         );
 
         let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let (background_texture, background_view) = create_background_texture(gpu, None);
 
         let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -125,27 +128,33 @@ impl TerminalRenderPipeline {
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
                     ],
                 });
 
-        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("terminal_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
+        let bind_group = create_bind_group(
+            gpu,
+            &bind_group_layout,
+            &uniform_buffer,
+            &atlas_view,
+            &background_view,
+            &sampler,
+        );
 
         let pipeline_layout = gpu
             .device
@@ -187,6 +196,11 @@ impl TerminalRenderPipeline {
                                 shader_location: 3,
                                 format: wgpu::VertexFormat::Float32x4,
                             },
+                            wgpu::VertexAttribute {
+                                offset: 48,
+                                shader_location: 4,
+                                format: wgpu::VertexFormat::Float32,
+                            },
                         ],
                     }],
                     compilation_options: Default::default(),
@@ -213,12 +227,14 @@ impl TerminalRenderPipeline {
 
         Self {
             pipeline,
-            _bind_group_layout: bind_group_layout,
+            bind_group_layout,
             bind_group,
             uniform_buffer,
             atlas_texture,
-            _atlas_view: atlas_view,
-            _sampler: sampler,
+            atlas_view,
+            sampler,
+            background_texture,
+            background_view,
             vertex_buffer: None,
             index_buffer: None,
         }
@@ -369,4 +385,109 @@ impl TerminalRenderPipeline {
             },
         );
     }
+
+    /// Upload or clear the background image texture used for the compositor.
+    pub fn upload_background_image(
+        &mut self,
+        gpu: &GpuContext,
+        width: Option<u32>,
+        height: Option<u32>,
+        pixels: Option<&[u8]>,
+    ) {
+        let (background_texture, background_view) = match (width, height, pixels) {
+            (Some(width), Some(height), Some(pixels)) => {
+                create_background_texture(gpu, Some((width, height, pixels)))
+            }
+            _ => create_background_texture(gpu, None),
+        };
+
+        self.background_texture = background_texture;
+        self.background_view = background_view;
+        self.bind_group = create_bind_group(
+            gpu,
+            &self.bind_group_layout,
+            &self.uniform_buffer,
+            &self.atlas_view,
+            &self.background_view,
+            &self.sampler,
+        );
+    }
+}
+
+fn create_bind_group(
+    gpu: &GpuContext,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    uniform_buffer: &wgpu::Buffer,
+    atlas_view: &wgpu::TextureView,
+    background_view: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("terminal_bind_group"),
+        layout: bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(atlas_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(background_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
+}
+
+fn create_background_texture(
+    gpu: &GpuContext,
+    image: Option<(u32, u32, &[u8])>,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let (width, height, pixels) = image.unwrap_or((1, 1, &[255u8, 255, 255, 0]));
+    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("background_texture"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    gpu.queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        pixels,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
 }

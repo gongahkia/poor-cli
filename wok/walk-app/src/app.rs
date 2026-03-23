@@ -1,5 +1,8 @@
 //! Main application struct: wires all subsystems together.
 
+use crate::action_effects::{
+    ActionEffects, ClipboardEffect, OverlayEffect, RuntimeEffect, ViewportEffect, WorkspaceEffect,
+};
 use walk_blocks::block::BlockManager;
 use walk_blocks::block_nav::BlockNavigator;
 use walk_input::editor::{EditorKey, InputEditor, InputPosition};
@@ -15,6 +18,15 @@ use crate::config::WalkConfig;
 use crate::input::InputEvent;
 use crate::keybindings::{Action, Context, KeyCombo, KeybindingConfig};
 
+/// Active input surface for a pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputMode {
+    /// The shell prompt inside the PTY is the primary editor.
+    ShellNative,
+    /// The owned command palette / scratch editor is active.
+    CommandPalette,
+}
+
 /// The main Walk application state.
 pub struct WalkApp {
     /// Application configuration.
@@ -27,6 +39,8 @@ pub struct WalkApp {
     pub block_navigator: BlockNavigator,
     /// Input editor.
     pub input_editor: InputEditor,
+    /// Active input mode.
+    pub input_mode: InputMode,
     /// Clipboard manager.
     pub clipboard: ClipboardManager,
     /// Mouse selection manager.
@@ -56,7 +70,8 @@ impl WalkApp {
             crate::config::InputPosition::Bottom => InputPosition::Bottom,
         };
 
-        let input_editor = InputEditor::new(config.shell.clone(), history, input_position);
+        let mut input_editor = InputEditor::new(config.shell.clone(), history, input_position);
+        input_editor.is_active = false;
 
         Self {
             zoom: ZoomManager::new(config.font_size),
@@ -65,6 +80,7 @@ impl WalkApp {
             block_manager: BlockManager::new(),
             block_navigator: BlockNavigator::new(),
             input_editor,
+            input_mode: InputMode::ShellNative,
             clipboard: ClipboardManager::new(),
             selection: SelectionManager::new(),
             global_search: GlobalSearch::new(),
@@ -76,10 +92,10 @@ impl WalkApp {
     pub fn current_context(&self) -> Context {
         if self.global_search.is_active {
             Context::SearchActive
+        } else if self.input_mode == InputMode::CommandPalette {
+            Context::InputEditor
         } else if self.block_navigator.selected_block_index.is_some() {
             Context::BlockSelected
-        } else if self.input_editor.is_active {
-            Context::InputEditor
         } else {
             Context::Terminal
         }
@@ -101,56 +117,54 @@ impl WalkApp {
         self.block_manager.handle_event(event);
     }
 
-    /// Dispatch a resolved action. Returns optional bytes to send to PTY.
-    pub fn handle_action(&mut self, action: &Action) -> Option<Vec<u8>> {
+    /// Dispatch a resolved action and return typed runtime effects.
+    pub fn handle_action(&mut self, action: &Action) -> ActionEffects {
+        let mut effects = ActionEffects::new();
+
         match action {
             Action::Copy => {
-                if let Some((_, _)) = self.selection.selection_range() {
-                    // Selection copy handled by caller with grid access
-                }
-                None
+                effects.push(RuntimeEffect::Clipboard(ClipboardEffect::CopySelection));
             }
             Action::Paste => {
-                if let Ok(text) = self.clipboard.paste() {
-                    self.input_editor.buffer.insert_at(0, &text).ok();
-                }
-                None
+                effects.push(RuntimeEffect::Clipboard(ClipboardEffect::Paste));
             }
             Action::SelectAll => {
-                self.input_editor.handle_key(EditorKey::SelectAll);
-                None
+                if self.input_mode == InputMode::CommandPalette {
+                    self.input_editor.handle_key(EditorKey::SelectAll);
+                }
             }
             Action::ZoomIn => {
                 self.zoom.zoom_in();
-                None
+                effects.push(RuntimeEffect::Zoom(self.zoom.current_size()));
             }
             Action::ZoomOut => {
                 self.zoom.zoom_out();
-                None
+                effects.push(RuntimeEffect::Zoom(self.zoom.current_size()));
             }
             Action::ZoomReset => {
                 self.zoom.zoom_reset();
-                None
+                effects.push(RuntimeEffect::Zoom(self.zoom.current_size()));
             }
             Action::BlockPrev => {
                 self.block_navigator.select_prev(self.block_manager.len());
                 self.sync_active_block();
-                None
             }
             Action::BlockNext => {
                 self.block_navigator.select_next(self.block_manager.len());
                 self.sync_active_block();
-                None
             }
             Action::BlockCollapse => {
                 self.block_navigator
                     .toggle_collapse(&mut self.block_manager);
-                None
             }
-            Action::BlockCopy | Action::BlockSearch | Action::SearchInBlock => None,
-            Action::SearchGlobal => {
-                self.global_search.activate();
-                None
+            Action::BlockCopy => {
+                effects.push(RuntimeEffect::Clipboard(ClipboardEffect::CopySelectedBlock));
+            }
+            Action::BlockSearch | Action::SearchInBlock | Action::SearchGlobal => {
+                effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenSearch));
+            }
+            Action::CommandPalette => {
+                effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandPalette));
             }
             Action::ToggleInputPosition => {
                 let new_pos = match self.input_editor.render_data().position {
@@ -158,30 +172,107 @@ impl WalkApp {
                     InputPosition::Bottom => InputPosition::Top,
                 };
                 self.input_editor.set_position(new_pos);
-                None
             }
-            Action::ClearScreen => Some(b"\x1b[2J\x1b[H".to_vec()),
-            Action::SendEof => Some(b"\x04".to_vec()),
-            Action::ScrollUp
-            | Action::ScrollDown
-            | Action::ScrollPageUp
-            | Action::ScrollPageDown
-            | Action::ScrollToTop
-            | Action::ScrollToBottom => None,
-            Action::NewTab
-            | Action::CloseTab
-            | Action::NextTab
-            | Action::PrevTab
-            | Action::SwitchToTab(_) => None,
-            Action::SplitVertical | Action::SplitHorizontal | Action::CloseSplit => None,
-            Action::FocusLeft | Action::FocusRight | Action::FocusUp | Action::FocusDown => None,
-            Action::ResizeSplitLeft
-            | Action::ResizeSplitRight
-            | Action::ResizeSplitUp
-            | Action::ResizeSplitDown
-            | Action::SaveSession(_)
-            | Action::LoadSession(_) => None,
+            Action::ClearScreen => {
+                effects.push(RuntimeEffect::PtyWrite(b"\x1b[2J\x1b[H".to_vec()));
+            }
+            Action::SendEof => {
+                effects.push(RuntimeEffect::PtyWrite(b"\x04".to_vec()));
+            }
+            Action::ScrollUp => {
+                effects.push(RuntimeEffect::Viewport(ViewportEffect::ScrollLines(3)));
+            }
+            Action::ScrollDown => {
+                effects.push(RuntimeEffect::Viewport(ViewportEffect::ScrollLines(-3)));
+            }
+            Action::ScrollPageUp => {
+                effects.push(RuntimeEffect::Viewport(ViewportEffect::ScrollPages(1)));
+            }
+            Action::ScrollPageDown => {
+                effects.push(RuntimeEffect::Viewport(ViewportEffect::ScrollPages(-1)));
+            }
+            Action::ScrollToTop => {
+                effects.push(RuntimeEffect::Viewport(ViewportEffect::ScrollToTop));
+            }
+            Action::ScrollToBottom => {
+                effects.push(RuntimeEffect::Viewport(ViewportEffect::ScrollToBottom));
+            }
+            Action::NewTab => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewTab));
+            }
+            Action::CloseTab => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::CloseTab));
+            }
+            Action::NextTab => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NextTab));
+            }
+            Action::PrevTab => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::PrevTab));
+            }
+            Action::SwitchToTab(index) => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::SwitchToTab(
+                    *index,
+                )));
+            }
+            Action::SplitVertical => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::SplitVertical));
+            }
+            Action::SplitHorizontal => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::SplitHorizontal));
+            }
+            Action::CloseSplit => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::CloseSplit));
+            }
+            Action::FocusLeft => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusLeft));
+            }
+            Action::FocusRight => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusRight));
+            }
+            Action::FocusUp => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusUp));
+            }
+            Action::FocusDown => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::FocusDown));
+            }
+            Action::ResizeSplitLeft => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ResizeSplitLeft));
+            }
+            Action::ResizeSplitRight => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ResizeSplitRight));
+            }
+            Action::ResizeSplitUp => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ResizeSplitUp));
+            }
+            Action::ResizeSplitDown => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ResizeSplitDown));
+            }
+            Action::SaveSession(name) => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::SaveSession(
+                    name.clone(),
+                )));
+            }
+            Action::LoadSession(name) => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::LoadSession(
+                    name.clone(),
+                )));
+            }
         }
+
+        effects
+    }
+
+    /// Open the command palette input mode.
+    pub fn open_command_palette(&mut self) {
+        self.input_mode = InputMode::CommandPalette;
+        self.input_editor.is_active = true;
+    }
+
+    /// Close the command palette input mode.
+    pub fn close_command_palette(&mut self) {
+        self.input_mode = InputMode::ShellNative;
+        self.input_editor.is_active = false;
+        self.input_editor.buffer.clear();
     }
 
     fn sync_active_block(&mut self) {
@@ -234,9 +325,28 @@ mod tests {
     #[test]
     fn test_select_all_routes_to_editor() {
         let mut app = WalkApp::new(WalkConfig::default());
+        app.open_command_palette();
         app.input_editor.handle_key(EditorKey::Char('x'));
         let _ = app.handle_action(&Action::SelectAll);
 
         assert_eq!(app.input_editor.buffer.cursors()[0].anchor, Some(0));
+    }
+
+    #[test]
+    fn test_command_palette_is_not_active_by_default() {
+        let app = WalkApp::new(WalkConfig::default());
+        assert_eq!(app.input_mode, InputMode::ShellNative);
+        assert!(!app.input_editor.is_active);
+    }
+
+    #[test]
+    fn test_search_action_emits_overlay_effect() {
+        let mut app = WalkApp::new(WalkConfig::default());
+        let effects = app.handle_action(&Action::SearchGlobal);
+
+        assert_eq!(
+            effects.effects,
+            vec![RuntimeEffect::Overlay(OverlayEffect::OpenSearch)]
+        );
     }
 }

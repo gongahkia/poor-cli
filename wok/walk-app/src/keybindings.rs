@@ -71,6 +71,8 @@ pub enum Action {
     SearchInBlock,
     /// Global terminal search.
     SearchGlobal,
+    /// Open the command palette.
+    CommandPalette,
     /// Toggle input position (top/bottom).
     ToggleInputPosition,
     /// Increase font size.
@@ -328,6 +330,13 @@ impl Default for KeybindingConfig {
                 modifiers: pm,
             },
             Action::SearchGlobal,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('p'),
+                modifiers: pm,
+            },
+            Action::CommandPalette,
         );
         bindings.insert(
             KeyCombo {

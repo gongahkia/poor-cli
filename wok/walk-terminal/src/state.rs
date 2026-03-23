@@ -130,6 +130,11 @@ impl TerminalState {
         self.term.mode()
     }
 
+    /// Return whether the terminal is currently in alternate screen mode.
+    pub fn is_alt_screen(&self) -> bool {
+        self.term.mode().contains(term::TermMode::ALT_SCREEN)
+    }
+
     /// Resize the terminal grid.
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let size = TermSize::new(cols, rows);

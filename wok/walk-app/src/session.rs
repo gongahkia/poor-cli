@@ -42,6 +42,9 @@ pub struct PaneState {
     /// Persisted viewport scroll offset.
     #[serde(default)]
     pub display_offset: usize,
+    /// Whether the pane should stay pinned to live output.
+    #[serde(default = "default_follow_output")]
+    pub follow_output: bool,
     /// Persisted block timeline.
     #[serde(default)]
     pub blocks: Vec<BlockState>,
@@ -126,6 +129,10 @@ pub struct WorkspaceSessionState {
     pub window_size: (u32, u32),
     /// Window position.
     pub window_position: (i32, i32),
+}
+
+fn default_follow_output() -> bool {
+    true
 }
 
 /// Save a session state to a JSON file.
@@ -297,6 +304,7 @@ mod tests {
                 search_query: "hello".to_string(),
                 buffer_lines: vec!["echo hello".to_string(), "hello".to_string()],
                 display_offset: 3,
+                follow_output: false,
                 blocks: vec![BlockState {
                     id: 1,
                     prompt_text: "$".to_string(),
@@ -328,6 +336,7 @@ mod tests {
         assert_eq!(loaded.window_size, (1280, 800));
         assert_eq!(loaded.panes[0].buffer_lines.len(), 2);
         assert_eq!(loaded.panes[0].blocks.len(), 1);
+        assert!(!loaded.panes[0].follow_output);
     }
 
     #[test]

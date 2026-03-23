@@ -51,6 +51,8 @@ pub struct WalkConfig {
     pub confirm_close_with_running_process: bool,
     /// Whether to restore sessions on startup.
     pub restore_session: bool,
+    /// Whether to show the internal debug overlay.
+    pub debug_overlay: bool,
 }
 
 /// Input editor position.
@@ -80,6 +82,7 @@ struct ConfigToml {
     copy_on_select: Option<bool>,
     confirm_close_with_running_process: Option<bool>,
     restore_session: Option<bool>,
+    debug_overlay: Option<bool>,
 }
 
 impl Default for WalkConfig {
@@ -100,6 +103,7 @@ impl Default for WalkConfig {
             copy_on_select: false,
             confirm_close_with_running_process: true,
             restore_session: false,
+            debug_overlay: false,
         }
     }
 }
@@ -180,6 +184,9 @@ impl WalkConfig {
         }
         if let Some(r) = toml_config.restore_session {
             config.restore_session = r;
+        }
+        if let Some(debug_overlay) = toml_config.debug_overlay {
+            config.debug_overlay = debug_overlay;
         }
 
         Ok(config)

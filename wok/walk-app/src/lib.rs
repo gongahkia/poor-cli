@@ -27,6 +27,7 @@
 #![allow(clippy::use_self)]
 #![allow(clippy::cast_lossless)]
 
+pub mod action_effects;
 pub mod app;
 pub mod config;
 pub mod dpi;
@@ -35,6 +36,7 @@ pub mod frame_clock;
 pub mod handler;
 pub mod input;
 pub mod keybindings;
+pub mod plugin_host;
 pub mod scripting;
 pub mod session;
 pub mod window;

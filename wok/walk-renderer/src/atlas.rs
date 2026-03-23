@@ -48,6 +48,8 @@ pub struct GlyphAtlas {
     shelf_x: u32,
     /// Current shelf height.
     shelf_height: u32,
+    /// Total occupied pixel area.
+    occupied_pixels: u64,
 }
 
 impl GlyphAtlas {
@@ -60,6 +62,7 @@ impl GlyphAtlas {
             shelf_y: 0,
             shelf_x: 0,
             shelf_height: 0,
+            occupied_pixels: 0,
         }
     }
 
@@ -115,6 +118,7 @@ impl GlyphAtlas {
         let y = self.shelf_y;
         self.shelf_x += width;
         self.shelf_height = self.shelf_height.max(height);
+        self.occupied_pixels += u64::from(width) * u64::from(height);
 
         let atlas_w = self.width as f32;
         let atlas_h = self.height as f32;
@@ -137,6 +141,7 @@ impl GlyphAtlas {
         self.shelf_y = 0;
         self.shelf_x = 0;
         self.shelf_height = 0;
+        self.occupied_pixels = 0;
     }
 
     /// Get the number of cached glyphs.
@@ -147,6 +152,15 @@ impl GlyphAtlas {
     /// Check if the atlas is empty.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// Return the approximate atlas occupancy ratio in the range 0.0..=1.0.
+    pub fn usage_ratio(&self) -> f32 {
+        let total_pixels = u64::from(self.width) * u64::from(self.height);
+        if total_pixels == 0 {
+            return 0.0;
+        }
+        (self.occupied_pixels as f32 / total_pixels as f32).clamp(0.0, 1.0)
     }
 }
 

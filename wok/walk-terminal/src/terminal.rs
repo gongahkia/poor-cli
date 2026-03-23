@@ -37,6 +37,13 @@ pub enum SemanticEvent {
         /// Absolute row where command input starts.
         row: AbsoluteRow,
     },
+    /// Command text captured from shell integration before execution.
+    CommandText {
+        /// Absolute row associated with the command start.
+        row: AbsoluteRow,
+        /// The shell command text.
+        text: String,
+    },
     /// Command output started (OSC 133;C).
     OutputStart {
         /// Absolute row where command output starts.
@@ -181,6 +188,12 @@ impl Terminal {
                                 Some('B') => {
                                     self.events
                                         .push(SemanticEvent::CommandStart { row: cursor_row });
+                                }
+                                Some('E') => {
+                                    self.events.push(SemanticEvent::CommandText {
+                                        row: cursor_row,
+                                        text: rest.get(2..).unwrap_or_default().to_string(),
+                                    });
                                 }
                                 Some('C') => {
                                     self.events

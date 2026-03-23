@@ -18,6 +18,8 @@ __walk_prompt_command() {
     printf '\033]7;file://%s%s\007' "$(hostname)" "$(pwd)"
 }
 __walk_preexec() {
+    printf '\033]133;E;%s\007' "$BASH_COMMAND"
+    printf '\033]133;B\007'
     printf '\033]133;C\007'
 }
 PROMPT_COMMAND="__walk_prompt_command${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
@@ -35,6 +37,7 @@ __walk_precmd() {
     printf '\033]7;file://%s%s\007' "$(hostname)" "$(pwd)"
 }
 __walk_preexec() {
+    printf '\033]133;E;%s\007' "$1"
     printf '\033]133;B\007'
     printf '\033]133;C\007'
 }
@@ -45,7 +48,7 @@ printf '\033]133;A\007'
 "#;
 
 /// Fish shell integration script (OSC 133 markers).
-pub const FISH_INTEGRATION: &str = r"
+pub const FISH_INTEGRATION: &str = r#"
 # Walk terminal shell integration (fish)
 function __walk_prompt --on-event fish_prompt
     printf '\033]133;D;%d\007' $status
@@ -53,11 +56,12 @@ function __walk_prompt --on-event fish_prompt
     printf '\033]7;file://%s%s\007' (hostname) (pwd)
 end
 function __walk_preexec --on-event fish_preexec
+    printf '\033]133;E;%s\007' "$argv[1]"
     printf '\033]133;B\007'
     printf '\033]133;C\007'
 end
 printf '\033]133;A\007'
-";
+"#;
 
 /// PowerShell shell integration script (OSC 133 markers).
 pub const POWERSHELL_INTEGRATION: &str = r#"
@@ -74,6 +78,12 @@ function global:prompt {
 if (Get-Module -ListAvailable -Name PSReadLine) {
     Import-Module PSReadLine
     Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
+        $line = $null
+        $cursor = $null
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+        if ($line) {
+            [Console]::Out.Write("`e]133;E;$line`a")
+        }
         [Console]::Out.Write("`e]133;B`a")
         [Console]::Out.Write("`e]133;C`a")
         [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
@@ -357,6 +367,8 @@ mod tests {
     #[test]
     fn test_bash_integration_has_osc_markers() {
         assert!(BASH_INTEGRATION.contains("133;A"));
+        assert!(BASH_INTEGRATION.contains("133;E"));
+        assert!(BASH_INTEGRATION.contains("133;B"));
         assert!(BASH_INTEGRATION.contains("133;C"));
         assert!(BASH_INTEGRATION.contains("133;D"));
     }
@@ -364,6 +376,7 @@ mod tests {
     #[test]
     fn test_zsh_integration_has_osc_markers() {
         assert!(ZSH_INTEGRATION.contains("133;A"));
+        assert!(ZSH_INTEGRATION.contains("133;E"));
         assert!(ZSH_INTEGRATION.contains("133;B"));
         assert!(ZSH_INTEGRATION.contains("133;C"));
         assert!(ZSH_INTEGRATION.contains("133;D"));
@@ -372,6 +385,7 @@ mod tests {
     #[test]
     fn test_fish_integration_has_osc_markers() {
         assert!(FISH_INTEGRATION.contains("133;A"));
+        assert!(FISH_INTEGRATION.contains("133;E"));
         assert!(FISH_INTEGRATION.contains("133;B"));
         assert!(FISH_INTEGRATION.contains("133;C"));
         assert!(FISH_INTEGRATION.contains("133;D"));
@@ -380,6 +394,7 @@ mod tests {
     #[test]
     fn test_powershell_integration_has_osc_markers() {
         assert!(POWERSHELL_INTEGRATION.contains("133;A"));
+        assert!(POWERSHELL_INTEGRATION.contains("133;E"));
         assert!(POWERSHELL_INTEGRATION.contains("133;B"));
         assert!(POWERSHELL_INTEGRATION.contains("133;C"));
         assert!(POWERSHELL_INTEGRATION.contains("133;D"));

@@ -100,6 +100,15 @@ impl BlockManager {
                     };
                 }
             }
+            SemanticEvent::CommandText { text, .. } => {
+                self.pending_command_text = Some(text.clone());
+
+                if let Some(block) = self.blocks.last_mut() {
+                    if block.exit_code.is_none() {
+                        block.command_text.clone_from(text);
+                    }
+                }
+            }
             SemanticEvent::OutputStart { row } => {
                 if let BlockBuildState::InCommand { prompt_text } = &self.state {
                     let id = self.next_id;
@@ -210,8 +219,11 @@ mod tests {
         let mut mgr = BlockManager::new();
         mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
         mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "echo hello".to_string(),
+        });
         mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
-        mgr.set_command_text("echo hello");
         mgr.handle_event(&SemanticEvent::CommandEnd {
             row: 3,
             exit_code: Some(0),
@@ -258,8 +270,11 @@ mod tests {
     fn test_command_text_recorded_before_output_start() {
         let mut mgr = BlockManager::new();
         mgr.handle_event(&SemanticEvent::PromptStart { row: 0 });
-        mgr.set_command_text("cargo test");
         mgr.handle_event(&SemanticEvent::CommandStart { row: 1 });
+        mgr.handle_event(&SemanticEvent::CommandText {
+            row: 1,
+            text: "cargo test".to_string(),
+        });
         mgr.handle_event(&SemanticEvent::OutputStart { row: 2 });
         mgr.handle_event(&SemanticEvent::CommandEnd {
             row: 3,

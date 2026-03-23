@@ -14,6 +14,8 @@ pub struct Vertex {
     pub fg_color: [f32; 4],
     /// Background color (r, g, b, a).
     pub bg_color: [f32; 4],
+    /// Texture mode: 0 = solid color, 1 = glyph atlas, 2 = background image.
+    pub tex_kind: f32,
 }
 
 /// Cursor display shape.
@@ -53,24 +55,28 @@ impl QuadBatch {
                 tex_coords: [0.0, 0.0],
                 fg_color: [0.0; 4],
                 bg_color: color,
+                tex_kind: 0.0,
             },
             Vertex {
                 position: [x + w, y],
                 tex_coords: [1.0, 0.0],
                 fg_color: [0.0; 4],
                 bg_color: color,
+                tex_kind: 0.0,
             },
             Vertex {
                 position: [x + w, y + h],
                 tex_coords: [1.0, 1.0],
                 fg_color: [0.0; 4],
                 bg_color: color,
+                tex_kind: 0.0,
             },
             Vertex {
                 position: [x, y + h],
                 tex_coords: [0.0, 1.0],
                 fg_color: [0.0; 4],
                 bg_color: color,
+                tex_kind: 0.0,
             },
         ]);
         self.indices
@@ -94,24 +100,65 @@ impl QuadBatch {
                 tex_coords: [region.u_min, region.v_min],
                 fg_color,
                 bg_color: [0.0; 4],
+                tex_kind: 1.0,
             },
             Vertex {
                 position: [x + w, y],
                 tex_coords: [region.u_max, region.v_min],
                 fg_color,
                 bg_color: [0.0; 4],
+                tex_kind: 1.0,
             },
             Vertex {
                 position: [x + w, y + h],
                 tex_coords: [region.u_max, region.v_max],
                 fg_color,
                 bg_color: [0.0; 4],
+                tex_kind: 1.0,
             },
             Vertex {
                 position: [x, y + h],
                 tex_coords: [region.u_min, region.v_max],
                 fg_color,
                 bg_color: [0.0; 4],
+                tex_kind: 1.0,
+            },
+        ]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// Add a textured background image quad.
+    pub fn push_image_quad(&mut self, x: f32, y: f32, w: f32, h: f32, tint: [f32; 4]) {
+        let base = self.vertices.len() as u32;
+        self.vertices.extend_from_slice(&[
+            Vertex {
+                position: [x, y],
+                tex_coords: [0.0, 0.0],
+                fg_color: tint,
+                bg_color: [0.0; 4],
+                tex_kind: 2.0,
+            },
+            Vertex {
+                position: [x + w, y],
+                tex_coords: [1.0, 0.0],
+                fg_color: tint,
+                bg_color: [0.0; 4],
+                tex_kind: 2.0,
+            },
+            Vertex {
+                position: [x + w, y + h],
+                tex_coords: [1.0, 1.0],
+                fg_color: tint,
+                bg_color: [0.0; 4],
+                tex_kind: 2.0,
+            },
+            Vertex {
+                position: [x, y + h],
+                tex_coords: [0.0, 1.0],
+                fg_color: tint,
+                bg_color: [0.0; 4],
+                tex_kind: 2.0,
             },
         ]);
         self.indices

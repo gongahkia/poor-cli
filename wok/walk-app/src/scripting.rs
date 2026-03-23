@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use tracing::{info, warn};
 
 /// Collected keybinding overrides from Lua.
@@ -32,8 +33,12 @@ pub struct LuaState {
     pub notifications: Arc<Mutex<Vec<String>>>,
     /// Pending shell commands requested by Lua.
     pub exec_requests: Arc<Mutex<Vec<String>>>,
+    /// Pending built-in action requests requested by Lua.
+    pub action_requests: Arc<Mutex<Vec<String>>>,
     /// Named commands registered from Lua as action aliases.
     pub commands: Arc<Mutex<HashMap<String, String>>>,
+    /// Latest runtime snapshot exposed to plugin callbacks.
+    pub runtime_snapshot: Arc<Mutex<JsonValue>>,
 }
 
 /// Lua scripting runtime for Walk.
@@ -166,6 +171,15 @@ impl LuaRuntime {
                 })?;
         walk.set("register_command", register_command_fn)?;
 
+        // walk.run_action(action) — queue a built-in runtime action
+        let action_state = self.state.action_requests.clone();
+        let run_action_fn = self.lua.create_function(move |_, action: String| {
+            action_state.lock().unwrap().push(action);
+            Ok(())
+        })?;
+        walk.set("run_action", run_action_fn.clone())?;
+        walk.set("action", run_action_fn)?;
+
         // walk.exec(command) — queue a shell command for the active pane
         let exec_state = self.state.exec_requests.clone();
         let exec_fn = self.lua.create_function(move |_, command: String| {
@@ -181,6 +195,46 @@ impl LuaRuntime {
             Ok(())
         })?;
         walk.set("notify", notify_fn)?;
+
+        let snapshot_state = self.state.runtime_snapshot.clone();
+        walk.set(
+            "app",
+            self.lua.create_function(move |lua, ()| {
+                let snapshot = snapshot_state.lock().unwrap().clone();
+                let app = snapshot.get("app").cloned().unwrap_or_default();
+                lua.to_value(&app)
+            })?,
+        )?;
+
+        let snapshot_state = self.state.runtime_snapshot.clone();
+        walk.set(
+            "workspace",
+            self.lua.create_function(move |lua, ()| {
+                let snapshot = snapshot_state.lock().unwrap().clone();
+                let workspace = snapshot.get("workspace").cloned().unwrap_or_default();
+                lua.to_value(&workspace)
+            })?,
+        )?;
+
+        let snapshot_state = self.state.runtime_snapshot.clone();
+        walk.set(
+            "pane",
+            self.lua.create_function(move |lua, ()| {
+                let snapshot = snapshot_state.lock().unwrap().clone();
+                let pane = snapshot.get("pane").cloned().unwrap_or_default();
+                lua.to_value(&pane)
+            })?,
+        )?;
+
+        let snapshot_state = self.state.runtime_snapshot.clone();
+        walk.set(
+            "session",
+            self.lua.create_function(move |lua, ()| {
+                let snapshot = snapshot_state.lock().unwrap().clone();
+                let session = snapshot.get("session").cloned().unwrap_or_default();
+                lua.to_value(&session)
+            })?,
+        )?;
 
         self.lua.globals().set("walk", walk)?;
         Ok(())
@@ -239,9 +293,29 @@ impl LuaRuntime {
         std::mem::take(&mut *self.state.exec_requests.lock().unwrap())
     }
 
+    /// Drain pending built-in action requests queued from Lua.
+    pub fn take_action_requests(&self) -> Vec<String> {
+        std::mem::take(&mut *self.state.action_requests.lock().unwrap())
+    }
+
+    /// Resolve a named command alias registered from Lua to an action string.
+    pub fn resolve_command_action(&self, name: &str) -> Option<String> {
+        self.state.commands.lock().unwrap().get(name).cloned()
+    }
+
+    /// Return the current command alias table registered from Lua.
+    pub fn command_aliases(&self) -> HashMap<String, String> {
+        self.state.commands.lock().unwrap().clone()
+    }
+
     /// Drain pending notifications queued from Lua.
     pub fn take_notifications(&self) -> Vec<String> {
         std::mem::take(&mut *self.state.notifications.lock().unwrap())
+    }
+
+    /// Update the latest runtime snapshot exposed through the `walk.*()` accessors.
+    pub fn set_runtime_snapshot(&self, snapshot: JsonValue) {
+        *self.state.runtime_snapshot.lock().unwrap() = snapshot;
     }
 }
 
@@ -268,5 +342,40 @@ mod tests {
             .expect("hook should run");
 
         assert_eq!(runtime.take_notifications(), vec!["ok:7".to_string()]);
+    }
+
+    #[test]
+    fn test_run_action_queues_request() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(r#"walk.run_action("new_tab")"#)
+            .expect("run_action should work");
+
+        assert_eq!(runtime.take_action_requests(), vec!["new_tab".to_string()]);
+    }
+
+    #[test]
+    fn test_runtime_snapshot_accessors_return_tables() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime.set_runtime_snapshot(serde_json::json!({
+            "workspace": { "tab_count": 3 },
+            "pane": { "cwd": "/tmp/demo" },
+        }));
+        runtime
+            .exec(
+                r#"
+                local workspace = walk.workspace()
+                local pane = walk.pane()
+                walk.notify(tostring(workspace.tab_count) .. ":" .. pane.cwd)
+            "#,
+            )
+            .expect("snapshot accessors should work");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["3:/tmp/demo".to_string()]
+        );
     }
 }

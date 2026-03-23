@@ -14,11 +14,18 @@ var atlas_texture: texture_2d<f32>;
 @group(0) @binding(2)
 var atlas_sampler: sampler;
 
+@group(0) @binding(3)
+var background_texture: texture_2d<f32>;
+
+@group(0) @binding(4)
+var background_sampler: sampler;
+
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) fg_color: vec4<f32>,
     @location(3) bg_color: vec4<f32>,
+    @location(4) tex_kind: f32,
 };
 
 struct VertexOutput {
@@ -26,6 +33,7 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
     @location(1) fg_color: vec4<f32>,
     @location(2) bg_color: vec4<f32>,
+    @location(3) tex_kind: f32,
 };
 
 @vertex
@@ -40,17 +48,21 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.tex_coords = in.tex_coords;
     out.fg_color = in.fg_color;
     out.bg_color = in.bg_color;
+    out.tex_kind = in.tex_kind;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // If fg_color alpha is 0, this is a background-only quad
-    if (in.fg_color.a == 0.0) {
+    if (in.tex_kind < 0.5) {
         return in.bg_color;
     }
-    // Otherwise, sample the glyph atlas and composite
-    let tex_color = textureSample(atlas_texture, atlas_sampler, in.tex_coords);
-    let alpha = tex_color.r * in.fg_color.a;
-    return vec4<f32>(in.fg_color.rgb, alpha);
+    if (in.tex_kind < 1.5) {
+        let tex_color = textureSample(atlas_texture, atlas_sampler, in.tex_coords);
+        let alpha = tex_color.r * in.fg_color.a;
+        return vec4<f32>(in.fg_color.rgb, alpha);
+    }
+
+    let bg = textureSample(background_texture, background_sampler, in.tex_coords);
+    return vec4<f32>(bg.rgb * in.fg_color.rgb, bg.a * in.fg_color.a);
 }
