@@ -52,7 +52,7 @@ const buildDatastoreFilters = (
 });
 
 const getQueryLimit = (limit?: number): number => {
-  return Math.min(Math.max(limit ?? 50, 200), 500);
+  return Math.min(Math.max(limit ?? 50, 50), 200);
 };
 
 export const getHdbResalePrices = async (
