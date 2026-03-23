@@ -30,7 +30,7 @@ pub struct PtyIoHandle {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     killer: Arc<Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>>,
     rx: Receiver<PtyEvent>,
-    _shell_bootstrap: Option<ShellBootstrap>,
+    _shell_bootstrap: ShellBootstrap,
     _reader_thread: JoinHandle<()>,
     _wait_thread: JoinHandle<()>,
 }

@@ -56,7 +56,7 @@ pub struct SpawnedPty {
     /// Child process running inside the PTY.
     pub child: Box<dyn Child + Send + Sync>,
     /// Temporary bootstrap files that must remain alive for the shell lifetime.
-    pub shell_bootstrap: Option<ShellBootstrap>,
+    pub shell_bootstrap: ShellBootstrap,
 }
 
 /// Manages creation of PTY processes.

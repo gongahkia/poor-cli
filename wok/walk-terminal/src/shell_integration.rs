@@ -107,18 +107,16 @@ pub enum ShellBootstrap {
 }
 
 /// Prepare shell bootstrap files and mutate the shell config to use them.
-///
-/// Returns `Ok(None)` for shells that do not yet support automatic Walk integration.
 pub fn prepare_shell_bootstrap(
     shell: &ShellType,
     config: &mut PtyConfig,
-) -> Result<Option<ShellBootstrap>, std::io::Error> {
+) -> Result<ShellBootstrap, std::io::Error> {
     match shell {
-        ShellType::Bash => prepare_bash_bootstrap(config).map(Some),
-        ShellType::Zsh => prepare_zsh_bootstrap(config).map(Some),
-        ShellType::Fish => prepare_fish_bootstrap(config).map(Some),
-        ShellType::PowerShell => prepare_powershell_bootstrap(config).map(Some),
-        ShellType::Wsl(_) => prepare_wsl_bootstrap(config).map(Some),
+        ShellType::Bash => prepare_bash_bootstrap(config),
+        ShellType::Zsh => prepare_zsh_bootstrap(config),
+        ShellType::Fish => prepare_fish_bootstrap(config),
+        ShellType::PowerShell => prepare_powershell_bootstrap(config),
+        ShellType::Wsl(_) => prepare_wsl_bootstrap(config),
     }
 }
 
@@ -404,7 +402,7 @@ mod tests {
     fn test_prepare_bash_bootstrap_sets_rcfile() {
         let mut config = test_config("bash");
         let bootstrap = prepare_shell_bootstrap(&ShellType::Bash, &mut config).unwrap();
-        assert!(matches!(bootstrap, Some(ShellBootstrap::Bash(_))));
+        assert!(matches!(bootstrap, ShellBootstrap::Bash(_)));
         assert!(config.args.iter().any(|arg| arg == "--rcfile"));
     }
 
@@ -412,7 +410,7 @@ mod tests {
     fn test_prepare_zsh_bootstrap_sets_zdotdir() {
         let mut config = test_config("zsh");
         let bootstrap = prepare_shell_bootstrap(&ShellType::Zsh, &mut config).unwrap();
-        assert!(matches!(bootstrap, Some(ShellBootstrap::Zsh(_))));
+        assert!(matches!(bootstrap, ShellBootstrap::Zsh(_)));
         assert!(config.env.contains_key("ZDOTDIR"));
     }
 
@@ -420,7 +418,7 @@ mod tests {
     fn test_prepare_fish_bootstrap_sets_xdg_config_home() {
         let mut config = test_config("fish");
         let bootstrap = prepare_shell_bootstrap(&ShellType::Fish, &mut config).unwrap();
-        assert!(matches!(bootstrap, Some(ShellBootstrap::Fish(_))));
+        assert!(matches!(bootstrap, ShellBootstrap::Fish(_)));
         assert!(config.env.contains_key("XDG_CONFIG_HOME"));
     }
 
@@ -428,10 +426,10 @@ mod tests {
     fn test_prepare_powershell_bootstrap_sets_file() {
         let mut config = test_config("pwsh");
         let bootstrap = prepare_shell_bootstrap(&ShellType::PowerShell, &mut config).unwrap();
-        assert!(matches!(bootstrap, Some(ShellBootstrap::PowerShell(_))));
+        assert!(matches!(bootstrap, ShellBootstrap::PowerShell(_)));
         assert!(config.args.iter().any(|arg| arg == "-NoProfile"));
         assert!(config.args.iter().any(|arg| arg == "-File"));
-        let Some(ShellBootstrap::PowerShell(profile)) = bootstrap else {
+        let ShellBootstrap::PowerShell(profile) = bootstrap else {
             panic!("expected powershell bootstrap");
         };
         let contents = fs::read_to_string(profile.path()).unwrap();
@@ -455,7 +453,7 @@ mod tests {
         };
         let bootstrap =
             prepare_shell_bootstrap(&ShellType::Wsl("Ubuntu".to_string()), &mut config).unwrap();
-        assert!(matches!(bootstrap, Some(ShellBootstrap::Wsl(_))));
+        assert!(matches!(bootstrap, ShellBootstrap::Wsl(_)));
         assert!(config.args.iter().any(|arg| arg == "--rcfile"));
         assert_eq!(config.args[0], "-d");
         assert_eq!(config.args[1], "Ubuntu");
