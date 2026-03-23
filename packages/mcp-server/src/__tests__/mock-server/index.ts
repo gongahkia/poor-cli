@@ -21,8 +21,8 @@ const ROUTES: Record<string, string> = {
   "/onemap/common/elastic/search": "onemap/__tests__/fixtures/search-response.json",
   "/ura/invokeUraDS": "ura/__tests__/fixtures/search-response.json",
   "/ura/insertNewToken.action": "ura/__tests__/fixtures/search-response.json",
-  "/datagov/datasets": "datagov/__tests__/fixtures/search-response.json",
   "/datagov/datasets/": "datagov/__tests__/fixtures/metadata-response.json",
+  "/datagov/datasets": "datagov/__tests__/fixtures/search-response.json",
   "/lta/v3/BusArrival": "lta/__tests__/fixtures/bus-arrivals-response.json",
   "/lta/TrainServiceAlerts": "lta/__tests__/fixtures/train-alerts-response.json",
   "/lta/TrafficIncidents": "lta/__tests__/fixtures/traffic-incidents-response.json",
@@ -49,7 +49,8 @@ const server = createServer((req, res) => {
     }
 
     let matched = false;
-    for (const [route, fixture] of Object.entries(ROUTES)) {
+    const orderedRoutes = Object.entries(ROUTES).sort(([left], [right]) => right.length - left.length);
+    for (const [route, fixture] of orderedRoutes) {
       if (url.pathname.startsWith(route)) {
         res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
         res.end(loadFixture(fixture));

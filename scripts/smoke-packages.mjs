@@ -207,6 +207,24 @@ try {
       throw new Error(`Packaged MCP tool invocation failed to return config payload${formatServerLogs()}`);
     }
 
+    const datasetMetadataResult = await client.callTool({
+      name: "sg_datagov_get",
+      arguments: {
+        datasetId: "hawker-centres",
+        format: "json",
+      },
+    });
+    const datasetMetadataText = "content" in datasetMetadataResult
+      ? datasetMetadataResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (datasetMetadataText === undefined) {
+      throw new Error(`Packaged sg_datagov_get did not return text content${formatServerLogs()}`);
+    }
+    const datasetMetadataPayload = JSON.parse(datasetMetadataText);
+    if (datasetMetadataPayload.name !== "Hawker Centres") {
+      throw new Error(`Packaged sg_datagov_get returned unexpected metadata payload${formatServerLogs()}`);
+    }
+
     const queryPlanResult = await client.callTool({
       name: "sg_query",
       arguments: {
