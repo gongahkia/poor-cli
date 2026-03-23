@@ -22,6 +22,15 @@ pub struct LuaKeybinding {
     pub action: String,
 }
 
+/// Theme work requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeRequest {
+    /// Load a named or explicit theme path.
+    Load(String),
+    /// Apply live theme overrides.
+    Override(HashMap<String, String>),
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -29,6 +38,8 @@ pub struct LuaState {
     pub keybindings: Arc<Mutex<Vec<LuaKeybinding>>>,
     /// Theme overrides from Lua.
     pub theme_overrides: Arc<Mutex<HashMap<String, String>>>,
+    /// Pending theme requests from Lua.
+    pub theme_requests: Arc<Mutex<Vec<ThemeRequest>>>,
     /// Status messages from Lua.
     pub notifications: Arc<Mutex<Vec<String>>>,
     /// Pending shell commands requested by Lua.
@@ -97,9 +108,6 @@ impl LuaRuntime {
 
         // walk.config table (read-only config values)
         let config = self.lua.create_table()?;
-        config.set("font_size", 14.0)?;
-        config.set("font_family", "JetBrains Mono")?;
-        config.set("scrollback_lines", 10_000)?;
         walk.set("config", config)?;
 
         // walk.bind_key(mode, key, action) — register keybinding
@@ -127,19 +135,40 @@ impl LuaRuntime {
         // walk.theme table with set() and load()
         let theme_table = self.lua.create_table()?;
         let theme_state = self.state.theme_overrides.clone();
+        let theme_request_state = self.state.theme_requests.clone();
         let theme_set_fn = self.lua.create_function(move |_, table: Table| {
             let mut overrides = theme_state.lock().unwrap();
-            for pair in table.pairs::<String, String>() {
-                if let Ok((key, value)) = pair {
-                    overrides.insert(key, value);
-                }
+            let mut delta = HashMap::new();
+            for pair in table.pairs::<String, Value>() {
+                let (key, value) = pair?;
+                let value = match value {
+                    Value::String(s) => s.to_string_lossy().to_string(),
+                    Value::Integer(i) => i.to_string(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Boolean(b) => b.to_string(),
+                    _ => {
+                        return Err(mlua::Error::runtime(
+                            "theme overrides must be string, number, or boolean values",
+                        ));
+                    }
+                };
+                overrides.insert(key.clone(), value.clone());
+                delta.insert(key, value);
             }
+            theme_request_state
+                .lock()
+                .unwrap()
+                .push(ThemeRequest::Override(delta));
             Ok(())
         })?;
         theme_table.set("set", theme_set_fn)?;
 
-        let theme_load_fn = self.lua.create_function(|_, name: String| {
-            info!("loading theme: {name}");
+        let theme_request_state = self.state.theme_requests.clone();
+        let theme_load_fn = self.lua.create_function(move |_, name: String| {
+            theme_request_state
+                .lock()
+                .unwrap()
+                .push(ThemeRequest::Load(name));
             Ok(())
         })?;
         theme_table.set("load", theme_load_fn)?;
@@ -298,6 +327,11 @@ impl LuaRuntime {
         std::mem::take(&mut *self.state.action_requests.lock().unwrap())
     }
 
+    /// Drain pending theme requests queued from Lua.
+    pub fn take_theme_requests(&self) -> Vec<ThemeRequest> {
+        std::mem::take(&mut *self.state.theme_requests.lock().unwrap())
+    }
+
     /// Resolve a named command alias registered from Lua to an action string.
     pub fn resolve_command_action(&self, name: &str) -> Option<String> {
         self.state.commands.lock().unwrap().get(name).cloned()
@@ -316,6 +350,26 @@ impl LuaRuntime {
     /// Update the latest runtime snapshot exposed through the `walk.*()` accessors.
     pub fn set_runtime_snapshot(&self, snapshot: JsonValue) {
         *self.state.runtime_snapshot.lock().unwrap() = snapshot;
+    }
+
+    /// Update the read-only `walk.config` table with current runtime values.
+    ///
+    /// # Errors
+    ///
+    /// Returns a Lua error if the table cannot be updated.
+    pub fn set_config_values(&self, values: &JsonValue) -> LuaResult<()> {
+        let walk: Table = self.lua.globals().get("walk")?;
+        let config: Table = walk.get("config")?;
+
+        config.clear()?;
+        let Some(object) = values.as_object() else {
+            return Ok(());
+        };
+        for (key, value) in object {
+            config.set(key.as_str(), self.lua.to_value(value)?)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -376,6 +430,50 @@ mod tests {
         assert_eq!(
             runtime.take_notifications(),
             vec!["3:/tmp/demo".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_theme_requests_are_queued() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r##"
+                walk.theme.set({ background = "#112233", opacity = 0.6 })
+                walk.theme.load("paper")
+            "##,
+            )
+            .expect("theme requests should queue");
+
+        let requests = runtime.take_theme_requests();
+        assert_eq!(requests.len(), 2);
+        assert!(matches!(requests[0], ThemeRequest::Override(_)));
+        assert_eq!(requests[1], ThemeRequest::Load("paper".to_string()));
+    }
+
+    #[test]
+    fn test_config_table_tracks_runtime_values() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .set_config_values(&serde_json::json!({
+                "font_size": 17.0,
+                "font_family": "Iosevka",
+                "shell": "zsh",
+            }))
+            .expect("config values should update");
+        runtime
+            .exec(
+                r#"
+                walk.notify(walk.config.font_family .. ":" .. tostring(walk.config.font_size) .. ":" .. walk.config.shell)
+            "#,
+            )
+            .expect("config table should be readable");
+
+        assert_eq!(
+            runtime.take_notifications(),
+            vec!["Iosevka:17.0:zsh".to_string()]
         );
     }
 }

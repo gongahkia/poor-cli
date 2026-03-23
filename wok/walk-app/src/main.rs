@@ -20,6 +20,7 @@ use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
+use walk_app::scripting::ThemeRequest;
 use walk_app::session::{
     block_from_state, block_to_state, default_session_path, load_session, named_session_path,
     save_session, split_node_from_state, split_node_to_state, PaneState, WorkspaceSessionState,
@@ -142,6 +143,7 @@ struct WalkHandler {
     last_cursor_visible: bool,
     pending_close_confirmation: Option<Instant>,
     redraw_history_ms: VecDeque<f32>,
+    theme_overrides: HashMap<String, String>,
 }
 
 impl WalkHandler {
@@ -163,7 +165,7 @@ impl WalkHandler {
             .as_ref()
             .and_then(|path| ThemeWatcher::new(path).ok());
 
-        Self {
+        let handler = Self {
             config,
             workspace,
             panes: HashMap::new(),
@@ -181,7 +183,11 @@ impl WalkHandler {
             last_cursor_visible: true,
             pending_close_confirmation: None,
             redraw_history_ms: VecDeque::with_capacity(60),
-        }
+            theme_overrides: HashMap::new(),
+        };
+        handler.refresh_plugin_config();
+        handler.refresh_plugin_snapshot();
+        handler
     }
 
     fn active_pane_id(&self) -> Option<PaneId> {
@@ -910,6 +916,30 @@ impl WalkHandler {
         plugins.update_snapshot(self.plugin_snapshot());
     }
 
+    fn refresh_plugin_config(&self) {
+        let Some(plugins) = &self.plugins else {
+            return;
+        };
+        plugins.set_config_values(&self.plugin_config_snapshot());
+    }
+
+    fn plugin_config_snapshot(&self) -> serde_json::Value {
+        json!({
+            "shell": self.config.shell.to_string(),
+            "font_family": self.config.font_family.clone(),
+            "font_size": self.font.font_size,
+            "scrollback_lines": self.config.scrollback_lines,
+            "input_position": match self.config.input_position {
+                walk_app::config::InputPosition::Top => "top",
+                walk_app::config::InputPosition::Bottom => "bottom",
+            },
+            "theme_path": self.config.theme_path.as_ref().map(|path| path.display().to_string()),
+            "window_opacity": self.config.window_opacity,
+            "restore_session": self.config.restore_session,
+            "debug_overlay": self.config.debug_overlay,
+        })
+    }
+
     fn plugin_snapshot(&self) -> serde_json::Value {
         let active_pane_id = self.active_pane_id();
         let pane = self.active_pane();
@@ -966,6 +996,13 @@ impl WalkHandler {
                 "autosave_path": default_session_path(),
                 "window_size": window_size,
                 "window_position": window_position,
+            },
+            "theme": {
+                "name": pane.map(|pane| pane.app.theme.name.clone()),
+                "font_family": pane.map(|pane| pane.app.theme.font_family.clone()),
+                "font_size": pane.map(|pane| pane.app.theme.font_size),
+                "background_image": pane
+                    .and_then(|pane| pane.app.theme.background_image.as_ref().map(|path| path.display().to_string())),
             }
         })
     }
@@ -1002,7 +1039,105 @@ impl WalkHandler {
             };
             self.handle_action(action);
         }
+        for request in effects.theme_requests {
+            self.apply_theme_request(request);
+        }
+        self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
+    }
+
+    fn apply_theme_request(&mut self, request: ThemeRequest) {
+        match request {
+            ThemeRequest::Load(name) => {
+                let path = resolve_plugin_theme_path(&name);
+                match walk_ui::theme_loader::load_theme(&path) {
+                    Ok(mut theme) => {
+                        if let Err(error) = walk_ui::theme_loader::apply_theme_overrides(
+                            &mut theme,
+                            &self.theme_overrides,
+                        ) {
+                            warn!("failed to apply live theme overrides after theme load: {error}");
+                        }
+                        self.config.theme_path = Some(path.clone());
+                        self.theme_watcher = ThemeWatcher::new(&path).ok();
+                        self.apply_theme_to_runtime(theme);
+                        self.status_message = Some(format!("loaded theme '{}'", name));
+                    }
+                    Err(error) => warn!("failed to load theme '{}': {error}", name),
+                }
+            }
+            ThemeRequest::Override(overrides) => {
+                self.theme_overrides.extend(overrides);
+                let mut theme = self
+                    .active_pane()
+                    .map(|pane| pane.app.theme.clone())
+                    .unwrap_or_else(|| {
+                        self.config
+                            .theme_path
+                            .as_ref()
+                            .and_then(|path| walk_ui::theme_loader::load_theme(path).ok())
+                            .unwrap_or_default()
+                    });
+                match walk_ui::theme_loader::apply_theme_overrides(
+                    &mut theme,
+                    &self.theme_overrides,
+                ) {
+                    Ok(()) => {
+                        self.apply_theme_to_runtime(theme);
+                        self.status_message = Some("applied live theme overrides".to_string());
+                    }
+                    Err(error) => warn!("failed to apply live theme overrides: {error}"),
+                }
+            }
+        }
+    }
+
+    fn apply_theme_to_runtime(&mut self, theme: Theme) {
+        self.config.font_family = theme.font_family.clone();
+        self.config.font_size = theme.font_size;
+        self.font = FontSystem::new(&theme.font_family, theme.font_size);
+        if let Some(render) = self.render.as_mut() {
+            render.atlas.clear();
+        }
+        for pane in self.panes.values_mut() {
+            pane.app.theme = theme.clone();
+            pane.app.config.font_family = theme.font_family.clone();
+            pane.app.config.font_size = theme.font_size;
+            pane.app.config.theme_path = self.config.theme_path.clone();
+            pane.app.zoom = walk_ui::zoom::ZoomManager::new(theme.font_size);
+        }
+        self.sync_background_renderer(Some(&theme));
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+        self.needs_redraw = true;
+    }
+
+    fn sync_background_renderer(&mut self, theme: Option<&Theme>) {
+        let background_path = self
+            .config
+            .background_image
+            .clone()
+            .or_else(|| theme.and_then(|theme| theme.background_image.clone()));
+        if let Some(path) = background_path {
+            if let Err(error) = self.background.load_image(&path) {
+                warn!("failed to load background image: {error}");
+                self.background.clear();
+            }
+        } else {
+            self.background.clear();
+        }
+        if let Some(render) = self.render.as_mut() {
+            render.pipeline.upload_background_image(
+                &render.gpu,
+                self.background.image.as_ref().map(|image| image.width),
+                self.background.image.as_ref().map(|image| image.height),
+                self.background
+                    .image
+                    .as_ref()
+                    .map(|image| image.pixels.as_ref()),
+            );
+        }
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
@@ -1476,9 +1611,12 @@ impl WalkHandler {
         }
 
         self.font.set_font_size(target_size);
+        self.config.font_size = target_size;
         for pane in self.panes.values_mut() {
             pane.app.zoom.set_current_size(target_size);
+            pane.app.config.font_size = target_size;
         }
+        self.refresh_plugin_config();
         if let Some(window) = &self.window {
             self.sync_workspace_layout(window.inner_size());
         }
@@ -1730,29 +1868,16 @@ impl AppHandler for WalkHandler {
         }
 
         if let Some(theme) = self.theme_watcher.as_ref().and_then(ThemeWatcher::poll) {
-            let background_image = theme.background_image.clone();
-            for pane in self.panes.values_mut() {
-                pane.app.theme = theme.clone();
+            let mut theme = theme;
+            if let Err(error) =
+                walk_ui::theme_loader::apply_theme_overrides(&mut theme, &self.theme_overrides)
+            {
+                warn!("failed to reapply live theme overrides after file reload: {error}");
             }
-            if let Some(path) = background_image {
-                if let Err(error) = self.background.load_image(&path) {
-                    warn!("failed to reload theme background image: {error}");
-                }
-            } else {
-                self.background.clear();
-            }
-            if let Some(render) = self.render.as_mut() {
-                render.pipeline.upload_background_image(
-                    &render.gpu,
-                    self.background.image.as_ref().map(|image| image.width),
-                    self.background.image.as_ref().map(|image| image.height),
-                    self.background
-                        .image
-                        .as_ref()
-                        .map(|image| image.pixels.as_ref()),
-                );
-            }
-            self.status_message = Some(format!("reloaded theme '{}'", theme.name));
+            let theme_name = theme.name.clone();
+            self.apply_theme_to_runtime(theme);
+            self.refresh_plugin_config();
+            self.status_message = Some(format!("reloaded theme '{theme_name}'"));
             self.needs_redraw = true;
         }
 
@@ -2413,6 +2538,20 @@ fn resolve_background_image_path(config: &WalkConfig) -> Option<std::path::PathB
                 .and_then(|theme| theme.background_image)
         })
     })
+}
+
+fn resolve_plugin_theme_path(name: &str) -> std::path::PathBuf {
+    let candidate = std::path::PathBuf::from(name);
+    if candidate.is_absolute()
+        || candidate.extension().is_some()
+        || candidate.components().count() > 1
+    {
+        return candidate;
+    }
+
+    WalkConfig::config_dir()
+        .join("themes")
+        .join(format!("{name}.toml"))
 }
 
 fn search_match_at_cell(

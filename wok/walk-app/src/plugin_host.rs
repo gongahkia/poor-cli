@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::app::WalkApp;
 use crate::keybindings::{Action, Context, KeyCombo};
-use crate::scripting::LuaRuntime;
+use crate::scripting::{LuaRuntime, ThemeRequest};
 
 /// Queued side effects emitted by plugins.
 #[derive(Debug, Default)]
@@ -19,6 +19,8 @@ pub struct PluginEffects {
     pub exec_requests: Vec<String>,
     /// Built-in action requests requested by plugins.
     pub action_requests: Vec<String>,
+    /// Theme requests requested by plugins.
+    pub theme_requests: Vec<ThemeRequest>,
 }
 
 /// Thin runtime wrapper that isolates the scripting engine from app orchestration.
@@ -35,6 +37,13 @@ impl PluginHost {
             return None;
         }
         Some(Self { runtime })
+    }
+
+    /// Update the read-only config table exposed to plugins.
+    pub fn set_config_values(&self, values: &Value) {
+        if let Err(error) = self.runtime.set_config_values(values) {
+            warn!("failed to update plugin config table: {error}");
+        }
     }
 
     /// Apply plugin-provided keybindings to a pane-local app state.
@@ -97,6 +106,7 @@ impl PluginHost {
             notifications: self.runtime.take_notifications(),
             exec_requests: self.runtime.take_exec_requests(),
             action_requests: self.runtime.take_action_requests(),
+            theme_requests: self.runtime.take_theme_requests(),
         }
     }
 }

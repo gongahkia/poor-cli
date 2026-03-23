@@ -1,5 +1,6 @@
 //! Theme loader: loads and parses TOML theme files.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -228,6 +229,56 @@ fn apply_optional_color(target: &mut Color, hex: Option<String>) -> Result<(), T
     Ok(())
 }
 
+/// Apply a flat map of runtime theme overrides to an existing theme.
+///
+/// # Errors
+///
+/// Returns [`ThemeError`] if a color or numeric override cannot be parsed.
+pub fn apply_theme_overrides<S: std::hash::BuildHasher>(
+    theme: &mut Theme,
+    overrides: &HashMap<String, String, S>,
+) -> Result<(), ThemeError> {
+    for (key, value) in overrides {
+        match key.as_str() {
+            "name" => theme.name.clone_from(value),
+            "background" => theme.background = parse_hex_color(value)?,
+            "foreground" => theme.foreground = parse_hex_color(value)?,
+            "cursor" => theme.cursor = parse_hex_color(value)?,
+            "selection" => theme.selection = parse_hex_color(value)?,
+            "opacity" => {
+                theme.opacity = value
+                    .parse::<f32>()
+                    .map_err(|_| ThemeError::InvalidColor(format!("{key}={value}")))?;
+            }
+            "font_family" => theme.font_family.clone_from(value),
+            "font_size" => {
+                theme.font_size = value
+                    .parse::<f32>()
+                    .map_err(|_| ThemeError::InvalidColor(format!("{key}={value}")))?;
+            }
+            "background_image" => {
+                theme.background_image = (!value.trim().is_empty()).then(|| PathBuf::from(value));
+            }
+            "tab_bar_bg" => theme.tab_bar_bg = parse_hex_color(value)?,
+            "tab_active_bg" => theme.tab_active_bg = parse_hex_color(value)?,
+            "tab_inactive_bg" => theme.tab_inactive_bg = parse_hex_color(value)?,
+            "status_bar_bg" => theme.status_bar_bg = parse_hex_color(value)?,
+            "status_bar_text" => theme.status_bar_text = parse_hex_color(value)?,
+            "input_bg" => theme.input_bg = parse_hex_color(value)?,
+            "input_text" => theme.input_text = parse_hex_color(value)?,
+            "block_separator" => theme.block_separator = parse_hex_color(value)?,
+            "block_success_accent" => theme.block_success_accent = parse_hex_color(value)?,
+            "block_error_accent" => theme.block_error_accent = parse_hex_color(value)?,
+            "highlight_match" => theme.highlight_match = parse_hex_color(value)?,
+            "highlight_current_match" => theme.highlight_current_match = parse_hex_color(value)?,
+            "bracket_match" => theme.bracket_match = parse_hex_color(value)?,
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
 /// Discover available theme files in the themes directory.
 pub fn discover_themes(config_dir: &Path) -> Vec<PathBuf> {
     let themes_dir = config_dir.join("themes");
@@ -275,5 +326,21 @@ mod tests {
     fn test_parse_without_hash() {
         let c = parse_hex_color("00ff00").unwrap();
         assert!((c.g - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_apply_theme_overrides_updates_runtime_fields() {
+        let mut theme = Theme::default();
+        let overrides = HashMap::from([
+            ("background".to_string(), "#010203".to_string()),
+            ("font_family".to_string(), "Iosevka".to_string()),
+            ("font_size".to_string(), "16".to_string()),
+        ]);
+
+        apply_theme_overrides(&mut theme, &overrides).unwrap();
+
+        assert_eq!(theme.font_family, "Iosevka");
+        assert!((theme.font_size - 16.0).abs() < f32::EPSILON);
+        assert!((theme.background.r - (1.0 / 255.0)).abs() < 0.01);
     }
 }
