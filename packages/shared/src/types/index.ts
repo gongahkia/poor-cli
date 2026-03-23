@@ -13,9 +13,21 @@ export type ApiErrorInfo = {
   readonly retryable: boolean;
 };
 
+export type ToolErrorPayload = {
+  readonly source: string;
+  readonly tool: string;
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly message: string;
+  readonly suggestedAction?: string;
+  readonly statusCode?: number;
+  readonly details?: unknown;
+};
+
 export type ToolResult = {
   readonly content: readonly { readonly type: "text"; readonly text: string }[];
   readonly isError?: boolean;
+  readonly structuredContent?: Readonly<Record<string, unknown>>;
 };
 
 export type OutputFormat = "json" | "markdown" | "csv" | "geojson";

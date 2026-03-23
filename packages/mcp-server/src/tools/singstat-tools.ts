@@ -9,7 +9,12 @@ export const handleSingStatSearch = async (
 ): Promise<ToolResult> => {
   const results = await searchDatasets(params.keyword, params.limit);
   const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: results,
+    },
+  };
 };
 
 export const singstatToolDefinitions: readonly RegisteredToolDefinition[] = [

@@ -30,16 +30,39 @@ vi.mock("../../apis/datagov/client.js", () => ({
   listCollections: vi.fn(),
 }));
 
+vi.mock("../../apis/lta/client.js", () => ({
+  getBusArrivals: vi.fn(),
+  getTrainAlerts: vi.fn(),
+  getTrafficIncidents: vi.fn(),
+}));
+
+vi.mock("../../apis/nea/client.js", () => ({
+  getForecast2Hr: vi.fn(),
+  getAirQuality: vi.fn(),
+  getRainfall: vi.fn(),
+}));
+
+vi.mock("../../apis/hdb/client.js", () => ({
+  getHdbResalePrices: vi.fn(),
+  getHdbRentalPrices: vi.fn(),
+}));
+
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData } from "../../apis/onemap/client.js";
 import { uraFetch } from "../../apis/ura/client.js";
 import { searchDatasets as datagovSearch } from "../../apis/datagov/client.js";
+import { getBusArrivals } from "../../apis/lta/client.js";
+import { getForecast2Hr } from "../../apis/nea/client.js";
+import { getHdbResalePrices } from "../../apis/hdb/client.js";
 import { handleSingStatSearch } from "../singstat-tools.js";
 import { handleMasExchangeRates, handleMasInterestRates } from "../mas-tools.js";
 import { handleOneMapGeocode, handleOneMapPopulation } from "../onemap-tools.js";
 import { handleUraPlanningArea } from "../ura-tools.js";
 import { handleDatagovSearch } from "../datagov-tools.js";
+import { handleLtaBusArrivals } from "../lta-tools.js";
+import { handleNeaForecast2Hr } from "../nea-tools.js";
+import { handleHdbResalePrices } from "../hdb-tools.js";
 import { executeQueryStep } from "../query-tool.js";
 
 describe("sg_query parity", () => {
@@ -50,6 +73,9 @@ describe("sg_query parity", () => {
     vi.mocked(getPopulationData).mockReset();
     vi.mocked(uraFetch).mockReset();
     vi.mocked(datagovSearch).mockReset();
+    vi.mocked(getBusArrivals).mockReset();
+    vi.mocked(getForecast2Hr).mockReset();
+    vi.mocked(getHdbResalePrices).mockReset();
   });
 
   it("matches the direct SingStat search handler", async () => {
@@ -168,6 +194,82 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_datagov_search", input)).resolves.toEqual(
       await handleDatagovSearch(input),
+    );
+  });
+
+  it("matches the direct LTA bus-arrivals handler", async () => {
+    vi.mocked(getBusArrivals).mockResolvedValue([
+      {
+        busStopCode: "83139",
+        serviceNo: "851",
+        operator: "SBST",
+        arrivals: [
+          {
+            ordinal: 1,
+            estimatedArrival: "2026-03-23T08:05:00+08:00",
+            load: "SEA",
+            feature: "WAB",
+            type: "SD",
+            monitored: true,
+            visitNumber: "1",
+            originCode: "59009",
+            destinationCode: "58009",
+            lat: 1.3345,
+            lng: 103.8974,
+          },
+        ],
+      },
+    ]);
+
+    const input = { busStopCode: "83139", serviceNo: "851", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_lta_bus_arrivals", input)).resolves.toEqual(
+      await handleLtaBusArrivals(input),
+    );
+  });
+
+  it("matches the direct NEA forecast handler", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Partly Cloudy",
+        validFrom: "2026-03-23T08:00:00+08:00",
+        validTo: "2026-03-23T10:00:00+08:00",
+        validText: "8 AM to 10 AM",
+        updatedAt: "2026-03-23T08:00:00+08:00",
+        lat: 1.3526,
+        lng: 103.945,
+      },
+    ]);
+
+    const input = { area: "Tampines", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_nea_forecast_2hr", input)).resolves.toEqual(
+      await handleNeaForecast2Hr(input),
+    );
+  });
+
+  it("matches the direct HDB resale handler", async () => {
+    vi.mocked(getHdbResalePrices).mockResolvedValue([
+      {
+        month: "2026-02",
+        town: "BEDOK",
+        flatType: "4 ROOM",
+        block: "101",
+        streetName: "BEDOK NORTH AVE 4",
+        storeyRange: "10 TO 12",
+        floorAreaSqm: 92,
+        flatModel: "Model A",
+        leaseCommenceDate: 1998,
+        remainingLease: "71 years 2 months",
+        resalePrice: 560000,
+      },
+    ]);
+
+    const input = { town: "Bedok", startMonth: "2026-01", endMonth: "2026-03", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_hdb_resale_prices", input)).resolves.toEqual(
+      await handleHdbResalePrices(input),
     );
   });
 });

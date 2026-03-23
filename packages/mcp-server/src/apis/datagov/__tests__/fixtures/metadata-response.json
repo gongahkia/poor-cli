@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "data": {
+    "name": "Hawker Centres",
+    "description": "Locations of hawker centres in Singapore",
+    "format": "CSV",
+    "managedByAgencyName": "National Environment Agency",
+    "lastUpdatedAt": "2026-03-01T00:00:00Z",
+    "createdAt": "2020-01-01T00:00:00Z"
+  }
+}

@@ -21,7 +21,15 @@ const ROUTES: Record<string, string> = {
   "/onemap/common/elastic/search": "onemap/__tests__/fixtures/search-response.json",
   "/ura/invokeUraDS": "ura/__tests__/fixtures/search-response.json",
   "/ura/insertNewToken.action": "ura/__tests__/fixtures/search-response.json",
+  "/datagov/datasets/": "datagov/__tests__/fixtures/metadata-response.json",
   "/datagov/datasets": "datagov/__tests__/fixtures/search-response.json",
+  "/lta/v3/BusArrival": "lta/__tests__/fixtures/bus-arrivals-response.json",
+  "/lta/TrainServiceAlerts": "lta/__tests__/fixtures/train-alerts-response.json",
+  "/lta/TrafficIncidents": "lta/__tests__/fixtures/traffic-incidents-response.json",
+  "/nea/two-hr-forecast": "nea/__tests__/fixtures/forecast-response.json",
+  "/nea/psi": "nea/__tests__/fixtures/psi-response.json",
+  "/nea/pm25": "nea/__tests__/fixtures/pm25-response.json",
+  "/nea/rainfall": "nea/__tests__/fixtures/rainfall-response.json",
 };
 
 const server = createServer((req, res) => {
@@ -29,8 +37,20 @@ const server = createServer((req, res) => {
   const delay = parseInt(url.searchParams.get("delay") ?? "0", 10);
 
   const respond = (): void => {
+    if (url.pathname === "/datagov/action/datastore_search") {
+      const resourceId = url.searchParams.get("resource_id");
+      const fixture =
+        resourceId === "d_c9f57187485a850908655db0e8cfe651"
+          ? "hdb/__tests__/fixtures/rental-response.json"
+          : "hdb/__tests__/fixtures/resale-response.json";
+      res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
+      res.end(loadFixture(fixture));
+      return;
+    }
+
     let matched = false;
-    for (const [route, fixture] of Object.entries(ROUTES)) {
+    const orderedRoutes = Object.entries(ROUTES).sort(([left], [right]) => right.length - left.length);
+    for (const [route, fixture] of orderedRoutes) {
       if (url.pathname.startsWith(route)) {
         res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
         res.end(loadFixture(fixture));

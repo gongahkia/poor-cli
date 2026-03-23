@@ -39,6 +39,14 @@ export {
   DatagovSearchSchema,
   DatagovGetSchema,
   DatagovBrowseSchema,
+  LtaBusArrivalsSchema,
+  LtaTrainAlertsSchema,
+  LtaTrafficIncidentsSchema,
+  NeaForecast2HrSchema,
+  NeaAirQualitySchema,
+  NeaRainfallSchema,
+  HdbResalePricesSchema,
+  HdbRentalPricesSchema,
   HealthCheckSchema,
   KeySetSchema,
   KeyListSchema,
@@ -77,6 +85,7 @@ export type {
   KeyInfo,
   LatLng,
   OutputFormat,
+  ToolErrorPayload,
   ToolResult,
 } from "./types/index.js";
 export type {
@@ -130,6 +139,33 @@ export type {
 } from "./types/ura.js";
 export type {
   DatagovCollection,
+  DatagovDatastoreField,
+  DatagovDatastoreResponse,
+  DatagovDatastoreResult,
   DatagovDataset,
   DatagovV2ListResponse,
 } from "./types/datagov.js";
+export type {
+  HdbNormalizedRentalRecord,
+  HdbNormalizedResaleRecord,
+  HdbRentalRecord,
+  HdbResaleRecord,
+} from "./types/hdb.js";
+export type {
+  LtaBusArrivalResponse,
+  LtaNormalizedBusArrival,
+  LtaNormalizedTrafficIncident,
+  LtaNormalizedTrainAlert,
+  LtaNormalizedTrainAlertMessage,
+  LtaTrafficIncidentsResponse,
+  LtaTrainAlertsResponse,
+} from "./types/lta.js";
+export type {
+  NeaForecastResponse,
+  NeaNormalizedAirQuality,
+  NeaNormalizedForecast,
+  NeaNormalizedRainfall,
+  NeaPm25Response,
+  NeaPsiResponse,
+  NeaRainfallResponse,
+} from "./types/nea.js";

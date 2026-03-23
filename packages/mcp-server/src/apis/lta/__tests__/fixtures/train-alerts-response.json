@@ -1,0 +1,19 @@
+{
+  "value": [
+    {
+      "Status": 2,
+      "Line": "North South Line",
+      "Direction": "Northbound",
+      "Stations": "City Hall, Orchard",
+      "FreePublicBus": "City Hall, Orchard",
+      "FreeMRTShuttle": "Orchard, Newton",
+      "MRTShuttleDirection": "Orchard to Newton"
+    }
+  ],
+  "Message": [
+    {
+      "Content": "Train service delay between City Hall and Orchard.",
+      "CreatedDate": "2026-03-23T08:00:00+08:00"
+    }
+  ]
+}

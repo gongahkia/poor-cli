@@ -1,13 +1,14 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
 const tarballs = [];
+let mockServer = null;
 
 const EXPECTED_TOOL_NAMES = [
   "sg_singstat_search",
@@ -29,6 +30,14 @@ const EXPECTED_TOOL_NAMES = [
   "sg_datagov_search",
   "sg_datagov_get",
   "sg_datagov_browse",
+  "sg_lta_bus_arrivals",
+  "sg_lta_train_alerts",
+  "sg_lta_traffic_incidents",
+  "sg_nea_forecast_2hr",
+  "sg_nea_air_quality",
+  "sg_nea_rainfall",
+  "sg_hdb_resale_prices",
+  "sg_hdb_rental_prices",
   "sg_health_check",
   "sg_key_set",
   "sg_key_list",
@@ -48,6 +57,36 @@ const run = (args, cwd = root) => {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
   }).trim();
+};
+
+const startMockServer = async () => {
+  return new Promise((resolveMock, reject) => {
+    const child = spawn("npm", ["run", "mock-server"], {
+      cwd: root,
+      env: { ...process.env, MOCK_PORT: "0" },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`Timed out waiting for mock API server startup.\n${stderr}`));
+    }, 10000);
+
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+      const match = stderr.match(/Mock API server running on (http:\/\/localhost:\d+)/);
+      if (match !== null) {
+        clearTimeout(timeout);
+        resolveMock({ child, url: match[1] });
+      }
+    });
+
+    child.on("exit", (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`Mock API server exited before startup with code ${String(code)}.\n${stderr}`));
+    });
+  });
 };
 
 try {
@@ -81,10 +120,17 @@ try {
   JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "package.json"), "utf8"));
   JSON.parse(readFileSync(join(tempDir, "node_modules", "@sg-apis", "shared", "package.json"), "utf8"));
 
+  mockServer = await startMockServer();
+
   const transport = new StdioClientTransport({
     command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
     cwd: tempDir,
-    env: { ...process.env, SG_APIS_LOG_LEVEL: "error" },
+    env: {
+      ...process.env,
+      SG_APIS_LOG_LEVEL: "error",
+      MOCK_API_BASE_URL: mockServer.url,
+      SG_API_LTA_KEY: "test-lta-key",
+    },
     stderr: "pipe",
   });
   const stderrChunks = [];
@@ -160,6 +206,47 @@ try {
     if (toolText === undefined || !toolText.includes("\"cache\"")) {
       throw new Error(`Packaged MCP tool invocation failed to return config payload${formatServerLogs()}`);
     }
+
+    const datasetMetadataResult = await client.callTool({
+      name: "sg_datagov_get",
+      arguments: {
+        datasetId: "hawker-centres",
+        format: "json",
+      },
+    });
+    const datasetMetadataText = "content" in datasetMetadataResult
+      ? datasetMetadataResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (datasetMetadataText === undefined) {
+      throw new Error(`Packaged sg_datagov_get did not return text content${formatServerLogs()}`);
+    }
+    const datasetMetadataPayload = JSON.parse(datasetMetadataText);
+    if (datasetMetadataPayload.name !== "Hawker Centres") {
+      throw new Error(`Packaged sg_datagov_get returned unexpected metadata payload${formatServerLogs()}`);
+    }
+
+    const queryPlanResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Macro snapshot of Singapore",
+        mode: "plan",
+      },
+    });
+    if (!("structuredContent" in queryPlanResult) || queryPlanResult.structuredContent?.status !== "planned") {
+      throw new Error(`Packaged sg_query plan call did not return workflow metadata${formatServerLogs()}`);
+    }
+
+    const queryExecuteResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Bus arrivals for stop 83139 service 851",
+        mode: "execute",
+        format: "json",
+      },
+    });
+    if (!("structuredContent" in queryExecuteResult) || queryExecuteResult.structuredContent?.status !== "completed") {
+      throw new Error(`Packaged sg_query execute call did not complete successfully${formatServerLogs()}`);
+    }
   } catch (error) {
     if (error instanceof Error && stderrChunks.length > 0 && !error.message.includes("Server stderr:")) {
       error.message += formatServerLogs();
@@ -173,6 +260,9 @@ try {
 } finally {
   for (const tarball of tarballs) {
     rmSync(tarball, { force: true });
+  }
+  if (mockServer !== null) {
+    mockServer.child.kill("SIGTERM");
   }
   rmSync(tempDir, { recursive: true, force: true });
 }

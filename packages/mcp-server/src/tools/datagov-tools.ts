@@ -8,7 +8,52 @@ export const handleDatagovSearch = async (
 ): Promise<ToolResult> => {
   const results = await searchDatasets(params.keyword, params.limit);
   const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: results,
+    },
+  };
+};
+
+export const handleDatagovGet = async (
+  params: Readonly<{ datasetId: string; format?: "json" | "markdown" | "csv" | "geojson" | undefined }>,
+): Promise<ToolResult> => {
+  const result = await getDataset(params.datasetId);
+  if (result === null) {
+    return { content: [{ type: "text", text: "Dataset not found." }] };
+  }
+  const fmt = resolveOutputFormat(params.format);
+  const text = formatResponse(result as unknown as Record<string, unknown>, fmt);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      record: result,
+    },
+  };
+};
+
+export const handleDatagovBrowse = async (
+  params: Readonly<{ collection?: string | undefined }>,
+): Promise<ToolResult> => {
+  if (params.collection !== undefined) {
+    const results = await searchDatasets(params.collection, 20);
+    const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
+    return {
+      content: [{ type: "text", text }],
+      structuredContent: {
+        records: results,
+      },
+    };
+  }
+  const collections = await listCollections();
+  const text = formatResponse(collections as unknown as Record<string, unknown>[], "markdown");
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: collections,
+    },
+  };
 };
 
 export const datagovToolDefinitions: readonly RegisteredToolDefinition[] = [
@@ -29,14 +74,7 @@ export const datagovToolDefinitions: readonly RegisteredToolDefinition[] = [
     scopeNotes: ["Metadata only."],
     inputSchema: DatagovGetSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { datasetId, format } = validateInput(DatagovGetSchema, input);
-      const result = await getDataset(datasetId);
-      if (result === null) {
-        return { content: [{ type: "text", text: "Dataset not found." }] };
-      }
-      const fmt = resolveOutputFormat(format);
-      const text = formatResponse(result as unknown as Record<string, unknown>, fmt);
-      return { content: [{ type: "text", text }] };
+      return handleDatagovGet(validateInput(DatagovGetSchema, input));
     },
   },
 
@@ -46,15 +84,7 @@ export const datagovToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: DatagovBrowseSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { collection } = validateInput(DatagovBrowseSchema, input);
-      if (collection !== undefined) {
-        const results = await searchDatasets(collection, 20);
-        const text = formatResponse(results as unknown as Record<string, unknown>[], "markdown");
-        return { content: [{ type: "text", text }] };
-      }
-      const collections = await listCollections();
-      const text = formatResponse(collections as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleDatagovBrowse(validateInput(DatagovBrowseSchema, input));
     },
   },
 ];

@@ -36,6 +36,11 @@ export const hasUraKey = (lookup: CredentialLookup): boolean => {
   return hasConfiguredValue(key);
 };
 
+export const hasLtaKey = (lookup: CredentialLookup): boolean => {
+  const key = process.env["SG_API_LTA_KEY"] ?? lookup.getKey("lta");
+  return hasConfiguredValue(key);
+};
+
 export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
   return [
     {
@@ -73,6 +78,15 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: true,
       configured: hasUraKey,
+    },
+    {
+      api: "LTA",
+      url: getHealthBaseUrl(
+        "lta/v3/BusArrival?BusStopCode=83139",
+        "https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival?BusStopCode=83139",
+      ),
+      authRequired: true,
+      configured: hasLtaKey,
     },
     {
       api: "data.gov.sg",

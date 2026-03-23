@@ -25,7 +25,12 @@ export const handleMasExchangeRates = async (
 
   const fmt = resolveOutputFormat(format);
   const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: normalized as unknown as readonly Record<string, unknown>[],
+    },
+  };
 };
 
 export const handleMasInterestRates = async (
@@ -40,7 +45,12 @@ export const handleMasInterestRates = async (
   const normalized = records.map(normalizeMasRecord);
   const fmt = resolveOutputFormat(format);
   const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: normalized as unknown as readonly Record<string, unknown>[],
+    },
+  };
 };
 
 export const handleMasFinancialStats = async (
@@ -55,7 +65,12 @@ export const handleMasFinancialStats = async (
   const normalized = records.map(normalizeMasRecord);
   const fmt = resolveOutputFormat(format);
   const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: normalized as unknown as readonly Record<string, unknown>[],
+    },
+  };
 };
 
 export const masToolDefinitions: readonly RegisteredToolDefinition[] = [

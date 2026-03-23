@@ -38,7 +38,12 @@ export const handleUraPropertyTransactions = async (
   const normalized = normalizeTransactions(raw);
   const fmt = resolveOutputFormat(params.format);
   const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: normalized as unknown as readonly Record<string, unknown>[],
+    },
+  };
 };
 
 export const handleUraPlanningArea = async (
@@ -46,7 +51,12 @@ export const handleUraPlanningArea = async (
 ): Promise<ToolResult> => {
   const result = await lookupPlanningArea(params);
   const text = formatResponse(result as unknown as Record<string, unknown>[], "markdown");
-  return { content: [{ type: "text", text }] };
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: result,
+    },
+  };
 };
 
 export const uraToolDefinitions: readonly RegisteredToolDefinition[] = [
