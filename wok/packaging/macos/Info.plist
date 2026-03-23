@@ -12,8 +12,6 @@
     <string>0.1.0</string>
     <key>CFBundleExecutable</key>
     <string>walk</string>
-    <key>CFBundleIconFile</key>
-    <string>walk.icns</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
     <key>NSHighResolutionCapable</key>
