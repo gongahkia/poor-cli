@@ -34,7 +34,7 @@ impl PluginHost {
         let mut runtime = LuaRuntime::new().ok()?;
         if let Err(error) = runtime.init(config_dir) {
             warn!("failed to initialize Lua runtime: {error}");
-            return None;
+            runtime.push_notification(format!("init.lua error: {error}"));
         }
         Some(Self { runtime })
     }
@@ -43,6 +43,8 @@ impl PluginHost {
     pub fn set_config_values(&self, values: &Value) {
         if let Err(error) = self.runtime.set_config_values(values) {
             warn!("failed to update plugin config table: {error}");
+            self.runtime
+                .push_notification(format!("plugin config sync failed: {error}"));
         }
     }
 
@@ -92,6 +94,8 @@ impl PluginHost {
     {
         if let Err(error) = self.runtime.trigger_hook(hook, payload) {
             warn!("plugin hook '{hook}' failed: {error}");
+            self.runtime
+                .push_notification(format!("plugin hook '{hook}' failed: {error}"));
         }
     }
 
@@ -150,4 +154,36 @@ fn parse_lua_key_combo(key: &str) -> Option<KeyCombo> {
     }
 
     key_action.map(|key| KeyCombo { key, modifiers })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    #[test]
+    fn test_invalid_init_lua_surfaces_notification() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let config_dir = std::env::temp_dir().join(format!("walk-plugin-host-{unique}"));
+        std::fs::create_dir_all(&config_dir).expect("config dir should be created");
+        std::fs::write(config_dir.join("init.lua"), "this is not valid lua !!!")
+            .expect("invalid init.lua should be written");
+
+        let host = PluginHost::new(&config_dir).expect("plugin host should still initialize");
+        let effects = host.drain_effects();
+
+        std::fs::remove_file(config_dir.join("init.lua")).ok();
+        std::fs::remove_dir_all(&config_dir).ok();
+
+        assert_eq!(effects.exec_requests.len(), 0);
+        assert_eq!(effects.action_requests.len(), 0);
+        assert!(effects
+            .notifications
+            .iter()
+            .any(|message| message.contains("init.lua error")));
+    }
 }

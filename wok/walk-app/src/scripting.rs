@@ -347,6 +347,15 @@ impl LuaRuntime {
         std::mem::take(&mut *self.state.notifications.lock().unwrap())
     }
 
+    /// Push a notification into the pending Lua notification queue.
+    pub fn push_notification(&self, message: impl Into<String>) {
+        self.state
+            .notifications
+            .lock()
+            .unwrap()
+            .push(message.into());
+    }
+
     /// Update the latest runtime snapshot exposed through the `walk.*()` accessors.
     pub fn set_runtime_snapshot(&self, snapshot: JsonValue) {
         *self.state.runtime_snapshot.lock().unwrap() = snapshot;
