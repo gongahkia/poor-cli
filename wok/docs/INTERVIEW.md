@@ -10,7 +10,7 @@ The current runtime is a real workspace terminal:
 - one PTY-backed terminal per pane
 - pane-local blocks, search state, and input drafts
 - autosaved sessions plus explicit snapshot save/load
-- Lua limited to actions, hooks, command aliases, `exec`, and `notify`
+- Lua limited to actions, hooks, command aliases, `run_action`, `exec`, `notify`, and runtime state accessors
 
 ## Architecture Story
 
@@ -29,7 +29,7 @@ That split keeps the systems boundary, the product boundary, and the rendering b
 
 1. `winit` produces normalized `InputEvent`s.
 2. `WalkHandler` resolves actions for the focused pane or workspace.
-3. Pane-local `WalkApp` state handles keybindings, input editor, block navigation, search, clipboard, and zoom.
+3. Pane-local `WalkApp` state handles keybindings, command palette state, block navigation, search, clipboard, and zoom.
 4. `walk-terminal` writes to the PTY and drains output on frame ticks.
 5. The terminal parser updates the emulator state and emits `SemanticEvent`s from OSC 133 / OSC 7 markers.
 6. `walk-blocks` turns those events into pane-local block records anchored to absolute scrollback rows.
@@ -47,9 +47,9 @@ That split keeps the systems boundary, the product boundary, and the rendering b
 
 ### What I intentionally constrained
 
-- Search is scoped to the focused pane, not the full workspace.
+- Search is workspace-global, but the overlay is still rendered in the focused pane.
 - Lua is not a plugin API with custom renderers or arbitrary runtime mutation.
-- `walk.on(...)` hooks are lifecycle notifications; today they carry `nil` payloads rather than rich structured event objects.
+- Runtime orchestration is still concentrated in `walk-app/src/main.rs`, even though the subsystem boundaries are now coherent.
 - PowerShell and WSL are supported through explicit bootstrap wrappers with regression coverage, though Bash/Zsh/Fish remain the cleanest first-run demo shells.
 
 ## Questions You Should Expect
@@ -88,7 +88,7 @@ The weakest part is not architecture coverage anymore; it is product-fit iterati
 4. Split the workspace and run another command in the second pane.
 5. Navigate blocks with `Mod+Up` / `Mod+Down`.
 6. Collapse a block with `Mod+Shift+E`.
-7. Search the focused pane with `Mod+F`.
+7. Search the workspace with `Mod+F` and jump across panes.
 8. Save the `manual` snapshot with `Mod+Shift+S`.
 9. Restart with `restore_session = true` or reload the snapshot with `Mod+Shift+R`.
 10. Resize the window to show block anchors and PTY size stay coherent.
@@ -97,4 +97,4 @@ The weakest part is not architecture coverage anymore; it is product-fit iterati
 
 If asked whether this is production-ready, the strongest accurate answer is:
 
-Walk is a credible local-first v1 workspace terminal with a differentiated block workflow. The architecture and runtime are coherent enough to defend in an interview. The remaining gap is not conceptual clarity; it is broader runtime hardening, especially end-to-end coverage and shell/platform soak time.
+Walk is a credible local-first v1 workspace terminal with a differentiated block workflow. The architecture and runtime are coherent enough to defend in an interview. The remaining gap is not conceptual clarity; it is deeper renderer/runtime hardening, especially row-damage caching, end-to-end coverage, and shell/platform soak time.

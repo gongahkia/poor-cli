@@ -39,14 +39,14 @@ Workspace-level state owns:
 - tab/split structure
 - focused pane routing
 - autosave/restore session handling
-- Lua runtime and side effects
+- plugin host, theme overrides, and plugin side effects
 - top tab bar and bottom status bar
 
 ## Data Flow
 
 1. `winit` delivers keyboard, mouse, resize, and frame events into `walk-app`.
 2. `WalkHandler` resolves whether an event is workspace-scoped or focused-pane-scoped.
-3. Focused-pane `WalkApp` state resolves keybindings first, then search/input editing, then raw PTY fallback.
+3. Focused-pane `WalkApp` state resolves keybindings first, then command-palette/search overlays, then raw PTY fallback.
 4. `walk-terminal` writes to the PTY and drains PTY output during frame ticks.
 5. The terminal parser updates the emulator state and emits semantic events for:
    - prompt start
@@ -108,8 +108,11 @@ Current capabilities:
 
 - bind keys to built-in actions
 - register reusable action aliases
+- trigger built-in actions through `walk.run_action(...)`
 - run shell commands in the focused pane
-- receive lifecycle hooks
+- receive structured lifecycle hooks
+- inspect app/workspace/pane/session state snapshots
+- load themes and apply live theme overrides
 - push status notifications
 
 Current non-goals:
@@ -137,8 +140,8 @@ The shell layer emits OSC markers and cwd/title updates that feed the block mode
 The current runtime is coherent, but a few edges are still intentionally narrow:
 
 - search is workspace-global, but the overlay is still rendered in the focused pane
-- Lua hooks are lifecycle notifications, not rich structured events
-- font family selection is plumbed but still relies on the renderer's current monospace fallback path
-- close-confirmation and richer compositor features remain deferred
+- plugins do not own custom rendering or arbitrary layout mutation
+- the renderer still rebuilds the live frame batch rather than consuming the dormant row-damage cache
+- runtime orchestration is still concentrated in `walk-app/src/main.rs`
 
 For the product framing and demo script, use [README.md](README.md) and [docs/INTERVIEW.md](docs/INTERVIEW.md).

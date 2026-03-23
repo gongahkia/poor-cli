@@ -12,12 +12,12 @@ The product is intentionally opinionated: no AI, no login, no cloud dependency. 
 | Blocks on Bash/Zsh/Fish | Shipped | Automatic shell bootstrap, OSC 133 parsing, separators, exit-status accents, collapse, and block copy |
 | PowerShell / WSL | Shipped | Automatic bootstrap wrappers emit block markers, source user profiles deterministically, restore startup cwd, and now have explicit regression coverage |
 | Tabs, splits, sessions | Shipped | IDE-style workspace with autosave/restore, manual snapshot save/load, and restored transcript/block continuity |
-| Input bar | Shipped | Pane-local bottom input editor with multiline draft, history recall, submit, cancel, and paste |
+| Input bar | Shipped | Bottom bar is now an explicit command palette / scratch editor; shell-native prompt editing remains the default path |
 | Search | Shipped | Workspace-global query with focused-pane overlay, match counts, next/prev navigation, and cross-pane result jumps |
 | Mouse selection | Shipped | Drag selection works; `copy_on_select` is honored |
-| Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, hooks, `exec`, and `notify` |
-| Theme loading | Shipped | `theme_path` is loaded at startup |
-| Remaining limits | Honest gap | Lua is action/hook scoped rather than a full plugin API |
+| Lua scripting | Shipped | Loads `~/.config/walk/init.lua`, supports keybindings, command aliases, structured hooks, `run_action`, `exec`, `notify`, and runtime state accessors |
+| Theme loading | Shipped | `theme_path` loads at startup, hot reloads on file changes, and can be changed live through `walk.theme.load(...)` / `walk.theme.set(...)` |
+| Remaining limits | Honest gap | Plugins are still action/hook scoped rather than custom renderers, and row-damage caching is not yet wired into the live frame builder |
 
 ## Run Locally
 

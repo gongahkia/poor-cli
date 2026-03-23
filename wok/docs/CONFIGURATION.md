@@ -42,6 +42,7 @@ theme_path = "~/.config/walk/themes/catppuccin.toml"
 | `copy_on_select` | boolean | `false` | Active | Auto-copy selected text on mouse-up |
 | `confirm_close_with_running_process` | boolean | `true` | Active | Requires a second close request within 2 seconds when panes still have running shell processes |
 | `restore_session` | boolean | `false` | Active | Loads the autosaved workspace session on startup |
+| `debug_overlay` | boolean | `false` | Active | Shows a small internal overlay with redraw timing, atlas occupancy, scrollback depth, and approximate session memory |
 | `theme_path` | string | none | Active | Path to a custom theme TOML file |
 | `background_image` | string | none | Active | Loads a background image from config or theme and renders it behind the workspace chrome and panes |
 

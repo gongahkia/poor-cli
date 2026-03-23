@@ -1,8 +1,8 @@
 # Walk Lua Scripting Guide
 
-Walk loads `~/.config/walk/init.lua` on startup and exposes a small action-oriented Lua surface for keybindings, command aliases, lifecycle hooks, shell execution, and notifications.
+Walk loads `~/.config/walk/init.lua` on startup and exposes a local-only plugin surface for keybindings, command aliases, lifecycle hooks, shell execution, built-in actions, runtime state inspection, and theme changes.
 
-This API is intentionally constrained. Lua extends the existing action bus; it does not replace the renderer or bypass core runtime state.
+This API is still intentionally scoped. Lua extends the action bus and runtime state model; it does not replace the renderer or bypass core workspace routing.
 
 ## Getting Started
 
@@ -24,7 +24,7 @@ The `walk.keymap(...)` name is kept as an alias for `walk.bind_key(...)`.
 
 ### `walk.config`
 
-Read-only table of a few startup config values.
+Read-only table of current runtime config values.
 
 ```lua
 local font_size = walk.config.font_size
@@ -58,6 +58,7 @@ walk.bind_key("terminal", "ctrl+shift+r", "restore_demo")
 - `split_vertical`, `split_horizontal`, `close_split`
 - `focus_left`, `focus_right`, `focus_up`, `focus_down`
 - `search_global`, `toggle_search`
+- `command_palette`, `palette`
 - `block_prev`, `block_next`, `block_copy`, `block_collapse`
 - `zoom_in`, `zoom_out`, `zoom_reset`
 - `clear_screen`, `send_eof`
@@ -116,6 +117,25 @@ walk.on("block_finished", function(event)
 end)
 ```
 
+### `walk.run_action(action)`
+
+Queue a built-in Walk action through the same runtime path used by core keybindings.
+
+```lua
+walk.run_action("new_tab")
+walk.run_action("command_palette")
+```
+
+### `walk.app()`, `walk.workspace()`, `walk.pane()`, `walk.session()`
+
+Return structured tables describing the current runtime state visible to plugins.
+
+```lua
+local pane = walk.pane()
+local workspace = walk.workspace()
+walk.notify("Pane " .. tostring(pane.pane_id) .. " of " .. tostring(workspace.pane_count))
+```
+
 ### `walk.exec(command)`
 
 Queue a shell command to run in the focused pane.
@@ -134,7 +154,7 @@ walk.notify("Snapshot restored")
 
 ### `walk.theme.set(table)`
 
-Store theme overrides for future theme-aware surfaces.
+Apply live theme overrides to the active runtime theme. Overrides are also re-applied after watched theme file reloads.
 
 ```lua
 walk.theme.set({
@@ -146,7 +166,12 @@ walk.theme.set({
 
 ### `walk.theme.load(name)`
 
-Placeholder hook for named theme loading.
+Load a theme either by explicit path or by name from `~/.config/walk/themes/<name>.toml`.
+
+```lua
+walk.theme.load("catppuccin")
+walk.theme.load("/absolute/path/to/theme.toml")
+```
 
 ## Examples
 
