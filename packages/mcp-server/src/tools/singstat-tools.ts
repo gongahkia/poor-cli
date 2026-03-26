@@ -17,6 +17,106 @@ export const handleSingStatSearch = async (
   };
 };
 
+export const handleSingStatTable = async (
+  params: Readonly<{
+    tableId: string;
+    timeFilter?: string | undefined;
+    variables?: readonly string[] | undefined;
+    format?: "json" | "markdown" | "csv" | "geojson" | undefined;
+  }>,
+): Promise<ToolResult> => {
+  const opts: Record<string, unknown> = {};
+  if (params.timeFilter !== undefined) {
+    opts["timeFilter"] = params.timeFilter;
+  }
+  if (params.variables !== undefined) {
+    opts["variables"] = params.variables;
+  }
+
+  const data = await getTableData(params.tableId, opts as { timeFilter?: string; variables?: readonly string[] });
+  const fmt = resolveOutputFormat(params.format);
+  const text = formatResponse(data.rows as unknown as Record<string, unknown>[], fmt);
+  return {
+    content: [{ type: "text", text: `## ${data.metadata.title}\n\n${text}` }],
+    structuredContent: {
+      metadata: data.metadata,
+      records: data.rows,
+    },
+  };
+};
+
+export const handleSingStatTimeseries = async (
+  params: Readonly<{
+    tableId: string;
+    indicator: string;
+    startYear: number;
+    endYear: number;
+    format?: "json" | "markdown" | "csv" | "geojson" | undefined;
+  }>,
+): Promise<ToolResult> => {
+  const results = await getTimeSeries(params.tableId, params.indicator, params.startYear, params.endYear);
+  const fmt = resolveOutputFormat(params.format);
+  const text = formatResponse(results as unknown as Record<string, unknown>[], fmt);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: results,
+    },
+  };
+};
+
+export const handleSingStatBrowse = async (
+  params: Readonly<{ category?: string | undefined }>,
+): Promise<ToolResult> => {
+  if (params.category === undefined) {
+    const categories = [
+      { category: "Economy & Prices", description: "GDP, CPI, trade, prices, national accounts" },
+      { category: "Population & Land Area", description: "Population size, demographics, land use" },
+      { category: "Labour & Productivity", description: "Employment, wages, labour force, productivity" },
+      { category: "Society", description: "Education, health, housing, social indicators" },
+      { category: "Transport", description: "Vehicle registrations, traffic, public transport" },
+      { category: "Services", description: "Retail, food, accommodation, tourism" },
+      { category: "Manufacturing & Construction", description: "Industrial production, construction" },
+      { category: "Finance & Insurance", description: "Banking, insurance, capital markets" },
+      { category: "International Trade", description: "Imports, exports, trade partners" },
+    ];
+    const text = formatResponse(categories as unknown as Record<string, unknown>[], "markdown");
+    return {
+      content: [{ type: "text", text: "## SingStat Categories\n\n" + text + "\n\nUse `sg_singstat_browse` with a category name to see its datasets." }],
+      structuredContent: {
+        records: categories,
+      },
+    };
+  }
+
+  const results = await searchDatasets(params.category, 20);
+  const grouped = results.reduce<Record<string, typeof results>>((acc, dataset) => {
+    const topic = dataset.topic;
+    if (acc[topic] === undefined) {
+      acc[topic] = [];
+    }
+    acc[topic].push(dataset);
+    return acc;
+  }, {});
+
+  const lines: string[] = [`## Datasets in "${params.category}"\n`];
+  for (const [topic, datasets] of Object.entries(grouped)) {
+    lines.push(`### ${topic}`);
+    for (const ds of datasets) {
+      lines.push(`- **${ds.id}**: ${ds.title} (${ds.frequency})`);
+    }
+    lines.push("");
+  }
+
+  return {
+    content: [{ type: "text", text: lines.join("\n") }],
+    structuredContent: {
+      category: params.category,
+      records: results,
+    },
+  };
+};
+
 export const singstatToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_singstat_search",
@@ -34,14 +134,7 @@ export const singstatToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: SingStatTableSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { tableId, timeFilter, variables, format } = validateInput(SingStatTableSchema, input);
-      const opts: Record<string, unknown> = {};
-      if (timeFilter !== undefined) opts["timeFilter"] = timeFilter;
-      if (variables !== undefined) opts["variables"] = variables;
-      const data = await getTableData(tableId, opts as { timeFilter?: string; variables?: readonly string[] });
-      const fmt = resolveOutputFormat(format);
-      const text = formatResponse(data.rows as unknown as Record<string, unknown>[], fmt);
-      return { content: [{ type: "text", text: `## ${data.metadata.title}\n\n${text}` }] };
+      return handleSingStatTable(validateInput(SingStatTableSchema, input));
     },
   },
 
@@ -51,11 +144,7 @@ export const singstatToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: SingStatTimeseriesSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { tableId, indicator, startYear, endYear, format } = validateInput(SingStatTimeseriesSchema, input);
-      const results = await getTimeSeries(tableId, indicator, startYear, endYear);
-      const fmt = resolveOutputFormat(format);
-      const text = formatResponse(results as unknown as Record<string, unknown>[], fmt);
-      return { content: [{ type: "text", text }] };
+      return handleSingStatTimeseries(validateInput(SingStatTimeseriesSchema, input));
     },
   },
 
@@ -86,44 +175,7 @@ export const singstatToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: SingStatBrowseSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { category } = validateInput(SingStatBrowseSchema, input);
-
-      if (category === undefined) {
-        // Return top-level categories
-        const categories = [
-          { category: "Economy & Prices", description: "GDP, CPI, trade, prices, national accounts" },
-          { category: "Population & Land Area", description: "Population size, demographics, land use" },
-          { category: "Labour & Productivity", description: "Employment, wages, labour force, productivity" },
-          { category: "Society", description: "Education, health, housing, social indicators" },
-          { category: "Transport", description: "Vehicle registrations, traffic, public transport" },
-          { category: "Services", description: "Retail, food, accommodation, tourism" },
-          { category: "Manufacturing & Construction", description: "Industrial production, construction" },
-          { category: "Finance & Insurance", description: "Banking, insurance, capital markets" },
-          { category: "International Trade", description: "Imports, exports, trade partners" },
-        ];
-        const text = formatResponse(categories as unknown as Record<string, unknown>[], "markdown");
-        return { content: [{ type: "text", text: "## SingStat Categories\n\n" + text + "\n\nUse `sg_singstat_browse` with a category name to see its datasets." }] };
-      }
-
-      // Search within the specified category
-      const results = await searchDatasets(category, 20);
-      const grouped = results.reduce<Record<string, typeof results>>((acc, dataset) => {
-        const topic = dataset.topic;
-        if (acc[topic] === undefined) acc[topic] = [];
-        acc[topic].push(dataset);
-        return acc;
-      }, {});
-
-      const lines: string[] = [`## Datasets in "${category}"\n`];
-      for (const [topic, datasets] of Object.entries(grouped)) {
-        lines.push(`### ${topic}`);
-        for (const ds of datasets) {
-          lines.push(`- **${ds.id}**: ${ds.title} (${ds.frequency})`);
-        }
-        lines.push("");
-      }
-
-      return { content: [{ type: "text", text: lines.join("\n") }] };
+      return handleSingStatBrowse(validateInput(SingStatBrowseSchema, input));
     },
   },
 ];
