@@ -29,6 +29,13 @@ export const warmCache = async (): Promise<WarmResult> => {
         await searchDatasets("GDP", 5);
       },
     },
+    {
+      name: "datagov_index",
+      fn: async () => {
+        const { ensureLocalIndexWarm } = await import("../apis/datagov/client.js");
+        ensureLocalIndexWarm();
+      },
+    },
   ];
 
   const results = await Promise.allSettled(tasks.map((t) => t.fn()));
