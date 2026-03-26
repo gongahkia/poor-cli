@@ -27,10 +27,12 @@ The direct tools are the stable low-level contract. Additive briefs are allowed 
 4. Create direct tool definitions in `packages/mcp-server/src/tools/<family>-tools.ts`.
 5. Register the definitions in `packages/mcp-server/src/tools/tool-set.ts` as a `RegisteredToolDefinition[]`.
 6. Update public catalogs in `packages/mcp-server/src/tools/catalog.ts`.
-7. Keep `sg://apis`, `sg://tools`, and `sg://workflows` truthful.
+7. Keep `sg://apis`, `sg://tools`, `sg://workflows`, and `sg://recipes` truthful.
 8. Add tests for schemas, clients, tools, routing, and catalog parity.
 9. Update docs and marketplace metadata in the same change.
 10. Keep `scripts/check-docs-parity.mjs` green.
+
+If the change introduces a new guided prompt shape, update `RECIPE_CATALOG` in the same patch and reflect the onboarding impact in `docs/agent-builder-quickstart.md`.
 
 ## Adding An Additive Brief Tool
 
