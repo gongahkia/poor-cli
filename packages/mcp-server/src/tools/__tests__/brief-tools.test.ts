@@ -1,0 +1,306 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BriefArtifactSchema, MasDataset } from "@sg-apis/shared";
+
+vi.mock("../../apis/acra/client.js", () => ({
+  getAcraEntities: vi.fn(),
+}));
+
+vi.mock("../../apis/bca/client.js", () => ({
+  getBcaLicensedBuilders: vi.fn(),
+  getBcaRegisteredContractors: vi.fn(),
+}));
+
+vi.mock("../../apis/cea/client.js", () => ({
+  getCeaSalespersons: vi.fn(),
+}));
+
+vi.mock("../../apis/hdb/client.js", () => ({
+  getHdbResalePrices: vi.fn(),
+}));
+
+vi.mock("../../apis/lta/client.js", () => ({
+  getBusArrivals: vi.fn(),
+  getTrainAlerts: vi.fn(),
+  getTrafficIncidents: vi.fn(),
+}));
+
+vi.mock("../../apis/nea/client.js", () => ({
+  getAirQuality: vi.fn(),
+  getForecast2Hr: vi.fn(),
+  getRainfall: vi.fn(),
+}));
+
+vi.mock("../../apis/onemap/client.js", () => ({
+  geocode: vi.fn(),
+}));
+
+vi.mock("../../apis/singstat/client.js", () => ({
+  searchDatasets: vi.fn(),
+}));
+
+vi.mock("../../apis/ura/client.js", () => ({
+  getPropertyTransactions: vi.fn(),
+}));
+
+vi.mock("../mas-tools.js", () => ({
+  fetchNormalizedMasRecords: vi.fn(),
+}));
+
+vi.mock("../ura-tools.js", () => ({
+  lookupPlanningArea: vi.fn(),
+}));
+
+import { getAcraEntities } from "../../apis/acra/client.js";
+import {
+  getBcaLicensedBuilders,
+  getBcaRegisteredContractors,
+} from "../../apis/bca/client.js";
+import { getHdbResalePrices } from "../../apis/hdb/client.js";
+import {
+  getBusArrivals,
+  getTrainAlerts,
+  getTrafficIncidents,
+} from "../../apis/lta/client.js";
+import {
+  getAirQuality,
+  getForecast2Hr,
+  getRainfall,
+} from "../../apis/nea/client.js";
+import { searchDatasets as searchSingStatDatasets } from "../../apis/singstat/client.js";
+import { getPropertyTransactions } from "../../apis/ura/client.js";
+import { fetchNormalizedMasRecords } from "../mas-tools.js";
+import { lookupPlanningArea } from "../ura-tools.js";
+import {
+  handleBusinessDossier,
+  handleEnvironmentBrief,
+  handleMacroBrief,
+  handlePropertyBrief,
+  handleTransportBrief,
+} from "../brief-tools.js";
+
+const parseBrief = (resultText: string) => {
+  return BriefArtifactSchema.parse(JSON.parse(resultText));
+};
+
+const expectMarkdownSections = (text: string) => {
+  expect(text).toContain("### Sources");
+  expect(text).toContain("### Freshness");
+  expect(text).toContain("### What This Does Not Do");
+};
+
+describe("brief tools", () => {
+  beforeEach(() => {
+    vi.mocked(getAcraEntities).mockReset();
+    vi.mocked(getBcaLicensedBuilders).mockReset();
+    vi.mocked(getBcaRegisteredContractors).mockReset();
+    vi.mocked(getHdbResalePrices).mockReset();
+    vi.mocked(getBusArrivals).mockReset();
+    vi.mocked(getTrainAlerts).mockReset();
+    vi.mocked(getTrafficIncidents).mockReset();
+    vi.mocked(getAirQuality).mockReset();
+    vi.mocked(getForecast2Hr).mockReset();
+    vi.mocked(getRainfall).mockReset();
+    vi.mocked(searchSingStatDatasets).mockReset();
+    vi.mocked(getPropertyTransactions).mockReset();
+    vi.mocked(fetchNormalizedMasRecords).mockReset();
+    vi.mocked(lookupPlanningArea).mockReset();
+  });
+
+  it("returns the expanded business dossier envelope", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+        noOfOfficers: 3,
+        annualReturnDate: "2026-03-01",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      {
+        classCode: "GB1",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      {
+        workhead: "CW01",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      format: "json",
+    });
+    const jsonText = jsonResult.content[0]?.text ?? "";
+    const payload = parseBrief(jsonText);
+
+    expect(payload.title).toBe("Business Dossier");
+    expect(payload.provenance).toHaveLength(4);
+    expect(payload.freshness).toHaveLength(4);
+    expect(payload.limits.length).toBeGreaterThan(0);
+
+    const markdownResult = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      format: "markdown",
+    });
+    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("returns the expanded property brief envelope", async () => {
+    vi.mocked(lookupPlanningArea).mockResolvedValue([
+      { planningArea: "Bedok", region: "East Region" },
+    ] as never);
+    vi.mocked(getPropertyTransactions).mockResolvedValue([
+      { price: "1200000", contractDate: "2026-03" },
+    ] as never);
+    vi.mocked(getHdbResalePrices).mockResolvedValue([
+      { resalePrice: 560000, month: "2026-03" },
+    ] as never);
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      { area: "Bedok", forecast: "Cloudy", updatedAt: "2026-03-26T08:00:00+08:00" },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      { region: "East", psi24h: 42, updatedAt: "2026-03-26T08:00:00+08:00" },
+    ] as never);
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [{ line: "EWL" }],
+      messages: [{ content: "Delay", createdDate: "2026-03-26T08:00:00+08:00" }],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([
+      { type: "Accident" },
+    ] as never);
+
+    const jsonResult = await handlePropertyBrief({
+      planningArea: "Bedok",
+      includeTransport: true,
+      includeEnvironment: true,
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect(payload.title).toBe("Property Brief");
+    expect(payload.provenance.length).toBeGreaterThanOrEqual(6);
+    expect(payload.records["trainAlerts"]).toBeDefined();
+
+    const markdownResult = await handlePropertyBrief({
+      planningArea: "Bedok",
+      includeTransport: true,
+      includeEnvironment: true,
+      format: "markdown",
+    });
+    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("returns the expanded macro brief envelope", async () => {
+    vi.mocked(fetchNormalizedMasRecords).mockImplementation(async (dataset) => {
+      if (dataset === MasDataset.EXCHANGE_RATES) {
+        return [{ date: "2026-03-26", usd_sgd: 1.35 }] as never;
+      }
+      if (dataset === MasDataset.INTEREST_RATES_SORA) {
+        return [{ date: "2026-03-26", sora: 3.2 }] as never;
+      }
+      return [{ date: "2026-03-26", resident_deposits: 1000 }] as never;
+    });
+    vi.mocked(searchSingStatDatasets)
+      .mockResolvedValueOnce([{ id: "gdp", title: "Singapore GDP" }] as never)
+      .mockResolvedValueOnce([{ id: "cpi", title: "Singapore CPI" }] as never);
+
+    const jsonResult = await handleMacroBrief({
+      currency: "USD",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect(payload.title).toBe("Macro Brief");
+    expect(payload.provenance).toHaveLength(4);
+    expect(payload.summary.some((item) => item.label === "GDP table ID")).toBe(true);
+
+    const markdownResult = await handleMacroBrief({
+      currency: "USD",
+      format: "markdown",
+    });
+    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("returns the expanded transport brief envelope", async () => {
+    vi.mocked(getBusArrivals).mockResolvedValue([
+      {
+        busStopCode: "83139",
+        serviceNo: "851",
+        arrivals: [{ estimatedArrival: "2026-03-26T08:05:00+08:00" }],
+      },
+    ] as never);
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [{ line: "NSL" }],
+      messages: [{ content: "Minor delay", createdDate: "2026-03-26T08:00:00+08:00" }],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([
+      { type: "Road Works" },
+    ] as never);
+
+    const jsonResult = await handleTransportBrief({
+      busStopCode: "83139",
+      serviceNo: "851",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect(payload.title).toBe("Transport Brief");
+    expect(payload.provenance).toHaveLength(3);
+    expect(payload.summary.some((item) => item.label === "Next bus ETA")).toBe(true);
+
+    const markdownResult = await handleTransportBrief({
+      busStopCode: "83139",
+      serviceNo: "851",
+      format: "markdown",
+    });
+    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("returns the expanded environment brief envelope", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Partly Cloudy",
+        updatedAt: "2026-03-26T08:00:00+08:00",
+        validFrom: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 40,
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getRainfall).mockResolvedValue([
+      {
+        stationName: "Tampines",
+        value: 0.2,
+        timestamp: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+
+    const jsonResult = await handleEnvironmentBrief({
+      area: "Tampines",
+      region: "East",
+      stationId: "S107",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect(payload.title).toBe("Environment Brief");
+    expect(payload.provenance).toHaveLength(3);
+    expect(payload.summary.some((item) => item.label === "PSI 24h")).toBe(true);
+
+    const markdownResult = await handleEnvironmentBrief({
+      area: "Tampines",
+      region: "East",
+      stationId: "S107",
+      format: "markdown",
+    });
+    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+});
