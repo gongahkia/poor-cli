@@ -1,0 +1,48 @@
+{
+  "title": "Macro Brief",
+  "summary": [
+    { "label": "USD/SGD", "value": 1.3245, "source": "MAS" },
+    { "label": "FX date", "value": "2026-03-25", "source": "MAS" },
+    { "label": "FX period delta %", "value": -0.15, "source": "MAS" },
+    { "label": "sora", "value": 3.1542, "source": "MAS" },
+    { "label": "SORA period delta %", "value": -0.32, "source": "MAS" },
+    { "label": "total_deposits", "value": 892145.3, "source": "MAS" },
+    { "label": "GDP dataset", "value": "Gross Domestic Product At Current Market Prices, Annual", "source": "SingStat" },
+    { "label": "GDP table ID", "value": "M015631", "source": "SingStat" },
+    { "label": "CPI dataset", "value": "Consumer Price Index (CPI), 2019 As Base Year, Annual", "source": "SingStat" },
+    { "label": "CPI table ID", "value": "M212881", "source": "SingStat" }
+  ],
+  "evidence": [
+    { "label": "FX rows", "value": 5, "source": "MAS" },
+    { "label": "SORA rows", "value": 5, "source": "MAS" },
+    { "label": "Banking rows", "value": 5, "source": "MAS" },
+    { "label": "GDP candidates", "value": 3, "source": "SingStat" },
+    { "label": "CPI candidates", "value": 3, "source": "SingStat" },
+    { "label": "Primary SORA key", "value": "sora", "source": "MAS" },
+    { "label": "Primary banking key", "value": "total_deposits", "source": "MAS" }
+  ],
+  "nextChecks": [
+    { "tool": "sg_singstat_table", "reason": "Retrieve full GDP table data for detailed analysis.", "input": { "tableId": "M015631" } },
+    { "tool": "sg_singstat_table", "reason": "Retrieve full CPI table data for inflation analysis.", "input": { "tableId": "M212881" } },
+    { "tool": "sg_singstat_search", "reason": "Discover additional SingStat datasets for deeper macro analysis.", "input": { "keyword": "Singapore unemployment" } }
+  ],
+  "gaps": [],
+  "provenance": [
+    { "source": "MAS", "tool": "sg_mas_exchange_rates", "coverage": "Exchange-rate coverage for the requested currency and date range.", "authRequired": false, "recordCount": 5 },
+    { "source": "MAS", "tool": "sg_mas_interest_rates", "coverage": "SORA interest-rate coverage for the requested date range.", "authRequired": false, "recordCount": 5 },
+    { "source": "MAS", "tool": "sg_mas_financial_stats", "coverage": "Banking-statistics coverage for the requested date range.", "authRequired": false, "recordCount": 5 },
+    { "source": "SingStat", "tool": "sg_singstat_search", "coverage": "Bounded dataset discovery for GDP and CPI entrypoints.", "authRequired": false, "recordCount": 6 }
+  ],
+  "freshness": [
+    { "source": "MAS exchange rates", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-25" },
+    { "source": "MAS interest rates", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-25" },
+    { "source": "MAS banking stats", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-02" },
+    { "source": "SingStat GDP search", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null },
+    { "source": "SingStat CPI search", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null }
+  ],
+  "limits": [
+    { "code": "STARTER_SNAPSHOT", "message": "This brief is a compact macro starter, not a full economic research note or narrative analysis." },
+    { "code": "DATASET_ENTRYPOINTS_ONLY", "message": "SingStat coverage is limited to bounded dataset discovery in this brief rather than full table extraction." },
+    { "code": "NO_FORWARD_VIEW", "message": "The brief reports current or requested historical values and does not forecast or interpret future macro conditions." }
+  ]
+}

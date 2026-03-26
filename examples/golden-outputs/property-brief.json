@@ -1,0 +1,50 @@
+{
+  "title": "Property Brief",
+  "summary": [
+    { "label": "Resolved planning area", "value": "Bedok", "source": "URA" },
+    { "label": "Region", "value": "East", "source": "URA" },
+    { "label": "Resolved postal code", "value": "460123", "source": "OneMap" },
+    { "label": "Private transaction average", "value": 1250000, "source": "URA" },
+    { "label": "Private transaction median", "value": 1180000, "source": "URA" },
+    { "label": "HDB resale average", "value": 520000, "source": "HDB" },
+    { "label": "HDB resale median", "value": 505000, "source": "HDB" },
+    { "label": "Forecast", "value": "Partly Cloudy", "source": "NEA" },
+    { "label": "PSI 24h", "value": 42, "source": "NEA" }
+  ],
+  "evidence": [
+    { "label": "URA transactions", "value": 15, "source": "URA" },
+    { "label": "HDB resale records", "value": 25, "source": "HDB" },
+    { "label": "2-hour forecast rows", "value": 47, "source": "NEA" },
+    { "label": "Air-quality rows", "value": 5, "source": "NEA" },
+    { "label": "Train alerts", "value": 0, "source": "LTA" },
+    { "label": "Traffic incidents", "value": 0, "source": "LTA" }
+  ],
+  "riskFlags": [],
+  "nextChecks": [
+    { "tool": "sg_ura_property_transactions", "reason": "Retrieve detailed URA transactions for deeper price analysis.", "input": { "propertyType": "residential", "planningArea": "Bedok" } },
+    { "tool": "sg_hdb_resale_prices", "reason": "Retrieve detailed HDB resale records for the planning area.", "input": { "town": "Bedok" } },
+    { "tool": "sg_ura_dev_charges", "reason": "Check development charges for the planning area.", "input": { "planningArea": "Bedok" } }
+  ],
+  "records": {
+    "uraRollup": { "count": 15, "median": 1180000, "min": 850000, "max": 1800000, "average": 1250000, "latestMonth": "2026-02" },
+    "hdbRollup": { "count": 25, "median": 505000, "min": 380000, "max": 680000, "average": 520000, "latestMonth": "2026-03" },
+    "marketComparison": { "privateAvg": 1250000, "hdbResaleAvg": 520000, "delta": 730000, "ratio": 2.4 }
+  },
+  "gaps": [],
+  "provenance": [
+    { "source": "OneMap", "tool": "sg_onemap_geocode", "coverage": "Postal-code or address resolution into a Singapore geocode candidate.", "authRequired": true, "recordCount": 1 },
+    { "source": "URA", "tool": "sg_ura_planning_area", "coverage": "Planning-area resolution for the requested location.", "authRequired": true, "recordCount": 1 },
+    { "source": "URA", "tool": "sg_ura_property_transactions", "coverage": "Private market transaction context for the resolved planning area.", "authRequired": true, "recordCount": 15 },
+    { "source": "HDB", "tool": "sg_hdb_resale_prices", "coverage": "Curated HDB resale market context for the resolved planning area.", "authRequired": false, "recordCount": 25 }
+  ],
+  "freshness": [
+    { "source": "OneMap geocode", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null },
+    { "source": "URA planning area", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null },
+    { "source": "URA transactions", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-02" },
+    { "source": "HDB resale", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03" }
+  ],
+  "limits": [
+    { "code": "NOT_A_RECOMMENDATION", "message": "This brief is bounded diligence context, not a valuation, investment score, or purchase recommendation." },
+    { "code": "AREA_LEVEL_CONTEXT", "message": "Property context is planning-area oriented and does not replace parcel-level legal or title checks." }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "title": "Environment Brief",
+  "summary": [
+    { "label": "Monitoring status", "value": "Environmental watch signals detected for area Bedok, region east.", "source": "NEA" },
+    { "label": "Forecast risk", "value": "watch", "source": "NEA" },
+    { "label": "PSI band", "value": "clear", "source": "NEA" },
+    { "label": "PSI 24h", "value": 42, "source": "NEA" },
+    { "label": "Rainfall band", "value": "watch", "source": "NEA" },
+    { "label": "Rainfall", "value": 2.4, "source": "NEA" },
+    { "label": "Focus area", "value": "Bedok", "source": "NEA" },
+    { "label": "Focus region", "value": "east", "source": "NEA" },
+    { "label": "Focus station", "value": "Bedok South", "source": "NEA" }
+  ],
+  "evidence": [
+    { "label": "Forecast rows", "value": 47, "source": "NEA" },
+    { "label": "Air-quality rows", "value": 5, "source": "NEA" },
+    { "label": "Rainfall rows", "value": 12, "source": "NEA" },
+    { "label": "Forecast input", "value": "Light Showers", "source": "NEA" },
+    { "label": "PSI input", "value": 42, "source": "NEA" },
+    { "label": "Rainfall input", "value": 2.4, "source": "NEA" }
+  ],
+  "records": {
+    "opsStatus": {
+      "level": "watch",
+      "headline": "Environmental watch signals detected for area Bedok, region east.",
+      "focusArea": "Bedok",
+      "focusRegion": "east",
+      "focusStation": "Bedok South"
+    },
+    "outdoorConditions": {
+      "advisory": "Carry umbrella, monitor conditions",
+      "reasons": ["rain or showers possible", "light rainfall detected"]
+    },
+    "rainfallStation": { "stationId": "S104", "stationName": "Bedok South" }
+  },
+  "gaps": [],
+  "provenance": [
+    { "source": "NEA", "tool": "sg_nea_forecast_2hr", "coverage": "2-hour forecast coverage for the requested area or the first available forecast area.", "authRequired": false, "recordCount": 47 },
+    { "source": "NEA", "tool": "sg_nea_air_quality", "coverage": "Regional air-quality coverage for the requested region or the first available regional reading.", "authRequired": false, "recordCount": 5 },
+    { "source": "NEA", "tool": "sg_nea_rainfall", "coverage": "Station rainfall coverage for the requested station or the first available station reading.", "authRequired": false, "recordCount": 12 }
+  ],
+  "freshness": [
+    { "source": "NEA forecast", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-26T09:30:00+08:00" },
+    { "source": "NEA air quality", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-26T09:00:00+08:00" },
+    { "source": "NEA rainfall", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-26T09:55:00+08:00" }
+  ],
+  "limits": [
+    { "code": "LIVE_SNAPSHOT_ONLY", "message": "This brief summarizes current NEA conditions and does not replace severe-weather alerts or long-range forecasting." }
+  ]
+}
