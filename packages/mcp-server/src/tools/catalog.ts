@@ -123,14 +123,16 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
   },
   {
     name: "data.gov.sg",
-    description: "Singapore open data portal for broad dataset discovery and metadata retrieval.",
-    tools: ["sg_datagov_search", "sg_datagov_get", "sg_datagov_browse"],
+    description: "Singapore open data portal for broad dataset discovery, metadata retrieval, machine-readable resource inspection, and bounded datastore row reads.",
+    tools: ["sg_datagov_search", "sg_datagov_get", "sg_datagov_resources", "sg_datagov_rows", "sg_datagov_browse"],
     authRequired: false,
     rateLimit: "20 tokens, 3/sec refill",
-    positioning: "Fallback discovery surface when the domain APIs do not fit.",
+    positioning: "Fallback discovery and row-access surface when the domain APIs do not fit.",
     preferredInterface: "sg_query",
     scopeNotes: [
       "sg_datagov_get returns dataset metadata only.",
+      "sg_datagov_resources exposes the current machine-readable resource shape for a dataset.",
+      "sg_datagov_rows performs bounded datastore reads with explicit filters, limit, offset, and sort.",
     ],
   },
 ];
@@ -140,13 +142,12 @@ export const TOOL_CATALOG: readonly ToolCatalogEntry[] = ALL_TOOL_DEFINITIONS.ma
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     name: "Macro Snapshot",
-    intent: "Combine SingStat and MAS for a top-down Singapore macro check.",
+    intent: "Build a compact Singapore macro starter brief with MAS values and SingStat entrypoints.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Macro snapshot of Singapore", mode: "execute" } },
-      { tool: "sg_singstat_search", input: { keyword: "GDP Singapore" } },
-      { tool: "sg_singstat_search", input: { keyword: "CPI Singapore" } },
-      { tool: "sg_mas_exchange_rates", input: { currency: "USD" } },
-      { tool: "sg_mas_interest_rates", input: {} },
+      { tool: "sg_macro_brief", input: { currency: "USD" } },
+      { tool: "sg_mas_exchange_rates", input: { currency: "USD", startDate: "2026-03-01", endDate: "2026-03-26" } },
+      { tool: "sg_singstat_search", input: { keyword: "Singapore GDP" } },
     ],
   },
   {
@@ -160,12 +161,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     name: "Property And Regulatory Due Diligence",
-    intent: "Pair URA planning and transaction data with location resolution and optional HDB market context.",
+    intent: "Build a location and property brief with URA planning, URA transactions, HDB context, and optional live context.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Property due diligence for Bedok HDB resale", mode: "execute" } },
+      { tool: "sg_property_brief", input: { planningArea: "Bedok", flatType: "4 ROOM", includeEnvironment: true } },
       { tool: "sg_ura_property_transactions", input: { propertyType: "residential", area: "Bedok" } },
-      { tool: "sg_ura_planning_area", input: { planningArea: "Bedok" } },
-      { tool: "sg_hdb_resale_prices", input: { town: "Bedok" } },
+      { tool: "sg_hdb_resale_prices", input: { town: "Bedok", flatType: "4 ROOM" } },
     ],
   },
   {
@@ -182,9 +183,10 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     name: "Business Registry Diligence",
-    intent: "Cross-check a company, contractor, builder, or estate-agent counterparty across ACRA, BCA, and CEA records.",
+    intent: "Build a cross-registry business dossier across ACRA, BCA, and CEA records.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Registry diligence for UEN 201912345K", mode: "execute" } },
+      { tool: "sg_business_dossier", input: { uen: "201912345K" } },
       { tool: "sg_acra_entities", input: { uen: "201912345K" } },
       { tool: "sg_bca_licensed_builders", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
       { tool: "sg_bca_registered_contractors", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
@@ -193,18 +195,20 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     name: "Dataset Discovery Fallback",
-    intent: "Search data.gov.sg when the domain APIs do not cover the topic cleanly.",
+    intent: "Search data.gov.sg and continue from dataset discovery into resource inspection and bounded row reads.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Find datasets about hawker centres", mode: "execute" } },
       { tool: "sg_datagov_search", input: { keyword: "hawker centres" } },
-      { tool: "sg_datagov_get", input: { datasetId: "<dataset-id-from-search>" } },
+      { tool: "sg_datagov_resources", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" } },
+      { tool: "sg_datagov_rows", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", limit: 5, sort: "month desc" } },
     ],
   },
   {
     name: "Transport Status",
-    intent: "Inspect live bus, train, and traffic conditions from LTA.",
+    intent: "Build a live transport operations brief and optionally drill into stop-level arrivals, train alerts, and traffic incidents.",
     entrypoints: [
-      { tool: "sg_query", input: { query: "Bus arrivals for stop 83139 service 851", mode: "execute" } },
+      { tool: "sg_query", input: { query: "Transport status in Singapore right now", mode: "execute" } },
+      { tool: "sg_transport_brief", input: {} },
       { tool: "sg_lta_bus_arrivals", input: { busStopCode: "83139", serviceNo: "851" } },
       { tool: "sg_lta_train_alerts", input: {} },
       { tool: "sg_lta_traffic_incidents", input: {} },
@@ -212,9 +216,10 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     name: "Environment Snapshot",
-    intent: "Inspect live weather, rainfall, and air quality from NEA.",
+    intent: "Build a live environment monitoring brief and optionally drill into forecast, air quality, and rainfall detail.",
     entrypoints: [
-      { tool: "sg_query", input: { query: "2 hour forecast for Tampines", mode: "execute" } },
+      { tool: "sg_query", input: { query: "Environment snapshot of Singapore right now", mode: "execute" } },
+      { tool: "sg_environment_brief", input: {} },
       { tool: "sg_nea_forecast_2hr", input: { area: "Tampines" } },
       { tool: "sg_nea_air_quality", input: { region: "East" } },
       { tool: "sg_nea_rainfall", input: {} },
