@@ -15,7 +15,12 @@ import { ltaToolDefinitions } from "./lta-tools.js";
 import { masToolDefinitions } from "./mas-tools.js";
 import { moeToolDefinitions } from "./moe-tools.js";
 import { mohToolDefinitions } from "./moh-tools.js";
+import { momToolDefinitions } from "./mom-tools.js";
 import { neaToolDefinitions } from "./nea-tools.js";
+import { nparksToolDefinitions } from "./nparks-tools.js";
+import { pubToolDefinitions } from "./pub-tools.js";
+import { sfaToolDefinitions } from "./sfa-tools.js";
+import { stbToolDefinitions } from "./stb-tools.js";
 import { onemapToolDefinitions } from "./onemap-tools.js";
 import { queryToolDefinitions } from "./query-tool.js";
 import { singstatToolDefinitions } from "./singstat-tools.js";
@@ -37,6 +42,11 @@ export const ALL_TOOL_DEFINITIONS = [
   ...hawkerToolDefinitions,
   ...moeToolDefinitions,
   ...mohToolDefinitions,
+  ...sfaToolDefinitions,
+  ...nparksToolDefinitions,
+  ...pubToolDefinitions,
+  ...momToolDefinitions,
+  ...stbToolDefinitions,
   ...briefToolDefinitions,
   ...healthCheckToolDefinitions,
   ...cacheToolDefinitions,
