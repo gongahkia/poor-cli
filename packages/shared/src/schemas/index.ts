@@ -2,6 +2,43 @@ import { z } from "zod";
 import type { ZodSchema } from "zod";
 import { ValidationError } from "../errors.js";
 
+const OutputFormatSchema = z.enum(["json", "markdown", "csv", "geojson"]);
+const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const DatagovFilterValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.object({
+    ilike: z.string().min(1),
+  }).strict(),
+]);
+const BriefValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const BriefSummaryItemSchema = z.object({
+  label: z.string().min(1),
+  value: BriefValueSchema,
+  source: z.string().min(1),
+}).strict();
+const EvidenceGapSchema = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+}).strict();
+const BriefLimitSchema = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+}).strict();
+const BriefProvenanceItemSchema = z.object({
+  source: z.string().min(1),
+  tool: z.string().min(1),
+  coverage: z.string().min(1),
+  authRequired: z.boolean(),
+  recordCount: z.number().int().min(0),
+}).strict();
+const BriefFreshnessItemSchema = z.object({
+  source: z.string().min(1),
+  observedAt: z.string().min(1),
+  upstreamTimestamp: z.string().min(1).nullable(),
+}).strict();
+
 export const SingStatSearchSchema = z.object({
   keyword: z.string().min(1),
   limit: z.number().int().positive().optional(),
@@ -11,7 +48,7 @@ export const SingStatTableSchema = z.object({
   tableId: z.string().min(1),
   timeFilter: z.string().optional(),
   variables: z.array(z.string()).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 });
 
 export const SingStatBrowseSchema = z.object({
@@ -23,7 +60,7 @@ export const SingStatTimeseriesSchema = z.object({
   indicator: z.string().min(1),
   startYear: z.number().int(),
   endYear: z.number().int(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 });
 
 export const SingStatCompareSchema = z.object({
@@ -36,32 +73,29 @@ export const SingStatCompareSchema = z.object({
   ),
   startYear: z.number().int().optional(),
   endYear: z.number().int().optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 });
 
 export const MasExchangeRateSchema = z.object({
   currency: z.string().length(3).optional(),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  date: IsoDateSchema.optional(),
+  startDate: IsoDateSchema.optional(),
+  endDate: IsoDateSchema.optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const MasInterestRateSchema = z.object({
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  date: IsoDateSchema.optional(),
+  startDate: IsoDateSchema.optional(),
+  endDate: IsoDateSchema.optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const MasFinancialStatsSchema = z.object({
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  date: IsoDateSchema.optional(),
+  startDate: IsoDateSchema.optional(),
+  endDate: IsoDateSchema.optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const OneMapGeocodeSchema = z.object({
@@ -97,7 +131,7 @@ export const OneMapPopulationSchema = z.object({
       "getTypeOfDwellingHousehold",
     ])
     .optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 });
 
 export const OneMapConvertCoordsSchema = z.object({
@@ -110,7 +144,7 @@ export const UraPropertyTransactionsSchema = z.object({
   propertyType: z.enum(["residential", "commercial", "industrial"]).optional(),
   area: z.string().optional(),
   period: z.string().optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 });
 
 export const UraPlanningAreaBaseSchema = z.object({
@@ -139,8 +173,30 @@ export const DatagovSearchSchema = z.object({
 
 export const DatagovGetSchema = z.object({
   datasetId: z.string().min(1),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
+
+export const DatagovResourcesSchema = z.object({
+  datasetId: z.string().min(1),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const DatagovRowsBaseSchema = z.object({
+  datasetId: z.string().min(1).optional(),
+  resourceId: z.string().min(1).optional(),
+  filters: z.record(DatagovFilterValueSchema).optional(),
+  limit: z.number().int().positive().max(200).optional(),
+  offset: z.number().int().min(0).optional(),
+  sort: z.string().min(1).optional(),
+  format: OutputFormatSchema.optional(),
+}).strict();
+
+export const DatagovRowsSchema = DatagovRowsBaseSchema.refine(
+  ({ datasetId, resourceId }) => datasetId !== undefined || resourceId !== undefined,
+  {
+    message: "Provide datasetId or resourceId.",
+  },
+);
 
 export const DatagovBrowseSchema = z.object({
   collection: z.string().optional(),
@@ -151,33 +207,33 @@ const MonthSchema = z.string().regex(/^\d{4}-\d{2}$/);
 export const LtaBusArrivalsSchema = z.object({
   busStopCode: z.string().min(5),
   serviceNo: z.string().min(1).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const LtaTrainAlertsSchema = z.object({
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const LtaTrafficIncidentsSchema = z.object({
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const NeaForecast2HrSchema = z.object({
   area: z.string().min(1).optional(),
   date: z.string().min(1).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const NeaAirQualitySchema = z.object({
   region: z.string().min(1).optional(),
   date: z.string().min(1).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const NeaRainfallSchema = z.object({
   stationId: z.string().min(1).optional(),
   date: z.string().min(1).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const HdbResalePricesSchema = z.object({
@@ -186,7 +242,7 @@ export const HdbResalePricesSchema = z.object({
   startMonth: MonthSchema.optional(),
   endMonth: MonthSchema.optional(),
   limit: z.number().int().positive().max(200).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const HdbRentalPricesSchema = z.object({
@@ -195,7 +251,7 @@ export const HdbRentalPricesSchema = z.object({
   startMonth: MonthSchema.optional(),
   endMonth: MonthSchema.optional(),
   limit: z.number().int().positive().max(200).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const CeaSalespersonsBaseSchema = z.object({
@@ -204,7 +260,7 @@ export const CeaSalespersonsBaseSchema = z.object({
   estateAgentName: z.string().min(1).optional(),
   estateAgentLicenseNo: z.string().min(1).optional(),
   limit: z.number().int().positive().max(100).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const CeaSalespersonsSchema = CeaSalespersonsBaseSchema.refine(
@@ -224,7 +280,7 @@ export const BcaLicensedBuildersBaseSchema = z.object({
   className: z.string().min(1).optional(),
   classCode: z.string().min(1).optional(),
   limit: z.number().int().positive().max(100).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const BcaLicensedBuildersSchema = BcaLicensedBuildersBaseSchema.refine(
@@ -244,7 +300,7 @@ export const BcaRegisteredContractorsBaseSchema = z.object({
   workhead: z.string().min(1).optional(),
   grade: z.string().min(1).optional(),
   limit: z.number().int().positive().max(100).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
 }).strict();
 
 export const BcaRegisteredContractorsSchema = BcaRegisteredContractorsBaseSchema.refine(
@@ -262,7 +318,107 @@ export const AcraEntitiesBaseSchema = z.object({
   entityName: z.string().min(1).optional(),
   uen: z.string().min(1).optional(),
   limit: z.number().int().positive().max(50).optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
+}).strict();
+
+export const BusinessDossierBaseSchema = z.object({
+  entityName: z.string().min(1).optional(),
+  uen: z.string().min(1).optional(),
+  salespersonName: z.string().min(1).optional(),
+  registrationNo: z.string().min(1).optional(),
+  estateAgentName: z.string().min(1).optional(),
+  estateAgentLicenseNo: z.string().min(1).optional(),
+  classCode: z.string().min(1).optional(),
+  workhead: z.string().min(1).optional(),
+  grade: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const BusinessDossierSchema = BusinessDossierBaseSchema.refine(
+  ({
+    entityName,
+    uen,
+    salespersonName,
+    registrationNo,
+    estateAgentName,
+    estateAgentLicenseNo,
+    classCode,
+    workhead,
+    grade,
+  }) =>
+    entityName !== undefined
+    || uen !== undefined
+    || salespersonName !== undefined
+    || registrationNo !== undefined
+    || estateAgentName !== undefined
+    || estateAgentLicenseNo !== undefined
+    || classCode !== undefined
+    || workhead !== undefined
+    || grade !== undefined,
+  {
+    message: "Provide at least one business or estate-agent identifier.",
+  },
+);
+
+export const PropertyBriefBaseSchema = z.object({
+  planningArea: z.string().min(1).optional(),
+  postalCode: z.string().regex(/^\d{6}$/).optional(),
+  address: z.string().min(1).optional(),
+  flatType: z.string().min(1).optional(),
+  propertyType: z.enum(["residential", "commercial", "industrial"]).optional(),
+  includeTransport: z.boolean().optional(),
+  includeEnvironment: z.boolean().optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const PropertyBriefSchema = PropertyBriefBaseSchema.refine(
+  ({ planningArea, postalCode, address }) =>
+    planningArea !== undefined || postalCode !== undefined || address !== undefined,
+  {
+    message: "Provide planningArea, postalCode, or address.",
+  },
+);
+
+export const MacroBriefSchema = z.object({
+  currency: z.string().length(3).optional(),
+  date: IsoDateSchema.optional(),
+  startDate: IsoDateSchema.optional(),
+  endDate: IsoDateSchema.optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransportBriefBaseSchema = z.object({
+  busStopCode: z.string().min(5).optional(),
+  serviceNo: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const TransportBriefSchema = TransportBriefBaseSchema.refine(
+  ({ busStopCode, serviceNo }) => serviceNo === undefined || busStopCode !== undefined,
+  {
+    message: "Provide busStopCode when serviceNo is supplied.",
+  },
+);
+
+export const EnvironmentBriefBaseSchema = z.object({
+  area: z.string().min(1).optional(),
+  region: z.string().min(1).optional(),
+  stationId: z.string().min(1).optional(),
+  date: z.string().min(1).optional(),
+  format: z.enum(["json", "markdown"]).optional(),
+}).strict();
+
+export const EnvironmentBriefSchema = EnvironmentBriefBaseSchema;
+
+export const BriefArtifactSchema = z.object({
+  title: z.string().min(1),
+  summary: z.array(BriefSummaryItemSchema),
+  evidence: z.array(BriefSummaryItemSchema),
+  records: z.record(z.unknown()),
+  gaps: z.array(EvidenceGapSchema),
+  provenance: z.array(BriefProvenanceItemSchema),
+  freshness: z.array(BriefFreshnessItemSchema),
+  limits: z.array(BriefLimitSchema),
 }).strict();
 
 export const AcraEntitiesSchema = AcraEntitiesBaseSchema.refine(
@@ -300,7 +456,7 @@ export const ConfigSetSchema = z.object({
 
 export const QuerySchema = z.object({
   query: z.string().min(1),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+  format: OutputFormatSchema.optional(),
   mode: z.enum(["execute", "plan"]).optional(),
 }).strict();
 
