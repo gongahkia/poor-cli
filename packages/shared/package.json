@@ -7,7 +7,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/__tests__/**",
+    "!dist/**/fixtures/**",
+    "!dist/**/mock-server/**"
   ],
   "exports": {
     ".": {
