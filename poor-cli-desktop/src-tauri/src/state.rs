@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use tokio::process::Child;
 
 pub struct BackendProcess {
-    pub child: Child,
+    pub _child: Child,
     pub stdin: tokio::process::ChildStdin,
     pub stdout: tokio::io::BufReader<tokio::process::ChildStdout>,
 }

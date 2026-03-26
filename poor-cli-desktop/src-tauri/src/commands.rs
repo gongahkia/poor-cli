@@ -49,7 +49,7 @@ pub async fn initialize_backend(
             let stdin = child.stdin.take().ok_or("failed to capture stdin")?;
             let stdout = child.stdout.take().ok_or("failed to capture stdout")?;
             *backend = Some(BackendProcess {
-                child,
+                _child: child,
                 stdin,
                 stdout: BufReader::new(stdout),
             });
