@@ -13,10 +13,19 @@
         <h2>poor-cli</h2>
         <span class="version">v5.0.0</span>
       </div>
+      <div class="sidebar-nav">
+        <div class="sidebar-nav-item active" data-nav="chat">New thread</div>
+        <div class="sidebar-nav-item" data-nav="skills">Skills</div>
+        <div class="sidebar-nav-item" data-nav="automations">Automations</div>
+      </div>
       <div class="sidebar-section">
         <h3>Sessions</h3>
         <div id="session-list"></div>
         <button id="new-session-btn" class="btn btn-sm">+ New Session</button>
+      </div>
+      <div class="sidebar-section">
+        <h3>History</h3>
+        <div id="history-sidebar-list"></div>
       </div>
       <div class="sidebar-section">
         <h3>Provider</h3>
@@ -28,21 +37,102 @@
           <option value="ollama">Ollama</option>
         </select>
       </div>
-    </div>
-    <div class="main-panel">
-      <div class="chat-container" id="chat-container">
-        <div class="chat-messages" id="chat-messages">
-          <div class="welcome-message">
-            <h1>poor-cli desktop</h1>
-            <p>Provider-agnostic AI coding assistant</p>
-            <p class="hint">Type a message below to start coding</p>
+      <div class="sidebar-footer">
+        <button id="account-btn" class="btn btn-sm" title="Settings">&#9881; Settings</button>
+        <div id="account-menu" class="account-menu" hidden>
+          <div class="account-menu-item" data-action="settings">Settings</div>
+          <div class="account-menu-divider"></div>
+          <div class="account-menu-section">
+            <h4>API Keys</h4>
+            <div id="api-key-status"></div>
+          </div>
+          <div class="account-menu-divider"></div>
+          <div class="account-menu-section">
+            <h4>Session Cost</h4>
+            <div id="session-cost-display">--</div>
           </div>
         </div>
-        <div class="chat-input-area">
-          <textarea id="chat-input" placeholder="Send a message..." rows="3"></textarea>
-          <button id="send-btn" class="btn btn-primary">Send</button>
+      </div>
+    </div>
+    <div class="main-panel">
+      <div id="top-bar" class="top-bar">
+        <span id="thread-title">New thread</span>
+        <div class="top-bar-actions">
+          <button id="thread-menu-btn" class="btn btn-sm" title="Thread options">&#8943;</button>
+          <div id="thread-menu" class="thread-menu" hidden>
+            <div class="thread-menu-item" data-action="rename">Rename</div>
+            <div class="thread-menu-item" data-action="delete">Delete</div>
+          </div>
         </div>
       </div>
+      <!-- chat view -->
+      <div class="view-panel" data-view="chat">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            <div class="welcome-message">
+              <h1>poor-cli desktop</h1>
+              <p>Provider-agnostic AI coding assistant</p>
+              <p class="hint">Type a message below to start coding</p>
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <div class="input-toolbar">
+              <select id="model-selector" title="Model">
+                <option value="">Auto</option>
+              </select>
+              <div class="effort-toggle" id="effort-toggle">
+                <span class="effort-opt active" data-effort="low">Fast</span>
+                <span class="effort-opt" data-effort="medium">Normal</span>
+                <span class="effort-opt" data-effort="high">High</span>
+              </div>
+              <button id="attach-btn" class="btn btn-sm" title="Attach file">+</button>
+            </div>
+            <div class="input-row">
+              <textarea id="chat-input" placeholder="Send a message..." rows="3"></textarea>
+              <button id="send-btn" class="btn btn-primary">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- settings view -->
+      <div class="view-panel" data-view="settings" hidden>
+        <div class="settings-layout">
+          <nav class="settings-sidebar">
+            <div class="settings-back" id="settings-back">&larr; Back to app</div>
+          </nav>
+          <div class="settings-content" id="settings-content"></div>
+        </div>
+      </div>
+      <!-- skills view -->
+      <div class="view-panel" data-view="skills" hidden>
+        <div class="skills-container">
+          <h2>Skills</h2>
+          <div id="skills-list" class="item-list"></div>
+        </div>
+      </div>
+      <!-- automations view -->
+      <div class="view-panel" data-view="automations" hidden>
+        <div class="skills-container">
+          <h2>Automations</h2>
+          <div id="automations-list" class="item-list"></div>
+        </div>
+      </div>
+      <!-- history view -->
+      <div class="view-panel" data-view="history" hidden>
+        <div class="history-container">
+          <h2>Conversation History</h2>
+          <input type="text" id="history-search" class="search-input" placeholder="Search conversations..." />
+          <div id="history-list" class="item-list"></div>
+        </div>
+      </div>
+      <!-- status bar -->
+      <footer id="status-bar" class="status-bar">
+        <span id="sb-cwd" title="Working directory">Local</span>
+        <span id="sb-permission" title="Permission mode">--</span>
+        <span id="sb-git" title="Git branch">--</span>
+        <span id="sb-spinner" class="spinner" hidden></span>
+        <span id="sb-changes" class="file-changes-badge" hidden></span>
+      </footer>
     </div>
   </div>
   <script type="module" src="lib/app.js"></script>
