@@ -70,6 +70,11 @@ const extractIsoDate = (query: string): string | null => {
   return match?.[1] ?? null;
 };
 
+const extractDatasetId = (query: string): string | null => {
+  const match = query.match(/\b(d_[a-f0-9]{32})\b/i);
+  return match?.[1] ?? null;
+};
+
 const extractMonthRange = (
   query: string,
 ): Readonly<{ startMonth?: string; endMonth?: string }> => {
@@ -275,6 +280,9 @@ export const classifyIntent = (query: string): IntentResult => {
   const date = extractIsoDate(query);
   if (date !== null) params["date"] = date;
 
+  const datasetId = extractDatasetId(query);
+  if (datasetId !== null) params["datasetId"] = datasetId;
+
   const { startMonth, endMonth } = extractMonthRange(query);
   if (startMonth !== undefined) params["startMonth"] = startMonth;
   if (endMonth !== undefined) params["endMonth"] = endMonth;
@@ -333,7 +341,7 @@ export const classifyIntent = (query: string): IntentResult => {
   const aliasedTool = resolveAlias(lower);
   const macroSignals = countMacroSignals(lower);
 
-  if (/macro\s*(snapshot|overview)|economic\s*(snapshot|overview)|macro\s*data/i.test(lower) || macroSignals >= 3) {
+  if (/macro\s*(snapshot|overview|brief)|economic\s*(snapshot|overview|brief)|macro\s*data/i.test(lower) || macroSignals >= 3) {
     return {
       ...buildIntentResult("macro", "macro_snapshot", 0.92, params),
       apis: ["singstat", "mas"],
@@ -341,7 +349,7 @@ export const classifyIntent = (query: string): IntentResult => {
   }
 
   if (
-    /due\s*diligence|regulatory|registration\s*check|registry\s*check|registry\s*diligence|business\s*diligence|counterparty\s*diligence|licen[cs]e\s*check/i.test(lower)
+    /due\s*diligence|regulatory|registration\s*check|registry\s*check|registry\s*diligence|business\s*diligence|counterparty\s*diligence|licen[cs]e\s*check|business\s*dossier|company\s*dossier/i.test(lower)
     && /acra|company|entity|uen|salesperson|estate\s*agent|builder|contractor|bca|cea/i.test(lower)
   ) {
     return {
@@ -350,11 +358,19 @@ export const classifyIntent = (query: string): IntentResult => {
     };
   }
 
-  if (/due\s*diligence|regulatory|legal|planning\s*review|property\s*overview/i.test(lower)) {
+  if (/due\s*diligence|regulatory|legal|planning\s*review|property\s*overview|property\s*brief|location\s*brief/i.test(lower)) {
     return {
       ...buildIntentResult("property", "property_due_diligence", 0.9, params),
       apis: ["onemap", "ura", "hdb"],
     };
+  }
+
+  if (datasetId !== null && /resource|resources|column|columns|schema/i.test(lower)) {
+    return buildIntentResult("dataset", "direct_tool", 0.91, params, "sg_datagov_resources");
+  }
+
+  if (datasetId !== null && /\b(row|rows|record|records)\b/i.test(lower)) {
+    return buildIntentResult("dataset", "direct_tool", 0.91, params, "sg_datagov_rows");
   }
 
   if (/demographic\s*(overview|profile)|population\s*(overview|profile)|income\s*profile|age\s*distribution/i.test(lower)) {
@@ -368,6 +384,37 @@ export const classifyIntent = (query: string): IntentResult => {
     return {
       ...buildIntentResult("dataset", "dataset_discovery", 0.82, params),
       apis: ["datagov"],
+    };
+  }
+
+  if (
+    (
+      aliasedTool === "sg_transport_brief"
+      || /transport\s*(status|snapshot|brief|ops|operations)|network\s*status|commute\s*status|mrt\s*status|road\s*status/i.test(lower)
+    )
+    && busStopCode === null
+    && serviceNo === null
+    && !/bus\s*arrival|train\s*alert|traffic\s*incident/i.test(lower)
+  ) {
+    return {
+      ...buildIntentResult("transport", "transport_brief", 0.9, params),
+      apis: ["lta"],
+    };
+  }
+
+  if (
+    (
+      aliasedTool === "sg_environment_brief"
+      || /environment\s*(status|snapshot|brief)|weather\s*(snapshot|brief)|air\s*quality\s*(snapshot|brief)|rainfall\s*(snapshot|brief)/i.test(lower)
+    )
+    && stationId === null
+    && region === null
+    && !(planningArea !== null && /forecast|weather/i.test(lower))
+    && !/2\s*hour\s*forecast|forecast\s+for|rainfall\s+for|air\s*quality\s+for|psi\s+for|pm2\.?5\s+for/i.test(lower)
+  ) {
+    return {
+      ...buildIntentResult("environment", "environment_brief", 0.89, params),
+      apis: ["nea"],
     };
   }
 
@@ -476,6 +523,8 @@ export const resolveToolInput = (
         input: {
           ...(params["currency"] !== undefined ? { currency: params["currency"] } : {}),
           ...(params["date"] !== undefined ? { date: params["date"] } : {}),
+          ...(params["startDate"] !== undefined ? { startDate: params["startDate"] } : {}),
+          ...(params["endDate"] !== undefined ? { endDate: params["endDate"] } : {}),
         },
       };
     case "sg_mas_interest_rates":
@@ -484,6 +533,8 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["date"] !== undefined ? { date: params["date"] } : {}),
+          ...(params["startDate"] !== undefined ? { startDate: params["startDate"] } : {}),
+          ...(params["endDate"] !== undefined ? { endDate: params["endDate"] } : {}),
         },
       };
     case "sg_ura_property_transactions":
@@ -498,6 +549,24 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["planningArea"] !== undefined ? { planningArea: params["planningArea"] } : {}),
+        },
+      };
+    case "sg_transport_brief":
+      return {
+        tool,
+        input: {
+          ...(params["busStopCode"] !== undefined ? { busStopCode: params["busStopCode"] } : {}),
+          ...(params["serviceNo"] !== undefined ? { serviceNo: params["serviceNo"] } : {}),
+        },
+      };
+    case "sg_environment_brief":
+      return {
+        tool,
+        input: {
+          ...(params["planningArea"] !== undefined ? { area: params["planningArea"] } : {}),
+          ...(params["region"] !== undefined ? { region: params["region"] } : {}),
+          ...(params["stationId"] !== undefined ? { stationId: params["stationId"] } : {}),
+          ...(params["date"] !== undefined ? { date: params["date"] } : {}),
         },
       };
     case "sg_onemap_geocode":
@@ -565,6 +634,20 @@ export const resolveToolInput = (
         tool,
         input: { keyword: query },
       };
+    case "sg_datagov_resources":
+      return {
+        tool,
+        input: {
+          ...(params["datasetId"] !== undefined ? { datasetId: params["datasetId"] } : {}),
+        },
+      };
+    case "sg_datagov_rows":
+      return {
+        tool,
+        input: {
+          ...(params["datasetId"] !== undefined ? { datasetId: params["datasetId"] } : {}),
+        },
+      };
     case "sg_cea_salespersons":
       return {
         tool,
@@ -600,6 +683,39 @@ export const resolveToolInput = (
         input: {
           ...(params["entityName"] !== undefined ? { entityName: params["entityName"] } : {}),
           ...(params["uen"] !== undefined ? { uen: params["uen"] } : {}),
+        },
+      };
+    case "sg_business_dossier":
+      return {
+        tool,
+        input: {
+          ...(params["entityName"] !== undefined ? { entityName: params["entityName"] } : {}),
+          ...(params["uen"] !== undefined ? { uen: params["uen"] } : {}),
+          ...(params["salespersonName"] !== undefined ? { salespersonName: params["salespersonName"] } : {}),
+          ...(params["registrationNo"] !== undefined ? { registrationNo: params["registrationNo"] } : {}),
+          ...(params["estateAgentName"] !== undefined ? { estateAgentName: params["estateAgentName"] } : {}),
+          ...(params["estateAgentLicenseNo"] !== undefined ? { estateAgentLicenseNo: params["estateAgentLicenseNo"] } : {}),
+          ...(params["classCode"] !== undefined ? { classCode: params["classCode"] } : {}),
+          ...(params["workhead"] !== undefined ? { workhead: params["workhead"] } : {}),
+          ...(params["grade"] !== undefined ? { grade: params["grade"] } : {}),
+        },
+      };
+    case "sg_property_brief":
+      return {
+        tool,
+        input: {
+          ...(params["planningArea"] !== undefined ? { planningArea: params["planningArea"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+        },
+      };
+    case "sg_macro_brief":
+      return {
+        tool,
+        input: {
+          ...(params["currency"] !== undefined ? { currency: params["currency"] } : {}),
+          ...(params["date"] !== undefined ? { date: params["date"] } : {}),
+          ...(params["startDate"] !== undefined ? { startDate: params["startDate"] } : {}),
+          ...(params["endDate"] !== undefined ? { endDate: params["endDate"] } : {}),
         },
       };
     default:
