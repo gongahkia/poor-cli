@@ -30,3 +30,8 @@ jobs:
         working-directory: packages/mcp-server
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Registry smoke
+        run: npm run test:smoke:registry
+        env:
+          SG_APIS_LOG_LEVEL: error
