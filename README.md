@@ -1,90 +1,156 @@
 # sg-apis-mcp
 
-Tool-first MCP server for Singapore government data.
+Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 40 `sg_*` tools total across 11 official data families.
+The repo currently exposes 47 `sg_*` tools total across 11 official data families.
 
-- 31 direct data tools
+- 33 direct data tools
+- 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers for health, keys, cache, and config
 - 1 bounded preferred interface, `sg_query`
 
-`sg_query` is the preferred natural-language entrypoint across 11 routed families. It plans or executes bounded deterministic workflows and transparent single-step direct calls. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 11 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
-## Product Scope
+## Why This Exists
 
-This repo is not a general Singapore analyst copilot. It goes deep on 11 official data families:
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg manually.
 
-- SingStat
-- MAS
-- OneMap
-- URA
-- LTA DataMall
-- NEA
-- HDB
-- CEA
-- BCA
-- ACRA
-- data.gov.sg
+The value is not hidden magic. The value is:
 
-Architecture and tradeoff notes live in [docs/architecture.md](./docs/architecture.md).
+- official Singapore public data in one server
+- explicit schemas and stable `sg_*` tool names
+- bounded workflows instead of vague planning claims
+- provenance, freshness, and limits surfaced directly in brief artifacts
+- caching, rate limiting, auth handling, packaging, and parity checks already done
+
+## Capability Matrix
+
+| Need | Best entrypoint | Better than raw API calls because | Auth | Freshness surface | Intentionally unsupported |
+| --- | --- | --- | --- | --- | --- |
+| Business Registry Diligence | `sg_business_dossier` or `sg_query` | ACRA, BCA, and CEA are combined into one brief with `summary`, `evidence`, `records`, `gaps`, `provenance`, `freshness`, and `limits` | None | observed-at and upstream registry timestamps are returned per source | broad corporate graph analysis |
+| Property And Regulatory Due Diligence | `sg_property_brief` or `sg_query` | OneMap, URA, HDB, and optional NEA/LTA context are combined with explicit location resolution and workflow limits | OneMap optional, URA key for live planning data, LTA optional | observed-at plus first available market or live-signal timestamps | hidden property scoring or recommendations |
+| Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and SingStat dataset entrypoints are returned as one starter brief with dataset IDs and scope notes | None | observed-at plus returned MAS dates | open-ended macro commentary |
+| Transport Status | `sg_transport_brief` or `sg_query` | bus arrivals, train alerts, and traffic incidents are normalized into one operational snapshot | LTA key for live data | observed-at plus next ETA or alert timestamps when available | route planning or delay prediction |
+| Environment Snapshot | `sg_environment_brief` or `sg_query` | forecast, air quality, and rainfall are normalized into one live monitoring snapshot | None | observed-at plus forecast, air-quality, and rainfall timestamps when available | long-range forecasting or severe-weather alerting |
+| Dataset Discovery Fallback | `sg_datagov_search` -> `sg_datagov_resources` -> `sg_datagov_rows` | dataset discovery continues into resource inspection and bounded row reads | None | data.gov.sg metadata timestamps are returned directly by the direct tools | unbounded scraping or arbitrary joins |
 
 ## Stable Surface
 
 | API family | Direct tools | Current scope | Auth |
 | --- | --- | --- | --- |
 | SingStat | 5 | Search, browse, table reads, time series, explicit compare | None |
-| MAS | 3 | Exchange rates by latest or exact date, SORA only, banking stats only | None |
+| MAS | 3 | Exchange rates, SORA, banking stats, exact dates, bounded date ranges | None |
 | OneMap | 5 | Geocode, reverse geocode, route, planning-area demographics, coordinate conversion | Email + password |
-| URA | 3 | Property transactions, planning-area lookup by name or coordinates, development charges | API key |
+| URA | 3 | Property transactions, planning-area lookup, development charges | API key |
 | LTA DataMall | 3 | Bus arrivals, train alerts, traffic incidents | API key |
 | NEA | 3 | 2-hour forecast, air quality, rainfall | None |
-| HDB | 2 | Curated resale and rental market records over official data.gov.sg datasets | None |
-| CEA | 1 | Curated salesperson registry lookup | None |
-| BCA | 2 | Curated builder and contractor registry lookup | None |
-| ACRA | 1 | Curated corporate-entity lookup by exact entity name or UEN over the official sharded registry | None |
-| data.gov.sg | 3 | Dataset search, browse, and metadata lookup | None |
+| HDB | 2 | Curated resale and rental market reads over official data.gov.sg datasets | None |
+| CEA | 1 | Curated salesperson and estate-agent registry lookup | None |
+| BCA | 2 | Curated licensed-builder and contractor registry lookup | None |
+| ACRA | 1 | Curated exact-match company and UEN lookup over the official sharded registry | None |
+| data.gov.sg | 5 | Dataset search, metadata, resource inspection, bounded row reads, collection browse | None |
+
+Additive brief tools:
+
+- `sg_business_dossier`
+- `sg_property_brief`
+- `sg_macro_brief`
+- `sg_transport_brief`
+- `sg_environment_brief`
+
+All brief tools return the same bounded envelope:
+
+- `title`
+- `summary`
+- `evidence`
+- `records`
+- `gaps`
+- `provenance`
+- `freshness`
+- `limits`
 
 Notes:
 
-- `sg_mas_exchange_rates` supports latest or exact-date lookup. It does not expose synthetic date ranges.
-- `sg_mas_interest_rates` is SORA-only in this phase.
-- `sg_mas_financial_stats` is banking-only in this phase.
-- `sg_datagov_get` returns dataset metadata only. It does not page, filter, or read dataset rows.
-- `sg_onemap_route` only supports `startLat`, `startLng`, `endLat`, `endLng`, and `routeType`.
-- HDB, CEA, BCA, and ACRA are curated tools over official data.gov.sg datasets. They do not require separate credentials.
+- `sg_mas_exchange_rates`, `sg_mas_interest_rates`, and `sg_mas_financial_stats` support latest, exact-date, and bounded date-range reads.
+- `sg_datagov_get` is metadata only.
+- `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
+- `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
+- OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback outside mock mode.
+- HDB, CEA, BCA, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 
 ## Quickstart
 
 Node 20.x is the supported runtime.
 
+### Local Repo Install
+
+This is the truthful default until the first public npm release exists.
+
 ```bash
-npx sg-apis-mcp
+npm install
+npm run build
+node packages/mcp-server/dist/index.js
 ```
 
-Claude Desktop:
+Local Claude Desktop or Codex-style MCP config:
 
 ```json
 {
   "mcpServers": {
-    "sg-apis": {
-      "command": "npx",
-      "args": ["sg-apis-mcp"]
+    "sg-apis-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/sg-skills/packages/mcp-server/dist/index.js"]
     }
   }
 }
 ```
 
-Claude Code:
+Local Claude Code:
 
 ```bash
-claude mcp add sg-apis-mcp -- npx sg-apis-mcp
+claude mcp add sg-apis-mcp -- node /absolute/path/to/sg-skills/packages/mcp-server/dist/index.js
 ```
+
+### Published npm Install
+
+Use this only after the first successful public npm release:
+
+```bash
+npx -y sg-apis-mcp
+```
+
+Published-package client config:
+
+```json
+{
+  "mcpServers": {
+    "sg-apis-mcp": {
+      "command": "npx",
+      "args": ["-y", "sg-apis-mcp"]
+    }
+  }
+}
+```
+
+### Quick Demo
+
+After building locally, run one of the bundled end-to-end demos:
+
+```bash
+npm run demo:mcp -- business
+npm run demo:mcp -- property
+npm run demo:mcp -- macro
+npm run demo:mcp -- transport
+npm run demo:mcp -- environment
+```
+
+Those demos start the mock upstream server, connect to the built MCP server, read a catalog resource, and call one direct tool, one brief tool, and `sg_query`.
 
 ## Authentication
 
-Environment variables are the recommended production path:
+Copy [`.env.example`](./.env.example) and set the credentials you actually need:
 
 - `SG_API_ONEMAP_EMAIL`
 - `SG_API_ONEMAP_PASSWORD`
@@ -98,99 +164,115 @@ The keystore helpers are still available for local use:
 - `sg_key_set { "apiName": "ura", "key": "..." }`
 - `sg_key_set { "apiName": "lta", "key": "..." }`
 
-The local keystore is a convenience fallback, not a secret-management system.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. HDB, CEA, BCA, and ACRA are intentionally covered operationally through the shared data.gov.sg path.
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. HDB, CEA, BCA, and ACRA are intentionally covered operationally through the shared data.gov.sg path rather than separate health probes.
+Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 
-## Workflow Recipes
+## Workflow Demos
 
-These are the intended product workflows for this phase.
+The primary runnable demos for this tranche are:
 
-### 1. Macro Snapshot
+- [Business Registry Diligence](./examples/business-dossier.md)
+- [Property And Regulatory Due Diligence](./examples/property-brief.md)
+- [Macro Snapshot](./examples/macro-brief.md)
+- [Transport Status](./examples/transport-brief.md)
+- [Environment Snapshot](./examples/environment-brief.md)
 
-Goal: combine macro indicators from SingStat with MAS rates.
+Additional bounded workflow names exposed in the catalog:
 
-```text
-sg_query { "query": "Macro snapshot of Singapore", "mode": "execute" }
-sg_singstat_search { "keyword": "GDP Singapore" }
-sg_singstat_search { "keyword": "CPI Singapore" }
-sg_mas_exchange_rates { "currency": "USD" }
-sg_mas_interest_rates {}
-```
+- Demographic Profile
+- Property Counterparty Diligence
+- Dataset Discovery Fallback
 
-### 2. Demographic Profile
-
-Goal: inspect the demographic profile of a planning area, optionally starting from a postal code.
+### Business Registry Diligence
 
 ```text
-sg_query { "query": "Demographic profile for postal code 168742", "mode": "execute" }
-sg_onemap_population { "planningArea": "Tampines", "dataType": "getPopulationAgeGroup" }
-sg_onemap_population { "planningArea": "Tampines", "dataType": "getHouseholdMonthlyIncomeWork" }
+sg_query { "query": "Registry diligence for UEN 201912345K", "mode": "execute" }
+sg_business_dossier { "uen": "201912345K", "format": "json" }
+sg_acra_entities { "uen": "201912345K", "format": "json" }
+sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_cea_salespersons { "registrationNo": "R123456A", "format": "json" }
 ```
 
-### 3. Property And Regulatory Due Diligence
-
-Goal: pair URA planning and transaction data with optional HDB market context.
+### Property And Regulatory Due Diligence
 
 ```text
 sg_query { "query": "Property due diligence for Bedok HDB resale", "mode": "execute" }
-sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok" }
-sg_ura_planning_area { "planningArea": "Bedok" }
-sg_hdb_resale_prices { "town": "Bedok" }
+sg_property_brief { "planningArea": "Bedok", "flatType": "4 ROOM", "includeEnvironment": true, "includeTransport": true, "format": "json" }
+sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok", "format": "json" }
+sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM", "format": "json" }
 ```
 
-### 4. Property Counterparty Diligence
-
-Goal: combine market context with ACRA, CEA, and BCA registry checks.
+### Property Counterparty Diligence
 
 ```text
-sg_query { "query": "Run registry check for company ABC CONSTRUCTION PTE LTD", "mode": "execute" }
-sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok" }
-sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM" }
-sg_cea_salespersons { "estateAgentName": "ERA REALTY NETWORK PTE LTD" }
-sg_acra_entities { "entityName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD" }
+sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok", "format": "json" }
+sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM", "format": "json" }
+sg_cea_salespersons { "estateAgentName": "ERA REALTY NETWORK PTE LTD", "format": "json" }
+sg_acra_entities { "entityName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 ```
 
-### 5. Business Registry Diligence
-
-Goal: cross-check a company, contractor, builder, or estate-agent counterparty across official registries.
+### Macro Snapshot
 
 ```text
-sg_query { "query": "Run registry check for company ABC CONSTRUCTION PTE LTD", "mode": "execute" }
-sg_acra_entities { "entityName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD" }
-sg_cea_salespersons { "registrationNo": "R123456A" }
+sg_query { "query": "Macro snapshot of Singapore", "mode": "execute" }
+sg_macro_brief { "currency": "USD", "format": "json" }
+sg_mas_exchange_rates { "currency": "USD", "startDate": "2026-03-01", "endDate": "2026-03-26", "format": "json" }
+sg_singstat_search { "keyword": "Singapore GDP", "format": "json" }
 ```
 
-### 6. Dataset Discovery Fallback
-
-Goal: find a relevant Singapore dataset when the domain-specific APIs do not cover the topic.
+### Transport Status
 
 ```text
-sg_query { "query": "Find datasets about hawker centres", "mode": "execute" }
-sg_datagov_search { "keyword": "hawker centres" }
-sg_datagov_get { "datasetId": "<dataset-id-from-search>" }
+sg_query { "query": "Transport status in Singapore right now", "mode": "execute" }
+sg_transport_brief { "busStopCode": "83139", "serviceNo": "851", "format": "json" }
+sg_lta_bus_arrivals { "busStopCode": "83139", "serviceNo": "851", "format": "json" }
+sg_lta_train_alerts { "format": "json" }
+sg_lta_traffic_incidents { "format": "json" }
 ```
+
+### Environment Snapshot
+
+```text
+sg_query { "query": "Environment snapshot of Singapore right now", "mode": "execute" }
+sg_environment_brief { "area": "Tampines", "region": "East", "stationId": "S107", "format": "json" }
+sg_nea_forecast_2hr { "area": "Tampines", "format": "json" }
+sg_nea_air_quality { "region": "East", "format": "json" }
+sg_nea_rainfall { "stationId": "S107", "format": "json" }
+```
+
+## Why This Beats Raw APIs
+
+| Workflow | Raw upstream path | MCP path | What the repo adds |
+| --- | --- | --- | --- |
+| Business Registry Diligence | call `sg_acra_entities`, `sg_bca_licensed_builders`, `sg_bca_registered_contractors`, and `sg_cea_salespersons`, then normalize exact-match misses yourself | `sg_business_dossier` or `sg_query` | one envelope, explicit coverage, exact-match gaps, freshness markers, and scope limits |
+| Property And Regulatory Due Diligence | geocode, resolve planning area, fetch URA transactions, fetch HDB market reads, then optionally stitch NEA and LTA signals | `sg_property_brief` or `sg_query` | resolved location, bounded live context, provenance per source, and clear non-recommendation boundaries |
+| Macro Snapshot | call 3 MAS series plus separate SingStat dataset search calls, then decide which dataset IDs to keep | `sg_macro_brief` or `sg_query` | one starter artifact with dataset entrypoints, freshness, and explicit limits |
+| Transport Status | call bus arrivals, train alerts, and traffic incidents separately, then decide what counts as a useful operations snapshot | `sg_transport_brief` or `sg_query` | one snapshot contract with stop-level optionality, provenance, and no hidden route-planning claims |
+| Environment Snapshot | call forecast, air quality, and rainfall separately, then reconcile area, region, and station coverage | `sg_environment_brief` or `sg_query` | one live snapshot contract with area and region caveats surfaced directly in `limits` |
 
 ## `sg_query`
 
-`sg_query` is the bounded preferred interface across 11 routed families.
+Supported intents:
 
-Supported uses:
+- macro snapshot
+- demographic profile
+- property or regulatory due diligence
+- business registry diligence
+- dataset discovery fallback
+- transport status or transport snapshot
+- environment snapshot
+- direct-tool routing for precise stop-level, area-level, region-level, station-level, company, UEN, dataset, and table prompts already covered by a direct `sg_*` tool
 
-- transparent plan or execute mode for bounded workflows
-- single-step routing to covered direct tools
-- macro, demographic, property, business-registry, dataset-discovery, transport, and environment workflows
+Common rejection or block cases:
 
-Unsupported uses:
-
-- general planning across arbitrary user goals
-- automatic comparison workflows
-- hidden fan-out beyond the bounded workflow catalog
-- hidden row-level data.gov.sg extraction beyond the explicit direct tools
+- unsupported comparisons return an explicit unsupported-workflow response instead of hidden multi-step synthesis
+- missing identifiers return a blocked plan with the exact field needed next, such as `busStopCode`, `planningArea`, `datasetId`, `entityName`, or `UEN`
+- unsupported multi-step formats return a direct format error instead of silently flattening the workflow
+- broad prompts outside the bounded catalog return an explicit "could not build a supported workflow" response
 
 When you need deterministic contracts, use the direct `sg_*` tools.
 
@@ -201,9 +283,22 @@ npm install
 npm run verify
 ```
 
+Useful follow-up commands:
+
+- `npm run demo:mcp -- transport`
+- `npm run test:smoke:packaging`
+- `npm run test:smoke:registry`
+
+Release workflow notes live in [docs/release.md](./docs/release.md).
+
 ## Current Limits
 
-The public entity surface is now live through `sg_acra_entities`, but it is still exact-match and registry-focused. This repo does not yet expose broader corporate graph or officer-level diligence beyond the fields published in the official public ACRA collection.
+- The repo is still a tool-first infrastructure product for agents, not a broad end-user analytics assistant.
+- `sg_business_dossier` is registry-focused and exact-match oriented.
+- `sg_property_brief` is a bounded diligence brief, not an automated investment recommendation.
+- `sg_macro_brief` is a compact starter snapshot, not a full macro research product.
+- `sg_transport_brief` is an operational snapshot, not a route planner or prediction engine.
+- `sg_environment_brief` is a live monitoring brief, not a severe-weather or forecasting system.
 
 ## License
 
