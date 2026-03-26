@@ -16,6 +16,7 @@ If you only read one resource first, read `sg://recipes`.
 Use `sg_query` when the caller starts with a goal instead of exact parameters:
 
 - `Walk from 049178 to 048616`
+- `Find a community club near 560123`
 - `Reverse geocode 1.2840, 103.8510`
 - `Convert SVY21 28001 38744 to WGS84`
 - `Browse SingStat transport datasets`
@@ -88,10 +89,22 @@ sg_datagov_resources { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" }
 sg_datagov_rows { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", "limit": 5, "sort": "month desc" }
 ```
 
+### Civic Discovery
+
+```text
+sg_query { "query": "Find childcare centres near Bedok with vacancies", "mode": "execute" }
+sg_pa_community_outlets { "type": "community_club", "postalCode": "560123" }
+sg_sportsg_facilities { "facilityType": "swimming_complex", "postalCode": "560123" }
+sg_ecda_childcare_centres { "postalCode": "560123", "hasVacancy": true }
+```
+
 ## New Data Families
 
-Nine additional families are available as direct tools, all backed by data.gov.sg (no auth required):
+Twelve additional families are available as direct tools, all backed by data.gov.sg or the official no-auth file-download path:
 
+- `sg_pa_community_outlets` and `sg_pa_resident_network_centres` — community clubs, PAssion WaVe outlets, and residents' network centres
+- `sg_sportsg_facilities` — public sport facilities by facility type, postal code, or proximity
+- `sg_ecda_childcare_centres` — childcare centres with joined vacancy signals
 - `sg_gebiz_tenders` — government procurement tenders and awards
 - `sg_hawker_centres` — hawker centre directory with coordinates
 - `sg_moe_schools` — school directory by level, zone, name

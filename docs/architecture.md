@@ -10,13 +10,13 @@ Accepted for the current product shape.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 11 official data families.
+This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 23 official data families.
 
 The product boundary is:
 
 - stable direct `sg_*` tools first
 - additive briefs where composition creates clear user value
-- a bounded preferred interface across 11 routed families
+- a bounded preferred interface across 14 routed families
 - machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, and `sg://recipes`
 
 That boundary keeps the repo useful without pretending to solve arbitrary analyst workflows.
@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 20 official data families
+### 2. The repo goes deep on 23 official data families
 
 The current families are:
 
@@ -50,6 +50,9 @@ The current families are:
 - CEA
 - BCA
 - ACRA
+- PA
+- Sport Singapore
+- ECDA
 - GeBIZ
 - Hawker Centres
 - MOE Schools
@@ -74,7 +77,7 @@ Consequence:
 
 ### 3. `sg_query` is a bounded usability layer, not a planner
 
-`sg_query` is the bounded preferred interface across 11 routed families.
+`sg_query` is the bounded preferred interface across 14 routed families.
 
 Why:
 
@@ -87,6 +90,7 @@ Consequence:
 - business-registry workflows can route to ACRA, CEA, and BCA
 - macro workflows can collapse to `sg_macro_brief`
 - property workflows can collapse to `sg_property_brief`
+- civic discovery can geocode postal codes, addresses, or planning areas before calling PA, Sport Singapore, or ECDA directory tools
 - route planning can geocode postal codes before calling `sg_onemap_route`
 - reverse geocoding and coordinate conversion can route through direct OneMap handlers
 - SingStat table drilldowns can move from browse to table to time-series reads

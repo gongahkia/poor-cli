@@ -44,6 +44,9 @@ These tool families do not require credentials:
 - CEA
 - BCA
 - ACRA
+- PA
+- Sport Singapore
+- ECDA
 - GeBIZ
 - Hawker Centres
 - MOE Schools
@@ -55,7 +58,8 @@ These tool families do not require credentials:
 - STB
 - data.gov.sg
 
-HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB are intentionally covered through the shared data.gov.sg path.
+HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.
+PA, Sport Singapore, ECDA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB use the same no-auth data.gov.sg access layer or official file-download path.
 
 ## OneMap
 
@@ -132,4 +136,3 @@ Common failure modes:
 ## Health Coverage Note
 
 `sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path rather than separate upstream probes.
-

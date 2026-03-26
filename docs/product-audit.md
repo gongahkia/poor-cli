@@ -4,7 +4,7 @@
 
 Actual value prop: yes, but narrow.
 
-This repo already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 11 official public-data families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. It is not yet enough to feel like a broad Singapore developer platform.
+This repo already has real utility for developers building Singapore-focused agents because it offers one deterministic MCP surface over 23 official public-data families, bounded brief artifacts, transparent blocker behavior, and a verified local build path. That is enough to be useful. It is not yet enough to feel like a broad Singapore developer platform.
 
 ## Who Gets Value Today
 
@@ -41,6 +41,7 @@ This repo already has real utility for developers building Singapore-focused age
 - runtime-only package contents for published tarballs
 - `sg://recipes` as a machine-readable discovery layer
 - broader `sg_query` coverage across geospatial, SingStat, data.gov.sg, URA development-charge, and HDB rental prompts
+- no-auth civic discovery across PA community outlets, Sport Singapore facilities, and ECDA childcare directories
 - stronger examples, smoke coverage, and onboarding docs for agent builders
 
 ## Current Limits
@@ -52,7 +53,7 @@ This repo already has real utility for developers building Singapore-focused age
 
 ## Breadth Priorities After This Pass
 
-- Civic amenities and directories: hawker centres, community facilities, parks, and other common place-based lookups would increase daily utility.
+- Civic amenities and directories: deepen from general discovery into family and neighbourhood support services such as student care, family services, and social service offices.
 - Education: schools, programmes, and catchment-adjacent discovery would broaden family and relocation use cases.
 - Healthcare facilities: clinics, hospitals, and service directories would expand practical consumer and operations workflows.
 - Procurement and tender discovery: this is a natural fit for business-facing agents and diligence workflows.
