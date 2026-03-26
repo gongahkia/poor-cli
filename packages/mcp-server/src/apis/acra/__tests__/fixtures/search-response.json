@@ -1,0 +1,46 @@
+{
+  "success": true,
+  "result": {
+    "fields": [
+      { "id": "uen", "type": "text" },
+      { "id": "entity_name", "type": "text" },
+      { "id": "entity_status_description", "type": "text" },
+      { "id": "annual_return_date", "type": "text" }
+    ],
+    "records": [
+      {
+        "uen": "201912345K",
+        "issuance_agency_id": "ACRA",
+        "entity_name": "ABC CONSTRUCTION PTE LTD",
+        "entity_type_description": "Local Company",
+        "business_constitution_description": "",
+        "company_type_description": "Private Company Limited by Shares",
+        "paf_constitution_description": "",
+        "entity_status_description": "Live Company",
+        "registration_incorporation_date": "2019-04-01",
+        "uen_issue_date": "2019-04-01",
+        "address_type": "LOCAL",
+        "block": "1",
+        "street_name": "MAIN STREET",
+        "level_no": "02",
+        "unit_no": "01",
+        "building_name": "ABC BUILDING",
+        "postal_code": "123456",
+        "other_address_line1": "",
+        "other_address_line2": "",
+        "account_due_date": "2026-04-01",
+        "annual_return_date": "2026-03-01",
+        "primary_ssic_code": "41001",
+        "primary_ssic_description": "GENERAL CONTRACTORS",
+        "primary_user_described_activity": "",
+        "secondary_ssic_code": "",
+        "secondary_ssic_description": "",
+        "secondary_user_described_activity": "",
+        "no_of_officers": "3"
+      }
+    ],
+    "total": 1,
+    "limit": 1,
+    "offset": 0
+  }
+}
