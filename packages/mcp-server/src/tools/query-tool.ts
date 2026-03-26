@@ -31,10 +31,25 @@ import {
   handleMasInterestRates,
 } from "./mas-tools.js";
 import { handleNeaAirQuality, handleNeaForecast2Hr, handleNeaRainfall } from "./nea-tools.js";
-import { handleOneMapGeocode, handleOneMapPopulation, handleOneMapRoute } from "./onemap-tools.js";
-import { handleSingStatSearch } from "./singstat-tools.js";
+import {
+  handleOneMapConvertCoords,
+  handleOneMapGeocode,
+  handleOneMapPopulation,
+  handleOneMapReverseGeocode,
+  handleOneMapRoute,
+} from "./onemap-tools.js";
+import {
+  handleSingStatBrowse,
+  handleSingStatSearch,
+  handleSingStatTable,
+  handleSingStatTimeseries,
+} from "./singstat-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-import { handleUraPlanningArea, handleUraPropertyTransactions } from "./ura-tools.js";
+import {
+  handleUraDevCharges,
+  handleUraPlanningArea,
+  handleUraPropertyTransactions,
+} from "./ura-tools.js";
 
 type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
 
@@ -77,6 +92,12 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleEnvironmentBrief(params as Parameters<typeof handleEnvironmentBrief>[0]),
   sg_singstat_search: async (params) =>
     handleSingStatSearch(params as Parameters<typeof handleSingStatSearch>[0]),
+  sg_singstat_table: async (params) =>
+    handleSingStatTable(params as Parameters<typeof handleSingStatTable>[0]),
+  sg_singstat_timeseries: async (params) =>
+    handleSingStatTimeseries(params as Parameters<typeof handleSingStatTimeseries>[0]),
+  sg_singstat_browse: async (params) =>
+    handleSingStatBrowse(params as Parameters<typeof handleSingStatBrowse>[0]),
   sg_mas_exchange_rates: async (params) =>
     handleMasExchangeRates(params as Parameters<typeof handleMasExchangeRates>[0]),
   sg_mas_interest_rates: async (params) =>
@@ -85,14 +106,20 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleMasFinancialStats(params as Parameters<typeof handleMasFinancialStats>[0]),
   sg_onemap_geocode: async (params) =>
     handleOneMapGeocode(params as Parameters<typeof handleOneMapGeocode>[0]),
+  sg_onemap_reverse_geocode: async (params) =>
+    handleOneMapReverseGeocode(params as Parameters<typeof handleOneMapReverseGeocode>[0]),
   sg_onemap_route: async (params) =>
     handleOneMapRoute(params as Parameters<typeof handleOneMapRoute>[0]),
+  sg_onemap_convert_coords: async (params) =>
+    handleOneMapConvertCoords(params as Parameters<typeof handleOneMapConvertCoords>[0]),
   sg_onemap_population: async (params) =>
     handleOneMapPopulation(params as Parameters<typeof handleOneMapPopulation>[0]),
   sg_ura_property_transactions: async (params) =>
     handleUraPropertyTransactions(params as Parameters<typeof handleUraPropertyTransactions>[0]),
   sg_ura_planning_area: async (params) =>
     handleUraPlanningArea(params as Parameters<typeof handleUraPlanningArea>[0]),
+  sg_ura_dev_charges: async (params) =>
+    handleUraDevCharges(params as Parameters<typeof handleUraDevCharges>[0]),
   sg_datagov_search: async (params) =>
     handleDatagovSearch(params as Parameters<typeof handleDatagovSearch>[0]),
   sg_datagov_get: async (params) =>
