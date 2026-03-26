@@ -71,6 +71,14 @@ type QueryFormatSupport =
   | { readonly supported: true }
   | { readonly supported: false; readonly reason: string; readonly suggestion: string };
 
+type WorkflowOpsMetadata = {
+  readonly resultSummary?: {
+    readonly level: string;
+    readonly headline: string;
+  };
+  readonly nextActions?: readonly Readonly<Record<string, unknown>>[];
+};
+
 const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
   sg_acra_entities: async (params) =>
     handleAcraEntities(params as Parameters<typeof handleAcraEntities>[0]),
@@ -408,6 +416,104 @@ const toDirectSuggestion = (step: Pick<QueryStep, "tool"> & { readonly input: Re
   return `${step.tool} ${JSON.stringify(step.input)}`;
 };
 
+const extractWorkflowOpsMetadata = (
+  steps: readonly ExecutedQueryStep[],
+): WorkflowOpsMetadata => {
+  const finalStep = steps[steps.length - 1];
+  if (finalStep === undefined || finalStep.status !== "completed" || !isRecord(finalStep.structuredOutput)) {
+    return {};
+  }
+
+  const record = finalStep.structuredOutput["record"];
+  if (!isRecord(record)) {
+    return {};
+  }
+
+  const records = record["records"];
+  if (!isRecord(records)) {
+    return {};
+  }
+
+  const opsStatus = records["opsStatus"];
+  const nextChecks = records["nextChecks"];
+  const resultSummary =
+    isRecord(opsStatus)
+    && typeof opsStatus["level"] === "string"
+    && typeof opsStatus["headline"] === "string"
+      ? {
+          level: opsStatus["level"],
+          headline: opsStatus["headline"],
+        }
+      : undefined;
+  const nextActions = Array.isArray(nextChecks)
+    ? nextChecks.filter((item): item is Readonly<Record<string, unknown>> => isRecord(item))
+    : undefined;
+
+  return {
+    ...(resultSummary === undefined ? {} : { resultSummary }),
+    ...(nextActions === undefined || nextActions.length === 0 ? {} : { nextActions }),
+  };
+};
+
+const appendOpsMarkdownSections = (
+  body: string,
+  opsMetadata: WorkflowOpsMetadata,
+): string => {
+  const sections = [body];
+
+  if (opsMetadata.resultSummary !== undefined) {
+    sections.push("");
+    sections.push(`Ops result: ${opsMetadata.resultSummary.level} - ${opsMetadata.resultSummary.headline}`);
+  }
+
+  if (opsMetadata.nextActions !== undefined && opsMetadata.nextActions.length > 0) {
+    sections.push("");
+    sections.push("### Next Actions");
+    for (const action of opsMetadata.nextActions) {
+      const tool = typeof action["tool"] === "string" ? action["tool"] : "unknown_tool";
+      const reason = typeof action["reason"] === "string" ? action["reason"] : "";
+      const input = isRecord(action["input"]) ? action["input"] : {};
+      sections.push(`- \`${tool}\` ${reason} Input: \`${JSON.stringify(input)}\``);
+    }
+  }
+
+  return sections.join("\n");
+};
+
+const renderSingleStepWithOps = (
+  step: ExecutedQueryStep,
+  format: OutputFormat,
+  opsMetadata: WorkflowOpsMetadata,
+): string | null => {
+  const baseText = renderSingleStepText(step, format);
+
+  if (opsMetadata.resultSummary === undefined && opsMetadata.nextActions === undefined) {
+    return baseText;
+  }
+
+  if (format === "markdown") {
+    return appendOpsMarkdownSections(baseText ?? "", opsMetadata);
+  }
+
+  if (format === "json") {
+    const data = getRenderableStructuredData(step);
+    if (!isRecord(data)) {
+      return baseText;
+    }
+
+    return formatResponse(
+      {
+        ...data,
+        ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
+        ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
+      },
+      "json",
+    );
+  }
+
+  return baseText;
+};
+
 const formatUnsupportedQuery = (
   reason: string,
   suggestion: string,
@@ -472,6 +578,7 @@ const formatExecutionText = (
   steps: readonly ExecutedQueryStep[],
   status: "completed" | "failed",
   format: OutputFormat,
+  opsMetadata: WorkflowOpsMetadata,
 ): string => {
   if (format !== "markdown") {
     return formatResponse(
@@ -482,6 +589,8 @@ const formatExecutionText = (
         apis: plan.apis,
         confidence: plan.confidence,
         steps,
+        ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
+        ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
       },
       "json",
     );
@@ -512,6 +621,22 @@ const formatExecutionText = (
     } else if (step.outputText !== undefined) {
       lines.push("");
       lines.push(step.outputText);
+    }
+    lines.push("");
+  }
+
+  if (opsMetadata.resultSummary !== undefined) {
+    lines.push(`Ops result: ${opsMetadata.resultSummary.level} - ${opsMetadata.resultSummary.headline}`);
+    lines.push("");
+  }
+
+  if (opsMetadata.nextActions !== undefined && opsMetadata.nextActions.length > 0) {
+    lines.push("### Next Actions");
+    for (const action of opsMetadata.nextActions) {
+      const tool = typeof action["tool"] === "string" ? action["tool"] : "unknown_tool";
+      const reason = typeof action["reason"] === "string" ? action["reason"] : "";
+      const input = isRecord(action["input"]) ? action["input"] : {};
+      lines.push(`- \`${tool}\` ${reason} Input: \`${JSON.stringify(input)}\``);
     }
     lines.push("");
   }
@@ -672,6 +797,9 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       }
 
       const execution = await executePlan(plan, resolvedFormat);
+      const opsMetadata = execution.status === "completed"
+        ? extractWorkflowOpsMetadata(execution.steps)
+        : {};
       if (execution.status === "completed" && plan.steps.length === 1) {
         const step = execution.steps[0];
         if (step !== undefined) {
@@ -701,8 +829,9 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
 
       const executionText =
         execution.status === "completed" && plan.steps.length === 1
-          ? renderSingleStepText(execution.steps[0]!, resolvedFormat) ?? formatExecutionText(plan, execution.steps, execution.status, resolvedFormat)
-          : formatExecutionText(plan, execution.steps, execution.status, resolvedFormat);
+          ? renderSingleStepWithOps(execution.steps[0]!, resolvedFormat, opsMetadata)
+            ?? formatExecutionText(plan, execution.steps, execution.status, resolvedFormat, opsMetadata)
+          : formatExecutionText(plan, execution.steps, execution.status, resolvedFormat, opsMetadata);
       return {
         isError: execution.status === "failed",
         content: [{ type: "text", text: executionText }],
@@ -715,6 +844,8 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
           confidence: plan.confidence,
           toolsUsed: plan.steps.map((step) => step.tool),
           steps: execution.steps,
+          ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
+          ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
           ...(execution.status === "failed"
             ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
             : {}),

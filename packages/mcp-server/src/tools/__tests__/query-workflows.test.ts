@@ -261,6 +261,11 @@ describe("sg_query workflows", () => {
       status: "completed",
       workflow: "route_plan",
     });
+    expect(result.structuredContent?.["resultSummary"]).toBeUndefined();
+    expect(result.structuredContent?.["nextActions"]).toBeUndefined();
+    const text = result.content.find((item) => item.type === "text")?.text;
+    expect(JSON.parse(text!)).not.toHaveProperty("resultSummary");
+    expect(JSON.parse(text!)).not.toHaveProperty("nextActions");
     expect(vi.mocked(getRoute)).toHaveBeenCalledWith(1.2864, 103.8537, 1.284, 103.851, "walk");
   });
 
@@ -321,6 +326,7 @@ describe("sg_query workflows", () => {
     const result = await runQuery({
       query: "Transport status in Singapore right now",
       mode: "execute",
+      format: "json",
     });
 
     expect(result.isError).toBe(false);
@@ -328,7 +334,15 @@ describe("sg_query workflows", () => {
       status: "completed",
       workflow: "transport_brief",
       toolsUsed: ["sg_transport_brief"],
+      resultSummary: {
+        level: "disrupted",
+      },
     });
+    expect(Array.isArray(result.structuredContent?.["nextActions"])).toBe(true);
+    const text = result.content.find((item) => item.type === "text")?.text;
+    const payload = JSON.parse(text!);
+    expect(payload.resultSummary).toMatchObject({ level: "disrupted" });
+    expect(Array.isArray(payload.nextActions)).toBe(true);
   });
 
   it("routes broad environment snapshot queries to the environment brief", async () => {
@@ -365,7 +379,14 @@ describe("sg_query workflows", () => {
       status: "completed",
       workflow: "environment_brief",
       toolsUsed: ["sg_environment_brief"],
+      resultSummary: {
+        level: "watch",
+      },
     });
+    expect(Array.isArray(result.structuredContent?.["nextActions"])).toBe(true);
+    const text = result.content.find((item) => item.type === "text")?.text ?? "";
+    expect(text).toContain("### Next Actions");
+    expect(text).toContain("Ops result: watch");
   });
 
   it("reports the failing step and suggested action when a workflow dependency cannot be resolved", async () => {
