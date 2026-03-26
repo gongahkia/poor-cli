@@ -23,9 +23,66 @@ const PLANNING_AREAS = [
 
 const CURRENCY_STOPWORDS = new Set(["GDP", "CPI", "MRT", "HDB", "LTA", "NEA", "CEA", "BCA", "ACRA"]);
 const REGIONS = ["north", "south", "east", "west", "central"] as const;
+const SINGSTAT_CATEGORY_MATCHERS = [
+  { category: "Economy & Prices", pattern: /\beconomy|prices|gdp|cpi|inflation|national accounts\b/i },
+  { category: "Population & Land Area", pattern: /\bpopulation|land area|demographic\b/i },
+  { category: "Labour & Productivity", pattern: /\blabou?r|employment|wages|productivity\b/i },
+  { category: "Society", pattern: /\bsociety|education|health|housing|social\b/i },
+  { category: "Transport", pattern: /\btransport|traffic|vehicle|mrt|bus\b/i },
+  { category: "Services", pattern: /\bservices|retail|tourism|accommodation|food\b/i },
+  { category: "Manufacturing & Construction", pattern: /\bmanufacturing|construction|industrial production\b/i },
+  { category: "Finance & Insurance", pattern: /\bfinance|banking|insurance|capital markets\b/i },
+  { category: "International Trade", pattern: /\binternational trade|imports|exports|trade partners\b/i },
+] as const;
 
 const extractPostalCode = (query: string): string | null => {
   const match = query.match(/\b(\d{6})\b/);
+  return match?.[1] ?? null;
+};
+
+const extractPostalCodes = (query: string): readonly string[] => {
+  return Array.from(query.matchAll(/\b(\d{6})\b/g), (match) => match[1] ?? "");
+};
+
+const extractCoordinatePairs = (
+  query: string,
+): readonly { lat: number; lng: number }[] => {
+  return Array.from(
+    query.matchAll(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/g),
+    (match) => ({
+      lat: Number(match[1]),
+      lng: Number(match[2]),
+    }),
+  ).filter(({ lat, lng }) =>
+    Number.isFinite(lat)
+    && Number.isFinite(lng)
+    && Math.abs(lat) <= 90
+    && Math.abs(lng) <= 180);
+};
+
+const extractSvy21Pair = (query: string): { x: number; y: number } | null => {
+  const explicit = query.match(
+    /\b(?:svy21|easting|northing)\b.*?(?:x|easting)?\s*[:=]?\s*(\d{4,6})\D+(?:y|northing)?\s*[:=]?\s*(\d{4,6})/i,
+  );
+  if (explicit === null) {
+    return null;
+  }
+  return {
+    x: Number(explicit[1]),
+    y: Number(explicit[2]),
+  };
+};
+
+const extractRouteType = (query: string): "walk" | "drive" | "pt" | "cycle" | null => {
+  if (/\bwalk|walking\b/i.test(query)) return "walk";
+  if (/\bdrive|driving\b/i.test(query)) return "drive";
+  if (/\bcycle|cycling\b/i.test(query)) return "cycle";
+  if (/\bpublic transport|train|mrt|bus\b/i.test(query)) return "pt";
+  return null;
+};
+
+const extractTableId = (query: string): string | null => {
+  const match = query.match(/\b([A-Z]\d{6}[A-Z]?)\b/i);
   return match?.[1] ?? null;
 };
 
@@ -124,6 +181,63 @@ const extractStationId = (query: string): string | null => {
 const extractQuotedTerm = (query: string): string | null => {
   const match = query.match(/["“”'`]\s*([^"“”'`]{2,}?)\s*["“”'`]/);
   return match?.[1]?.trim() ?? null;
+};
+
+const extractIndicator = (query: string): string | null => {
+  const explicit = query.match(/\bindicator\s+(.+?)(?=\s+(?:from|table|for|between)\b|[?.!,]|$)/i);
+  if (explicit?.[1] !== undefined) {
+    return explicit[1].trim();
+  }
+  return extractQuotedTerm(query);
+};
+
+const extractFlatType = (query: string): string | null => {
+  const match = query.match(/\b(STUDIO APARTMENT|MULTI-GENERATION|EXECUTIVE|[1-5]\s*ROOM)\b/i);
+  return match?.[1]?.replace(/\s+/g, " ").toUpperCase() ?? null;
+};
+
+const extractSingStatCategory = (query: string): string | null => {
+  for (const matcher of SINGSTAT_CATEGORY_MATCHERS) {
+    if (matcher.pattern.test(query)) {
+      return matcher.category;
+    }
+  }
+  return null;
+};
+
+const extractCollection = (query: string): string | null => {
+  const explicit = query.match(/\bcollection\s+(.+?)(?=\s+(?:datasets?|data|resources?|rows?)\b|[?.!,]|$)/i);
+  if (explicit?.[1] !== undefined) {
+    return explicit[1].trim();
+  }
+  return /collection/i.test(query) ? extractQuotedTerm(query) : null;
+};
+
+const extractUseGroup = (query: string): string | null => {
+  const explicit = query.match(/\buse\s+group\s+(.+?)(?=\s+(?:sector|rate|rates)\b|[?.!,]|$)/i);
+  return explicit?.[1]?.trim() ?? null;
+};
+
+const extractSector = (query: string): string | null => {
+  const explicit = query.match(/\bsector\s+(.+?)(?=\s+(?:use\s+group|rate|rates)\b|[?.!,]|$)/i);
+  return explicit?.[1]?.trim() ?? null;
+};
+
+const extractCoordinateSource = (query: string): "SVY21" | "WGS84" | null => {
+  const lower = query.toLowerCase();
+  if (/to\s+svy21|from\s+wgs84|from\s+gps/.test(lower)) {
+    return "WGS84";
+  }
+  if (/to\s+wgs84|to\s+gps|from\s+svy21/.test(lower)) {
+    return "SVY21";
+  }
+  if (/convert\s+svy21/.test(lower)) {
+    return "SVY21";
+  }
+  if (/convert\s+wgs84|convert\s+gps/.test(lower)) {
+    return "WGS84";
+  }
+  return null;
 };
 
 const stripTrailingBusinessContext = (value: string): string => {
@@ -268,6 +382,30 @@ export const classifyIntent = (query: string): IntentResult => {
   const postalCode = extractPostalCode(query);
   if (postalCode !== null) params["postalCode"] = postalCode;
 
+  const postalCodes = extractPostalCodes(query);
+  if (postalCodes.length >= 2) {
+    params["originPostalCode"] = postalCodes[0]!;
+    params["destinationPostalCode"] = postalCodes[1]!;
+  }
+
+  const coordinatePairs = extractCoordinatePairs(query);
+  if (coordinatePairs.length >= 1) {
+    params["lat"] = coordinatePairs[0]!.lat;
+    params["lng"] = coordinatePairs[0]!.lng;
+  }
+  if (coordinatePairs.length >= 2) {
+    params["startLat"] = coordinatePairs[0]!.lat;
+    params["startLng"] = coordinatePairs[0]!.lng;
+    params["endLat"] = coordinatePairs[1]!.lat;
+    params["endLng"] = coordinatePairs[1]!.lng;
+  }
+
+  const svy21Pair = extractSvy21Pair(query);
+  if (svy21Pair !== null) {
+    params["svy21X"] = svy21Pair.x;
+    params["svy21Y"] = svy21Pair.y;
+  }
+
   const busStopCode = extractBusStopCode(query);
   if (busStopCode !== null && /bus|arrival|stop/i.test(lower)) params["busStopCode"] = busStopCode;
 
@@ -299,6 +437,41 @@ export const classifyIntent = (query: string): IntentResult => {
 
   const stationId = extractStationId(query);
   if (stationId !== null) params["stationId"] = stationId;
+
+  const routeType = extractRouteType(query);
+  if (routeType !== null) params["routeType"] = routeType;
+
+  const tableId = extractTableId(query);
+  if (tableId !== null) params["tableId"] = tableId;
+
+  const indicator = extractIndicator(query);
+  if (indicator !== null) params["indicator"] = indicator;
+
+  const flatType = extractFlatType(query);
+  if (flatType !== null) params["flatType"] = flatType;
+
+  const category = extractSingStatCategory(query);
+  if (category !== null) params["category"] = category;
+
+  const collection = extractCollection(query);
+  if (collection !== null) params["collection"] = collection;
+
+  const useGroup = extractUseGroup(query);
+  if (useGroup !== null) params["useGroup"] = useGroup;
+
+  const sector = extractSector(query);
+  if (sector !== null) params["sector"] = sector;
+
+  const coordinateSource = extractCoordinateSource(query);
+  if (coordinateSource !== null) params["from"] = coordinateSource;
+  if (coordinateSource === "SVY21" && svy21Pair !== null) {
+    params["x"] = svy21Pair.x;
+    params["y"] = svy21Pair.y;
+  }
+  if (coordinateSource === "WGS84" && coordinatePairs.length >= 1) {
+    params["x"] = coordinatePairs[0]!.lat;
+    params["y"] = coordinatePairs[0]!.lng;
+  }
 
   const companyName = extractCompanyName(query);
   if (companyName !== null) {
@@ -388,6 +561,30 @@ export const classifyIntent = (query: string): IntentResult => {
   }
 
   if (
+    aliasedTool === "sg_onemap_route"
+    || /\b(directions|how\s+to\s+get|travel\s+from|walk\s+from|drive\s+from|cycle\s+from|route\s+from)\b/i.test(lower)
+  ) {
+    return {
+      ...buildIntentResult("geospatial", "route_plan", 0.89, params),
+      apis: ["onemap"],
+    };
+  }
+
+  if (
+    aliasedTool === "sg_onemap_reverse_geocode"
+    || /reverse\s*geocode|address\s+from\s+coordinates?|what\s+is\s+at\s+[-\d.]+\s*,\s*[-\d.]+/i.test(lower)
+  ) {
+    return buildIntentResult("geospatial", "direct_tool", 0.9, params, "sg_onemap_reverse_geocode");
+  }
+
+  if (
+    aliasedTool === "sg_onemap_convert_coords"
+    || /coordinate\s*conversion|convert\s+coordinates|convert\s+svy21|convert\s+wgs84|convert\s+gps/i.test(lower)
+  ) {
+    return buildIntentResult("geospatial", "direct_tool", 0.88, params, "sg_onemap_convert_coords");
+  }
+
+  if (
     (
       aliasedTool === "sg_transport_brief"
       || /transport\s*(status|snapshot|brief|ops|operations)|network\s*status|commute\s*status|mrt\s*status|road\s*status/i.test(lower)
@@ -474,12 +671,34 @@ export const classifyIntent = (query: string): IntentResult => {
     return buildIntentResult("financial", "direct_tool", 0.9, params, tool);
   }
 
+  if (aliasedTool === "sg_ura_dev_charges" || /development\s*charge|dev\s*charge/i.test(lower)) {
+    return buildIntentResult("property", "direct_tool", 0.88, params, "sg_ura_dev_charges");
+  }
+
   if (aliasedTool?.includes("ura") || /property|condo|transaction|plot\s*ratio|zoning|master\s*plan/i.test(lower)) {
     const tool = aliasedTool
       ?? (/plot\s*ratio|zoning|master\s*plan|planning\s*area/i.test(lower)
         ? "sg_ura_planning_area"
         : "sg_ura_property_transactions");
     return buildIntentResult("property", "direct_tool", 0.86, params, tool);
+  }
+
+  if (aliasedTool === "sg_singstat_browse" || /browse\s+singstat|singstat\s+(?:categories|category|browse)/i.test(lower)) {
+    return buildIntentResult("economic", "direct_tool", 0.87, params, "sg_singstat_browse");
+  }
+
+  if (
+    aliasedTool === "sg_singstat_timeseries"
+    || (tableId !== null && /time\s*series|timeseries|historical\s+series/i.test(lower))
+  ) {
+    return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_timeseries");
+  }
+
+  if (
+    aliasedTool === "sg_singstat_table"
+    || (tableId !== null && /singstat|tablebuilder|table\s+[a-z]\d{6}/i.test(lower))
+  ) {
+    return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_table");
   }
 
   if (
@@ -497,6 +716,10 @@ export const classifyIntent = (query: string): IntentResult => {
     || aliasedTool?.includes("onemap_population")
   ) {
     return buildIntentResult("demographic", "direct_tool", 0.85, params, "sg_onemap_population");
+  }
+
+  if (aliasedTool === "sg_datagov_browse" || /browse\s+(?:data\.gov|open\s+data)|data\.gov.*collections?|open\s+data.*collections?/i.test(lower)) {
+    return buildIntentResult("dataset", "direct_tool", 0.84, params, "sg_datagov_browse");
   }
 
   if (aliasedTool?.includes("singstat") || /gdp|cpi|inflation|unemployment|trade|economy|economic/i.test(lower)) {
@@ -549,6 +772,17 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["planningArea"] !== undefined ? { planningArea: params["planningArea"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+        },
+      };
+    case "sg_ura_dev_charges":
+      return {
+        tool,
+        input: {
+          ...(params["useGroup"] !== undefined ? { useGroup: params["useGroup"] } : {}),
+          ...(params["sector"] !== undefined ? { sector: params["sector"] } : {}),
         },
       };
     case "sg_transport_brief":
@@ -573,6 +807,34 @@ export const resolveToolInput = (
       return {
         tool,
         input: { searchVal: (params["postalCode"] ?? params["planningArea"] ?? query) as string },
+      };
+    case "sg_onemap_reverse_geocode":
+      return {
+        tool,
+        input: {
+          ...(params["lat"] !== undefined ? { lat: params["lat"] } : {}),
+          ...(params["lng"] !== undefined ? { lng: params["lng"] } : {}),
+        },
+      };
+    case "sg_onemap_route":
+      return {
+        tool,
+        input: {
+          ...(params["startLat"] !== undefined ? { startLat: params["startLat"] } : {}),
+          ...(params["startLng"] !== undefined ? { startLng: params["startLng"] } : {}),
+          ...(params["endLat"] !== undefined ? { endLat: params["endLat"] } : {}),
+          ...(params["endLng"] !== undefined ? { endLng: params["endLng"] } : {}),
+          routeType: (params["routeType"] ?? "pt") as "walk" | "drive" | "pt" | "cycle",
+        },
+      };
+    case "sg_onemap_convert_coords":
+      return {
+        tool,
+        input: {
+          ...(params["from"] !== undefined ? { from: params["from"] } : {}),
+          ...(params["x"] !== undefined ? { x: params["x"] } : {}),
+          ...(params["y"] !== undefined ? { y: params["y"] } : {}),
+        },
       };
     case "sg_onemap_population":
       return {
@@ -625,8 +887,33 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["planningArea"] !== undefined ? { town: params["planningArea"] } : {}),
+          ...(params["flatType"] !== undefined ? { flatType: params["flatType"] } : {}),
           ...(params["startMonth"] !== undefined ? { startMonth: params["startMonth"] } : {}),
           ...(params["endMonth"] !== undefined ? { endMonth: params["endMonth"] } : {}),
+        },
+      };
+    case "sg_singstat_table":
+      return {
+        tool,
+        input: {
+          ...(params["tableId"] !== undefined ? { tableId: params["tableId"] } : {}),
+        },
+      };
+    case "sg_singstat_timeseries":
+      return {
+        tool,
+        input: {
+          ...(params["tableId"] !== undefined ? { tableId: params["tableId"] } : {}),
+          ...(params["indicator"] !== undefined ? { indicator: params["indicator"] } : {}),
+          ...(params["startYear"] !== undefined ? { startYear: params["startYear"] } : {}),
+          ...(params["endYear"] !== undefined ? { endYear: params["endYear"] } : {}),
+        },
+      };
+    case "sg_singstat_browse":
+      return {
+        tool,
+        input: {
+          ...(params["category"] !== undefined ? { category: params["category"] } : {}),
         },
       };
     case "sg_singstat_search":
@@ -646,6 +933,13 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["datasetId"] !== undefined ? { datasetId: params["datasetId"] } : {}),
+        },
+      };
+    case "sg_datagov_browse":
+      return {
+        tool,
+        input: {
+          ...(params["collection"] !== undefined ? { collection: params["collection"] } : {}),
         },
       };
     case "sg_cea_salespersons":
