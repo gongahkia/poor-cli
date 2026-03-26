@@ -27,6 +27,8 @@ vi.mock("../../apis/ura/client.js", () => ({
 vi.mock("../../apis/datagov/client.js", () => ({
   searchDatasets: vi.fn(),
   getDataset: vi.fn(),
+  getDatasetResources: vi.fn(),
+  getDatasetRows: vi.fn(),
   listCollections: vi.fn(),
 }));
 
@@ -63,10 +65,14 @@ vi.mock("../../apis/acra/client.js", () => ({
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData } from "../../apis/onemap/client.js";
-import { uraFetch } from "../../apis/ura/client.js";
-import { searchDatasets as datagovSearch } from "../../apis/datagov/client.js";
-import { getBusArrivals } from "../../apis/lta/client.js";
-import { getForecast2Hr } from "../../apis/nea/client.js";
+import { getPropertyTransactions, uraFetch } from "../../apis/ura/client.js";
+import {
+  getDatasetResources,
+  getDatasetRows,
+  searchDatasets as datagovSearch,
+} from "../../apis/datagov/client.js";
+import { getBusArrivals, getTrafficIncidents, getTrainAlerts } from "../../apis/lta/client.js";
+import { getAirQuality, getForecast2Hr, getRainfall } from "../../apis/nea/client.js";
 import { getHdbResalePrices } from "../../apis/hdb/client.js";
 import { getCeaSalespersons } from "../../apis/cea/client.js";
 import {
@@ -78,7 +84,18 @@ import { handleSingStatSearch } from "../singstat-tools.js";
 import { handleMasExchangeRates, handleMasInterestRates } from "../mas-tools.js";
 import { handleOneMapGeocode, handleOneMapPopulation } from "../onemap-tools.js";
 import { handleUraPlanningArea } from "../ura-tools.js";
-import { handleDatagovSearch } from "../datagov-tools.js";
+import {
+  handleDatagovResources,
+  handleDatagovRows,
+  handleDatagovSearch,
+} from "../datagov-tools.js";
+import {
+  handleBusinessDossier,
+  handleEnvironmentBrief,
+  handleMacroBrief,
+  handlePropertyBrief,
+  handleTransportBrief,
+} from "../brief-tools.js";
 import { handleLtaBusArrivals } from "../lta-tools.js";
 import { handleNeaForecast2Hr } from "../nea-tools.js";
 import { handleHdbResalePrices } from "../hdb-tools.js";
@@ -90,16 +107,68 @@ import {
 import { handleAcraEntities } from "../acra-tools.js";
 import { executeQueryStep } from "../query-tool.js";
 
+const normalizeBriefResult = (result: Awaited<ReturnType<typeof executeQueryStep>>) => {
+  const normalized = structuredClone(result);
+  const record = normalized.structuredContent?.["record"];
+  let content = normalized.content;
+
+  if (
+    typeof record === "object"
+    && record !== null
+    && "freshness" in record
+    && Array.isArray(record["freshness"])
+  ) {
+    for (const item of record["freshness"]) {
+      if (typeof item === "object" && item !== null && "observedAt" in item) {
+        item["observedAt"] = "__normalized__";
+      }
+    }
+  }
+
+  const firstContent = normalized.content[0];
+  if (firstContent?.type === "text") {
+    try {
+      const parsed = JSON.parse(firstContent.text) as Record<string, unknown>;
+      const freshness = parsed["freshness"];
+      if (Array.isArray(freshness)) {
+        for (const item of freshness) {
+          if (typeof item === "object" && item !== null && "observedAt" in item) {
+            item["observedAt"] = "__normalized__";
+          }
+        }
+        content = [{
+          ...firstContent,
+          text: JSON.stringify(parsed, null, 2),
+        }];
+      }
+    } catch {
+      // Non-JSON tool outputs are compared as-is.
+    }
+  }
+
+  return {
+    ...normalized,
+    content,
+  };
+};
+
 describe("sg_query parity", () => {
   beforeEach(() => {
     vi.mocked(singstatSearch).mockReset();
     vi.mocked(masQuery).mockReset();
     vi.mocked(geocode).mockReset();
     vi.mocked(getPopulationData).mockReset();
+    vi.mocked(getPropertyTransactions).mockReset();
     vi.mocked(uraFetch).mockReset();
     vi.mocked(datagovSearch).mockReset();
+    vi.mocked(getDatasetResources).mockReset();
+    vi.mocked(getDatasetRows).mockReset();
     vi.mocked(getBusArrivals).mockReset();
+    vi.mocked(getTrainAlerts).mockReset();
+    vi.mocked(getTrafficIncidents).mockReset();
     vi.mocked(getForecast2Hr).mockReset();
+    vi.mocked(getAirQuality).mockReset();
+    vi.mocked(getRainfall).mockReset();
     vi.mocked(getHdbResalePrices).mockReset();
     vi.mocked(getCeaSalespersons).mockReset();
     vi.mocked(getBcaLicensedBuilders).mockReset();
@@ -224,6 +293,117 @@ describe("sg_query parity", () => {
     await expect(executeQueryStep("sg_datagov_search", input)).resolves.toEqual(
       await handleDatagovSearch(input),
     );
+  });
+
+  it("matches the direct data.gov resource-inspection handler", async () => {
+    vi.mocked(getDatasetResources).mockResolvedValue({
+      datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      name: "HDB Resale Flat Prices",
+      description: "Resale flat prices",
+      status: "active",
+      format: "CSV",
+      createdAt: "2020-01-01",
+      lastUpdatedAt: "2026-03-01",
+      managedByAgencyName: "HDB",
+      collectionIds: ["housing"],
+      contactEmails: ["data@hdb.gov.sg"],
+      datasetSize: 2048,
+      resources: [{
+        resourceId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+        name: "HDB Resale Flat Prices",
+        format: "CSV",
+        machineReadable: true,
+        columns: [
+          {
+            key: "month",
+            name: "month",
+            title: "Month",
+            dataType: "text",
+            index: 1,
+            isCategorical: false,
+          },
+        ],
+      }],
+    });
+
+    const input = { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_datagov_resources", input)).resolves.toEqual(
+      await handleDatagovResources(input),
+    );
+  });
+
+  it("matches the direct data.gov bounded-row handler", async () => {
+    vi.mocked(getDatasetRows).mockResolvedValue({
+      datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      datasetName: "HDB Resale Flat Prices",
+      resourceId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      total: 1,
+      offset: 0,
+      limit: 1,
+      fields: [{ id: "town", type: "text" }],
+      records: [{ town: "BEDOK" }],
+    });
+
+    const input = { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", limit: 1, format: "json" } as const;
+
+    await expect(executeQueryStep("sg_datagov_rows", input)).resolves.toEqual(
+      await handleDatagovRows(input),
+    );
+  });
+
+  it("matches the direct transport brief handler", async () => {
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [{ line: "NSL" }],
+      messages: [{ content: "Minor delay", createdDate: "2026-03-26T08:00:00+08:00" }],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([
+      { type: "Road Works" },
+    ] as never);
+
+    const input = { format: "json" } as const;
+
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_transport_brief", input),
+      handleTransportBrief(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
+  });
+
+  it("matches the direct environment brief handler", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Partly Cloudy",
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 40,
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getRainfall).mockResolvedValue([
+      {
+        stationId: "S107",
+        stationName: "Tampines",
+        value: 0.2,
+        timestamp: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+
+    const input = { area: "Tampines", region: "East", stationId: "S107", format: "json" } as const;
+
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_environment_brief", input),
+      handleEnvironmentBrief(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
   });
 
   it("matches the direct LTA bus-arrivals handler", async () => {
@@ -410,5 +590,165 @@ describe("sg_query parity", () => {
     await expect(executeQueryStep("sg_acra_entities", input)).resolves.toEqual(
       await handleAcraEntities(input),
     );
+  });
+
+  it("matches the direct business dossier handler", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        uen: "201912345K",
+        issuanceAgencyId: "ACRA",
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        entityTypeDescription: "Local Company",
+        businessConstitutionDescription: null,
+        companyTypeDescription: "Private Company Limited by Shares",
+        pafConstitutionDescription: null,
+        entityStatusDescription: "Live Company",
+        registrationIncorporationDate: "2019-04-01",
+        uenIssueDate: "2019-04-01",
+        addressType: "LOCAL",
+        block: "1",
+        streetName: "MAIN STREET",
+        levelNo: "02",
+        unitNo: "01",
+        buildingName: "ABC BUILDING",
+        postalCode: "123456",
+        otherAddressLine1: null,
+        otherAddressLine2: null,
+        accountDueDate: "2026-04-01",
+        annualReturnDate: "2025-04-01",
+        primarySsicCode: "41001",
+        primarySsicDescription: "GENERAL CONTRACTORS",
+        primaryUserDescribedActivity: null,
+        secondarySsicCode: null,
+        secondarySsicDescription: null,
+        secondaryUserDescribedActivity: null,
+        noOfOfficers: 3,
+      },
+    ]);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([]);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([]);
+    vi.mocked(getCeaSalespersons).mockResolvedValue([]);
+
+    const input = { entityName: "ABC CONSTRUCTION PTE LTD", format: "json" } as const;
+
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_business_dossier", input),
+      handleBusinessDossier(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
+  });
+
+  it("matches the direct property brief handler", async () => {
+    vi.mocked(geocode).mockResolvedValue([
+      {
+        address: "BEDOK",
+        building: "TEST",
+        postal: "460000",
+        lat: 1.324,
+        lng: 103.93,
+        x: 0,
+        y: 0,
+      },
+    ]);
+    vi.mocked(uraFetch).mockResolvedValue({
+      Status: "OK",
+      Result: [{ pln_area_n: "BEDOK", region: "East Region" }],
+    });
+    vi.mocked(getPropertyTransactions).mockResolvedValue([
+      {
+        project: "BEDOK RESIDENCES",
+        street: "BEDOK NORTH AVE 4",
+        x: "0",
+        y: "0",
+        marketSegment: "RCR",
+        area: "90",
+        floorRange: "10 TO 12",
+        noOfUnits: "1",
+        contractDate: "2026-03",
+        typeOfSale: "Resale",
+        price: "1200000",
+        propertyType: "residential",
+        district: "16",
+        typeOfArea: "sqm",
+        tenure: "99 years",
+        nettPrice: "1200000",
+      },
+    ]);
+    vi.mocked(getHdbResalePrices).mockResolvedValue([
+      {
+        month: "2026-02",
+        town: "BEDOK",
+        flatType: "4 ROOM",
+        block: "101",
+        streetName: "BEDOK NORTH AVE 4",
+        storeyRange: "10 TO 12",
+        floorAreaSqm: 92,
+        flatModel: "Model A",
+        leaseCommenceDate: 1998,
+        remainingLease: "71 years 2 months",
+        resalePrice: 560000,
+      },
+    ]);
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Bedok",
+        forecast: "Partly Cloudy",
+        validFrom: "2026-03-23T08:00:00+08:00",
+        validTo: "2026-03-23T10:00:00+08:00",
+        validText: "8 AM to 10 AM",
+        updatedAt: "2026-03-23T08:00:00+08:00",
+        lat: 1.3526,
+        lng: 103.945,
+      },
+    ]);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 42,
+        pm25OneHourly: 12,
+        pm25TwentyFourHourly: 18,
+        updatedAt: "2026-03-23T08:00:00+08:00",
+        lat: 1.35,
+        lng: 103.94,
+      },
+    ]);
+
+    const input = { planningArea: "Bedok", flatType: "4 ROOM", format: "json" } as const;
+
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_property_brief", input),
+      handlePropertyBrief(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
+  });
+
+  it("matches the direct macro brief handler", async () => {
+    vi.mocked(masQuery).mockResolvedValue([
+      { _id: 1, end_of_day: "2024-01-31", preliminary: "N", usd_sgd: "1.35", sora: "3.56", resident_non_bank: "100" },
+    ]);
+    vi.mocked(singstatSearch).mockImplementation(async (keyword) => {
+      if (keyword === "Singapore GDP") {
+        return [
+          { id: "M015631", title: "Singapore GDP", theme: "Economy", subject: "National Accounts", topic: "GDP", frequency: "Annual" },
+        ];
+      }
+      if (keyword === "Singapore CPI inflation") {
+        return [
+          { id: "M212261", title: "Singapore CPI", theme: "Economy", subject: "Prices", topic: "CPI", frequency: "Monthly" },
+        ];
+      }
+      return [];
+    });
+
+    const input = { currency: "USD", format: "json" } as const;
+
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_macro_brief", input),
+      handleMacroBrief(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
   });
 });
