@@ -152,6 +152,8 @@ try {
       ...process.env,
       SG_APIS_LOG_LEVEL: "error",
       MOCK_API_BASE_URL: mockServer.url,
+      SG_API_ONEMAP_EMAIL: "test-onemap@example.com",
+      SG_API_ONEMAP_PASSWORD: "test-onemap-password",
       SG_API_URA_KEY: "test-ura-key",
       SG_API_LTA_KEY: "test-lta-key",
     },
