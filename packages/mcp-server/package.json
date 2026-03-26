@@ -1,7 +1,7 @@
 {
   "name": "sg-apis-mcp",
   "version": "0.1.0",
-  "description": "Singapore government data MCP server for SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg",
+  "description": "Official Singapore public data MCP server for agents across SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg",
   "license": "MIT",
   "type": "module",
   "files": [
