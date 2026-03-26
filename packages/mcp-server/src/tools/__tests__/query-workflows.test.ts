@@ -203,6 +203,15 @@ describe("sg_query workflows", () => {
     vi.mocked(geocode)
       .mockResolvedValueOnce([
         {
+          address: "5 RAFFLES PLACE",
+          building: "RAFFLES PLACE MRT STATION",
+          postal: "048618",
+          lat: 1.28413,
+          lng: 103.85146,
+          x: 0,
+          y: 0,
+        },
+        {
           address: "1 FULLERTON SQUARE",
           building: "FULLERTON",
           postal: "049178",
@@ -213,6 +222,15 @@ describe("sg_query workflows", () => {
         },
       ])
       .mockResolvedValueOnce([
+        {
+          address: "5 RAFFLES PLACE",
+          building: "RAFFLES PLACE MRT STATION",
+          postal: "048618",
+          lat: 1.28413,
+          lng: 103.85146,
+          x: 0,
+          y: 0,
+        },
         {
           address: "1 RAFFLES PLACE",
           building: "ONE RAFFLES PLACE",
