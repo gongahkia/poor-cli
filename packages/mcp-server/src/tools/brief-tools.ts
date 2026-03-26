@@ -753,6 +753,77 @@ const buildBusinessLimits = (): readonly BriefLimit[] => [
   toLimit("PUBLIC_REGISTRY_SCOPE", "The brief only covers ACRA, BCA, and CEA public registry evidence exposed through the current direct tools."),
 ];
 
+const medianSorted = (values: readonly number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? Math.round(((sorted[mid - 1]! + sorted[mid]!) / 2) * 100) / 100 : sorted[mid]!;
+};
+
+const computeTransactionRollup = (
+  records: readonly Readonly<Record<string, unknown>>[] | null,
+  priceField: string,
+  dateField: string,
+): Readonly<Record<string, unknown>> | null => {
+  if (records === null || records.length === 0) return null;
+  const prices = records.map((r) => Number(r[priceField])).filter((v) => Number.isFinite(v));
+  const dates = records.map((r) => String(r[dateField] ?? "")).filter((d) => d !== "").sort();
+  if (prices.length === 0) return null;
+  return {
+    count: prices.length,
+    median: medianSorted(prices),
+    min: Math.min(...prices),
+    max: Math.max(...prices),
+    average: Math.round((prices.reduce((s, v) => s + v, 0) / prices.length) * 100) / 100,
+    latestMonth: dates[dates.length - 1] ?? null,
+  };
+};
+
+const buildPropertyDealChecklist = (
+  uraRollup: Readonly<Record<string, unknown>> | null,
+  hdbRollup: Readonly<Record<string, unknown>> | null,
+  planningArea: string | null,
+  propertyType: string | undefined,
+): readonly RiskFlag[] => {
+  const flags: RiskFlag[] = [];
+  if (uraRollup !== null) {
+    const latest = uraRollup["latestMonth"];
+    if (typeof latest === "string") {
+      const months = (Date.now() - new Date(latest).getTime()) / (1000 * 60 * 60 * 24 * 30);
+      if (months > 6) {
+        flags.push({ code: "STALE_URA_DATA", severity: "medium", message: `Latest URA transaction is from ${latest}, more than 6 months ago.`, source: "URA" });
+      }
+    }
+  } else if (planningArea !== null) {
+    flags.push({ code: "NO_URA_TRANSACTIONS", severity: "low", message: "No URA private transactions found for this planning area.", source: "URA" });
+  }
+  if (propertyType === "residential" || propertyType === undefined) {
+    if (hdbRollup === null && planningArea !== null) {
+      flags.push({ code: "NO_HDB_CONTEXT", severity: "low", message: "No HDB resale context available for residential comparison.", source: "HDB" });
+    }
+  }
+  if (planningArea === null) {
+    flags.push({ code: "UNRESOLVED_LOCATION", severity: "high", message: "Location could not be resolved to a planning area.", source: "OneMap" });
+  }
+  return flags;
+};
+
+const buildPropertyNextChecks = (
+  planningArea: string | null,
+  postalCode: string | null,
+): readonly NextCheck[] => {
+  const checks: NextCheck[] = [];
+  if (planningArea !== null) {
+    checks.push({ tool: "sg_ura_property_transactions", reason: "Retrieve detailed URA transactions for deeper price analysis.", input: { propertyType: "residential", planningArea } });
+    checks.push({ tool: "sg_hdb_resale_prices", reason: "Retrieve detailed HDB resale records for the planning area.", input: { town: planningArea } });
+    checks.push({ tool: "sg_ura_dev_charges", reason: "Check development charges for the planning area.", input: { planningArea } });
+  }
+  if (postalCode !== null) {
+    checks.push({ tool: "sg_onemap_reverse_geocode", reason: "Get full address details for the resolved postal code.", input: { lat: 0, lng: 0 } });
+  }
+  return checks;
+};
+
 const buildPropertyLimits = (includeTransport: boolean, includeEnvironment: boolean): readonly BriefLimit[] => {
   const limits: BriefLimit[] = [
     toLimit("NOT_A_RECOMMENDATION", "This brief is bounded diligence context, not a valuation, investment score, or purchase recommendation."),
@@ -1055,6 +1126,19 @@ export const handlePropertyBrief = async (
   );
   const primaryForecast = forecast?.[0];
   const primaryAirQuality = airQuality?.[0];
+  const uraRollup = computeTransactionRollup(
+    uraTransactions as readonly Readonly<Record<string, unknown>>[] | null,
+    "price", "contractDate",
+  );
+  const hdbRollup = computeTransactionRollup(
+    hdbResale as readonly Readonly<Record<string, unknown>>[] | null,
+    "resalePrice", "month",
+  );
+  const marketComparison = privateAverage !== null && resaleAverage !== null
+    ? { privateAvg: privateAverage, hdbResaleAvg: resaleAverage, delta: Math.round((privateAverage - resaleAverage) * 100) / 100, ratio: Math.round((privateAverage / resaleAverage) * 100) / 100 }
+    : null;
+  const dealChecklist = buildPropertyDealChecklist(uraRollup, hdbRollup, planningArea, params.propertyType);
+  const propertyNextChecks = buildPropertyNextChecks(planningArea, firstGeocode?.postal ?? params.postalCode ?? null);
 
   const payload: BriefArtifact = {
     title: "Property Brief",
@@ -1063,7 +1147,9 @@ export const handlePropertyBrief = async (
       { label: "Region", value: region, source: "URA" },
       { label: "Resolved postal code", value: firstGeocode?.postal ?? params.postalCode ?? null, source: "OneMap" },
       { label: "Private transaction average", value: privateAverage, source: "URA" },
+      { label: "Private transaction median", value: uraRollup?.["median"] as number | null ?? null, source: "URA" },
       { label: "HDB resale average", value: resaleAverage, source: "HDB" },
+      { label: "HDB resale median", value: hdbRollup?.["median"] as number | null ?? null, source: "HDB" },
       { label: "Forecast", value: primaryForecast?.forecast ?? null, source: "NEA" },
       { label: "PSI 24h", value: primaryAirQuality?.psi24h ?? null, source: "NEA" },
     ],
@@ -1079,7 +1165,10 @@ export const handlePropertyBrief = async (
       geocode: firstGeocode === null ? [] : [firstGeocode],
       planningArea: planningRecords ?? [],
       uraTransactions: uraTransactions ?? [],
+      uraRollup: uraRollup ?? {},
       hdbResale: hdbResale ?? [],
+      hdbRollup: hdbRollup ?? {},
+      marketComparison: marketComparison ?? {},
       forecast: forecast ?? [],
       airQuality: airQuality ?? [],
       trainAlerts: trainAlerts?.alerts ?? [],
@@ -1124,6 +1213,8 @@ export const handlePropertyBrief = async (
         : []),
     ],
     limits: buildPropertyLimits(includeTransport, includeEnvironment),
+    riskFlags: dealChecklist,
+    nextChecks: propertyNextChecks,
   };
 
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
