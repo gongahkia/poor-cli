@@ -73,3 +73,46 @@ export type HealthStatus = {
   readonly latencyMs: number;
   readonly error?: string;
 };
+
+export type EvidenceGap = {
+  readonly code: string;
+  readonly message: string;
+};
+
+export type BriefLimit = {
+  readonly code: string;
+  readonly message: string;
+};
+
+export type BriefSummaryItem = {
+  readonly label: string;
+  readonly value: string | number | boolean | null;
+  readonly source: string;
+};
+
+export type BriefProvenanceItem = {
+  readonly source: string;
+  readonly tool: string;
+  readonly coverage: string;
+  readonly authRequired: boolean;
+  readonly recordCount: number;
+};
+
+export type BriefFreshnessItem = {
+  readonly source: string;
+  readonly observedAt: string;
+  readonly upstreamTimestamp: string | null;
+};
+
+export type BriefArtifactRecord = Readonly<Record<string, unknown>>;
+
+export type BriefArtifact = {
+  readonly title: string;
+  readonly summary: readonly BriefSummaryItem[];
+  readonly evidence: readonly BriefSummaryItem[];
+  readonly records: Readonly<Record<string, unknown>>;
+  readonly gaps: readonly EvidenceGap[];
+  readonly provenance: readonly BriefProvenanceItem[];
+  readonly freshness: readonly BriefFreshnessItem[];
+  readonly limits: readonly BriefLimit[];
+};
