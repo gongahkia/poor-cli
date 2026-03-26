@@ -811,6 +811,8 @@ const buildPropertyDealChecklist = (
 const buildPropertyNextChecks = (
   planningArea: string | null,
   postalCode: string | null,
+  resolvedLat: number | null,
+  resolvedLng: number | null,
 ): readonly NextCheck[] => {
   const checks: NextCheck[] = [];
   if (planningArea !== null) {
@@ -818,8 +820,10 @@ const buildPropertyNextChecks = (
     checks.push({ tool: "sg_hdb_resale_prices", reason: "Retrieve detailed HDB resale records for the planning area.", input: { town: planningArea } });
     checks.push({ tool: "sg_ura_dev_charges", reason: "Check development charges for the planning area.", input: { planningArea } });
   }
-  if (postalCode !== null) {
-    checks.push({ tool: "sg_onemap_reverse_geocode", reason: "Get full address details for the resolved postal code.", input: { lat: 0, lng: 0 } });
+  if (resolvedLat !== null && resolvedLng !== null) {
+    checks.push({ tool: "sg_onemap_reverse_geocode", reason: "Get full address details for the resolved location.", input: { lat: resolvedLat, lng: resolvedLng } });
+  } else if (postalCode !== null) {
+    checks.push({ tool: "sg_onemap_geocode", reason: "Geocode the postal code for detailed location data.", input: { searchVal: postalCode, returnGeom: true, getAddrDetails: true } });
   }
   return checks;
 };
@@ -1176,7 +1180,7 @@ export const handlePropertyBrief = async (
     ? { privateAvg: privateAverage, hdbResaleAvg: resaleAverage, delta: Math.round((privateAverage - resaleAverage) * 100) / 100, ratio: Math.round((privateAverage / resaleAverage) * 100) / 100 }
     : null;
   const dealChecklist = buildPropertyDealChecklist(uraRollup, hdbRollup, planningArea, params.propertyType);
-  const propertyNextChecks = buildPropertyNextChecks(planningArea, firstGeocode?.postal ?? params.postalCode ?? null);
+  const propertyNextChecks = buildPropertyNextChecks(planningArea, firstGeocode?.postal ?? params.postalCode ?? null, firstGeocode?.lat ?? null, firstGeocode?.lng ?? null);
 
   const payload: BriefArtifact = {
     title: "Property Brief",
