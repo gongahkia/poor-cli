@@ -9,6 +9,7 @@ const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
 const tarballs = [];
 let mockServer = null;
+const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/"];
 
 const EXPECTED_TOOL_NAMES = [
   "sg_singstat_search",
@@ -60,7 +61,7 @@ const EXPECTED_TOOL_NAMES = [
   "sg_query",
 ];
 
-const EXPECTED_RESOURCE_URIS = ["sg://apis", "sg://tools", "sg://workflows"];
+const EXPECTED_RESOURCE_URIS = ["sg://apis", "sg://tools", "sg://workflows", "sg://recipes"];
 
 const run = (args, cwd = root) => {
   return execFileSync("npm", args, {
@@ -101,9 +102,20 @@ const startMockServer = async () => {
 };
 
 try {
+  const assertRuntimeOnlyPackage = (workspace, packInfo) => {
+    const leaked = packInfo.files
+      .map((file) => file.path)
+      .filter((path) => RUNTIME_LEAK_PATTERNS.some((pattern) => path.includes(pattern)));
+    if (leaked.length > 0) {
+      throw new Error(`${workspace} package still includes non-runtime files: ${leaked.join(", ")}`);
+    }
+  };
+
   const packWorkspace = (workspace) => {
     const output = run(["pack", "--json", "--workspace", workspace]);
-    const [{ filename }] = JSON.parse(output);
+    const [packInfo] = JSON.parse(output);
+    assertRuntimeOnlyPackage(workspace, packInfo);
+    const { filename } = packInfo;
     const tarballPath = join(root, filename);
     tarballs.push(tarballPath);
     return tarballPath;
@@ -344,6 +356,22 @@ try {
       || queryExecuteResult.structuredContent?.workflow !== "transport_brief"
     ) {
       throw new Error(`Packaged sg_query execute call did not complete successfully${formatServerLogs()}`);
+    }
+
+    const routeRecipeResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Walk from 049178 to 048616",
+        mode: "execute",
+        format: "json",
+      },
+    });
+    if (
+      !("structuredContent" in routeRecipeResult)
+      || routeRecipeResult.structuredContent?.status !== "completed"
+      || routeRecipeResult.structuredContent?.workflow !== "route_plan"
+    ) {
+      throw new Error(`Packaged sg_query route recipe did not complete successfully${formatServerLogs()}`);
     }
   } catch (error) {
     if (error instanceof Error && stderrChunks.length > 0 && !error.message.includes("Server stderr:")) {
