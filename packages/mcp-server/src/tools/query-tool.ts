@@ -8,8 +8,21 @@ import {
   handleBcaLicensedBuilders,
   handleBcaRegisteredContractors,
 } from "./bca-tools.js";
+import {
+  handleBusinessDossier,
+  handleEnvironmentBrief,
+  handleMacroBrief,
+  handlePropertyBrief,
+  handleTransportBrief,
+} from "./brief-tools.js";
 import { handleCeaSalespersons } from "./cea-tools.js";
-import { handleDatagovBrowse, handleDatagovGet, handleDatagovSearch } from "./datagov-tools.js";
+import {
+  handleDatagovBrowse,
+  handleDatagovGet,
+  handleDatagovResources,
+  handleDatagovRows,
+  handleDatagovSearch,
+} from "./datagov-tools.js";
 import { handleHdbRentalPrices, handleHdbResalePrices } from "./hdb-tools.js";
 import { handleLtaBusArrivals, handleLtaTrafficIncidents, handleLtaTrainAlerts } from "./lta-tools.js";
 import {
@@ -52,6 +65,16 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleBcaRegisteredContractors(params as Parameters<typeof handleBcaRegisteredContractors>[0]),
   sg_cea_salespersons: async (params) =>
     handleCeaSalespersons(params as Parameters<typeof handleCeaSalespersons>[0]),
+  sg_business_dossier: async (params) =>
+    handleBusinessDossier(params as Parameters<typeof handleBusinessDossier>[0]),
+  sg_property_brief: async (params) =>
+    handlePropertyBrief(params as Parameters<typeof handlePropertyBrief>[0]),
+  sg_macro_brief: async (params) =>
+    handleMacroBrief(params as Parameters<typeof handleMacroBrief>[0]),
+  sg_transport_brief: async (params) =>
+    handleTransportBrief(params as Parameters<typeof handleTransportBrief>[0]),
+  sg_environment_brief: async (params) =>
+    handleEnvironmentBrief(params as Parameters<typeof handleEnvironmentBrief>[0]),
   sg_singstat_search: async (params) =>
     handleSingStatSearch(params as Parameters<typeof handleSingStatSearch>[0]),
   sg_mas_exchange_rates: async (params) =>
@@ -74,6 +97,10 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleDatagovSearch(params as Parameters<typeof handleDatagovSearch>[0]),
   sg_datagov_get: async (params) =>
     handleDatagovGet(params as Parameters<typeof handleDatagovGet>[0]),
+  sg_datagov_resources: async (params) =>
+    handleDatagovResources(params as Parameters<typeof handleDatagovResources>[0]),
+  sg_datagov_rows: async (params) =>
+    handleDatagovRows(params as Parameters<typeof handleDatagovRows>[0]),
   sg_datagov_browse: async (params) =>
     handleDatagovBrowse(params as Parameters<typeof handleDatagovBrowse>[0]),
   sg_lta_bus_arrivals: async (params) =>
@@ -95,6 +122,11 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
 };
 
 const FORMAT_CAPABLE_TOOLS = new Set([
+  "sg_business_dossier",
+  "sg_property_brief",
+  "sg_macro_brief",
+  "sg_transport_brief",
+  "sg_environment_brief",
   "sg_acra_entities",
   "sg_bca_licensed_builders",
   "sg_bca_registered_contractors",
@@ -105,6 +137,8 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_onemap_population",
   "sg_ura_property_transactions",
   "sg_datagov_get",
+  "sg_datagov_resources",
+  "sg_datagov_rows",
   "sg_lta_bus_arrivals",
   "sg_lta_train_alerts",
   "sg_lta_traffic_incidents",
@@ -113,6 +147,25 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_nea_rainfall",
   "sg_hdb_resale_prices",
   "sg_hdb_rental_prices",
+]);
+
+const MARKDOWN_JSON_ONLY_TOOLS = new Set([
+  "sg_business_dossier",
+  "sg_property_brief",
+  "sg_macro_brief",
+  "sg_transport_brief",
+  "sg_environment_brief",
+  "sg_datagov_resources",
+]);
+
+const DIRECT_TEXT_FORMAT_TOOLS = new Set([
+  "sg_business_dossier",
+  "sg_property_brief",
+  "sg_macro_brief",
+  "sg_transport_brief",
+  "sg_environment_brief",
+  "sg_datagov_resources",
+  "sg_datagov_rows",
 ]);
 
 const getTextContent = (result: ToolResult): string => {
@@ -198,6 +251,14 @@ const getSingleStepFormatSupport = (
   step: ExecutedQueryStep,
   format: OutputFormat,
 ): QueryFormatSupport => {
+  if (MARKDOWN_JSON_ONLY_TOOLS.has(step.tool) && format !== "markdown" && format !== "json") {
+    return {
+      supported: false,
+      reason: `${step.tool} only supports markdown or json output through sg_query.`,
+      suggestion: `Use markdown or json for ${step.tool}, or call the lower-level direct tools for row or geospatial exports.`,
+    };
+  }
+
   if (format === "markdown") {
     return { supported: true };
   }
@@ -266,6 +327,10 @@ const renderSingleStepText = (
   step: ExecutedQueryStep,
   format: OutputFormat,
 ): string | null => {
+  if (DIRECT_TEXT_FORMAT_TOOLS.has(step.tool) && step.outputText !== undefined) {
+    return step.outputText;
+  }
+
   if (format === "markdown") {
     return step.outputText ?? "";
   }
