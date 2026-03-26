@@ -250,6 +250,9 @@ describe("brief tools", () => {
     expect(payload.title).toBe("Transport Brief");
     expect(payload.provenance).toHaveLength(3);
     expect(payload.summary.some((item) => item.label === "Next bus ETA")).toBe(true);
+    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("disrupted");
+    expect(payload.records["signals"]).toBeDefined();
+    expect(payload.records["nextChecks"]).toBeDefined();
 
     const markdownResult = await handleTransportBrief({
       busStopCode: "83139",
@@ -257,6 +260,84 @@ describe("brief tools", () => {
       format: "markdown",
     });
     expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("returns advisory transport status when only traffic incidents are active", async () => {
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [],
+      messages: [],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([
+      { type: "Accident" },
+    ] as never);
+
+    const jsonResult = await handleTransportBrief({
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const opsStatus = payload.records["opsStatus"] as Record<string, unknown>;
+
+    expect(opsStatus["level"]).toBe("advisory");
+    expect(opsStatus["focus"]).toBe("network-wide");
+  });
+
+  it("returns unknown transport status when a requested bus stop has no ETA and no broader signals", async () => {
+    vi.mocked(getBusArrivals).mockResolvedValue([
+      {
+        busStopCode: "83139",
+        serviceNo: "851",
+        arrivals: [{ estimatedArrival: null }],
+      },
+    ] as never);
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [],
+      messages: [],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([] as never);
+
+    const jsonResult = await handleTransportBrief({
+      busStopCode: "83139",
+      serviceNo: "851",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const opsStatus = payload.records["opsStatus"] as Record<string, unknown>;
+    const nextChecks = payload.records["nextChecks"] as readonly Record<string, unknown>[];
+
+    expect(opsStatus["level"]).toBe("unknown");
+    expect(nextChecks.map((check) => check["tool"])).toEqual([
+      "sg_lta_bus_arrivals",
+      "sg_lta_train_alerts",
+      "sg_lta_traffic_incidents",
+    ]);
+    expect((nextChecks[0]?.["input"] as Record<string, unknown>)["busStopCode"]).toBe("83139");
+    expect((nextChecks[0]?.["input"] as Record<string, unknown>)["serviceNo"]).toBe("851");
+  });
+
+  it("returns normal transport status when the requested stop has arrivals and no disruptions", async () => {
+    vi.mocked(getBusArrivals).mockResolvedValue([
+      {
+        busStopCode: "83139",
+        serviceNo: "851",
+        arrivals: [{ estimatedArrival: "2026-03-26T08:05:00+08:00" }],
+      },
+    ] as never);
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [],
+      messages: [],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([] as never);
+
+    const jsonResult = await handleTransportBrief({
+      busStopCode: "83139",
+      serviceNo: "851",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const opsStatus = payload.records["opsStatus"] as Record<string, unknown>;
+
+    expect(opsStatus["level"]).toBe("normal");
+    expect(opsStatus["focus"]).toBe("bus stop 83139 service 851");
   });
 
   it("returns the expanded environment brief envelope", async () => {

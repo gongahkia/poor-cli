@@ -246,6 +246,180 @@ const getFirstBusArrivalTimestamp = (value: unknown): string | null => {
   return null;
 };
 
+const buildTransportFocus = (
+  busStopCode: string | undefined,
+  serviceNo: string | undefined,
+): string => {
+  if (busStopCode === undefined) {
+    return "network-wide";
+  }
+  return serviceNo === undefined
+    ? `bus stop ${busStopCode}`
+    : `bus stop ${busStopCode} service ${serviceNo}`;
+};
+
+const getTransportOpsLevel = (params: Readonly<{ busStopCode?: string | undefined }>, counts: Readonly<{
+  trainSignals: number;
+  trafficSignals: number;
+}>, nextArrival: string | null): "disrupted" | "advisory" | "unknown" | "normal" => {
+  if (counts.trainSignals > 0) {
+    return "disrupted";
+  }
+  if (counts.trafficSignals > 0) {
+    return "advisory";
+  }
+  if (params.busStopCode !== undefined && nextArrival === null) {
+    return "unknown";
+  }
+  return "normal";
+};
+
+const buildTransportHeadline = (
+  level: "disrupted" | "advisory" | "unknown" | "normal",
+  focus: string,
+  counts: Readonly<{
+    trainAlerts: number;
+    trainMessages: number;
+    trafficSignals: number;
+  }>,
+  primaryTrainLine: string | null,
+  primaryIncidentType: string | null,
+): string => {
+  if (level === "disrupted") {
+    return primaryTrainLine === null
+      ? `Train disruptions reported for ${focus}.`
+      : `Train disruptions reported on ${primaryTrainLine} for ${focus}.`;
+  }
+  if (level === "advisory") {
+    return primaryIncidentType === null
+      ? `Traffic advisory: ${counts.trafficSignals} incident(s) reported for ${focus}.`
+      : `Traffic advisory: ${counts.trafficSignals} incident(s) including ${primaryIncidentType} for ${focus}.`;
+  }
+  if (level === "unknown") {
+    return `No current bus ETA available for ${focus}, and no broader transport signals are active.`;
+  }
+  return `No active train or traffic disruptions detected for ${focus}.`;
+};
+
+const getTransportCoverage = (
+  busStopCode: string | undefined,
+  busArrivals: readonly Readonly<Record<string, unknown>>[] | null,
+  nextArrival: string | null,
+  trainAlerts: Readonly<{ alerts: readonly Readonly<Record<string, unknown>>[]; messages: readonly Readonly<Record<string, unknown>>[] }> | null,
+  trafficIncidents: readonly Readonly<Record<string, unknown>>[] | null,
+): {
+  busCoverage: "not_requested" | "available" | "missing" | "unavailable";
+  trainCoverage: "clear" | "alerts_active" | "unavailable";
+  trafficCoverage: "clear" | "incidents_active" | "unavailable";
+} => {
+  const busCoverage =
+    busStopCode === undefined
+      ? "not_requested"
+      : busArrivals === null
+        ? "unavailable"
+        : nextArrival !== null
+          ? "available"
+          : "missing";
+  const trainCoverage =
+    trainAlerts === null
+      ? "unavailable"
+      : trainAlerts.alerts.length + trainAlerts.messages.length > 0
+        ? "alerts_active"
+        : "clear";
+  const trafficCoverage =
+    trafficIncidents === null
+      ? "unavailable"
+      : trafficIncidents.length > 0
+        ? "incidents_active"
+        : "clear";
+
+  return { busCoverage, trainCoverage, trafficCoverage };
+};
+
+const buildTransportSignals = (
+  params: Readonly<{ busStopCode?: string | undefined; serviceNo?: string | undefined }>,
+  nextArrival: string | null,
+  counts: Readonly<{
+    trainAlerts: number;
+    trainMessages: number;
+    trafficSignals: number;
+  }>,
+  primaryTrainLine: string | null,
+  primaryIncidentType: string | null,
+  coverage: Readonly<{
+    busCoverage: string;
+    trainCoverage: string;
+    trafficCoverage: string;
+  }>,
+): readonly Readonly<Record<string, unknown>>[] => {
+  const signals: Readonly<Record<string, unknown>>[] = [];
+  const focus = buildTransportFocus(params.busStopCode, params.serviceNo);
+
+  if (params.busStopCode !== undefined) {
+    signals.push({
+      source: "bus",
+      level: nextArrival === null ? "unknown" : "normal",
+      headline: nextArrival === null
+        ? `No current bus ETA available for ${focus}.`
+        : `Next bus ETA for ${focus} is ${nextArrival}.`,
+      coverage: coverage.busCoverage,
+    });
+  }
+
+  signals.push({
+    source: "train",
+    level: counts.trainAlerts + counts.trainMessages > 0 ? "disrupted" : coverage.trainCoverage === "unavailable" ? "unknown" : "normal",
+    headline:
+      counts.trainAlerts + counts.trainMessages > 0
+        ? primaryTrainLine === null
+          ? `${counts.trainAlerts} train alert(s) and ${counts.trainMessages} message(s) reported.`
+          : `${counts.trainAlerts} train alert(s) and ${counts.trainMessages} message(s) reported on ${primaryTrainLine}.`
+        : "No active train alerts reported.",
+    coverage: coverage.trainCoverage,
+  });
+
+  signals.push({
+    source: "traffic",
+    level: counts.trafficSignals > 0 ? "advisory" : coverage.trafficCoverage === "unavailable" ? "unknown" : "normal",
+    headline:
+      counts.trafficSignals > 0
+        ? primaryIncidentType === null
+          ? `${counts.trafficSignals} traffic incident(s) reported.`
+          : `${counts.trafficSignals} traffic incident(s) reported, including ${primaryIncidentType}.`
+        : "No active traffic incidents reported.",
+    coverage: coverage.trafficCoverage,
+  });
+
+  return signals;
+};
+
+const buildTransportNextChecks = (
+  params: Readonly<{ busStopCode?: string | undefined; serviceNo?: string | undefined }>,
+): readonly Readonly<Record<string, unknown>>[] => {
+  const checks: Readonly<Record<string, unknown>>[] = [];
+  if (params.busStopCode !== undefined) {
+    checks.push({
+      tool: "sg_lta_bus_arrivals",
+      reason: "Inspect stop-level bus arrivals for the current transport focus.",
+      input: {
+        busStopCode: params.busStopCode,
+        ...(params.serviceNo === undefined ? {} : { serviceNo: params.serviceNo }),
+      },
+    });
+  }
+  checks.push({
+    tool: "sg_lta_train_alerts",
+    reason: "Inspect network-wide train service alerts and operator messages.",
+    input: {},
+  });
+  checks.push({
+    tool: "sg_lta_traffic_incidents",
+    reason: "Inspect live traffic incidents across Singapore.",
+    input: {},
+  });
+  return checks;
+};
+
 const toProvenance = (
   source: string,
   tool: string,
@@ -797,23 +971,52 @@ export const handleTransportBrief = async (
   const nextArrival = getFirstBusArrivalTimestamp(busArrivals);
   const primaryTrainLine = trainAlerts?.alerts[0]?.line ?? null;
   const primaryIncidentType = trafficIncidents?.[0]?.type ?? null;
+  const focus = buildTransportFocus(params.busStopCode, params.serviceNo);
+  const counts = {
+    trainAlerts: trainAlerts?.alerts.length ?? 0,
+    trainMessages: trainAlerts?.messages.length ?? 0,
+    trainSignals: (trainAlerts?.alerts.length ?? 0) + (trainAlerts?.messages.length ?? 0),
+    trafficSignals: trafficIncidents?.length ?? 0,
+  };
+  const coverage = getTransportCoverage(
+    params.busStopCode,
+    busArrivals as readonly Readonly<Record<string, unknown>>[] | null,
+    nextArrival,
+    trainAlerts as Readonly<{ alerts: readonly Readonly<Record<string, unknown>>[]; messages: readonly Readonly<Record<string, unknown>>[] }> | null,
+    trafficIncidents as readonly Readonly<Record<string, unknown>>[] | null,
+  );
+  const opsLevel = getTransportOpsLevel(params, counts, nextArrival);
+  const opsHeadline = buildTransportHeadline(opsLevel, focus, counts, primaryTrainLine, primaryIncidentType);
+  const signals = buildTransportSignals(params, nextArrival, counts, primaryTrainLine, primaryIncidentType, coverage);
+  const nextChecks = buildTransportNextChecks(params);
 
   const payload: BriefArtifact = {
     title: "Transport Brief",
     summary: [
-      { label: "Bus stop", value: params.busStopCode ?? null, source: "LTA" },
-      { label: "Service number", value: params.serviceNo ?? null, source: "LTA" },
+      { label: "Network status", value: opsHeadline, source: "LTA" },
+      { label: "Focus", value: focus, source: "LTA" },
       { label: "Next bus ETA", value: nextArrival, source: "LTA" },
-      { label: "Primary train line", value: primaryTrainLine, source: "LTA" },
-      { label: "Primary incident type", value: primaryIncidentType, source: "LTA" },
+      { label: "Train disruption count", value: counts.trainSignals, source: "LTA" },
+      { label: "Traffic incident count", value: counts.trafficSignals, source: "LTA" },
     ],
     evidence: [
-      { label: "Bus services", value: busArrivals?.length ?? 0, source: "LTA" },
-      { label: "Train alerts", value: trainAlerts?.alerts.length ?? 0, source: "LTA" },
-      { label: "Train messages", value: trainAlerts?.messages.length ?? 0, source: "LTA" },
-      { label: "Traffic incidents", value: trafficIncidents?.length ?? 0, source: "LTA" },
+      { label: "Bus coverage", value: coverage.busCoverage, source: "LTA" },
+      { label: "Bus services observed", value: busArrivals?.length ?? 0, source: "LTA" },
+      { label: "Train alerts observed", value: counts.trainAlerts, source: "LTA" },
+      { label: "Train messages observed", value: counts.trainMessages, source: "LTA" },
+      { label: "Traffic incidents observed", value: counts.trafficSignals, source: "LTA" },
     ],
     records: {
+      opsStatus: {
+        level: opsLevel,
+        headline: opsHeadline,
+        focus,
+        busCoverage: coverage.busCoverage,
+        trainCoverage: coverage.trainCoverage,
+        trafficCoverage: coverage.trafficCoverage,
+      },
+      signals,
+      nextChecks,
       busArrivals: busArrivals ?? [],
       trainAlerts: trainAlerts?.alerts ?? [],
       trainAlertMessages: trainAlerts?.messages ?? [],
