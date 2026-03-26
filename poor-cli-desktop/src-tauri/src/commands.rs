@@ -126,3 +126,78 @@ pub async fn destroy_session(
     )
     .await
 }
+
+#[tauri::command]
+pub async fn get_status_view(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getStatusView", json!({})).await
+}
+
+#[tauri::command]
+pub async fn list_providers(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listProviders", json!({})).await
+}
+
+#[tauri::command]
+pub async fn rename_session(state: State<'_, AppState>, session_id: String, label: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/renameSession", json!({"sessionId": session_id, "label": label})).await
+}
+
+#[tauri::command]
+pub async fn get_config(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getConfig", json!({})).await
+}
+
+#[tauri::command]
+pub async fn set_config(state: State<'_, AppState>, key_path: String, value: Value) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setConfig", json!({"keyPath": key_path, "value": value})).await
+}
+
+#[tauri::command]
+pub async fn list_config_options(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listConfigOptions", json!({})).await
+}
+
+#[tauri::command]
+pub async fn get_api_key_status(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getApiKeyStatus", json!({})).await
+}
+
+#[tauri::command]
+pub async fn list_skills(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listSkills", json!({})).await
+}
+
+#[tauri::command]
+pub async fn list_automations(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listAutomations", json!({})).await
+}
+
+#[tauri::command]
+pub async fn preview_mutation(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/previewMutation", json!({})).await
+}
+
+#[tauri::command]
+pub async fn save_session(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/saveSession", json!({})).await
+}
+
+#[tauri::command]
+pub async fn restore_session(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/restoreSession", json!({})).await
+}
+
+#[tauri::command]
+pub async fn list_history(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listHistory", json!({})).await
+}
+
+#[tauri::command]
+pub async fn search_history(state: State<'_, AppState>, term: String, limit: Option<u32>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/searchHistory", json!({"term": term, "limit": limit.unwrap_or(20)})).await
+}
+
+#[tauri::command]
+pub async fn get_session_cost(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getSessionCost", json!({})).await
+}

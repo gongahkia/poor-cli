@@ -21,6 +21,21 @@ fn main() {
             commands::list_sessions,
             commands::create_session,
             commands::destroy_session,
+            commands::get_status_view,
+            commands::list_providers,
+            commands::rename_session,
+            commands::get_config,
+            commands::set_config,
+            commands::list_config_options,
+            commands::get_api_key_status,
+            commands::list_skills,
+            commands::list_automations,
+            commands::preview_mutation,
+            commands::save_session,
+            commands::restore_session,
+            commands::list_history,
+            commands::search_history,
+            commands::get_session_cost,
         ])
         .run(tauri::generate_context!())
         .expect("error running poor-cli desktop");
