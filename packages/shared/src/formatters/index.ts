@@ -65,6 +65,7 @@ export const formatStream = async function* (
   format: OutputFormat,
 ): AsyncIterable<string> {
   let first = true;
+  let jsonFirst = true;
   let columns: string[] = [];
 
   if (format === "json") {
@@ -88,7 +89,8 @@ export const formatStream = async function* (
     } else if (format === "markdown") {
       yield `| ${columns.map((col) => String(row[col] ?? "")).join(" | ")} |\n`;
     } else if (format === "json") {
-      yield (first ? "" : ",\n") + JSON.stringify(row);
+      yield (jsonFirst ? "" : ",\n") + JSON.stringify(row);
+      jsonFirst = false;
     }
   }
 
