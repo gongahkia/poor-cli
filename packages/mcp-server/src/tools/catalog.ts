@@ -22,6 +22,18 @@ export type WorkflowCatalogEntry = {
   }[];
 };
 
+export type RecipeCatalogEntry = {
+  readonly name: string;
+  readonly goal: string;
+  readonly prompt: string;
+  readonly preferredEntrypoint: {
+    readonly tool: string;
+    readonly input: Readonly<Record<string, unknown>>;
+  };
+  readonly fallbackTools: readonly string[];
+  readonly notes: readonly string[];
+};
+
 export const API_CATALOG: readonly ApiCatalogEntry[] = [
   {
     name: "SingStat",
@@ -204,6 +216,35 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     ],
   },
   {
+    name: "Route Planning",
+    intent: "Plan directions between two Singapore postal codes or coordinate pairs using OneMap geocoding and routing.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Walk from 049178 to 048616", mode: "execute" } },
+      { tool: "sg_onemap_route", input: { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" } },
+      { tool: "sg_onemap_reverse_geocode", input: { lat: 1.284, lng: 103.851 } },
+    ],
+  },
+  {
+    name: "SingStat Table Drilldown",
+    intent: "Move from dataset discovery into a specific SingStat table, browse, and time-series read with explicit table IDs.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Browse SingStat transport datasets", mode: "execute" } },
+      { tool: "sg_singstat_browse", input: { category: "Transport" } },
+      { tool: "sg_singstat_table", input: { tableId: "M650151" } },
+      { tool: "sg_singstat_timeseries", input: { tableId: "M650151", indicator: "Vehicle population", startYear: 2022, endYear: 2025 } },
+    ],
+  },
+  {
+    name: "Dataset Collection Browse",
+    intent: "Browse data.gov.sg collections first, then drill into datasets, resources, and bounded rows.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Browse data.gov collections", mode: "execute" } },
+      { tool: "sg_datagov_browse", input: {} },
+      { tool: "sg_datagov_search", input: { keyword: "hawker centres" } },
+      { tool: "sg_datagov_resources", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" } },
+    ],
+  },
+  {
     name: "Transport Status",
     intent: "Build a live transport operations brief and optionally drill into stop-level arrivals, train alerts, and traffic incidents.",
     entrypoints: [
@@ -227,8 +268,106 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
 ];
 
+export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
+  {
+    name: "Postal Route",
+    goal: "Turn a natural-language route prompt into a bounded OneMap routing workflow.",
+    prompt: "Walk from 049178 to 048616",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Walk from 049178 to 048616", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_onemap_route"],
+    notes: [
+      "sg_query geocodes both postal codes before calling sg_onemap_route.",
+      "If one endpoint is missing, sg_query returns an explicit blocker instead of guessing.",
+    ],
+  },
+  {
+    name: "Reverse Geocode",
+    goal: "Resolve one coordinate pair to a Singapore address without manual parameter mapping.",
+    prompt: "Reverse geocode 1.2840, 103.8510",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Reverse geocode 1.2840, 103.8510", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_reverse_geocode"],
+    notes: [
+      "Best for turning GPS-like coordinates into a nearest address lookup.",
+      "Requires one latitude and longitude pair.",
+    ],
+  },
+  {
+    name: "Coordinate Conversion",
+    goal: "Convert between SVY21 and WGS84 using a prompt instead of remembering parameter names.",
+    prompt: "Convert SVY21 28001 38744 to WGS84",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Convert SVY21 28001 38744 to WGS84", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_convert_coords"],
+    notes: [
+      "Use this when a caller has a local map coordinate pair and needs GPS coordinates, or the reverse.",
+    ],
+  },
+  {
+    name: "SingStat Drilldown",
+    goal: "Browse, select, and read the right SingStat table without leaving the MCP surface.",
+    prompt: "Browse SingStat transport datasets",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Browse SingStat transport datasets", mode: "execute" },
+    },
+    fallbackTools: ["sg_singstat_browse", "sg_singstat_table", "sg_singstat_timeseries"],
+    notes: [
+      "Use sg_singstat_search if you still need to discover a table ID.",
+      "Use sg_singstat_timeseries when you already know the table ID and indicator.",
+    ],
+  },
+  {
+    name: "data.gov Collection Browse",
+    goal: "Discover collections first, then continue into resource and row inspection.",
+    prompt: "Browse data.gov collections",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Browse data.gov collections", mode: "execute" },
+    },
+    fallbackTools: ["sg_datagov_browse", "sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
+    notes: [
+      "Good for agent builders that need a broad fallback surface before committing to a dataset ID.",
+    ],
+  },
+  {
+    name: "URA Development Charges",
+    goal: "Inspect URA development charge rates without remembering the direct tool payload shape.",
+    prompt: "Show URA development charge rates for Residential sector A",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Show URA development charge rates for Residential sector A", mode: "execute" },
+    },
+    fallbackTools: ["sg_ura_dev_charges"],
+    notes: [
+      "Use quoted or explicit use-group and sector terms when you want a narrower result set.",
+    ],
+  },
+  {
+    name: "HDB Rental Check",
+    goal: "Check HDB rental prices with a natural-language prompt before dropping to direct row reads.",
+    prompt: "Show HDB rental prices in Bedok for 4 ROOM flats",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Show HDB rental prices in Bedok for 4 ROOM flats", mode: "execute" },
+    },
+    fallbackTools: ["sg_hdb_rental_prices"],
+    notes: [
+      "Use this when the caller has a town and flat type but does not want to construct the direct tool payload manually.",
+    ],
+  },
+];
+
 export const RESOURCE_URIS = {
   apis: "sg://apis",
   tools: "sg://tools",
   workflows: "sg://workflows",
+  recipes: "sg://recipes",
 } as const;
