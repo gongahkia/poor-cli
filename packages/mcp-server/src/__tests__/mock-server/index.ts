@@ -72,6 +72,16 @@ const DATASET_DOWNLOADS_BY_ID: Record<
     fixture: "msf/__tests__/fixtures/family-services.geojson",
     contentType: "application/geo+json",
   },
+  d_77e6e0d58ce4743dab1f26dfcbbeb6f4: {
+    path: "/downloads/msf-student-care-services.geojson",
+    fixture: "msf/__tests__/fixtures/student-care-services.geojson",
+    contentType: "application/geo+json",
+  },
+  d_22cfe2aed0bf20a679ab59bcaf0f8248: {
+    path: "/downloads/msf-social-service-offices.geojson",
+    fixture: "msf/__tests__/fixtures/social-service-offices.geojson",
+    contentType: "application/geo+json",
+  },
 };
 
 const DATASET_DOWNLOADS_BY_PATH = Object.fromEntries(

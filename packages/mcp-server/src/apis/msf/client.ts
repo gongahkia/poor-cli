@@ -81,6 +81,50 @@ const toCoordinates = (
   };
 };
 
+const normalizeAddressFragment = (value: string | null): string | null => {
+  const normalized = toNullableString(value);
+  return normalized === null ? null : normalized.replace(/\s+/g, " ").trim();
+};
+
+const toUnitPart = (
+  floorNumber: string | null,
+  unitNumber: string | null,
+): string | null => {
+  const normalizedFloor = normalizeAddressFragment(floorNumber);
+  const normalizedUnit = normalizeAddressFragment(unitNumber);
+
+  if (normalizedFloor !== null && normalizedUnit !== null) {
+    if (normalizedFloor.includes("-")) {
+      return `${normalizedFloor}${normalizedUnit.replace(/^#/, "")}`;
+    }
+    if (normalizedFloor.startsWith("#")) {
+      return `${normalizedFloor}-${normalizedUnit.replace(/^#/, "")}`;
+    }
+    return `#${normalizedFloor}-${normalizedUnit.replace(/^#/, "")}`;
+  }
+
+  if (normalizedFloor !== null) {
+    return normalizedFloor.startsWith("#") ? normalizedFloor : `#${normalizedFloor}`;
+  }
+
+  if (normalizedUnit !== null) {
+    return normalizedUnit.startsWith("#") ? normalizedUnit : `Unit ${normalizedUnit}`;
+  }
+
+  return null;
+};
+
+const parseCompactDate = (value: string | null | undefined): string | null => {
+  const normalized = toNullableString(value);
+  if (normalized === null) {
+    return null;
+  }
+  if (/^\d{8}$/.test(normalized)) {
+    return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`;
+  }
+  return normalized;
+};
+
 const buildStructuredAddress = (
   streetAddress: string | null,
   buildingName: string | null,
@@ -93,13 +137,7 @@ const buildStructuredAddress = (
     return buildAddress(streetAddress, buildingName);
   }
 
-  const unitPart = floorNumber !== null && unitNumber !== null
-    ? `#${floorNumber}-${unitNumber}`
-    : floorNumber !== null
-      ? `#${floorNumber}`
-      : unitNumber !== null
-        ? `Unit ${unitNumber}`
-        : null;
+  const unitPart = toUnitPart(floorNumber, unitNumber);
 
   return buildAddress(block, streetName, unitPart, buildingName);
 };
@@ -162,7 +200,7 @@ const normalizeStudentCare = (
     sourceUrl: STUDENT_CARE_SERVICES_SOURCE_URL,
     lastUpdatedAt: parseFmelTimestamp(feature.properties.FMEL_UPD_D),
     auditStatus: toNullableString(feature.properties.AUDIT_STATUS),
-    auditDate: toNullableString(feature.properties.AUDIT_DATE),
+    auditDate: parseCompactDate(feature.properties.AUDIT_DATE),
     scfa: feature.properties.SCFA_Y_N?.trim().toUpperCase() === "Y"
       ? true
       : feature.properties.SCFA_Y_N?.trim().toUpperCase() === "N"
