@@ -67,6 +67,11 @@ const DATASET_DOWNLOADS_BY_ID: Record<
     fixture: "ecda/__tests__/fixtures/listing-of-centres.csv",
     contentType: "text/csv; charset=utf-8",
   },
+  d_add23c06f7267e799185c79ccaa2099b: {
+    path: "/downloads/msf-family-services.geojson",
+    fixture: "msf/__tests__/fixtures/family-services.geojson",
+    contentType: "application/geo+json",
+  },
 };
 
 const DATASET_DOWNLOADS_BY_PATH = Object.fromEntries(

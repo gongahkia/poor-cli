@@ -17,6 +17,7 @@ import { masToolDefinitions } from "./mas-tools.js";
 import { moeToolDefinitions } from "./moe-tools.js";
 import { mohToolDefinitions } from "./moh-tools.js";
 import { momToolDefinitions } from "./mom-tools.js";
+import { msfToolDefinitions } from "./msf-tools.js";
 import { neaToolDefinitions } from "./nea-tools.js";
 import { nparksToolDefinitions } from "./nparks-tools.js";
 import { paToolDefinitions } from "./pa-tools.js";
@@ -38,6 +39,7 @@ export const ALL_TOOL_DEFINITIONS = [
   ...paToolDefinitions,
   ...sportsgToolDefinitions,
   ...ecdaToolDefinitions,
+  ...msfToolDefinitions,
   ...ltaToolDefinitions,
   ...neaToolDefinitions,
   ...hdbToolDefinitions,

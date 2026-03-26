@@ -1,0 +1,47 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.83789640387423, 1.3688544443488972]
+      },
+      "properties": {
+        "NAME": "Allkin Family Service Centre @ Ang Mo Kio 230",
+        "ADDRESSSTREETNAME": "Blk 230 Ang Mo Kio Ave 3 #01-1264",
+        "ADDRESSPOSTALCODE": "560230",
+        "ADDRESSBUILDINGNAME": null,
+        "ADDRESSBLOCKHOUSENUMBER": null,
+        "ADDRESSFLOORNUMBER": null,
+        "ADDRESSUNITNUMBER": null,
+        "DESCRIPTION": "Family Service Centres",
+        "TELEPHONE": "6453 5349",
+        "EMAIL": "fscamk@allkin.org.sg",
+        "HYPERLINK": null,
+        "FMEL_UPD_D": "20251203185226"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8462, 1.3698]
+      },
+      "properties": {
+        "NAME": "Care Corner Family Service Centre",
+        "ADDRESSSTREETNAME": null,
+        "ADDRESSPOSTALCODE": "569830",
+        "ADDRESSBUILDINGNAME": "Care Corner Hub",
+        "ADDRESSBLOCKHOUSENUMBER": "85",
+        "ADDRESSFLOORNUMBER": "03",
+        "ADDRESSUNITNUMBER": "12",
+        "DESCRIPTION": "Family Service Centres",
+        "TELEPHONE": "61234567",
+        "EMAIL": "fsc@carecorner.org.sg",
+        "HYPERLINK": "https://example.org/fsc",
+        "FMEL_UPD_D": "20251203185226"
+      }
+    }
+  ]
+}
