@@ -77,6 +77,44 @@ type WorkflowOpsMetadata = {
     readonly headline: string;
   };
   readonly nextActions?: readonly Readonly<Record<string, unknown>>[];
+  readonly continuationHints?: readonly string[];
+};
+
+const buildRoutingExplanation = (plan: Extract<QueryPlan, { supported: true }>): string => {
+  const tools = plan.steps.map((s) => s.tool).join(" → ");
+  return `Routed to ${plan.workflow} (confidence ${plan.confidence.toFixed(2)}) via ${tools}. Drop to direct sg_* tools when you have exact identifiers.`;
+};
+
+const buildContinuationHints = (plan: Extract<QueryPlan, { supported: true }>, steps: readonly ExecutedQueryStep[]): readonly string[] => {
+  const hints: string[] = [];
+  const lastStep = steps[steps.length - 1];
+  if (lastStep === undefined) return hints;
+  const structured = lastStep.structuredOutput;
+  if (isRecord(structured)) {
+    const record = structured["record"] ?? structured["records"];
+    if (isRecord(record)) {
+      // extract table IDs from SingStat
+      for (const key of ["gdpDatasets", "cpiDatasets"]) {
+        const datasets = record[key];
+        if (Array.isArray(datasets) && datasets.length > 0) {
+          const first = datasets[0] as Readonly<Record<string, unknown>> | undefined;
+          const tableId = first?.["id"];
+          if (typeof tableId === "string") hints.push(`Call sg_singstat_table with tableId "${tableId}" for detailed data.`);
+        }
+      }
+      // extract planning area for deeper property
+      const pa = record["planningArea"];
+      if (Array.isArray(pa) && pa.length > 0) {
+        const first = pa[0] as Readonly<Record<string, unknown>> | undefined;
+        const area = first?.["planningArea"];
+        if (typeof area === "string") hints.push(`Call sg_ura_dev_charges with planningArea "${area}" for development charge context.`);
+      }
+    }
+  }
+  if (hints.length === 0) {
+    hints.push(`Use sg://recipes to discover related workflows.`);
+  }
+  return hints;
 };
 
 const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
@@ -797,8 +835,12 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       }
 
       const execution = await executePlan(plan, resolvedFormat);
-      const opsMetadata = execution.status === "completed"
-        ? extractWorkflowOpsMetadata(execution.steps)
+      const routingExplanation = buildRoutingExplanation(plan);
+      const continuationHints = execution.status === "completed"
+        ? buildContinuationHints(plan, execution.steps)
+        : [];
+      const opsMetadata: WorkflowOpsMetadata = execution.status === "completed"
+        ? { ...extractWorkflowOpsMetadata(execution.steps), continuationHints }
         : {};
       if (execution.status === "completed" && plan.steps.length === 1) {
         const step = execution.steps[0];
@@ -846,6 +888,8 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
           steps: execution.steps,
           ...(opsMetadata.resultSummary === undefined ? {} : { resultSummary: opsMetadata.resultSummary }),
           ...(opsMetadata.nextActions === undefined ? {} : { nextActions: opsMetadata.nextActions }),
+          routingExplanation,
+          ...(continuationHints.length > 0 ? { continuationHints } : {}),
           ...(execution.status === "failed"
             ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
             : {}),
