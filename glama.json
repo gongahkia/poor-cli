@@ -1,6 +1,6 @@
 {
   "name": "sg-apis-mcp",
-  "description": "Official Singapore public data MCP server for agents across SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg",
+  "description": "Official Singapore public data MCP server for agents across SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg",
   "transport": "stdio",
   "install": "npm install && npm run build && node packages/mcp-server/dist/index.js",
   "repository": "https://github.com/gongahkia/sg-skills"

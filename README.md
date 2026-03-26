@@ -6,9 +6,9 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 47 `sg_*` tools total across 11 official data families.
+The repo currently exposes 56 `sg_*` tools total across 20 official data families.
 
-- 33 direct data tools
+- 42 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers for health, keys, cache, and config
 - 1 bounded preferred interface, `sg_query`
@@ -17,7 +17,7 @@ The repo currently exposes 47 `sg_*` tools total across 11 official data familie
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -54,6 +54,15 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | CEA | 1 | Curated salesperson and estate-agent registry lookup | None |
 | BCA | 2 | Curated licensed-builder and contractor registry lookup | None |
 | ACRA | 1 | Curated exact-match company and UEN lookup over the official sharded registry | None |
+| GeBIZ | 1 | Government procurement tender awards and contract data | None |
+| Hawker Centres | 1 | Hawker centre directory with locations and stall counts | None |
+| MOE Schools | 1 | School directory filtered by level, zone, and name | None |
+| MOH Healthcare | 1 | Healthcare facility directory (hospitals, clinics) | None |
+| SFA | 1 | Licensed food establishment directory | None |
+| NParks | 1 | Parks and nature reserves directory | None |
+| PUB | 1 | Water level monitoring station readings | None |
+| MOM | 1 | Labour market statistics | None |
+| STB | 1 | Visitor arrival statistics | None |
 | data.gov.sg | 5 | Dataset search, metadata, resource inspection, bounded row reads, collection browse | None |
 
 Additive brief tools:

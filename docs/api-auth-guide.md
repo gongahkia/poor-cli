@@ -44,9 +44,18 @@ These tool families do not require credentials:
 - CEA
 - BCA
 - ACRA
+- GeBIZ
+- Hawker Centres
+- MOE Schools
+- MOH Healthcare
+- SFA
+- NParks
+- PUB
+- MOM
+- STB
 - data.gov.sg
 
-HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.
+HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB are intentionally covered through the shared data.gov.sg path.
 
 ## OneMap
 

@@ -62,7 +62,7 @@ describe("tool catalog parity", () => {
   });
 
   it("tracks the expected post-tranche public surface counts", () => {
-    expect(API_CATALOG).toHaveLength(15);
+    expect(API_CATALOG).toHaveLength(20);
     expect(TOOL_CATALOG).toHaveLength(56);
   });
 

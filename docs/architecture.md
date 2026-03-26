@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 11 official data families
+### 2. The repo goes deep on 20 official data families
 
 The current families are:
 
@@ -50,12 +50,21 @@ The current families are:
 - CEA
 - BCA
 - ACRA
+- GeBIZ
+- Hawker Centres
+- MOE Schools
+- MOH Healthcare
+- SFA
+- NParks
+- PUB
+- MOM
+- STB
 - data.gov.sg
 
 Why:
 
-- together they cover macro, finance, location, property, transport, environment, housing, dataset discovery, and business diligence
-- HDB, CEA, BCA, and ACRA deepen the diligence story without adding more credential surfaces
+- together they cover macro, finance, location, property, transport, environment, housing, dataset discovery, business diligence, procurement, civic amenities, education, healthcare, food safety, parks, water, labour, and tourism
+- HDB, CEA, BCA, ACRA, and the 9 new families deepen coverage without adding more credential surfaces (all route through data.gov.sg)
 - every new upstream multiplies auth, rate-limit, schema, and support cost
 
 Consequence:

@@ -11,9 +11,9 @@ Use this skill when an agent needs official Singapore public data through MCP wi
 
 ## Surface Snapshot
 
-The repo currently exposes 47 `sg_*` tools total across 11 official data families.
+The repo currently exposes 56 `sg_*` tools total across 20 official data families.
 
-- 33 direct data tools
+- 42 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers
 - 1 bounded preferred interface, `sg_query`
@@ -24,7 +24,7 @@ The repo currently exposes 47 `sg_*` tools total across 11 official data familie
 
 - Best for agent builders who need deterministic Singapore public-data calls
 - Optimized for bounded workflows, not free-form analyst chat
-- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg
+- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg
 - The core differentiator is explicit contracts plus additive briefs, not hidden orchestration
 
 ## Discovery Resources
