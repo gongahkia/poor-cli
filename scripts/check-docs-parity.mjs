@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
-const { API_CATALOG, TOOL_CATALOG, WORKFLOW_CATALOG } = await import(
+const { API_CATALOG, RECIPE_CATALOG, TOOL_CATALOG, WORKFLOW_CATALOG } = await import(
   pathToFileURL(resolve(root, "packages/mcp-server/dist/tools/catalog.js")).href
 );
 
@@ -15,6 +15,7 @@ const authFamilies = API_CATALOG.filter((api) => api.authRequired).map((api) => 
 const publicFamilies = API_CATALOG.filter((api) => !api.authRequired).map((api) => api.name);
 const familyNames = API_CATALOG.map((api) => api.name);
 const workflowNames = WORKFLOW_CATALOG.map((workflow) => workflow.name);
+const recipeNames = RECIPE_CATALOG.map((recipe) => recipe.name);
 const sgQuery = TOOL_CATALOG.find((tool) => tool.name === "sg_query");
 
 if (sgQuery?.preferred !== true) {
@@ -46,6 +47,12 @@ ensureIncludes("README.md", [
   `bounded preferred interface across ${routedFamilyCount} routed families`,
   "Business Registry Diligence",
   "sg_acra_entities",
+  "sg://recipes",
+  "docs/product-audit.md",
+  "docs/agent-builder-quickstart.md",
+  "Route Planning",
+  "SingStat Table Drilldown",
+  "Dataset Collection Browse",
   ...familyNames,
 ]);
 ensureExcludes("README.md", [
@@ -59,6 +66,10 @@ ensureIncludes("packages/skill/SKILL.md", [
   `bounded preferred interface across ${routedFamilyCount} routed families`,
   "Business Registry Diligence",
   "sg_acra_entities",
+  "sg://recipes",
+  "Route Planning",
+  "SingStat Table Drilldown",
+  "Dataset Collection Browse",
   ...familyNames,
 ]);
 ensureExcludes("packages/skill/SKILL.md", [
@@ -70,6 +81,10 @@ ensureIncludes("docs/architecture.md", [
   `${familyCount} official data families`,
   `bounded preferred interface across ${routedFamilyCount} routed families`,
   "business-registry workflows can route to ACRA, CEA, and BCA",
+  "sg://recipes",
+  "route planning can geocode postal codes before calling `sg_onemap_route`",
+  "SingStat table drilldowns can move from browse to table to time-series reads",
+  "data.gov collection browsing can continue into metadata, resources, and bounded rows",
   ...familyNames,
 ]);
 ensureExcludes("docs/architecture.md", [
@@ -90,11 +105,44 @@ ensureIncludes("docs/contributing.md", [
   "tool-set.ts",
   "scripts/check-docs-parity.mjs",
   `${directToolCount} direct data tools`,
+  "sg://recipes",
+  "RECIPE_CATALOG",
+  "docs/agent-builder-quickstart.md",
 ]);
 
-for (const workflowName of ["Business Registry Diligence", ...workflowNames.filter((name) => name === "Property Counterparty Diligence")]) {
+ensureIncludes("docs/product-audit.md", [
+  "Actual value prop: yes, but narrow.",
+  "sg://recipes",
+  "Civic amenities and directories",
+  "Education",
+  "Healthcare facilities",
+  "Procurement and tender discovery",
+]);
+
+ensureIncludes("docs/agent-builder-quickstart.md", [
+  "sg://recipes",
+  "sg://workflows",
+  "blocked",
+  "unsupported",
+  "sg_onemap_route",
+  "sg_singstat_browse",
+  "sg_datagov_browse",
+]);
+
+ensureIncludes("examples/README.md", [
+  "geospatial-routing.md",
+  "npm run demo:mcp -- geospatial",
+]);
+
+for (const workflowName of ["Business Registry Diligence", "Property Counterparty Diligence", "Route Planning", "SingStat Table Drilldown", "Dataset Collection Browse"]) {
   ensureIncludes("README.md", [workflowName]);
   ensureIncludes("packages/skill/SKILL.md", [workflowName]);
+}
+
+for (const recipeName of ["Postal Route", "SingStat Drilldown", "HDB Rental Check"]) {
+  if (!recipeNames.includes(recipeName)) {
+    throw new Error(`Built recipe catalog is missing expected recipe: ${recipeName}`);
+  }
 }
 
 for (const path of ["smithery.yaml", "glama.json", "packages/mcp-server/package.json"]) {
