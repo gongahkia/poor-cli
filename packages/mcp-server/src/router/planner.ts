@@ -157,34 +157,16 @@ const buildMacroSnapshotPlan = (
   currency: string | undefined,
 ): QueryPlan => ({
   supported: true,
-  workflow: "macro_snapshot",
+  workflow: "macro_brief",
   intent: "macro",
   confidence: 0.92,
   apis: ["singstat", "mas"],
   steps: [
     {
-      id: "macro_gdp",
-      purpose: "Find the main GDP dataset entrypoint in SingStat.",
-      tool: "sg_singstat_search",
-      input: { keyword: "Singapore GDP" },
-    },
-    {
-      id: "macro_cpi",
-      purpose: "Find the main inflation or CPI dataset entrypoint in SingStat.",
-      tool: "sg_singstat_search",
-      input: { keyword: "Singapore CPI inflation" },
-    },
-    {
-      id: "macro_fx",
-      purpose: "Pull the current MAS SGD exchange-rate context.",
-      tool: "sg_mas_exchange_rates",
+      id: "macro_brief",
+      purpose: "Build a compact Singapore macro starter brief.",
+      tool: "sg_macro_brief",
       input: { currency: currency ?? "USD" },
-    },
-    {
-      id: "macro_sora",
-      purpose: "Pull the current MAS SORA reading.",
-      tool: "sg_mas_interest_rates",
-      input: {},
     },
   ],
 });
@@ -326,38 +308,27 @@ const buildPropertyDueDiligencePlan = (
   const planningArea = params["planningArea"];
   const postalCode = params["postalCode"];
   const includeHdb = /hdb|flat|resale|rental/i.test(query.toLowerCase());
-  const hdbTool = /rental/i.test(query.toLowerCase()) ? "sg_hdb_rental_prices" : "sg_hdb_resale_prices";
   const propertyType =
     /commercial/i.test(query) ? "commercial" : /industrial/i.test(query) ? "industrial" : "residential";
 
   if (typeof planningArea === "string" && planningArea.trim() !== "") {
     return {
       supported: true,
-      workflow: "property_due_diligence",
+      workflow: "property_brief",
       intent: "property",
       confidence: 0.9,
       apis: includeHdb ? ["onemap", "ura", "hdb"] : ["ura"],
       steps: [
         {
-          id: "property_planning",
-          purpose: "Inspect URA planning-area context for the target area.",
-          tool: "sg_ura_planning_area",
-          input: { planningArea },
+          id: "property_brief",
+          purpose: "Build a location and property brief for the target area.",
+          tool: "sg_property_brief",
+          input: {
+            planningArea,
+            propertyType,
+            ...(includeHdb ? {} : { includeEnvironment: false }),
+          },
         },
-        {
-          id: "property_transactions",
-          purpose: "Inspect recent URA property transactions for the target area.",
-          tool: "sg_ura_property_transactions",
-          input: { area: planningArea, propertyType },
-        },
-        ...(includeHdb
-          ? [{
-              id: "property_hdb",
-              purpose: "Inspect curated HDB housing prices for the target area.",
-              tool: hdbTool,
-              input: { town: planningArea },
-            } satisfies QueryStep]
-          : []),
       ],
     };
   }
@@ -365,59 +336,21 @@ const buildPropertyDueDiligencePlan = (
   if (typeof postalCode === "string" && postalCode.trim() !== "") {
     return {
       supported: true,
-      workflow: "property_due_diligence",
+      workflow: "property_brief",
       intent: "property",
       confidence: 0.88,
       apis: includeHdb ? ["onemap", "ura", "hdb"] : ["onemap", "ura"],
       steps: [
         {
-          id: "property_geocode",
-          purpose: "Resolve the postal code to coordinates.",
-          tool: "sg_onemap_geocode",
-          input: { searchVal: postalCode },
-        },
-        {
-          id: "property_planning",
-          purpose: "Resolve the URA planning area for the location.",
-          tool: "sg_ura_planning_area",
+          id: "property_brief",
+          purpose: "Build a location and property brief from the postal code.",
+          tool: "sg_property_brief",
           input: {
-            lat: "<from property_geocode.records[0].lat>",
-            lng: "<from property_geocode.records[0].lng>",
-          },
-          dependsOn: ["property_geocode"],
-          resolveInput: (context) => {
-            const { lat, lng } = getLatLngFromGeocode(context, "property_geocode");
-            return { lat, lng };
+            postalCode,
+            propertyType,
+            ...(includeHdb ? {} : { includeEnvironment: false }),
           },
         },
-        {
-          id: "property_transactions",
-          purpose: "Inspect recent URA property transactions for the resolved area.",
-          tool: "sg_ura_property_transactions",
-          input: {
-            area: "<from property_planning.records[0].planningArea>",
-            propertyType,
-          },
-          dependsOn: ["property_planning"],
-          resolveInput: (context) => ({
-            area: getPlanningAreaFromStep(context, "property_planning"),
-            propertyType,
-          }),
-        },
-        ...(includeHdb
-          ? [{
-              id: "property_hdb",
-              purpose: "Inspect curated HDB housing prices for the resolved area.",
-              tool: hdbTool,
-              input: {
-                town: "<from property_planning.records[0].planningArea>",
-              },
-              dependsOn: ["property_planning"],
-              resolveInput: (context) => ({
-                town: getPlanningAreaFromStep(context, "property_planning"),
-              }),
-            } satisfies QueryStep]
-          : []),
       ],
     };
   }
@@ -513,11 +446,84 @@ const buildBusinessRegistryPlan = (
 
   return {
     supported: true,
-    workflow: "business_registry_diligence",
+    workflow: "business_dossier",
     intent: "business",
     confidence: 0.9,
     apis: Array.from(new Set(steps.map((step) => step.tool.split("_")[1]!))),
-    steps,
+    steps: [
+      {
+        id: "business_dossier",
+        purpose: "Build a cross-registry business dossier.",
+        tool: "sg_business_dossier",
+        input: {
+          ...(acraName === undefined ? {} : { entityName: acraName }),
+          ...(uen === undefined ? {} : { uen }),
+          ...(salespersonName === undefined ? {} : { salespersonName }),
+          ...(registrationNo === undefined ? {} : { registrationNo }),
+          ...(estateAgentName === undefined ? {} : { estateAgentName }),
+          ...(estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo }),
+          ...(classCode === undefined ? {} : { classCode }),
+          ...(workhead === undefined ? {} : { workhead }),
+          ...(grade === undefined ? {} : { grade }),
+        },
+      },
+    ],
+  };
+};
+
+const buildTransportBriefPlan = (
+  params: Readonly<Record<string, unknown>>,
+): QueryPlan => {
+  const busStopCode = typeof params["busStopCode"] === "string" ? params["busStopCode"] : undefined;
+  const serviceNo = typeof params["serviceNo"] === "string" ? params["serviceNo"] : undefined;
+
+  return {
+    supported: true,
+    workflow: "transport_brief",
+    intent: "transport",
+    confidence: 0.9,
+    apis: ["lta"],
+    steps: [
+      {
+        id: "transport_brief",
+        purpose: "Build a live transport operations brief.",
+        tool: "sg_transport_brief",
+        input: {
+          ...(busStopCode === undefined ? {} : { busStopCode }),
+          ...(serviceNo === undefined ? {} : { serviceNo }),
+        },
+      },
+    ],
+  };
+};
+
+const buildEnvironmentBriefPlan = (
+  params: Readonly<Record<string, unknown>>,
+): QueryPlan => {
+  const area = typeof params["planningArea"] === "string" ? params["planningArea"] : undefined;
+  const region = typeof params["region"] === "string" ? params["region"] : undefined;
+  const stationId = typeof params["stationId"] === "string" ? params["stationId"] : undefined;
+  const date = typeof params["date"] === "string" ? params["date"] : undefined;
+
+  return {
+    supported: true,
+    workflow: "environment_brief",
+    intent: "environment",
+    confidence: 0.89,
+    apis: ["nea"],
+    steps: [
+      {
+        id: "environment_brief",
+        purpose: "Build a live environment monitoring brief.",
+        tool: "sg_environment_brief",
+        input: {
+          ...(area === undefined ? {} : { area }),
+          ...(region === undefined ? {} : { region }),
+          ...(stationId === undefined ? {} : { stationId }),
+          ...(date === undefined ? {} : { date }),
+        },
+      },
+    ],
   };
 };
 
@@ -578,6 +584,20 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     );
   }
 
+  if (resolved.tool === "sg_datagov_resources" && resolved.input["datasetId"] === undefined) {
+    return buildUnsupportedPlan(
+      "sg_query needs a data.gov.sg datasetId like d_8b84c4ee58e3cfc0ece0d773c8ca6abc to inspect resource metadata.",
+      "Call sg_datagov_resources directly with datasetId, or use sg_datagov_search first to discover a dataset ID.",
+    );
+  }
+
+  if (resolved.tool === "sg_datagov_rows" && resolved.input["datasetId"] === undefined) {
+    return buildUnsupportedPlan(
+      "sg_query needs a data.gov.sg datasetId like d_8b84c4ee58e3cfc0ece0d773c8ca6abc to read bounded rows.",
+      "Call sg_datagov_rows directly with datasetId or resourceId, or inspect sg_datagov_resources first.",
+    );
+  }
+
   return {
     supported: true,
     workflow: "direct_tool",
@@ -622,6 +642,10 @@ export const planQuery = (query: string): QueryPlan => {
       return buildDatasetDiscoveryPlan(query);
     case "demographic_profile":
       return buildDemographicProfilePlan(intent.extractedParams);
+    case "transport_brief":
+      return buildTransportBriefPlan(intent.extractedParams);
+    case "environment_brief":
+      return buildEnvironmentBriefPlan(intent.extractedParams);
     default:
       return buildDirectToolPlan(query);
   }
