@@ -62,3 +62,23 @@ Each example file maps to one built-in profile:
 - `npm run demo:mcp -- geospatial`
 
 Every profile reads one resource, calls one direct tool, calls one supporting tool, and then runs the equivalent `sg_query` workflow against the mock upstream server.
+
+## Integration Example
+
+`integration/basic-client.ts` shows how to connect a TypeScript MCP client, read discovery resources, call `sg_query`, handle blocked/unsupported states, and fall back to direct tools:
+
+```bash
+npx tsx examples/integration/basic-client.ts
+```
+
+## Golden Outputs
+
+`golden-outputs/` contains realistic JSON fixtures for each brief tool, useful as reference for expected output shapes and field values.
+
+## Quick Start
+
+Run one brief workflow end-to-end in under 5 minutes:
+
+```bash
+node scripts/quick-start.mjs property
+```
