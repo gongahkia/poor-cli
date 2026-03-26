@@ -48,6 +48,18 @@ const server = createServer((req, res) => {
   const delay = parseInt(url.searchParams.get("delay") ?? "0", 10);
 
   const respond = (): void => {
+    if (url.pathname === "/onemap/common/elastic/search") {
+      const searchVal = url.searchParams.get("searchVal");
+      const fixture = searchVal === "049178"
+        ? "onemap/__tests__/fixtures/search-response-049178.json"
+        : searchVal === "048616"
+          ? "onemap/__tests__/fixtures/search-response-048616.json"
+          : "onemap/__tests__/fixtures/search-response.json";
+      res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
+      res.end(loadFixture(fixture));
+      return;
+    }
+
     if (url.pathname === "/datagov/action/datastore_search") {
       const resourceId = url.searchParams.get("resource_id");
       const fixture = resourceId === null
