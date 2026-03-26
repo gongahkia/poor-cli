@@ -1,0 +1,19 @@
+{
+  "found": 1,
+  "totalNumPages": 1,
+  "pageNum": 1,
+  "results": [
+    {
+      "SEARCHVAL": "ONE RAFFLES PLACE",
+      "BLK_NO": "1",
+      "ROAD_NAME": "RAFFLES PLACE",
+      "BUILDING": "ONE RAFFLES PLACE",
+      "ADDRESS": "1 RAFFLES PLACE SINGAPORE 048616",
+      "POSTAL": "048616",
+      "X": "29975.87",
+      "Y": "29642.37",
+      "LATITUDE": "1.28435",
+      "LONGITUDE": "103.85107"
+    }
+  ]
+}
