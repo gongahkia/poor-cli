@@ -5,7 +5,10 @@
   "license": "MIT",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/__tests__/**",
+    "!dist/**/fixtures/**",
+    "!dist/**/mock-server/**"
   ],
   "bin": {
     "sg-apis-mcp": "./dist/index.js"
