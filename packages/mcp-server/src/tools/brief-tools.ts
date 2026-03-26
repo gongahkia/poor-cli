@@ -1520,6 +1520,16 @@ export const handleTransportBrief = async (
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
 };
 
+const AREA_TO_REGION: Readonly<Record<string, string>> = {
+  "Ang Mo Kio": "central", "Bedok": "east", "Bishan": "central", "Bukit Batok": "west",
+  "Bukit Merah": "central", "Bukit Panjang": "west", "Bukit Timah": "central",
+  "Choa Chu Kang": "west", "Clementi": "west", "Geylang": "central", "Hougang": "north",
+  "Jurong East": "west", "Jurong West": "west", "Kallang": "central", "Marine Parade": "east",
+  "Pasir Ris": "east", "Punggol": "north", "Queenstown": "central", "Sembawang": "north",
+  "Sengkang": "north", "Serangoon": "central", "Tampines": "east", "Toa Payoh": "central",
+  "Woodlands": "north", "Yishun": "north",
+};
+
 export const handleEnvironmentBrief = async (
   params: Readonly<{
     area?: string | undefined;
@@ -1553,15 +1563,6 @@ export const handleEnvironmentBrief = async (
     ),
   ]);
 
-  const AREA_TO_REGION: Readonly<Record<string, string>> = {
-    "Ang Mo Kio": "central", "Bedok": "east", "Bishan": "central", "Bukit Batok": "west",
-    "Bukit Merah": "central", "Bukit Panjang": "west", "Bukit Timah": "central",
-    "Choa Chu Kang": "west", "Clementi": "west", "Geylang": "central", "Hougang": "north",
-    "Jurong East": "west", "Jurong West": "west", "Kallang": "central", "Marine Parade": "east",
-    "Pasir Ris": "east", "Punggol": "north", "Queenstown": "central", "Sembawang": "north",
-    "Sengkang": "north", "Serangoon": "central", "Tampines": "east", "Toa Payoh": "central",
-    "Woodlands": "north", "Yishun": "north",
-  };
   const primaryForecast = forecast?.[0];
   const primaryAirQuality = airQuality?.[0];
   const primaryRainfall = rainfall?.[0];
