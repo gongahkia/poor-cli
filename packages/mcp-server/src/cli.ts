@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // sg-data CLI: quick lookups without full MCP setup
 // usage: sg-data <command> [args]
+import type { ToolResult } from "@sg-apis/shared";
 import { handleBusinessDossier, handleEnvironmentBrief, handleMacroBrief, handlePropertyBrief, handleTransportBrief } from "./tools/brief-tools.js";
 import { handleHdbResalePrices } from "./tools/hdb-tools.js";
 import { handleLtaBusArrivals } from "./tools/lta-tools.js";
@@ -35,7 +36,6 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     if (!text) { console.error("usage: sg-data query <prompt>"); process.exit(1); }
     const { executeQueryStep } = await import("./tools/query-tool.js");
     const { planQuery } = await import("./router/planner.js");
-    type ToolResult = { content: readonly { type: string; text: string }[]; isError?: boolean; structuredContent?: Readonly<Record<string, unknown>> };
     const plan = planQuery(text);
     if (!plan.supported) { console.error(`unsupported: ${plan.reason}\n${plan.suggestion}`); process.exit(1); }
     const results = new Map<string, { input: Readonly<Record<string, unknown>>; output: ToolResult }>();
