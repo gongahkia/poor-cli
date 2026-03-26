@@ -110,6 +110,7 @@ try {
     cwd: tempDir,
     env: {
       ...process.env,
+      HOME: tempDir,
       SG_APIS_LOG_LEVEL: "error",
       MOCK_API_BASE_URL: mockServer.url,
       SG_API_ONEMAP_EMAIL: "test-onemap@example.com",
