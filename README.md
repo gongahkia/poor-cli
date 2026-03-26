@@ -25,6 +25,8 @@ The value is not hidden magic. The value is:
 - provenance, freshness, and limits surfaced directly in brief artifacts
 - caching, rate limiting, auth handling, packaging, and parity checks already done
 
+If you are evaluating whether the repo is actually useful for developers, start with [docs/product-audit.md](./docs/product-audit.md) and [docs/agent-builder-quickstart.md](./docs/agent-builder-quickstart.md).
+
 ## Capability Matrix
 
 | Need | Best entrypoint | Better than raw API calls because | Auth | Freshness surface | Intentionally unsupported |
@@ -144,9 +146,21 @@ npm run demo:mcp -- property
 npm run demo:mcp -- macro
 npm run demo:mcp -- transport
 npm run demo:mcp -- environment
+npm run demo:mcp -- geospatial
 ```
 
-Those demos start the mock upstream server, connect to the built MCP server, read a catalog resource, and call one direct tool, one brief tool, and `sg_query`.
+Those demos start the mock upstream server, connect to the built MCP server, read a catalog resource, and call one direct tool, one supporting tool, and `sg_query`.
+
+### Discovery Resources
+
+Read the built-in catalogs before wiring your own client logic:
+
+- `sg://apis`
+- `sg://tools`
+- `sg://workflows`
+- `sg://recipes`
+
+`sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools.
 
 ## Authentication
 
@@ -177,12 +191,16 @@ The primary runnable demos for this tranche are:
 - [Macro Snapshot](./examples/macro-brief.md)
 - [Transport Status](./examples/transport-brief.md)
 - [Environment Snapshot](./examples/environment-brief.md)
+- [Geospatial Routing](./examples/geospatial-routing.md)
 
 Additional bounded workflow names exposed in the catalog:
 
 - Demographic Profile
 - Property Counterparty Diligence
 - Dataset Discovery Fallback
+- Route Planning
+- SingStat Table Drilldown
+- Dataset Collection Browse
 
 ### Business Registry Diligence
 
@@ -244,6 +262,15 @@ sg_nea_air_quality { "region": "East", "format": "json" }
 sg_nea_rainfall { "stationId": "S107", "format": "json" }
 ```
 
+### Geospatial Routing
+
+```text
+sg_query { "query": "Walk from 049178 to 048616", "mode": "execute" }
+sg_onemap_route { "startLat": 1.2864, "startLng": 103.8537, "endLat": 1.284, "endLng": 103.851, "routeType": "walk", "format": "json" }
+sg_onemap_reverse_geocode { "lat": 1.284, "lng": 103.851, "format": "json" }
+sg_onemap_convert_coords { "from": "SVY21", "x": 28001, "y": 38744, "format": "json" }
+```
+
 ## Why This Beats Raw APIs
 
 | Workflow | Raw upstream path | MCP path | What the repo adds |
@@ -263,6 +290,13 @@ Supported intents:
 - property or regulatory due diligence
 - business registry diligence
 - dataset discovery fallback
+- route planning between Singapore postal codes or coordinate pairs
+- reverse geocode from one coordinate pair
+- coordinate conversion between SVY21 and WGS84
+- SingStat browse, table drilldown, and time-series reads
+- data.gov collection browsing before dataset drilldown
+- HDB resale or rental checks with town and flat-type extraction
+- URA development-charge lookups with use-group and sector extraction
 - transport status or transport snapshot
 - environment snapshot
 - direct-tool routing for precise stop-level, area-level, region-level, station-level, company, UEN, dataset, and table prompts already covered by a direct `sg_*` tool
