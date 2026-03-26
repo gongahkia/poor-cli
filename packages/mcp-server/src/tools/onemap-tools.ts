@@ -62,6 +62,44 @@ export const handleOneMapRoute = async (
   };
 };
 
+export const handleOneMapReverseGeocode = async (
+  params: Readonly<{ lat: number; lng: number; buffer?: number | undefined }>,
+): Promise<ToolResult> => {
+  const result = await reverseGeocode(params.lat, params.lng, params.buffer);
+  if (result === null) {
+    return { content: [{ type: "text", text: "No results found within the specified radius." }] };
+  }
+  const text = formatResponse(result as unknown as Record<string, unknown>, "markdown");
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      record: result,
+    },
+  };
+};
+
+export const handleOneMapConvertCoords = async (
+  params: Readonly<{ from: "SVY21" | "WGS84"; x: number; y: number }>,
+): Promise<ToolResult> => {
+  if (params.from === "SVY21") {
+    const result = await convertSVY21toWGS84(params.x, params.y);
+    return {
+      content: [{ type: "text", text: `Latitude: ${result.lat}\nLongitude: ${result.lng}` }],
+      structuredContent: {
+        record: result,
+      },
+    };
+  }
+
+  const result = await convertWGS84toSVY21(params.x, params.y);
+  return {
+    content: [{ type: "text", text: `Easting (X): ${result.x}\nNorthing (Y): ${result.y}` }],
+    structuredContent: {
+      record: result,
+    },
+  };
+};
+
 export const onemapToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_onemap_geocode",
@@ -79,13 +117,7 @@ export const onemapToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: OneMapReverseGeocodeSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { lat, lng, buffer } = validateInput(OneMapReverseGeocodeSchema, input);
-      const result = await reverseGeocode(lat, lng, buffer);
-      if (result === null) {
-        return { content: [{ type: "text", text: "No results found within the specified radius." }] };
-      }
-      const text = formatResponse(result as unknown as Record<string, unknown>, "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleOneMapReverseGeocode(validateInput(OneMapReverseGeocodeSchema, input));
     },
   },
 
@@ -115,14 +147,7 @@ export const onemapToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: OneMapConvertCoordsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { from, x, y } = validateInput(OneMapConvertCoordsSchema, input);
-      if (from === "SVY21") {
-        const result = await convertSVY21toWGS84(x, y);
-        return { content: [{ type: "text", text: `Latitude: ${result.lat}\nLongitude: ${result.lng}` }] };
-      } else {
-        const result = await convertWGS84toSVY21(x, y);
-        return { content: [{ type: "text", text: `Easting (X): ${result.x}\nNorthing (Y): ${result.y}` }] };
-      }
+      return handleOneMapConvertCoords(validateInput(OneMapConvertCoordsSchema, input));
     },
   },
 ];
