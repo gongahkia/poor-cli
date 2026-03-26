@@ -59,6 +59,26 @@ export const handleUraPlanningArea = async (
   };
 };
 
+export const handleUraDevCharges = async (
+  params: Readonly<{ useGroup?: string | undefined; sector?: string | undefined }>,
+): Promise<ToolResult> => {
+  const result = await uraFetch<{ Status: string; Result: { use_grp: string; sector: string; rate: string; effDate: string }[] }>("DC_Rates");
+  let data = result.Result;
+  if (params.useGroup !== undefined) {
+    data = data.filter((item) => item.use_grp === params.useGroup);
+  }
+  if (params.sector !== undefined) {
+    data = data.filter((item) => item.sector === params.sector);
+  }
+  const text = formatResponse(data as unknown as Record<string, unknown>[], "markdown");
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: {
+      records: data,
+    },
+  };
+};
+
 export const uraToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_ura_property_transactions",
@@ -86,13 +106,7 @@ export const uraToolDefinitions: readonly RegisteredToolDefinition[] = [
     surface: "canonical",
     inputSchema: UraDevChargesSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { useGroup, sector } = validateInput(UraDevChargesSchema, input);
-      const result = await uraFetch<{ Status: string; Result: { use_grp: string; sector: string; rate: string; effDate: string }[] }>("DC_Rates");
-      let data = result.Result;
-      if (useGroup !== undefined) data = data.filter((d) => d.use_grp === useGroup);
-      if (sector !== undefined) data = data.filter((d) => d.sector === sector);
-      const text = formatResponse(data as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return handleUraDevCharges(validateInput(UraDevChargesSchema, input));
     },
   },
 ];
