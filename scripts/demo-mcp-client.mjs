@@ -14,7 +14,7 @@ const PROFILES = {
       name: "sg_acra_entities",
       arguments: { entityName: "ABC CONSTRUCTION PTE LTD", format: "json" },
     },
-    brief: {
+    supporting: {
       name: "sg_business_dossier",
       arguments: { entityName: "ABC CONSTRUCTION PTE LTD", workhead: "CW01", format: "json" },
     },
@@ -33,7 +33,7 @@ const PROFILES = {
       name: "sg_hdb_resale_prices",
       arguments: { town: "Bedok", flatType: "4 ROOM", limit: 1, format: "json" },
     },
-    brief: {
+    supporting: {
       name: "sg_property_brief",
       arguments: {
         planningArea: "Bedok",
@@ -58,7 +58,7 @@ const PROFILES = {
       name: "sg_mas_exchange_rates",
       arguments: { currency: "USD", format: "json" },
     },
-    brief: {
+    supporting: {
       name: "sg_macro_brief",
       arguments: { currency: "USD", format: "json" },
     },
@@ -77,7 +77,7 @@ const PROFILES = {
       name: "sg_lta_bus_arrivals",
       arguments: { busStopCode: "83139", serviceNo: "851", format: "json" },
     },
-    brief: {
+    supporting: {
       name: "sg_transport_brief",
       arguments: { busStopCode: "83139", serviceNo: "851", format: "json" },
     },
@@ -96,7 +96,7 @@ const PROFILES = {
       name: "sg_nea_forecast_2hr",
       arguments: { area: "Tampines", format: "json" },
     },
-    brief: {
+    supporting: {
       name: "sg_environment_brief",
       arguments: { area: "Tampines", region: "East", format: "json" },
     },
@@ -104,6 +104,31 @@ const PROFILES = {
       name: "sg_query",
       arguments: {
         query: "Environment snapshot of Singapore right now",
+        mode: "execute",
+        format: "json",
+      },
+    },
+  },
+  geospatial: {
+    resourceUri: "sg://recipes",
+    direct: {
+      name: "sg_onemap_route",
+      arguments: {
+        startLat: 1.2864,
+        startLng: 103.8537,
+        endLat: 1.284,
+        endLng: 103.851,
+        routeType: "walk",
+      },
+    },
+    supporting: {
+      name: "sg_onemap_reverse_geocode",
+      arguments: { lat: 1.284, lng: 103.851 },
+    },
+    query: {
+      name: "sg_query",
+      arguments: {
+        query: "Walk from 049178 to 048616",
         mode: "execute",
         format: "json",
       },
@@ -194,13 +219,13 @@ try {
     const resourceText = resource.contents.find((content) => "text" in content && typeof content.text === "string")?.text ?? "";
 
     const directResult = await client.callTool(profile.direct);
-    const briefResult = await client.callTool(profile.brief);
+    const supportingResult = await client.callTool(profile.supporting);
     const queryResult = await client.callTool(profile.query);
 
     printSection("Profile", profileName);
     printSection("Resource", resourceText);
     printSection(`${profile.direct.name}`, formatToolResult(directResult));
-    printSection(`${profile.brief.name}`, formatToolResult(briefResult));
+    printSection(`${profile.supporting.name}`, formatToolResult(supportingResult));
     printSection("sg_query", formatToolResult(queryResult));
   } finally {
     await client.close().catch(() => undefined);
