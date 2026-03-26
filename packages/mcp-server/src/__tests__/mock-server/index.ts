@@ -48,7 +48,7 @@ const server = createServer((req, res) => {
   const delay = parseInt(url.searchParams.get("delay") ?? "0", 10);
 
   const respond = (): void => {
-    if (url.pathname === "/onemap/common/elastic/search") {
+    if (url.pathname.startsWith("/onemap/common/elastic/search")) {
       const searchVal = url.searchParams.get("searchVal");
       const fixture = searchVal === "049178"
         ? "onemap/__tests__/fixtures/search-response-049178.json"
