@@ -15,7 +15,9 @@
     "verify": "node ./scripts/verify.mjs",
     "dev": "tsc --build --watch",
     "mock-server": "tsx packages/mcp-server/src/__tests__/mock-server/index.ts",
-    "test:smoke:packaging": "node ./scripts/smoke-packages.mjs"
+    "test:smoke:packaging": "node ./scripts/smoke-packages.mjs",
+    "test:smoke:registry": "node ./scripts/registry-smoke.mjs",
+    "demo:mcp": "node ./scripts/demo-mcp-client.mjs"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.57.1",
