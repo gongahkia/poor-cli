@@ -717,6 +717,7 @@ class PoorCLIServer:
             "poor-cli/switchSession": self.handle_switch_session,
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
+            "poor-cli/renameSession": self.handle_rename_session,
         }
 
     # =========================================================================
@@ -4405,6 +4406,18 @@ class PoorCLIServer:
         make_default = bool(params.get("makeDefault", False))
         state = self._session_manager.create_session(label=label, cwd=cwd, make_default=make_default)
         return {"session": state.to_dict()}
+
+    async def handle_rename_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Rename a session's label."""
+        sid = str(params.get("sessionId", "")).strip()
+        label = str(params.get("label", "")).strip()
+        if not sid:
+            return {"error": "sessionId required"}
+        session = self._session_manager.get_session(sid)
+        if session is None:
+            return {"error": f"session {sid} not found"}
+        session.label = label
+        return {"sessionId": sid, "label": label}
 
     async def handle_destroy_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Destroy a session and release resources."""
