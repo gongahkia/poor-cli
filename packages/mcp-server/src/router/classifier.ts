@@ -553,6 +553,25 @@ export const classifyIntent = (query: string): IntentResult => {
     };
   }
 
+  if (aliasedTool === "sg_singstat_browse" || /browse\s+singstat|singstat\s+(?:categories|category|browse)/i.test(lower)) {
+    return buildIntentResult("economic", "direct_tool", 0.87, params, "sg_singstat_browse");
+  }
+
+  if (
+    aliasedTool === "sg_singstat_timeseries"
+    || /singstat.*(?:time\s*series|timeseries)|(?:time\s*series|timeseries).*(?:singstat|table\b)/i.test(lower)
+  ) {
+    return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_timeseries");
+  }
+
+  if (
+    aliasedTool === "sg_singstat_table"
+    || /singstat\s+table|tablebuilder\s+table|show\s+me\s+the\s+singstat\s+table/i.test(lower)
+    || (tableId !== null && /singstat|tablebuilder|table\s+[a-z]\d{6}/i.test(lower))
+  ) {
+    return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_table");
+  }
+
   if (/dataset|data\s*set|open\s*data|discover|browse.*dataset|find.*dataset/i.test(lower)) {
     return {
       ...buildIntentResult("dataset", "dataset_discovery", 0.82, params),
@@ -681,24 +700,6 @@ export const classifyIntent = (query: string): IntentResult => {
         ? "sg_ura_planning_area"
         : "sg_ura_property_transactions");
     return buildIntentResult("property", "direct_tool", 0.86, params, tool);
-  }
-
-  if (aliasedTool === "sg_singstat_browse" || /browse\s+singstat|singstat\s+(?:categories|category|browse)/i.test(lower)) {
-    return buildIntentResult("economic", "direct_tool", 0.87, params, "sg_singstat_browse");
-  }
-
-  if (
-    aliasedTool === "sg_singstat_timeseries"
-    || (tableId !== null && /time\s*series|timeseries|historical\s+series/i.test(lower))
-  ) {
-    return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_timeseries");
-  }
-
-  if (
-    aliasedTool === "sg_singstat_table"
-    || (tableId !== null && /singstat|tablebuilder|table\s+[a-z]\d{6}/i.test(lower))
-  ) {
-    return buildIntentResult("economic", "direct_tool", 0.88, params, "sg_singstat_table");
   }
 
   if (
