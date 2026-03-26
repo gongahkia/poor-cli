@@ -50,6 +50,15 @@ import {
   handleUraPlanningArea,
   handleUraPropertyTransactions,
 } from "./ura-tools.js";
+import { handleGeBIZTenders } from "./gebiz-tools.js";
+import { handleHawkerCentres } from "./hawker-tools.js";
+import { handleMoeSchools } from "./moe-tools.js";
+import { handleMohFacilities } from "./moh-tools.js";
+import { handleSfaEstablishments } from "./sfa-tools.js";
+import { handleNParks } from "./nparks-tools.js";
+import { handlePubWaterLevels } from "./pub-tools.js";
+import { handleMomLabourStats } from "./mom-tools.js";
+import { handleStbVisitorStats } from "./stb-tools.js";
 
 type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
 
@@ -192,6 +201,24 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleHdbResalePrices(params as Parameters<typeof handleHdbResalePrices>[0]),
   sg_hdb_rental_prices: async (params) =>
     handleHdbRentalPrices(params as Parameters<typeof handleHdbRentalPrices>[0]),
+  sg_gebiz_tenders: async (params) =>
+    handleGeBIZTenders(params as Parameters<typeof handleGeBIZTenders>[0]),
+  sg_hawker_centres: async (params) =>
+    handleHawkerCentres(params as Parameters<typeof handleHawkerCentres>[0]),
+  sg_moe_schools: async (params) =>
+    handleMoeSchools(params as Parameters<typeof handleMoeSchools>[0]),
+  sg_moh_facilities: async (params) =>
+    handleMohFacilities(params as Parameters<typeof handleMohFacilities>[0]),
+  sg_sfa_establishments: async (params) =>
+    handleSfaEstablishments(params as Parameters<typeof handleSfaEstablishments>[0]),
+  sg_nparks_parks: async (params) =>
+    handleNParks(params as Parameters<typeof handleNParks>[0]),
+  sg_pub_water_levels: async (params) =>
+    handlePubWaterLevels(params as Parameters<typeof handlePubWaterLevels>[0]),
+  sg_mom_labour_stats: async (params) =>
+    handleMomLabourStats(params as Parameters<typeof handleMomLabourStats>[0]),
+  sg_stb_visitor_stats: async (params) =>
+    handleStbVisitorStats(params as Parameters<typeof handleStbVisitorStats>[0]),
 };
 
 const FORMAT_CAPABLE_TOOLS = new Set([
@@ -220,6 +247,15 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_nea_rainfall",
   "sg_hdb_resale_prices",
   "sg_hdb_rental_prices",
+  "sg_gebiz_tenders",
+  "sg_hawker_centres",
+  "sg_moe_schools",
+  "sg_moh_facilities",
+  "sg_sfa_establishments",
+  "sg_nparks_parks",
+  "sg_pub_water_levels",
+  "sg_mom_labour_stats",
+  "sg_stb_visitor_stats",
 ]);
 
 const MARKDOWN_JSON_ONLY_TOOLS = new Set([
