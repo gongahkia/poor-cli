@@ -18,9 +18,6 @@ mod session_cmds;
 mod system_cmds;
 
 use core::resolve_close_slash_command;
-pub(crate) use collab::format_collab_summary_payload;
-pub(crate) use context::{format_doctor_report_payload, format_status_view_payload, format_trust_view_payload};
-pub(crate) use tasks::{format_runs_payload, format_task_detail, format_workflow_detail};
 
 // ── Slash command handler ─────────────────────────────────────────────
 
