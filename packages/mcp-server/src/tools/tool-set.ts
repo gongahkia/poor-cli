@@ -6,11 +6,15 @@ import { cacheToolDefinitions } from "./cache-tools.js";
 import { ceaToolDefinitions } from "./cea-tools.js";
 import { configToolDefinitions } from "./config-tools.js";
 import { datagovToolDefinitions } from "./datagov-tools.js";
+import { gebizToolDefinitions } from "./gebiz-tools.js";
+import { hawkerToolDefinitions } from "./hawker-tools.js";
 import { healthCheckToolDefinitions } from "./health-check.js";
 import { hdbToolDefinitions } from "./hdb-tools.js";
 import { keystoreToolDefinitions } from "./keystore-tools.js";
 import { ltaToolDefinitions } from "./lta-tools.js";
 import { masToolDefinitions } from "./mas-tools.js";
+import { moeToolDefinitions } from "./moe-tools.js";
+import { mohToolDefinitions } from "./moh-tools.js";
 import { neaToolDefinitions } from "./nea-tools.js";
 import { onemapToolDefinitions } from "./onemap-tools.js";
 import { queryToolDefinitions } from "./query-tool.js";
@@ -29,6 +33,10 @@ export const ALL_TOOL_DEFINITIONS = [
   ...ceaToolDefinitions,
   ...bcaToolDefinitions,
   ...acraToolDefinitions,
+  ...gebizToolDefinitions,
+  ...hawkerToolDefinitions,
+  ...moeToolDefinitions,
+  ...mohToolDefinitions,
   ...briefToolDefinitions,
   ...healthCheckToolDefinitions,
   ...cacheToolDefinitions,
