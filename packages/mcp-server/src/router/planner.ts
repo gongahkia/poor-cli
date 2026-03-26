@@ -93,6 +93,33 @@ const getFirstRecord = (
   return record;
 };
 
+const getGeocodeRecord = (
+  context: QueryExecutionContext,
+  stepId: string,
+  expectedPostalCode?: string,
+): Readonly<Record<string, unknown>> => {
+  const records = getStepRecords(context, stepId);
+  if (records.length === 0) {
+    throw dependencyError(
+      "The workflow could not resolve a geocode match from the previous step.",
+      "Call sg_onemap_geocode directly with a more explicit Singapore address or postal code.",
+    );
+  }
+
+  if (expectedPostalCode === undefined) {
+    return records[0]!;
+  }
+
+  const record = records.find((candidate) => candidate["postal"] === expectedPostalCode);
+  if (record === undefined) {
+    throw dependencyError(
+      `Workflow step ${stepId} did not return an exact postal-code match for ${expectedPostalCode}.`,
+      "Call sg_onemap_geocode directly and choose the correct record, or provide explicit coordinates to sg_onemap_route.",
+    );
+  }
+  return record;
+};
+
 const getPlanningAreaFromStep = (context: QueryExecutionContext, stepId: string): string => {
   const record = getFirstRecord(
     context,
@@ -110,13 +137,12 @@ const getPlanningAreaFromStep = (context: QueryExecutionContext, stepId: string)
   return planningArea;
 };
 
-const getLatLngFromGeocode = (context: QueryExecutionContext, stepId: string): { lat: number; lng: number } => {
-  const record = getFirstRecord(
-    context,
-    stepId,
-    "The workflow could not resolve a geocode match from the previous step.",
-    "Call sg_onemap_geocode directly with a more explicit Singapore address or postal code.",
-  );
+const getLatLngFromGeocode = (
+  context: QueryExecutionContext,
+  stepId: string,
+  expectedPostalCode?: string,
+): { lat: number; lng: number } => {
+  const record = getGeocodeRecord(context, stepId, expectedPostalCode);
   const lat = record["lat"];
   const lng = record["lng"];
   if (typeof lat !== "number" || typeof lng !== "number") {
@@ -602,8 +628,8 @@ const buildRoutePlan = (
           },
           dependsOn: ["route_origin_geocode", "route_destination_geocode"],
           resolveInput: (context) => {
-            const origin = getLatLngFromGeocode(context, "route_origin_geocode");
-            const destination = getLatLngFromGeocode(context, "route_destination_geocode");
+            const origin = getLatLngFromGeocode(context, "route_origin_geocode", originPostalCode);
+            const destination = getLatLngFromGeocode(context, "route_destination_geocode", destinationPostalCode);
             return {
               startLat: origin.lat,
               startLng: origin.lng,
