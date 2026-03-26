@@ -4,9 +4,12 @@ import { homedir } from "node:os";
 import Database from "better-sqlite3";
 import { httpGet, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
 import type {
+  DatagovColumnMetadata,
   DatagovDatastoreResult,
   DatagovDatastoreResponse,
   DatagovDataset,
+  DatagovDatasetMetadata,
+  DatagovMetadataResponse,
   DatagovV2ListResponse,
 } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
@@ -36,8 +39,18 @@ type DatastoreQueryOptions = {
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
 const DATASETS_PAGE_SIZE = 100;
+const TABULAR_FORMATS = new Set(["CSV", "JSON", "GEOJSON", "XLSX", "XLS", "TXT"]);
 
 let indexDb: Database.Database | null = null;
+let indexWarmPromise: Promise<void> | null = null;
+
+export const resetLocalIndexState = (): void => {
+  if (indexDb !== null) {
+    indexDb.close();
+    indexDb = null;
+  }
+  indexWarmPromise = null;
+};
 
 const getIndexDb = (): Database.Database => {
   if (indexDb !== null) return indexDb;
@@ -88,18 +101,20 @@ export const buildLocalIndex = async (): Promise<void> => {
   if (isIndexFresh()) return;
 
   logger.info("building data.gov.sg local index...");
-  const db = getIndexDb();
-
   const allDatasets = await fetchAllDatasets();
+  replaceLocalIndex(allDatasets);
+  logger.info("data.gov.sg local index built", { datasets: allDatasets.length });
+};
 
-  // Rebuild index
+const replaceLocalIndex = (datasets: readonly DatagovDataset[]): void => {
+  const db = getIndexDb();
   const insertStmt = db.prepare(
     "INSERT OR REPLACE INTO datagov_index (id, title, description, org, format, updated) VALUES (?, ?, ?, ?, ?, ?)",
   );
   const transaction = db.transaction(() => {
     db.exec("DELETE FROM datagov_index");
     db.exec("DELETE FROM datagov_fts");
-    for (const ds of allDatasets) {
+    for (const ds of datasets) {
       insertStmt.run(
         ds.datasetId,
         ds.name,
@@ -109,15 +124,54 @@ export const buildLocalIndex = async (): Promise<void> => {
         ds.lastUpdatedAt,
       );
     }
-    // Rebuild FTS index
     db.exec("INSERT INTO datagov_fts(datagov_fts) VALUES('rebuild')");
     db.prepare("INSERT OR REPLACE INTO datagov_index_meta (key, value) VALUES ('last_built', ?)").run(
       String(Math.floor(Date.now() / 1000)),
     );
   });
   transaction();
+};
 
-  logger.info("data.gov.sg local index built", { datasets: allDatasets.length });
+const hasIndexedDatasets = (): boolean => {
+  const db = getIndexDb();
+  const countRow = db.prepare("SELECT COUNT(*) as count FROM datagov_index").get() as { count: number };
+  return countRow.count > 0;
+};
+
+export const ensureLocalIndexWarm = (): void => {
+  if (isIndexFresh() || indexWarmPromise !== null) {
+    return;
+  }
+
+  indexWarmPromise = buildLocalIndex()
+    .catch((error: unknown) => {
+      logger.warn("background data.gov.sg index warm-up failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    })
+    .finally(() => {
+      indexWarmPromise = null;
+    });
+};
+
+const scheduleLocalIndexRefresh = (datasets: readonly DatagovDataset[]): void => {
+  if (indexWarmPromise !== null) {
+    return;
+  }
+
+  indexWarmPromise = Promise.resolve()
+    .then(() => {
+      replaceLocalIndex(datasets);
+      logger.info("data.gov.sg local index refreshed from in-band fetch", { datasets: datasets.length });
+    })
+    .catch((error: unknown) => {
+      logger.warn("background data.gov.sg index refresh failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    })
+    .finally(() => {
+      indexWarmPromise = null;
+    });
 };
 
 const fetchDatasetsPage = async (page: number): Promise<DatagovV2ListResponse> => {
@@ -236,10 +290,7 @@ const getIndexedDatasetById = (datasetId: string): DatagovDataset | null => {
 
 export const localSearch = (keyword: string, limit = 10): DatagovDataset[] => {
   const db = getIndexDb();
-
-  // Check if index has any data
-  const countRow = db.prepare("SELECT COUNT(*) as count FROM datagov_index").get() as { count: number };
-  if (countRow.count === 0) return [];
+  if (!hasIndexedDatasets()) return [];
 
   const rows = db
     .prepare(
@@ -271,30 +322,36 @@ export const localSearch = (keyword: string, limit = 10): DatagovDataset[] => {
 };
 
 export const searchDatasets = async (keyword: string, limit = 10): Promise<DatagovDataset[]> => {
-  // Try local FTS5 index first
-  try {
-    if (!isIndexFresh()) {
-      await buildLocalIndex();
+  const canUseLocalIndex = hasIndexedDatasets();
+  const localIndexFresh = canUseLocalIndex && isIndexFresh();
+  if (canUseLocalIndex) {
+    if (!localIndexFresh) {
+      ensureLocalIndexWarm();
     }
-    const localResults = localSearch(keyword, limit);
-    if (localResults.length > 0) {
-      return localResults;
+
+    try {
+      const localResults = localSearch(keyword, limit);
+      if (localResults.length > 0) {
+        return localResults;
+      }
+      const substringResults = localSubstringSearch(keyword, limit);
+      if (substringResults.length > 0) {
+        return substringResults;
+      }
+      if (localIndexFresh) {
+        return [];
+      }
+    } catch (error) {
+      logger.warn("local search failed, falling back to API", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    const substringResults = localSubstringSearch(keyword, limit);
-    if (substringResults.length > 0) {
-      return substringResults;
-    }
-    return [];
-  } catch (error) {
-    logger.warn("local search failed, falling back to API", {
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 
-  // Fallback to API search
   const cacheKey = buildCacheKey("datagov", "search", { keyword, limit });
   const { data } = await withCache(cacheKey, "DAILY", async () => {
     const datasets = await fetchAllDatasets();
+    scheduleLocalIndexRefresh(datasets);
     const lowerKeyword = keyword.toLowerCase();
     return datasets
       .filter(
@@ -304,6 +361,81 @@ export const searchDatasets = async (keyword: string, limit = 10): Promise<Datag
       )
       .slice(0, limit);
   });
+  return data;
+};
+
+const toNormalizedColumns = (
+  columnMetadata: DatagovMetadataResponse["data"]["columnMetadata"],
+): readonly DatagovColumnMetadata[] => {
+  if (columnMetadata?.map === undefined || columnMetadata.metaMapping === undefined) {
+    return [];
+  }
+
+  const orderedKeys = columnMetadata.order ?? Object.keys(columnMetadata.map);
+  return orderedKeys.map((key) => {
+    const mappedName = columnMetadata.map?.[key] ?? key;
+    const meta = columnMetadata.metaMapping?.[key];
+    return {
+      key,
+      name: meta?.name ?? mappedName,
+      title: meta?.columnTitle ?? mappedName,
+      dataType: meta?.dataType ?? "unknown",
+      index: meta?.index === undefined ? null : Number(meta.index),
+      isCategorical: meta?.isCategorical ?? false,
+    };
+  });
+};
+
+const normalizeMetadataResponse = (
+  response: DatagovMetadataResponse,
+): DatagovDatasetMetadata => {
+  const columns = toNormalizedColumns(response.data.columnMetadata);
+  const managedByAgencyName = response.data.managedByAgencyName ?? response.data.managedBy ?? "";
+
+  return {
+    datasetId: response.data.datasetId,
+    name: response.data.name,
+    status: response.data.status ?? "active",
+    format: response.data.format,
+    createdAt: response.data.createdAt,
+    lastUpdatedAt: response.data.lastUpdatedAt,
+    managedByAgencyName,
+    ...(response.data.description === undefined ? {} : { description: response.data.description }),
+    ...(response.data.coverageStart === undefined ? {} : { coverageStart: response.data.coverageStart }),
+    ...(response.data.coverageEnd === undefined ? {} : { coverageEnd: response.data.coverageEnd }),
+    collectionIds: response.data.collectionIds ?? [],
+    contactEmails: response.data.contactEmails ?? [],
+    datasetSize: response.data.datasetSize ?? null,
+    resources: [
+      {
+        resourceId: response.data.datasetId,
+        datasetId: response.data.datasetId,
+        name: response.data.name,
+        format: response.data.format,
+        machineReadable: columns.length > 0 || TABULAR_FORMATS.has(response.data.format.toUpperCase()),
+        columns,
+      },
+    ],
+  };
+};
+
+export const getDatasetMetadata = async (
+  datasetId: string,
+): Promise<DatagovDatasetMetadata | null> => {
+  const cacheKey = buildCacheKey("datagov", "dataset-metadata", { datasetId });
+  const { data } = await withCache(cacheKey, "DAILY", async () => {
+    try {
+      const url = `${getBaseUrl()}/datasets/${datasetId}/metadata`;
+      const response = await httpGet<DatagovMetadataResponse>(url, { apiName: "datagov" });
+      if (response.code !== 0) {
+        return null;
+      }
+      return normalizeMetadataResponse(response);
+    } catch {
+      return null;
+    }
+  });
+
   return data;
 };
 
@@ -320,58 +452,54 @@ export const getDataset = async (datasetId: string): Promise<DatagovDataset | nu
       // Fall through to API
     }
 
-    // Fetch from API
-    try {
-      const url = `${getBaseUrl()}/datasets/${datasetId}/metadata`;
-      const response = await httpGet<{
-        code: number;
-        data: {
-          name?: string;
-          description?: string;
-          format?: string;
-          managedByAgencyName?: string;
-          lastUpdatedAt?: string;
-          createdAt?: string;
-        };
-      }>(url, { apiName: "datagov" });
-
-      if (response.code !== 0) return null;
-
-      return {
-        datasetId,
-        name: response.data.name ?? datasetId,
-        description: response.data.description,
-        status: "active",
-        format: response.data.format ?? "CSV",
-        createdAt: response.data.createdAt ?? "",
-        lastUpdatedAt: response.data.lastUpdatedAt ?? "",
-        managedByAgencyName: response.data.managedByAgencyName ?? "",
-      } as DatagovDataset;
-    } catch {
+    const metadata = await getDatasetMetadata(datasetId);
+    if (metadata === null) {
       return null;
     }
+
+    return {
+      datasetId: metadata.datasetId,
+      name: metadata.name,
+      description: metadata.description,
+      status: metadata.status,
+      format: metadata.format,
+      createdAt: metadata.createdAt,
+      lastUpdatedAt: metadata.lastUpdatedAt,
+      managedByAgencyName: metadata.managedByAgencyName,
+      coverageStart: metadata.coverageStart,
+      coverageEnd: metadata.coverageEnd,
+    } as DatagovDataset;
   });
   return data;
 };
 
 export const listCollections = async (): Promise<{ id: string; name: string; description: string }[]> => {
-  try {
-    if (!isIndexFresh()) {
-      await buildLocalIndex();
+  const canUseLocalIndex = hasIndexedDatasets();
+  const localIndexFresh = canUseLocalIndex && isIndexFresh();
+  if (canUseLocalIndex) {
+    if (!localIndexFresh) {
+      ensureLocalIndexWarm();
     }
-    const indexedCollections = loadIndexedCollections();
-    if (indexedCollections.length > 0) {
-      return indexedCollections;
+
+    try {
+      const indexedCollections = loadIndexedCollections();
+      if (indexedCollections.length > 0) {
+        return indexedCollections;
+      }
+      if (localIndexFresh) {
+        return [];
+      }
+    } catch (error) {
+      logger.warn("collection index lookup failed, falling back to API", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-  } catch (error) {
-    logger.warn("collection index lookup failed, falling back to API", {
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 
   const cacheKey = buildCacheKey("datagov", "collections", {});
   const { data } = await withCache(cacheKey, "DAILY", async () => {
     const datasets = await fetchAllDatasets();
+    scheduleLocalIndexRefresh(datasets);
 
     const agencies = new Map<string, { count: number }>();
     for (const ds of datasets) {
@@ -390,6 +518,12 @@ export const listCollections = async (): Promise<{ id: string; name: string; des
     }));
   });
   return data;
+};
+
+export const getDatasetResources = async (
+  datasetId: string,
+): Promise<DatagovDatasetMetadata | null> => {
+  return getDatasetMetadata(datasetId);
 };
 
 export const queryDatastoreResult = async <TRecord extends Readonly<Record<string, unknown>>>(
@@ -448,6 +582,74 @@ export const queryDatastore = async <TRecord extends Readonly<Record<string, unk
 ): Promise<readonly TRecord[]> => {
   const result = await queryDatastoreResult<TRecord>(resourceId, options);
   return result.records;
+};
+
+export const getDatasetRows = async <
+  TRecord extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
+>(
+  params: Readonly<{
+    datasetId?: string;
+    resourceId?: string;
+    filters?: Readonly<Record<string, unknown>>;
+    limit?: number;
+    offset?: number;
+    sort?: string;
+  }>,
+): Promise<{
+  readonly datasetId?: string;
+  readonly datasetName?: string;
+  readonly resourceId: string;
+  readonly total: number;
+  readonly offset: number;
+  readonly limit: number;
+  readonly fields: readonly { readonly id: string; readonly type: string }[];
+  readonly records: readonly TRecord[];
+}> => {
+  const datasetMetadata =
+    params.datasetId === undefined ? null : await getDatasetMetadata(params.datasetId);
+  const resourceId = params.resourceId ?? datasetMetadata?.resources[0]?.resourceId ?? params.datasetId;
+
+  if (resourceId === undefined) {
+    throw new ApiError({
+      apiName: "datagov",
+      source: "data.gov.sg",
+      statusCode: 400,
+      code: "RESOURCE_ID_REQUIRED",
+      message: "A resourceId or datasetId is required for row retrieval.",
+      retryable: false,
+      suggestedAction: "Call sg_datagov_resources first to inspect the dataset's machine-readable resource metadata.",
+    });
+  }
+
+  if (datasetMetadata !== null && datasetMetadata.resources[0]?.machineReadable === false) {
+    throw new ApiError({
+      apiName: "datagov",
+      source: "data.gov.sg",
+      statusCode: 422,
+      code: "RESOURCE_NOT_MACHINE_READABLE",
+      message: `${datasetMetadata.name} does not expose a machine-readable tabular resource through the current metadata contract.`,
+      retryable: false,
+      suggestedAction: "Choose a CSV, JSON, or GeoJSON dataset, or call sg_datagov_resources to inspect the available columns first.",
+    });
+  }
+
+  const result = await queryDatastoreResult<TRecord>(resourceId, {
+    ...(params.filters === undefined ? {} : { filters: params.filters }),
+    ...(params.limit === undefined ? {} : { limit: params.limit }),
+    ...(params.offset === undefined ? {} : { offset: params.offset }),
+    ...(params.sort === undefined ? {} : { sort: params.sort }),
+  });
+
+  return {
+    ...(params.datasetId === undefined ? {} : { datasetId: params.datasetId }),
+    ...(datasetMetadata === null ? {} : { datasetName: datasetMetadata.name }),
+    resourceId,
+    total: result.total,
+    offset: result.offset ?? params.offset ?? 0,
+    limit: result.limit ?? params.limit ?? result.records.length,
+    fields: result.fields,
+    records: result.records,
+  };
 };
 
 export const queryDatastoreExactMatches = async <TRecord extends Readonly<Record<string, unknown>>>(
