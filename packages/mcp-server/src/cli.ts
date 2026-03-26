@@ -35,10 +35,15 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     if (!text) { console.error("usage: sg-data query <prompt>"); process.exit(1); }
     const { executeQueryStep } = await import("./tools/query-tool.js");
     const { planQuery } = await import("./router/planner.js");
+    type ToolResult = { content: readonly { type: string; text: string }[]; isError?: boolean; structuredContent?: Readonly<Record<string, unknown>> };
     const plan = planQuery(text);
     if (!plan.supported) { console.error(`unsupported: ${plan.reason}\n${plan.suggestion}`); process.exit(1); }
+    const results = new Map<string, { input: Readonly<Record<string, unknown>>; output: ToolResult }>();
     for (const step of plan.steps) {
-      const result = await executeQueryStep(step.tool, step.input);
+      const context = { results };
+      const resolvedInput = step.resolveInput !== undefined ? await step.resolveInput(context) : step.input;
+      const result = await executeQueryStep(step.tool, resolvedInput);
+      results.set(step.id, { input: resolvedInput, output: result });
       printResult(result);
     }
   },
