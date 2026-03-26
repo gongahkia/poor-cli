@@ -6,7 +6,7 @@ description = "Rust TUI for poor-cli - Claude Code / Codex inspired terminal int
 license = "MIT"
 
 [lib]
-name = "poor_cli_tui_lib"
+name = "poor_cli_tui"
 path = "src/lib.rs"
 
 [[bin]]
