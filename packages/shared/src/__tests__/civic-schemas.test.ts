@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   EcdaChildcareCentresSchema,
+  MsfFamilyServicesSchema,
+  MsfSocialServiceOfficesSchema,
+  MsfStudentCareServicesSchema,
   PaCommunityOutletsSchema,
   PaResidentNetworkCentresSchema,
   SportSgFacilitiesSchema,
@@ -42,6 +45,38 @@ describe("civic directory schemas", () => {
         hasVacancy: true,
         limit: 25,
         format: "json",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts MSF student-care filters and proximity lookups", () => {
+    expect(
+      MsfStudentCareServicesSchema.safeParse({
+        name: "Bright Minds",
+        auditStatus: "Grade A",
+        scfaOnly: true,
+        postalCode: "560123",
+        lat: 1.33,
+        lng: 103.85,
+        radiusKm: 2,
+        format: "json",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts bounded MSF family-service and SSO filters", () => {
+    expect(
+      MsfFamilyServicesSchema.safeParse({
+        name: "Allkin",
+        postalCode: "560230",
+        limit: 20,
+      }).success,
+    ).toBe(true);
+    expect(
+      MsfSocialServiceOfficesSchema.safeParse({
+        name: "Queenstown",
+        postalCode: "140040",
+        format: "geojson",
       }).success,
     ).toBe(true);
   });

@@ -61,3 +61,26 @@ export type EcdaChildcareCentreRecord = CivicDirectoryRecord & {
   readonly k1VacancyCurrentMonth: EcdaVacancyStatus | null;
   readonly k2VacancyCurrentMonth: EcdaVacancyStatus | null;
 };
+
+export type MsfFamilyServiceRecord = CivicDirectoryRecord & {
+  readonly description: string | null;
+  readonly telephone: string | null;
+  readonly email: string | null;
+  readonly url: string | null;
+};
+
+export type MsfStudentCareServiceRecord = CivicDirectoryRecord & {
+  readonly auditStatus: string | null;
+  readonly auditDate: string | null;
+  readonly scfa: boolean | null;
+  readonly businessProfile: string | null;
+  readonly monthlyFee: number | null;
+  readonly enrolment: number | null;
+  readonly telephone: string | null;
+  readonly email: string | null;
+};
+
+export type MsfSocialServiceOfficeRecord = CivicDirectoryRecord & {
+  readonly description: string | null;
+  readonly url: string | null;
+};

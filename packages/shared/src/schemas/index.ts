@@ -528,6 +528,21 @@ export const EcdaChildcareCentresInputSchema = CivicDirectoryBaseSchema.extend({
 
 export const EcdaChildcareCentresSchema = requireLatLngPair(EcdaChildcareCentresInputSchema);
 
+export const MsfFamilyServicesInputSchema = CivicDirectoryBaseSchema;
+
+export const MsfFamilyServicesSchema = requireLatLngPair(MsfFamilyServicesInputSchema);
+
+export const MsfStudentCareServicesInputSchema = CivicDirectoryBaseSchema.extend({
+  auditStatus: z.string().min(1).optional(),
+  scfaOnly: z.boolean().optional(),
+});
+
+export const MsfStudentCareServicesSchema = requireLatLngPair(MsfStudentCareServicesInputSchema);
+
+export const MsfSocialServiceOfficesInputSchema = CivicDirectoryBaseSchema;
+
+export const MsfSocialServiceOfficesSchema = requireLatLngPair(MsfSocialServiceOfficesInputSchema);
+
 export const HawkerCentresSchema = z.object({
   name: z.string().min(1).optional(),
   limit: z.number().int().positive().optional(),
