@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import Database from "better-sqlite3";
-import { httpGet, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
+import { httpGet, httpGetText, ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
 import type {
   DatagovColumnMetadata,
   DatagovDatastoreResult,
@@ -12,6 +12,7 @@ import type {
   DatagovMetadataResponse,
   DatagovV2ListResponse,
 } from "@sg-apis/shared";
+import type { TTLKey } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("datagov-client");
@@ -30,11 +31,28 @@ const getDatastoreBaseUrl = (): string => {
     : "https://data.gov.sg/api/action";
 };
 
+const getDownloadBaseUrl = (): string => {
+  const mockApiBaseUrl = getMockApiBaseUrl();
+  return mockApiBaseUrl !== undefined
+    ? `${mockApiBaseUrl}/datagov-open`
+    : "https://api-open.data.gov.sg/v1/public/api";
+};
+
 type DatastoreQueryOptions = {
   readonly limit?: number;
   readonly offset?: number;
   readonly sort?: string;
   readonly filters?: Readonly<Record<string, unknown>>;
+};
+
+type DatagovDatasetDownloadResponse = {
+  readonly code: number;
+  readonly data: {
+    readonly url?: string;
+    readonly status?: string;
+  } | null;
+  readonly errorMsg: string;
+  readonly name?: string;
 };
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
@@ -524,6 +542,148 @@ export const getDatasetResources = async (
   datasetId: string,
 ): Promise<DatagovDatasetMetadata | null> => {
   return getDatasetMetadata(datasetId);
+};
+
+const getDatasetDownloadUrl = async (datasetId: string): Promise<string> => {
+  const url = `${getDownloadBaseUrl()}/datasets/${datasetId}/poll-download`;
+  const response = await httpGet<DatagovDatasetDownloadResponse>(url, {
+    apiName: "datagov",
+  });
+
+  if (response.code !== 0 || response.data?.url === undefined) {
+    throw new ApiError({
+      apiName: "datagov",
+      source: "data.gov.sg",
+      statusCode: response.code === 0 ? 502 : response.code,
+      code: response.name ?? "DATASET_DOWNLOAD_FAILED",
+      message: response.errorMsg || `Unable to download dataset ${datasetId}.`,
+      retryable: response.code === 24 || response.code >= 500,
+      suggestedAction: "Retry later or inspect the dataset page directly on data.gov.sg.",
+      details: response,
+    });
+  }
+
+  return response.data.url;
+};
+
+const parseCsvRows = (csv: string): readonly Readonly<Record<string, string>>[] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index]!;
+    const next = csv[index + 1];
+
+    if (inQuotes) {
+      if (char === "\"") {
+        if (next === "\"") {
+          value += "\"";
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inQuotes = true;
+      continue;
+    }
+
+    if (char === ",") {
+      row.push(value);
+      value = "";
+      continue;
+    }
+
+    if (char === "\n") {
+      row.push(value);
+      rows.push(row);
+      row = [];
+      value = "";
+      continue;
+    }
+
+    if (char !== "\r") {
+      value += char;
+    }
+  }
+
+  if (value !== "" || row.length > 0) {
+    row.push(value);
+    rows.push(row);
+  }
+
+  const [headerRow, ...dataRows] = rows;
+  if (headerRow === undefined) {
+    return [];
+  }
+
+  const headers = headerRow.map((header) => header.trim());
+  return dataRows
+    .filter((candidate) => candidate.some((cell) => cell.trim() !== ""))
+    .map((cells) =>
+      Object.fromEntries(
+        headers.map((header, index) => [header, cells[index] ?? ""]),
+      ),
+    );
+};
+
+export const downloadDatasetText = async (
+  datasetId: string,
+  ttlKey: TTLKey = "DAILY",
+): Promise<string> => {
+  const cacheKey = buildCacheKey("datagov", "dataset-download", { datasetId, ttlKey });
+  const { data } = await withCache(cacheKey, ttlKey, async () => {
+    const downloadUrl = await getDatasetDownloadUrl(datasetId);
+    return httpGetText(downloadUrl, { apiName: "datagov" });
+  });
+  return data;
+};
+
+export const downloadDatasetGeoJson = async <
+  TFeature extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
+>(
+  datasetId: string,
+  ttlKey: TTLKey = "DAILY",
+): Promise<{
+  readonly type: "FeatureCollection";
+  readonly features: readonly {
+    readonly type: "Feature";
+    readonly geometry: {
+      readonly type: string;
+      readonly coordinates: readonly number[];
+    };
+    readonly properties: TFeature;
+  }[];
+}> => {
+  const text = await downloadDatasetText(datasetId, ttlKey);
+  return JSON.parse(text) as {
+    readonly type: "FeatureCollection";
+    readonly features: readonly {
+      readonly type: "Feature";
+      readonly geometry: {
+        readonly type: string;
+        readonly coordinates: readonly number[];
+      };
+      readonly properties: TFeature;
+    }[];
+  };
+};
+
+export const downloadDatasetCsvRows = async <
+  TRow extends Readonly<Record<string, string>> = Readonly<Record<string, string>>,
+>(
+  datasetId: string,
+  ttlKey: TTLKey = "DAILY",
+): Promise<readonly TRow[]> => {
+  const text = await downloadDatasetText(datasetId, ttlKey);
+  return parseCsvRows(text) as readonly TRow[];
 };
 
 export const queryDatastoreResult = async <TRecord extends Readonly<Record<string, unknown>>>(

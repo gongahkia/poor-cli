@@ -202,6 +202,28 @@ export const DatagovBrowseSchema = z.object({
   collection: z.string().optional(),
 });
 
+const CivicDirectoryBaseSchema = z.object({
+  name: z.string().min(1).optional(),
+  postalCode: z.string().regex(/^\d{6}$/).optional(),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().positive().max(20).optional(),
+  limit: z.number().int().positive().max(200).optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+const requireLatLngPair = <TSchema extends z.ZodTypeAny>(schema: TSchema): TSchema =>
+  schema.refine(
+    (value) => {
+      const record = value as { lat?: number; lng?: number };
+      return (record.lat === undefined && record.lng === undefined)
+        || (record.lat !== undefined && record.lng !== undefined);
+    },
+    {
+      message: "Provide both lat and lng together.",
+    },
+  ) as unknown as TSchema;
+
 const MonthSchema = z.string().regex(/^\d{4}-\d{2}$/);
 
 export const LtaBusArrivalsSchema = z.object({
@@ -481,6 +503,28 @@ export const GeBIZTendersSchema = z.object({
   limit: z.number().int().positive().optional(),
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
+
+export const PaCommunityOutletsSchema = requireLatLngPair(
+  CivicDirectoryBaseSchema.extend({
+    type: z.enum(["community_club", "passion_wave"]).optional(),
+  }),
+);
+
+export const PaResidentNetworkCentresSchema = requireLatLngPair(CivicDirectoryBaseSchema);
+
+export const SportSgFacilitiesSchema = requireLatLngPair(
+  CivicDirectoryBaseSchema.extend({
+    facilityType: z.string().min(1).optional(),
+  }),
+);
+
+export const EcdaChildcareCentresSchema = requireLatLngPair(
+  CivicDirectoryBaseSchema.extend({
+    centreType: z.string().min(1).optional(),
+    operatorType: z.string().min(1).optional(),
+    hasVacancy: z.boolean().optional(),
+  }),
+);
 
 export const HawkerCentresSchema = z.object({
   name: z.string().min(1).optional(),

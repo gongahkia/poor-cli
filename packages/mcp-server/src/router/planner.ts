@@ -1,5 +1,6 @@
 import { ApiError } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
+import { DEFAULT_CIVIC_RADIUS_KM } from "../apis/civic/utils.js";
 import { classifyIntent, resolveToolInput } from "./classifier.js";
 
 export type QueryExecutionContext = {
@@ -36,12 +37,20 @@ export type QueryPlan =
     }
   | {
       readonly supported: false;
+      readonly blocked?: boolean;
       readonly reason: string;
       readonly suggestion: string;
     };
 
 const buildUnsupportedPlan = (reason: string, suggestion: string): QueryPlan => ({
   supported: false,
+  reason,
+  suggestion,
+});
+
+const buildBlockedPlan = (reason: string, suggestion: string): QueryPlan => ({
+  supported: false,
+  blocked: true,
   reason,
   suggestion,
 });
@@ -177,6 +186,155 @@ const sanitizeDatasetKeyword = (query: string): string => {
     .replace(/\b(dataset|datasets|data\s*set|metadata)\b/gi, "")
     .trim();
   return cleaned.length > 0 ? cleaned : query;
+};
+
+const CIVIC_PLANNING_AREA_RADIUS_KM = 5;
+
+const toCivicSearchInput = (
+  tool: string,
+  params: Readonly<Record<string, unknown>>,
+  location: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> => {
+  const common = {
+    ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+    ...location,
+  };
+
+  switch (tool) {
+    case "sg_pa_community_outlets":
+      return {
+        ...common,
+        ...(params["type"] !== undefined ? { type: params["type"] } : {}),
+      };
+    case "sg_sportsg_facilities":
+      return {
+        ...common,
+        ...(params["facilityType"] !== undefined ? { facilityType: params["facilityType"] } : {}),
+      };
+    case "sg_ecda_childcare_centres":
+      return {
+        ...common,
+        ...(params["centreType"] !== undefined ? { centreType: params["centreType"] } : {}),
+        ...(params["operatorType"] !== undefined ? { operatorType: params["operatorType"] } : {}),
+        ...(params["hasVacancy"] !== undefined ? { hasVacancy: params["hasVacancy"] } : {}),
+      };
+    default:
+      return common;
+  }
+};
+
+const buildCivicDiscoveryPlan = (
+  tool: string | undefined,
+  params: Readonly<Record<string, unknown>>,
+): QueryPlan => {
+  if (tool === undefined) {
+    return buildUnsupportedPlan(
+      "sg_query could not determine which civic directory to search.",
+      "Specify whether you want community outlets, residents' network centres, SportSG facilities, or childcare centres.",
+    );
+  }
+
+  const name = typeof params["name"] === "string" ? params["name"] : undefined;
+  const postalCode = typeof params["postalCode"] === "string" ? params["postalCode"] : undefined;
+  const planningArea = typeof params["planningArea"] === "string" ? params["planningArea"] : undefined;
+  const rawAddress = typeof params["address"] === "string" ? params["address"] : undefined;
+  const address = rawAddress !== undefined
+    && planningArea !== undefined
+    && rawAddress.trim().toLowerCase() === planningArea.trim().toLowerCase()
+    ? undefined
+    : rawAddress;
+  const lat = typeof params["lat"] === "number" ? params["lat"] : undefined;
+  const lng = typeof params["lng"] === "number" ? params["lng"] : undefined;
+
+  if (lat !== undefined && lng !== undefined) {
+    return {
+      supported: true,
+      workflow: "civic_discovery",
+      intent: "civic",
+      confidence: 0.88,
+      apis: [tool.replace(/^sg_/, "").split("_")[0]!],
+      steps: [
+        {
+          id: "civic_search",
+          purpose: "Search the civic directory near the supplied coordinates.",
+          tool,
+          input: toCivicSearchInput(tool, params, {
+            lat,
+            lng,
+            radiusKm: DEFAULT_CIVIC_RADIUS_KM,
+          }),
+        },
+      ],
+    };
+  }
+
+  const locationHint = postalCode ?? address ?? planningArea;
+  const locationHintLower = locationHint?.toLowerCase().trim();
+  const nonResolvableHint = locationHintLower !== undefined
+    && ["me", "here", "near me", "this address", "nearby"].includes(locationHintLower);
+
+  if (locationHint !== undefined && !nonResolvableHint) {
+    const radiusKm = planningArea !== undefined && postalCode === undefined && address === undefined
+      ? CIVIC_PLANNING_AREA_RADIUS_KM
+      : DEFAULT_CIVIC_RADIUS_KM;
+    return {
+      supported: true,
+      workflow: "civic_discovery",
+      intent: "civic",
+      confidence: 0.88,
+      apis: ["onemap", tool.replace(/^sg_/, "").split("_")[0]!],
+      steps: [
+        {
+          id: "civic_geocode",
+          purpose: "Resolve the civic location hint to coordinates.",
+          tool: "sg_onemap_geocode",
+          input: { searchVal: locationHint },
+        },
+        {
+          id: "civic_search",
+          purpose: "Search the civic directory near the resolved location.",
+          tool,
+          input: toCivicSearchInput(tool, params, {
+            lat: "<from civic_geocode.records[0].lat>",
+            lng: "<from civic_geocode.records[0].lng>",
+            radiusKm,
+          }),
+          dependsOn: ["civic_geocode"],
+          resolveInput: (context) => {
+            const resolved = getLatLngFromGeocode(context, "civic_geocode", postalCode);
+            return toCivicSearchInput(tool, params, {
+              lat: resolved.lat,
+              lng: resolved.lng,
+              radiusKm,
+            });
+          },
+        },
+      ],
+    };
+  }
+
+  if (name !== undefined) {
+    return {
+      supported: true,
+      workflow: "civic_discovery",
+      intent: "civic",
+      confidence: 0.84,
+      apis: [tool.replace(/^sg_/, "").split("_")[0]!],
+      steps: [
+        {
+          id: "civic_search",
+          purpose: "Search the civic directory by exact facility name.",
+          tool,
+          input: toCivicSearchInput(tool, params, {}),
+        },
+      ],
+    };
+  }
+
+  return buildBlockedPlan(
+    "sg_query recognized a civic-discovery request, but it still needs a Singapore postal code, planning area, address, coordinates, or an explicit facility name.",
+    "Try prompts like \"Find a community club near 560123\" or \"Find childcare centres named \\\"MY FIRST SKOOL\\\"\".",
+  );
 };
 
 const buildMacroSnapshotPlan = (
@@ -815,6 +973,8 @@ export const planQuery = (query: string): QueryPlan => {
   }
 
   switch (intent.workflow) {
+    case "civic_discovery":
+      return buildCivicDiscoveryPlan(intent.tool, intent.extractedParams);
     case "macro_snapshot":
       return buildMacroSnapshotPlan(
         typeof intent.extractedParams["currency"] === "string"

@@ -34,6 +34,45 @@ const ROUTES: Record<string, string> = {
   "/nea/rainfall": "nea/__tests__/fixtures/rainfall-response.json",
 };
 
+const DATASET_DOWNLOADS_BY_ID: Record<
+  string,
+  {
+    readonly path: string;
+    readonly fixture: string;
+    readonly contentType: string;
+  }
+> = {
+  d_9de02d3fb33d96da1855f4fbef549a0f: {
+    path: "/downloads/pa-community-outlets.geojson",
+    fixture: "pa/__tests__/fixtures/community-outlets.geojson",
+    contentType: "application/geo+json",
+  },
+  d_9ae25d6b3fefdd15983c4e46ecc7fcbd: {
+    path: "/downloads/pa-resident-network-centres.geojson",
+    fixture: "pa/__tests__/fixtures/resident-network-centres.geojson",
+    contentType: "application/geo+json",
+  },
+  d_9b87bab59d036a60fad2a91530e10773: {
+    path: "/downloads/sportsg-facilities.geojson",
+    fixture: "sportsg/__tests__/fixtures/facilities.geojson",
+    contentType: "application/geo+json",
+  },
+  d_5d668e3f544335f8028f546827b773b4: {
+    path: "/downloads/ecda-childcare-services.geojson",
+    fixture: "ecda/__tests__/fixtures/childcare-services.geojson",
+    contentType: "application/geo+json",
+  },
+  d_696c994c50745b079b3684f0e90ffc53: {
+    path: "/downloads/ecda-listing-of-centres.csv",
+    fixture: "ecda/__tests__/fixtures/listing-of-centres.csv",
+    contentType: "text/csv; charset=utf-8",
+  },
+};
+
+const DATASET_DOWNLOADS_BY_PATH = Object.fromEntries(
+  Object.values(DATASET_DOWNLOADS_BY_ID).map((download) => [download.path, download]),
+);
+
 const DATASTORE_FIXTURES_BY_RESOURCE_ID: Record<string, string> = {
   d_8b84c4ee58e3cfc0ece0d773c8ca6abc: "hdb/__tests__/fixtures/resale-response.json",
   d_c9f57187485a850908655db0e8cfe651: "hdb/__tests__/fixtures/rental-response.json",
@@ -48,6 +87,35 @@ const server = createServer((req, res) => {
   const delay = parseInt(url.searchParams.get("delay") ?? "0", 10);
 
   const respond = (): void => {
+    const origin = `http://${req.headers.host ?? "localhost"}`;
+
+    if (url.pathname.startsWith("/datagov-open/datasets/") && url.pathname.endsWith("/poll-download")) {
+      const datasetId = url.pathname.split("/")[3];
+      const download = datasetId === undefined ? undefined : DATASET_DOWNLOADS_BY_ID[datasetId];
+      if (download === undefined) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Dataset download fixture not found", path: url.pathname }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        code: 0,
+        data: {
+          url: `${origin}${download.path}`,
+          status: "completed",
+        },
+        errorMsg: "",
+      }));
+      return;
+    }
+
+    const datasetDownloadFixture = DATASET_DOWNLOADS_BY_PATH[url.pathname];
+    if (datasetDownloadFixture !== undefined) {
+      res.writeHead(200, { "Content-Type": datasetDownloadFixture.contentType });
+      res.end(loadFixture(datasetDownloadFixture.fixture));
+      return;
+    }
+
     if (url.pathname.startsWith("/onemap/common/elastic/search")) {
       const searchVal = url.searchParams.get("searchVal");
       const fixture = searchVal === "049178"

@@ -62,6 +62,19 @@ vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
 }));
 
+vi.mock("../../apis/pa/client.js", () => ({
+  getPaCommunityOutlets: vi.fn(),
+  getPaResidentNetworkCentres: vi.fn(),
+}));
+
+vi.mock("../../apis/sportsg/client.js", () => ({
+  getSportSgFacilities: vi.fn(),
+}));
+
+vi.mock("../../apis/ecda/client.js", () => ({
+  getEcdaChildcareCentres: vi.fn(),
+}));
+
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { getTableData, getTimeSeries } from "../../apis/singstat/client.js";
 import { query as masQuery } from "../../apis/mas/client.js";
@@ -88,6 +101,9 @@ import {
   getBcaRegisteredContractors,
 } from "../../apis/bca/client.js";
 import { getAcraEntities } from "../../apis/acra/client.js";
+import { getPaCommunityOutlets } from "../../apis/pa/client.js";
+import { getSportSgFacilities } from "../../apis/sportsg/client.js";
+import { getEcdaChildcareCentres } from "../../apis/ecda/client.js";
 import {
   handleSingStatBrowse,
   handleSingStatSearch,
@@ -125,6 +141,9 @@ import {
   handleBcaRegisteredContractors,
 } from "../bca-tools.js";
 import { handleAcraEntities } from "../acra-tools.js";
+import { handlePaCommunityOutlets } from "../pa-tools.js";
+import { handleSportSgFacilities } from "../sportsg-tools.js";
+import { handleEcdaChildcareCentres } from "../ecda-tools.js";
 import { executeQueryStep } from "../query-tool.js";
 
 const normalizeBriefResult = (result: Awaited<ReturnType<typeof executeQueryStep>>) => {
@@ -201,6 +220,9 @@ describe("sg_query parity", () => {
     vi.mocked(getBcaLicensedBuilders).mockReset();
     vi.mocked(getBcaRegisteredContractors).mockReset();
     vi.mocked(getAcraEntities).mockReset();
+    vi.mocked(getPaCommunityOutlets).mockReset();
+    vi.mocked(getSportSgFacilities).mockReset();
+    vi.mocked(getEcdaChildcareCentres).mockReset();
   });
 
   it("matches the direct SingStat search handler", async () => {
@@ -944,5 +966,96 @@ describe("sg_query parity", () => {
     ]);
 
     expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
+  });
+
+  it("matches the direct PA community outlets handler", async () => {
+    vi.mocked(getPaCommunityOutlets).mockResolvedValue([
+      {
+        name: "Downtown Community Club",
+        category: "community",
+        subcategory: "community_club",
+        address: "5, Raffles Place",
+        postalCode: "048616",
+        lat: 1.284,
+        lng: 103.85105,
+        distanceKm: 0.006,
+        sourceAgency: "People's Association",
+        sourceDataset: "Community Club / PAssion WaVe Outlet",
+        sourceUrl: "https://data.gov.sg/datasets/d_9de02d3fb33d96da1855f4fbef549a0f/view",
+        lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+        type: "community_club",
+        url: "https://www.onepa.gov.sg/cc",
+      },
+    ] as never);
+
+    const input = { type: "community_club", postalCode: "048616", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_pa_community_outlets", input)).resolves.toEqual(
+      await handlePaCommunityOutlets(input),
+    );
+  });
+
+  it("matches the direct SportSG facilities handler", async () => {
+    vi.mocked(getSportSgFacilities).mockResolvedValue([
+      {
+        name: "Downtown Swimming Complex",
+        category: "sports",
+        subcategory: "swimming_complex",
+        address: "5, Raffles Place",
+        postalCode: "048618",
+        lat: 1.2842,
+        lng: 103.8513,
+        sourceAgency: "Sport Singapore",
+        sourceDataset: "SportSG Sport Facilities (GEOJSON)",
+        sourceUrl: "https://data.gov.sg/datasets/d_9b87bab59d036a60fad2a91530e10773/view",
+        lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+        facilityType: "swimming_complex",
+        detailsUrl: "https://www.activesgcircle.gov.sg/facilities",
+      },
+    ] as never);
+
+    const input = { facilityType: "swimming_complex", postalCode: "048618", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_sportsg_facilities", input)).resolves.toEqual(
+      await handleSportSgFacilities(input),
+    );
+  });
+
+  it("matches the direct ECDA childcare handler", async () => {
+    vi.mocked(getEcdaChildcareCentres).mockResolvedValue([
+      {
+        name: "MY FIRST SKOOL @ ONE RAFFLES PLACE",
+        category: "childcare",
+        subcategory: "child care / infant care",
+        address: "1 Raffles Place, #01-01",
+        postalCode: "048616",
+        lat: 1.284,
+        lng: 103.851,
+        sourceAgency: "Early Childhood Development Agency",
+        sourceDataset: "Child Care Services + Listing of Centres",
+        sourceUrl: "https://data.gov.sg/datasets/d_5d668e3f544335f8028f546827b773b4/view",
+        lastUpdatedAt: "2026-03-20",
+        centreCode: "CC0001",
+        centreType: "CC",
+        operatorType: "PAP Community Foundation",
+        serviceModel: "CHILD CARE / INFANT CARE",
+        contactNo: "61234567",
+        email: "info@myfirstskool.sg",
+        website: "https://www.myfirstskool.com",
+        hasVacancy: true,
+        infantVacancyCurrentMonth: "available",
+        playgroupVacancyCurrentMonth: "limited",
+        n1VacancyCurrentMonth: "full",
+        n2VacancyCurrentMonth: "full",
+        k1VacancyCurrentMonth: "available",
+        k2VacancyCurrentMonth: "full",
+      },
+    ] as never);
+
+    const input = { centreType: "CC", postalCode: "048616", hasVacancy: true, format: "json" } as const;
+
+    await expect(executeQueryStep("sg_ecda_childcare_centres", input)).resolves.toEqual(
+      await handleEcdaChildcareCentres(input),
+    );
   });
 });

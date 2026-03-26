@@ -178,6 +178,13 @@ const extractStationId = (query: string): string | null => {
   return match?.[1]?.toUpperCase() ?? null;
 };
 
+const extractLocationPhrase = (query: string): string | null => {
+  const match = query.match(
+    /\b(?:near|around|by|at|in)\s+(.+?)(?=\s+(?:with|for|called|named)\b|[?.!,]|$)/i,
+  );
+  return match?.[1]?.trim() ?? null;
+};
+
 const extractQuotedTerm = (query: string): string | null => {
   const match = query.match(/["“”'`]\s*([^"“”'`]{2,}?)\s*["“”'`]/);
   return match?.[1]?.trim() ?? null;
@@ -194,6 +201,50 @@ const extractIndicator = (query: string): string | null => {
 const extractFlatType = (query: string): string | null => {
   const match = query.match(/\b(STUDIO APARTMENT|MULTI-GENERATION|EXECUTIVE|[1-5]\s*ROOM)\b/i);
   return match?.[1]?.replace(/\s+/g, " ").toUpperCase() ?? null;
+};
+
+const extractNamedFacility = (query: string): string | null => {
+  return extractNamedSubject(query, [
+    /\b(?:named|called)\s+(.+?)(?=\s+(?:near|around|by|at|in|with|for)\b|[?.!,]|$)/i,
+  ]) ?? (
+    /(community\s+club|passion\s*wave|resident(?:s')?\s*(?:committee|network)|sportsg|sports?\s+facility|child\s*care|childcare|preschool|kindergarten)/i.test(query)
+      ? extractQuotedTerm(query)
+      : null
+  );
+};
+
+const extractSportSgFacilityType = (query: string): string | null => {
+  if (/\bswim(?:ming)?|pool\b/i.test(query)) return "swimming_complex";
+  if (/\btennis\b/i.test(query)) return "tennis_centre";
+  if (/\bsquash\b/i.test(query)) return "squash_centre";
+  if (/\bstadium\b/i.test(query)) return "stadium";
+  if (/\bsports?\s+hall\b/i.test(query)) return "sports_hall";
+  if (/\bhockey\b/i.test(query)) return "hockey_centre";
+  if (/\barchery\b/i.test(query)) return "archery_centre";
+  if (/\bsport(?:s)?\s+centre\b/i.test(query)) return "sport_centre";
+  return null;
+};
+
+const extractChildcareCentreType = (query: string): string | null => {
+  if (/\bkindergarten\b/i.test(query)) return "KN";
+  if (/\bchild\s*care|childcare|preschool\b/i.test(query)) return "CC";
+  return null;
+};
+
+const detectCivicTool = (query: string): string | null => {
+  if (/\bcommunity\s+club\b|\bpassion\s*wave\b/i.test(query)) {
+    return "sg_pa_community_outlets";
+  }
+  if (/\bresident(?:s')?\s*(?:committee|network(?:\s+centre)?|network centre)|\brn\b|\brc\b/i.test(query)) {
+    return "sg_pa_resident_network_centres";
+  }
+  if (/\bsportsg\b|\bsports?\s+facility\b|\bswimming\b|\btennis\b|\bsquash\b|\bstadium\b|\bsports?\s+hall\b|\bsport(?:s)?\s+centre\b/i.test(query)) {
+    return "sg_sportsg_facilities";
+  }
+  if (/\bchild\s*care\b|\bchildcare\b|\bpreschool\b|\bkindergarten\b/i.test(query)) {
+    return "sg_ecda_childcare_centres";
+  }
+  return null;
 };
 
 const extractSingStatCategory = (query: string): string | null => {
@@ -262,7 +313,9 @@ const extractNamedSubject = (
     const match = query.match(pattern);
     const candidate = match?.[1];
     if (candidate !== undefined) {
-      const cleaned = stripTrailingBusinessContext(candidate);
+      const cleaned = stripTrailingBusinessContext(candidate)
+        .replace(/^["“”'`]\s*|\s*["“”'`]$/g, "")
+        .trim();
       if (cleaned !== "") {
         return cleaned;
       }
@@ -355,6 +408,9 @@ const getApiForTool = (tool: string): string => {
   if (tool.startsWith("sg_cea_")) return "cea";
   if (tool.startsWith("sg_bca_")) return "bca";
   if (tool.startsWith("sg_acra_")) return "acra";
+  if (tool.startsWith("sg_pa_")) return "pa";
+  if (tool.startsWith("sg_sportsg_")) return "sportsg";
+  if (tool.startsWith("sg_ecda_")) return "ecda";
   return "datagov";
 };
 
@@ -449,6 +505,28 @@ export const classifyIntent = (query: string): IntentResult => {
 
   const flatType = extractFlatType(query);
   if (flatType !== null) params["flatType"] = flatType;
+
+  const locationPhrase = extractLocationPhrase(query);
+  if (locationPhrase !== null) params["address"] = locationPhrase;
+
+  const facilityName = extractNamedFacility(query);
+  if (facilityName !== null) params["name"] = facilityName;
+
+  const facilityType = extractSportSgFacilityType(query);
+  if (facilityType !== null) params["facilityType"] = facilityType;
+
+  const centreType = extractChildcareCentreType(query);
+  if (centreType !== null) params["centreType"] = centreType;
+
+  if (/\bvacanc(?:y|ies)|available\s+slots?|openings?\b/i.test(lower)) {
+    params["hasVacancy"] = true;
+  }
+
+  if (/\bpassion\s*wave\b/i.test(lower)) {
+    params["type"] = "passion_wave";
+  } else if (/\bcommunity\s+club\b/i.test(lower)) {
+    params["type"] = "community_club";
+  }
 
   const category = extractSingStatCategory(query);
   if (category !== null) params["category"] = category;
@@ -631,6 +709,14 @@ export const classifyIntent = (query: string): IntentResult => {
     return {
       ...buildIntentResult("environment", "environment_brief", 0.89, params),
       apis: ["nea"],
+    };
+  }
+
+  const civicTool = detectCivicTool(query);
+  if (civicTool !== null) {
+    return {
+      ...buildIntentResult("civic", "civic_discovery", 0.88, params, civicTool),
+      apis: Array.from(new Set(["onemap", getApiForTool(civicTool)])),
     };
   }
 
@@ -941,6 +1027,59 @@ export const resolveToolInput = (
         tool,
         input: {
           ...(params["collection"] !== undefined ? { collection: params["collection"] } : {}),
+        },
+      };
+    case "sg_pa_community_outlets":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["type"] !== undefined ? { type: params["type"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
+    case "sg_pa_resident_network_centres":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
+    case "sg_sportsg_facilities":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["facilityType"] !== undefined ? { facilityType: params["facilityType"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
+    case "sg_ecda_childcare_centres":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["centreType"] !== undefined ? { centreType: params["centreType"] } : {}),
+          ...(params["operatorType"] !== undefined ? { operatorType: params["operatorType"] } : {}),
+          ...(params["hasVacancy"] !== undefined ? { hasVacancy: params["hasVacancy"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
         },
       };
     case "sg_cea_salespersons":

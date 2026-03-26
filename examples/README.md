@@ -1,12 +1,13 @@
 # Examples
 
-This folder contains six runnable walkthroughs: five additive brief outcomes plus one recipe-driven geospatial flow.
+This folder contains seven runnable walkthroughs: five additive brief outcomes plus two recipe-driven discovery flows.
 
 - `business-dossier.md`
 - `property-brief.md`
 - `macro-brief.md`
 - `transport-brief.md`
 - `environment-brief.md`
+- `civic-discovery.md`
 - `geospatial-routing.md`
 
 ## Local Client Snippets
@@ -59,6 +60,7 @@ Each example file maps to one built-in profile:
 - `npm run demo:mcp -- macro`
 - `npm run demo:mcp -- transport`
 - `npm run demo:mcp -- environment`
+- `npm run demo:mcp -- civic`
 - `npm run demo:mcp -- geospatial`
 
 Every profile reads one resource, calls one direct tool, calls one supporting tool, and then runs the equivalent `sg_query` workflow against the mock upstream server.

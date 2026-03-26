@@ -1,0 +1,50 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8513, 1.2842]
+      },
+      "properties": {
+        "VENUE": "Downtown Swimming Complex",
+        "ADDRESSBLOCKHOUSENUMBER": "5",
+        "ADDRESSSTREETNAME": "Raffles Place",
+        "POSTAL_CODE": "048618",
+        "DETAILS": "https://www.activesgcircle.gov.sg/facilities",
+        "FMEL_UPD_D": "20240417181750"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8535, 1.2862]
+      },
+      "properties": {
+        "VENUE": "Marina Sports Hall",
+        "ADDRESSBLOCKHOUSENUMBER": "1",
+        "ADDRESSSTREETNAME": "Fullerton Square",
+        "POSTAL_CODE": "049178",
+        "DETAILS": "https://www.activesgcircle.gov.sg/facilities",
+        "FMEL_UPD_D": "20240417181750"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": []
+      },
+      "properties": {
+        "VENUE": "Broken Stadium",
+        "ADDRESSBLOCKHOUSENUMBER": "",
+        "ADDRESSSTREETNAME": "",
+        "POSTAL_CODE": "N/A",
+        "DETAILS": "",
+        "FMEL_UPD_D": "bad-timestamp"
+      }
+    }
+  ]
+}

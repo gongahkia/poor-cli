@@ -55,6 +55,19 @@ vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
 }));
 
+vi.mock("../../apis/pa/client.js", () => ({
+  getPaCommunityOutlets: vi.fn(),
+  getPaResidentNetworkCentres: vi.fn(),
+}));
+
+vi.mock("../../apis/sportsg/client.js", () => ({
+  getSportSgFacilities: vi.fn(),
+}));
+
+vi.mock("../../apis/ecda/client.js", () => ({
+  getEcdaChildcareCentres: vi.fn(),
+}));
+
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData, getRoute } from "../../apis/onemap/client.js";
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
@@ -72,6 +85,9 @@ import {
   getBcaRegisteredContractors,
 } from "../../apis/bca/client.js";
 import { getAcraEntities } from "../../apis/acra/client.js";
+import { getPaCommunityOutlets, getPaResidentNetworkCentres } from "../../apis/pa/client.js";
+import { getSportSgFacilities } from "../../apis/sportsg/client.js";
+import { getEcdaChildcareCentres } from "../../apis/ecda/client.js";
 import { queryToolDefinitions } from "../query-tool.js";
 
 const runQuery = async (input: Readonly<Record<string, unknown>>) => {
@@ -102,6 +118,10 @@ describe("sg_query workflows", () => {
     vi.mocked(getBcaLicensedBuilders).mockReset();
     vi.mocked(getBcaRegisteredContractors).mockReset();
     vi.mocked(getAcraEntities).mockReset();
+    vi.mocked(getPaCommunityOutlets).mockReset();
+    vi.mocked(getPaResidentNetworkCentres).mockReset();
+    vi.mocked(getSportSgFacilities).mockReset();
+    vi.mocked(getEcdaChildcareCentres).mockReset();
   });
 
   it("returns a macro workflow plan without executing steps", async () => {
@@ -492,6 +512,175 @@ describe("sg_query workflows", () => {
       status: "unsupported",
     });
     expect(JSON.stringify(result.structuredContent)).toContain("SingStat table ID");
+  });
+
+  it("executes civic discovery for a community club near a postal code", async () => {
+    vi.mocked(geocode).mockResolvedValue([
+      {
+        address: "5 RAFFLES PLACE",
+        building: "RAFFLES PLACE MRT STATION",
+        postal: "048616",
+        lat: 1.284,
+        lng: 103.851,
+        x: 0,
+        y: 0,
+      },
+    ]);
+    vi.mocked(getPaCommunityOutlets).mockResolvedValue([
+      {
+        name: "Downtown Community Club",
+        category: "community",
+        subcategory: "community_club",
+        address: "5, Raffles Place",
+        postalCode: "048616",
+        lat: 1.284,
+        lng: 103.85105,
+        distanceKm: 0.006,
+        sourceAgency: "People's Association",
+        sourceDataset: "Community Club / PAssion WaVe Outlet",
+        sourceUrl: "https://data.gov.sg/datasets/d_9de02d3fb33d96da1855f4fbef549a0f/view",
+        lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+        type: "community_club",
+        url: "https://www.onepa.gov.sg/cc",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find a community club near 048616",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(geocode)).toHaveBeenCalledWith("048616", undefined);
+    expect(vi.mocked(getPaCommunityOutlets)).toHaveBeenCalledWith({
+      type: "community_club",
+      lat: 1.284,
+      lng: 103.851,
+      radiusKm: 3,
+      format: "json",
+    });
+  });
+
+  it("executes civic discovery for a SportSG facility from a planning area", async () => {
+    vi.mocked(geocode).mockResolvedValue([
+      {
+        address: "BEDOK",
+        building: "BEDOK",
+        postal: "460000",
+        lat: 1.324,
+        lng: 103.93,
+        x: 0,
+        y: 0,
+      },
+    ]);
+    vi.mocked(getSportSgFacilities).mockResolvedValue([
+      {
+        name: "Bedok Swimming Complex",
+        category: "sports",
+        subcategory: "swimming_complex",
+        address: "1, Bedok North Street 1",
+        postalCode: "460000",
+        lat: 1.3238,
+        lng: 103.9299,
+        distanceKm: 0.032,
+        sourceAgency: "Sport Singapore",
+        sourceDataset: "SportSG Sport Facilities (GEOJSON)",
+        sourceUrl: "https://data.gov.sg/datasets/d_9b87bab59d036a60fad2a91530e10773/view",
+        lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+        facilityType: "swimming_complex",
+        detailsUrl: "https://www.activesgcircle.gov.sg/facilities",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find a SportSG swimming complex near Bedok",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(geocode)).toHaveBeenCalledWith("Bedok", undefined);
+    expect(vi.mocked(getSportSgFacilities)).toHaveBeenCalledWith({
+      facilityType: "swimming_complex",
+      lat: 1.324,
+      lng: 103.93,
+      radiusKm: 5,
+      format: "json",
+    });
+  });
+
+  it("executes civic discovery by exact childcare centre name without geocoding", async () => {
+    vi.mocked(getEcdaChildcareCentres).mockResolvedValue([
+      {
+        name: "Little Seeds Preschool",
+        category: "childcare",
+        subcategory: "child care",
+        address: "5 Raffles Place, #02-01",
+        postalCode: null,
+        lat: 1.28413,
+        lng: 103.85146,
+        sourceAgency: "Early Childhood Development Agency",
+        sourceDataset: "Child Care Services + Listing of Centres",
+        sourceUrl: "https://data.gov.sg/datasets/d_5d668e3f544335f8028f546827b773b4/view",
+        lastUpdatedAt: "2026-03-19",
+        centreCode: "CC0002",
+        centreType: "CC",
+        operatorType: "Little Seeds",
+        serviceModel: "CHILD CARE",
+        contactNo: "62345678",
+        email: "hello@littleseeds.sg",
+        website: "https://www.littleseeds.sg",
+        hasVacancy: false,
+        infantVacancyCurrentMonth: "full",
+        playgroupVacancyCurrentMonth: "full",
+        n1VacancyCurrentMonth: "full",
+        n2VacancyCurrentMonth: "full",
+        k1VacancyCurrentMonth: "full",
+        k2VacancyCurrentMonth: "full",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find childcare centres named \"Little Seeds Preschool\"",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(geocode)).not.toHaveBeenCalled();
+    expect(vi.mocked(getEcdaChildcareCentres)).toHaveBeenCalledWith({
+      name: "Little Seeds Preschool",
+      centreType: "CC",
+      format: "json",
+    });
+  });
+
+  it("returns a blocked civic-discovery response when the prompt says near me without a location", async () => {
+    const result = await runQuery({
+      query: "Find childcare centres near me",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "blocked",
+    });
+    expect(vi.mocked(geocode)).not.toHaveBeenCalled();
+    expect(vi.mocked(getEcdaChildcareCentres)).not.toHaveBeenCalled();
+    expect(vi.mocked(getPaResidentNetworkCentres)).not.toHaveBeenCalled();
   });
 
   it("executes the business registry diligence workflow for a named company", async () => {

@@ -23,6 +23,7 @@ import {
   handleDatagovRows,
   handleDatagovSearch,
 } from "./datagov-tools.js";
+import { handleEcdaChildcareCentres } from "./ecda-tools.js";
 import { handleHdbRentalPrices, handleHdbResalePrices } from "./hdb-tools.js";
 import { handleLtaBusArrivals, handleLtaTrafficIncidents, handleLtaTrainAlerts } from "./lta-tools.js";
 import {
@@ -57,7 +58,9 @@ import { handleMohFacilities } from "./moh-tools.js";
 import { handleSfaEstablishments } from "./sfa-tools.js";
 import { handleNParks } from "./nparks-tools.js";
 import { handlePubWaterLevels } from "./pub-tools.js";
+import { handlePaCommunityOutlets, handlePaResidentNetworkCentres } from "./pa-tools.js";
 import { handleMomLabourStats } from "./mom-tools.js";
+import { handleSportSgFacilities } from "./sportsg-tools.js";
 import { handleStbVisitorStats } from "./stb-tools.js";
 
 type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
@@ -185,6 +188,14 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleDatagovRows(params as Parameters<typeof handleDatagovRows>[0]),
   sg_datagov_browse: async (params) =>
     handleDatagovBrowse(params as Parameters<typeof handleDatagovBrowse>[0]),
+  sg_pa_community_outlets: async (params) =>
+    handlePaCommunityOutlets(params as Parameters<typeof handlePaCommunityOutlets>[0]),
+  sg_pa_resident_network_centres: async (params) =>
+    handlePaResidentNetworkCentres(params as Parameters<typeof handlePaResidentNetworkCentres>[0]),
+  sg_sportsg_facilities: async (params) =>
+    handleSportSgFacilities(params as Parameters<typeof handleSportSgFacilities>[0]),
+  sg_ecda_childcare_centres: async (params) =>
+    handleEcdaChildcareCentres(params as Parameters<typeof handleEcdaChildcareCentres>[0]),
   sg_lta_bus_arrivals: async (params) =>
     handleLtaBusArrivals(params as Parameters<typeof handleLtaBusArrivals>[0]),
   sg_lta_train_alerts: async (params) =>
@@ -239,6 +250,10 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_datagov_get",
   "sg_datagov_resources",
   "sg_datagov_rows",
+  "sg_pa_community_outlets",
+  "sg_pa_resident_network_centres",
+  "sg_sportsg_facilities",
+  "sg_ecda_childcare_centres",
   "sg_lta_bus_arrivals",
   "sg_lta_train_alerts",
   "sg_lta_traffic_incidents",
@@ -588,14 +603,17 @@ const renderSingleStepWithOps = (
   return baseText;
 };
 
-const formatUnsupportedQuery = (
+const formatQueryIssue = (
+  status: "blocked" | "unsupported",
   reason: string,
   suggestion: string,
   format: OutputFormat,
 ): string => {
   if (format === "markdown") {
     return [
-      "**sg_query could not build a supported workflow.**",
+      status === "blocked"
+        ? "**sg_query needs one more civic input before it can continue.**"
+        : "**sg_query could not build a supported workflow.**",
       reason,
       `Try this instead: ${suggestion}`,
     ].join("\n\n");
@@ -603,7 +621,7 @@ const formatUnsupportedQuery = (
 
   return formatResponse(
     {
-      status: "unsupported",
+      status,
       reason,
       suggestion,
     },
@@ -827,11 +845,12 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       const plan = planQuery(query);
 
       if (!plan.supported) {
+        const status = plan.blocked === true ? "blocked" : "unsupported";
         return {
           isError: true,
-          content: [{ type: "text", text: formatUnsupportedQuery(plan.reason, plan.suggestion, resolvedFormat) }],
+          content: [{ type: "text", text: formatQueryIssue(status, plan.reason, plan.suggestion, resolvedFormat) }],
           structuredContent: {
-            status: "unsupported",
+            status,
             mode,
             reason: plan.reason,
             suggestion: plan.suggestion,
@@ -843,7 +862,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       if (!formatSupport.supported) {
         return {
           isError: true,
-          content: [{ type: "text", text: formatUnsupportedQuery(formatSupport.reason, formatSupport.suggestion, resolvedFormat) }],
+          content: [{ type: "text", text: formatQueryIssue("unsupported", formatSupport.reason, formatSupport.suggestion, resolvedFormat) }],
           structuredContent: {
             status: "unsupported",
             mode,
@@ -887,7 +906,8 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
               isError: true,
               content: [{
                 type: "text",
-                text: formatUnsupportedQuery(
+                text: formatQueryIssue(
+                  "unsupported",
                   singleStepFormatSupport.reason,
                   singleStepFormatSupport.suggestion,
                   resolvedFormat,

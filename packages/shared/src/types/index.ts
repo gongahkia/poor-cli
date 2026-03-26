@@ -138,3 +138,13 @@ export type BriefArtifact = {
   readonly matchConfidence?: readonly MatchConfidence[];
   readonly nextChecks?: readonly NextCheck[];
 };
+
+export type {
+  CivicDirectoryRecord,
+  EcdaChildcareCentreRecord,
+  EcdaVacancyStatus,
+  PaCommunityOutletRecord,
+  PaResidentNetworkCentreRecord,
+  SportSgFacilityRecord,
+  SportSgFacilityType,
+} from "./civic.js";

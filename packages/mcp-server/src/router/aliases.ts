@@ -86,6 +86,16 @@ const ALIAS_MAP: Readonly<Record<string, string>> = {
   hawker: "sg_datagov_search",
   school: "sg_datagov_search",
   park: "sg_datagov_search",
+  "community club": "sg_pa_community_outlets",
+  "passion wave": "sg_pa_community_outlets",
+  "resident network": "sg_pa_resident_network_centres",
+  "residents network": "sg_pa_resident_network_centres",
+  "resident committee": "sg_pa_resident_network_centres",
+  childcare: "sg_ecda_childcare_centres",
+  preschool: "sg_ecda_childcare_centres",
+  kindergarten: "sg_ecda_childcare_centres",
+  sportsg: "sg_sportsg_facilities",
+  "sports facility": "sg_sportsg_facilities",
 };
 
 export const resolveAlias = (term: string): string | null => {

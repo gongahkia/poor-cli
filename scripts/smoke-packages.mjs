@@ -45,6 +45,10 @@ const EXPECTED_TOOL_NAMES = [
   "sg_bca_licensed_builders",
   "sg_bca_registered_contractors",
   "sg_acra_entities",
+  "sg_pa_community_outlets",
+  "sg_pa_resident_network_centres",
+  "sg_sportsg_facilities",
+  "sg_ecda_childcare_centres",
   "sg_gebiz_tenders",
   "sg_hawker_centres",
   "sg_moe_schools",
@@ -384,6 +388,41 @@ try {
       || routeRecipeResult.structuredContent?.workflow !== "route_plan"
     ) {
       throw new Error(`Packaged sg_query route recipe did not complete successfully${formatServerLogs()}`);
+    }
+
+    const civicDirectoryResult = await client.callTool({
+      name: "sg_pa_community_outlets",
+      arguments: {
+        type: "community_club",
+        postalCode: "048616",
+        format: "json",
+      },
+    });
+    const civicDirectoryText = "content" in civicDirectoryResult
+      ? civicDirectoryResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (civicDirectoryText === undefined) {
+      throw new Error(`Packaged sg_pa_community_outlets did not return text content${formatServerLogs()}`);
+    }
+    const civicDirectoryPayload = JSON.parse(civicDirectoryText);
+    if (!Array.isArray(civicDirectoryPayload) || civicDirectoryPayload[0]?.name !== "Downtown Community Club") {
+      throw new Error(`Packaged sg_pa_community_outlets returned an unexpected payload${formatServerLogs()}`);
+    }
+
+    const civicQueryResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Find a community club near 048616",
+        mode: "execute",
+        format: "json",
+      },
+    });
+    if (
+      !("structuredContent" in civicQueryResult)
+      || civicQueryResult.structuredContent?.status !== "completed"
+      || civicQueryResult.structuredContent?.workflow !== "civic_discovery"
+    ) {
+      throw new Error(`Packaged sg_query civic recipe did not complete successfully${formatServerLogs()}`);
     }
   } catch (error) {
     if (error instanceof Error && stderrChunks.length > 0 && !error.message.includes("Server stderr:")) {

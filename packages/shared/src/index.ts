@@ -12,6 +12,7 @@ export {
 } from "./formatters/index.js";
 export { httpGet } from "./http-client.js";
 export type { HttpOptions } from "./http-client.js";
+export { httpGetText } from "./http-client.js";
 export { Keystore } from "./keystore.js";
 export { createLogger } from "./logger.js";
 export type { Logger } from "./logger.js";
@@ -69,6 +70,10 @@ export {
   EnvironmentBriefSchema,
   BriefArtifactSchema,
   GeBIZTendersSchema,
+  PaCommunityOutletsSchema,
+  PaResidentNetworkCentresSchema,
+  SportSgFacilitiesSchema,
+  EcdaChildcareCentresSchema,
   HawkerCentresSchema,
   MoeSchoolsSchema,
   MohFacilitiesSchema,
@@ -116,6 +121,13 @@ export type {
   BriefSummaryItem,
   MatchConfidence,
   NextCheck,
+  CivicDirectoryRecord,
+  EcdaChildcareCentreRecord,
+  EcdaVacancyStatus,
+  PaCommunityOutletRecord,
+  PaResidentNetworkCentreRecord,
+  SportSgFacilityRecord,
+  SportSgFacilityType,
   RiskFlag,
   CacheStats,
   DateRange,
@@ -128,6 +140,15 @@ export type {
   ToolErrorPayload,
   ToolResult,
 } from "./types/index.js";
+export type {
+  CivicDirectoryRecord as CivicDirectoryRecordType,
+  EcdaChildcareCentreRecord as EcdaChildcareCentreRecordType,
+  EcdaVacancyStatus as EcdaVacancyStatusType,
+  PaCommunityOutletRecord as PaCommunityOutletRecordType,
+  PaResidentNetworkCentreRecord as PaResidentNetworkCentreRecordType,
+  SportSgFacilityRecord as SportSgFacilityRecordType,
+  SportSgFacilityType as SportSgFacilityTypeType,
+} from "./types/civic.js";
 export type {
   ComparisonResult,
   Dataset,

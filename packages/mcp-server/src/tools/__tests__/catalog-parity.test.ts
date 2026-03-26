@@ -62,8 +62,8 @@ describe("tool catalog parity", () => {
   });
 
   it("tracks the expected post-tranche public surface counts", () => {
-    expect(API_CATALOG).toHaveLength(20);
-    expect(TOOL_CATALOG).toHaveLength(56);
+    expect(API_CATALOG).toHaveLength(23);
+    expect(TOOL_CATALOG).toHaveLength(60);
   });
 
   it("keeps the business-diligence tool families visible in catalog resources", () => {
@@ -84,6 +84,21 @@ describe("tool catalog parity", () => {
           tools: ["sg_acra_entities"],
           preferredInterface: "sg_query",
         }),
+        expect.objectContaining({
+          name: "PA",
+          tools: ["sg_pa_community_outlets", "sg_pa_resident_network_centres"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "Sport Singapore",
+          tools: ["sg_sportsg_facilities"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "ECDA",
+          tools: ["sg_ecda_childcare_centres"],
+          preferredInterface: "sg_query",
+        }),
       ]),
     );
     expect(TOOL_CATALOG).toEqual(
@@ -92,6 +107,10 @@ describe("tool catalog parity", () => {
         expect.objectContaining({ name: "sg_cea_salespersons", surface: "canonical" }),
         expect.objectContaining({ name: "sg_bca_licensed_builders", surface: "canonical" }),
         expect.objectContaining({ name: "sg_bca_registered_contractors", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_pa_community_outlets", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_pa_resident_network_centres", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_sportsg_facilities", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_ecda_childcare_centres", surface: "canonical" }),
         expect.objectContaining({ name: "sg_business_dossier", surface: "canonical" }),
         expect.objectContaining({ name: "sg_property_brief", surface: "canonical" }),
         expect.objectContaining({ name: "sg_macro_brief", surface: "canonical" }),

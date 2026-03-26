@@ -134,6 +134,44 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     ],
   },
   {
+    name: "PA",
+    description: "People's Association civic directories for community clubs, PAssion WaVe outlets, and residents' network centres.",
+    tools: ["sg_pa_community_outlets", "sg_pa_resident_network_centres"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Neighbourhood civic-discovery surface for community facilities and grassroots locations.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Backed by PA geospatial datasets on data.gov.sg.",
+      "Optimized for postal-code and proximity lookups rather than recommendations.",
+    ],
+  },
+  {
+    name: "Sport Singapore",
+    description: "Sport Singapore public facility directory for sport centres, stadiums, swimming complexes, and selected specialist venues.",
+    tools: ["sg_sportsg_facilities"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Daily-utility civic discovery for public sports infrastructure.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Backed by the SportSG public-facilities GeoJSON dataset on data.gov.sg.",
+    ],
+  },
+  {
+    name: "ECDA",
+    description: "Early Childhood Development Agency childcare discovery combining geospatial centre locations with listing and vacancy data.",
+    tools: ["sg_ecda_childcare_centres"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Family-focused civic discovery for nearby childcare options.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Joins Child Care Services GeoJSON with Listing of Centres CSV by postal code first, then normalized centre name.",
+      "Vacancy signals are bounded to the current-month statuses surfaced in the listing dataset.",
+    ],
+  },
+  {
     name: "GeBIZ",
     description: "Singapore government procurement portal for tender awards and contract data.",
     tools: ["sg_gebiz_tenders"],
@@ -267,6 +305,16 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_query", input: { query: "Demographic profile for postal code 168742", mode: "execute" } },
       { tool: "sg_onemap_population", input: { planningArea: "Tampines", dataType: "getPopulationAgeGroup" } },
       { tool: "sg_onemap_population", input: { planningArea: "Tampines", dataType: "getHouseholdMonthlyIncomeWork" } },
+    ],
+  },
+  {
+    name: "Civic Discovery",
+    intent: "Find nearby community outlets, residents' network centres, SportSG facilities, or childcare centres from a postal code, address, planning area, or exact facility name.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Find a community club near 560123", mode: "execute" } },
+      { tool: "sg_pa_community_outlets", input: { type: "community_club", postalCode: "560123" } },
+      { tool: "sg_sportsg_facilities", input: { facilityType: "swimming_complex", postalCode: "560123" } },
+      { tool: "sg_ecda_childcare_centres", input: { postalCode: "560123", hasVacancy: true } },
     ],
   },
   {
@@ -473,6 +521,61 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "sg_query geocodes the postal code first, then fetches population data for the resolved planning area.",
       "Available data types include economic_status, education, ethnic_group, household_size, and more.",
+    ],
+  },
+  {
+    name: "Community Club Near Postal Code",
+    goal: "Find a nearby community club or PAssion WaVe outlet from a postal code prompt.",
+    prompt: "Find a community club near 560123",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find a community club near 560123", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_pa_community_outlets"],
+    notes: [
+      "sg_query geocodes the postal code first, then applies a bounded proximity search.",
+      "Use sg_pa_community_outlets directly when you already have latitude and longitude.",
+    ],
+  },
+  {
+    name: "Sport Facility Near Planning Area",
+    goal: "Find a nearby SportSG facility from a planning-area prompt and optional venue-type hint.",
+    prompt: "Find a SportSG swimming complex near Tampines",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find a SportSG swimming complex near Tampines", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_sportsg_facilities"],
+    notes: [
+      "sg_query resolves the planning area before applying a bounded civic proximity search.",
+      "Facility types are currently derived from venue-name patterns such as swimming, stadium, or sport centre.",
+    ],
+  },
+  {
+    name: "Childcare Vacancy Near Planning Area",
+    goal: "Find nearby childcare centres and keep only centres with current vacancy signals.",
+    prompt: "Find childcare centres near Bedok with vacancies",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find childcare centres near Bedok with vacancies", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_ecda_childcare_centres"],
+    notes: [
+      "Childcare discovery joins ECDA geospatial centres with the Listing of Centres vacancy dataset.",
+      "Current-month vacancy statuses are treated as bounded availability signals, not admissions guarantees.",
+    ],
+  },
+  {
+    name: "Residents Network Near Address",
+    goal: "Find a nearby residents' network or residents' committee centre from an address prompt.",
+    prompt: "Find a residents' network centre near 1 Raffles Place",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find a residents' network centre near 1 Raffles Place", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_pa_resident_network_centres"],
+    notes: [
+      "Use an exact facility name in quotes when you want a direct name lookup instead of a proximity search.",
     ],
   },
   {

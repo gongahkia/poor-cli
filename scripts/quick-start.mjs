@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // quick-start: build, start mock server, run one brief workflow, print output
 // usage: node scripts/quick-start.mjs [profile]
-// profiles: business, property, macro, transport, environment (default: property)
+// profiles: business, property, macro, transport, environment, civic (default: property)
 import { execSync, spawn } from "node:child_process";
 import { setTimeout } from "node:timers/promises";
 
 const profile = process.argv[2] ?? "property";
-const VALID = ["business", "property", "macro", "transport", "environment"];
+const VALID = ["business", "property", "macro", "transport", "environment", "civic"];
 if (!VALID.includes(profile)) {
   console.error(`invalid profile: ${profile}. valid: ${VALID.join(", ")}`);
   process.exit(1);
@@ -65,4 +65,5 @@ console.log("\n=== done! ===");
 console.log(`\nwant to explore more? try:`);
 console.log(`  npm run demo:mcp -- business`);
 console.log(`  npm run demo:mcp -- transport`);
+console.log(`  npm run demo:mcp -- civic`);
 console.log(`  npx tsx examples/integration/basic-client.ts`);

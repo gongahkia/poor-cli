@@ -111,6 +111,25 @@ const PROFILES = {
       },
     },
   },
+  civic: {
+    resourceUri: "sg://recipes",
+    direct: {
+      name: "sg_pa_community_outlets",
+      arguments: { type: "community_club", postalCode: "048616", format: "json" },
+    },
+    supporting: {
+      name: "sg_ecda_childcare_centres",
+      arguments: { postalCode: "048616", hasVacancy: true, format: "json" },
+    },
+    query: {
+      name: "sg_query",
+      arguments: {
+        query: "Find a community club near 048616",
+        mode: "execute",
+        format: "json",
+      },
+    },
+  },
   geospatial: {
     resourceUri: "sg://recipes",
     direct: {

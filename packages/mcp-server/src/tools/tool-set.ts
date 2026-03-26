@@ -6,6 +6,7 @@ import { cacheToolDefinitions } from "./cache-tools.js";
 import { ceaToolDefinitions } from "./cea-tools.js";
 import { configToolDefinitions } from "./config-tools.js";
 import { datagovToolDefinitions } from "./datagov-tools.js";
+import { ecdaToolDefinitions } from "./ecda-tools.js";
 import { gebizToolDefinitions } from "./gebiz-tools.js";
 import { hawkerToolDefinitions } from "./hawker-tools.js";
 import { healthCheckToolDefinitions } from "./health-check.js";
@@ -18,8 +19,10 @@ import { mohToolDefinitions } from "./moh-tools.js";
 import { momToolDefinitions } from "./mom-tools.js";
 import { neaToolDefinitions } from "./nea-tools.js";
 import { nparksToolDefinitions } from "./nparks-tools.js";
+import { paToolDefinitions } from "./pa-tools.js";
 import { pubToolDefinitions } from "./pub-tools.js";
 import { sfaToolDefinitions } from "./sfa-tools.js";
+import { sportsgToolDefinitions } from "./sportsg-tools.js";
 import { stbToolDefinitions } from "./stb-tools.js";
 import { onemapToolDefinitions } from "./onemap-tools.js";
 import { queryToolDefinitions } from "./query-tool.js";
@@ -32,6 +35,9 @@ export const ALL_TOOL_DEFINITIONS = [
   ...onemapToolDefinitions,
   ...uraToolDefinitions,
   ...datagovToolDefinitions,
+  ...paToolDefinitions,
+  ...sportsgToolDefinitions,
+  ...ecdaToolDefinitions,
   ...ltaToolDefinitions,
   ...neaToolDefinitions,
   ...hdbToolDefinitions,

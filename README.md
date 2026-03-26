@@ -6,18 +6,18 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 56 `sg_*` tools total across 20 official data families.
+The repo currently exposes 60 `sg_*` tools total across 23 official data families.
 
-- 42 direct data tools
+- 46 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers for health, keys, cache, and config
 - 1 bounded preferred interface, `sg_query`
 
-`sg_query` is the bounded preferred interface across 11 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 14 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -54,6 +54,9 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | CEA | 1 | Curated salesperson and estate-agent registry lookup | None |
 | BCA | 2 | Curated licensed-builder and contractor registry lookup | None |
 | ACRA | 1 | Curated exact-match company and UEN lookup over the official sharded registry | None |
+| PA | 2 | Community clubs, PAssion WaVe outlets, and residents' network centres | None |
+| Sport Singapore | 1 | Public sports facility discovery across swimming complexes, sports halls, stadiums, and sport centres | None |
+| ECDA | 1 | Childcare discovery with joined location and vacancy signals | None |
 | GeBIZ | 1 | Government procurement tender awards and contract data | None |
 | Hawker Centres | 1 | Hawker centre directory with locations and stall counts | None |
 | MOE Schools | 1 | School directory filtered by level, zone, and name | None |
@@ -92,6 +95,7 @@ Notes:
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
 - OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback outside mock mode.
 - HDB, CEA, BCA, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
+- PA, Sport Singapore, and ECDA civic directories stay no-auth by using the same official data.gov.sg download path.
 
 ## Quickstart
 
@@ -157,6 +161,7 @@ npm run demo:mcp -- property
 npm run demo:mcp -- macro
 npm run demo:mcp -- transport
 npm run demo:mcp -- environment
+npm run demo:mcp -- civic
 npm run demo:mcp -- geospatial
 ```
 
@@ -202,11 +207,13 @@ The primary runnable demos for this tranche are:
 - [Macro Snapshot](./examples/macro-brief.md)
 - [Transport Status](./examples/transport-brief.md)
 - [Environment Snapshot](./examples/environment-brief.md)
+- [Civic Discovery](./examples/civic-discovery.md)
 - [Geospatial Routing](./examples/geospatial-routing.md)
 
 Additional bounded workflow names exposed in the catalog:
 
 - Demographic Profile
+- Civic Discovery
 - Property Counterparty Diligence
 - Dataset Discovery Fallback
 - Route Planning
@@ -273,6 +280,16 @@ sg_nea_air_quality { "region": "East", "format": "json" }
 sg_nea_rainfall { "stationId": "S107", "format": "json" }
 ```
 
+### Civic Discovery
+
+```text
+sg_query { "query": "Find a community club near 560123", "mode": "execute" }
+sg_pa_community_outlets { "type": "community_club", "postalCode": "560123", "format": "json" }
+sg_pa_resident_network_centres { "postalCode": "560123", "format": "json" }
+sg_sportsg_facilities { "facilityType": "swimming_complex", "postalCode": "560123", "format": "json" }
+sg_ecda_childcare_centres { "postalCode": "560123", "hasVacancy": true, "format": "json" }
+```
+
 ### Geospatial Routing
 
 ```text
@@ -302,6 +319,7 @@ Supported intents:
 - business registry diligence
 - dataset discovery fallback
 - route planning between Singapore postal codes or coordinate pairs
+- civic discovery for community clubs, residents' network centres, SportSG facilities, and childcare centres
 - reverse geocode from one coordinate pair
 - coordinate conversion between SVY21 and WGS84
 - SingStat browse, table drilldown, and time-series reads
