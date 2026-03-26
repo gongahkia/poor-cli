@@ -63,28 +63,48 @@ vi.mock("../../apis/acra/client.js", () => ({
 }));
 
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
+import { getTableData, getTimeSeries } from "../../apis/singstat/client.js";
 import { query as masQuery } from "../../apis/mas/client.js";
-import { geocode, getPopulationData } from "../../apis/onemap/client.js";
+import {
+  convertSVY21toWGS84,
+  geocode,
+  getPopulationData,
+  getRoute,
+  reverseGeocode,
+} from "../../apis/onemap/client.js";
 import { getPropertyTransactions, uraFetch } from "../../apis/ura/client.js";
 import {
+  listCollections,
   getDatasetResources,
   getDatasetRows,
   searchDatasets as datagovSearch,
 } from "../../apis/datagov/client.js";
 import { getBusArrivals, getTrafficIncidents, getTrainAlerts } from "../../apis/lta/client.js";
 import { getAirQuality, getForecast2Hr, getRainfall } from "../../apis/nea/client.js";
-import { getHdbResalePrices } from "../../apis/hdb/client.js";
+import { getHdbRentalPrices, getHdbResalePrices } from "../../apis/hdb/client.js";
 import { getCeaSalespersons } from "../../apis/cea/client.js";
 import {
   getBcaLicensedBuilders,
   getBcaRegisteredContractors,
 } from "../../apis/bca/client.js";
 import { getAcraEntities } from "../../apis/acra/client.js";
-import { handleSingStatSearch } from "../singstat-tools.js";
-import { handleMasExchangeRates, handleMasInterestRates } from "../mas-tools.js";
-import { handleOneMapGeocode, handleOneMapPopulation } from "../onemap-tools.js";
-import { handleUraPlanningArea } from "../ura-tools.js";
 import {
+  handleSingStatBrowse,
+  handleSingStatSearch,
+  handleSingStatTable,
+  handleSingStatTimeseries,
+} from "../singstat-tools.js";
+import { handleMasExchangeRates, handleMasInterestRates } from "../mas-tools.js";
+import {
+  handleOneMapConvertCoords,
+  handleOneMapGeocode,
+  handleOneMapPopulation,
+  handleOneMapReverseGeocode,
+  handleOneMapRoute,
+} from "../onemap-tools.js";
+import { handleUraDevCharges, handleUraPlanningArea } from "../ura-tools.js";
+import {
+  handleDatagovBrowse,
   handleDatagovResources,
   handleDatagovRows,
   handleDatagovSearch,
@@ -98,7 +118,7 @@ import {
 } from "../brief-tools.js";
 import { handleLtaBusArrivals } from "../lta-tools.js";
 import { handleNeaForecast2Hr } from "../nea-tools.js";
-import { handleHdbResalePrices } from "../hdb-tools.js";
+import { handleHdbRentalPrices, handleHdbResalePrices } from "../hdb-tools.js";
 import { handleCeaSalespersons } from "../cea-tools.js";
 import {
   handleBcaLicensedBuilders,
@@ -155,12 +175,18 @@ const normalizeBriefResult = (result: Awaited<ReturnType<typeof executeQueryStep
 describe("sg_query parity", () => {
   beforeEach(() => {
     vi.mocked(singstatSearch).mockReset();
+    vi.mocked(getTableData).mockReset();
+    vi.mocked(getTimeSeries).mockReset();
     vi.mocked(masQuery).mockReset();
     vi.mocked(geocode).mockReset();
+    vi.mocked(reverseGeocode).mockReset();
+    vi.mocked(getRoute).mockReset();
+    vi.mocked(convertSVY21toWGS84).mockReset();
     vi.mocked(getPopulationData).mockReset();
     vi.mocked(getPropertyTransactions).mockReset();
     vi.mocked(uraFetch).mockReset();
     vi.mocked(datagovSearch).mockReset();
+    vi.mocked(listCollections).mockReset();
     vi.mocked(getDatasetResources).mockReset();
     vi.mocked(getDatasetRows).mockReset();
     vi.mocked(getBusArrivals).mockReset();
@@ -170,6 +196,7 @@ describe("sg_query parity", () => {
     vi.mocked(getAirQuality).mockReset();
     vi.mocked(getRainfall).mockReset();
     vi.mocked(getHdbResalePrices).mockReset();
+    vi.mocked(getHdbRentalPrices).mockReset();
     vi.mocked(getCeaSalespersons).mockReset();
     vi.mocked(getBcaLicensedBuilders).mockReset();
     vi.mocked(getBcaRegisteredContractors).mockReset();
@@ -185,6 +212,66 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_singstat_search", input)).resolves.toEqual(
       await handleSingStatSearch(input),
+    );
+  });
+
+  it("matches the direct SingStat table handler", async () => {
+    vi.mocked(getTableData).mockResolvedValue({
+      metadata: {
+        title: "Singapore GDP",
+        tableId: "M015631",
+        frequency: "Annual",
+        footnote: "",
+        source: "SingStat",
+        lastUpdated: "2026-03-01",
+      },
+      rows: [
+        { year: "2024", value: 712345.6 },
+      ],
+    } as never);
+
+    const input = { tableId: "M015631", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_singstat_table", input)).resolves.toEqual(
+      await handleSingStatTable(input),
+    );
+  });
+
+  it("matches the direct SingStat timeseries handler", async () => {
+    vi.mocked(getTimeSeries).mockResolvedValue([
+      { period: "2022", value: 3.2 },
+      { period: "2023", value: 3.4 },
+    ] as never);
+
+    const input = {
+      tableId: "M015631",
+      indicator: "GDP at current market prices",
+      startYear: 2022,
+      endYear: 2023,
+      format: "json",
+    } as const;
+
+    await expect(executeQueryStep("sg_singstat_timeseries", input)).resolves.toEqual(
+      await handleSingStatTimeseries(input),
+    );
+  });
+
+  it("matches the direct SingStat browse handler", async () => {
+    vi.mocked(singstatSearch).mockResolvedValue([
+      {
+        id: "M650151",
+        title: "Transport Indicators",
+        theme: "Transport",
+        subject: "Transport",
+        topic: "Transport",
+        frequency: "Annual",
+      },
+    ]);
+
+    const input = { category: "Transport" } as const;
+
+    await expect(executeQueryStep("sg_singstat_browse", input)).resolves.toEqual(
+      await handleSingStatBrowse(input),
     );
   });
 
@@ -232,6 +319,67 @@ describe("sg_query parity", () => {
     );
   });
 
+  it("matches the direct OneMap reverse-geocode handler", async () => {
+    vi.mocked(reverseGeocode).mockResolvedValue({
+      block: "1",
+      road: "RAFFLES PLACE",
+      building: "ONE RAFFLES PLACE",
+      postal: "048616",
+      x: 28001,
+      y: 38744,
+      lat: 1.284,
+      lng: 103.851,
+    } as never);
+
+    const input = { lat: 1.284, lng: 103.851 } as const;
+
+    await expect(executeQueryStep("sg_onemap_reverse_geocode", input)).resolves.toEqual(
+      await handleOneMapReverseGeocode(input),
+    );
+  });
+
+  it("matches the direct OneMap route handler", async () => {
+    vi.mocked(getRoute).mockResolvedValue({
+      totalDistance: 1500,
+      totalTime: 900,
+      instructions: [
+        {
+          instruction: "Walk straight",
+          road: "North Bridge Road",
+          distance: 250,
+          lat: 1.29,
+          lng: 103.85,
+        },
+      ],
+      routeGeometry: [],
+    } as never);
+
+    const input = {
+      startLat: 1.2894,
+      startLng: 103.8491,
+      endLat: 1.284,
+      endLng: 103.851,
+      routeType: "walk",
+    } as const;
+
+    await expect(executeQueryStep("sg_onemap_route", input)).resolves.toEqual(
+      await handleOneMapRoute(input),
+    );
+  });
+
+  it("matches the direct OneMap coordinate-conversion handler", async () => {
+    vi.mocked(convertSVY21toWGS84).mockResolvedValue({
+      lat: 1.284,
+      lng: 103.851,
+    } as never);
+
+    const input = { from: "SVY21", x: 28001, y: 38744 } as const;
+
+    await expect(executeQueryStep("sg_onemap_convert_coords", input)).resolves.toEqual(
+      await handleOneMapConvertCoords(input),
+    );
+  });
+
   it("matches the direct OneMap population handler", async () => {
     vi.mocked(getPopulationData).mockResolvedValue({
       planningArea: "Tampines",
@@ -271,6 +419,21 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_ura_planning_area", input)).resolves.toEqual(
       await handleUraPlanningArea(input),
+    );
+  });
+
+  it("matches the direct URA development-charge handler", async () => {
+    vi.mocked(uraFetch).mockResolvedValue({
+      Status: "OK",
+      Result: [
+        { use_grp: "Residential", sector: "A", rate: "3200", effDate: "2026-03-01" },
+      ],
+    } as never);
+
+    const input = { useGroup: "Residential", sector: "A" } as const;
+
+    await expect(executeQueryStep("sg_ura_dev_charges", input)).resolves.toEqual(
+      await handleUraDevCharges(input),
     );
   });
 
@@ -350,6 +513,18 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_datagov_rows", input)).resolves.toEqual(
       await handleDatagovRows(input),
+    );
+  });
+
+  it("matches the direct data.gov browse handler", async () => {
+    vi.mocked(listCollections).mockResolvedValue([
+      { collectionId: "housing", name: "Housing", datasetCount: 12 },
+    ] as never);
+
+    const input = {} as const;
+
+    await expect(executeQueryStep("sg_datagov_browse", input)).resolves.toEqual(
+      await handleDatagovBrowse(input),
     );
   });
 
@@ -479,6 +654,25 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_hdb_resale_prices", input)).resolves.toEqual(
       await handleHdbResalePrices(input),
+    );
+  });
+
+  it("matches the direct HDB rental handler", async () => {
+    vi.mocked(getHdbRentalPrices).mockResolvedValue([
+      {
+        month: "2026-02",
+        town: "BEDOK",
+        flatType: "4 ROOM",
+        block: "101",
+        streetName: "BEDOK NORTH AVE 4",
+        rents: 2600,
+      },
+    ] as never);
+
+    const input = { town: "Bedok", flatType: "4 ROOM", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_hdb_rental_prices", input)).resolves.toEqual(
+      await handleHdbRentalPrices(input),
     );
   });
 
