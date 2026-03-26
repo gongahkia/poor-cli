@@ -1,4 +1,9 @@
-import { EcdaChildcareCentresSchema, formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import {
+  EcdaChildcareCentresInputSchema,
+  EcdaChildcareCentresSchema,
+  formatResponse,
+  resolveOutputFormat,
+} from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import { toDirectoryGeoFeatures } from "../apis/civic/utils.js";
 import { getEcdaChildcareCentres } from "../apis/ecda/client.js";
@@ -41,7 +46,7 @@ export const ecdaToolDefinitions: readonly RegisteredToolDefinition[] = [
     name: "sg_ecda_childcare_centres",
     description: "Search ECDA childcare centres with optional vacancy, operator, postal-code, or proximity filters.",
     surface: "canonical",
-    inputSchema: EcdaChildcareCentresSchema.shape,
+    inputSchema: EcdaChildcareCentresInputSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => handleEcdaChildcareCentres(EcdaChildcareCentresSchema.parse(input)),
   },
 ];

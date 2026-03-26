@@ -504,27 +504,29 @@ export const GeBIZTendersSchema = z.object({
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
 
-export const PaCommunityOutletsSchema = requireLatLngPair(
-  CivicDirectoryBaseSchema.extend({
-    type: z.enum(["community_club", "passion_wave"]).optional(),
-  }),
-);
+export const PaCommunityOutletsInputSchema = CivicDirectoryBaseSchema.extend({
+  type: z.enum(["community_club", "passion_wave"]).optional(),
+});
 
-export const PaResidentNetworkCentresSchema = requireLatLngPair(CivicDirectoryBaseSchema);
+export const PaCommunityOutletsSchema = requireLatLngPair(PaCommunityOutletsInputSchema);
 
-export const SportSgFacilitiesSchema = requireLatLngPair(
-  CivicDirectoryBaseSchema.extend({
-    facilityType: z.string().min(1).optional(),
-  }),
-);
+export const PaResidentNetworkCentresInputSchema = CivicDirectoryBaseSchema;
 
-export const EcdaChildcareCentresSchema = requireLatLngPair(
-  CivicDirectoryBaseSchema.extend({
-    centreType: z.string().min(1).optional(),
-    operatorType: z.string().min(1).optional(),
-    hasVacancy: z.boolean().optional(),
-  }),
-);
+export const PaResidentNetworkCentresSchema = requireLatLngPair(PaResidentNetworkCentresInputSchema);
+
+export const SportSgFacilitiesInputSchema = CivicDirectoryBaseSchema.extend({
+  facilityType: z.string().min(1).optional(),
+});
+
+export const SportSgFacilitiesSchema = requireLatLngPair(SportSgFacilitiesInputSchema);
+
+export const EcdaChildcareCentresInputSchema = CivicDirectoryBaseSchema.extend({
+  centreType: z.string().min(1).optional(),
+  operatorType: z.string().min(1).optional(),
+  hasVacancy: z.boolean().optional(),
+});
+
+export const EcdaChildcareCentresSchema = requireLatLngPair(EcdaChildcareCentresInputSchema);
 
 export const HawkerCentresSchema = z.object({
   name: z.string().min(1).optional(),

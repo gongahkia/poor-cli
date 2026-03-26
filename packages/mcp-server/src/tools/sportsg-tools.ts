@@ -1,4 +1,9 @@
-import { formatResponse, resolveOutputFormat, SportSgFacilitiesSchema } from "@sg-apis/shared";
+import {
+  formatResponse,
+  resolveOutputFormat,
+  SportSgFacilitiesInputSchema,
+  SportSgFacilitiesSchema,
+} from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import { toDirectoryGeoFeatures } from "../apis/civic/utils.js";
 import { getSportSgFacilities } from "../apis/sportsg/client.js";
@@ -39,7 +44,7 @@ export const sportsgToolDefinitions: readonly RegisteredToolDefinition[] = [
     name: "sg_sportsg_facilities",
     description: "Search Sport Singapore public facilities with optional facility-type, postal-code, or proximity filters.",
     surface: "canonical",
-    inputSchema: SportSgFacilitiesSchema.shape,
+    inputSchema: SportSgFacilitiesInputSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => handleSportSgFacilities(SportSgFacilitiesSchema.parse(input)),
   },
 ];

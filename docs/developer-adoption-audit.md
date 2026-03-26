@@ -6,7 +6,7 @@ Observed on 2026-03-26 from the perspective of a developer deciding whether to i
 
 There is an actual value prop here.
 
-It is not "Singapore data for everyone." It is narrower and more defensible than that: one deterministic MCP server for Singapore public data with stable `sg_*` contracts, bounded workflow routing, additive brief artifacts, and enough runtime discipline to save a developer from wiring eleven separate public-data surfaces by hand.
+It is not "Singapore data for everyone." It is narrower and more defensible than that: one deterministic MCP server for Singapore public data with stable `sg_*` contracts, bounded workflow routing, additive brief artifacts, and enough runtime discipline to save a developer from wiring twenty-three separate public-data surfaces by hand.
 
 That is real value for the right buyer.
 
@@ -14,8 +14,8 @@ The current problem is not emptiness. The current problem is adoption depth. The
 
 ## Evidence That The Repo Is Real
 
-- The codebase contains 11 implemented API clients and 47 public `sg_*` tools.
-- `npm run verify` passed during this audit, including lint, build, docs parity, 178 tests across 26 test files, and packaging smoke.
+- The codebase now exposes 23 official data families and 60 public `sg_*` tools.
+- `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
 - The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, and `sg://recipes`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.
 - The demo scripts are runnable and prove the server can complete end-to-end MCP flows against the bundled mock server.
@@ -85,10 +85,11 @@ Even if this is partly a mock-fixture issue, it is still a product issue because
 
 ### 3. The Best Features Are Narrower Than The Surface Count Suggests
 
-The repo has 47 tools, but the truly differentiated user stories are concentrated in a smaller set:
+The repo has 60 tools, but the truly differentiated user stories are concentrated in a smaller set:
 
 - business dossier
 - property brief
+- civic discovery
 - route planning
 - transport brief
 - environment brief

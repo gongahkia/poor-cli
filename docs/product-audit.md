@@ -23,7 +23,7 @@ This repo already has real utility for developers building Singapore-focused age
 
 ## Developer Pain Points Observed
 
-- Discovery was thinner than the tool count suggested. A developer could see 47 tools, but not quickly tell which prompt shapes were supported.
+- Discovery was thinner than the tool count suggested. A developer could see 60 tools, but not quickly tell which prompt shapes were supported.
 - `sg_query` coverage lagged behind the direct surface for geospatial routing, reverse geocoding, coordinate conversion, SingStat drilldowns, data.gov collection browsing, and URA development charges.
 - Install confidence was weaker than it should have been because published tarballs included compiled test and mock artifacts.
 - The repo had strong internal structure but weaker newcomer positioning. A new developer still had to infer when to use `sg_query`, when to use direct tools, and how blocked responses should be handled.

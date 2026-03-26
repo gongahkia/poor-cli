@@ -292,6 +292,15 @@ Public families:
 - PA
 - Sport Singapore
 - ECDA
+- GeBIZ
+- Hawker Centres
+- MOE Schools
+- MOH Healthcare
+- SFA
+- NParks
+- PUB
+- MOM
+- STB
 - data.gov.sg
 
 HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.

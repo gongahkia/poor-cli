@@ -1,4 +1,11 @@
-import { formatResponse, PaCommunityOutletsSchema, PaResidentNetworkCentresSchema, resolveOutputFormat } from "@sg-apis/shared";
+import {
+  formatResponse,
+  PaCommunityOutletsInputSchema,
+  PaCommunityOutletsSchema,
+  PaResidentNetworkCentresInputSchema,
+  PaResidentNetworkCentresSchema,
+  resolveOutputFormat,
+} from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
 import { getPaCommunityOutlets, getPaResidentNetworkCentres } from "../apis/pa/client.js";
 import { toDirectoryGeoFeatures } from "../apis/civic/utils.js";
@@ -58,14 +65,14 @@ export const paToolDefinitions: readonly RegisteredToolDefinition[] = [
     name: "sg_pa_community_outlets",
     description: "Search People's Association community clubs and PAssion WaVe outlets with optional postal-code or proximity filters.",
     surface: "canonical",
-    inputSchema: PaCommunityOutletsSchema.shape,
+    inputSchema: PaCommunityOutletsInputSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => handlePaCommunityOutlets(PaCommunityOutletsSchema.parse(input)),
   },
   {
     name: "sg_pa_resident_network_centres",
     description: "Search People's Association residents' committee and residents' network centres with optional postal-code or proximity filters.",
     surface: "canonical",
-    inputSchema: PaResidentNetworkCentresSchema.shape,
+    inputSchema: PaResidentNetworkCentresInputSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => handlePaResidentNetworkCentres(PaResidentNetworkCentresSchema.parse(input)),
   },
 ];
