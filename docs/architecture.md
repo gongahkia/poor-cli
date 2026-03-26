@@ -17,6 +17,7 @@ The product boundary is:
 - stable direct `sg_*` tools first
 - additive briefs where composition creates clear user value
 - a bounded preferred interface across 11 routed families
+- machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, and `sg://recipes`
 
 That boundary keeps the repo useful without pretending to solve arbitrary analyst workflows.
 
@@ -77,9 +78,13 @@ Consequence:
 - business-registry workflows can route to ACRA, CEA, and BCA
 - macro workflows can collapse to `sg_macro_brief`
 - property workflows can collapse to `sg_property_brief`
+- route planning can geocode postal codes before calling `sg_onemap_route`
+- reverse geocoding and coordinate conversion can route through direct OneMap handlers
+- SingStat table drilldowns can move from browse to table to time-series reads
+- data.gov collection browsing can continue into metadata, resources, and bounded rows
 - transport workflows can collapse to `sg_transport_brief`
 - environment workflows can collapse to `sg_environment_brief`
-- dataset discovery can continue into `sg_datagov_resources` and `sg_datagov_rows`
+- HDB rental checks and URA development-charge lookups can route directly with extracted parameters
 - comparisons and arbitrary multi-step synthesis remain out of scope
 
 ### 4. Additive brief tools must return bounded artifacts
@@ -163,4 +168,3 @@ Key tradeoffs:
 - `sg_transport_brief` is an operations snapshot, not route planning or predictive dispatch
 - `sg_environment_brief` is a live monitoring brief, not severe-weather forecasting
 - data.gov.sg support is bounded to explicit metadata, resource inspection, and row reads rather than arbitrary data prep
-
