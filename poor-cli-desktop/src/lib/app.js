@@ -1,6 +1,10 @@
 // poor-cli desktop — frontend app logic
 import { rpc } from './rpc.js';
 import { registerView, showView } from './views.js';
+import { renderMarkdown } from './markdown.js';
+import { initSettings } from './settings.js';
+import { initSkills } from './skills.js';
+import { initHistory, refreshHistorySidebar } from './history.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -9,35 +13,68 @@ const providerSelect = document.getElementById('provider-select');
 const providerInfo = document.getElementById('provider-info');
 const sessionList = document.getElementById('session-list');
 const newSessionBtn = document.getElementById('new-session-btn');
+const modelSelector = document.getElementById('model-selector');
+const effortToggle = document.getElementById('effort-toggle');
+const threadTitle = document.getElementById('thread-title');
+const threadMenuBtn = document.getElementById('thread-menu-btn');
+const threadMenu = document.getElementById('thread-menu');
+const accountBtn = document.getElementById('account-btn');
+const accountMenu = document.getElementById('account-menu');
+const settingsBack = document.getElementById('settings-back');
+const sbCwd = document.getElementById('sb-cwd');
+const sbPermission = document.getElementById('sb-permission');
+const sbGit = document.getElementById('sb-git');
+const sbSpinner = document.getElementById('sb-spinner');
+const sbChanges = document.getElementById('sb-changes');
 
 let initialized = false;
+let currentEffort = 'low';
+let activeSessionId = null;
+
+// helpers
+function relativeTime(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return 'now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
 
 export function addMessage(text, role) {
   const div = document.createElement('div');
   div.className = `message message-${role}`;
-  div.textContent = text;
+  if (role === 'assistant') {
+    div.innerHTML = renderMarkdown(text);
+  } else {
+    div.textContent = text;
+  }
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   return div;
 }
 
 function clearWelcome() {
-  const welcome = chatMessages.querySelector('.welcome-message');
-  if (welcome) welcome.remove();
+  const w = chatMessages.querySelector('.welcome-message');
+  if (w) w.remove();
 }
 
+// init
 async function ensureInitialized() {
   if (initialized) return;
   try {
     await rpc('initialize_backend', {});
     initialized = true;
-    await refreshProviderInfo();
-    await refreshSessions();
+    await Promise.all([refreshProviderInfo(), refreshSessions(), populateModels(), refreshStatusBar()]);
   } catch (e) {
     providerInfo.textContent = `Error: ${e}`;
   }
 }
 
+// provider
 async function refreshProviderInfo() {
   try {
     const info = await rpc('get_provider_info', {});
@@ -45,6 +82,30 @@ async function refreshProviderInfo() {
   } catch (_) {}
 }
 
+// models
+async function populateModels() {
+  try {
+    const result = await rpc('list_providers', {});
+    const providers = result.providers || result;
+    modelSelector.innerHTML = '<option value="">Auto</option>';
+    if (typeof providers === 'object') {
+      for (const [name, data] of Object.entries(providers)) {
+        const group = document.createElement('optgroup');
+        group.label = name;
+        const models = data.models || data.available_models || [];
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = `${name}:${m}`;
+          opt.textContent = m;
+          group.appendChild(opt);
+        });
+        if (group.children.length) modelSelector.appendChild(group);
+      }
+    }
+  } catch (_) {}
+}
+
+// sessions
 export async function refreshSessions() {
   try {
     const result = await rpc('list_sessions', {});
@@ -53,12 +114,69 @@ export async function refreshSessions() {
     sessions.forEach(s => {
       const div = document.createElement('div');
       div.className = `session-item${s.isDefault ? ' active' : ''}`;
-      div.textContent = s.label || s.sessionId;
+      const label = document.createElement('span');
+      label.textContent = s.label || s.sessionId;
+      div.appendChild(label);
+      const ts = document.createElement('span');
+      ts.className = 'timestamp';
+      ts.textContent = relativeTime(s.createdAt);
+      div.appendChild(ts);
+      div.addEventListener('click', () => selectSession(s));
       sessionList.appendChild(div);
+      if (s.isDefault) {
+        activeSessionId = s.sessionId;
+        threadTitle.textContent = s.label || s.sessionId;
+      }
     });
   } catch (_) {}
 }
 
+function selectSession(s) {
+  activeSessionId = s.sessionId;
+  threadTitle.textContent = s.label || s.sessionId;
+  document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+
+// status bar
+async function refreshStatusBar() {
+  try {
+    const status = await rpc('get_status_view', {});
+    if (status) {
+      sbCwd.textContent = status.workingDirectory || status.cwd || 'Local';
+      sbPermission.textContent = status.permissionMode || status.sandbox?.preset || '--';
+      sbGit.textContent = status.gitBranch ? `\u2387 ${status.gitBranch}` : '--';
+    }
+  } catch (_) {}
+}
+
+function showSpinner(v) { sbSpinner.hidden = !v; }
+
+// activity + file changes
+async function renderActivity() {
+  try {
+    const status = await rpc('get_status_view', {});
+    if (!status) return;
+    const mutations = status.lastMutations || status.mutations || [];
+    if (mutations.length) {
+      const ind = document.createElement('div');
+      ind.className = 'activity-indicator';
+      ind.textContent = `${mutations.length} file(s) modified`;
+      chatMessages.appendChild(ind);
+    }
+    const changes = status.fileChanges || status.changes;
+    if (changes && changes.filesChanged) {
+      const bar = document.createElement('div');
+      bar.className = 'file-changes-bar';
+      bar.innerHTML = `${changes.filesChanged} files changed <span class="added">+${changes.additions || 0}</span> <span class="removed">-${changes.deletions || 0}</span> <span class="review-link">Review changes &nearr;</span>`;
+      chatMessages.appendChild(bar);
+      sbChanges.hidden = false;
+      sbChanges.innerHTML = `${changes.filesChanged} files <span class="added">+${changes.additions || 0}</span> <span class="removed">-${changes.deletions || 0}</span>`;
+    }
+  } catch (_) {}
+}
+
+// send message
 async function sendMessage() {
   const text = chatInput.value.trim();
   if (!text) return;
@@ -68,31 +186,39 @@ async function sendMessage() {
   chatInput.focus();
   await ensureInitialized();
   const pending = addMessage('thinking...', 'assistant');
+  showSpinner(true);
   try {
     const result = await rpc('send_chat', { message: text });
     const content = result.content || result.text || JSON.stringify(result);
-    pending.textContent = content;
+    pending.innerHTML = renderMarkdown(content);
+    await renderActivity();
   } catch (e) {
     pending.textContent = `Error: ${e}`;
     pending.style.color = 'var(--error)';
   }
+  showSpinner(false);
 }
 
+// event listeners
 sendBtn.addEventListener('click', sendMessage);
 chatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
-
 providerSelect.addEventListener('change', async () => {
   try {
     await rpc('switch_provider', { provider: providerSelect.value });
     await refreshProviderInfo();
   } catch (_) {}
 });
-
+modelSelector.addEventListener('change', async () => {
+  const val = modelSelector.value;
+  if (!val) return;
+  const [provider, ...modelParts] = val.split(':');
+  try {
+    await rpc('switch_provider', { provider, model: modelParts.join(':') });
+    await refreshProviderInfo();
+  } catch (_) {}
+});
 newSessionBtn.addEventListener('click', async () => {
   try {
     await rpc('create_session', { label: `session-${Date.now()}` });
@@ -100,12 +226,107 @@ newSessionBtn.addEventListener('click', async () => {
   } catch (_) {}
 });
 
-// register chat as default view
-registerView('chat', () => {});
+// effort toggle
+effortToggle.querySelectorAll('.effort-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    effortToggle.querySelectorAll('.effort-opt').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    currentEffort = opt.dataset.effort;
+  });
+});
 
-// sidebar nav click handler
+// thread menu
+threadMenuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  threadMenu.hidden = !threadMenu.hidden;
+});
+document.addEventListener('click', () => { threadMenu.hidden = true; accountMenu.hidden = true; });
+threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
+  item.addEventListener('click', async () => {
+    threadMenu.hidden = true;
+    if (!activeSessionId) return;
+    if (item.dataset.action === 'rename') {
+      const name = prompt('Rename session:', threadTitle.textContent);
+      if (name) {
+        try {
+          await rpc('rename_session', { sessionId: activeSessionId, label: name });
+          threadTitle.textContent = name;
+          await refreshSessions();
+        } catch (_) {}
+      }
+    } else if (item.dataset.action === 'delete') {
+      try {
+        await rpc('destroy_session', { sessionId: activeSessionId });
+        activeSessionId = null;
+        threadTitle.textContent = 'New thread';
+        await refreshSessions();
+      } catch (_) {}
+    }
+  });
+});
+
+// account menu
+accountBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  accountMenu.hidden = !accountMenu.hidden;
+  if (!accountMenu.hidden) {
+    try {
+      const keys = await rpc('get_api_key_status', {});
+      const el = document.getElementById('api-key-status');
+      if (keys && typeof keys === 'object') {
+        el.innerHTML = Object.entries(keys).map(([k, v]) =>
+          `<div>${v.isSet ? '\u2705' : '\u274c'} ${k}</div>`
+        ).join('');
+      }
+    } catch (_) {}
+    try {
+      const cost = await rpc('get_session_cost', {});
+      document.getElementById('session-cost-display').textContent =
+        cost && cost.totalCost ? `$${cost.totalCost.toFixed(4)}` : '$0.00';
+    } catch (_) {}
+  }
+});
+accountMenu.querySelector('[data-action="settings"]').addEventListener('click', () => {
+  accountMenu.hidden = true;
+  showView('settings');
+});
+
+// attach button (file dialog)
+document.getElementById('attach-btn').addEventListener('click', async () => {
+  try {
+    const dialog = window.__TAURI__?.dialog;
+    if (dialog) {
+      const files = await dialog.open({ multiple: true });
+      if (files) {
+        const paths = Array.isArray(files) ? files : [files];
+        chatInput.value += paths.map(f => `[file: ${f}]`).join(' ');
+        chatInput.focus();
+      }
+    }
+  } catch (_) {}
+});
+
+// register views
+registerView('chat', () => {});
+registerView('settings', initSettings);
+registerView('skills', initSkills);
+registerView('automations', () => {
+  import('./skills.js').then(m => m.initAutomations());
+});
+registerView('history', initHistory);
+
+// sidebar nav
 document.querySelectorAll('.sidebar-nav-item').forEach(el => {
   el.addEventListener('click', () => showView(el.dataset.nav));
+});
+settingsBack.addEventListener('click', () => showView('chat'));
+
+// status polling
+setInterval(refreshStatusBar, 10000);
+
+// auto-save on unload
+window.addEventListener('beforeunload', () => {
+  if (initialized) rpc('save_session', {}).catch(() => {});
 });
 
 // auto-init
