@@ -527,6 +527,102 @@ const buildEnvironmentBriefPlan = (
   };
 };
 
+const buildRoutePlan = (
+  params: Readonly<Record<string, unknown>>,
+): QueryPlan => {
+  const routeType = (typeof params["routeType"] === "string" ? params["routeType"] : "pt") as "walk" | "drive" | "pt" | "cycle";
+  const startLat = typeof params["startLat"] === "number" ? params["startLat"] : undefined;
+  const startLng = typeof params["startLng"] === "number" ? params["startLng"] : undefined;
+  const endLat = typeof params["endLat"] === "number" ? params["endLat"] : undefined;
+  const endLng = typeof params["endLng"] === "number" ? params["endLng"] : undefined;
+  const originPostalCode =
+    typeof params["originPostalCode"] === "string" ? params["originPostalCode"] : undefined;
+  const destinationPostalCode =
+    typeof params["destinationPostalCode"] === "string" ? params["destinationPostalCode"] : undefined;
+
+  if (
+    startLat !== undefined
+    && startLng !== undefined
+    && endLat !== undefined
+    && endLng !== undefined
+  ) {
+    return {
+      supported: true,
+      workflow: "route_plan",
+      intent: "geospatial",
+      confidence: 0.9,
+      apis: ["onemap"],
+      steps: [
+        {
+          id: "route_plan",
+          purpose: "Build directions between the supplied coordinate pairs.",
+          tool: "sg_onemap_route",
+          input: {
+            startLat,
+            startLng,
+            endLat,
+            endLng,
+            routeType,
+          },
+        },
+      ],
+    };
+  }
+
+  if (originPostalCode !== undefined && destinationPostalCode !== undefined) {
+    return {
+      supported: true,
+      workflow: "route_plan",
+      intent: "geospatial",
+      confidence: 0.88,
+      apis: ["onemap"],
+      steps: [
+        {
+          id: "route_origin_geocode",
+          purpose: "Resolve the origin postal code to coordinates.",
+          tool: "sg_onemap_geocode",
+          input: { searchVal: originPostalCode },
+        },
+        {
+          id: "route_destination_geocode",
+          purpose: "Resolve the destination postal code to coordinates.",
+          tool: "sg_onemap_geocode",
+          input: { searchVal: destinationPostalCode },
+        },
+        {
+          id: "route_plan",
+          purpose: "Build directions between the resolved origin and destination.",
+          tool: "sg_onemap_route",
+          input: {
+            startLat: "<from route_origin_geocode.records[0].lat>",
+            startLng: "<from route_origin_geocode.records[0].lng>",
+            endLat: "<from route_destination_geocode.records[0].lat>",
+            endLng: "<from route_destination_geocode.records[0].lng>",
+            routeType,
+          },
+          dependsOn: ["route_origin_geocode", "route_destination_geocode"],
+          resolveInput: (context) => {
+            const origin = getLatLngFromGeocode(context, "route_origin_geocode");
+            const destination = getLatLngFromGeocode(context, "route_destination_geocode");
+            return {
+              startLat: origin.lat,
+              startLng: origin.lng,
+              endLat: destination.lat,
+              endLng: destination.lng,
+              routeType,
+            };
+          },
+        },
+      ],
+    };
+  }
+
+  return buildUnsupportedPlan(
+    "sg_query needs either two coordinate pairs or two Singapore postal codes to plan a route.",
+    "Ask for directions between two postal codes like 018989 and 048616, or call sg_onemap_route directly with startLat/startLng/endLat/endLng.",
+  );
+};
+
 const buildDirectToolPlan = (query: string): QueryPlan => {
   const intent = classifyIntent(query);
   if (intent.tool === undefined) {
@@ -549,10 +645,53 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     );
   }
 
-  if (resolved.tool === "sg_ura_planning_area" && resolved.input["planningArea"] === undefined) {
+  if (
+    resolved.tool === "sg_onemap_reverse_geocode"
+    && (resolved.input["lat"] === undefined || resolved.input["lng"] === undefined)
+  ) {
     return buildUnsupportedPlan(
-      "sg_query needs a planning area name for a direct URA planning-area lookup.",
-      "Call sg_ura_planning_area directly with planningArea, or provide lat and lng yourself.",
+      "sg_query needs one latitude and longitude pair for reverse geocoding.",
+      "Ask for the address at coordinates like 1.2840, 103.8510, or call sg_onemap_reverse_geocode directly.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_onemap_route"
+    && (
+      resolved.input["startLat"] === undefined
+      || resolved.input["startLng"] === undefined
+      || resolved.input["endLat"] === undefined
+      || resolved.input["endLng"] === undefined
+    )
+  ) {
+    return buildUnsupportedPlan(
+      "sg_query needs both a start and end location before it can call sg_onemap_route directly.",
+      "Provide two coordinate pairs, or ask for directions between two Singapore postal codes so sg_query can geocode them first.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_onemap_convert_coords"
+    && (
+      resolved.input["from"] === undefined
+      || resolved.input["x"] === undefined
+      || resolved.input["y"] === undefined
+    )
+  ) {
+    return buildUnsupportedPlan(
+      "sg_query needs a source coordinate system plus one coordinate pair for conversion.",
+      "Ask to convert SVY21 28001 38744 to WGS84, or convert WGS84 1.2840, 103.8510 to SVY21.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_ura_planning_area"
+    && resolved.input["planningArea"] === undefined
+    && (resolved.input["lat"] === undefined || resolved.input["lng"] === undefined)
+  ) {
+    return buildUnsupportedPlan(
+      "sg_query needs a planning area name or coordinates for a URA zoning lookup.",
+      "Call sg_ura_planning_area directly with planningArea, or provide latitude and longitude.",
     );
   }
 
@@ -595,6 +734,28 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     return buildUnsupportedPlan(
       "sg_query needs a data.gov.sg datasetId like d_8b84c4ee58e3cfc0ece0d773c8ca6abc to read bounded rows.",
       "Call sg_datagov_rows directly with datasetId or resourceId, or inspect sg_datagov_resources first.",
+    );
+  }
+
+  if (resolved.tool === "sg_singstat_table" && resolved.input["tableId"] === undefined) {
+    return buildUnsupportedPlan(
+      "sg_query needs a SingStat table ID like M015631 before it can read a table directly.",
+      "Ask sg_singstat_search for matching datasets first, then call sg_singstat_table with the tableId you want.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_singstat_timeseries"
+    && (
+      resolved.input["tableId"] === undefined
+      || resolved.input["indicator"] === undefined
+      || resolved.input["startYear"] === undefined
+      || resolved.input["endYear"] === undefined
+    )
+  ) {
+    return buildUnsupportedPlan(
+      "sg_query needs tableId, indicator, startYear, and endYear for SingStat time-series reads.",
+      "Ask for a quoted indicator and a year range, for example: time series for table M015631 indicator \"GDP at current market prices\" from 2020 to 2025.",
     );
   }
 
@@ -646,6 +807,8 @@ export const planQuery = (query: string): QueryPlan => {
       return buildTransportBriefPlan(intent.extractedParams);
     case "environment_brief":
       return buildEnvironmentBriefPlan(intent.extractedParams);
+    case "route_plan":
+      return buildRoutePlan(intent.extractedParams);
     default:
       return buildDirectToolPlan(query);
   }
