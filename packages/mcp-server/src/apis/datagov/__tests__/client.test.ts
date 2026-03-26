@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +31,15 @@ vi.mock("../../../middleware/cache-middleware.js", () => ({
   buildCacheKey: vi.fn((...args: unknown[]) => args.join(":")),
 }));
 
-import { listCollections, queryDatastoreExactMatches, searchDatasets } from "../client.js";
+import {
+  getDatasetMetadata,
+  getDatasetResources,
+  getDatasetRows,
+  listCollections,
+  queryDatastoreExactMatches,
+  resetLocalIndexState,
+  searchDatasets,
+} from "../client.js";
 
 describe("data.gov.sg client", () => {
   let nowSpy: { mockRestore: () => void };
@@ -39,6 +47,8 @@ describe("data.gov.sg client", () => {
 
   beforeEach(() => {
     mockFetch.mockReset();
+    resetLocalIndexState();
+    rmSync(join(testHomeDir, ".sg-apis"), { recursive: true, force: true });
     nowSeed += 8 * 24 * 60 * 60 * 1000;
     nowSpy = vi.spyOn(Date, "now").mockReturnValue(nowSeed);
   });
@@ -121,6 +131,190 @@ describe("data.gov.sg client", () => {
     expect(collections.length).toBeGreaterThan(0);
     expect(collections[0]).toHaveProperty("id");
     expect(collections[0]).toHaveProperty("name");
+  });
+
+  it("normalizes dataset metadata and resources from the v2 metadata contract", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+          name: "HDB Resale Flat Prices",
+          description: "Resale flat prices based on registration date by town.",
+          format: "CSV",
+          managedBy: "Housing & Development Board",
+          lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+          createdAt: "2020-01-01T00:00:00+08:00",
+          collectionIds: ["housing"],
+          contactEmails: ["data@hdb.gov.sg"],
+          datasetSize: 2048,
+          columnMetadata: {
+            order: ["month", "town", "resale_price"],
+            map: {
+              month: "month",
+              town: "town",
+              resale_price: "resale_price",
+            },
+            metaMapping: {
+              month: {
+                name: "month",
+                columnTitle: "Month",
+                dataType: "text",
+                index: "1",
+                isCategorical: false,
+              },
+              town: {
+                name: "town",
+                columnTitle: "Town",
+                dataType: "text",
+                index: "2",
+                isCategorical: true,
+              },
+              resale_price: {
+                name: "resale_price",
+                columnTitle: "Resale Price",
+                dataType: "numeric",
+                index: "3",
+                isCategorical: false,
+              },
+            },
+          },
+        },
+        errorMsg: "",
+      }),
+    });
+
+    const metadata = await getDatasetMetadata("d_8b84c4ee58e3cfc0ece0d773c8ca6abc");
+    expect(metadata).toMatchObject({
+      datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      name: "HDB Resale Flat Prices",
+      managedByAgencyName: "Housing & Development Board",
+      collectionIds: ["housing"],
+    });
+    expect(metadata?.resources[0]).toMatchObject({
+      resourceId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      machineReadable: true,
+    });
+    expect(metadata?.resources[0]?.columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "town", dataType: "text", isCategorical: true }),
+      ]),
+    );
+  });
+
+  it("returns dataset resources as the current machine-readable resource shape", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+          name: "HDB Resale Flat Prices",
+          format: "CSV",
+          managedByAgencyName: "HDB",
+          lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+          createdAt: "2020-01-01T00:00:00+08:00",
+          columnMetadata: {
+            order: ["month"],
+            map: { month: "month" },
+            metaMapping: {
+              month: {
+                name: "month",
+                columnTitle: "Month",
+                dataType: "text",
+                index: "1",
+                isCategorical: false,
+              },
+            },
+          },
+        },
+        errorMsg: "",
+      }),
+    });
+
+    const resources = await getDatasetResources("d_8b84c4ee58e3cfc0ece0d773c8ca6abc");
+    expect(resources?.resources).toHaveLength(1);
+    expect(resources?.resources[0]?.columns[0]).toMatchObject({
+      key: "month",
+      title: "Month",
+    });
+  });
+
+  it("reads bounded datastore rows with truthful pagination metadata", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+            name: "HDB Resale Flat Prices",
+            format: "CSV",
+            managedByAgencyName: "HDB",
+            lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+            createdAt: "2020-01-01T00:00:00+08:00",
+            columnMetadata: {
+              order: ["month", "town"],
+              map: { month: "month", town: "town" },
+              metaMapping: {
+                month: {
+                  name: "month",
+                  columnTitle: "Month",
+                  dataType: "text",
+                  index: "1",
+                  isCategorical: false,
+                },
+                town: {
+                  name: "town",
+                  columnTitle: "Town",
+                  dataType: "text",
+                  index: "2",
+                  isCategorical: true,
+                },
+              },
+            },
+          },
+          errorMsg: "",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          result: {
+            fields: [
+              { id: "month", type: "text" },
+              { id: "town", type: "text" },
+            ],
+            total: 42,
+            limit: 5,
+            offset: 10,
+            records: [
+              { month: "2026-02", town: "BEDOK" },
+              { month: "2026-01", town: "BEDOK" },
+            ],
+          },
+        }),
+      });
+
+    const rows = await getDatasetRows({
+      datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      limit: 5,
+      offset: 10,
+      sort: "month desc",
+      filters: { town: "BEDOK" },
+    });
+
+    expect(rows).toMatchObject({
+      datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      datasetName: "HDB Resale Flat Prices",
+      resourceId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+      total: 42,
+      limit: 5,
+      offset: 10,
+    });
+    expect(rows.records).toHaveLength(2);
   });
 
   it("indexes datasets across multiple pages before searching", async () => {
