@@ -815,7 +815,7 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
         buf.set_string(bar_x, bar_y, &bar, Style::default().fg(theme::accent(mode)));
         buf.set_string(
             bar_x + bar_width, bar_y,
-            &format!(" {:.0}%", visual_pct),
+            format!(" {:.0}%", visual_pct),
             Style::default().fg(theme::muted_fg(mode)),
         );
         // show dismiss hint top-right after animation completes

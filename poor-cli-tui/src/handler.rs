@@ -132,8 +132,7 @@ pub(super) fn handle_server_message(
             app.push_message(ChatMessage::assistant(content));
         }
         ServerMsg::SystemMessage { content } => {
-            if content.starts_with("__PLAN__:") {
-                let rest = &content["__PLAN__:".len()..];
+            if let Some(rest) = content.strip_prefix("__PLAN__:") {
                 if let Some(colon_pos) = rest.find(':') {
                     let request = rest[..colon_pos].to_string();
                     let steps: Vec<String> = rest[colon_pos + 1..]

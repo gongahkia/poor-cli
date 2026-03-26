@@ -391,7 +391,7 @@ pub(super) fn handle_session_commands(
     }
 
     if lowered.starts_with("/search") {
-        let term = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let term = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if term.is_empty() {
             show_command_info_popup(app, raw, "Usage: /search <term>".to_string());
             return Some(false);

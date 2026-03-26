@@ -14,7 +14,7 @@ pub struct RemoteBootstrap {
 pub fn decode_invite_code(input: &str) -> Result<RemoteBootstrap, String> {
     let trimmed = input.trim();
     let mut padded = trimmed.to_string();
-    while padded.len() % 4 != 0 {
+    while !padded.len().is_multiple_of(4) {
         padded.push('=');
     }
     let decoded = base64_url_decode(&padded)
@@ -87,7 +87,7 @@ fn base64_url_decode(input: &str) -> Result<Vec<u8>, ()> {
     let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
     for chunk in bytes.chunks(4) {
         let vals: Vec<u8> = chunk.iter().map(|&b| lookup[b as usize]).collect();
-        if vals.iter().any(|&v| v == 255) {
+        if vals.contains(&255) {
             return Err(());
         }
         if vals.len() >= 2 {

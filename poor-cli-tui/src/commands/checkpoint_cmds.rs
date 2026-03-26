@@ -73,7 +73,7 @@ pub(super) fn handle_checkpoint_commands(
     }
 
     if lowered.starts_with("/checkpoint-preview ") {
-        let cp_id = raw.splitn(2, ' ').nth(1).unwrap_or("").trim();
+        let cp_id = raw.split_once(' ').map(|x| x.1).unwrap_or("").trim();
         if cp_id.is_empty() {
             show_command_info_popup(app, raw, "Usage: /checkpoint-preview <id>".to_string());
             return Some(false);
@@ -109,7 +109,7 @@ pub(super) fn handle_checkpoint_commands(
     }
 
     if lowered == "/checkpoint" || lowered.starts_with("/checkpoint ") || lowered == "/save" || lowered.starts_with("/save ") {
-        let name_arg = raw.splitn(2, ' ').nth(1).unwrap_or("").trim();
+        let name_arg = raw.split_once(' ').map(|x| x.1).unwrap_or("").trim();
         let name_arg = name_arg.trim_matches('"').trim_matches('\'');
         let description = if name_arg.is_empty() {
             if lowered.starts_with("/save") { "Quick save".to_string() } else { "Manual checkpoint".to_string() }

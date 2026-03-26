@@ -184,7 +184,7 @@ Submitting any slash command will cancel capture."
     }
 
     if lowered.starts_with("/use ") {
-        let name = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let name = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if name.is_empty() {
             show_command_info_popup(app, raw, "Usage: /use <name>".to_string());
             return Some(false);
@@ -230,7 +230,7 @@ Submitting any slash command will cancel capture."
     }
 
     if lowered.starts_with("/image ") {
-        let image_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let image_path = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if image_path.is_empty() {
             show_command_info_popup(app, raw, "Usage: /image <path>".to_string());
             return Some(false);
@@ -266,11 +266,9 @@ Submitting any slash command will cancel capture."
     if lowered == "/economy" || lowered.starts_with("/economy ") {
         let arg = lowered.strip_prefix("/economy").unwrap_or("").trim();
         if arg.is_empty() {
-            let presets = vec![
-                ("frugal", "minimize token usage"),
+            let presets = [("frugal", "minimize token usage"),
                 ("balanced", "balance cost and quality"),
-                ("quality", "maximize response quality"),
-            ];
+                ("quality", "maximize response quality")];
             let items: Vec<ListSelectorItem> = presets.iter().map(|(name, desc)| {
                 ListSelectorItem { label: format!("{name}: {desc}"), value: name.to_string() }
             }).collect();

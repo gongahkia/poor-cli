@@ -13,7 +13,7 @@ pub(super) fn handle_context_commands(
     _qa_watch_state: &mut QaWatchState,
 ) -> Option<bool> {
     if lowered.starts_with("/add ") {
-        let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let spec = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if spec.is_empty() {
             show_command_info_popup(app, raw, "Usage: /add <path>".to_string());
             return Some(false);
@@ -69,7 +69,7 @@ pub(super) fn handle_context_commands(
     }
 
     if lowered.starts_with("/drop ") {
-        let spec = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let spec = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if spec.is_empty() {
             show_command_info_popup(app, raw, "Usage: /drop <path>".to_string());
             return Some(false);
@@ -357,9 +357,7 @@ pub(super) fn handle_context_commands(
     }
 
     if lowered == "/workspace-map" || lowered.starts_with("/workspace-map ") {
-        let root_raw = raw
-            .splitn(2, ' ')
-            .nth(1)
+        let root_raw = raw.split_once(' ').map(|x| x.1)
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let root = root_raw
@@ -415,9 +413,7 @@ pub(super) fn handle_context_commands(
     }
 
     if lowered == "/bootstrap" || lowered.starts_with("/bootstrap ") {
-        let root_raw = raw
-            .splitn(2, ' ')
-            .nth(1)
+        let root_raw = raw.split_once(' ').map(|x| x.1)
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let root = root_raw
@@ -434,11 +430,9 @@ pub(super) fn handle_context_commands(
             .map(|value| value.trim().to_ascii_lowercase())
             .unwrap_or_else(|| "status".to_string());
         if selected == "status" {
-            let profiles = vec![
-                ("speed", "smaller context, terse output, faster loop"),
+            let profiles = [("speed", "smaller context, terse output, faster loop"),
                 ("safe", "balanced defaults, review-oriented safety"),
-                ("deep-review", "larger context, richer analysis depth"),
-            ];
+                ("deep-review", "larger context, richer analysis depth")];
             let items: Vec<ListSelectorItem> = profiles.iter().map(|(name, desc)| {
                 let active = if *name == app.execution_profile.as_str() { " (active)" } else { "" };
                 ListSelectorItem {

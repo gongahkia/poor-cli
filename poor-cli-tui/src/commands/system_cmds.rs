@@ -16,7 +16,7 @@ pub(super) fn handle_system_commands(
     qa_watch_state: &mut QaWatchState,
 ) -> Option<bool> {
     if lowered.starts_with("/run ") {
-        let command = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let command = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if command.is_empty() {
             show_command_info_popup(app, raw, "Usage: /run <command>".to_string());
             return Some(false);
@@ -40,7 +40,7 @@ pub(super) fn handle_system_commands(
     }
 
     if lowered.starts_with("/read ") {
-        let file_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let file_path = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if file_path.is_empty() {
             show_command_info_popup(app, raw, "Usage: /read <file>".to_string());
             return Some(false);
@@ -69,7 +69,7 @@ pub(super) fn handle_system_commands(
     }
 
     if lowered == "/ls" || lowered.starts_with("/ls ") {
-        let path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or(".");
+        let path = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or(".");
         let command = format!("ls -la {}", shell_escape_single_quotes(path));
         match rpc_execute_command_blocking(rpc_cmd_tx, &command) {
             Ok(output) => show_command_info_popup(
@@ -216,11 +216,9 @@ pub(super) fn handle_system_commands(
                     .get("permissionMode")
                     .and_then(|v| v.as_str())
                     .unwrap_or("prompt");
-                let modes = vec![
-                    ("prompt", "ask before each action"),
+                let modes = [("prompt", "ask before each action"),
                     ("auto-safe", "auto-approve safe actions"),
-                    ("danger-full-access", "approve all actions"),
-                ];
+                    ("danger-full-access", "approve all actions")];
                 let items: Vec<ListSelectorItem> = modes.iter().map(|(name, desc)| {
                     let active = if *name == current { " (active)" } else { "" };
                     ListSelectorItem { label: format!("{name}{active}: {desc}"), value: name.to_string() }

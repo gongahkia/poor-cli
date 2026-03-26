@@ -137,7 +137,7 @@ Version: v{}",
     }
 
     if lowered.starts_with("/toggle ") {
-        let key = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let key = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if key.is_empty() {
             show_command_info_popup(app, raw, "Usage: /toggle <key>".to_string());
             return Some(false);
@@ -193,7 +193,7 @@ Version: v{}",
     }
 
     if lowered == "/theme" {
-        let themes = vec![("dark", "Dark theme"), ("light", "Light theme")];
+        let themes = [("dark", "Dark theme"), ("light", "Light theme")];
         let items: Vec<ListSelectorItem> = themes.iter().map(|(name, desc)| {
             let active = if *name == app.theme_mode.as_str() { " (active)" } else { "" };
             ListSelectorItem { label: format!("{name}{active}: {desc}"), value: name.to_string() }

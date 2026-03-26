@@ -9,11 +9,10 @@ use super::{
 pub(super) fn handle_key_normal(app: &mut App, key: KeyEvent) -> InputAction {
     // While waiting, Esc still cancels the active request, but normal input remains editable so
     // plain-text prompts can be queued for auto-send once the current request finishes.
-    if app.waiting {
-        if key.code == KeyCode::Esc {
+    if app.waiting
+        && key.code == KeyCode::Esc {
             return InputAction::Cancel;
         }
-    }
 
     if key.code == KeyCode::F(2) {
         return InputAction::Submit("/provider switch".to_string());

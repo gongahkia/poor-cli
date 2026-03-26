@@ -757,7 +757,7 @@ pub(super) fn handle_automation_commands(
             }
 
             let stop = Arc::new(AtomicBool::new(false));
-            let watch_tx = watch_msg_sender(&tx);
+            let watch_tx = watch_msg_sender(tx);
             let handle = watcher::spawn_qa_watch_worker(
                 directory.clone(),
                 command.clone(),
@@ -783,7 +783,7 @@ pub(super) fn handle_automation_commands(
     }
 
     if lowered.starts_with("/watch ") {
-        let directory = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let directory = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if directory.is_empty() {
             show_command_info_popup(app, raw, "Usage: /watch <dir>".to_string());
             return Some(false);
@@ -804,7 +804,7 @@ pub(super) fn handle_automation_commands(
         }
 
         let stop = Arc::new(AtomicBool::new(false));
-        let watch_tx = watch_msg_sender(&tx);
+        let watch_tx = watch_msg_sender(tx);
         let handle = watcher::spawn_watch_worker(
             directory.to_string(),
             "Explain the changes in these files".to_string(),
@@ -853,7 +853,7 @@ pub(super) fn handle_automation_commands(
     if lowered.starts_with("/plan ") {
         const PLAN_REPLY_TIMEOUT_SECS: u64 = 130;
 
-        let request = raw.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string();
+        let request = raw.split_once(' ').map(|x| x.1).unwrap_or("").trim().to_string();
         if request.is_empty() {
             show_command_info_popup(app, raw, "Usage: /plan <task description>".to_string());
             return Some(false);

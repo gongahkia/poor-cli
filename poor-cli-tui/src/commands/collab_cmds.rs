@@ -590,7 +590,7 @@ pub(super) fn handle_collab_commands(
             }
             return Some(false);
         }
-        let has_lobby = args.iter().any(|a| *a == "--lobby");
+        let has_lobby = args.contains(&"--lobby");
         if args.len() == 2 && has_lobby {
             match rpc_pair_start_blocking(rpc_cmd_tx, true) {
                 Ok(payload) => {
@@ -714,7 +714,7 @@ pub(super) fn handle_collab_commands(
     }
 
     if lowered.starts_with("/suggest ") {
-        let text = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let text = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if text.is_empty() {
             show_command_info_popup(app, raw, "Usage: /suggest <text>".to_string());
             return Some(false);

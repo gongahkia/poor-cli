@@ -13,9 +13,7 @@ pub(super) fn handle_review_commands(
     _qa_watch_state: &mut QaWatchState,
 ) -> Option<bool> {
     if lowered.starts_with("/review") {
-        let maybe_path = raw
-            .splitn(2, ' ')
-            .nth(1)
+        let maybe_path = raw.split_once(' ').map(|x| x.1)
             .map(str::trim)
             .filter(|s| !s.is_empty());
 
@@ -65,7 +63,7 @@ pub(super) fn handle_review_commands(
     }
 
     if lowered.starts_with("/test ") {
-        let file_path = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let file_path = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         if file_path.is_empty() {
             show_command_info_popup(app, raw, "Usage: /test <file>".to_string());
             return Some(false);
@@ -199,7 +197,7 @@ pub(super) fn handle_review_commands(
     }
 
     if lowered == "/explain-diff" || lowered.starts_with("/explain-diff ") {
-        let target = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let target = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         let command = if target.is_empty() {
             "git diff".to_string()
         } else {
@@ -231,7 +229,7 @@ pub(super) fn handle_review_commands(
     }
 
     if lowered == "/fix-failures" || lowered.starts_with("/fix-failures ") {
-        let command_hint = raw.splitn(2, ' ').nth(1).map(str::trim).unwrap_or("");
+        let command_hint = raw.split_once(' ').map(|x| x.1).map(str::trim).unwrap_or("");
         let failure_output = if !command_hint.is_empty() {
             match rpc_execute_command_with_timeout_blocking(
                 rpc_cmd_tx,
