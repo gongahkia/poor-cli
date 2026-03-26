@@ -13,6 +13,8 @@ from enum import Enum
 from poor_cli.exceptions import ConfigurationError, setup_logger
 from poor_cli.provider_catalog import all_provider_entries, default_model_for_provider
 from poor_cli.economy import EconomyConfig, ECONOMY_PRESETS, apply_economy_preset
+from poor_cli.retry import RetryConfig
+from poor_cli.circuit_breaker import CircuitBreakerConfig
 
 logger = setup_logger(__name__)
 
@@ -333,6 +335,8 @@ class Config:
     output_truncation: OutputTruncationConfig = field(default_factory=OutputTruncationConfig)
     repo_index: RepoIndexConfig = field(default_factory=RepoIndexConfig)
     economy: EconomyConfig = field(default_factory=EconomyConfig)
+    retry: RetryConfig = field(default_factory=RetryConfig)
+    circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
 
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
@@ -360,6 +364,8 @@ class Config:
             "output_truncation": asdict(self.output_truncation),
             "repo_index": asdict(self.repo_index),
             "economy": asdict(self.economy),
+            "retry": asdict(self.retry),
+            "circuit_breaker": asdict(self.circuit_breaker),
             "mcp_servers": self.mcp_servers,
         }
         return config_dict
@@ -387,6 +393,8 @@ class Config:
             output_truncation=OutputTruncationConfig(**data.get("output_truncation", {})),
             repo_index=RepoIndexConfig(**data.get("repo_index", {})),
             economy=EconomyConfig(**data.get("economy", {})),
+            retry=RetryConfig(**{k: v for k, v in data.get("retry", {}).items() if k != "retryable_exceptions"}),
+            circuit_breaker=CircuitBreakerConfig(**data.get("circuit_breaker", {})),
             mcp_servers=data.get("mcp_servers", {}),
         )
 

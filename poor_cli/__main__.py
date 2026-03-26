@@ -44,7 +44,8 @@ def _render_root_help() -> str:
         "Reuse and integration:\n"
         "  poor-cli skills            List, inspect, or run repo/user skills\n"
         "  poor-cli commands          List, inspect, or run repo/user custom commands\n"
-        "  poor-cli server            Run the JSON-RPC server (alias for `poor-cli-server`)\n\n"
+        "  poor-cli server            Run the JSON-RPC server (alias for `poor-cli-server`)\n"
+        "  poor-cli telegram          Run the Telegram bot frontend\n\n"
         "Examples:\n"
         "  poor-cli\n"
         "  poor-cli exec --prompt \"Summarize this repository\" --plan-only\n"
@@ -1345,6 +1346,41 @@ def _run_github_task_mode(argv: Sequence[str]) -> int:
     raise SystemExit(f"Unknown github-task subcommand: {args.subcommand}")
 
 
+def _run_telegram_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="poor-cli telegram")
+    parser.add_argument("--token", help="Telegram bot token (or set POOR_CLI_TELEGRAM_TOKEN)")
+    parser.add_argument("--allowed-users", help="Comma-separated Telegram user IDs", default="")
+    parser.add_argument("--sandbox-preset", default="review-only")
+    parser.add_argument("--max-sessions", type=int, default=5)
+    parser.add_argument("--edit-interval", type=float, default=1.5)
+    args = parser.parse_args(argv)
+    token = args.token or os.environ.get("POOR_CLI_TELEGRAM_TOKEN", "")
+    if not token:
+        print("error: --token or POOR_CLI_TELEGRAM_TOKEN required", file=sys.stderr)
+        return 1
+    allowed = set()
+    if args.allowed_users:
+        allowed = {int(uid.strip()) for uid in args.allowed_users.split(",") if uid.strip()}
+    from .telegram_bot import PoorCLITelegramBot
+    bot = PoorCLITelegramBot(
+        token=token,
+        allowed_users=allowed or None,
+        sandbox_preset=args.sandbox_preset,
+        max_sessions=args.max_sessions,
+        edit_interval=args.edit_interval,
+    )
+    async def _run() -> None:
+        await bot.start()
+        try:
+            await asyncio.Event().wait() # run forever
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        finally:
+            await bot.stop()
+    asyncio.run(_run())
+    return 0
+
+
 def _main() -> None:
     argv = sys.argv[1:]
     if not argv:
@@ -1369,6 +1405,8 @@ def _main() -> None:
         raise SystemExit(_run_github_task_mode(argv[1:]))
     if argv and argv[0] == "server":
         raise SystemExit(_run_server_mode(argv[1:]))
+    if argv and argv[0] == "telegram":
+        raise SystemExit(_run_telegram_mode(argv[1:]))
     if argv and argv[0] == "install-info":
         raise SystemExit(run_install_info_mode(argv[1:]))
     if argv and argv[0] == "tui":

@@ -20,6 +20,7 @@ except ImportError:
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
+from ..retry import RetryConfig, with_retry
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -132,43 +133,27 @@ class AnthropicProvider(BaseProvider):
         """Send message to Anthropic"""
         self._append_message(message)
 
-        for attempt in range(self.max_retries):
+        async def _do_send() -> ProviderResponse:
             try:
                 request_params = self._build_request_params()
-
-                # Send request
                 response = await self.client.messages.create(**request_params)
-
-                # Parse response
                 return self._parse_response(response)
-
             except AnthropicRateLimitError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Rate limit, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APIRateLimitError("Anthropic rate limit exceeded", str(e))
-
             except AnthropicTimeoutError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Timeout, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APITimeoutError("Anthropic request timeout", str(e))
-
             except AnthropicConnectionError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Connection error, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APIConnectionError("Anthropic connection error", str(e))
-
+            except (APIError, ConfigurationError):
+                raise
             except Exception as e:
-                logger.error(f"Anthropic error: {e}")
                 raise APIError(f"Anthropic API error: {e}", str(e))
+
+        return await with_retry(
+            _do_send,
+            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+            retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
+        )
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from Anthropic"""

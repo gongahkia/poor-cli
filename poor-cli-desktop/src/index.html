@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>poor-cli</title>
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h2>poor-cli</h2>
+        <span class="version">v5.0.0</span>
+      </div>
+      <div class="sidebar-section">
+        <h3>Sessions</h3>
+        <div id="session-list"></div>
+        <button id="new-session-btn" class="btn btn-sm">+ New Session</button>
+      </div>
+      <div class="sidebar-section">
+        <h3>Provider</h3>
+        <div id="provider-info">Not connected</div>
+        <select id="provider-select">
+          <option value="gemini">Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="ollama">Ollama</option>
+        </select>
+      </div>
+    </div>
+    <div class="main-panel">
+      <div class="chat-container" id="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="welcome-message">
+            <h1>poor-cli desktop</h1>
+            <p>Provider-agnostic AI coding assistant</p>
+            <p class="hint">Type a message below to start coding</p>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <textarea id="chat-input" placeholder="Send a message..." rows="3"></textarea>
+          <button id="send-btn" class="btn btn-primary">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="lib/app.js"></script>
+</body>
+</html>

@@ -76,8 +76,10 @@ class PoorCLIServer:
 
     def __init__(self):
         """Initialize the server."""
-        self.core = PoorCLICore()
-        self.core.permission_callback = self._server_permission_callback
+        from ..session_manager import SessionManager
+        self._session_manager = SessionManager()
+        self._session_manager.create_session(label="default", make_default=True)
+        self._session_manager.set_permission_callback(self._server_permission_callback)
         self.handlers: Dict[str, Callable] = {}
         self.initialized = False
         self.permission_mode: str = "prompt"
@@ -112,6 +114,22 @@ class PoorCLIServer:
         self._sandbox_preset: str = "workspace-write"
 
         self._register_handlers()
+
+    @property
+    def core(self) -> PoorCLICore:
+        """backward-compat: returns the default session's core."""
+        return self._session_manager.get_session().core
+
+    @core.setter
+    def core(self, value: PoorCLICore) -> None:
+        """backward-compat setter — replaces core in default session."""
+        session = self._session_manager.get_session()
+        session.core = value
+
+    def _resolve_core(self, params: Dict[str, Any]) -> PoorCLICore:
+        """resolve the PoorCLICore for a request, supporting sessionId."""
+        sid = params.get("sessionId")
+        return self._session_manager.get_session(sid).core
 
     @staticmethod
     def _chat_request_id(params: Dict[str, Any]) -> str:
@@ -694,6 +712,11 @@ class PoorCLIServer:
             "poor-cli/restoreSession": self.handle_restore_session,
             "poor-cli/getEconomySavings": self.handle_get_economy_savings,
             "poor-cli/setEconomyPreset": self.handle_set_economy_preset,
+            "poor-cli/createSession": self.handle_create_session,
+            "poor-cli/destroySession": self.handle_destroy_session,
+            "poor-cli/switchSession": self.handle_switch_session,
+            "poor-cli/forkSession": self.handle_fork_session,
+            "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
         }
 
     # =========================================================================
@@ -4372,6 +4395,45 @@ class PoorCLIServer:
             }
         except Exception as e:
             return {"restored": False, "error": str(e)}
+
+    # ---- multiplexing session handlers ----
+
+    async def handle_create_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new independent agent session."""
+        label = str(params.get("label", "")).strip()
+        cwd = params.get("workingDirectory")
+        make_default = bool(params.get("makeDefault", False))
+        state = self._session_manager.create_session(label=label, cwd=cwd, make_default=make_default)
+        return {"session": state.to_dict()}
+
+    async def handle_destroy_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Destroy a session and release resources."""
+        sid = str(params.get("sessionId", "")).strip()
+        if not sid:
+            return {"error": "sessionId required"}
+        self._session_manager.destroy_session(sid)
+        return {"destroyed": sid}
+
+    async def handle_switch_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Switch the default active session."""
+        sid = str(params.get("sessionId", "")).strip()
+        if not sid:
+            return {"error": "sessionId required"}
+        state = self._session_manager.switch_default(sid)
+        return {"session": state.to_dict()}
+
+    async def handle_fork_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Fork a new session from an existing one (copies config, not history)."""
+        source = str(params.get("sourceSessionId", "")).strip()
+        label = str(params.get("label", "")).strip()
+        if not source:
+            return {"error": "sourceSessionId required"}
+        state = self._session_manager.fork_session(source, label=label)
+        return {"session": state.to_dict()}
+
+    async def handle_list_mux_sessions(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all active multiplexed sessions."""
+        return {"sessions": self._session_manager.list_sessions()}
 
     async def _streaming_permission_callback(
         self,

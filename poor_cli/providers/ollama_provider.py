@@ -17,6 +17,7 @@ except ImportError:
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
+from ..retry import RetryConfig, with_retry
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -135,12 +136,9 @@ class OllamaProvider(BaseProvider):
         """Send message to Ollama"""
         self._append_message(message)
 
-        for attempt in range(self.max_retries):
+        async def _do_send() -> ProviderResponse:
             try:
-                # Prepare request
                 request_data = self._build_chat_request(stream=False)
-
-                # Send request
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         f"{self.base_url}/api/chat",
@@ -150,43 +148,25 @@ class OllamaProvider(BaseProvider):
                         if resp.status != 200:
                             error_text = await resp.text()
                             raise APIError(f"Ollama error {resp.status}: {error_text}", error_text)
-
                         response_data = await resp.json()
-
-                # Parse response
                 return self._parse_response(response_data)
-
             except asyncio.TimeoutError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Timeout, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APITimeoutError("Ollama request timeout", str(e))
-
             except aiohttp.ClientError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Connection error, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APIConnectionError("Ollama connection error", str(e))
-
             except APIError as e:
-                error_text = str(e)
-                if self.tools and self._tools_not_supported(error_text):
-                    logger.warning(
-                        "Model %s does not support tools; retrying without tool payloads",
-                        self.model_name,
-                    )
+                if self.tools and self._tools_not_supported(str(e)):
+                    logger.warning("Model %s does not support tools; disabling", self.model_name)
                     self.tools = None
-                    if attempt < self.max_retries - 1:
-                        continue
                 raise
-
             except Exception as e:
-                logger.debug(f"Ollama request failed: {e}")
                 raise APIError(f"Ollama API error: {e}", str(e))
+
+        return await with_retry(
+            _do_send,
+            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+            retryable=lambda e: isinstance(e, (APITimeoutError, APIConnectionError)),
+        )
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from Ollama"""

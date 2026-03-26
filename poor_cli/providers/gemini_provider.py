@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - protobuf is an indirect dependency.
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
+from ..retry import RetryConfig, with_retry
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -118,36 +119,33 @@ class GeminiProvider(BaseProvider):
 
         normalized_message = self._normalize_message(message)
 
-        for attempt in range(self.max_retries):
+        async def _do_send() -> ProviderResponse:
             try:
                 response = await asyncio.wait_for(
                     self.chat.send_message(normalized_message),
                     timeout=self.timeout,
                 )
                 return self._parse_response(response)
-
             except asyncio.TimeoutError as e:
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2**attempt))
-                    continue
                 raise APITimeoutError("Gemini request timeout", str(e))
-
             except genai_errors.APIError as e:
-                mapped = self._map_api_error(e)
-                if self._is_retryable_error(e) and attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2**attempt))
-                    continue
-                raise mapped
-
+                raise self._map_api_error(e)
+            except (APIError, ConfigurationError):
+                raise
             except Exception as e:
                 raise APIError(f"Failed to send message: {e}", str(e))
+
+        return await with_retry(
+            _do_send,
+            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+            retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
+        )
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response chunks from Gemini."""
         if self.chat is None:
             raise ConfigurationError("Gemini provider not initialized")
 
-        # economy mode output cap
         if self.economy_max_output_tokens > 0 and self._chat_config is not None:
             try:
                 self._chat_config.max_output_tokens = self.economy_max_output_tokens
@@ -155,40 +153,34 @@ class GeminiProvider(BaseProvider):
                 pass
 
         normalized_message = self._normalize_message(message)
+        retry_cfg = RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True)
 
-        for attempt in range(self.max_retries):
+        for attempt in range(retry_cfg.max_retries):
             received_chunk = False
             try:
                 stream = await asyncio.wait_for(
                     self.chat.send_message_stream(normalized_message),
                     timeout=self.timeout,
                 )
-
                 while True:
                     chunk = await asyncio.wait_for(stream.__anext__(), timeout=self.timeout)
                     received_chunk = True
                     yield self._parse_response(chunk, is_chunk=True)
-
             except StopAsyncIteration:
                 return
-
             except asyncio.TimeoutError as e:
-                if not received_chunk and attempt < self.max_retries - 1:
-                    await asyncio.sleep(self.retry_delay * (2**attempt))
+                if not received_chunk and attempt < retry_cfg.max_retries - 1:
+                    delay = retry_cfg.base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
                     continue
                 raise APITimeoutError("Gemini streaming request timeout", str(e))
-
             except genai_errors.APIError as e:
                 mapped = self._map_api_error(e)
-                if (
-                    not received_chunk
-                    and self._is_retryable_error(e)
-                    and attempt < self.max_retries - 1
-                ):
-                    await asyncio.sleep(self.retry_delay * (2**attempt))
+                if not received_chunk and self._is_retryable_error(e) and attempt < retry_cfg.max_retries - 1:
+                    delay = retry_cfg.base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
                     continue
                 raise mapped
-
             except Exception as e:
                 raise APIError(f"Streaming failed: {e}", str(e))
 
@@ -421,14 +413,31 @@ class GeminiProvider(BaseProvider):
             return []
 
     def set_history(self, messages: List[Dict[str, Any]]) -> None:
+        """Restore history by recreating the chat with prior turns as context.
+
+        Gemini's chat object manages history internally so we cannot inject
+        raw messages.  Instead we create a fresh chat seeded with the prior
+        history converted to ``Content`` objects.
+        """
         if self._chat_config is None:
             return
+        history_parts: List[Any] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            parts = msg.get("parts", [])
+            text_parts = []
+            for p in parts:
+                if isinstance(p, str):
+                    text_parts.append(genai_types.Part.from_text(text=p))
+                elif isinstance(p, dict) and "text" in p:
+                    text_parts.append(genai_types.Part.from_text(text=p["text"]))
+            if text_parts:
+                history_parts.append(genai_types.Content(role=role, parts=text_parts))
         self.chat = self.client.chats.create(
             model=self.model_name,
             config=self._chat_config,
+            history=history_parts if history_parts else None,
         )
-        # re-seed by sending pairs; gemini manages history internally
-        # just clear and let the summary be sent as next user message
 
     def get_capabilities(self) -> ProviderCapabilities:
         """Get Gemini capabilities."""

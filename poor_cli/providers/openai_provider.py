@@ -19,6 +19,7 @@ except ImportError:
 from .base import BaseProvider, ProviderCapabilities, ProviderResponse, FunctionCall, UsageMetadata
 from .tool_translator import ToolTranslator, ProviderType
 from ..provider_catalog import default_model_for_provider
+from ..retry import RetryConfig, with_retry
 from ..exceptions import (
     APIError,
     APIRateLimitError,
@@ -98,51 +99,33 @@ class OpenAIProvider(BaseProvider):
         """Send message to OpenAI"""
         self._append_message(message)
 
-        for attempt in range(self.max_retries):
+        async def _do_send() -> ProviderResponse:
             try:
-                # Prepare request
                 request_params = {
                     "model": self.model_name,
                     "messages": self.messages,
                 }
-
                 if self.tools:
                     request_params["tools"] = self.tools
                     request_params["tool_choice"] = "auto"
-
-                # Send request
                 response = await self.client.chat.completions.create(**request_params)
-
-                # Parse response
                 return self._parse_response(response)
-
             except RateLimitError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Rate limit, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APIRateLimitError("OpenAI rate limit exceeded", str(e))
-
             except Timeout as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Timeout, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APITimeoutError("OpenAI request timeout", str(e))
-
             except OpenAIConnectionError as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = self.retry_delay * (2 ** attempt)
-                    logger.warning(f"Connection error, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
                 raise APIConnectionError("OpenAI connection error", str(e))
-
+            except (APIError, ConfigurationError):
+                raise
             except Exception as e:
-                logger.error(f"OpenAI error: {e}")
                 raise APIError(f"OpenAI API error: {e}", str(e))
+
+        return await with_retry(
+            _do_send,
+            config=RetryConfig(max_retries=self.max_retries, base_delay=self.retry_delay, jitter=True),
+            retryable=lambda e: isinstance(e, (APITimeoutError, APIRateLimitError, APIConnectionError)),
+        )
 
     async def send_message_stream(self, message: Any) -> AsyncIterator[ProviderResponse]:
         """Stream response from OpenAI"""

@@ -54,6 +54,19 @@ class APIRateLimitError(APIError):
     pass
 
 
+class CircuitOpenError(APIError):
+    """Raised when circuit breaker is open for a provider."""
+    ERROR_CODE = "CIRCUIT_OPEN"
+
+    def __init__(self, provider_name: str, remaining_seconds: float = 0.0):
+        self.provider_name = provider_name
+        self.remaining_seconds = remaining_seconds
+        super().__init__(
+            f"circuit open for provider '{provider_name}' "
+            f"({remaining_seconds:.0f}s until half-open)",
+        )
+
+
 class FileOperationError(PoorCLIError):
     """Base exception for file operation errors"""
     ERROR_CODE = "FILE_OPERATION_ERROR"
