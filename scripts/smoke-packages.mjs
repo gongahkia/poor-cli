@@ -29,6 +29,8 @@ const EXPECTED_TOOL_NAMES = [
   "sg_ura_dev_charges",
   "sg_datagov_search",
   "sg_datagov_get",
+  "sg_datagov_resources",
+  "sg_datagov_rows",
   "sg_datagov_browse",
   "sg_lta_bus_arrivals",
   "sg_lta_train_alerts",
@@ -42,6 +44,11 @@ const EXPECTED_TOOL_NAMES = [
   "sg_bca_licensed_builders",
   "sg_bca_registered_contractors",
   "sg_acra_entities",
+  "sg_business_dossier",
+  "sg_property_brief",
+  "sg_macro_brief",
+  "sg_transport_brief",
+  "sg_environment_brief",
   "sg_health_check",
   "sg_key_set",
   "sg_key_list",
@@ -133,6 +140,7 @@ try {
       ...process.env,
       SG_APIS_LOG_LEVEL: "error",
       MOCK_API_BASE_URL: mockServer.url,
+      SG_API_URA_KEY: "test-ura-key",
       SG_API_LTA_KEY: "test-lta-key",
     },
     stderr: "pipe",
@@ -214,7 +222,7 @@ try {
     const datasetMetadataResult = await client.callTool({
       name: "sg_datagov_get",
       arguments: {
-        datasetId: "hawker-centres",
+        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
         format: "json",
       },
     });
@@ -225,8 +233,90 @@ try {
       throw new Error(`Packaged sg_datagov_get did not return text content${formatServerLogs()}`);
     }
     const datasetMetadataPayload = JSON.parse(datasetMetadataText);
-    if (datasetMetadataPayload.name !== "Hawker Centres") {
+    if (datasetMetadataPayload.name !== "HDB Resale Flat Prices") {
       throw new Error(`Packaged sg_datagov_get returned unexpected metadata payload${formatServerLogs()}`);
+    }
+
+    const datasetResourcesResult = await client.callTool({
+      name: "sg_datagov_resources",
+      arguments: {
+        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+        format: "json",
+      },
+    });
+    const datasetResourcesText = "content" in datasetResourcesResult
+      ? datasetResourcesResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (datasetResourcesText === undefined) {
+      throw new Error(`Packaged sg_datagov_resources did not return text content${formatServerLogs()}`);
+    }
+    const datasetResourcesPayload = JSON.parse(datasetResourcesText);
+    if (!Array.isArray(datasetResourcesPayload.resources) || datasetResourcesPayload.resources.length === 0) {
+      throw new Error(`Packaged sg_datagov_resources returned no resource metadata${formatServerLogs()}`);
+    }
+
+    const datasetRowsResult = await client.callTool({
+      name: "sg_datagov_rows",
+      arguments: {
+        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+        limit: 1,
+        format: "json",
+      },
+    });
+    const datasetRowsText = "content" in datasetRowsResult
+      ? datasetRowsResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (datasetRowsText === undefined) {
+      throw new Error(`Packaged sg_datagov_rows did not return text content${formatServerLogs()}`);
+    }
+    const datasetRowsPayload = JSON.parse(datasetRowsText);
+    if (!Array.isArray(datasetRowsPayload.records) || datasetRowsPayload.records.length === 0) {
+      throw new Error(`Packaged sg_datagov_rows returned no records${formatServerLogs()}`);
+    }
+
+    const macroBriefResult = await client.callTool({
+      name: "sg_macro_brief",
+      arguments: {
+        currency: "USD",
+        format: "json",
+      },
+    });
+    const macroBriefText = "content" in macroBriefResult
+      ? macroBriefResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (macroBriefText === undefined) {
+      throw new Error(`Packaged sg_macro_brief did not return text content${formatServerLogs()}`);
+    }
+    const macroBriefPayload = JSON.parse(macroBriefText);
+    if (macroBriefPayload.title !== "Macro Brief") {
+      throw new Error(`Packaged sg_macro_brief returned an unexpected payload${formatServerLogs()}`);
+    }
+    for (const key of ["provenance", "freshness", "limits"]) {
+      if (!Array.isArray(macroBriefPayload[key])) {
+        throw new Error(`Packaged sg_macro_brief did not include ${key}${formatServerLogs()}`);
+      }
+    }
+
+    const environmentBriefResult = await client.callTool({
+      name: "sg_environment_brief",
+      arguments: {
+        area: "Tampines",
+        region: "East",
+        format: "json",
+      },
+    });
+    const environmentBriefText = "content" in environmentBriefResult
+      ? environmentBriefResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (environmentBriefText === undefined) {
+      throw new Error(`Packaged sg_environment_brief did not return text content${formatServerLogs()}`);
+    }
+    const environmentBriefPayload = JSON.parse(environmentBriefText);
+    if (environmentBriefPayload.title !== "Environment Brief") {
+      throw new Error(`Packaged sg_environment_brief returned an unexpected payload${formatServerLogs()}`);
+    }
+    if (!Array.isArray(environmentBriefPayload.provenance) || !Array.isArray(environmentBriefPayload.freshness)) {
+      throw new Error(`Packaged sg_environment_brief omitted provenance or freshness${formatServerLogs()}`);
     }
 
     const queryPlanResult = await client.callTool({
@@ -243,12 +333,16 @@ try {
     const queryExecuteResult = await client.callTool({
       name: "sg_query",
       arguments: {
-        query: "Bus arrivals for stop 83139 service 851",
+        query: "Transport status in Singapore right now",
         mode: "execute",
         format: "json",
       },
     });
-    if (!("structuredContent" in queryExecuteResult) || queryExecuteResult.structuredContent?.status !== "completed") {
+    if (
+      !("structuredContent" in queryExecuteResult)
+      || queryExecuteResult.structuredContent?.status !== "completed"
+      || queryExecuteResult.structuredContent?.workflow !== "transport_brief"
+    ) {
       throw new Error(`Packaged sg_query execute call did not complete successfully${formatServerLogs()}`);
     }
   } catch (error) {
