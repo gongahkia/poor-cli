@@ -62,7 +62,7 @@ describe("tool catalog parity", () => {
 
   it("tracks the expected post-tranche public surface counts", () => {
     expect(API_CATALOG).toHaveLength(11);
-    expect(TOOL_CATALOG).toHaveLength(40);
+    expect(TOOL_CATALOG).toHaveLength(47);
   });
 
   it("keeps the business-diligence tool families visible in catalog resources", () => {
@@ -91,6 +91,13 @@ describe("tool catalog parity", () => {
         expect.objectContaining({ name: "sg_cea_salespersons", surface: "canonical" }),
         expect.objectContaining({ name: "sg_bca_licensed_builders", surface: "canonical" }),
         expect.objectContaining({ name: "sg_bca_registered_contractors", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_business_dossier", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_property_brief", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_macro_brief", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_transport_brief", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_environment_brief", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_datagov_resources", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_datagov_rows", surface: "canonical" }),
       ]),
     );
   });
