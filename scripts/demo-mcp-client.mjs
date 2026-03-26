@@ -1,11 +1,13 @@
-import { accessSync } from "node:fs";
+import { accessSync, mkdtempSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
 const serverEntry = resolve(root, "packages/mcp-server/dist/index.js");
+const tempHome = mkdtempSync(join(tmpdir(), "sg-apis-demo-"));
 
 const PROFILES = {
   business: {
@@ -199,6 +201,7 @@ try {
     cwd: root,
     env: {
       ...process.env,
+      HOME: tempHome,
       SG_APIS_LOG_LEVEL: "error",
       MOCK_API_BASE_URL: mockServer.url,
       SG_API_URA_KEY: "test-ura-key",
@@ -234,4 +237,5 @@ try {
   if (mockServer !== null) {
     mockServer.child.kill("SIGTERM");
   }
+  rmSync(tempHome, { recursive: true, force: true });
 }
