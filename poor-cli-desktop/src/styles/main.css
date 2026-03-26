@@ -49,6 +49,7 @@ body {
 }
 .sidebar-nav-item:hover { background: var(--bg-tertiary); }
 .sidebar-nav-item.active { background: var(--bg-tertiary); color: var(--text-primary); }
+.sidebar-section { margin-top: 4px; }
 .sidebar-section h3 {
   font-size: 11px;
   text-transform: uppercase;

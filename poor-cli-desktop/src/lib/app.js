@@ -68,7 +68,7 @@ async function ensureInitialized() {
   try {
     await rpc('initialize_backend', {});
     initialized = true;
-    await Promise.all([refreshProviderInfo(), refreshSessions(), populateModels(), refreshStatusBar()]);
+    await Promise.all([refreshProviderInfo(), refreshSessions(), populateModels(), refreshStatusBar(), refreshHistorySidebar()]);
   } catch (e) {
     providerInfo.textContent = `Error: ${e}`;
   }
@@ -121,7 +121,7 @@ export async function refreshSessions() {
       ts.className = 'timestamp';
       ts.textContent = relativeTime(s.createdAt);
       div.appendChild(ts);
-      div.addEventListener('click', () => selectSession(s));
+      div.addEventListener('click', (e) => selectSession(s, e.currentTarget));
       sessionList.appendChild(div);
       if (s.isDefault) {
         activeSessionId = s.sessionId;
@@ -131,11 +131,11 @@ export async function refreshSessions() {
   } catch (_) {}
 }
 
-function selectSession(s) {
+function selectSession(s, clickedEl) {
   activeSessionId = s.sessionId;
   threadTitle.textContent = s.label || s.sessionId;
   document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
-  event.currentTarget.classList.add('active');
+  if (clickedEl) clickedEl.classList.add('active');
 }
 
 // status bar
@@ -223,6 +223,7 @@ newSessionBtn.addEventListener('click', async () => {
   try {
     await rpc('create_session', { label: `session-${Date.now()}` });
     await refreshSessions();
+    await refreshHistorySidebar();
   } catch (_) {}
 });
 
