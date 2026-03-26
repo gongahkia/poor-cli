@@ -1,5 +1,7 @@
 # sg-apis-mcp
 
+Give your Agents context on Singapore.
+
 Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
