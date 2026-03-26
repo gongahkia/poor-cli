@@ -15,13 +15,13 @@ describe("MAS schema contracts", () => {
     ).toBe(true);
   });
 
-  it("rejects deprecated exchange-rate range fields", () => {
+  it("accepts bounded exchange-rate range fields", () => {
     expect(
       MasExchangeRateSchema.safeParse({
         startDate: "2025-01-01",
         endDate: "2025-01-02",
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("rejects unsupported interest-rate variants", () => {
