@@ -56,9 +56,14 @@ vi.mock("../../apis/acra/client.js", () => ({
 }));
 
 import { query as masQuery } from "../../apis/mas/client.js";
-import { geocode, getPopulationData } from "../../apis/onemap/client.js";
+import { geocode, getPopulationData, getRoute } from "../../apis/onemap/client.js";
+import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { uraFetch } from "../../apis/ura/client.js";
-import { getDataset, searchDatasets as datagovSearch } from "../../apis/datagov/client.js";
+import {
+  getDataset,
+  listCollections,
+  searchDatasets as datagovSearch,
+} from "../../apis/datagov/client.js";
 import { getTrainAlerts, getTrafficIncidents } from "../../apis/lta/client.js";
 import { getAirQuality, getForecast2Hr, getRainfall } from "../../apis/nea/client.js";
 import { getCeaSalespersons } from "../../apis/cea/client.js";
@@ -79,12 +84,15 @@ const runQuery = async (input: Readonly<Record<string, unknown>>) => {
 
 describe("sg_query workflows", () => {
   beforeEach(() => {
+    vi.mocked(singstatSearch).mockReset();
     vi.mocked(masQuery).mockReset();
     vi.mocked(geocode).mockReset();
+    vi.mocked(getRoute).mockReset();
     vi.mocked(getPopulationData).mockReset();
     vi.mocked(uraFetch).mockReset();
     vi.mocked(datagovSearch).mockReset();
     vi.mocked(getDataset).mockReset();
+    vi.mocked(listCollections).mockReset();
     vi.mocked(getTrainAlerts).mockReset();
     vi.mocked(getTrafficIncidents).mockReset();
     vi.mocked(getForecast2Hr).mockReset();
@@ -189,6 +197,98 @@ describe("sg_query workflows", () => {
       workflow: "dataset_discovery",
     });
     expect(vi.mocked(getDataset)).toHaveBeenCalledWith("hawker-centres");
+  });
+
+  it("executes a route workflow from two Singapore postal codes", async () => {
+    vi.mocked(geocode)
+      .mockResolvedValueOnce([
+        {
+          address: "1 FULLERTON SQUARE",
+          building: "FULLERTON",
+          postal: "049178",
+          lat: 1.2864,
+          lng: 103.8537,
+          x: 0,
+          y: 0,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          address: "1 RAFFLES PLACE",
+          building: "ONE RAFFLES PLACE",
+          postal: "048616",
+          lat: 1.284,
+          lng: 103.851,
+          x: 0,
+          y: 0,
+        },
+      ]);
+    vi.mocked(getRoute).mockResolvedValue({
+      totalDistance: 650,
+      totalTime: 540,
+      instructions: [
+        { instruction: "Walk straight", road: "Fullerton Road", distance: 300 },
+      ],
+      routeGeometry: [],
+    } as never);
+
+    const result = await runQuery({
+      query: "Walk from 049178 to 048616",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "route_plan",
+    });
+    expect(vi.mocked(getRoute)).toHaveBeenCalledWith(1.2864, 103.8537, 1.284, 103.851, "walk");
+  });
+
+  it("executes direct data.gov collection browsing through sg_query", async () => {
+    vi.mocked(listCollections).mockResolvedValue([
+      { collectionId: "housing", name: "Housing", datasetCount: 12 },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Browse data.gov collections",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_datagov_browse"],
+    });
+  });
+
+  it("executes direct SingStat category browsing through sg_query", async () => {
+    vi.mocked(singstatSearch).mockResolvedValue([
+      {
+        id: "M650151",
+        title: "Transport Indicators",
+        theme: "Transport",
+        subject: "Transport",
+        topic: "Transport",
+        frequency: "Annual",
+      },
+    ]);
+
+    const result = await runQuery({
+      query: "Browse SingStat transport datasets",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "direct_tool",
+      toolsUsed: ["sg_singstat_browse"],
+    });
   });
 
   it("routes broad transport status queries to the transport brief", async () => {
@@ -314,6 +414,45 @@ describe("sg_query workflows", () => {
         lng: 103.8392,
       },
     ]);
+  });
+
+  it("returns a clear blocker for reverse geocode prompts without coordinates", async () => {
+    const result = await runQuery({
+      query: "Reverse geocode this location",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "unsupported",
+    });
+    expect(JSON.stringify(result.structuredContent)).toContain("latitude and longitude");
+  });
+
+  it("returns a clear blocker for coordinate conversion prompts without a coordinate pair", async () => {
+    const result = await runQuery({
+      query: "Convert WGS84 to SVY21",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "unsupported",
+    });
+    expect(JSON.stringify(result.structuredContent)).toContain("source coordinate system");
+  });
+
+  it("returns a clear blocker for SingStat table requests without a table ID", async () => {
+    const result = await runQuery({
+      query: "Show me the SingStat table for GDP",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "unsupported",
+    });
+    expect(JSON.stringify(result.structuredContent)).toContain("SingStat table ID");
   });
 
   it("executes the business registry diligence workflow for a named company", async () => {
