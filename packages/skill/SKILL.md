@@ -1,19 +1,20 @@
 ---
-name: sg-apis
-description: Singapore government data for agent builders through direct MCP tools and bounded workflow planning
+name: sg-apis-mcp
+description: Official Singapore public data for agent builders through deterministic MCP tools and bounded workflow planning
 version: 0.1.0
 mcp_server: sg-apis-mcp
 ---
 
-# Singapore Government Data Skill
+# sg-apis-mcp Skill
 
-Use this skill when an agent needs official Singapore public data through MCP.
+Use this skill when an agent needs official Singapore public data through MCP with explicit contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 40 `sg_*` tools total across 11 official data families.
+The repo currently exposes 47 `sg_*` tools total across 11 official data families.
 
-- 31 direct data tools
+- 33 direct data tools
+- 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers
 - 1 bounded preferred interface, `sg_query`
 
@@ -21,158 +22,113 @@ The repo currently exposes 40 `sg_*` tools total across 11 official data familie
 
 ## Positioning
 
-- Best for deterministic agent workflows that need official Singapore data
-- Optimized for tool calls, not free-form analyst chat
-- Current depth spans 11 data families: SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg
-- Multi-step workflows are intentionally bounded and transparent
+- Best for agent builders who need deterministic Singapore public-data calls
+- Optimized for bounded workflows, not free-form analyst chat
+- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, and data.gov.sg
+- The core differentiator is explicit contracts plus additive briefs, not hidden orchestration
+
+## Preferred Entry Points
+
+- `sg_business_dossier`
+  Cross-registry business diligence across ACRA, BCA, and CEA.
+- `sg_property_brief`
+  Location and property brief across OneMap, URA, HDB, and optional live context.
+- `sg_macro_brief`
+  Compact Singapore macro starter brief using MAS values and SingStat entrypoints.
+- `sg_transport_brief`
+  Live transport operations brief over LTA bus arrivals, train alerts, and traffic incidents.
+- `sg_environment_brief`
+  Live environment brief over NEA forecast, air quality, and rainfall signals.
+- `sg_query`
+  Preferred bounded workflow planner and executor for covered families.
 
 ## Stable Scope
 
 ### SingStat
 
-Use for dataset discovery and structured statistical retrieval.
-
 - `sg_singstat_search`
-  Search SingStat tables by keyword.
-  Input: `{ "keyword": "GDP", "limit": 5 }`
 - `sg_singstat_table`
-  Read a specific table once you know the table ID.
-  Input: `{ "tableId": "M015631", "timeFilter": "2020,2024", "variables": ["GDP Growth Rate"] }`
 - `sg_singstat_timeseries`
-  Pull a specific indicator over a year range.
-  Input: `{ "tableId": "M015631", "indicator": "GDP", "startYear": 2019, "endYear": 2024 }`
 - `sg_singstat_compare`
-  Compare explicitly specified indicators side by side.
 - `sg_singstat_browse`
-  Browse categories when search is too broad.
 
 ### MAS
 
-Use for official monetary and banking snapshots.
-
 - `sg_mas_exchange_rates`
-  Latest or exact-date SGD exchange rates.
-  Input: `{ "currency": "USD", "date": "2024-01-31" }`
+  Latest, exact-date, or bounded date-range FX reads.
 - `sg_mas_interest_rates`
-  SORA only in this phase.
-  Input: `{ "date": "2024-01-31" }`
+  SORA only, with latest, exact-date, or bounded date-range reads.
 - `sg_mas_financial_stats`
-  Banking statistics only in this phase.
-  Input: `{ "date": "2024-01-31" }`
-
-Do not assume generic rate categories or date-range semantics are supported.
+  Banking only, with latest, exact-date, or bounded date-range reads.
 
 ### OneMap
 
-Use for geography, routing, and planning-area demographics.
-
 - `sg_onemap_geocode`
-  Address or postal-code lookup.
-  Input: `{ "searchVal": "168742" }`
 - `sg_onemap_reverse_geocode`
-  Coordinate-to-address lookup.
 - `sg_onemap_route`
-  Explicit routing from coordinates.
-  Input: `{ "startLat": 1.3, "startLng": 103.8, "endLat": 1.31, "endLng": 103.81, "routeType": "drive" }`
 - `sg_onemap_population`
-  Demographic data by planning area.
-  Input: `{ "planningArea": "Tampines", "dataType": "getPopulationAgeGroup" }`
 - `sg_onemap_convert_coords`
-  Convert between SVY21 and WGS84.
+
+Live OneMap calls require valid credentials. There is no silent unauthenticated fallback outside mock mode.
 
 ### URA
 
-Use for property and planning context.
-
 - `sg_ura_property_transactions`
-  Private property transaction data by property type, area, or period.
-  Input: `{ "propertyType": "residential", "area": "Bedok" }`
 - `sg_ura_planning_area`
-  URA planning-area lookup by planning area name or coordinates.
-  Input: `{ "planningArea": "Bedok" }`
 - `sg_ura_dev_charges`
-  Development charge lookup.
 
 ### LTA DataMall
 
-Use for live transport operations.
-
 - `sg_lta_bus_arrivals`
-  Bus-arrival predictions for a stop and optional service number.
 - `sg_lta_train_alerts`
-  Train service disruption and line-status alerts.
 - `sg_lta_traffic_incidents`
-  Live traffic incidents.
 
 ### NEA
 
-Use for live environment conditions.
-
 - `sg_nea_forecast_2hr`
-  2-hour weather forecast by area.
 - `sg_nea_air_quality`
-  PSI and PM2.5 by region.
 - `sg_nea_rainfall`
-  Rainfall readings by station.
 
 ### HDB
 
-Use for curated public-housing market checks over official data.gov.sg datasets.
-
 - `sg_hdb_resale_prices`
-  Resale records filtered by town, flat type, and month range.
 - `sg_hdb_rental_prices`
-  Rental records filtered by town, flat type, and month range.
 
 ### CEA
 
-Use for curated estate-agent diligence.
-
 - `sg_cea_salespersons`
-  Exact-match salesperson lookup by salesperson, registration number, estate agent, or estate-agent licence number.
 
 ### BCA
 
-Use for curated builder and contractor diligence.
-
 - `sg_bca_licensed_builders`
-  Exact-match lookup by company, UEN, builder class, or class code.
 - `sg_bca_registered_contractors`
-  Exact-match lookup by company, UEN, workhead, or grade.
 
 ### ACRA
 
-Use for curated company-registry diligence over the official sharded public entity collection.
-
 - `sg_acra_entities`
-  Exact-match entity lookup by company name or UEN.
 
 ### data.gov.sg
 
-Use as the general discovery fallback.
-
 - `sg_datagov_search`
-  Search datasets by keyword across the full paginated index.
 - `sg_datagov_get`
-  Metadata lookup only.
-  Input: `{ "datasetId": "<dataset-id>" }`
+- `sg_datagov_resources`
+- `sg_datagov_rows`
 - `sg_datagov_browse`
-  Browse collections across the full paginated index.
 
-Do not expect `sg_datagov_get` to return paginated dataset rows.
+`sg_datagov_get` is metadata only. Use `sg_datagov_resources` to inspect the current machine-readable resource shape, then `sg_datagov_rows` for bounded datastore reads.
 
-## Operational Tools
+## Brief Contract
 
-- `sg_health_check`
-  Reports each core upstream as configured or unconfigured, plus reachable or unreachable.
-- `sg_key_set`, `sg_key_list`, `sg_key_delete`
-  Local credential helpers.
-- `sg_cache_stats`, `sg_cache_clear`
-  Cache inspection and maintenance.
-- `sg_config_get`, `sg_config_set`
-  Runtime config for supported mutable keys only.
-- `sg_query`
-  Preferred bounded workflow planner and executor for covered routed families.
+All additive brief tools return:
+
+- `title`
+- `summary`
+- `evidence`
+- `records`
+- `gaps`
+- `provenance`
+- `freshness`
+- `limits`
 
 ## Workflow Recipes
 
@@ -180,49 +136,60 @@ Do not expect `sg_datagov_get` to return paginated dataset rows.
 
 ```text
 sg_query { "query": "Macro snapshot of Singapore", "mode": "execute" }
-sg_singstat_search { "keyword": "GDP Singapore" }
-sg_singstat_search { "keyword": "CPI Singapore" }
-sg_mas_exchange_rates { "currency": "USD" }
-sg_mas_interest_rates {}
-```
-
-### Demographic Profile
-
-```text
-sg_query { "query": "Demographic profile for postal code 168742", "mode": "execute" }
-sg_onemap_population { "planningArea": "Tampines", "dataType": "getPopulationAgeGroup" }
-sg_onemap_population { "planningArea": "Tampines", "dataType": "getHouseholdMonthlyIncomeWork" }
+sg_macro_brief { "currency": "USD", "format": "json" }
+sg_mas_exchange_rates { "currency": "USD", "startDate": "2026-03-01", "endDate": "2026-03-26", "format": "json" }
+sg_singstat_search { "keyword": "Singapore GDP", "format": "json" }
 ```
 
 ### Property And Regulatory Due Diligence
 
 ```text
 sg_query { "query": "Property due diligence for Bedok HDB resale", "mode": "execute" }
-sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok" }
-sg_ura_planning_area { "planningArea": "Bedok" }
-sg_hdb_resale_prices { "town": "Bedok" }
+sg_property_brief { "planningArea": "Bedok", "flatType": "4 ROOM", "includeEnvironment": true, "includeTransport": true, "format": "json" }
+sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok", "format": "json" }
+sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM", "format": "json" }
 ```
 
 ### Property Counterparty Diligence
 
 ```text
-sg_query { "query": "Run registry check for company ABC CONSTRUCTION PTE LTD", "mode": "execute" }
-sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok" }
-sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM" }
-sg_cea_salespersons { "estateAgentName": "ERA REALTY NETWORK PTE LTD" }
-sg_acra_entities { "entityName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD" }
+sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok", "format": "json" }
+sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM", "format": "json" }
+sg_cea_salespersons { "estateAgentName": "ERA REALTY NETWORK PTE LTD", "format": "json" }
+sg_acra_entities { "entityName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 ```
 
 ### Business Registry Diligence
 
 ```text
-sg_query { "query": "Run registry check for company ABC CONSTRUCTION PTE LTD", "mode": "execute" }
-sg_acra_entities { "entityName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD" }
-sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD" }
-sg_cea_salespersons { "registrationNo": "R123456A" }
+sg_query { "query": "Registry diligence for UEN 201912345K", "mode": "execute" }
+sg_business_dossier { "uen": "201912345K", "format": "json" }
+sg_acra_entities { "uen": "201912345K", "format": "json" }
+sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
+sg_cea_salespersons { "registrationNo": "R123456A", "format": "json" }
+```
+
+### Transport Status
+
+```text
+sg_query { "query": "Transport status in Singapore right now", "mode": "execute" }
+sg_transport_brief { "busStopCode": "83139", "serviceNo": "851", "format": "json" }
+sg_lta_bus_arrivals { "busStopCode": "83139", "serviceNo": "851", "format": "json" }
+sg_lta_train_alerts { "format": "json" }
+sg_lta_traffic_incidents { "format": "json" }
+```
+
+### Environment Snapshot
+
+```text
+sg_query { "query": "Environment snapshot of Singapore right now", "mode": "execute" }
+sg_environment_brief { "area": "Tampines", "region": "East", "stationId": "S107", "format": "json" }
+sg_nea_forecast_2hr { "area": "Tampines", "format": "json" }
+sg_nea_air_quality { "region": "East", "format": "json" }
+sg_nea_rainfall { "stationId": "S107", "format": "json" }
 ```
 
 ### Dataset Discovery Fallback
@@ -230,27 +197,17 @@ sg_cea_salespersons { "registrationNo": "R123456A" }
 ```text
 sg_query { "query": "Find datasets about hawker centres", "mode": "execute" }
 sg_datagov_search { "keyword": "hawker centres" }
-sg_datagov_get { "datasetId": "<dataset-id-from-search>" }
+sg_datagov_resources { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" }
+sg_datagov_rows { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", "limit": 5, "sort": "month desc" }
 ```
 
-## `sg_query`
-
-Supported uses:
-
-- plan or execute bounded workflows
-- single-step routing to covered direct tools
-- macro, demographic, property, business-registry, dataset, transport, and environment workflows
-
-Unsupported uses:
-
-- general planning across arbitrary goals
-- automatic comparison workflows
-- hidden fan-out beyond the bounded workflow catalog
-- hidden row-level data.gov.sg extraction beyond the explicit direct tools
-
-When unsupported, call the direct tools yourself.
-
 ## Authentication
+
+Authenticated upstreams:
+
+- OneMap
+- URA
+- LTA DataMall
 
 Recommended production path:
 
@@ -259,15 +216,25 @@ Recommended production path:
 - `SG_API_URA_KEY`
 - `SG_API_LTA_KEY`
 
-Local fallback through MCP tools:
+Public families:
 
-```text
-sg_key_set { "apiName": "onemap_email", "key": "you@example.com" }
-sg_key_set { "apiName": "onemap_password", "key": "your-password" }
-sg_key_set { "apiName": "ura", "key": "your-ura-api-key" }
-sg_key_set { "apiName": "lta", "key": "your-lta-api-key" }
-```
+- SingStat
+- MAS
+- NEA
+- HDB
+- CEA
+- BCA
+- ACRA
+- data.gov.sg
 
-HDB, CEA, BCA, and ACRA use official data.gov.sg datasets and do not need separate credentials.
+HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.
 
-The local keystore is convenient for development, but it is not a managed secret store.
+## Examples
+
+The workflow demos live in:
+
+- `examples/business-dossier.md`
+- `examples/property-brief.md`
+- `examples/macro-brief.md`
+- `examples/transport-brief.md`
+- `examples/environment-brief.md`
