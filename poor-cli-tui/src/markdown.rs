@@ -46,7 +46,7 @@ pub fn render_markdown(text: &str, theme_mode: ThemeMode) -> Vec<Line<'static>> 
             } else {
                 // Start code block
                 in_code_block = true;
-                code_lang = raw_line[3..].trim().to_string();
+                code_lang = raw_line.strip_prefix("```").unwrap_or("").trim().to_string();
             }
             continue;
         }

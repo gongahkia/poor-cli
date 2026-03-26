@@ -461,7 +461,7 @@ fn draw_at_path_completion(frame: &mut Frame, app: &App) {
         return;
     }
 
-    let row_count = app.at_path_completion.items.len().max(1).min(8) as u16;
+    let row_count = app.at_path_completion.items.len().clamp(1, 8) as u16;
     let popup_height = row_count + 3;
     if frame.area().height <= popup_height + 4 {
         return;

@@ -772,8 +772,7 @@ pub(crate) fn draw_graph_overlay(frame: &mut Frame, app: &App) {
             }
         }
         // draw nodes
-        for i in 0..visible {
-            let n = &plot_nodes[i];
+        for n in &plot_nodes[..visible] {
             let nx = n.x as u16;
             let ny = n.y as u16;
             if nx < inner.x || nx >= inner.x + inner.width

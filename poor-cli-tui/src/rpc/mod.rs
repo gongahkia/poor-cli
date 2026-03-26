@@ -747,41 +747,36 @@ impl RpcClient {
         let notif_tx = notification_tx.clone();
         let reader_handle = thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            loop {
-                match read_one_message(&mut reader) {
-                    Ok(body_str) => {
-                        let msg: RpcResponse = match serde_json::from_str(&body_str) {
-                            Ok(m) => m,
-                            Err(_) => continue,
-                        };
+            while let Ok(body_str) = read_one_message(&mut reader) {
+                let msg: RpcResponse = match serde_json::from_str(&body_str) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
 
-                        // Check if this is a notification (no id, has method)
-                        if msg.id.is_none() {
-                            if let Some(method) = &msg.method {
-                                let params = msg.params.as_ref().cloned().unwrap_or(Value::Null);
-                                if let Some(notif) = parse_notification(method, &params) {
-                                    let _ = notif_tx.send(notif);
-                                }
-                            }
-                            continue;
-                        }
-
-                        // It's a response — route to pending request
-                        if let Some(id) = msg.id {
-                            if let Ok(mut pending) = pending_clone.lock() {
-                                if let Some(sender) = pending.remove(&id) {
-                                    let result = if let Some(err) = msg.error {
-                                        Err(err.to_string())
-                                    } else {
-                                        msg.result
-                                            .ok_or_else(|| "No result in response".to_string())
-                                    };
-                                    let _ = sender.send(result);
-                                }
-                            }
+                // Check if this is a notification (no id, has method)
+                if msg.id.is_none() {
+                    if let Some(method) = &msg.method {
+                        let params = msg.params.as_ref().cloned().unwrap_or(Value::Null);
+                        if let Some(notif) = parse_notification(method, &params) {
+                            let _ = notif_tx.send(notif);
                         }
                     }
-                    Err(_) => break, // EOF or read error
+                    continue;
+                }
+
+                // It's a response — route to pending request
+                if let Some(id) = msg.id {
+                    if let Ok(mut pending) = pending_clone.lock() {
+                        if let Some(sender) = pending.remove(&id) {
+                            let result = if let Some(err) = msg.error {
+                                Err(err.to_string())
+                            } else {
+                                msg.result
+                                    .ok_or_else(|| "No result in response".to_string())
+                            };
+                            let _ = sender.send(result);
+                        }
+                    }
                 }
             }
         });

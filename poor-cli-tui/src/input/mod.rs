@@ -459,9 +459,7 @@ fn autocomplete_command(app: &mut App) -> bool {
 
 fn clamp_command_match_index(app: &mut App) {
     let matches = visible_command_palette_matches(app.input_buffer.as_str());
-    if matches.is_empty() {
-        app.command_match_index = 0;
-    } else if app.command_match_index >= matches.len() {
+    if matches.is_empty() || app.command_match_index >= matches.len() {
         app.command_match_index = 0;
     }
 }

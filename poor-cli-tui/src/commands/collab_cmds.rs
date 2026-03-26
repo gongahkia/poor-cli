@@ -678,7 +678,7 @@ pub(super) fn handle_collab_commands(
                     return Some(false);
                 }
             } else if target.starts_with('@') {
-                (Some(target[1..].to_string()), None)
+                (Some(target.strip_prefix('@').unwrap().to_string()), None)
             } else {
                 (Some(target.clone()), None)
             }
