@@ -132,6 +132,12 @@ try {
       throw new Error("Registry-installed server did not return workflow resource text.");
     }
 
+    const recipesResource = await client.readResource({ uri: "sg://recipes" });
+    const recipesText = recipesResource.contents.find((content) => "text" in content && typeof content.text === "string")?.text;
+    if (recipesText === undefined) {
+      throw new Error("Registry-installed server did not return recipe resource text.");
+    }
+
     const directResult = await client.callTool({
       name: "sg_datagov_get",
       arguments: {
@@ -180,6 +186,18 @@ try {
     });
     if (!("structuredContent" in queryResult) || queryResult.structuredContent?.workflow !== "transport_brief") {
       throw new Error("Registry-installed sg_query did not route transport status to sg_transport_brief.");
+    }
+
+    const routeRecipeResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Walk from 049178 to 048616",
+        mode: "execute",
+        format: "json",
+      },
+    });
+    if (!("structuredContent" in routeRecipeResult) || routeRecipeResult.structuredContent?.workflow !== "route_plan") {
+      throw new Error("Registry-installed sg_query did not complete the route recipe workflow.");
     }
   } finally {
     await client.close().catch(() => undefined);
