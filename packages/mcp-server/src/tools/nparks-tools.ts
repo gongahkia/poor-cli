@@ -1,14 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, NParksSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getParks } from "../apis/nparks/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const NParksSchema = z.object({
-  name: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handleNParks = async (
   params: Readonly<{ name?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,

@@ -1,14 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, PubWaterLevelsSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getWaterLevels } from "../apis/pub/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const PubWaterLevelsSchema = z.object({
-  station: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handlePubWaterLevels = async (
   params: Readonly<{ station?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,

@@ -1,16 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, GeBIZTendersSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getGeBIZTenders } from "../apis/gebiz/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const GeBIZTendersSchema = z.object({
-  agency: z.string().min(1).optional(),
-  category: z.string().min(1).optional(),
-  supplierName: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handleGeBIZTenders = async (
   params: Readonly<{

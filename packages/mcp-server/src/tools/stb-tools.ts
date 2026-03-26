@@ -1,15 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, StbVisitorStatsSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getVisitorArrivals } from "../apis/stb/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const StbVisitorStatsSchema = z.object({
-  country: z.string().min(1).optional(),
-  year: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handleStbVisitorStats = async (
   params: Readonly<{ country?: string | undefined; year?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,

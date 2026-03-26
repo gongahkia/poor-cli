@@ -474,6 +474,67 @@ export const ConfigSetSchema = z.object({
   value: z.string().min(1),
 });
 
+export const GeBIZTendersSchema = z.object({
+  agency: z.string().min(1).optional(),
+  category: z.string().min(1).optional(),
+  supplierName: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const HawkerCentresSchema = z.object({
+  name: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
+}).strict();
+
+export const MoeSchoolsSchema = z.object({
+  level: z.string().min(1).optional(),
+  zone: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const MohFacilitiesSchema = z.object({
+  type: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  postalCode: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const SfaEstablishmentsSchema = z.object({
+  name: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const NParksSchema = z.object({
+  name: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const PubWaterLevelsSchema = z.object({
+  station: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const MomLabourStatsSchema = z.object({
+  indicator: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const StbVisitorStatsSchema = z.object({
+  country: z.string().min(1).optional(),
+  year: z.string().min(1).optional(),
+  limit: z.number().int().positive().optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
 export const QuerySchema = z.object({
   query: z.string().min(1),
   format: OutputFormatSchema.optional(),

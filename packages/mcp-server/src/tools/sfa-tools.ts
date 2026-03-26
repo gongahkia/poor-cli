@@ -1,14 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, SfaEstablishmentsSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getSfaEstablishments } from "../apis/sfa/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const SfaEstablishmentsSchema = z.object({
-  name: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handleSfaEstablishments = async (
   params: Readonly<{ name?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,

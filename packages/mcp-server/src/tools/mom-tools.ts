@@ -1,14 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, MomLabourStatsSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getLabourStats } from "../apis/mom/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const MomLabourStatsSchema = z.object({
-  indicator: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handleMomLabourStats = async (
   params: Readonly<{ indicator?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,

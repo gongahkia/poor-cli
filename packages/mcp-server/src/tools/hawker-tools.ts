@@ -1,14 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, HawkerCentresSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getHawkerCentres } from "../apis/hawker/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const HawkerCentresSchema = z.object({
-  name: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv", "geojson"]).optional(),
-}).strict();
 
 export const handleHawkerCentres = async (
   params: Readonly<{

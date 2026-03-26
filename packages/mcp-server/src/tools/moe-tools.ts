@@ -1,16 +1,7 @@
-import { formatResponse, resolveOutputFormat } from "@sg-apis/shared";
+import { formatResponse, MoeSchoolsSchema, resolveOutputFormat } from "@sg-apis/shared";
 import type { OutputFormat, ToolResult } from "@sg-apis/shared";
-import { z } from "zod";
 import { getSchools } from "../apis/moe/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
-
-const MoeSchoolsSchema = z.object({
-  level: z.string().min(1).optional().describe("PRIMARY, SECONDARY, JUNIOR COLLEGE, etc."),
-  zone: z.string().min(1).optional().describe("NORTH, SOUTH, EAST, WEST"),
-  name: z.string().min(1).optional(),
-  limit: z.number().int().positive().optional(),
-  format: z.enum(["json", "markdown", "csv"]).optional(),
-}).strict();
 
 export const handleMoeSchools = async (
   params: Readonly<{
