@@ -1419,6 +1419,34 @@ export const handleTransportBrief = async (
   const primaryTrainLine = trainAlerts?.alerts[0]?.line ?? null;
   const primaryIncidentType = trafficIncidents?.[0]?.type ?? null;
   const focus = buildTransportFocus(params.busStopCode, params.serviceNo);
+
+  // stop summary: service count + avg wait
+  const stopSummary = params.busStopCode !== undefined && busArrivals !== null ? (() => {
+    const serviceCount = busArrivals.length;
+    const waitMins: number[] = [];
+    for (const svc of busArrivals) {
+      const arrivals = (svc as Readonly<Record<string, unknown>>)["arrivals"];
+      if (Array.isArray(arrivals) && arrivals.length > 0) {
+        const first = arrivals[0] as Readonly<Record<string, unknown>> | undefined;
+        const eta = first?.["estimatedArrival"];
+        if (typeof eta === "string") {
+          const diff = (new Date(eta).getTime() - Date.now()) / 60000;
+          if (Number.isFinite(diff) && diff >= 0) waitMins.push(Math.round(diff * 10) / 10);
+        }
+      }
+    }
+    return { serviceCount, avgWaitMinutes: waitMins.length > 0 ? Math.round((waitMins.reduce((s, v) => s + v, 0) / waitMins.length) * 10) / 10 : null };
+  })() : null;
+
+  // incident summary: count by type
+  const incidentSummary = trafficIncidents !== null && trafficIncidents.length > 0 ? (() => {
+    const byType: Record<string, number> = {};
+    for (const inc of trafficIncidents) {
+      const t = String((inc as Readonly<Record<string, unknown>>)["type"] ?? "unknown");
+      byType[t] = (byType[t] ?? 0) + 1;
+    }
+    return { total: trafficIncidents.length, byType };
+  })() : null;
   const counts = {
     trainAlerts: trainAlerts?.alerts.length ?? 0,
     trainMessages: trainAlerts?.messages.length ?? 0,
@@ -1464,6 +1492,8 @@ export const handleTransportBrief = async (
       },
       signals,
       nextChecks,
+      ...(stopSummary !== null ? { stopSummary } : {}),
+      ...(incidentSummary !== null ? { incidentSummary } : {}),
       busArrivals: busArrivals ?? [],
       trainAlerts: trainAlerts?.alerts ?? [],
       trainAlertMessages: trainAlerts?.messages ?? [],
