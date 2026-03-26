@@ -17,6 +17,9 @@ import type {
   BriefLimit,
   BriefProvenanceItem,
   EvidenceGap,
+  MatchConfidence,
+  NextCheck,
+  RiskFlag,
   ToolResult,
 } from "@sg-apis/shared";
 import { MasDataset } from "@sg-apis/shared";
@@ -120,6 +123,36 @@ const renderBriefMarkdown = (payload: BriefArtifact): string => {
       message: item.message,
     }))),
   ];
+
+  if (payload.riskFlags !== undefined && payload.riskFlags.length > 0) {
+    sections.push("");
+    sections.push("### Risk Flags");
+    sections.push(renderSectionRows(payload.riskFlags.map((f) => ({
+      severity: f.severity,
+      code: f.code,
+      message: f.message,
+      source: f.source,
+    }))));
+  }
+
+  if (payload.matchConfidence !== undefined && payload.matchConfidence.length > 0) {
+    sections.push("");
+    sections.push("### Match Confidence");
+    sections.push(renderSectionRows(payload.matchConfidence.map((m) => ({
+      source: m.source,
+      confidence: m.confidence,
+      matchedOn: m.matchedOn,
+    }))));
+  }
+
+  if (payload.nextChecks !== undefined && payload.nextChecks.length > 0) {
+    sections.push("");
+    sections.push("### Next Checks");
+    sections.push(renderSectionRows(payload.nextChecks.map((c) => ({
+      tool: c.tool,
+      reason: c.reason,
+    }))));
+  }
 
   for (const [label, value] of Object.entries(payload.records)) {
     sections.push("");
@@ -621,6 +654,99 @@ const toFreshness = (
   upstreamTimestamp,
 });
 
+const buildBusinessRiskFlags = (
+  params: Readonly<{ entityName?: string; uen?: string }>,
+  acra: readonly Readonly<Record<string, unknown>>[],
+  builders: readonly Readonly<Record<string, unknown>>[],
+  contractors: readonly Readonly<Record<string, unknown>>[],
+): readonly RiskFlag[] => {
+  const flags: RiskFlag[] = [];
+  const primary = acra[0];
+  if (primary !== undefined) {
+    const status = String(primary["entityStatusDescription"] ?? "").toLowerCase();
+    if (status !== "" && status !== "live" && status !== "registered") {
+      flags.push({ code: "ENTITY_NOT_ACTIVE", severity: "high", message: `Entity status is "${primary["entityStatusDescription"]}", not Live or Registered.`, source: "ACRA" });
+    }
+  }
+  if ((params.entityName !== undefined || params.uen !== undefined) && acra.length === 0) {
+    flags.push({ code: "NO_ACRA_MATCH", severity: "high", message: "No ACRA entity matched the provided identifier.", source: "ACRA" });
+  }
+  for (const b of builders) {
+    const expiry = b["expiryDate"];
+    if (typeof expiry === "string" && expiry.trim() !== "") {
+      const expiryDate = new Date(expiry);
+      if (!isNaN(expiryDate.getTime()) && expiryDate < new Date()) {
+        flags.push({ code: "BUILDER_LICENSE_EXPIRED", severity: "high", message: `Builder license expired on ${expiry}.`, source: "BCA" });
+      }
+    }
+  }
+  for (const c of contractors) {
+    const expiry = c["expiryDate"];
+    if (typeof expiry === "string" && expiry.trim() !== "") {
+      const expiryDate = new Date(expiry);
+      if (!isNaN(expiryDate.getTime()) && expiryDate < new Date()) {
+        flags.push({ code: "CONTRACTOR_EXPIRED", severity: "medium", message: `Contractor registration expired on ${expiry}.`, source: "BCA" });
+      }
+    }
+  }
+  return flags;
+};
+
+const buildBusinessMatchConfidence = (
+  params: Readonly<{ entityName?: string; uen?: string; salespersonName?: string; registrationNo?: string; estateAgentName?: string; estateAgentLicenseNo?: string }>,
+  acra: readonly Readonly<Record<string, unknown>>[],
+  builders: readonly Readonly<Record<string, unknown>>[],
+  contractors: readonly Readonly<Record<string, unknown>>[],
+  salespersons: readonly Readonly<Record<string, unknown>>[],
+): readonly MatchConfidence[] => {
+  const matches: MatchConfidence[] = [];
+  if (params.entityName !== undefined || params.uen !== undefined) {
+    const hasExactUen = params.uen !== undefined && acra.some((r) => String(r["uen"]).toUpperCase() === params.uen!.toUpperCase());
+    matches.push({
+      source: "ACRA",
+      confidence: acra.length === 0 ? "no-match" : hasExactUen ? "exact" : "name-fuzzy",
+      matchedOn: hasExactUen ? "uen" : acra.length > 0 ? "entityName" : null,
+    });
+  }
+  if (params.entityName !== undefined || params.uen !== undefined) {
+    matches.push({
+      source: "BCA licensed builders",
+      confidence: builders.length === 0 ? "no-match" : params.uen !== undefined ? "exact" : "name-fuzzy",
+      matchedOn: builders.length === 0 ? null : params.uen !== undefined ? "uenNo" : "companyName",
+    });
+    matches.push({
+      source: "BCA registered contractors",
+      confidence: contractors.length === 0 ? "no-match" : params.uen !== undefined ? "exact" : "name-fuzzy",
+      matchedOn: contractors.length === 0 ? null : params.uen !== undefined ? "uenNo" : "companyName",
+    });
+  }
+  if (params.salespersonName !== undefined || params.registrationNo !== undefined || params.estateAgentName !== undefined || params.estateAgentLicenseNo !== undefined) {
+    const hasExactReg = params.registrationNo !== undefined && salespersons.length > 0;
+    const hasExactLic = params.estateAgentLicenseNo !== undefined && salespersons.length > 0;
+    matches.push({
+      source: "CEA",
+      confidence: salespersons.length === 0 ? "no-match" : (hasExactReg || hasExactLic) ? "exact" : "name-fuzzy",
+      matchedOn: salespersons.length === 0 ? null : hasExactReg ? "registrationNo" : hasExactLic ? "estateAgentLicenseNo" : "name",
+    });
+  }
+  return matches;
+};
+
+const buildBusinessNextChecks = (
+  params: Readonly<{ entityName?: string; uen?: string }>,
+): readonly NextCheck[] => {
+  const checks: NextCheck[] = [];
+  if (params.uen !== undefined) {
+    checks.push({ tool: "sg_acra_entities", reason: "Retrieve full ACRA entity details for deeper officer and financial-year inspection.", input: { uen: params.uen } });
+  }
+  if (params.entityName !== undefined) {
+    checks.push({ tool: "sg_bca_licensed_builders", reason: "Inspect all licensed-builder records for the entity.", input: { companyName: params.entityName } });
+    checks.push({ tool: "sg_bca_registered_contractors", reason: "Inspect all registered-contractor records for the entity.", input: { companyName: params.entityName } });
+  }
+  checks.push({ tool: "sg_datagov_search", reason: "Search data.gov.sg for additional public records related to this entity.", input: { query: params.entityName ?? params.uen ?? "" } });
+  return checks;
+};
+
 const buildBusinessLimits = (): readonly BriefLimit[] => [
   toLimit("EXACT_MATCH_ONLY", "Registry checks are exact-match oriented for company, UEN, salesperson, and estate-agent identifiers."),
   toLimit("NO_CORPORATE_GRAPH", "This dossier does not infer subsidiaries, shareholders, officers, or beneficial ownership relationships."),
@@ -769,6 +895,9 @@ export const handleBusinessDossier = async (
   const primaryBuilder = builders[0];
   const primaryContractor = contractors[0];
   const primarySalesperson = salespersons[0];
+  const riskFlags = buildBusinessRiskFlags(params, acra, builders, contractors);
+  const matchConfidence = buildBusinessMatchConfidence(params, acra, builders, contractors, salespersons);
+  const nextChecks = buildBusinessNextChecks(params);
 
   const payload: BriefArtifact = {
     title: "Business Dossier",
@@ -808,6 +937,9 @@ export const handleBusinessDossier = async (
       toFreshness("CEA", observedAt, getFirstTimestamp(salespersons, ["registrationEndDate", "registrationStartDate"])),
     ],
     limits: buildBusinessLimits(),
+    riskFlags,
+    matchConfidence,
+    nextChecks,
   };
 
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
