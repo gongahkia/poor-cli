@@ -838,6 +838,44 @@ const buildPropertyLimits = (includeTransport: boolean, includeEnvironment: bool
   return limits;
 };
 
+const extractNamedMasMetric = (
+  record: Readonly<Record<string, unknown>> | undefined,
+  preferredKeys: readonly string[],
+): { key: string; value: number } | null => {
+  if (record === undefined) return null;
+  for (const key of preferredKeys) {
+    const v = record[key];
+    if (typeof v === "number" && Number.isFinite(v)) return { key, value: v };
+  }
+  return findFirstNumericField(record);
+};
+
+const computeMasDelta = (
+  records: readonly Readonly<Record<string, unknown>>[] | null,
+  metricKey: string,
+): number | null => {
+  if (records === null || records.length < 2) return null;
+  const latest = Number(records[0]?.[metricKey]);
+  const prev = Number(records[1]?.[metricKey]);
+  if (!Number.isFinite(latest) || !Number.isFinite(prev) || prev === 0) return null;
+  return Math.round(((latest - prev) / Math.abs(prev)) * 10000) / 100;
+};
+
+const buildMacroNextChecks = (
+  gdpTableId: string | null,
+  cpiTableId: string | null,
+): readonly NextCheck[] => {
+  const checks: NextCheck[] = [];
+  if (gdpTableId !== null) {
+    checks.push({ tool: "sg_singstat_table", reason: "Retrieve full GDP table data for detailed analysis.", input: { tableId: gdpTableId } });
+  }
+  if (cpiTableId !== null) {
+    checks.push({ tool: "sg_singstat_table", reason: "Retrieve full CPI table data for inflation analysis.", input: { tableId: cpiTableId } });
+  }
+  checks.push({ tool: "sg_singstat_search", reason: "Discover additional SingStat datasets for deeper macro analysis.", input: { keyword: "Singapore unemployment" } });
+  return checks;
+};
+
 const buildMacroLimits = (): readonly BriefLimit[] => [
   toLimit("STARTER_SNAPSHOT", "This brief is a compact macro starter, not a full economic research note or narrative analysis."),
   toLimit("DATASET_ENTRYPOINTS_ONLY", "SingStat coverage is limited to bounded dataset discovery in this brief rather than full table extraction."),
@@ -1285,20 +1323,27 @@ export const handleMacroBrief = async (
   const exchangeValue = latestExchange?.[exchangeKey]
     ?? latestExchange?.[`${currency.toLowerCase()}_sgd_100`]
     ?? null;
-  const soraMetric = findFirstNumericField(latestInterest);
-  const bankingMetric = findFirstNumericField(latestBanking);
+  const soraMetric = extractNamedMasMetric(latestInterest, ["sora", "sora_1m", "sora_3m", "sora_6m", "sor_average"]);
+  const bankingMetric = extractNamedMasMetric(latestBanking, ["total_deposits", "total_loans", "total_assets", "dbd_deposit"]);
+  const fxDelta = computeMasDelta(exchangeRates, exchangeKey);
+  const soraDelta = soraMetric !== null ? computeMasDelta(interestRates, soraMetric.key) : null;
+  const gdpTableId = gdpDatasets?.[0]?.id ?? null;
+  const cpiTableId = cpiDatasets?.[0]?.id ?? null;
+  const macroNextChecks = buildMacroNextChecks(gdpTableId, cpiTableId);
 
   const payload: BriefArtifact = {
     title: "Macro Brief",
     summary: [
       { label: `${currency}/SGD`, value: typeof exchangeValue === "number" ? exchangeValue : exchangeValue as string | null, source: "MAS" },
       { label: "FX date", value: typeof latestExchange?.["date"] === "string" ? latestExchange["date"] : null, source: "MAS" },
-      { label: "SORA metric", value: soraMetric?.value ?? null, source: "MAS" },
-      { label: "Banking metric", value: bankingMetric?.value ?? null, source: "MAS" },
+      { label: "FX period delta %", value: fxDelta, source: "MAS" },
+      { label: soraMetric?.key ?? "SORA", value: soraMetric?.value ?? null, source: "MAS" },
+      { label: "SORA period delta %", value: soraDelta, source: "MAS" },
+      { label: bankingMetric?.key ?? "Banking metric", value: bankingMetric?.value ?? null, source: "MAS" },
       { label: "GDP dataset", value: gdpDatasets?.[0]?.title ?? null, source: "SingStat" },
-      { label: "GDP table ID", value: gdpDatasets?.[0]?.id ?? null, source: "SingStat" },
+      { label: "GDP table ID", value: gdpTableId, source: "SingStat" },
       { label: "CPI dataset", value: cpiDatasets?.[0]?.title ?? null, source: "SingStat" },
-      { label: "CPI table ID", value: cpiDatasets?.[0]?.id ?? null, source: "SingStat" },
+      { label: "CPI table ID", value: cpiTableId, source: "SingStat" },
     ],
     evidence: [
       { label: "FX rows", value: exchangeRates?.length ?? 0, source: "MAS" },
@@ -1306,7 +1351,8 @@ export const handleMacroBrief = async (
       { label: "Banking rows", value: financialStats?.length ?? 0, source: "MAS" },
       { label: "GDP candidates", value: gdpDatasets?.length ?? 0, source: "SingStat" },
       { label: "CPI candidates", value: cpiDatasets?.length ?? 0, source: "SingStat" },
-      { label: "Primary banking metric", value: bankingMetric?.key ?? null, source: "MAS" },
+      { label: "Primary SORA key", value: soraMetric?.key ?? null, source: "MAS" },
+      { label: "Primary banking key", value: bankingMetric?.key ?? null, source: "MAS" },
     ],
     records: {
       exchangeRates: exchangeRates ?? [],
@@ -1330,6 +1376,7 @@ export const handleMacroBrief = async (
       toFreshness("SingStat CPI search", observedAt, null),
     ],
     limits: buildMacroLimits(),
+    nextChecks: macroNextChecks,
   };
 
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
