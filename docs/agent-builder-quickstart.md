@@ -88,6 +88,22 @@ sg_datagov_resources { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" }
 sg_datagov_rows { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", "limit": 5, "sort": "month desc" }
 ```
 
+## New Data Families
+
+Nine additional families are available as direct tools, all backed by data.gov.sg (no auth required):
+
+- `sg_gebiz_tenders` — government procurement tenders and awards
+- `sg_hawker_centres` — hawker centre directory with coordinates
+- `sg_moe_schools` — school directory by level, zone, name
+- `sg_moh_facilities` — hospitals, clinics, polyclinics
+- `sg_sfa_establishments` — licensed food establishments
+- `sg_nparks_parks` — parks and nature reserves
+- `sg_pub_water_levels` — water level station readings
+- `sg_mom_labour_stats` — labour market statistics
+- `sg_stb_visitor_stats` — tourism visitor arrivals
+
+These complement the property brief with amenity context and the business dossier with procurement history.
+
 ## Practical Rule
 
 If your application needs auditability, use the direct tools. If your application needs onboarding speed for supported Singapore public-data prompts, start with `sg_query` plus `sg://recipes`.
