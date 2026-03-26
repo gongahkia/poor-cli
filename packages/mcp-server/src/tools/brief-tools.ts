@@ -420,6 +420,183 @@ const buildTransportNextChecks = (
   return checks;
 };
 
+const FORECAST_CAUTION_PATTERN = /\b(thunder|thundery|storm|heavy[\s-]*rain)\b/i;
+const FORECAST_WATCH_PATTERN = /\b(rain|showers?)\b/i;
+
+const getForecastRisk = (forecast: string | null | undefined): "caution" | "watch" | "clear" | "unknown" => {
+  if (forecast === null || forecast === undefined || forecast.trim() === "") {
+    return "unknown";
+  }
+  if (FORECAST_CAUTION_PATTERN.test(forecast)) {
+    return "caution";
+  }
+  if (FORECAST_WATCH_PATTERN.test(forecast)) {
+    return "watch";
+  }
+  return "clear";
+};
+
+const getAirQualityBand = (psi24h: number | null | undefined): "caution" | "watch" | "clear" | "unknown" => {
+  if (typeof psi24h !== "number" || !Number.isFinite(psi24h)) {
+    return "unknown";
+  }
+  if (psi24h > 100) {
+    return "caution";
+  }
+  if (psi24h >= 51) {
+    return "watch";
+  }
+  return "clear";
+};
+
+const getRainfallBand = (rainfall: number | null | undefined): "caution" | "watch" | "clear" | "unknown" => {
+  if (typeof rainfall !== "number" || !Number.isFinite(rainfall)) {
+    return "unknown";
+  }
+  if (rainfall >= 10) {
+    return "caution";
+  }
+  if (rainfall > 0) {
+    return "watch";
+  }
+  return "clear";
+};
+
+const buildEnvironmentScopeLabel = (
+  focusArea: string | null,
+  focusRegion: string | null,
+  focusStation: string | null,
+): string => {
+  const scope = [
+    focusArea === null ? null : `area ${focusArea}`,
+    focusRegion === null ? null : `region ${focusRegion}`,
+    focusStation === null ? null : `station ${focusStation}`,
+  ].filter((value): value is string => value !== null);
+
+  return scope.length === 0 ? "the requested scope" : scope.join(", ");
+};
+
+const getEnvironmentOpsLevel = (thresholds: Readonly<{
+  forecastRisk: "caution" | "watch" | "clear" | "unknown";
+  airQualityBand: "caution" | "watch" | "clear" | "unknown";
+  rainfallBand: "caution" | "watch" | "clear" | "unknown";
+}>): "caution" | "watch" | "clear" | "unknown" => {
+  const bands = Object.values(thresholds);
+  if (bands.includes("caution")) {
+    return "caution";
+  }
+  if (bands.includes("watch")) {
+    return "watch";
+  }
+  if (bands.includes("clear")) {
+    return "clear";
+  }
+  return "unknown";
+};
+
+const buildEnvironmentHeadline = (
+  level: "caution" | "watch" | "clear" | "unknown",
+  focusArea: string | null,
+  focusRegion: string | null,
+  focusStation: string | null,
+): string => {
+  const scopeLabel = buildEnvironmentScopeLabel(focusArea, focusRegion, focusStation);
+  if (level === "caution") {
+    return `Environmental caution signals detected for ${scopeLabel}.`;
+  }
+  if (level === "watch") {
+    return `Environmental watch signals detected for ${scopeLabel}.`;
+  }
+  if (level === "clear") {
+    return `Current environmental signals are clear for ${scopeLabel}.`;
+  }
+  return `No current environmental signals are available for ${scopeLabel}.`;
+};
+
+const buildEnvironmentSignals = (
+  primaryForecast: Readonly<Record<string, unknown>> | undefined,
+  primaryAirQuality: Readonly<Record<string, unknown>> | undefined,
+  primaryRainfall: Readonly<Record<string, unknown>> | undefined,
+  thresholds: Readonly<{
+    forecastRisk: "caution" | "watch" | "clear" | "unknown";
+    airQualityBand: "caution" | "watch" | "clear" | "unknown";
+    rainfallBand: "caution" | "watch" | "clear" | "unknown";
+  }>,
+): readonly Readonly<Record<string, unknown>>[] => {
+  const signals: Readonly<Record<string, unknown>>[] = [];
+
+  if (primaryForecast !== undefined) {
+    signals.push({
+      source: "forecast",
+      level: thresholds.forecastRisk,
+      headline: `Forecast ${String(primaryForecast["forecast"] ?? "")} for ${String(primaryForecast["area"] ?? "the requested area")}.`,
+      input: primaryForecast["forecast"] ?? null,
+    });
+  }
+
+  if (primaryAirQuality !== undefined) {
+    signals.push({
+      source: "air_quality",
+      level: thresholds.airQualityBand,
+      headline: `PSI 24h is ${String(primaryAirQuality["psi24h"] ?? "unknown")} for ${String(primaryAirQuality["region"] ?? "the requested region")}.`,
+      input: primaryAirQuality["psi24h"] ?? null,
+    });
+  }
+
+  if (primaryRainfall !== undefined) {
+    signals.push({
+      source: "rainfall",
+      level: thresholds.rainfallBand,
+      headline: `Rainfall is ${String(primaryRainfall["value"] ?? "unknown")} ${String(primaryRainfall["unit"] ?? "")}`.trim()
+        + ` at ${String(primaryRainfall["stationName"] ?? primaryRainfall["stationId"] ?? "the requested station")}.`,
+      input: primaryRainfall["value"] ?? null,
+    });
+  }
+
+  return signals;
+};
+
+const buildEnvironmentNextChecks = (
+  params: Readonly<{
+    area?: string | undefined;
+    region?: string | undefined;
+    stationId?: string | undefined;
+    date?: string | undefined;
+  }>,
+  resolved: Readonly<{
+    focusArea: string | null;
+    focusRegion: string | null;
+    stationId: string | null;
+  }>,
+): readonly Readonly<Record<string, unknown>>[] => {
+  return [
+    {
+      tool: "sg_nea_forecast_2hr",
+      reason: "Inspect the focused 2-hour forecast directly.",
+      input: {
+        ...(resolved.focusArea === null ? params.area === undefined ? {} : { area: params.area } : { area: resolved.focusArea }),
+        ...(params.date === undefined ? {} : { date: params.date }),
+      },
+    },
+    {
+      tool: "sg_nea_air_quality",
+      reason: "Inspect the focused air-quality reading directly.",
+      input: {
+        ...(resolved.focusRegion === null ? params.region === undefined ? {} : { region: params.region } : { region: resolved.focusRegion }),
+        ...(params.date === undefined ? {} : { date: params.date }),
+      },
+    },
+    {
+      tool: "sg_nea_rainfall",
+      reason: "Inspect the focused rainfall reading directly.",
+      input: {
+        ...(resolved.stationId === null ? params.stationId === undefined ? {} : { stationId: params.stationId } : { stationId: resolved.stationId }),
+        ...(params.date === undefined ? {} : { date: params.date }),
+      },
+    },
+  ];
+};
+
 const toProvenance = (
   source: string,
   tool: string,
@@ -1075,24 +1252,61 @@ export const handleEnvironmentBrief = async (
   const primaryForecast = forecast?.[0];
   const primaryAirQuality = airQuality?.[0];
   const primaryRainfall = rainfall?.[0];
+  const focusArea = primaryForecast?.area ?? params.area ?? null;
+  const focusRegion = primaryAirQuality?.region ?? params.region ?? null;
+  const focusStationId = primaryRainfall?.stationId ?? params.stationId ?? null;
+  const focusStation = primaryRainfall?.stationName ?? focusStationId;
+  const thresholds = {
+    forecastRisk: getForecastRisk(primaryForecast?.forecast),
+    airQualityBand: getAirQualityBand(primaryAirQuality?.psi24h),
+    rainfallBand: getRainfallBand(primaryRainfall?.value),
+  } as const;
+  const opsLevel = getEnvironmentOpsLevel(thresholds);
+  const opsHeadline = buildEnvironmentHeadline(opsLevel, focusArea, focusRegion, focusStation);
+  const signals = buildEnvironmentSignals(
+    primaryForecast as Readonly<Record<string, unknown>> | undefined,
+    primaryAirQuality as Readonly<Record<string, unknown>> | undefined,
+    primaryRainfall as Readonly<Record<string, unknown>> | undefined,
+    thresholds,
+  );
+  const nextChecks = buildEnvironmentNextChecks(params, {
+    focusArea,
+    focusRegion,
+    stationId: focusStationId,
+  });
 
   const payload: BriefArtifact = {
     title: "Environment Brief",
     summary: [
-      { label: "Forecast area", value: primaryForecast?.area ?? params.area ?? null, source: "NEA" },
-      { label: "Forecast", value: primaryForecast?.forecast ?? null, source: "NEA" },
-      { label: "Air-quality region", value: primaryAirQuality?.region ?? params.region ?? null, source: "NEA" },
+      { label: "Monitoring status", value: opsHeadline, source: "NEA" },
+      { label: "Forecast risk", value: thresholds.forecastRisk, source: "NEA" },
+      { label: "PSI band", value: thresholds.airQualityBand, source: "NEA" },
       { label: "PSI 24h", value: primaryAirQuality?.psi24h ?? null, source: "NEA" },
-      { label: "Rainfall station", value: primaryRainfall?.stationName ?? params.stationId ?? null, source: "NEA" },
+      { label: "Rainfall band", value: thresholds.rainfallBand, source: "NEA" },
       { label: "Rainfall", value: primaryRainfall?.value ?? null, source: "NEA" },
+      { label: "Focus area", value: focusArea, source: "NEA" },
+      { label: "Focus region", value: focusRegion, source: "NEA" },
+      { label: "Focus station", value: focusStation, source: "NEA" },
     ],
     evidence: [
       { label: "Forecast rows", value: forecast?.length ?? 0, source: "NEA" },
       { label: "Air-quality rows", value: airQuality?.length ?? 0, source: "NEA" },
       { label: "Rainfall rows", value: rainfall?.length ?? 0, source: "NEA" },
-      { label: "Forecast valid window", value: primaryForecast?.validText ?? null, source: "NEA" },
+      { label: "Forecast input", value: primaryForecast?.forecast ?? null, source: "NEA" },
+      { label: "PSI input", value: primaryAirQuality?.psi24h ?? null, source: "NEA" },
+      { label: "Rainfall input", value: primaryRainfall?.value ?? null, source: "NEA" },
     ],
     records: {
+      opsStatus: {
+        level: opsLevel,
+        headline: opsHeadline,
+        focusArea,
+        focusRegion,
+        focusStation,
+      },
+      thresholds,
+      signals,
+      nextChecks,
       forecast: forecast ?? [],
       airQuality: airQuality ?? [],
       rainfall: rainfall ?? [],

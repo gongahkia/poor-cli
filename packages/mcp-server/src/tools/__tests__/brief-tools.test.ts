@@ -375,6 +375,10 @@ describe("brief tools", () => {
     expect(payload.title).toBe("Environment Brief");
     expect(payload.provenance).toHaveLength(3);
     expect(payload.summary.some((item) => item.label === "PSI 24h")).toBe(true);
+    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("watch");
+    expect(payload.records["thresholds"]).toBeDefined();
+    expect(payload.records["signals"]).toBeDefined();
+    expect(payload.records["nextChecks"]).toBeDefined();
 
     const markdownResult = await handleEnvironmentBrief({
       area: "Tampines",
@@ -383,5 +387,135 @@ describe("brief tools", () => {
       format: "markdown",
     });
     expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("returns caution environment status for thundery or heavy-rain forecasts", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Thundery Showers",
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 40,
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getRainfall).mockResolvedValue([
+      {
+        stationId: "S107",
+        stationName: "Tampines",
+        value: 0,
+        timestamp: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+
+    const jsonResult = await handleEnvironmentBrief({
+      area: "Tampines",
+      region: "East",
+      stationId: "S107",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("caution");
+    expect((payload.records["thresholds"] as Record<string, unknown>)["forecastRisk"]).toBe("caution");
+  });
+
+  it("returns watch environment status for moderate PSI with no rain", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Partly Cloudy",
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 75,
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getRainfall).mockResolvedValue([
+      {
+        stationId: "S107",
+        stationName: "Tampines",
+        value: 0,
+        timestamp: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+
+    const jsonResult = await handleEnvironmentBrief({
+      area: "Tampines",
+      region: "East",
+      stationId: "S107",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const nextChecks = payload.records["nextChecks"] as readonly Record<string, unknown>[];
+
+    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("watch");
+    expect((payload.records["thresholds"] as Record<string, unknown>)["airQualityBand"]).toBe("watch");
+    expect((nextChecks[0]?.["input"] as Record<string, unknown>)["area"]).toBe("Tampines");
+    expect((nextChecks[1]?.["input"] as Record<string, unknown>)["region"]).toBe("East");
+    expect((nextChecks[2]?.["input"] as Record<string, unknown>)["stationId"]).toBe("S107");
+  });
+
+  it("returns clear environment status when forecast, air quality, and rainfall are all clear", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Partly Cloudy",
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 40,
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getRainfall).mockResolvedValue([
+      {
+        stationId: "S107",
+        stationName: "Tampines",
+        value: 0,
+        timestamp: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+
+    const jsonResult = await handleEnvironmentBrief({
+      area: "Tampines",
+      region: "East",
+      stationId: "S107",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("clear");
+    expect((payload.records["thresholds"] as Record<string, unknown>)["rainfallBand"]).toBe("clear");
+  });
+
+  it("returns unknown environment status when all upstream reads fail", async () => {
+    vi.mocked(getForecast2Hr).mockRejectedValue(new Error("forecast unavailable"));
+    vi.mocked(getAirQuality).mockRejectedValue(new Error("air unavailable"));
+    vi.mocked(getRainfall).mockRejectedValue(new Error("rainfall unavailable"));
+
+    const jsonResult = await handleEnvironmentBrief({
+      area: "Tampines",
+      region: "East",
+      stationId: "S107",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("unknown");
+    expect(payload.gaps).toHaveLength(3);
+    expect(payload.records["signals"]).toEqual([]);
   });
 });
