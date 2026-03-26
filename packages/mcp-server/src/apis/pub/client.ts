@@ -17,7 +17,7 @@ export type WaterLevelNormalizedRecord = {
 };
 
 export const getWaterLevels = async (
-  params: { readonly station?: string; readonly limit?: number },
+  params: { readonly station?: string | undefined; readonly limit?: number | undefined },
 ): Promise<readonly WaterLevelNormalizedRecord[]> => {
   const filters: Record<string, string> = {};
   if (params.station !== undefined) filters["station"] = params.station;

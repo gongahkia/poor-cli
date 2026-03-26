@@ -25,8 +25,10 @@ const parseArgs = (args: string[]): Record<string, string> => {
 
 const commands: Record<string, (args: string[]) => Promise<void>> = {
   async health() {
-    const { handleHealthCheck } = await import("./tools/ops-tools.js");
-    printResult(await handleHealthCheck());
+    const { getHealthCheckTargets } = await import("./tools/health-check.js");
+    const targets = getHealthCheckTargets();
+    console.log(`health check targets: ${targets.length}`);
+    for (const t of targets) console.log(`  ${t.api}: ${t.url} (auth: ${t.authRequired})`);
   },
   async query(args) {
     const text = args.join(" ");

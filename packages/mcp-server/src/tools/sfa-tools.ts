@@ -11,7 +11,7 @@ const SfaEstablishmentsSchema = z.object({
 }).strict();
 
 export const handleSfaEstablishments = async (
-  params: Readonly<{ name?: string; limit?: number; format?: OutputFormat }>,
+  params: Readonly<{ name?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const data = await getSfaEstablishments(params);
   const format = resolveOutputFormat(params.format);

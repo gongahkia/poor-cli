@@ -12,7 +12,7 @@ const StbVisitorStatsSchema = z.object({
 }).strict();
 
 export const handleStbVisitorStats = async (
-  params: Readonly<{ country?: string; year?: string; limit?: number; format?: OutputFormat }>,
+  params: Readonly<{ country?: string | undefined; year?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const data = await getVisitorArrivals(params);
   const format = resolveOutputFormat(params.format);

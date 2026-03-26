@@ -655,7 +655,7 @@ const toFreshness = (
 });
 
 const buildBusinessRiskFlags = (
-  params: Readonly<{ entityName?: string; uen?: string }>,
+  params: Readonly<{ entityName?: string | undefined; uen?: string | undefined }>,
   acra: readonly Readonly<Record<string, unknown>>[],
   builders: readonly Readonly<Record<string, unknown>>[],
   contractors: readonly Readonly<Record<string, unknown>>[],
@@ -693,7 +693,7 @@ const buildBusinessRiskFlags = (
 };
 
 const buildBusinessMatchConfidence = (
-  params: Readonly<{ entityName?: string; uen?: string; salespersonName?: string; registrationNo?: string; estateAgentName?: string; estateAgentLicenseNo?: string }>,
+  params: Readonly<{ entityName?: string | undefined; uen?: string | undefined; salespersonName?: string | undefined; registrationNo?: string | undefined; estateAgentName?: string | undefined; estateAgentLicenseNo?: string | undefined }>,
   acra: readonly Readonly<Record<string, unknown>>[],
   builders: readonly Readonly<Record<string, unknown>>[],
   contractors: readonly Readonly<Record<string, unknown>>[],
@@ -733,7 +733,7 @@ const buildBusinessMatchConfidence = (
 };
 
 const buildBusinessNextChecks = (
-  params: Readonly<{ entityName?: string; uen?: string }>,
+  params: Readonly<{ entityName?: string | undefined; uen?: string | undefined }>,
 ): readonly NextCheck[] => {
   const checks: NextCheck[] = [];
   if (params.uen !== undefined) {

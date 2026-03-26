@@ -17,7 +17,7 @@ export type VisitorNormalizedRecord = {
 };
 
 export const getVisitorArrivals = async (
-  params: { readonly country?: string; readonly year?: string; readonly limit?: number },
+  params: { readonly country?: string | undefined; readonly year?: string | undefined; readonly limit?: number | undefined },
 ): Promise<readonly VisitorNormalizedRecord[]> => {
   const filters: Record<string, string> = {};
   if (params.country !== undefined) filters["country"] = params.country;

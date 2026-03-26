@@ -11,7 +11,7 @@ const MomLabourStatsSchema = z.object({
 }).strict();
 
 export const handleMomLabourStats = async (
-  params: Readonly<{ indicator?: string; limit?: number; format?: OutputFormat }>,
+  params: Readonly<{ indicator?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const data = await getLabourStats(params);
   const format = resolveOutputFormat(params.format);

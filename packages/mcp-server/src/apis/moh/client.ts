@@ -23,10 +23,10 @@ export type FacilityNormalizedRecord = {
 };
 
 type FacilityFilterParams = {
-  readonly type?: string;
-  readonly name?: string;
-  readonly postalCode?: string;
-  readonly limit?: number;
+  readonly type?: string | undefined;
+  readonly name?: string | undefined;
+  readonly postalCode?: string | undefined;
+  readonly limit?: number | undefined;
 };
 
 export const getHealthcareFacilities = async (

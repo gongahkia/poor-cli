@@ -15,7 +15,7 @@ export type ParkNormalizedRecord = {
 };
 
 export const getParks = async (
-  params: { readonly name?: string; readonly limit?: number },
+  params: { readonly name?: string | undefined; readonly limit?: number | undefined },
 ): Promise<readonly ParkNormalizedRecord[]> => {
   const filters: Record<string, string> = {};
   if (params.name !== undefined) filters["name"] = params.name;

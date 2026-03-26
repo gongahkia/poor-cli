@@ -25,10 +25,10 @@ export type GeBIZNormalizedRecord = {
 };
 
 type GeBIZFilterParams = {
-  readonly agency?: string;
-  readonly category?: string;
-  readonly supplierName?: string;
-  readonly limit?: number;
+  readonly agency?: string | undefined;
+  readonly category?: string | undefined;
+  readonly supplierName?: string | undefined;
+  readonly limit?: number | undefined;
 };
 
 export const getGeBIZTenders = async (

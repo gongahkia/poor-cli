@@ -85,7 +85,7 @@ const buildRoutingExplanation = (plan: Extract<QueryPlan, { supported: true }>):
   return `Routed to ${plan.workflow} (confidence ${plan.confidence.toFixed(2)}) via ${tools}. Drop to direct sg_* tools when you have exact identifiers.`;
 };
 
-const buildContinuationHints = (plan: Extract<QueryPlan, { supported: true }>, steps: readonly ExecutedQueryStep[]): readonly string[] => {
+const buildContinuationHints = (_plan: Extract<QueryPlan, { supported: true }>, steps: readonly ExecutedQueryStep[]): readonly string[] => {
   const hints: string[] = [];
   const lastStep = steps[steps.length - 1];
   if (lastStep === undefined) return hints;

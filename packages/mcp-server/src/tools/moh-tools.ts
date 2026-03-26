@@ -14,11 +14,11 @@ const MohFacilitiesSchema = z.object({
 
 export const handleMohFacilities = async (
   params: Readonly<{
-    type?: string;
-    name?: string;
-    postalCode?: string;
-    limit?: number;
-    format?: OutputFormat;
+    type?: string | undefined;
+    name?: string | undefined;
+    postalCode?: string | undefined;
+    limit?: number | undefined;
+    format?: OutputFormat | undefined;
   }>,
 ): Promise<ToolResult> => {
   const data = await getHealthcareFacilities(params);

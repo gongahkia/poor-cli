@@ -12,9 +12,9 @@ const HawkerCentresSchema = z.object({
 
 export const handleHawkerCentres = async (
   params: Readonly<{
-    name?: string;
-    limit?: number;
-    format?: OutputFormat;
+    name?: string | undefined;
+    limit?: number | undefined;
+    format?: OutputFormat | undefined;
   }>,
 ): Promise<ToolResult> => {
   const data = await getHawkerCentres(params);

@@ -14,11 +14,11 @@ const GeBIZTendersSchema = z.object({
 
 export const handleGeBIZTenders = async (
   params: Readonly<{
-    agency?: string;
-    category?: string;
-    supplierName?: string;
-    limit?: number;
-    format?: OutputFormat;
+    agency?: string | undefined;
+    category?: string | undefined;
+    supplierName?: string | undefined;
+    limit?: number | undefined;
+    format?: OutputFormat | undefined;
   }>,
 ): Promise<ToolResult> => {
   const data = await getGeBIZTenders(params);

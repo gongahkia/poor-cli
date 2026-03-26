@@ -17,7 +17,7 @@ export type SfaNormalizedRecord = {
 };
 
 export const getSfaEstablishments = async (
-  params: { readonly name?: string; readonly limit?: number },
+  params: { readonly name?: string | undefined; readonly limit?: number | undefined },
 ): Promise<readonly SfaNormalizedRecord[]> => {
   const filters: Record<string, string> = {};
   if (params.name !== undefined) filters["business_name"] = params.name;

@@ -11,7 +11,7 @@ const NParksSchema = z.object({
 }).strict();
 
 export const handleNParks = async (
-  params: Readonly<{ name?: string; limit?: number; format?: OutputFormat }>,
+  params: Readonly<{ name?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const data = await getParks(params);
   const format = resolveOutputFormat(params.format);

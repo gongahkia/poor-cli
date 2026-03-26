@@ -15,7 +15,7 @@ export type LabourNormalizedRecord = {
 };
 
 export const getLabourStats = async (
-  params: { readonly indicator?: string; readonly limit?: number },
+  params: { readonly indicator?: string | undefined; readonly limit?: number | undefined },
 ): Promise<readonly LabourNormalizedRecord[]> => {
   const filters: Record<string, string> = {};
   if (params.indicator !== undefined) filters["indicator"] = params.indicator;

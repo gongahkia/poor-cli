@@ -27,10 +27,10 @@ export type SchoolNormalizedRecord = {
 };
 
 type SchoolFilterParams = {
-  readonly level?: string;
-  readonly zone?: string;
-  readonly name?: string;
-  readonly limit?: number;
+  readonly level?: string | undefined;
+  readonly zone?: string | undefined;
+  readonly name?: string | undefined;
+  readonly limit?: number | undefined;
 };
 
 export const getSchools = async (

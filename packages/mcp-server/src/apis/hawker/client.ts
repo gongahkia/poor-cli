@@ -23,8 +23,8 @@ export type HawkerNormalizedRecord = {
 };
 
 type HawkerFilterParams = {
-  readonly name?: string;
-  readonly limit?: number;
+  readonly name?: string | undefined;
+  readonly limit?: number | undefined;
 };
 
 export const getHawkerCentres = async (

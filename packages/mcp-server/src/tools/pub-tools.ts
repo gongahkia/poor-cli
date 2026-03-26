@@ -11,7 +11,7 @@ const PubWaterLevelsSchema = z.object({
 }).strict();
 
 export const handlePubWaterLevels = async (
-  params: Readonly<{ station?: string; limit?: number; format?: OutputFormat }>,
+  params: Readonly<{ station?: string | undefined; limit?: number | undefined; format?: OutputFormat | undefined }>,
 ): Promise<ToolResult> => {
   const data = await getWaterLevels(params);
   const format = resolveOutputFormat(params.format);

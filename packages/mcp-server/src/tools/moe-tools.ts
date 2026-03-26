@@ -14,11 +14,11 @@ const MoeSchoolsSchema = z.object({
 
 export const handleMoeSchools = async (
   params: Readonly<{
-    level?: string;
-    zone?: string;
-    name?: string;
-    limit?: number;
-    format?: OutputFormat;
+    level?: string | undefined;
+    zone?: string | undefined;
+    name?: string | undefined;
+    limit?: number | undefined;
+    format?: OutputFormat | undefined;
   }>,
 ): Promise<ToolResult> => {
   const data = await getSchools(params);
