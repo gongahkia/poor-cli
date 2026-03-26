@@ -363,6 +363,62 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "Use this when the caller has a town and flat type but does not want to construct the direct tool payload manually.",
     ],
   },
+  {
+    name: "Demographic Profile",
+    goal: "Get demographic and population data for a planning area from a postal code.",
+    prompt: "Population profile for postal code 460123",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Population profile for postal code 460123", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_onemap_population"],
+    notes: [
+      "sg_query geocodes the postal code first, then fetches population data for the resolved planning area.",
+      "Available data types include economic_status, education, ethnic_group, household_size, and more.",
+    ],
+  },
+  {
+    name: "Bus Stop Status",
+    goal: "Get live bus arrival timings and transport context for a specific bus stop.",
+    prompt: "Bus arrivals at stop 83139",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Bus arrivals at stop 83139", mode: "execute" },
+    },
+    fallbackTools: ["sg_lta_bus_arrivals", "sg_transport_brief"],
+    notes: [
+      "Use sg_transport_brief for a broader snapshot including train alerts and traffic incidents.",
+      "Bus stop codes are 5-digit numbers found at bus stop poles.",
+    ],
+  },
+  {
+    name: "Outdoor Event Check",
+    goal: "Check if weather and air quality conditions are safe for outdoor activities.",
+    prompt: "Is it safe for outdoor activities in Bedok?",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Environment brief for Bedok", mode: "execute" },
+    },
+    fallbackTools: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality"],
+    notes: [
+      "The environment brief includes an outdoorConditions advisory derived from forecast, air quality, and rainfall.",
+      "Check the outdoorConditions.advisory field for a plain-language recommendation.",
+    ],
+  },
+  {
+    name: "Business Due Diligence",
+    goal: "Run a cross-registry business check across ACRA, BCA, and CEA for a company.",
+    prompt: "Business dossier for UEN 201912345A",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Business dossier for UEN 201912345A", mode: "execute" },
+    },
+    fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_bca_licensed_builders"],
+    notes: [
+      "The dossier includes riskFlags for expired licenses and inactive entities.",
+      "Check matchConfidence to understand whether results are exact-match or fuzzy.",
+    ],
+  },
 ];
 
 export const RESOURCE_URIS = {
