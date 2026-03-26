@@ -30,6 +30,18 @@ vi.mock("../../apis/datagov/client.js", () => ({
   listCollections: vi.fn(),
 }));
 
+vi.mock("../../apis/lta/client.js", () => ({
+  getBusArrivals: vi.fn(),
+  getTrainAlerts: vi.fn(),
+  getTrafficIncidents: vi.fn(),
+}));
+
+vi.mock("../../apis/nea/client.js", () => ({
+  getForecast2Hr: vi.fn(),
+  getAirQuality: vi.fn(),
+  getRainfall: vi.fn(),
+}));
+
 vi.mock("../../apis/cea/client.js", () => ({
   getCeaSalespersons: vi.fn(),
 }));
@@ -47,6 +59,8 @@ import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData } from "../../apis/onemap/client.js";
 import { uraFetch } from "../../apis/ura/client.js";
 import { getDataset, searchDatasets as datagovSearch } from "../../apis/datagov/client.js";
+import { getTrainAlerts, getTrafficIncidents } from "../../apis/lta/client.js";
+import { getAirQuality, getForecast2Hr, getRainfall } from "../../apis/nea/client.js";
 import { getCeaSalespersons } from "../../apis/cea/client.js";
 import {
   getBcaLicensedBuilders,
@@ -71,6 +85,11 @@ describe("sg_query workflows", () => {
     vi.mocked(uraFetch).mockReset();
     vi.mocked(datagovSearch).mockReset();
     vi.mocked(getDataset).mockReset();
+    vi.mocked(getTrainAlerts).mockReset();
+    vi.mocked(getTrafficIncidents).mockReset();
+    vi.mocked(getForecast2Hr).mockReset();
+    vi.mocked(getAirQuality).mockReset();
+    vi.mocked(getRainfall).mockReset();
     vi.mocked(getCeaSalespersons).mockReset();
     vi.mocked(getBcaLicensedBuilders).mockReset();
     vi.mocked(getBcaRegisteredContractors).mockReset();
@@ -87,13 +106,8 @@ describe("sg_query workflows", () => {
     expect(result.structuredContent).toMatchObject({
       status: "planned",
       mode: "plan",
-      workflow: "macro_snapshot",
-      toolsUsed: [
-        "sg_singstat_search",
-        "sg_singstat_search",
-        "sg_mas_exchange_rates",
-        "sg_mas_interest_rates",
-      ],
+      workflow: "macro_brief",
+      toolsUsed: ["sg_macro_brief"],
     });
     expect(vi.mocked(masQuery)).not.toHaveBeenCalled();
   });
@@ -177,6 +191,65 @@ describe("sg_query workflows", () => {
     expect(vi.mocked(getDataset)).toHaveBeenCalledWith("hawker-centres");
   });
 
+  it("routes broad transport status queries to the transport brief", async () => {
+    vi.mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [{ line: "NSL" }],
+      messages: [{ content: "Minor delay", createdDate: "2026-03-26T08:00:00+08:00" }],
+    } as never);
+    vi.mocked(getTrafficIncidents).mockResolvedValue([
+      { type: "Road Works" },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Transport status in Singapore right now",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "transport_brief",
+      toolsUsed: ["sg_transport_brief"],
+    });
+  });
+
+  it("routes broad environment snapshot queries to the environment brief", async () => {
+    vi.mocked(getForecast2Hr).mockResolvedValue([
+      {
+        area: "Tampines",
+        forecast: "Partly Cloudy",
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getAirQuality).mockResolvedValue([
+      {
+        region: "East",
+        psi24h: 40,
+        updatedAt: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+    vi.mocked(getRainfall).mockResolvedValue([
+      {
+        stationId: "S107",
+        stationName: "Tampines",
+        value: 0.2,
+        timestamp: "2026-03-26T08:00:00+08:00",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Environment snapshot of Singapore right now",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "environment_brief",
+      toolsUsed: ["sg_environment_brief"],
+    });
+  });
+
   it("reports the failing step and suggested action when a workflow dependency cannot be resolved", async () => {
     vi.mocked(datagovSearch).mockResolvedValue([]);
 
@@ -207,9 +280,9 @@ describe("sg_query workflows", () => {
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({
       status: "unsupported",
-      workflow: "macro_snapshot",
+      workflow: "macro_brief",
     });
-    expect(JSON.stringify(result.structuredContent)).toContain("single-step direct executions");
+    expect(JSON.stringify(result.structuredContent)).toContain("only supports markdown or json");
   });
 
   it("renders single-step geocode queries in json when requested", async () => {
@@ -317,24 +390,20 @@ describe("sg_query workflows", () => {
     expect(result.isError).toBe(false);
     expect(result.structuredContent).toMatchObject({
       status: "completed",
-      workflow: "business_registry_diligence",
-      toolsUsed: [
-        "sg_acra_entities",
-        "sg_bca_licensed_builders",
-        "sg_bca_registered_contractors",
-      ],
+      workflow: "business_dossier",
+      toolsUsed: ["sg_business_dossier"],
     });
     expect(vi.mocked(getAcraEntities)).toHaveBeenCalledWith(
       expect.objectContaining({
         entityName: "ABC CONSTRUCTION PTE LTD",
-        format: "markdown",
+        limit: 5,
       }),
     );
     expect(vi.mocked(getBcaRegisteredContractors)).toHaveBeenCalledWith(
       expect.objectContaining({
         companyName: "ABC CONSTRUCTION PTE LTD",
         workhead: "CW01",
-        format: "markdown",
+        limit: 5,
       }),
     );
     expect(vi.mocked(getCeaSalespersons)).not.toHaveBeenCalled();
