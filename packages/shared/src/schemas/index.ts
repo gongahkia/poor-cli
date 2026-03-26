@@ -410,6 +410,23 @@ export const EnvironmentBriefBaseSchema = z.object({
 
 export const EnvironmentBriefSchema = EnvironmentBriefBaseSchema;
 
+const RiskFlagSchema = z.object({
+  code: z.string().min(1),
+  severity: z.enum(["high", "medium", "low"]),
+  message: z.string().min(1),
+  source: z.string().min(1),
+}).strict();
+const MatchConfidenceSchema = z.object({
+  source: z.string().min(1),
+  confidence: z.enum(["exact", "name-fuzzy", "no-match"]),
+  matchedOn: z.string().nullable(),
+}).strict();
+const NextCheckSchema = z.object({
+  tool: z.string().min(1),
+  reason: z.string().min(1),
+  input: z.record(z.unknown()),
+}).strict();
+
 export const BriefArtifactSchema = z.object({
   title: z.string().min(1),
   summary: z.array(BriefSummaryItemSchema),
@@ -419,6 +436,9 @@ export const BriefArtifactSchema = z.object({
   provenance: z.array(BriefProvenanceItemSchema),
   freshness: z.array(BriefFreshnessItemSchema),
   limits: z.array(BriefLimitSchema),
+  riskFlags: z.array(RiskFlagSchema).optional(),
+  matchConfidence: z.array(MatchConfidenceSchema).optional(),
+  nextChecks: z.array(NextCheckSchema).optional(),
 }).strict();
 
 export const AcraEntitiesSchema = AcraEntitiesBaseSchema.refine(

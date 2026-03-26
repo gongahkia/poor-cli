@@ -106,6 +106,25 @@ export type BriefFreshnessItem = {
 
 export type BriefArtifactRecord = Readonly<Record<string, unknown>>;
 
+export type RiskFlag = {
+  readonly code: string;
+  readonly severity: "high" | "medium" | "low";
+  readonly message: string;
+  readonly source: string;
+};
+
+export type MatchConfidence = {
+  readonly source: string;
+  readonly confidence: "exact" | "name-fuzzy" | "no-match";
+  readonly matchedOn: string | null;
+};
+
+export type NextCheck = {
+  readonly tool: string;
+  readonly reason: string;
+  readonly input: Readonly<Record<string, unknown>>;
+};
+
 export type BriefArtifact = {
   readonly title: string;
   readonly summary: readonly BriefSummaryItem[];
@@ -115,4 +134,7 @@ export type BriefArtifact = {
   readonly provenance: readonly BriefProvenanceItem[];
   readonly freshness: readonly BriefFreshnessItem[];
   readonly limits: readonly BriefLimit[];
+  readonly riskFlags?: readonly RiskFlag[];
+  readonly matchConfidence?: readonly MatchConfidence[];
+  readonly nextChecks?: readonly NextCheck[];
 };
