@@ -19,6 +19,8 @@ const ROUTES: Record<string, string> = {
   "/singstat/tabledata/": "singstat/__tests__/fixtures/data-response.json",
   "/mas/search.json": "mas/__tests__/fixtures/search-response.json",
   "/onemap/common/elastic/search": "onemap/__tests__/fixtures/search-response.json",
+  "/onemap/public/revgeocode": "onemap/__tests__/fixtures/reverse-geocode-response.json",
+  "/onemap/public/routingsvc/route": "onemap/__tests__/fixtures/route-response.json",
   "/ura/invokeUraDS": "ura/__tests__/fixtures/search-response.json",
   "/ura/insertNewToken.action": "ura/__tests__/fixtures/search-response.json",
   "/datagov/datasets/": "datagov/__tests__/fixtures/metadata-response.json",
