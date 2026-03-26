@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   API_CATALOG,
+  RECIPE_CATALOG,
   RESOURCE_URIS,
   TOOL_CATALOG,
   WORKFLOW_CATALOG,
@@ -129,5 +130,12 @@ describe("resource catalog parity", () => {
     const result = await resourceHandlers.get(RESOURCE_URIS.workflows)!();
 
     expect(JSON.parse(result.contents[0]!.text!)).toEqual(WORKFLOW_CATALOG);
+  });
+
+  it("serves the recipe catalog through sg://recipes", async () => {
+    const { resourceHandlers } = collectSurface();
+    const result = await resourceHandlers.get(RESOURCE_URIS.recipes)!();
+
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(RECIPE_CATALOG);
   });
 });
