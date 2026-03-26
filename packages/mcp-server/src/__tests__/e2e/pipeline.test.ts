@@ -100,6 +100,18 @@ describe("E2E Pipeline", () => {
     expect(intent.extractedParams["planningArea"]).toBe("Tampines");
   });
 
+  it("routes broad transport snapshot queries to the transport brief workflow", () => {
+    const intent = classifyIntent("Transport status in Singapore right now");
+    expect(intent.intent).toBe("transport");
+    expect(intent.workflow).toBe("transport_brief");
+  });
+
+  it("routes broad environment snapshot queries to the environment brief workflow", () => {
+    const intent = classifyIntent("Environment snapshot of Singapore right now");
+    expect(intent.intent).toBe("environment");
+    expect(intent.workflow).toBe("environment_brief");
+  });
+
   it("routes HDB resale queries to the curated HDB tool", () => {
     const intent = classifyIntent("HDB resale prices in Bedok from 2026-01 to 2026-03");
     expect(intent.intent).toBe("housing");
