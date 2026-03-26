@@ -32,6 +32,15 @@ const ROUTES: Record<string, string> = {
   "/nea/rainfall": "nea/__tests__/fixtures/rainfall-response.json",
 };
 
+const DATASTORE_FIXTURES_BY_RESOURCE_ID: Record<string, string> = {
+  d_8b84c4ee58e3cfc0ece0d773c8ca6abc: "hdb/__tests__/fixtures/resale-response.json",
+  d_c9f57187485a850908655db0e8cfe651: "hdb/__tests__/fixtures/rental-response.json",
+  d_8575e84912df3c28995b8e6e0e05205a: "acra/__tests__/fixtures/search-response.json",
+  d_19573c579879be15623f2e1e3854926d: "bca/__tests__/fixtures/licensed-builders-response.json",
+  d_dcda79be4aded5f9e769b8e23ff69b47: "bca/__tests__/fixtures/registered-contractors-response.json",
+  d_07c63be0f37e6e59c07a4ddc2fd87fcb: "cea/__tests__/fixtures/search-response.json",
+};
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost`);
   const delay = parseInt(url.searchParams.get("delay") ?? "0", 10);
@@ -39,10 +48,9 @@ const server = createServer((req, res) => {
   const respond = (): void => {
     if (url.pathname === "/datagov/action/datastore_search") {
       const resourceId = url.searchParams.get("resource_id");
-      const fixture =
-        resourceId === "d_c9f57187485a850908655db0e8cfe651"
-          ? "hdb/__tests__/fixtures/rental-response.json"
-          : "hdb/__tests__/fixtures/resale-response.json";
+      const fixture = resourceId === null
+        ? "hdb/__tests__/fixtures/resale-response.json"
+        : DATASTORE_FIXTURES_BY_RESOURCE_ID[resourceId] ?? "hdb/__tests__/fixtures/resale-response.json";
       res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
       res.end(loadFixture(fixture));
       return;
