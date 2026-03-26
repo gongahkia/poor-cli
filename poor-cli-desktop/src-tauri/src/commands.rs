@@ -7,8 +7,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 async fn send_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
-    let mut backend = state.backend.lock().map_err(|e| e.to_string())?;
-    let backend = backend.as_mut().ok_or("backend not initialized")?;
+    let mut guard = state.backend.lock().await;
+    let backend = guard.as_mut().ok_or("backend not initialized")?;
     let id = state.next_request_id();
     let request = json!({
         "jsonrpc": "2.0",
@@ -37,7 +37,7 @@ pub async fn initialize_backend(
 ) -> Result<Value, String> {
     // spawn poor-cli-server if not already running
     {
-        let mut backend = state.backend.lock().map_err(|e| e.to_string())?;
+        let mut backend = state.backend.lock().await;
         if backend.is_none() {
             let mut child = Command::new("poor-cli-server")
                 .arg("--stdio")
@@ -63,7 +63,7 @@ pub async fn initialize_backend(
         params["model"] = json!(m);
     }
     let result = send_rpc(&state, "initialize", params).await?;
-    *state.initialized.lock().map_err(|e| e.to_string())? = true;
+    *state.initialized.lock().await = true;
     Ok(result)
 }
 
