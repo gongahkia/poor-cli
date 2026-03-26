@@ -4,17 +4,68 @@ import { query } from "../apis/mas/client.js";
 import { normalizeMasRecord } from "../apis/mas/normalizer.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
-export const handleMasExchangeRates = async (
-  params: Readonly<{ currency?: string | undefined; date?: string | undefined; format?: OutputFormat | undefined }>,
-): Promise<ToolResult> => {
-  const { currency, date, format } = params;
-  const filters: Record<string, string> = {};
-  if (date !== undefined) filters["end_of_day"] = date;
-  const queryParams: { limit: number; filters?: Readonly<Record<string, string>> } = { limit: 100 };
-  if (Object.keys(filters).length > 0) queryParams.filters = filters;
-  const records = await query(MasDataset.EXCHANGE_RATES, queryParams);
+const normalizeDateOnly = (value: string): string => value.slice(0, 10);
 
-  let normalized = records.map(normalizeMasRecord);
+export const filterMasRecordsByDate = (
+  records: readonly Record<string, unknown>[],
+  params: Readonly<{ date?: string | undefined; startDate?: string | undefined; endDate?: string | undefined }>,
+): readonly Record<string, unknown>[] => {
+  const withDate = records.filter((record) => typeof record["date"] === "string");
+  const exactDate = params.date;
+  const startDate = params.startDate;
+  const endDate = params.endDate;
+
+  return withDate
+    .filter((record) => {
+      const dateValue = normalizeDateOnly(record["date"] as string);
+      if (exactDate !== undefined && dateValue !== exactDate) {
+        return false;
+      }
+      if (startDate !== undefined && dateValue < startDate) {
+        return false;
+      }
+      if (endDate !== undefined && dateValue > endDate) {
+        return false;
+      }
+      return true;
+    })
+    .sort((left, right) =>
+      String(right["date"]).localeCompare(String(left["date"])),
+    );
+};
+
+export const fetchNormalizedMasRecords = async (
+  dataset: string,
+  params: Readonly<{ date?: string | undefined; startDate?: string | undefined; endDate?: string | undefined }>,
+): Promise<readonly Record<string, unknown>[]> => {
+  const filters: Record<string, string> = {};
+  if (params.date !== undefined) {
+    filters["end_of_day"] = params.date;
+  }
+
+  const records = await query(dataset, {
+    limit: 100,
+    sort: "end_of_day desc",
+    ...(Object.keys(filters).length === 0 ? {} : { filters }),
+  });
+
+  return filterMasRecordsByDate(
+    records.map(normalizeMasRecord) as readonly Record<string, unknown>[],
+    params,
+  );
+};
+
+export const handleMasExchangeRates = async (
+  params: Readonly<{
+    currency?: string | undefined;
+    date?: string | undefined;
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+    format?: OutputFormat | undefined;
+  }>,
+): Promise<ToolResult> => {
+  const { currency, format } = params;
+  let normalized = [...await fetchNormalizedMasRecords(MasDataset.EXCHANGE_RATES, params)];
   if (currency !== undefined) {
     const key = `${currency.toLowerCase()}_sgd`;
     normalized = normalized.map((r) => ({
@@ -34,15 +85,15 @@ export const handleMasExchangeRates = async (
 };
 
 export const handleMasInterestRates = async (
-  params: Readonly<{ date?: string | undefined; format?: OutputFormat | undefined }>,
+  params: Readonly<{
+    date?: string | undefined;
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+    format?: OutputFormat | undefined;
+  }>,
 ): Promise<ToolResult> => {
-  const { date, format } = params;
-  const filters: Record<string, string> = {};
-  if (date !== undefined) filters["end_of_day"] = date;
-  const queryParams: { limit: number; filters?: Readonly<Record<string, string>> } = { limit: 100 };
-  if (Object.keys(filters).length > 0) queryParams.filters = filters;
-  const records = await query(MasDataset.INTEREST_RATES_SORA, queryParams);
-  const normalized = records.map(normalizeMasRecord);
+  const { format } = params;
+  const normalized = await fetchNormalizedMasRecords(MasDataset.INTEREST_RATES_SORA, params);
   const fmt = resolveOutputFormat(format);
   const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
   return {
@@ -54,15 +105,15 @@ export const handleMasInterestRates = async (
 };
 
 export const handleMasFinancialStats = async (
-  params: Readonly<{ date?: string | undefined; format?: OutputFormat | undefined }>,
+  params: Readonly<{
+    date?: string | undefined;
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+    format?: OutputFormat | undefined;
+  }>,
 ): Promise<ToolResult> => {
-  const { date, format } = params;
-  const filters: Record<string, string> = {};
-  if (date !== undefined) filters["end_of_day"] = date;
-  const queryParams: { limit: number; filters?: Readonly<Record<string, string>> } = { limit: 100 };
-  if (Object.keys(filters).length > 0) queryParams.filters = filters;
-  const records = await query(MasDataset.BANKING_STATS, queryParams);
-  const normalized = records.map(normalizeMasRecord);
+  const { format } = params;
+  const normalized = await fetchNormalizedMasRecords(MasDataset.BANKING_STATS, params);
   const fmt = resolveOutputFormat(format);
   const text = formatResponse(normalized as unknown as Record<string, unknown>[], fmt);
   return {
@@ -76,7 +127,7 @@ export const handleMasFinancialStats = async (
 export const masToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_mas_exchange_rates",
-    description: "Get MAS exchange rates for SGD against foreign currencies. Supports latest data or an exact date lookup.",
+    description: "Get MAS exchange rates for SGD against foreign currencies. Supports latest data, an exact date, or a bounded date range.",
     surface: "canonical",
     inputSchema: MasExchangeRateSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
@@ -86,7 +137,7 @@ export const masToolDefinitions: readonly RegisteredToolDefinition[] = [
 
   {
     name: "sg_mas_interest_rates",
-    description: "Get MAS interest rates. This phase supports SORA only, with latest data or an exact date lookup.",
+    description: "Get MAS interest rates. This phase supports SORA only, with latest data, an exact date, or a bounded date range.",
     surface: "canonical",
     inputSchema: MasInterestRateSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
@@ -96,7 +147,7 @@ export const masToolDefinitions: readonly RegisteredToolDefinition[] = [
 
   {
     name: "sg_mas_financial_stats",
-    description: "Get MAS banking statistics. This phase supports banking data only, with latest data or an exact date lookup.",
+    description: "Get MAS banking statistics. This phase supports banking data only, with latest data, an exact date, or a bounded date range.",
     surface: "canonical",
     inputSchema: MasFinancialStatsSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
