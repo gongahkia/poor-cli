@@ -1549,11 +1549,21 @@ export const handleEnvironmentBrief = async (
     ),
   ]);
 
+  const AREA_TO_REGION: Readonly<Record<string, string>> = {
+    "Ang Mo Kio": "central", "Bedok": "east", "Bishan": "central", "Bukit Batok": "west",
+    "Bukit Merah": "central", "Bukit Panjang": "west", "Bukit Timah": "central",
+    "Choa Chu Kang": "west", "Clementi": "west", "Geylang": "central", "Hougang": "north",
+    "Jurong East": "west", "Jurong West": "west", "Kallang": "central", "Marine Parade": "east",
+    "Pasir Ris": "east", "Punggol": "north", "Queenstown": "central", "Sembawang": "north",
+    "Sengkang": "north", "Serangoon": "central", "Tampines": "east", "Toa Payoh": "central",
+    "Woodlands": "north", "Yishun": "north",
+  };
   const primaryForecast = forecast?.[0];
   const primaryAirQuality = airQuality?.[0];
   const primaryRainfall = rainfall?.[0];
+  const inferredRegion = params.region ?? (params.area !== undefined ? AREA_TO_REGION[params.area] ?? null : null);
   const focusArea = primaryForecast?.area ?? params.area ?? null;
-  const focusRegion = primaryAirQuality?.region ?? params.region ?? null;
+  const focusRegion = primaryAirQuality?.region ?? inferredRegion ?? null;
   const focusStationId = primaryRainfall?.stationId ?? params.stationId ?? null;
   const focusStation = primaryRainfall?.stationName ?? focusStationId;
   const thresholds = {
@@ -1569,6 +1579,24 @@ export const handleEnvironmentBrief = async (
     primaryRainfall as Readonly<Record<string, unknown>> | undefined,
     thresholds,
   );
+  const outdoorConditions = (() => {
+    if (opsLevel === "caution") {
+      const reasons: string[] = [];
+      if (thresholds.forecastRisk === "caution") reasons.push("thunderstorms or heavy rain expected");
+      if (thresholds.airQualityBand === "caution") reasons.push("poor air quality (PSI > 100)");
+      if (thresholds.rainfallBand === "caution") reasons.push("heavy rainfall detected");
+      return { advisory: "Avoid prolonged outdoor activities", reasons };
+    }
+    if (opsLevel === "watch") {
+      const reasons: string[] = [];
+      if (thresholds.forecastRisk === "watch") reasons.push("rain or showers possible");
+      if (thresholds.airQualityBand === "watch") reasons.push("moderate air quality (PSI 51-100)");
+      if (thresholds.rainfallBand === "watch") reasons.push("light rainfall detected");
+      return { advisory: "Carry umbrella, monitor conditions", reasons };
+    }
+    if (opsLevel === "clear") return { advisory: "Safe for outdoor activities", reasons: [] };
+    return { advisory: "Conditions unknown, check individual signals", reasons: [] };
+  })();
   const nextChecks = buildEnvironmentNextChecks(params, {
     focusArea,
     focusRegion,
@@ -1604,9 +1632,14 @@ export const handleEnvironmentBrief = async (
         focusRegion,
         focusStation,
       },
+      outdoorConditions,
       thresholds,
       signals,
       nextChecks,
+      rainfallStation: primaryRainfall !== undefined ? {
+        stationId: primaryRainfall.stationId ?? null,
+        stationName: primaryRainfall.stationName ?? null,
+      } : null,
       forecast: forecast ?? [],
       airQuality: airQuality ?? [],
       rainfall: rainfall ?? [],
