@@ -11,7 +11,8 @@
     "!dist/**/mock-server/**"
   ],
   "bin": {
-    "sg-apis-mcp": "./dist/index.js"
+    "sg-apis-mcp": "./dist/index.js",
+    "sg-data": "./dist/cli.js"
   },
   "publishConfig": {
     "access": "public"
