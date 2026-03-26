@@ -1,4 +1,4 @@
-import { ApiError, createLogger, getMockApiBaseUrl } from "@sg-apis/shared";
+import { ApiError, getMockApiBaseUrl } from "@sg-apis/shared";
 import type {
   OneMapSearchResponse,
   GeocodeResult,
@@ -10,8 +10,6 @@ import type {
 } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 import { authenticatedFetch } from "./auth.js";
-
-const logger = createLogger("onemap-client");
 
 const getBaseUrl = (): string => {
   const mockApiBaseUrl = getMockApiBaseUrl();
@@ -37,35 +35,16 @@ const onemapGet = async <T>(url: string): Promise<T> => {
     return (await response.json()) as T;
   }
 
-  // In real mode, use authenticated fetch
-  try {
-    const response = await authenticatedFetch(url);
-    if (!response.ok) {
-      throw new ApiError({
-        apiName: "onemap",
-        statusCode: response.status,
-        message: `OneMap request failed: ${response.statusText}`,
-        retryable: response.status >= 500,
-      });
-    }
-    return (await response.json()) as T;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    // If auth fails (credentials not configured), fall back to unauthenticated
-    logger.warn("auth failed, attempting unauthenticated request", {
-      error: error instanceof Error ? error.message : String(error),
+  const response = await authenticatedFetch(url);
+  if (!response.ok) {
+    throw new ApiError({
+      apiName: "onemap",
+      statusCode: response.status,
+      message: `OneMap request failed: ${response.statusText}`,
+      retryable: response.status >= 500,
     });
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new ApiError({
-        apiName: "onemap",
-        statusCode: response.status,
-        message: `OneMap request failed: ${response.statusText}`,
-        retryable: response.status >= 500,
-      });
-    }
-    return (await response.json()) as T;
   }
+  return (await response.json()) as T;
 };
 
 export const geocode = async (searchVal: string, limit = 10): Promise<GeocodeResult[]> => {
