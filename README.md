@@ -181,6 +181,8 @@ Read the built-in catalogs before wiring your own client logic:
 
 `sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools.
 
+For application wiring, start with [`examples/integration/basic-client.ts`](./examples/integration/basic-client.ts). It connects once, caches `sg://recipes`, uses `sg_query` for covered prompts, surfaces blocked or unsupported outcomes directly, and falls back to direct `sg_*` tools when the caller already has exact parameters.
+
 ## Authentication
 
 Copy [`.env.example`](./.env.example) and set the credentials you actually need:

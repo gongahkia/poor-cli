@@ -60,6 +60,8 @@ Build your client around those outcomes:
 4. Surface blocker messages directly to the caller instead of trying to infer missing data.
 5. Keep the direct tool names visible in logs and traces so developers can debug routing decisions.
 
+The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts).
+
 ## Useful Starter Paths
 
 ### Geospatial

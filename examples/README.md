@@ -67,7 +67,7 @@ Every profile reads one resource, calls one direct tool, calls one supporting to
 
 ## Integration Example
 
-`integration/basic-client.ts` shows how to connect a TypeScript MCP client, read discovery resources, call `sg_query`, handle blocked/unsupported states, and fall back to direct tools:
+`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes`, runs one covered `sg_query` prompt, demonstrates both blocked and unsupported outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters:
 
 ```bash
 npx tsx examples/integration/basic-client.ts
