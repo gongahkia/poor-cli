@@ -1,4 +1,6 @@
 // file changes panel — groups mutations by directory, renders status + stats
+import { rpc } from './rpc.js';
+
 const panel = document.getElementById('file-changes-panel');
 const body = document.getElementById('fcp-body');
 const closeBtn = document.getElementById('fcp-close');
@@ -92,10 +94,25 @@ function renderFileList(mutations, changes) {
   }
 }
 
-function showDiffPreview(file) {
+async function showDiffPreview(file) {
   diffPreview.hidden = false;
-  diffPreview.innerHTML = `<div class="diff-title">${file.name} — preview</div>` +
-    `<div class="diff-ctx">  // diff data requires preview_mutation RPC</div>` +
-    `<div class="diff-ctx">  // operation: ${file.operation}</div>` +
-    `<div class="diff-ctx">  // path: ${file.path}</div>`;
+  diffPreview.innerHTML = `<div class="diff-title">${file.name}</div><div class="diff-ctx">loading...</div>`;
+  try {
+    const result = await rpc('preview_mutation', { filePath: file.path, operation: file.operation });
+    const lines = (result.diff || result.preview || result.content || '').split('\n');
+    let html = `<div class="diff-title">${file.name}</div>`;
+    for (const line of lines) {
+      if (line.startsWith('+')) html += `<div class="diff-add">${escapeHtml(line)}</div>`;
+      else if (line.startsWith('-')) html += `<div class="diff-del">${escapeHtml(line)}</div>`;
+      else html += `<div class="diff-ctx">${escapeHtml(line)}</div>`;
+    }
+    diffPreview.innerHTML = html;
+  } catch (_) {
+    diffPreview.innerHTML = `<div class="diff-title">${file.name}</div>` +
+      `<div class="diff-ctx">${escapeHtml(file.operation)} ${escapeHtml(file.path)}</div>`;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
