@@ -6,9 +6,7 @@ module Seuss.TUI.App
 
 import Brick
 import qualified Brick.Main as M
-import Brick.Util (fg, on)
 import Brick.Widgets.Border (borderWithLabel)
-import Control.Monad.State.Class (get, put)
 import Data.Char (digitToInt)
 import Data.List (nub, sort)
 import qualified Data.Map.Strict as Map
@@ -453,6 +451,7 @@ searchBackspace state =
                         else T.init (appSearch state)
                 , appEntityIndex = 0
                 }
+        ModeCommand -> state
 
 searchAppend :: Char -> AppState -> AppState
 searchAppend charValue state =
@@ -464,6 +463,7 @@ searchAppend charValue state =
                 , appEntityIndex = 0
                 , appStatus = "Filtering entities"
                 }
+        ModeCommand -> state
 
 commandBackspace :: AppState -> AppState
 commandBackspace state =
@@ -715,7 +715,7 @@ followSelection state =
         PaneRelationships ->
             jumpRelationshipEndpoint True state
         PaneDiagnostics ->
-            state{appStatus = "Diagnostic source jumps are not implemented yet"}
+            followDiagnostic state
 
 jumpRelationshipEndpoint :: Bool -> AppState -> AppState
 jumpRelationshipEndpoint useSource state =
@@ -725,6 +725,86 @@ jumpRelationshipEndpoint useSource state =
             focusEntityByName
                 (if useSource then layoutRelSource relationship else layoutRelTarget relationship)
                 state
+
+followDiagnostic :: AppState -> AppState
+followDiagnostic state =
+    case safeIndex (appDiagnosticIndex state) (appDiagnostics state) of
+        Nothing -> state{appStatus = "No diagnostic selected"}
+        Just diagnostic ->
+            case diagnosticRelationshipPair diagnostic of
+                Just (sourceName, targetName) ->
+                    focusRelationshipBy
+                        (\relationship -> layoutRelSource relationship == sourceName && layoutRelTarget relationship == targetName)
+                        ("Focused relationship " <> sourceName <> " -> " <> targetName)
+                        state
+                Nothing ->
+                    case diagnosticEntityTarget diagnostic of
+                        Just entityNameValue ->
+                            focusEntityByName entityNameValue state
+                        Nothing ->
+                            case diagnosticTimelineTarget diagnostic of
+                                Just timelineNameValue ->
+                                    focusTimelineByName timelineNameValue state
+                                Nothing ->
+                                    case diagnosticRelationshipSourceTarget diagnostic of
+                                        Just sourceName ->
+                                            focusRelationshipBy
+                                                (\relationship -> layoutRelSource relationship == sourceName)
+                                                ("Focused relationship source " <> sourceName)
+                                                state
+                                        Nothing ->
+                                            case diagnosticRelationshipDestinationTarget diagnostic of
+                                                Just targetName ->
+                                                    focusRelationshipBy
+                                                        (\relationship -> layoutRelTarget relationship == targetName)
+                                                        ("Focused relationship target " <> targetName)
+                                                        state
+                                                Nothing ->
+                                                    state
+                                                        { appStatus =
+                                                            maybe
+                                                                "No navigation target for selected diagnostic"
+                                                                renderDiagnosticLocation
+                                                                (diagnosticSpan diagnostic)
+                                                        }
+
+diagnosticEntityTarget :: Diagnostic -> Maybe Text
+diagnosticEntityTarget diagnostic =
+    takeTargetName =<< T.stripPrefix "entity " (diagnosticMessage diagnostic)
+
+diagnosticTimelineTarget :: Diagnostic -> Maybe Text
+diagnosticTimelineTarget diagnostic =
+    takeTargetName =<< T.stripPrefix "timeline " (diagnosticMessage diagnostic)
+
+diagnosticRelationshipPair :: Diagnostic -> Maybe (Text, Text)
+diagnosticRelationshipPair diagnostic = do
+    targetText <- T.stripPrefix "relationship temporal scope has start after end: " (diagnosticMessage diagnostic)
+    case T.splitOn " -> " targetText of
+        [sourceName, targetName] -> Just (sourceName, targetName)
+        _ -> Nothing
+
+diagnosticRelationshipSourceTarget :: Diagnostic -> Maybe Text
+diagnosticRelationshipSourceTarget diagnostic =
+    T.stripPrefix "relationship source not found: " (diagnosticMessage diagnostic)
+
+diagnosticRelationshipDestinationTarget :: Diagnostic -> Maybe Text
+diagnosticRelationshipDestinationTarget diagnostic =
+    T.stripPrefix "relationship target not found: " (diagnosticMessage diagnostic)
+
+takeTargetName :: Text -> Maybe Text
+takeTargetName targetText =
+    case T.words targetText of
+        targetName : _ -> Just targetName
+        [] -> Nothing
+
+renderDiagnosticLocation :: SourceSpan -> Text
+renderDiagnosticLocation sourceSpan =
+    "Diagnostic at "
+        <> T.pack (spanFile sourceSpan)
+        <> ":"
+        <> T.pack (show (spanStartLine sourceSpan))
+        <> ":"
+        <> T.pack (show (spanStartColumn sourceSpan))
 
 focusEntityByName :: Text -> AppState -> AppState
 focusEntityByName entityNameValue state =
@@ -737,6 +817,46 @@ focusEntityByName entityNameValue state =
                     { appPane = PaneEntities
                     , appEntityIndex = indexValue
                     , appStatus = "Focused entity " <> entityNameValue
+                    }
+  where
+    baseState =
+        (recordHistory state)
+            { appSearch = ""
+            , appTypeFilter = Nothing
+            , appNeighborhoodOnly = False
+            , appScrubPoint = Nothing
+            }
+
+focusTimelineByName :: Text -> AppState -> AppState
+focusTimelineByName timelineNameValue state =
+    case lookupIndexBy (\timeline -> layoutTimelineName timeline == timelineNameValue) (layoutTimelines (appLayout baseState)) of
+        Nothing ->
+            baseState{appStatus = "Unable to focus timeline " <> timelineNameValue}
+        Just indexValue ->
+            noteCurrentSelection $
+                baseState
+                    { appPane = PaneTimelines
+                    , appTimelineIndex = indexValue
+                    , appStatus = "Focused timeline " <> timelineNameValue
+                    }
+  where
+    baseState =
+        (recordHistory state)
+            { appNeighborhoodOnly = False
+            , appScrubPoint = Nothing
+            }
+
+focusRelationshipBy :: (LayoutRelationship -> Bool) -> Text -> AppState -> AppState
+focusRelationshipBy predicate successMessage state =
+    case lookupIndexBy predicate (visibleRelationships baseState) of
+        Nothing ->
+            baseState{appStatus = "Unable to focus relationship for selected diagnostic"}
+        Just indexValue ->
+            noteCurrentSelection $
+                baseState
+                    { appPane = PaneRelationships
+                    , appRelationshipIndex = indexValue
+                    , appStatus = successMessage
                     }
   where
     baseState =

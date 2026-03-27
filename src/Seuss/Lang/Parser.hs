@@ -311,7 +311,7 @@ entityDeclParser :: Parser EntityDecl
 entityDeclParser = do
     _ <- symbol "entity"
     name <- identifier
-    entityType <- optional (symbol ":" *> identifier)
+    entityTypeName <- optional (symbol ":" *> identifier)
     fields <- braces (many entityFieldParser)
     let customFields =
             Map.fromList
@@ -325,7 +325,7 @@ entityDeclParser = do
     pure
         EntityDecl
             { entityDeclName = name
-            , entityDeclType = entityType
+            , entityDeclType = entityTypeName
             , entityDeclFields = customFields
             , entityDeclAppearances = appearances
             }
@@ -461,8 +461,8 @@ paramParser :: Parser (Text, Text)
 paramParser = do
     name <- identifier
     _ <- symbol ":"
-    typeName <- identifier
-    pure (name, typeName)
+    paramTypeName <- identifier
+    pure (name, paramTypeName)
 
 ifDeclParser :: Parser IfDecl
 ifDeclParser = do
@@ -550,7 +550,7 @@ appearanceFieldParser :: Parser EntityFieldEntry
 appearanceFieldParser = do
     _ <- symbol "appears_on"
     _ <- symbol ":"
-    timelineName <- identifier
+    appearanceTimelineName <- identifier
     _ <- symbol "@"
     startValue <- nonRangeExprParser
     _ <- symbol ".."
@@ -559,7 +559,7 @@ appearanceFieldParser = do
     pure $
         AppearanceField
             AppearanceDecl
-                { appearanceDeclTimeline = timelineName
+                { appearanceDeclTimeline = appearanceTimelineName
                 , appearanceDeclStart = startValue
                 , appearanceDeclEnd = endValue
                 }
@@ -574,10 +574,10 @@ timelineFieldParser = do
 
 timelineRefExprParser :: Parser Expr
 timelineRefExprParser = do
-    timelineName <- identifier
+    timelineRefName <- identifier
     _ <- symbol "@"
     point <- exprParser
-    pure (ExprBinary OpEq (ExprIdent timelineName) point)
+    pure (ExprBinary OpEq (ExprIdent timelineRefName) point)
 
 labeledArrow :: Parser (Maybe Text, Bool)
 labeledArrow = do

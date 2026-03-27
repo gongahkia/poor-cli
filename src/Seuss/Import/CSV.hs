@@ -193,26 +193,26 @@ parseCsvFields rawLine = reverse (finalize insideQuotes currentField reversedFie
   where
     (insideQuotes, currentField, reversedFields) = go False False "" [] (T.unpack rawLine)
 
-    go insideQuotes sawClosingQuote currentField reversedFields chars =
+    go insideQuoteState sawClosingQuote fieldValue fieldsAcc chars =
         case chars of
-            [] -> (insideQuotes, currentField, reversedFields)
-            '"' : '"' : rest | insideQuotes ->
-                go True False (T.snoc currentField '"') reversedFields rest
-            '"' : rest | insideQuotes ->
-                go False True currentField reversedFields rest
+            [] -> (insideQuoteState, fieldValue, fieldsAcc)
+            '"' : '"' : rest | insideQuoteState ->
+                go True False (T.snoc fieldValue '"') fieldsAcc rest
+            '"' : rest | insideQuoteState ->
+                go False True fieldValue fieldsAcc rest
             '"' : rest ->
-                go True False currentField reversedFields rest
-            ',' : rest | not insideQuotes ->
-                go False False "" (trim currentField : reversedFields) rest
+                go True False fieldValue fieldsAcc rest
+            ',' : rest | not insideQuoteState ->
+                go False False "" (trim fieldValue : fieldsAcc) rest
             charValue : rest ->
-                let nextField =
+                let nextFieldValue =
                         if sawClosingQuote && isSpace charValue
-                            then currentField
-                            else T.snoc currentField charValue
-                 in go insideQuotes False nextField reversedFields rest
+                            then fieldValue
+                            else T.snoc fieldValue charValue
+                 in go insideQuoteState False nextFieldValue fieldsAcc rest
 
-    finalize _ currentField reversedFields =
-        trim currentField : reversedFields
+    finalize _ fieldValue fieldsAcc =
+        trim fieldValue : fieldsAcc
 
 columnValueAny :: [Text] -> [Text] -> [Text] -> Text
 columnValueAny header columns aliases =

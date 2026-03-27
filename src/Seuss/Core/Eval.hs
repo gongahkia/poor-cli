@@ -465,10 +465,10 @@ evalBuiltin state name args =
                 _ -> Nothing
         "type_of" ->
             case args of
-                [VEntityRef entityName] ->
-                    VString . entityType <$> findEntity entityName (evalWorld state)
-                [VString entityName] ->
-                    VString . entityType <$> findEntity entityName (evalWorld state)
+                [VEntityRef entityNameValue] ->
+                    VString . entityType <$> findEntity entityNameValue (evalWorld state)
+                [VString entityNameValue] ->
+                    VString . entityType <$> findEntity entityNameValue (evalWorld state)
                 _ -> Nothing
         _ -> Nothing
 
@@ -498,8 +498,8 @@ valueMatchesType _ (VBool _) "bool" = True
 valueMatchesType _ (VDate _) "date" = True
 valueMatchesType _ (VList _) "list" = True
 valueMatchesType _ (VEntityRef _) "entity" = True
-valueMatchesType state (VEntityRef entityName) expectedType =
-    case findEntity entityName (evalWorld state) of
+valueMatchesType state (VEntityRef entityNameValue) expectedType =
+    case findEntity entityNameValue (evalWorld state) of
         Nothing -> False
         Just entity ->
             entityType entity == expectedType
@@ -515,8 +515,8 @@ renderValueType _ (VString _) = "string"
 renderValueType _ (VBool _) = "bool"
 renderValueType _ (VDate _) = "date"
 renderValueType _ (VList _) = "list"
-renderValueType state (VEntityRef entityName) =
-    maybe "entity" entityType (findEntity entityName (evalWorld state))
+renderValueType state (VEntityRef entityNameValue) =
+    maybe "entity" entityType (findEntity entityNameValue (evalWorld state))
 renderValueType _ (VTimelineRef _) = "timeline"
 renderValueType _ (VClosureRef _) = "closure"
 
