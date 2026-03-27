@@ -342,7 +342,7 @@ importStmtParser = do
 letDeclParser :: Parser LetDecl
 letDeclParser = do
     _ <- symbol "let"
-    _ <- optional (symbol "mut")
+    isMutable <- isJust <$> optional (symbol "mut")
     name <- identifier
     typeAnnotation <- optional (symbol ":" *> identifier)
     _ <- symbol "="
@@ -351,6 +351,7 @@ letDeclParser = do
     pure
         LetDecl
             { letName = name
+            , letMutable = isMutable
             , letTypeAnnotation = typeAnnotation
             , letValue = value
             }

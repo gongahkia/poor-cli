@@ -243,6 +243,7 @@ spec = do
                                     [ StmtLet
                                         LetDecl
                                             { letName = "running"
+                                            , letMutable = False
                                             , letTypeAnnotation = Nothing
                                             , letValue = ExprValue (VBool True)
                                             }
@@ -254,6 +255,7 @@ spec = do
                                     [ StmtLet
                                         LetDecl
                                             { letName = "seen"
+                                            , letMutable = False
                                             , letTypeAnnotation = Nothing
                                             , letValue = ExprIdent "state"
                                             }
@@ -265,6 +267,7 @@ spec = do
                                     [ StmtLet
                                         LetDecl
                                             { letName = "running"
+                                            , letMutable = False
                                             , letTypeAnnotation = Nothing
                                             , letValue = ExprValue (VBool False)
                                             }
@@ -412,6 +415,7 @@ spec = do
                         `shouldBe`
                             LetDecl
                                 { letName = "counter"
+                                , letMutable = True
                                 , letTypeAnnotation = Nothing
                                 , letValue = ExprValue (VInt 0)
                                 }
@@ -424,6 +428,17 @@ spec = do
                                 (ExprValue (VInt 1))
                 Right other ->
                     expectationFailure ("unexpected parse result: " <> show other)
+
+        it "rejects assignment to immutable let bindings" $ do
+            case parseProgram "<inline>" "let counter = 0;\ncounter = 1;\n" of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            diagnosticMessage diag `shouldSatisfy` T.isInfixOf "immutable variable"
+                        Right _ ->
+                            expectationFailure "expected immutable assignment failure"
 
         it "reassigns loop state inside while-blocks so the condition can change" $ do
             let source =
@@ -667,6 +682,18 @@ spec = do
                             expectationFailure ("eval failed: " <> show diag)
                         Right worldValue ->
                             Map.member "field_access_hit" (worldEntities worldValue) `shouldBe` True
+
+    describe "identifier resolution" $
+        it "rejects unresolved identifiers instead of coercing them to strings" $ do
+            case parseProgram "<inline>" "let value = missing_name;\n" of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            diagnosticMessage diag `shouldSatisfy` T.isInfixOf "unresolved identifier"
+                        Right _ ->
+                            expectationFailure "expected unresolved identifier failure"
 
     describe "closure and builtin parsing and evaluation" $ do
         it "parses typed closure expressions and closure-backed calls" $ do

@@ -9,6 +9,7 @@ import Data.Foldable (traverse_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe, isJust)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import Seuss.Lang.AST
@@ -17,6 +18,7 @@ import Seuss.Model.Types
 data EvalState = EvalState
     { evalWorld :: World
     , evalEnv :: Map Text Value
+    , evalMutableNames :: Set.Set Text
     , evalFunctions :: Map Text FnDecl
     , evalClosures :: Map Integer ClosureDef
     , evalNextClosureId :: Integer
@@ -35,7 +37,7 @@ maxWhileIterations = 10000
 
 evalProgram :: Program -> Either Diagnostic World
 evalProgram (Program statements) =
-    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Map.empty Map.empty 0 0 Nothing) statements
+    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Set.empty Map.empty Map.empty 0 0 Nothing) statements
 
 evalStmt :: EvalState -> Stmt -> Either Diagnostic EvalState
 evalStmt state statement =
@@ -130,12 +132,28 @@ evalStmt state statement =
                 StmtLet decl -> do
                     (state1, value) <- evalExpr state (letValue decl)
                     maybe (pure ()) (assertTypeMatches state1 value) (letTypeAnnotation decl)
-                    pure state1{evalEnv = Map.insert (letName decl) value (evalEnv state1)}
+                    pure $
+                        state1
+                            { evalEnv = Map.insert (letName decl) value (evalEnv state1)
+                            , evalMutableNames =
+                                if letMutable decl
+                                    then Set.insert (letName decl) (evalMutableNames state1)
+                                    else Set.delete (letName decl) (evalMutableNames state1)
+                            }
                 StmtAssign name expr ->
                     if Map.member name (evalEnv state)
-                        then do
-                            (state1, value) <- evalExpr state expr
-                            pure state1{evalEnv = Map.insert name value (evalEnv state1)}
+                        then
+                            if Set.member name (evalMutableNames state)
+                                then do
+                                    (state1, value) <- evalExpr state expr
+                                    pure state1{evalEnv = Map.insert name value (evalEnv state1)}
+                                else
+                                    Left $
+                                        Diagnostic
+                                            { diagnosticLevel = DiagnosticError
+                                            , diagnosticSource = "evaluator"
+                                            , diagnosticMessage = "cannot assign to immutable variable: " <> name
+                                            }
                         else
                             Left $
                                 Diagnostic
@@ -210,7 +228,13 @@ evalExpr state (ExprIdent name) =
                 Nothing ->
                     case findTimeline name (evalWorld state) of
                         Just _ -> Right (state, VTimelineRef name)
-                        Nothing -> Right (state, VString name)
+                        Nothing ->
+                            Left $
+                                Diagnostic
+                                    { diagnosticLevel = DiagnosticError
+                                    , diagnosticSource = "evaluator"
+                                    , diagnosticMessage = "unresolved identifier: " <> name
+                                    }
 evalExpr state (ExprList exprs) = do
     (nextState, values) <- evalExprList state exprs
     pure (nextState, VList values)
@@ -339,6 +363,28 @@ indexOutOfBounds targetName indexValue targetLength =
         }
 
 evalCall :: EvalState -> Expr -> [Expr] -> Either Diagnostic (EvalState, Value)
+evalCall state (ExprIdent name) argExprs = do
+    (state1, argValues) <- evalExprList state argExprs
+    case Map.lookup name (evalFunctions state1) of
+        Just fnDecl ->
+            callNamedFunction state1 name fnDecl argValues
+        Nothing ->
+            case evalBuiltin state1 name argValues of
+                Just builtinValue ->
+                    pure (state1, builtinValue)
+                Nothing ->
+                    case Map.lookup name (evalEnv state1) of
+                        Just (VClosureRef closureId) ->
+                            callClosure state1 closureId argValues
+                        Just _ ->
+                            Left $
+                                Diagnostic
+                                    { diagnosticLevel = DiagnosticError
+                                    , diagnosticSource = "evaluator"
+                                    , diagnosticMessage = "only named functions and closure values are callable in the current implementation"
+                                    }
+                        Nothing ->
+                            undefinedFunction name
 evalCall state calleeExpr argExprs = do
     (state1, calleeValue) <- evalExpr state calleeExpr
     (state2, argValues) <- evalExprList state1 argExprs
@@ -346,24 +392,12 @@ evalCall state calleeExpr argExprs = do
         VClosureRef closureId ->
             callClosure state2 closureId argValues
         _ ->
-            case calleeExpr of
-                ExprIdent name ->
-                    case Map.lookup name (evalFunctions state2) of
-                        Just fnDecl ->
-                            callNamedFunction state2 name fnDecl argValues
-                        Nothing ->
-                            case evalBuiltin state2 name argValues of
-                                Just builtinValue ->
-                                    pure (state2, builtinValue)
-                                Nothing ->
-                                    undefinedFunction name
-                _ ->
-                    Left $
-                        Diagnostic
-                                    { diagnosticLevel = DiagnosticError
-                                    , diagnosticSource = "evaluator"
-                                    , diagnosticMessage = "only named functions and closure values are callable in the current implementation"
-                                    }
+            Left $
+                Diagnostic
+                    { diagnosticLevel = DiagnosticError
+                    , diagnosticSource = "evaluator"
+                    , diagnosticMessage = "only named functions and closure values are callable in the current implementation"
+                    }
 
 callNamedFunction :: EvalState -> Text -> FnDecl -> [Value] -> Either Diagnostic (EvalState, Value)
 callNamedFunction state name fnDecl argValues =
@@ -384,11 +418,14 @@ callNamedFunction state name fnDecl argValues =
         else do
             traverse_ (uncurry (assertTypeMatches state)) (zip argValues (map snd (fnParams fnDecl)))
             let savedEnv = evalEnv state
+                savedMutableNames = evalMutableNames state
                 savedReturn = evalReturnValue state
                 paramBindings = Map.fromList (zip (map fst (fnParams fnDecl)) argValues)
+                paramNames = Set.fromList (map fst (fnParams fnDecl))
                 callState =
                     state
                         { evalEnv = paramBindings `Map.union` savedEnv
+                        , evalMutableNames = savedMutableNames `Set.difference` paramNames
                         , evalFunctionDepth = evalFunctionDepth state + 1
                         , evalReturnValue = Nothing
                         }
@@ -398,6 +435,7 @@ callNamedFunction state name fnDecl argValues =
             pure
                 ( resultState
                     { evalEnv = savedEnv
+                    , evalMutableNames = savedMutableNames
                     , evalFunctionDepth = evalFunctionDepth state
                     , evalReturnValue = savedReturn
                     }
@@ -429,10 +467,13 @@ callClosure state closureId argValues =
                             }
                 else do
                     let savedEnv = evalEnv state
+                        savedMutableNames = evalMutableNames state
                         paramBindings = Map.fromList (zip (map fst (closureParams closureDef)) argValues)
+                        paramNames = Set.fromList (map fst (closureParams closureDef))
                         callState =
                             state
                                 { evalEnv = paramBindings `Map.union` closureCapturedEnv closureDef
+                                , evalMutableNames = savedMutableNames `Set.difference` paramNames
                                 , evalFunctionDepth = evalFunctionDepth state + 1
                                 , evalReturnValue = Nothing
                                 }
@@ -440,6 +481,7 @@ callClosure state closureId argValues =
                     pure
                         ( resultState
                             { evalEnv = savedEnv
+                            , evalMutableNames = savedMutableNames
                             , evalFunctionDepth = evalFunctionDepth state
                             , evalReturnValue = evalReturnValue state
                             }

@@ -83,6 +83,7 @@ data RelationshipDecl = RelationshipDecl
 
 data LetDecl = LetDecl
     { letName :: Text
+    , letMutable :: Bool
     , letTypeAnnotation :: Maybe Text
     , letValue :: Expr
     }
