@@ -38,10 +38,16 @@ fn which_exists(name: &str) -> bool {
 }
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(10);
+const RPC_TIMEOUT_LONG: Duration = Duration::from_secs(60); // tasks, checkpoints, automations
 
 async fn send_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
     let fut = send_rpc_inner(state, method, params);
     timeout(RPC_TIMEOUT, fut).await.map_err(|_| format!("rpc timeout: {method}"))? // bail after 10s
+}
+
+async fn send_rpc_long(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
+    let fut = send_rpc_inner(state, method, params);
+    timeout(RPC_TIMEOUT_LONG, fut).await.map_err(|_| format!("rpc timeout (long): {method}"))?
 }
 
 async fn read_one_message(backend: &mut BackendProcess) -> Result<Value, String> {
@@ -495,4 +501,163 @@ pub async fn list_agenda(state: State<'_, AppState>, room: Option<String>) -> Re
 #[tauri::command]
 pub async fn resolve_agenda_item(state: State<'_, AppState>, item_id: String, room: Option<String>) -> Result<Value, String> {
     send_rpc(&state, "poor-cli/resolveAgendaItem", json!({"itemId": item_id, "room": room.unwrap_or_default()})).await
+}
+
+// --- tasks ---
+#[tauri::command]
+pub async fn create_task(state: State<'_, AppState>, title: Option<String>, prompt: String, sandbox_preset: Option<String>, requires_approval: Option<bool>) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/createTask", json!({"title": title.unwrap_or_default(), "prompt": prompt, "sandboxPreset": sandbox_preset, "requiresApproval": requires_approval.unwrap_or(false)})).await
+}
+#[tauri::command]
+pub async fn list_tasks(state: State<'_, AppState>, status_filter: Option<String>) -> Result<Value, String> {
+    let mut p = json!({});
+    if let Some(s) = status_filter { p["status"] = json!(s); }
+    send_rpc(&state, "poor-cli/listTasks", p).await
+}
+#[tauri::command]
+pub async fn get_task(state: State<'_, AppState>, task_id: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getTask", json!({"taskId": task_id})).await
+}
+#[tauri::command]
+pub async fn start_task(state: State<'_, AppState>, task_id: String) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/startTask", json!({"taskId": task_id})).await
+}
+#[tauri::command]
+pub async fn approve_task(state: State<'_, AppState>, task_id: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/approveTask", json!({"taskId": task_id})).await
+}
+#[tauri::command]
+pub async fn cancel_task(state: State<'_, AppState>, task_id: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/cancelTask", json!({"taskId": task_id})).await
+}
+#[tauri::command]
+pub async fn retry_task(state: State<'_, AppState>, task_id: String) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/retryTask", json!({"taskId": task_id})).await
+}
+#[tauri::command]
+pub async fn replay_task(state: State<'_, AppState>, task_id: String) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/replayTask", json!({"taskId": task_id})).await
+}
+
+// --- checkpoints ---
+#[tauri::command]
+pub async fn list_checkpoints(state: State<'_, AppState>, limit: Option<u32>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listCheckpoints", json!({"limit": limit.unwrap_or(50)})).await
+}
+#[tauri::command]
+pub async fn create_checkpoint(state: State<'_, AppState>, description: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/createCheckpoint", json!({"description": description.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn restore_checkpoint(state: State<'_, AppState>, checkpoint_id: String) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/restoreCheckpoint", json!({"checkpointId": checkpoint_id})).await
+}
+#[tauri::command]
+pub async fn preview_checkpoint(state: State<'_, AppState>, checkpoint_id: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/previewCheckpoint", json!({"checkpointId": checkpoint_id})).await
+}
+
+// --- automation CRUD ---
+#[tauri::command]
+pub async fn create_automation(state: State<'_, AppState>, name: String, prompt: String, schedule_type: Option<String>, interval_minutes: Option<u32>, requires_approval: Option<bool>) -> Result<Value, String> {
+    let mut p = json!({"name": name, "prompt": prompt, "requiresApproval": requires_approval.unwrap_or(false)});
+    let stype = schedule_type.unwrap_or_else(|| "interval".into());
+    p["schedule"] = json!({"type": stype, "intervalMinutes": interval_minutes.unwrap_or(60)});
+    send_rpc_long(&state, "poor-cli/createAutomation", p).await
+}
+#[tauri::command]
+pub async fn get_automation(state: State<'_, AppState>, automation_id: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getAutomation", json!({"automationId": automation_id})).await
+}
+#[tauri::command]
+pub async fn set_automation_enabled(state: State<'_, AppState>, automation_id: String, enabled: bool) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setAutomationEnabled", json!({"automationId": automation_id, "enabled": enabled})).await
+}
+#[tauri::command]
+pub async fn run_automation_now(state: State<'_, AppState>, automation_id: String) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/runAutomationNow", json!({"automationId": automation_id})).await
+}
+#[tauri::command]
+pub async fn get_automation_history(state: State<'_, AppState>, automation_id: String, limit: Option<u32>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getAutomationHistory", json!({"automationId": automation_id, "limit": limit.unwrap_or(20)})).await
+}
+#[tauri::command]
+pub async fn replay_automation(state: State<'_, AppState>, automation_id: String) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/replayAutomation", json!({"automationId": automation_id})).await
+}
+
+// --- custom commands ---
+#[tauri::command]
+pub async fn list_custom_commands(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listCustomCommands", json!({})).await
+}
+#[tauri::command]
+pub async fn get_custom_command(state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getCustomCommand", json!({"name": name})).await
+}
+#[tauri::command]
+pub async fn run_custom_command(state: State<'_, AppState>, name: String, args: Option<String>) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/runCustomCommand", json!({"name": name, "args": args.unwrap_or_default()})).await
+}
+
+// --- workflows ---
+#[tauri::command]
+pub async fn list_workflows(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listWorkflows", json!({})).await
+}
+#[tauri::command]
+pub async fn get_workflow(state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getWorkflow", json!({"name": name})).await
+}
+
+// --- tools & MCP ---
+#[tauri::command]
+pub async fn get_tools(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getTools", json!({})).await
+}
+#[tauri::command]
+pub async fn get_mcp_status(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getMcpStatus", json!({})).await
+}
+
+// --- diagnostics ---
+#[tauri::command]
+pub async fn get_doctor_report(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getDoctorReport", json!({})).await
+}
+#[tauri::command]
+pub async fn get_policy_status(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getPolicyStatus", json!({})).await
+}
+#[tauri::command]
+pub async fn get_trust_view(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getTrustView", json!({})).await
+}
+#[tauri::command]
+pub async fn get_sandbox_status(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getSandboxStatus", json!({})).await
+}
+
+// --- export ---
+#[tauri::command]
+pub async fn export_conversation(state: State<'_, AppState>, format: Option<String>) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/exportConversation", json!({"format": format.unwrap_or_else(|| "markdown".into())})).await
+}
+
+// --- services ---
+#[tauri::command]
+pub async fn start_service(state: State<'_, AppState>, name: String, options: Option<Value>) -> Result<Value, String> {
+    send_rpc_long(&state, "poor-cli/startService", json!({"name": name, "options": options.unwrap_or(json!({}))})).await
+}
+#[tauri::command]
+pub async fn stop_service(state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/stopService", json!({"name": name})).await
+}
+#[tauri::command]
+pub async fn get_service_status(state: State<'_, AppState>, name: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getServiceStatus", json!({"name": name.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn get_service_logs(state: State<'_, AppState>, name: String, lines: Option<u32>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getServiceLogs", json!({"name": name, "lines": lines.unwrap_or(50)})).await
 }

@@ -8,6 +8,13 @@ import { initHistory, refreshHistorySidebar } from './history.js';
 import { initFileChangesPanel, updateFileChanges, openFileChangesPanel, toggleFileChangesPanel } from './filechanges.js';
 import { initCollabPanel, toggleCollabPanel, showCollabButton, cleanupCollab } from './multiplayer.js';
 import { initAutocomplete } from './autocomplete.js';
+import { initTasks } from './tasks.js';
+import { initCheckpoints } from './checkpoints.js';
+import { initCommands } from './commands.js';
+import { initWorkflows } from './workflows.js';
+import { initTools } from './tools.js';
+import { initDiagnostics } from './diagnostics.js';
+import { initContext } from './context.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -227,6 +234,91 @@ async function renderActivity() {
   } catch (_) {}
 }
 
+// slash command dispatch — maps /commands to RPC calls
+const SLASH_HANDLERS = {
+  '/help': async () => ({ content: 'Available commands: /help, /status, /plan, /history, /cost, /review, /test, /debug, /implement, /summarize, /qa, /diff, /checkpoint, /checkpoints, /undo, /context, /compact, /sandbox, /provider, /config, /settings, /api-key, /theme, /tools, /mcp, /files, /add, /drop, /focus, /workspace-map, /skills, /commands, /autopilot, /task, /doctor, /run, /commit, /collab, /economy, /export, /gc\n\nType `/` to see the full list with descriptions.' }),
+  '/status': () => rpc('get_status_view', {}),
+  '/cost': () => rpc('get_session_cost', {}),
+  '/history': async () => { showView('history'); return { content: 'Opened history view.' }; },
+  '/provider': () => rpc('get_provider_info', {}),
+  '/config': () => rpc('get_config', {}),
+  '/settings': async () => { showView('settings'); return { content: 'Opened settings.' }; },
+  '/tools': () => rpc('get_tools', {}),
+  '/skills': async () => { showView('skills'); return { content: 'Opened skills view.' }; },
+  '/files': () => rpc('get_status_view', {}),
+  '/checkpoint': async (args) => rpc('create_checkpoint', { description: args || 'Manual checkpoint' }),
+  '/checkpoints': async () => { showView('checkpoints'); return { content: 'Opened checkpoints view.' }; },
+  '/undo': async () => rpc('restore_checkpoint', { checkpoint_id: 'last' }),
+  '/task': async () => { showView('tasks'); return { content: 'Opened tasks view.' }; },
+  '/commands': async () => { showView('commands'); return { content: 'Opened commands view.' }; },
+  '/clear': async () => { await rpc('clear_history', {}); return { content: 'Conversation history cleared.' }; },
+  '/new-session': async () => {
+    const label = `session-${Date.now()}`;
+    await rpc('create_session', { label });
+    await refreshSessions();
+    return { content: `Created session: ${label}` };
+  },
+  '/mcp': () => rpc('get_mcp_status', {}),
+  '/doctor': () => rpc('get_doctor_report', {}),
+  '/context': async () => { showView('context'); return { content: 'Opened context view.' }; },
+  '/compact': async () => rpc('send_chat', { message: '/compact' }),
+  '/economy': () => rpc('get_session_cost', {}),
+  '/export': async () => { document.getElementById('export-modal').hidden = false; return { content: 'Select export format.' }; },
+  // workflow shortcuts — send to AI as chat messages
+  '/review': async () => rpc('send_chat', { message: '/review' }),
+  '/test': async () => rpc('send_chat', { message: '/test' }),
+  '/debug': async () => rpc('send_chat', { message: '/debug' }),
+  '/implement': async () => rpc('send_chat', { message: '/implement' }),
+  '/summarize': async () => rpc('send_chat', { message: '/summarize' }),
+  '/qa': async () => rpc('send_chat', { message: '/qa' }),
+  // pass-through to AI
+  '/plan': async () => rpc('send_chat', { message: '/plan' }),
+  '/diff': async () => { toggleFileChangesPanel(); return { content: 'Opened file changes panel.' }; },
+  '/commit': async () => rpc('send_chat', { message: '/commit' }),
+  '/gc': async () => rpc('send_chat', { message: '/gc' }),
+};
+async function handleSlashCommand(text) {
+  const parts = text.split(/\s+/);
+  const cmd = parts[0].toLowerCase();
+  const args = parts.slice(1).join(' ');
+  // exact match handler
+  if (SLASH_HANDLERS[cmd]) return SLASH_HANDLERS[cmd](args);
+  // commands with args that map to RPC
+  if (cmd === '/switch' || cmd === '/provider' && args.startsWith('switch')) {
+    const model = args.replace('switch', '').trim();
+    return rpc('switch_provider', { provider: model || 'gemini' });
+  }
+  if (cmd === '/api-key') return rpc('get_api_key_status', {});
+  if (cmd === '/search' && args) return rpc('search_history', { term: args });
+  if (cmd === '/run' && args) return rpc('send_chat', { message: `!${args}` });
+  if (cmd === '/add' && args) return { content: `Context file hint: use @${args} in your next message to attach it.` };
+  if (cmd === '/sandbox') return rpc('get_sandbox_status', {});
+  if (cmd === '/theme') {
+    showView('settings');
+    return { content: 'Opened settings. Use the General section to change theme.' };
+  }
+  if (cmd === '/focus' && args) return rpc('send_chat', { message: `/focus ${args}` });
+  if (cmd === '/resume') return rpc('send_chat', { message: '/resume' });
+  if (cmd === '/autopilot') return rpc('send_chat', { message: '/autopilot' });
+  if (cmd === '/fix-failures') return rpc('send_chat', { message: '/fix-failures' });
+  if (cmd === '/timeline') return rpc('send_chat', { message: '/timeline' });
+  if (cmd === '/workspace-map') return rpc('send_chat', { message: '/workspace-map' });
+  if (cmd === '/read' && args) return rpc('send_chat', { message: `/read ${args}` });
+  if (cmd === '/collab') { document.getElementById('wb-collab').click(); return { content: 'Toggled collaboration panel.' }; }
+  if (cmd === '/pass') return rpc('next_driver', {});
+  if (cmd === '/suggest' && args) return rpc('suggest_text', { text: args });
+  if (cmd === '/retry') return rpc('send_chat', { message: '/retry' });
+  if (cmd === '/drop' && args) return rpc('send_chat', { message: `/drop ${args}` });
+  if (cmd === '/image') return { content: 'Attach an image by dragging it into the chat or using @filename.' };
+  if (cmd === '/save-prompt' && args) return rpc('send_chat', { message: `/save-prompt ${args}` });
+  if (cmd === '/use' && args) return rpc('send_chat', { message: `/use ${args}` });
+  if (cmd === '/setup') return rpc('send_chat', { message: '/setup' });
+  if (cmd === '/profile' && args) return rpc('send_chat', { message: `/profile ${args}` });
+  if (cmd === '/watch' && args) return rpc('send_chat', { message: `/watch ${args}` });
+  // fallback: send to AI as a normal message (the AI can interpret some commands contextually)
+  return null;
+}
+
 // send message
 async function sendMessage() {
   const text = chatInput.value.trim();
@@ -236,6 +328,32 @@ async function sendMessage() {
   chatInput.value = '';
   chatInput.focus();
   await ensureInitialized();
+  // try slash command dispatch first
+  if (text.startsWith('/')) {
+    const pending = addMessage('...', 'assistant');
+    showSpinner(true);
+    try {
+      const slashResult = await handleSlashCommand(text);
+      if (slashResult !== null) {
+        let content;
+        if (typeof slashResult === 'string') content = slashResult;
+        else if (slashResult.content) content = slashResult.content;
+        else if (slashResult.text) content = slashResult.text;
+        else content = '```json\n' + JSON.stringify(slashResult, null, 2) + '\n```';
+        pending.innerHTML = renderMarkdown(content);
+        showSpinner(false);
+        return;
+      }
+    } catch (e) {
+      pending.textContent = `Command error: ${e}`;
+      pending.style.color = 'var(--error)';
+      showSpinner(false);
+      return;
+    }
+    // null means fallback to AI chat
+    pending.remove();
+    showSpinner(false);
+  }
   const pending = addMessage('thinking...', 'assistant');
   showSpinner(true);
   try {
@@ -245,7 +363,7 @@ async function sendMessage() {
     else if (result.content) content = result.content;
     else if (result.text) content = result.text;
     else if (result.message) content = result.message;
-    else content = '```json\n' + JSON.stringify(result, null, 2) + '\n```'; // pretty-print fallback
+    else content = '```json\n' + JSON.stringify(result, null, 2) + '\n```';
     pending.innerHTML = renderMarkdown(content);
     await renderActivity();
   } catch (e) {
@@ -316,6 +434,8 @@ threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
           await refreshSessions();
         } catch (_) {}
       }
+    } else if (item.dataset.action === 'export') {
+      document.getElementById('export-modal').hidden = false;
     } else if (item.dataset.action === 'delete') {
       try {
         await rpc('destroy_session', { sessionId: activeSessionId });
@@ -335,6 +455,13 @@ registerView('automations', () => {
   import('./skills.js').then(m => m.initAutomations());
 });
 registerView('history', initHistory);
+registerView('tasks', initTasks);
+registerView('checkpoints', initCheckpoints);
+registerView('commands', initCommands);
+registerView('workflows', initWorkflows);
+registerView('tools', initTools);
+registerView('diagnostics', initDiagnostics);
+registerView('context', initContext);
 
 // sidebar nav
 document.querySelectorAll('.sidebar-nav-item').forEach(el => {
@@ -342,8 +469,51 @@ document.querySelectorAll('.sidebar-nav-item').forEach(el => {
 });
 settingsBack.addEventListener('click', () => showView('chat'));
 
+// routing mode
+const routingSelect = document.getElementById('routing-mode');
+routingSelect.addEventListener('change', async () => {
+  try {
+    await rpc('set_config', { key_path: 'model.routing_mode', value: routingSelect.value });
+    await refreshProviderInfo();
+  } catch (e) { providerInfo.textContent = `Routing error: ${e}`; }
+});
+
+// cost display
+const sbCostEl = document.getElementById('sb-cost');
+async function refreshCost() {
+  try {
+    const cost = await rpc('get_session_cost', {});
+    if (cost) {
+      const tokens = cost.totalTokens || cost.tokens || 0;
+      const usd = cost.estimatedCost || cost.cost || 0;
+      if (tokens > 0 || usd > 0) {
+        sbCostEl.hidden = false;
+        sbCostEl.textContent = usd > 0 ? `$${usd.toFixed(4)} (${tokens} tok)` : `${tokens} tok`;
+      } else { sbCostEl.hidden = true; }
+    }
+  } catch (_) { sbCostEl.hidden = true; }
+}
+
+// export handlers
+document.getElementById('export-modal-cancel').addEventListener('click', () => { document.getElementById('export-modal').hidden = true; });
+document.getElementById('export-modal-go').addEventListener('click', async () => {
+  const format = document.getElementById('export-format').value;
+  document.getElementById('export-modal').hidden = true;
+  try {
+    const result = await rpc('export_conversation', { format });
+    const content = result.content || result.text || JSON.stringify(result, null, 2);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `conversation.${format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'txt'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { addMessage(`Export failed: ${e}`, 'assistant'); }
+});
+
 // status polling
-setInterval(refreshStatusBar, 10000);
+setInterval(() => { refreshStatusBar(); refreshCost(); }, 10000);
 
 // auto-save on unload
 window.addEventListener('beforeunload', () => {

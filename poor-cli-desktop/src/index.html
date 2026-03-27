@@ -18,9 +18,14 @@
       </div>
       <div class="sidebar-nav">
         <div class="sidebar-nav-item active" data-nav="chat">New thread</div>
+        <div class="sidebar-nav-item" data-nav="tasks">Tasks</div>
         <div class="sidebar-nav-item" data-nav="skills">Skills</div>
+        <div class="sidebar-nav-item" data-nav="commands">Commands</div>
         <div class="sidebar-nav-item" data-nav="automations">Automations</div>
-        <div class="sidebar-nav-item" data-nav="history">History</div>
+        <div class="sidebar-nav-item" data-nav="workflows">Workflows</div>
+        <div class="sidebar-nav-item" data-nav="checkpoints">Checkpoints</div>
+        <div class="sidebar-nav-item" data-nav="tools">Tools</div>
+        <div class="sidebar-nav-item" data-nav="diagnostics">Diagnostics</div>
         <div class="sidebar-nav-item" data-nav="settings">Settings</div>
       </div>
       <div class="sidebar-section">
@@ -36,6 +41,14 @@
           <option value="anthropic">Anthropic</option>
           <option value="ollama">Ollama</option>
         </select>
+        <label class="routing-label">Routing</label>
+        <select id="routing-mode">
+          <option value="manual">Manual</option>
+          <option value="quality">Quality</option>
+          <option value="speed">Speed</option>
+          <option value="cheap">Cheap</option>
+          <option value="private">Private</option>
+        </select>
       </div>
       <div class="sidebar-footer" hidden></div>
     </div>
@@ -49,6 +62,7 @@
           <button id="thread-menu-btn" class="btn btn-sm" title="Thread options">&#8943;</button>
           <div id="thread-menu" class="thread-menu" hidden>
             <div class="thread-menu-item" data-action="rename">Rename</div>
+            <div class="thread-menu-item" data-action="export">Export</div>
             <div class="thread-menu-item" data-action="delete">Delete</div>
           </div>
         </div>
@@ -125,11 +139,65 @@
           <div id="history-list" class="item-list"></div>
         </div>
       </div>
+      <!-- tasks view -->
+      <div class="view-panel" data-view="tasks" hidden>
+        <div class="tasks-container">
+          <div class="tasks-header"><h2>Tasks</h2><button class="btn btn-primary btn-sm" id="create-task-btn">+ New Task</button></div>
+          <div class="tasks-filter-bar" id="tasks-filter-bar"></div>
+          <div id="tasks-list" class="item-list"></div>
+          <div id="task-detail" class="task-detail-panel" hidden></div>
+        </div>
+      </div>
+      <!-- checkpoints view -->
+      <div class="view-panel" data-view="checkpoints" hidden>
+        <div class="checkpoints-container">
+          <div class="checkpoints-header"><h2>Checkpoints</h2><button class="btn btn-primary btn-sm" id="create-checkpoint-btn">+ Create</button></div>
+          <div id="checkpoint-storage-info" class="checkpoint-storage-info"></div>
+          <div id="checkpoints-list" class="item-list"></div>
+          <div id="checkpoint-preview" class="checkpoint-preview" hidden></div>
+        </div>
+      </div>
+      <!-- commands view -->
+      <div class="view-panel" data-view="commands" hidden>
+        <div class="commands-container">
+          <h2>Custom Commands</h2>
+          <div id="commands-list" class="item-list"></div>
+        </div>
+      </div>
+      <!-- workflows view -->
+      <div class="view-panel" data-view="workflows" hidden>
+        <div class="workflows-container">
+          <h2>Workflows</h2>
+          <div id="workflows-list" class="item-list"></div>
+        </div>
+      </div>
+      <!-- tools view -->
+      <div class="view-panel" data-view="tools" hidden>
+        <div class="tools-container">
+          <h2>Tools &amp; MCP</h2>
+          <div id="tools-content"></div>
+        </div>
+      </div>
+      <!-- diagnostics view -->
+      <div class="view-panel" data-view="diagnostics" hidden>
+        <div class="diagnostics-container">
+          <h2>Diagnostics</h2>
+          <div id="diagnostics-content"></div>
+        </div>
+      </div>
+      <!-- context view -->
+      <div class="view-panel" data-view="context" hidden>
+        <div class="context-container">
+          <h2>Context</h2>
+          <div id="context-content"></div>
+        </div>
+      </div>
       <!-- status bar -->
       <footer id="status-bar" class="status-bar">
         <span id="sb-cwd" title="Working directory">Local</span>
         <span id="sb-permission" title="Permission mode">--</span>
         <span id="sb-git" title="Git branch">--</span>
+        <span id="sb-cost" class="cost-badge" hidden title="Session cost"></span>
         <span id="sb-collab" class="sb-collab" hidden></span>
         <span id="sb-spinner" class="spinner" hidden></span>
         <span id="sb-changes" class="file-changes-badge" hidden></span>
@@ -198,6 +266,49 @@
       <div class="modal-actions">
         <button class="btn" id="invite-modal-close">Close</button>
         <button class="btn btn-primary" id="invite-modal-copy">Copy</button>
+      </div>
+    </div>
+  </div>
+  <!-- create task modal -->
+  <div class="modal-overlay" id="create-task-modal" hidden>
+    <div class="modal">
+      <h3>Create Task</h3>
+      <label>Title</label><input type="text" id="task-title-input" placeholder="e.g. Refactor auth module" />
+      <label>Prompt</label><textarea id="task-prompt-input" rows="4" placeholder="Describe what the task should do..."></textarea>
+      <label>Sandbox preset</label>
+      <select id="task-sandbox-select"><option value="">Default</option><option value="read-only">Read Only</option><option value="review-only">Review Only</option><option value="workspace-write">Workspace Write</option><option value="full-access">Full Access</option></select>
+      <label><input type="checkbox" id="task-approval-check" /> Requires approval before start</label>
+      <div class="modal-actions">
+        <button class="btn" id="task-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="task-modal-create">Create</button>
+      </div>
+    </div>
+  </div>
+  <!-- create automation modal -->
+  <div class="modal-overlay" id="create-automation-modal" hidden>
+    <div class="modal">
+      <h3>Create Automation</h3>
+      <label>Name</label><input type="text" id="auto-name-input" placeholder="e.g. nightly-review" />
+      <label>Prompt</label><textarea id="auto-prompt-input" rows="3" placeholder="What should this automation do?"></textarea>
+      <label>Schedule type</label>
+      <select id="auto-schedule-type"><option value="interval">Interval</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
+      <label>Interval (minutes)</label><input type="number" id="auto-interval-input" value="60" min="1" />
+      <label><input type="checkbox" id="auto-approval-check" /> Requires approval</label>
+      <div class="modal-actions">
+        <button class="btn" id="auto-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="auto-modal-create">Create</button>
+      </div>
+    </div>
+  </div>
+  <!-- export modal -->
+  <div class="modal-overlay" id="export-modal" hidden>
+    <div class="modal">
+      <h3>Export Conversation</h3>
+      <label>Format</label>
+      <select id="export-format"><option value="markdown">Markdown</option><option value="json">JSON</option><option value="text">Plain Text</option></select>
+      <div class="modal-actions">
+        <button class="btn" id="export-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="export-modal-go">Export</button>
       </div>
     </div>
   </div>

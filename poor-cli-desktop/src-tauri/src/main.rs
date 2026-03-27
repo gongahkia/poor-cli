@@ -64,6 +64,49 @@ fn main() {
             commands::add_agenda_item,
             commands::list_agenda,
             commands::resolve_agenda_item,
+            // tasks
+            commands::create_task,
+            commands::list_tasks,
+            commands::get_task,
+            commands::start_task,
+            commands::approve_task,
+            commands::cancel_task,
+            commands::retry_task,
+            commands::replay_task,
+            // checkpoints
+            commands::list_checkpoints,
+            commands::create_checkpoint,
+            commands::restore_checkpoint,
+            commands::preview_checkpoint,
+            // automation CRUD
+            commands::create_automation,
+            commands::get_automation,
+            commands::set_automation_enabled,
+            commands::run_automation_now,
+            commands::get_automation_history,
+            commands::replay_automation,
+            // custom commands
+            commands::list_custom_commands,
+            commands::get_custom_command,
+            commands::run_custom_command,
+            // workflows
+            commands::list_workflows,
+            commands::get_workflow,
+            // tools & MCP
+            commands::get_tools,
+            commands::get_mcp_status,
+            // diagnostics
+            commands::get_doctor_report,
+            commands::get_policy_status,
+            commands::get_trust_view,
+            commands::get_sandbox_status,
+            // export
+            commands::export_conversation,
+            // services
+            commands::start_service,
+            commands::stop_service,
+            commands::get_service_status,
+            commands::get_service_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error running poor-cli desktop");
