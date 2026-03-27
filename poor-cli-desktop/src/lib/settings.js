@@ -184,6 +184,11 @@ export function applyCustomFonts() { // call on startup
     const name = parseFontFamily(fonts.codeUrl);
     if (name) document.documentElement.style.setProperty('--font-mono', `'${name}', 'JetBrains Mono', 'Fira Code', monospace`);
   }
+  if (fonts.displayUrl) {
+    injectFontLink('custom-font-display', fonts.displayUrl);
+    const name = parseFontFamily(fonts.displayUrl);
+    if (name) document.documentElement.style.setProperty('--font-display', `'${name}', 'Syne', var(--font-sans)`);
+  }
   if (fonts.uiSize) document.documentElement.style.setProperty('--font-size-ui', `${fonts.uiSize}px`);
   if (fonts.codeSize) document.documentElement.style.setProperty('--font-size-code', `${fonts.codeSize}px`);
 }
@@ -197,6 +202,7 @@ function renderFontsGroup() {
   const defs = [
     { key: 'uiUrl', label: 'UI Font', hint: 'Google Fonts URL for interface text', placeholder: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' },
     { key: 'codeUrl', label: 'Code Font', hint: 'Google Fonts URL for code snippets', placeholder: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap' },
+    { key: 'displayUrl', label: 'Display Font', hint: 'Google Fonts URL for headings & brand text', placeholder: 'https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap' },
   ];
   const sizeDefs = [
     { key: 'uiSize', label: 'UI Font Size', cssVar: '--font-size-ui', fallback: 14, min: 10, max: 24 },
@@ -229,8 +235,10 @@ function renderFontsGroup() {
     if (resetBtn) resetBtn.addEventListener('click', () => {
       delete fonts[def.key];
       saveStoredFonts(fonts);
-      injectFontLink(def.key === 'uiUrl' ? 'custom-font-ui' : 'custom-font-code', null);
-      document.documentElement.style.removeProperty(def.key === 'uiUrl' ? '--font-sans' : '--font-mono');
+      const linkId = def.key === 'uiUrl' ? 'custom-font-ui' : def.key === 'codeUrl' ? 'custom-font-code' : 'custom-font-display';
+      const cssVar = def.key === 'uiUrl' ? '--font-sans' : def.key === 'codeUrl' ? '--font-mono' : '--font-display';
+      injectFontLink(linkId, null);
+      document.documentElement.style.removeProperty(cssVar);
       renderOptions(document.getElementById('settings-content'), defaultOptions);
     });
     group.appendChild(row);
