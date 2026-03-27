@@ -49,6 +49,9 @@ const EXPECTED_TOOL_NAMES = [
   "sg_pa_resident_network_centres",
   "sg_sportsg_facilities",
   "sg_ecda_childcare_centres",
+  "sg_msf_family_services",
+  "sg_msf_student_care_services",
+  "sg_msf_social_service_offices",
   "sg_gebiz_tenders",
   "sg_hawker_centres",
   "sg_moe_schools",
@@ -391,10 +394,9 @@ try {
     }
 
     const civicDirectoryResult = await client.callTool({
-      name: "sg_pa_community_outlets",
+      name: "sg_msf_family_services",
       arguments: {
-        type: "community_club",
-        postalCode: "048616",
+        postalCode: "560230",
         format: "json",
       },
     });
@@ -402,17 +404,17 @@ try {
       ? civicDirectoryResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
       : undefined;
     if (civicDirectoryText === undefined) {
-      throw new Error(`Packaged sg_pa_community_outlets did not return text content${formatServerLogs()}`);
+      throw new Error(`Packaged sg_msf_family_services did not return text content${formatServerLogs()}`);
     }
     const civicDirectoryPayload = JSON.parse(civicDirectoryText);
-    if (!Array.isArray(civicDirectoryPayload) || civicDirectoryPayload[0]?.name !== "Downtown Community Club") {
-      throw new Error(`Packaged sg_pa_community_outlets returned an unexpected payload${formatServerLogs()}`);
+    if (!Array.isArray(civicDirectoryPayload) || civicDirectoryPayload[0]?.name !== "Allkin Family Service Centre @ Ang Mo Kio 230") {
+      throw new Error(`Packaged sg_msf_family_services returned an unexpected payload${formatServerLogs()}`);
     }
 
     const civicQueryResult = await client.callTool({
       name: "sg_query",
       arguments: {
-        query: "Find a community club near 048616",
+        query: "Find a family service centre near 560230",
         mode: "execute",
         format: "json",
       },

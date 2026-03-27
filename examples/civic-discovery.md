@@ -11,14 +11,14 @@ npm run demo:mcp -- civic
 ## Prompt
 
 ```text
-Find a community club near 048616.
+Find a family service centre near 560230.
 ```
 
 ## What It Exercises
 
 - resource: `sg://recipes`
-- direct tool: `sg_pa_community_outlets`
-- supporting direct tool: `sg_ecda_childcare_centres`
+- direct tool: `sg_msf_family_services`
+- supporting direct tool: `sg_msf_student_care_services`
 - routed workflow: `sg_query`
 
 ## Why The Recipe Matters

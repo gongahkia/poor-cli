@@ -14,7 +14,7 @@ The current problem is not emptiness. The current problem is adoption depth. The
 
 ## Evidence That The Repo Is Real
 
-- The codebase now exposes 23 official data families and 60 public `sg_*` tools.
+- The codebase now exposes 26 official data families and 63 public `sg_*` tools.
 - `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
 - The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, and `sg://recipes`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.
@@ -85,7 +85,7 @@ Even if this is partly a mock-fixture issue, it is still a product issue because
 
 ### 3. The Best Features Are Narrower Than The Surface Count Suggests
 
-The repo has 60 tools, but the truly differentiated user stories are concentrated in a smaller set:
+The repo has 63 tools, but the truly differentiated user stories are concentrated in a smaller set:
 
 - business dossier
 - property brief

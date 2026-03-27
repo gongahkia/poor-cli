@@ -11,20 +11,20 @@ Use this skill when an agent needs official Singapore public data through MCP wi
 
 ## Surface Snapshot
 
-The repo currently exposes 60 `sg_*` tools total across 23 official data families.
+The repo currently exposes 63 `sg_*` tools total across 26 official data families.
 
-- 46 direct data tools
+- 49 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers
 - 1 bounded preferred interface, `sg_query`
 
-`sg_query` is the bounded preferred interface across 14 routed families. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 17 routed families. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Positioning
 
 - Best for agent builders who need deterministic Singapore public-data calls
 - Optimized for bounded workflows, not free-form analyst chat
-- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg
+- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg
 - The core differentiator is explicit contracts plus additive briefs, not hidden orchestration
 
 ## Discovery Resources
@@ -135,6 +135,18 @@ Live OneMap calls require valid credentials. There is no silent unauthenticated 
 
 - `sg_ecda_childcare_centres`
 
+### MSF Family Services
+
+- `sg_msf_family_services`
+
+### MSF Student Care Services
+
+- `sg_msf_student_care_services`
+
+### MSF Social Service Offices
+
+- `sg_msf_social_service_offices`
+
 ### data.gov.sg
 
 - `sg_datagov_search`
@@ -223,10 +235,11 @@ sg_nea_rainfall { "stationId": "S107", "format": "json" }
 ### Civic Discovery
 
 ```text
-sg_query { "query": "Find a community club near 560123", "mode": "execute" }
+sg_query { "query": "Find a family service centre near 560230", "mode": "execute" }
+sg_msf_family_services { "postalCode": "560230", "format": "json" }
+sg_msf_student_care_services { "postalCode": "750471", "scfaOnly": true, "format": "json" }
+sg_msf_social_service_offices { "name": "Social Service Office @ Queenstown", "format": "json" }
 sg_pa_community_outlets { "type": "community_club", "postalCode": "560123", "format": "json" }
-sg_pa_resident_network_centres { "postalCode": "560123", "format": "json" }
-sg_sportsg_facilities { "facilityType": "swimming_complex", "postalCode": "560123", "format": "json" }
 sg_ecda_childcare_centres { "postalCode": "560123", "hasVacancy": true, "format": "json" }
 ```
 

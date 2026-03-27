@@ -6,18 +6,18 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 60 `sg_*` tools total across 23 official data families.
+The repo currently exposes 63 `sg_*` tools total across 26 official data families.
 
-- 46 direct data tools
+- 49 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers for health, keys, cache, and config
 - 1 bounded preferred interface, `sg_query`
 
-`sg_query` is the bounded preferred interface across 14 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 17 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -57,6 +57,9 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | PA | 2 | Community clubs, PAssion WaVe outlets, and residents' network centres | None |
 | Sport Singapore | 1 | Public sports facility discovery across swimming complexes, sports halls, stadiums, and sport centres | None |
 | ECDA | 1 | Childcare discovery with joined location and vacancy signals | None |
+| MSF Family Services | 1 | Family service centre discovery by name, postal code, or proximity | None |
+| MSF Student Care Services | 1 | Student care discovery with audit-status and SCFA filters | None |
+| MSF Social Service Offices | 1 | Social service office discovery by name, postal code, or proximity | None |
 | GeBIZ | 1 | Government procurement tender awards and contract data | None |
 | Hawker Centres | 1 | Hawker centre directory with locations and stall counts | None |
 | MOE Schools | 1 | School directory filtered by level, zone, and name | None |
@@ -95,7 +98,7 @@ Notes:
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
 - OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback outside mock mode.
 - HDB, CEA, BCA, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
-- PA, Sport Singapore, and ECDA civic directories stay no-auth by using the same official data.gov.sg download path.
+- PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.
 
 ## Quickstart
 

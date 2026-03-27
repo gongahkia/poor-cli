@@ -137,6 +137,8 @@ const server = createServer((req, res) => {
         ? "onemap/__tests__/fixtures/search-response-049178.json"
         : searchVal === "048616"
           ? "onemap/__tests__/fixtures/search-response-048616.json"
+          : searchVal === "560230"
+            ? "onemap/__tests__/fixtures/search-response-560230.json"
           : "onemap/__tests__/fixtures/search-response.json";
       res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
       res.end(loadFixture(fixture));

@@ -47,6 +47,9 @@ These tool families do not require credentials:
 - PA
 - Sport Singapore
 - ECDA
+- MSF Family Services
+- MSF Student Care Services
+- MSF Social Service Offices
 - GeBIZ
 - Hawker Centres
 - MOE Schools
@@ -59,7 +62,7 @@ These tool families do not require credentials:
 - data.gov.sg
 
 HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.
-PA, Sport Singapore, ECDA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB use the same no-auth data.gov.sg access layer or official file-download path.
+PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB use the same no-auth data.gov.sg access layer or official file-download path.
 
 ## OneMap
 

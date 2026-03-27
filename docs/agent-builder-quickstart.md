@@ -92,19 +92,22 @@ sg_datagov_rows { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", "limit": 5,
 ### Civic Discovery
 
 ```text
-sg_query { "query": "Find childcare centres near Bedok with vacancies", "mode": "execute" }
-sg_pa_community_outlets { "type": "community_club", "postalCode": "560123" }
-sg_sportsg_facilities { "facilityType": "swimming_complex", "postalCode": "560123" }
-sg_ecda_childcare_centres { "postalCode": "560123", "hasVacancy": true }
+sg_query { "query": "Find a family service centre near 560230", "mode": "execute" }
+sg_msf_family_services { "postalCode": "560230" }
+sg_msf_student_care_services { "postalCode": "750471", "scfaOnly": true }
+sg_msf_social_service_offices { "name": "Social Service Office @ Queenstown" }
 ```
 
 ## New Data Families
 
-Twelve additional families are available as direct tools, all backed by data.gov.sg or the official no-auth file-download path:
+Fifteen additional families are available as direct tools, all backed by data.gov.sg or the official no-auth file-download path:
 
 - `sg_pa_community_outlets` and `sg_pa_resident_network_centres` — community clubs, PAssion WaVe outlets, and residents' network centres
 - `sg_sportsg_facilities` — public sport facilities by facility type, postal code, or proximity
 - `sg_ecda_childcare_centres` — childcare centres with joined vacancy signals
+- `sg_msf_family_services` — family service centres by name, postal code, or proximity
+- `sg_msf_student_care_services` — student care services with audit-status and SCFA filters
+- `sg_msf_social_service_offices` — social service offices by name, postal code, or proximity
 - `sg_gebiz_tenders` — government procurement tenders and awards
 - `sg_hawker_centres` — hawker centre directory with coordinates
 - `sg_moe_schools` — school directory by level, zone, name

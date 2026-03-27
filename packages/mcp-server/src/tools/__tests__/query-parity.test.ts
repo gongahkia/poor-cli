@@ -75,6 +75,12 @@ vi.mock("../../apis/ecda/client.js", () => ({
   getEcdaChildcareCentres: vi.fn(),
 }));
 
+vi.mock("../../apis/msf/client.js", () => ({
+  getMsfFamilyServices: vi.fn(),
+  getMsfStudentCareServices: vi.fn(),
+  getMsfSocialServiceOffices: vi.fn(),
+}));
+
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
 import { getTableData, getTimeSeries } from "../../apis/singstat/client.js";
 import { query as masQuery } from "../../apis/mas/client.js";
@@ -104,6 +110,11 @@ import { getAcraEntities } from "../../apis/acra/client.js";
 import { getPaCommunityOutlets } from "../../apis/pa/client.js";
 import { getSportSgFacilities } from "../../apis/sportsg/client.js";
 import { getEcdaChildcareCentres } from "../../apis/ecda/client.js";
+import {
+  getMsfFamilyServices,
+  getMsfSocialServiceOffices,
+  getMsfStudentCareServices,
+} from "../../apis/msf/client.js";
 import {
   handleSingStatBrowse,
   handleSingStatSearch,
@@ -144,6 +155,11 @@ import { handleAcraEntities } from "../acra-tools.js";
 import { handlePaCommunityOutlets } from "../pa-tools.js";
 import { handleSportSgFacilities } from "../sportsg-tools.js";
 import { handleEcdaChildcareCentres } from "../ecda-tools.js";
+import {
+  handleMsfFamilyServices,
+  handleMsfSocialServiceOffices,
+  handleMsfStudentCareServices,
+} from "../msf-tools.js";
 import { executeQueryStep } from "../query-tool.js";
 
 const normalizeBriefResult = (result: Awaited<ReturnType<typeof executeQueryStep>>) => {
@@ -223,6 +239,9 @@ describe("sg_query parity", () => {
     vi.mocked(getPaCommunityOutlets).mockReset();
     vi.mocked(getSportSgFacilities).mockReset();
     vi.mocked(getEcdaChildcareCentres).mockReset();
+    vi.mocked(getMsfFamilyServices).mockReset();
+    vi.mocked(getMsfStudentCareServices).mockReset();
+    vi.mocked(getMsfSocialServiceOffices).mockReset();
   });
 
   it("matches the direct SingStat search handler", async () => {
@@ -1056,6 +1075,92 @@ describe("sg_query parity", () => {
 
     await expect(executeQueryStep("sg_ecda_childcare_centres", input)).resolves.toEqual(
       await handleEcdaChildcareCentres(input),
+    );
+  });
+
+  it("matches the direct MSF family services handler", async () => {
+    vi.mocked(getMsfFamilyServices).mockResolvedValue([
+      {
+        name: "Allkin Family Service Centre @ Ang Mo Kio 230",
+        category: "social_support",
+        subcategory: "family_service_centre",
+        address: "Blk 230 Ang Mo Kio Ave 3 #01-1264",
+        postalCode: "560230",
+        lat: 1.3688544443488972,
+        lng: 103.83789640387423,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Family Services",
+        sourceUrl: "https://data.gov.sg/datasets/d_add23c06f7267e799185c79ccaa2099b/view",
+        lastUpdatedAt: "2025-12-03T18:52:26+08:00",
+        description: "Family Service Centres",
+        telephone: "6453 5349",
+        email: "fscamk@allkin.org.sg",
+        url: null,
+      },
+    ] as never);
+
+    const input = { postalCode: "560230", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_msf_family_services", input)).resolves.toEqual(
+      await handleMsfFamilyServices(input),
+    );
+  });
+
+  it("matches the direct MSF student care handler", async () => {
+    vi.mocked(getMsfStudentCareServices).mockResolvedValue([
+      {
+        name: "YMCA Student Care Centre @ Canberra",
+        category: "childcare",
+        subcategory: "student_care",
+        address: "471, Sembawang Drive, #1 421, Singapore 750471",
+        postalCode: "750471",
+        lat: 1.4520108099275582,
+        lng: 103.81584893819745,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Student Care Services",
+        sourceUrl: "https://data.gov.sg/datasets/d_77e6e0d58ce4743dab1f26dfcbbeb6f4/view",
+        lastUpdatedAt: "2026-02-23T12:48:33+08:00",
+        auditStatus: "Grade A",
+        auditDate: "2026-01-23",
+        scfa: true,
+        businessProfile: "Commercial Companies",
+        monthlyFee: 295,
+        enrolment: 100,
+        telephone: "98375096",
+        email: "cbscc@ymca.edu.sg",
+      },
+    ] as never);
+
+    const input = { postalCode: "750471", auditStatus: "Grade A", scfaOnly: true, format: "json" } as const;
+
+    await expect(executeQueryStep("sg_msf_student_care_services", input)).resolves.toEqual(
+      await handleMsfStudentCareServices(input),
+    );
+  });
+
+  it("matches the direct MSF social service offices handler", async () => {
+    vi.mocked(getMsfSocialServiceOffices).mockResolvedValue([
+      {
+        name: "Social Service Office @ Queenstown",
+        category: "social_support",
+        subcategory: "social_service_office",
+        address: "40, Margaret Drive, #02-01",
+        postalCode: "140040",
+        lat: 1.2964584179145409,
+        lng: 103.80620757407047,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Social Service Offices",
+        sourceUrl: "https://data.gov.sg/datasets/d_22cfe2aed0bf20a679ab59bcaf0f8248/view",
+        lastUpdatedAt: "2024-11-04T11:36:04+08:00",
+        description: "Social Service Offices",
+        url: null,
+      },
+    ] as never);
+
+    const input = { postalCode: "140040", format: "json" } as const;
+
+    await expect(executeQueryStep("sg_msf_social_service_offices", input)).resolves.toEqual(
+      await handleMsfSocialServiceOffices(input),
     );
   });
 });

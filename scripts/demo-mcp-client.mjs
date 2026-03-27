@@ -114,17 +114,17 @@ const PROFILES = {
   civic: {
     resourceUri: "sg://recipes",
     direct: {
-      name: "sg_pa_community_outlets",
-      arguments: { type: "community_club", postalCode: "048616", format: "json" },
+      name: "sg_msf_family_services",
+      arguments: { postalCode: "560230", format: "json" },
     },
     supporting: {
-      name: "sg_ecda_childcare_centres",
-      arguments: { postalCode: "048616", hasVacancy: true, format: "json" },
+      name: "sg_msf_student_care_services",
+      arguments: { postalCode: "750471", scfaOnly: true, format: "json" },
     },
     query: {
       name: "sg_query",
       arguments: {
-        query: "Find a community club near 048616",
+        query: "Find a family service centre near 560230",
         mode: "execute",
         format: "json",
       },

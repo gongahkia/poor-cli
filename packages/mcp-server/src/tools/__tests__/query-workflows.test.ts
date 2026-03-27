@@ -697,6 +697,194 @@ describe("sg_query workflows", () => {
     expect(vi.mocked(getPaResidentNetworkCentres)).not.toHaveBeenCalled();
   });
 
+  it("executes civic discovery for a family service centre near an address", async () => {
+    vi.mocked(geocode).mockResolvedValue([
+      {
+        address: "BLK 230 ANG MO KIO AVE 3",
+        building: "TEST",
+        postal: "560230",
+        lat: 1.3688544443488972,
+        lng: 103.83789640387423,
+        x: 0,
+        y: 0,
+      },
+    ]);
+    vi.mocked(getMsfFamilyServices).mockResolvedValue([
+      {
+        name: "Allkin Family Service Centre @ Ang Mo Kio 230",
+        category: "social_support",
+        subcategory: "family_service_centre",
+        address: "Blk 230 Ang Mo Kio Ave 3 #01-1264",
+        postalCode: "560230",
+        lat: 1.3688544443488972,
+        lng: 103.83789640387423,
+        distanceKm: 0,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Family Services",
+        sourceUrl: "https://data.gov.sg/datasets/d_add23c06f7267e799185c79ccaa2099b/view",
+        lastUpdatedAt: "2025-12-03T18:52:26+08:00",
+        description: "Family Service Centres",
+        telephone: "6453 5349",
+        email: "fscamk@allkin.org.sg",
+        url: null,
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find a family service centre near Blk 230 Ang Mo Kio Ave 3",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(geocode)).toHaveBeenCalledWith("Blk 230 Ang Mo Kio Ave 3", undefined);
+    expect(vi.mocked(getMsfFamilyServices)).toHaveBeenCalledWith({
+      lat: 1.3688544443488972,
+      lng: 103.83789640387423,
+      radiusKm: 3,
+      format: "json",
+    });
+  });
+
+  it("executes civic discovery for SCFA grade A student care from a planning area", async () => {
+    vi.mocked(geocode).mockResolvedValue([
+      {
+        address: "TAMPINES",
+        building: "TAMPINES",
+        postal: "520000",
+        lat: 1.3526,
+        lng: 103.945,
+        x: 0,
+        y: 0,
+      },
+    ]);
+    vi.mocked(getMsfStudentCareServices).mockResolvedValue([
+      {
+        name: "YMCA Student Care Centre @ Tampines",
+        category: "childcare",
+        subcategory: "student_care",
+        address: "1 Tampines Street 11",
+        postalCode: "521001",
+        lat: 1.353,
+        lng: 103.9448,
+        distanceKm: 0.046,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Student Care Services",
+        sourceUrl: "https://data.gov.sg/datasets/d_77e6e0d58ce4743dab1f26dfcbbeb6f4/view",
+        lastUpdatedAt: "2026-02-23T12:48:33+08:00",
+        auditStatus: "Grade A",
+        auditDate: "2026-01-23",
+        scfa: true,
+        businessProfile: "Commercial Companies",
+        monthlyFee: 295,
+        enrolment: 100,
+        telephone: "98375096",
+        email: "cbscc@ymca.edu.sg",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find SCFA Grade A student care near Tampines",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(getMsfStudentCareServices)).toHaveBeenCalledWith({
+      auditStatus: "Grade A",
+      scfaOnly: true,
+      lat: 1.3526,
+      lng: 103.945,
+      radiusKm: 5,
+      format: "json",
+    });
+  });
+
+  it("executes civic discovery for a social service office from coordinates", async () => {
+    vi.mocked(getMsfSocialServiceOffices).mockResolvedValue([
+      {
+        name: "Social Service Office @ Queenstown",
+        category: "social_support",
+        subcategory: "social_service_office",
+        address: "40, Margaret Drive, #02-01",
+        postalCode: "140040",
+        lat: 1.2964584179145409,
+        lng: 103.80620757407047,
+        distanceKm: 0.001,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Social Service Offices",
+        sourceUrl: "https://data.gov.sg/datasets/d_22cfe2aed0bf20a679ab59bcaf0f8248/view",
+        lastUpdatedAt: "2024-11-04T11:36:04+08:00",
+        description: "Social Service Offices",
+        url: null,
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find a social service office near 1.29646, 103.80621",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(geocode)).not.toHaveBeenCalled();
+    expect(vi.mocked(getMsfSocialServiceOffices)).toHaveBeenCalledWith({
+      lat: 1.29646,
+      lng: 103.80621,
+      radiusKm: 3,
+      format: "json",
+    });
+  });
+
+  it("executes civic discovery by exact MSF office name without geocoding", async () => {
+    vi.mocked(getMsfSocialServiceOffices).mockResolvedValue([
+      {
+        name: "Social Service Office @ Queenstown",
+        category: "social_support",
+        subcategory: "social_service_office",
+        address: "40, Margaret Drive, #02-01",
+        postalCode: "140040",
+        lat: 1.2964584179145409,
+        lng: 103.80620757407047,
+        sourceAgency: "Ministry of Social and Family Development",
+        sourceDataset: "Social Service Offices",
+        sourceUrl: "https://data.gov.sg/datasets/d_22cfe2aed0bf20a679ab59bcaf0f8248/view",
+        lastUpdatedAt: "2024-11-04T11:36:04+08:00",
+        description: "Social Service Offices",
+        url: null,
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Find a social service office named \"Social Service Office @ Queenstown\"",
+      mode: "execute",
+      format: "json",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "civic_discovery",
+    });
+    expect(vi.mocked(geocode)).not.toHaveBeenCalled();
+    expect(vi.mocked(getMsfSocialServiceOffices)).toHaveBeenCalledWith({
+      name: "Social Service Office @ Queenstown",
+      format: "json",
+    });
+  });
+
   it("executes the business registry diligence workflow for a named company", async () => {
     vi.mocked(getAcraEntities).mockResolvedValue([
       {

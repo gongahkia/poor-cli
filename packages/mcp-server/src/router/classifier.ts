@@ -523,11 +523,25 @@ export const classifyIntent = (query: string): IntentResult => {
   const flatType = extractFlatType(query);
   if (flatType !== null) params["flatType"] = flatType;
 
-  const locationPhrase = extractLocationPhrase(query);
-  if (locationPhrase !== null) params["address"] = locationPhrase;
-
   const facilityName = extractNamedFacility(query);
-  if (facilityName !== null) params["name"] = facilityName;
+  if (facilityName !== null) {
+    params["name"] = facilityName;
+    const extractedPlanningArea = params["planningArea"];
+    if (
+      typeof extractedPlanningArea === "string"
+      && facilityName.toLowerCase().includes(extractedPlanningArea.toLowerCase())
+    ) {
+      delete params["planningArea"];
+    }
+  }
+
+  const locationPhrase = extractLocationPhrase(query);
+  if (
+    locationPhrase !== null
+    && (facilityName === null || !facilityName.toLowerCase().includes(locationPhrase.toLowerCase()))
+  ) {
+    params["address"] = locationPhrase;
+  }
 
   const facilityType = extractSportSgFacilityType(query);
   if (facilityType !== null) params["facilityType"] = facilityType;
