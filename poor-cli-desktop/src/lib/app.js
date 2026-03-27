@@ -7,6 +7,7 @@ import { initSkills } from './skills.js';
 import { initHistory, refreshHistorySidebar } from './history.js';
 import { initFileChangesPanel, updateFileChanges, openFileChangesPanel, toggleFileChangesPanel } from './filechanges.js';
 import { initCollabPanel, toggleCollabPanel, showCollabButton, cleanupCollab } from './multiplayer.js';
+import { initAutocomplete } from './autocomplete.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -354,4 +355,5 @@ window.addEventListener('beforeunload', () => {
 applyCustomFonts();
 initFileChangesPanel();
 initCollabPanel();
+initAutocomplete();
 ensureInitialized();

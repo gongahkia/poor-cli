@@ -38,6 +38,7 @@ fn main() {
             commands::list_history,
             commands::search_history,
             commands::get_session_cost,
+            commands::search_workspace_files,
             // multiplayer
             commands::start_host_server,
             commands::stop_host_server,

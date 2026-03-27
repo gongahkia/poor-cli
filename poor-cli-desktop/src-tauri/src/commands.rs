@@ -305,6 +305,32 @@ pub async fn get_session_cost(state: State<'_, AppState>) -> Result<Value, Strin
     send_rpc(&state, "poor-cli/getSessionCost", json!({})).await
 }
 
+// workspace file search
+#[tauri::command]
+pub async fn search_workspace_files(_state: State<'_, AppState>, query: String, limit: Option<usize>) -> Result<Value, String> {
+    let limit = limit.unwrap_or(20);
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let mut results = Vec::new();
+    collect_files(&cwd, &cwd, &query.to_lowercase(), limit, &mut results);
+    Ok(json!({"files": results}))
+}
+
+fn collect_files(root: &std::path::Path, dir: &std::path::Path, query: &str, limit: usize, results: &mut Vec<String>) {
+    if results.len() >= limit { return; }
+    let entries = match std::fs::read_dir(dir) { Ok(e) => e, Err(_) => return };
+    for entry in entries.flatten() {
+        if results.len() >= limit { return; }
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "node_modules" || name == "__pycache__" || name == "target" || name == ".venv" { continue; }
+        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+        if query.is_empty() || rel.to_lowercase().contains(query) || name.to_lowercase().contains(query) {
+            results.push(rel.clone());
+        }
+        if path.is_dir() { collect_files(root, &path, query, limit, results); }
+    }
+}
+
 // multiplayer — hosting
 #[tauri::command]
 pub async fn start_host_server(state: State<'_, AppState>, room: Option<String>, preset: Option<String>, lobby: Option<bool>) -> Result<Value, String> {
