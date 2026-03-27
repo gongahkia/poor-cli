@@ -12,13 +12,9 @@ const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 const providerSelect = document.getElementById('provider-select');
 const providerInfo = document.getElementById('provider-info');
-const modelSelector = document.getElementById('model-selector'); // removed
-const effortToggle = document.getElementById('effort-toggle'); // removed
 const threadTitle = document.getElementById('thread-title');
 const threadMenuBtn = document.getElementById('thread-menu-btn');
 const threadMenu = document.getElementById('thread-menu');
-const accountBtn = document.getElementById('account-btn'); // removed from DOM
-const accountMenu = document.getElementById('account-menu');
 const settingsBack = document.getElementById('settings-back');
 const sbCwd = document.getElementById('sb-cwd');
 const sbPermission = document.getElementById('sb-permission');
@@ -85,7 +81,7 @@ async function ensureInitialized() {
     for (const [id, key] of Object.entries(storedKeys)) { if (key && envMap[id]) envKeys[envMap[id]] = key; }
     await rpc('initialize_backend', { env_keys: envKeys });
     initialized = true;
-    await Promise.all([refreshProviderInfo(), refreshSessions(), populateModels(), refreshStatusBar(), refreshHistorySidebar()]);
+    await Promise.all([refreshProviderInfo(), refreshSessions(), refreshStatusBar(), refreshHistorySidebar()]);
   } catch (e) {
     const msg = String(e);
     if (msg.includes('timeout') || msg.includes('spawn') || msg.includes('No such file')) {
@@ -109,30 +105,6 @@ async function refreshProviderInfo() {
   } catch (e) {
     providerInfo.textContent = 'Not connected';
   }
-}
-
-// models
-async function populateModels() {
-  if (!modelSelector) return;
-  try {
-    const result = await rpc('list_providers', {});
-    const providers = result.providers || result;
-    modelSelector.innerHTML = '<option value="">Auto</option>';
-    if (typeof providers === 'object') {
-      for (const [name, data] of Object.entries(providers)) {
-        const group = document.createElement('optgroup');
-        group.label = name;
-        const models = data.models || data.available_models || [];
-        models.forEach(m => {
-          const opt = document.createElement('option');
-          opt.value = `${name}:${m}`;
-          opt.textContent = m;
-          group.appendChild(opt);
-        });
-        if (group.children.length) modelSelector.appendChild(group);
-      }
-    }
-  } catch (_) {}
 }
 
 // sessions
@@ -296,15 +268,6 @@ providerSelect.addEventListener('change', async () => {
     if (prev) providerSelect.value = prev; // revert dropdown
   }
 });
-if (modelSelector) modelSelector.addEventListener('change', async () => {
-  const val = modelSelector.value;
-  if (!val) return;
-  const [provider, ...modelParts] = val.split(':');
-  try {
-    await rpc('switch_provider', { provider, model: modelParts.join(':') });
-    await refreshProviderInfo();
-  } catch (_) {}
-});
 // session tab bar
 sessionTabAdd.addEventListener('click', () => {
   newSessionModal.hidden = false;
@@ -331,7 +294,7 @@ threadMenuBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   threadMenu.hidden = !threadMenu.hidden;
 });
-document.addEventListener('click', () => { threadMenu.hidden = true; if (accountMenu) accountMenu.hidden = true; });
+document.addEventListener('click', () => { threadMenu.hidden = true; });
 threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
   item.addEventListener('click', async () => {
     threadMenu.hidden = true;
@@ -355,20 +318,6 @@ threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
     }
   });
 });
-
-// account menu (removed from DOM — guarded)
-if (accountBtn && accountMenu) {
-  accountBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    accountMenu.hidden = !accountMenu.hidden;
-  });
-  const settingsAction = accountMenu.querySelector('[data-action="settings"]');
-  if (settingsAction) settingsAction.addEventListener('click', () => {
-    accountMenu.hidden = true;
-    showView('settings');
-  });
-}
-
 
 // register views
 registerView('chat', () => {});
