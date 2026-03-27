@@ -5,14 +5,13 @@ import { renderMarkdown } from './markdown.js';
 import { initSettings, applyCustomFonts } from './settings.js';
 import { initSkills } from './skills.js';
 import { initHistory, refreshHistorySidebar } from './history.js';
+import { initFileChangesPanel, updateFileChanges, openFileChangesPanel, toggleFileChangesPanel } from './filechanges.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 const providerSelect = document.getElementById('provider-select');
 const providerInfo = document.getElementById('provider-info');
-const sessionList = document.getElementById('session-list');
-const newSessionBtn = document.getElementById('new-session-btn');
 const modelSelector = document.getElementById('model-selector'); // removed
 const effortToggle = document.getElementById('effort-toggle'); // removed
 const threadTitle = document.getElementById('thread-title');
@@ -26,6 +25,21 @@ const sbPermission = document.getElementById('sb-permission');
 const sbGit = document.getElementById('sb-git');
 const sbSpinner = document.getElementById('sb-spinner');
 const sbChanges = document.getElementById('sb-changes');
+const sessionTabBar = document.getElementById('session-tab-bar');
+const sessionTabAdd = document.getElementById('session-tab-add');
+const projectAvatar = document.getElementById('project-avatar');
+const projectName = document.getElementById('project-name');
+const projectPath = document.getElementById('project-path');
+const wbGitBranch = document.getElementById('wb-git-branch');
+const wbPermission = document.getElementById('wb-permission-mode');
+const wbFileChanges = document.getElementById('wb-file-changes');
+const wbFcCount = document.getElementById('wb-fc-count');
+const wbFcAdded = document.getElementById('wb-fc-added');
+const wbFcRemoved = document.getElementById('wb-fc-removed');
+const newSessionModal = document.getElementById('new-session-modal');
+const newSessionNameInput = document.getElementById('new-session-name');
+const modalCancel = document.getElementById('modal-cancel');
+const modalCreate = document.getElementById('modal-create');
 
 let initialized = false;
 let activeSessionId = null;
@@ -122,23 +136,48 @@ async function populateModels() {
 }
 
 // sessions
+function abbreviatePath(p) {
+  if (!p) return '';
+  const parts = p.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (parts.length <= 2) return p;
+  return '.../' + parts.slice(-2).join('/');
+}
+
 export async function refreshSessions() {
   try {
     const result = await rpc('list_sessions', {});
     const sessions = result.sessions || [];
-    sessionList.innerHTML = '';
+    sessionTabBar.querySelectorAll('.session-tab').forEach(el => el.remove());
+    const addBtn = sessionTabBar.querySelector('.session-tab-add');
     sessions.forEach(s => {
-      const div = document.createElement('div');
-      div.className = `session-item${s.isDefault ? ' active' : ''}`;
-      const label = document.createElement('span');
-      label.textContent = s.label || s.sessionId;
-      div.appendChild(label);
-      const ts = document.createElement('span');
-      ts.className = 'timestamp';
-      ts.textContent = relativeTime(s.createdAt);
-      div.appendChild(ts);
-      div.addEventListener('click', (e) => selectSession(s, e.currentTarget));
-      sessionList.appendChild(div);
+      const tab = document.createElement('div');
+      tab.className = `session-tab${s.isDefault ? ' active' : ''}`;
+      const dot = document.createElement('span');
+      dot.className = `status-dot ${s.status === 'active' || s.status === 'running' ? 'running' : s.status === 'idle' ? 'idle' : 'stopped'}`;
+      tab.appendChild(dot);
+      const name = document.createElement('span');
+      name.className = 'tab-name';
+      name.textContent = s.label || s.sessionId;
+      tab.appendChild(name);
+      if (s.workingDirectory) {
+        const pathSpan = document.createElement('span');
+        pathSpan.className = 'tab-path';
+        pathSpan.textContent = abbreviatePath(s.workingDirectory);
+        tab.appendChild(pathSpan);
+      }
+      const close = document.createElement('span');
+      close.className = 'tab-close';
+      close.textContent = '\u00d7';
+      close.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await rpc('destroy_session', { sessionId: s.sessionId });
+          await refreshSessions();
+        } catch (_) {}
+      });
+      tab.appendChild(close);
+      tab.addEventListener('click', () => selectSession(s, tab));
+      sessionTabBar.insertBefore(tab, addBtn);
       if (s.isDefault) {
         activeSessionId = s.sessionId;
         threadTitle.textContent = s.label || s.sessionId;
@@ -150,12 +189,12 @@ export async function refreshSessions() {
 function selectSession(s, clickedEl) {
   activeSessionId = s.sessionId;
   threadTitle.textContent = s.label || s.sessionId;
-  document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.session-tab').forEach(el => el.classList.remove('active'));
   if (clickedEl) clickedEl.classList.add('active');
-  rpc('switch_session', { session_id: s.sessionId }).catch(() => {});
+  rpc('switch_session', { session_id: s.sessionId }).then(() => refreshStatusBar()).catch(() => {});
 }
 
-// status bar
+// status bar + workspace bar
 async function refreshStatusBar() {
   try {
     const status = await rpc('get_status_view', {});
@@ -163,6 +202,25 @@ async function refreshStatusBar() {
       sbCwd.textContent = status.workingDirectory || status.cwd || 'Local';
       sbPermission.textContent = status.permissionMode || status.sandbox?.preset || '--';
       sbGit.textContent = status.gitBranch ? `\u2387 ${status.gitBranch}` : '--';
+      // workspace bar
+      const cwd = status.workingDirectory || status.cwd || '';
+      const name = cwd.split('/').filter(Boolean).pop() || 'Project';
+      projectAvatar.textContent = name.charAt(0).toUpperCase();
+      projectName.textContent = name;
+      projectPath.textContent = cwd;
+      wbGitBranch.textContent = status.gitBranch || '--';
+      wbPermission.textContent = status.permissionMode || status.sandbox?.preset || '--';
+      // file changes
+      const changes = status.fileChanges || status.changes;
+      if (changes && changes.filesChanged) {
+        wbFileChanges.hidden = false;
+        wbFcCount.textContent = changes.filesChanged;
+        wbFcAdded.textContent = `+${changes.additions || 0}`;
+        wbFcRemoved.textContent = `-${changes.deletions || 0}`;
+        updateFileChanges(status);
+      } else {
+        wbFileChanges.hidden = true;
+      }
     }
   } catch (_) {}
 }
@@ -186,6 +244,7 @@ async function renderActivity() {
       const bar = document.createElement('div');
       bar.className = 'file-changes-bar';
       bar.innerHTML = `${changes.filesChanged} files changed <span class="added">+${changes.additions || 0}</span> <span class="removed">-${changes.deletions || 0}</span> <span class="review-link">Review changes &nearr;</span>`;
+      bar.querySelector('.review-link').addEventListener('click', openFileChangesPanel);
       chatMessages.appendChild(bar);
       sbChanges.hidden = false;
       sbChanges.innerHTML = `${changes.filesChanged} files <span class="added">+${changes.additions || 0}</span> <span class="removed">-${changes.deletions || 0}</span>`;
@@ -246,13 +305,25 @@ if (modelSelector) modelSelector.addEventListener('change', async () => {
     await refreshProviderInfo();
   } catch (_) {}
 });
-newSessionBtn.addEventListener('click', async () => {
+// session tab bar
+sessionTabAdd.addEventListener('click', () => {
+  newSessionModal.hidden = false;
+  newSessionNameInput.value = '';
+  newSessionNameInput.focus();
+});
+modalCancel.addEventListener('click', () => { newSessionModal.hidden = true; });
+modalCreate.addEventListener('click', async () => {
+  const label = newSessionNameInput.value.trim() || `session-${Date.now()}`;
+  newSessionModal.hidden = true;
   try {
-    await rpc('create_session', { label: `session-${Date.now()}` });
+    await rpc('create_session', { label });
     await refreshSessions();
     await refreshHistorySidebar();
   } catch (_) {}
 });
+newSessionModal.addEventListener('click', (e) => { if (e.target === newSessionModal) newSessionModal.hidden = true; });
+// file changes panel toggle
+wbFileChanges.addEventListener('click', toggleFileChangesPanel);
 
 
 // thread menu
@@ -324,4 +395,5 @@ window.addEventListener('beforeunload', () => {
 
 // auto-init
 applyCustomFonts();
+initFileChangesPanel();
 ensureInitialized();
