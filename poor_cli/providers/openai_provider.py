@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, AsyncIterator
 
 try:
     from openai import AsyncOpenAI
-    from openai import APIError as OpenAIAPIError, RateLimitError, Timeout, APIConnectionError as OpenAIConnectionError
+    from openai import APIError as OpenAIAPIError, RateLimitError, APITimeoutError as OpenAITimeoutError, APIConnectionError as OpenAIConnectionError
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
@@ -112,7 +112,7 @@ class OpenAIProvider(BaseProvider):
                 return self._parse_response(response)
             except RateLimitError as e:
                 raise APIRateLimitError("OpenAI rate limit exceeded", str(e))
-            except Timeout as e:
+            except OpenAITimeoutError as e:
                 raise APITimeoutError("OpenAI request timeout", str(e))
             except OpenAIConnectionError as e:
                 raise APIConnectionError("OpenAI connection error", str(e))
