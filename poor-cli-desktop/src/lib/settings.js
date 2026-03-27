@@ -3,6 +3,7 @@ import { rpc } from './rpc.js';
 
 const categories = { // display name -> config key prefix
   'General': 'ui',
+  'Fonts': 'fonts',
   'API Keys': 'api_keys',
   'Providers': 'model',
   'Security': 'security',
