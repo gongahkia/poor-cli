@@ -83,11 +83,18 @@ async function ensureInitialized() {
 }
 
 // provider
+let activeProvider = null;
 async function refreshProviderInfo() {
   try {
     const info = await rpc('get_provider_info', {});
-    providerInfo.textContent = `${info.name || 'unknown'} / ${info.model || 'unknown'}`;
-  } catch (_) {}
+    const name = info.name || 'unknown';
+    const model = info.model || 'unknown';
+    providerInfo.textContent = `${name} / ${model}`;
+    activeProvider = name;
+    providerSelect.value = name; // sync dropdown to actual backend provider
+  } catch (e) {
+    providerInfo.textContent = 'Not connected';
+  }
 }
 
 // models
@@ -145,6 +152,7 @@ function selectSession(s, clickedEl) {
   threadTitle.textContent = s.label || s.sessionId;
   document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
   if (clickedEl) clickedEl.classList.add('active');
+  rpc('switch_session', { session_id: s.sessionId }).catch(() => {});
 }
 
 // status bar
@@ -198,7 +206,12 @@ async function sendMessage() {
   showSpinner(true);
   try {
     const result = await rpc('send_chat', { message: text });
-    const content = result.content || result.text || JSON.stringify(result);
+    let content;
+    if (typeof result === 'string') content = result;
+    else if (result.content) content = result.content;
+    else if (result.text) content = result.text;
+    else if (result.message) content = result.message;
+    else content = '```json\n' + JSON.stringify(result, null, 2) + '\n```'; // pretty-print fallback
     pending.innerHTML = renderMarkdown(content);
     await renderActivity();
   } catch (e) {
@@ -214,10 +227,15 @@ chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 providerSelect.addEventListener('change', async () => {
+  const prev = activeProvider;
   try {
     await rpc('switch_provider', { provider: providerSelect.value });
     await refreshProviderInfo();
-  } catch (_) {}
+  } catch (e) {
+    providerInfo.textContent = `Switch failed: ${e}`;
+    providerInfo.style.color = 'var(--error)';
+    if (prev) providerSelect.value = prev; // revert dropdown
+  }
 });
 if (modelSelector) modelSelector.addEventListener('change', async () => {
   const val = modelSelector.value;

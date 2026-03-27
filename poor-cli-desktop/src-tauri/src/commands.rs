@@ -55,11 +55,11 @@ async fn send_rpc_inner(state: &AppState, method: &str, params: Value) -> Result
         "params": params,
     });
     let body = serde_json::to_string(&request).map_err(|e| e.to_string())?;
-    let header = format!("Content-Length: {}\r\n\r\n", body.len()); // LSP-style framing
+    eprintln!("[rpc:req] id={id} method={method}");
+    let header = format!("Content-Length: {}\r\n\r\n", body.len());
     backend.stdin.write_all(header.as_bytes()).await.map_err(|e| e.to_string())?;
     backend.stdin.write_all(body.as_bytes()).await.map_err(|e| e.to_string())?;
     backend.stdin.flush().await.map_err(|e| e.to_string())?;
-    // read Content-Length header from response
     let mut header_buf = String::new();
     loop {
         let mut byte = [0u8; 1];
@@ -76,9 +76,12 @@ async fn send_rpc_inner(state: &AppState, method: &str, params: Value) -> Result
     backend.stdout.read_exact(&mut body_buf).await.map_err(|e| e.to_string())?;
     let response: Value = serde_json::from_slice(&body_buf).map_err(|e| e.to_string())?;
     if let Some(error) = response.get("error") {
+        eprintln!("[rpc:err] id={id} method={method} error={error}");
         return Err(error.to_string());
     }
-    Ok(response.get("result").cloned().unwrap_or(Value::Null))
+    let result = response.get("result").cloned().unwrap_or(Value::Null);
+    eprintln!("[rpc:res] id={id} method={method} result_size={}", result.to_string().len());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -163,6 +166,11 @@ pub async fn clear_history(state: State<'_, AppState>) -> Result<Value, String> 
 #[tauri::command]
 pub async fn list_sessions(state: State<'_, AppState>) -> Result<Value, String> {
     send_rpc(&state, "poor-cli/listMuxSessions", json!({})).await
+}
+
+#[tauri::command]
+pub async fn switch_session(state: State<'_, AppState>, session_id: String) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/switchSession", json!({"sessionId": session_id})).await
 }
 
 #[tauri::command]

@@ -19,6 +19,7 @@ fn main() {
             commands::switch_provider,
             commands::clear_history,
             commands::list_sessions,
+            commands::switch_session,
             commands::create_session,
             commands::destroy_session,
             commands::get_status_view,
