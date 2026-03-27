@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Main (main) where
 
@@ -18,7 +19,7 @@ import Seuss.Core.Validation
 import Seuss.Import.CSV
 import Seuss.Import.GEDCOM
 import Seuss.Import.JSONLD
-import Seuss.Lang.AST (Program(..), Stmt)
+import Seuss.Lang.AST (Program(..), Stmt, pattern Program)
 import Seuss.Lang.Parser
 import Seuss.Model.Types
 import Seuss.Render.Layout
@@ -88,10 +89,6 @@ runExport configValue themeOverride exportOptions = do
             TIO.writeFile outputPath svgDocument
             reportDiagnostics (loadedDiagnostics loaded)
             putStrLn ("Wrote " <> outputPath)
-        ExportPng ->
-            failUnsupported "PNG export is not implemented yet in the current implementation; SVG is available now."
-        ExportPdf ->
-            failUnsupported "PDF export is not implemented yet in the current implementation; SVG is available now."
 
 runCheck :: FilePath -> IO ()
 runCheck filePath = do
@@ -346,20 +343,8 @@ reportDiagnostics = mapM_ (TIO.putStrLn . renderDiagnostic)
 hasErrors :: [Diagnostic] -> Bool
 hasErrors = any ((== DiagnosticError) . diagnosticLevel)
 
-failUnsupported :: String -> IO ()
-failUnsupported message = do
-    putStrLn message
-    exitFailure
-
 effectiveExportFormat :: SeussConfig -> ExportOptions -> ExportFormat
-effectiveExportFormat configValue exportOptions =
-    case exportFormat exportOptions of
-        ExportSvg ->
-            case fmap T.toLower (configDefaultFormat configValue) of
-                Just "png" -> ExportPng
-                Just "pdf" -> ExportPdf
-                _ -> ExportSvg
-        explicitFormat -> explicitFormat
+effectiveExportFormat _ exportOptions = exportFormat exportOptions
 
 resolveLoadTarget :: String -> IO FilePath
 resolveLoadTarget target =

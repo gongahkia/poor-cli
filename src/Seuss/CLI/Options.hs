@@ -7,6 +7,7 @@ module Seuss.CLI.Options
     , ImportFormat(..)
     , ImportOptions(..)
     , Options(..)
+    , parseExportFormat
     , optionsParserInfo
     ) where
 
@@ -17,8 +18,6 @@ import Options.Applicative
 
 data ExportFormat
     = ExportSvg
-    | ExportPng
-    | ExportPdf
     deriving (Eq, Show)
 
 data ImportFormat
@@ -95,7 +94,7 @@ exportParser =
                 <$> argument str (metavar "FILE")
                 <*> option
                     (eitherReader parseExportFormat)
-                    (short 'f' <> long "format" <> value ExportSvg <> metavar "FORMAT" <> help "svg | png | pdf")
+                    (short 'f' <> long "format" <> value ExportSvg <> metavar "FORMAT" <> help "svg")
                 <*> optional (strOption (short 'o' <> long "output" <> metavar "PATH"))
                 <*> optional (option auto (long "width" <> metavar "PIXELS"))
                 <*> optional (option auto (long "height" <> metavar "PIXELS"))
@@ -133,9 +132,7 @@ parseExportFormat :: String -> Either String ExportFormat
 parseExportFormat raw =
     case map toLower raw of
         "svg" -> Right ExportSvg
-        "png" -> Right ExportPng
-        "pdf" -> Right ExportPdf
-        other -> Left ("unknown export format: " <> other)
+        other -> Left ("unknown export format: " <> other <> " (supported: svg)")
 
 parseImportFormat :: String -> Either String ImportFormat
 parseImportFormat raw =

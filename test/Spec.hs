@@ -9,6 +9,7 @@ import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Time (fromGregorian)
+import Seuss.CLI.Options
 import Seuss.Config.Loader
 import Seuss.Core.Diff
 import Seuss.Core.Eval
@@ -337,6 +338,14 @@ spec = do
             configDefaultFormat configValue `shouldBe` Just "pdf"
             configThemeName configValue `shouldBe` Just "light"
             themeBackground resolvedTheme `shouldBe` "#ffffff"
+
+    describe "export format parsing" $ do
+        it "accepts svg as the only supported export format" $ do
+            parseExportFormat "svg" `shouldBe` Right ExportSvg
+
+        it "rejects unsupported export formats at the parser boundary" $ do
+            parseExportFormat "png" `shouldSatisfy` either (T.isInfixOf "supported: svg" . T.pack) (const False)
+            parseExportFormat "pdf" `shouldSatisfy` either (T.isInfixOf "supported: svg" . T.pack) (const False)
 
     describe "import parsing" $
         it "accepts import statements in the current frontend" $ do
