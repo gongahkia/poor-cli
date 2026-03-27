@@ -654,11 +654,11 @@ export const classifyIntent = (query: string): IntentResult => {
     };
   }
 
-  if (datasetId !== null && /resource|resources|column|columns|schema/i.test(lower)) {
+  if (aliasedTool === "sg_datagov_resources" || (datasetId !== null && /resource|resources|column|columns|schema/i.test(lower))) {
     return buildIntentResult("dataset", "direct_tool", 0.91, params, "sg_datagov_resources");
   }
 
-  if (datasetId !== null && /\b(row|rows|record|records)\b/i.test(lower)) {
+  if (aliasedTool === "sg_datagov_rows" || (datasetId !== null && /\b(row|rows|record|records)\b/i.test(lower))) {
     return buildIntentResult("dataset", "direct_tool", 0.91, params, "sg_datagov_rows");
   }
 

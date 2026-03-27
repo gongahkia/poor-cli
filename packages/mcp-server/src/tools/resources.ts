@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   API_CATALOG,
+  RUNTIME_CATALOG,
   RECIPE_CATALOG,
   RESOURCE_URIS,
   TOOL_CATALOG,
@@ -43,6 +44,16 @@ export const registerResources = (server: McpServer): void => {
       {
         uri: RESOURCE_URIS.recipes,
         text: JSON.stringify(RECIPE_CATALOG, null, 2),
+        mimeType: "application/json",
+      },
+    ],
+  }));
+
+  server.resource("sg-runtime", RESOURCE_URIS.runtime, async () => ({
+    contents: [
+      {
+        uri: RESOURCE_URIS.runtime,
+        text: JSON.stringify(RUNTIME_CATALOG, null, 2),
         mimeType: "application/json",
       },
     ],

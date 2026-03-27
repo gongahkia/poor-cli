@@ -27,9 +27,10 @@ Raw environment monitoring means calling forecast, air-quality, and rainfall sep
 
 `sg_environment_brief` returns one live artifact with:
 
-- forecast area context
-- regional air-quality context
-- station rainfall context
+- analyst-grade status, coverage, and signal summaries
+- threshold bands with a plain-language advisory and reasons
+- resolved focus context for area, region, and rainfall station
+- follow-up actions and bounded raw supporting rows
 - explicit coverage caveats in `limits`
 
 ## Sample Output Shape
@@ -38,14 +39,32 @@ Raw environment monitoring means calling forecast, air-quality, and rainfall sep
 {
   "title": "Environment Brief",
   "summary": [
-    { "label": "Forecast area", "value": "Tampines", "source": "NEA" },
-    { "label": "Forecast", "value": "Partly Cloudy", "source": "NEA" },
-    { "label": "Air-quality region", "value": "East", "source": "NEA" }
+    { "label": "Monitoring status", "value": "watch", "source": "NEA" },
+    { "label": "Focus", "value": "area Tampines, region East, station S107", "source": "NEA" },
+    { "label": "Primary driver", "value": "rainfall", "source": "NEA" }
   ],
   "evidence": [
     { "label": "Forecast rows", "value": 1, "source": "NEA" },
+    { "label": "Air-quality rows", "value": 1, "source": "NEA" },
     { "label": "Rainfall rows", "value": 1, "source": "NEA" }
   ],
+  "records": {
+    "status": { "level": "watch", "headline": "Environmental watch signals detected for area Tampines, region East, station S107." },
+    "coverage": {
+      "forecast": { "status": "available", "requestedArea": "Tampines", "resolvedArea": "Tampines", "rowCount": 1 },
+      "airQuality": { "status": "available", "requestedRegion": "East", "resolvedRegion": "East", "rowCount": 1 },
+      "rainfall": { "status": "available", "requestedStationId": "S107", "resolvedStationId": "S107", "resolvedStationName": "Tampines", "rowCount": 1 }
+    },
+    "thresholds": {
+      "forecastRisk": "clear",
+      "airQualityBand": "clear",
+      "rainfallBand": "watch",
+      "advisory": "Carry umbrella, monitor conditions",
+      "reasons": ["light rainfall detected"]
+    },
+    "focus": { "area": "Tampines", "region": "East", "stationId": "S107", "stationName": "Tampines" },
+    "followups": [{ "tool": "sg_nea_forecast_2hr", "reason": "Inspect the focused 2-hour forecast directly.", "input": { "area": "Tampines" } }]
+  },
   "gaps": [],
   "provenance": [
     { "source": "NEA", "tool": "sg_nea_forecast_2hr", "coverage": "2-hour forecast coverage for the requested area or the first available forecast area.", "authRequired": false, "recordCount": 1 }

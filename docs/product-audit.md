@@ -18,7 +18,7 @@ This repo already has real utility for developers building Singapore-focused age
 - The direct tools are honest wrappers with explicit schemas and stable names.
 - The additive briefs create actual product value instead of renaming raw upstream payloads.
 - `sg_query` is bounded and inspectable rather than pretending to be a free-form planner.
-- The catalog resources make the public surface discoverable without reading the source tree.
+- The catalog resources make the public surface discoverable without reading the source tree, and `sg://runtime` now exposes the operational trust contract directly.
 - `npm run verify` already enforces lint, build, docs parity, tests, and packaging smoke.
 
 ## Developer Pain Points Observed
@@ -33,7 +33,7 @@ This repo already has real utility for developers building Singapore-focused age
 - Start from `sg://recipes` when the caller has a natural-language goal and wants the right entrypoint quickly.
 - Use `sg_query` when the prompt matches a bounded supported workflow and transparent blocker handling matters.
 - Use direct `sg_*` tools when the caller already has the exact identifiers, coordinates, table IDs, or dataset IDs.
-- Use `sg://workflows` and `sg://tools` when building your own planner or IDE integration.
+- Use `sg://workflows`, `sg://tools`, and `sg://runtime` when building your own planner or IDE integration.
 - Trust the blocked and unsupported responses. They are a feature because they keep routing deterministic and auditable.
 
 ## What This Pass Improves

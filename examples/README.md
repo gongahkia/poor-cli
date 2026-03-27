@@ -67,7 +67,7 @@ Every profile reads one resource, calls one direct tool, calls one supporting to
 
 ## Integration Example
 
-`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes`, runs one covered `sg_query` prompt, demonstrates both blocked and unsupported outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters:
+`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes` plus `sg://runtime`, runs one covered `sg_query` prompt, demonstrates blocked, unsupported, and failed outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters:
 
 ```bash
 npx tsx examples/integration/basic-client.ts
@@ -75,7 +75,7 @@ npx tsx examples/integration/basic-client.ts
 
 ## Golden Outputs
 
-`golden-outputs/` contains realistic JSON fixtures for each brief tool, useful as reference for expected output shapes and field values.
+`golden-outputs/` contains realistic JSON fixtures for each brief tool plus sg_query completed, blocked, unsupported, and failed outcomes, useful as reference for expected output shapes and contract semantics.
 
 ## Quick Start
 

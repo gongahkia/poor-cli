@@ -31,6 +31,7 @@ export type ToolResult = {
 };
 
 export type OutputFormat = "json" | "markdown" | "csv" | "geojson";
+export type CredentialSource = "env" | "keystore" | "mixed" | "none" | "not_required";
 
 export type LatLng = {
   readonly lat: number;
@@ -69,8 +70,11 @@ export type HealthStatus = {
   readonly api: string;
   readonly authRequired: boolean;
   readonly configured: boolean;
+  readonly credentialSource: CredentialSource;
   readonly reachable: boolean;
   readonly latencyMs: number;
+  readonly dependentFamilies?: readonly string[];
+  readonly coverageNotes?: readonly string[];
   readonly error?: string;
 };
 
@@ -138,6 +142,110 @@ export type BriefArtifact = {
   readonly matchConfidence?: readonly MatchConfidence[];
   readonly nextChecks?: readonly NextCheck[];
 };
+
+export type QueryBlocker = {
+  readonly field: string;
+  readonly reason: string;
+  readonly directTool: string;
+  readonly exampleInput: Readonly<Record<string, unknown>>;
+  readonly suggestedPrompt: string;
+};
+
+export type QueryPlannedStep = {
+  readonly id: string;
+  readonly purpose: string;
+  readonly tool: string;
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly dependsOn?: readonly string[];
+};
+
+export type QueryExecutedStep = QueryPlannedStep & {
+  readonly status: "completed" | "failed";
+  readonly outputText?: string;
+  readonly structuredOutput?: Readonly<Record<string, unknown>>;
+  readonly error?: ToolErrorPayload;
+};
+
+export type QueryResultSummary = {
+  readonly level: string;
+  readonly headline: string;
+};
+
+export type QueryPlannedResult = {
+  readonly status: "planned";
+  readonly mode: "plan";
+  readonly workflow: string;
+  readonly intent: string;
+  readonly apis: readonly string[];
+  readonly confidence: number;
+  readonly toolsUsed: readonly string[];
+  readonly steps: readonly QueryPlannedStep[];
+};
+
+export type QueryCompletedResult = {
+  readonly status: "completed";
+  readonly mode: "execute";
+  readonly workflow: string;
+  readonly intent: string;
+  readonly apis: readonly string[];
+  readonly confidence: number;
+  readonly toolsUsed: readonly string[];
+  readonly steps: readonly QueryExecutedStep[];
+  readonly routingExplanation: string;
+  readonly continuationHints?: readonly string[];
+  readonly resultSummary?: QueryResultSummary;
+  readonly nextActions?: readonly NextCheck[];
+};
+
+export type QueryBlockedResult = {
+  readonly status: "blocked";
+  readonly mode: "plan" | "execute";
+  readonly workflow: string;
+  readonly intent: string;
+  readonly apis: readonly string[];
+  readonly confidence: number;
+  readonly toolsUsed: readonly string[];
+  readonly steps: readonly QueryPlannedStep[];
+  readonly blockers: readonly QueryBlocker[];
+  readonly reason: string;
+  readonly suggestion: string;
+  readonly routingExplanation: string;
+};
+
+export type QueryUnsupportedResult = {
+  readonly status: "unsupported";
+  readonly mode: "plan" | "execute";
+  readonly reason: string;
+  readonly suggestion: string;
+  readonly workflow?: string;
+  readonly intent?: string;
+  readonly apis?: readonly string[];
+  readonly confidence?: number;
+  readonly toolsUsed?: readonly string[];
+  readonly steps?: readonly QueryPlannedStep[];
+};
+
+export type QueryFailedResult = {
+  readonly status: "failed";
+  readonly mode: "execute";
+  readonly workflow: string;
+  readonly intent: string;
+  readonly apis: readonly string[];
+  readonly confidence: number;
+  readonly toolsUsed: readonly string[];
+  readonly steps: readonly QueryExecutedStep[];
+  readonly routingExplanation: string;
+  readonly resultSummary?: QueryResultSummary;
+  readonly nextActions?: readonly NextCheck[];
+  readonly failedStep: QueryExecutedStep | null;
+};
+
+export type QueryOutcome =
+  | QueryPlannedResult
+  | QueryCompletedResult
+  | QueryBlockedResult
+  | QueryUnsupportedResult
+  | QueryFailedResult;
 
 export type {
   CivicDirectoryRecord,

@@ -13,6 +13,11 @@ import {
   HdbResalePricesSchema,
   MacroBriefSchema,
   OneMapRouteSchema,
+  QueryBlockedResultSchema,
+  QueryCompletedResultSchema,
+  QueryFailedResultSchema,
+  QueryOutcomeSchema,
+  QueryUnsupportedResultSchema,
   PropertyBriefSchema,
   QuerySchema,
   TransportBriefSchema,
@@ -214,6 +219,140 @@ describe("query and HDB schema contracts", () => {
           upstreamTimestamp: "2026-03-26",
         }],
         limits: [{ code: "SNAPSHOT_ONLY", message: "Starter brief only." }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts a blocked sg_query result with structured blockers", () => {
+    expect(
+      QueryBlockedResultSchema.safeParse({
+        status: "blocked",
+        mode: "execute",
+        workflow: "route_plan",
+        intent: "geospatial",
+        apis: ["onemap"],
+        confidence: 0.88,
+        toolsUsed: ["sg_onemap_geocode", "sg_onemap_route"],
+        steps: [
+          {
+            id: "route_origin_geocode",
+            purpose: "Resolve the origin postal code to coordinates.",
+            tool: "sg_onemap_geocode",
+            input: { searchVal: "049178" },
+          },
+        ],
+        blockers: [
+          {
+            field: "destinationPostalCode",
+            reason: "Provide a Singapore postal code or coordinates for the destination.",
+            directTool: "sg_onemap_geocode",
+            exampleInput: { searchVal: "048616" },
+            suggestedPrompt: "Walk from 049178 to 048616",
+          },
+        ],
+        reason: "sg_query needs a destination before it can continue the route workflow.",
+        suggestion: "Provide the missing destination postal code or coordinates and retry.",
+        routingExplanation: "Routed to route_plan (confidence 0.88) via sg_onemap_geocode → sg_onemap_route. Drop to direct sg_* tools when you have exact identifiers.",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts completed, unsupported, and failed sg_query outcomes via the shared union schema", () => {
+    expect(
+      QueryOutcomeSchema.safeParse({
+        status: "completed",
+        mode: "execute",
+        workflow: "macro_brief",
+        intent: "macro",
+        apis: ["mas", "singstat"],
+        confidence: 0.92,
+        toolsUsed: ["sg_macro_brief"],
+        steps: [
+          {
+            id: "macro_brief",
+            purpose: "Build a compact Singapore macro starter brief.",
+            tool: "sg_macro_brief",
+            status: "completed",
+            input: { currency: "USD" },
+            structuredOutput: { record: { title: "Macro Brief" } },
+          },
+        ],
+        routingExplanation: "Routed to macro_brief (confidence 0.92) via sg_macro_brief. Drop to direct sg_* tools when you have exact identifiers.",
+        continuationHints: ["Call sg_singstat_table with tableId \"M015631\" for detailed data."],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      QueryUnsupportedResultSchema.safeParse({
+        status: "unsupported",
+        mode: "execute",
+        reason: "sg_query does not run comparison workflows automatically.",
+        suggestion: "Call the relevant direct tool separately for each item you want to compare.",
+      }).success,
+    ).toBe(true);
+
+    expect(
+      QueryFailedResultSchema.safeParse({
+        status: "failed",
+        mode: "execute",
+        workflow: "dataset_discovery",
+        intent: "dataset",
+        apis: ["datagov"],
+        confidence: 0.82,
+        toolsUsed: ["sg_datagov_search", "sg_datagov_get"],
+        steps: [
+          {
+            id: "dataset_search",
+            purpose: "Search data.gov.sg for relevant datasets.",
+            tool: "sg_datagov_search",
+            status: "failed",
+            input: { keyword: "hawker centres" },
+            error: {
+              source: "sg_datagov_search",
+              tool: "sg_datagov_search",
+              code: "UPSTREAM_ERROR",
+              retryable: true,
+              message: "Upstream service unavailable",
+            },
+          },
+        ],
+        routingExplanation: "Routed to dataset_discovery (confidence 0.82) via sg_datagov_search → sg_datagov_get. Drop to direct sg_* tools when you have exact identifiers.",
+        failedStep: {
+          id: "dataset_search",
+          purpose: "Search data.gov.sg for relevant datasets.",
+          tool: "sg_datagov_search",
+          status: "failed",
+          input: { keyword: "hawker centres" },
+          error: {
+            source: "sg_datagov_search",
+            tool: "sg_datagov_search",
+            code: "UPSTREAM_ERROR",
+            retryable: true,
+            message: "Upstream service unavailable",
+          },
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      QueryCompletedResultSchema.safeParse({
+        status: "completed",
+        mode: "execute",
+        workflow: "transport_brief",
+        intent: "transport",
+        apis: ["lta"],
+        confidence: 0.9,
+        toolsUsed: ["sg_transport_brief"],
+        steps: [
+          {
+            id: "transport_brief",
+            purpose: "Build a live transport operations brief.",
+            tool: "sg_transport_brief",
+            status: "completed",
+            input: {},
+          },
+        ],
+        routingExplanation: "Routed to transport_brief (confidence 0.90) via sg_transport_brief. Drop to direct sg_* tools when you have exact identifiers.",
       }).success,
     ).toBe(true);
   });

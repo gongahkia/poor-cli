@@ -33,8 +33,9 @@ The repo currently exposes 63 `sg_*` tools total across 26 official data familie
 - `sg://tools`
 - `sg://workflows`
 - `sg://recipes`
+- `sg://runtime`
 
-Use `sg://recipes` first when the caller has a goal-shaped prompt and you need the fastest honest entrypoint.
+Use `sg://recipes` first when the caller has a goal-shaped prompt and you need the fastest honest entrypoint. Use `sg://runtime` when you need auth, timeout, cache, health, or `sg_query` status-contract details without opening the docs.
 
 ## Preferred Entry Points
 
@@ -56,6 +57,7 @@ Use `sg://recipes` first when the caller has a goal-shaped prompt and you need t
 - Use `sg_query` when the user starts from a prompt such as route planning, reverse geocoding, SingStat browsing, data.gov collection browsing, or URA development-charge lookup.
 - Use direct `sg_*` tools when your application already has the exact coordinates, table IDs, dataset IDs, UENs, towns, or flat types.
 - Treat blocked and unsupported `sg_query` responses as useful contract outcomes, not something to hide.
+- Treat only `failed` as an execution error. Use `failedStep` plus the direct tool name to recover.
 
 ## Stable Scope
 

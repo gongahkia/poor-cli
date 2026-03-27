@@ -1,6 +1,6 @@
 # Developer Adoption Audit
 
-Observed on 2026-03-26 from the perspective of a developer deciding whether to integrate this repository into a real product.
+Observed on 2026-03-27 from the perspective of a developer deciding whether to integrate this repository into a real product.
 
 ## Executive Verdict
 
@@ -16,7 +16,7 @@ The current problem is not emptiness. The current problem is adoption depth. The
 
 - The codebase now exposes 26 official data families and 63 public `sg_*` tools.
 - `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
-- The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, and `sg://recipes`.
+- The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.
 - The demo scripts are runnable and prove the server can complete end-to-end MCP flows against the bundled mock server.
 
@@ -64,12 +64,12 @@ Transport and environment snapshots are useful, but they currently feel more lik
 
 The documentation is strong on honesty, scope, and tool inventory. It is weaker on "what would I ship with this in the next two days?"
 
-Most examples are MCP payload snippets, not product integration patterns. There are no short TypeScript examples showing:
+Most examples are still MCP payload snippets rather than full product integration patterns. The new `examples/integration/basic-client.ts` closes the most obvious gap, but the repo still needs more opinionated client patterns showing:
 
-- how to connect a client
+- how to connect a client in more than one runtime
 - how to read discovery resources once and cache them
 - how to route between `sg_query` and direct tools in app code
-- how to recover from blocked and unsupported states in a UI or backend job
+- how to recover from blocked, unsupported, and failed states in a UI or backend job
 
 That gap matters because real developers adopt runnable patterns, not just tool catalogs.
 

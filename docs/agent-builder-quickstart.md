@@ -8,6 +8,7 @@ Use the catalog resources before you build prompt routing logic:
 - `sg://tools`: direct tool inventory and schemas
 - `sg://workflows`: bounded workflow entrypoints and examples
 - `sg://recipes`: common prompt shapes mapped to the preferred entrypoint and fallback tools
+- `sg://runtime`: auth dependencies, credential-source rules, timeout/cache policy, health coverage, and `sg_query` status semantics
 
 If you only read one resource first, read `sg://recipes`.
 
@@ -45,20 +46,23 @@ Expect two important non-success outcomes:
 
 - blocked: the repo recognized the workflow, but a required field is missing
 - unsupported: the prompt does not map to a bounded supported workflow
+- failed: execution started, but a direct tool or workflow dependency failed
 
 Build your client around those outcomes:
 
 1. If the status is blocked, ask the user for the missing field shown in the blocker message.
 2. If the status is unsupported, drop to discovery through `sg://recipes`, `sg://workflows`, or direct tool selection.
-3. If the workflow is completed, continue from the returned `structuredContent` and underlying direct-tool outputs.
+3. If the status is failed, inspect `failedStep`, surface the suggested action, and retry only after fixing the failing direct-tool input.
+4. If the workflow is completed, continue from the returned `structuredContent` and underlying direct-tool outputs.
 
 ## Recommended Integration Pattern
 
-1. Read `sg://recipes` at startup and cache the recipe list in your planner.
+1. Read `sg://recipes` and `sg://runtime` at startup and cache them in your planner.
 2. Route covered natural-language prompts to `sg_query`.
 3. Route exact-parameter tasks to direct `sg_*` tools.
 4. Surface blocker messages directly to the caller instead of trying to infer missing data.
-5. Keep the direct tool names visible in logs and traces so developers can debug routing decisions.
+5. Treat `blocked` and `unsupported` as non-error control-flow outcomes; only `failed` is an execution error.
+6. Keep the direct tool names visible in logs and traces so developers can debug routing decisions.
 
 The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts).
 

@@ -450,7 +450,7 @@ describe("sg_query workflows", () => {
       format: "csv",
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({
       status: "unsupported",
       workflow: "macro_brief",
@@ -495,9 +495,14 @@ describe("sg_query workflows", () => {
       mode: "execute",
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({
-      status: "unsupported",
+      status: "blocked",
+      workflow: "direct_tool",
+      blockers: [
+        expect.objectContaining({ field: "lat", directTool: "sg_onemap_reverse_geocode" }),
+        expect.objectContaining({ field: "lng", directTool: "sg_onemap_reverse_geocode" }),
+      ],
     });
     expect(JSON.stringify(result.structuredContent)).toContain("latitude and longitude");
   });
@@ -508,9 +513,14 @@ describe("sg_query workflows", () => {
       mode: "execute",
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({
-      status: "unsupported",
+      status: "blocked",
+      blockers: [
+        expect.objectContaining({ field: "from", directTool: "sg_onemap_convert_coords" }),
+        expect.objectContaining({ field: "x", directTool: "sg_onemap_convert_coords" }),
+        expect.objectContaining({ field: "y", directTool: "sg_onemap_convert_coords" }),
+      ],
     });
     expect(JSON.stringify(result.structuredContent)).toContain("source coordinate system");
   });
@@ -521,11 +531,87 @@ describe("sg_query workflows", () => {
       mode: "execute",
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({
-      status: "unsupported",
+      status: "blocked",
+      blockers: [expect.objectContaining({ field: "tableId", directTool: "sg_singstat_table" })],
     });
     expect(JSON.stringify(result.structuredContent)).toContain("SingStat table ID");
+  });
+
+  it("returns a blocked business-diligence response when no registry identifier is supplied", async () => {
+    const result = await runQuery({
+      query: "Run registry diligence for a company",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "blocked",
+      workflow: "business_dossier",
+      blockers: expect.arrayContaining([
+        expect.objectContaining({ field: "entityName", directTool: "sg_business_dossier" }),
+        expect.objectContaining({ field: "uen", directTool: "sg_business_dossier" }),
+        expect.objectContaining({ field: "registrationNo", directTool: "sg_cea_salespersons" }),
+      ]),
+    });
+  });
+
+  it("returns a blocked property-diligence response when no area hint is supplied", async () => {
+    const result = await runQuery({
+      query: "Property due diligence for an HDB resale",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "blocked",
+      workflow: "property_brief",
+      blockers: expect.arrayContaining([
+        expect.objectContaining({ field: "planningArea", directTool: "sg_property_brief" }),
+        expect.objectContaining({ field: "postalCode", directTool: "sg_property_brief" }),
+      ]),
+    });
+  });
+
+  it("returns a blocked bus-arrivals response when no bus stop code is supplied", async () => {
+    const result = await runQuery({
+      query: "Bus arrivals right now",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "blocked",
+      workflow: "direct_tool",
+      blockers: [expect.objectContaining({ field: "busStopCode", directTool: "sg_lta_bus_arrivals" })],
+    });
+  });
+
+  it("returns a blocked data.gov resources response when the dataset id is missing", async () => {
+    const result = await runQuery({
+      query: "dataset resources",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "blocked",
+      blockers: [expect.objectContaining({ field: "datasetId", directTool: "sg_datagov_resources" })],
+    });
+  });
+
+  it("returns a blocked data.gov rows response when the dataset id is missing", async () => {
+    const result = await runQuery({
+      query: "dataset rows",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      status: "blocked",
+      blockers: [expect.objectContaining({ field: "datasetId", directTool: "sg_datagov_rows" })],
+    });
   });
 
   it("executes civic discovery for a community club near a postal code", async () => {
@@ -688,9 +774,15 @@ describe("sg_query workflows", () => {
       mode: "execute",
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({
       status: "blocked",
+      workflow: "civic_discovery",
+      blockers: expect.arrayContaining([
+        expect.objectContaining({ field: "postalCode", directTool: "sg_onemap_geocode" }),
+        expect.objectContaining({ field: "address", directTool: "sg_onemap_geocode" }),
+        expect.objectContaining({ field: "name", directTool: "sg_ecda_childcare_centres" }),
+      ]),
     });
     expect(vi.mocked(geocode)).not.toHaveBeenCalled();
     expect(vi.mocked(getEcdaChildcareCentres)).not.toHaveBeenCalled();

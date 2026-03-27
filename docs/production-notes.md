@@ -2,6 +2,8 @@
 
 Operational guidance for teams deploying sg-apis-mcp in production.
 
+The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs.
+
 ## Latency Expectations
 
 | API Family | Timeout (ms) | Typical Latency | Notes |

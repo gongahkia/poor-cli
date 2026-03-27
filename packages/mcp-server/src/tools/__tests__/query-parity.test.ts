@@ -165,6 +165,7 @@ import { executeQueryStep } from "../query-tool.js";
 const normalizeBriefResult = (result: Awaited<ReturnType<typeof executeQueryStep>>) => {
   const normalized = structuredClone(result);
   const record = normalized.structuredContent?.["record"];
+  const meta = normalized.structuredContent?.["meta"];
   let content = normalized.content;
 
   if (
@@ -178,6 +179,10 @@ const normalizeBriefResult = (result: Awaited<ReturnType<typeof executeQueryStep
         item["observedAt"] = "__normalized__";
       }
     }
+  }
+
+  if (typeof meta === "object" && meta !== null && "observedAt" in meta) {
+    meta["observedAt"] = "__normalized__";
   }
 
   const firstContent = normalized.content[0];

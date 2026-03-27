@@ -512,6 +512,10 @@ const buildTransportSignals = (
       headline: nextArrival === null
         ? `No current bus ETA available for ${focus}.`
         : `Next bus ETA for ${focus} is ${nextArrival}.`,
+      focus,
+      busStopCode: params.busStopCode,
+      ...(params.serviceNo === undefined ? {} : { serviceNo: params.serviceNo }),
+      nextArrival,
       coverage: coverage.busCoverage,
     });
   }
@@ -525,6 +529,9 @@ const buildTransportSignals = (
           ? `${counts.trainAlerts} train alert(s) and ${counts.trainMessages} message(s) reported.`
           : `${counts.trainAlerts} train alert(s) and ${counts.trainMessages} message(s) reported on ${primaryTrainLine}.`
         : "No active train alerts reported.",
+    alertCount: counts.trainAlerts,
+    messageCount: counts.trainMessages,
+    primaryLine: primaryTrainLine,
     coverage: coverage.trainCoverage,
   });
 
@@ -537,6 +544,8 @@ const buildTransportSignals = (
           ? `${counts.trafficSignals} traffic incident(s) reported.`
           : `${counts.trafficSignals} traffic incident(s) reported, including ${primaryIncidentType}.`
         : "No active traffic incidents reported.",
+    incidentCount: counts.trafficSignals,
+    primaryIncidentType,
     coverage: coverage.trafficCoverage,
   });
 
@@ -680,7 +689,11 @@ const buildEnvironmentSignals = (
       source: "forecast",
       level: thresholds.forecastRisk,
       headline: `Forecast ${String(primaryForecast["forecast"] ?? "")} for ${String(primaryForecast["area"] ?? "the requested area")}.`,
-      input: primaryForecast["forecast"] ?? null,
+      area: primaryForecast["area"] ?? null,
+      forecast: primaryForecast["forecast"] ?? null,
+      updatedAt: primaryForecast["updatedAt"] ?? null,
+      validFrom: primaryForecast["validFrom"] ?? null,
+      validTo: primaryForecast["validTo"] ?? null,
     });
   }
 
@@ -689,7 +702,10 @@ const buildEnvironmentSignals = (
       source: "air_quality",
       level: thresholds.airQualityBand,
       headline: `PSI 24h is ${String(primaryAirQuality["psi24h"] ?? "unknown")} for ${String(primaryAirQuality["region"] ?? "the requested region")}.`,
-      input: primaryAirQuality["psi24h"] ?? null,
+      region: primaryAirQuality["region"] ?? null,
+      psi24h: primaryAirQuality["psi24h"] ?? null,
+      pm25OneHourly: primaryAirQuality["pm25OneHourly"] ?? null,
+      updatedAt: primaryAirQuality["updatedAt"] ?? null,
     });
   }
 
@@ -699,7 +715,11 @@ const buildEnvironmentSignals = (
       level: thresholds.rainfallBand,
       headline: `Rainfall is ${String(primaryRainfall["value"] ?? "unknown")} ${String(primaryRainfall["unit"] ?? "")}`.trim()
         + ` at ${String(primaryRainfall["stationName"] ?? primaryRainfall["stationId"] ?? "the requested station")}.`,
-      input: primaryRainfall["value"] ?? null,
+      stationId: primaryRainfall["stationId"] ?? null,
+      stationName: primaryRainfall["stationName"] ?? null,
+      value: primaryRainfall["value"] ?? null,
+      unit: primaryRainfall["unit"] ?? null,
+      timestamp: primaryRainfall["timestamp"] ?? null,
     });
   }
 
@@ -745,6 +765,124 @@ const buildEnvironmentNextChecks = (
       },
     },
   ];
+};
+
+const getTransportPrimaryDriver = (
+  level: "disrupted" | "advisory" | "unknown" | "normal",
+  nextArrival: string | null,
+  primaryTrainLine: string | null,
+  primaryIncidentType: string | null,
+): string | null => {
+  if (level === "disrupted") {
+    return primaryTrainLine === null ? "train alerts active" : `train alerts on ${primaryTrainLine}`;
+  }
+  if (level === "advisory") {
+    return primaryIncidentType === null ? "traffic incidents active" : primaryIncidentType;
+  }
+  if (nextArrival !== null) {
+    return `next arrival ${nextArrival}`;
+  }
+  if (level === "unknown") {
+    return "no current bus ETA available";
+  }
+  return "no active disruption signals";
+};
+
+const buildTrainByLine = (
+  alerts: readonly Readonly<Record<string, unknown>>[],
+): Readonly<Record<string, number>> => {
+  const counts: Record<string, number> = {};
+  for (const alert of alerts) {
+    const line = typeof alert["line"] === "string" && alert["line"].trim() !== ""
+      ? alert["line"]
+      : "Unknown";
+    counts[line] = (counts[line] ?? 0) + 1;
+  }
+  return counts;
+};
+
+const buildTrafficByType = (
+  incidents: readonly Readonly<Record<string, unknown>>[],
+): Readonly<Record<string, number>> => {
+  const counts: Record<string, number> = {};
+  for (const incident of incidents) {
+    const type = typeof incident["type"] === "string" && incident["type"].trim() !== ""
+      ? incident["type"]
+      : "Unknown";
+    counts[type] = (counts[type] ?? 0) + 1;
+  }
+  return counts;
+};
+
+const buildStopDetail = (
+  params: Readonly<{ busStopCode?: string | undefined; serviceNo?: string | undefined }>,
+  nextArrival: string | null,
+  busArrivals: readonly Readonly<Record<string, unknown>>[] | null,
+): Readonly<Record<string, unknown>> | null => {
+  if (params.busStopCode === undefined || busArrivals === null) {
+    return null;
+  }
+
+  const waitMins: number[] = [];
+  const arrivals = busArrivals.map((service) => {
+    const serviceArrivals = Array.isArray(service["arrivals"])
+      ? service["arrivals"] as readonly Readonly<Record<string, unknown>>[]
+      : [];
+    const eta = typeof serviceArrivals[0]?.["estimatedArrival"] === "string"
+      ? serviceArrivals[0]!["estimatedArrival"]
+      : null;
+    if (eta !== null) {
+      const diff = (new Date(eta).getTime() - Date.now()) / 60000;
+      if (Number.isFinite(diff) && diff >= 0) {
+        waitMins.push(Math.round(diff * 10) / 10);
+      }
+    }
+
+    return {
+      serviceNo: service["serviceNo"] ?? null,
+      operator: service["operator"] ?? null,
+      nextArrival: eta,
+      arrivalCount: serviceArrivals.length,
+      arrivals: serviceArrivals,
+    };
+  });
+
+  return {
+    busStopCode: params.busStopCode,
+    ...(params.serviceNo === undefined ? {} : { serviceNo: params.serviceNo }),
+    serviceCount: busArrivals.length,
+    nextArrival,
+    avgWaitMinutes: waitMins.length > 0
+      ? Math.round((waitMins.reduce((sum, value) => sum + value, 0) / waitMins.length) * 10) / 10
+      : null,
+    arrivals,
+  };
+};
+
+const getEnvironmentPrimaryDriver = (
+  level: "caution" | "watch" | "clear" | "unknown",
+  thresholds: Readonly<{
+    forecastRisk: "caution" | "watch" | "clear" | "unknown";
+    airQualityBand: "caution" | "watch" | "clear" | "unknown";
+    rainfallBand: "caution" | "watch" | "clear" | "unknown";
+  }>,
+): string | null => {
+  if (thresholds.forecastRisk === level && level !== "clear" && level !== "unknown") {
+    return "forecast";
+  }
+  if (thresholds.airQualityBand === level && level !== "clear" && level !== "unknown") {
+    return "air quality";
+  }
+  if (thresholds.rainfallBand === level && level !== "clear" && level !== "unknown") {
+    return "rainfall";
+  }
+  if (level === "clear") {
+    return "no adverse forecast, air-quality, or rainfall signals";
+  }
+  if (level === "unknown") {
+    return "signals unavailable";
+  }
+  return null;
 };
 
 const toProvenance = (
@@ -1555,34 +1693,6 @@ export const handleTransportBrief = async (
   const primaryTrainLine = trainAlerts?.alerts[0]?.line ?? null;
   const primaryIncidentType = trafficIncidents?.[0]?.type ?? null;
   const focus = buildTransportFocus(params.busStopCode, params.serviceNo);
-
-  // stop summary: service count + avg wait
-  const stopSummary = params.busStopCode !== undefined && busArrivals !== null ? (() => {
-    const serviceCount = busArrivals.length;
-    const waitMins: number[] = [];
-    for (const svc of busArrivals) {
-      const arrivals = (svc as Readonly<Record<string, unknown>>)["arrivals"];
-      if (Array.isArray(arrivals) && arrivals.length > 0) {
-        const first = arrivals[0] as Readonly<Record<string, unknown>> | undefined;
-        const eta = first?.["estimatedArrival"];
-        if (typeof eta === "string") {
-          const diff = (new Date(eta).getTime() - Date.now()) / 60000;
-          if (Number.isFinite(diff) && diff >= 0) waitMins.push(Math.round(diff * 10) / 10);
-        }
-      }
-    }
-    return { serviceCount, avgWaitMinutes: waitMins.length > 0 ? Math.round((waitMins.reduce((s, v) => s + v, 0) / waitMins.length) * 10) / 10 : null };
-  })() : null;
-
-  // incident summary: count by type
-  const incidentSummary = trafficIncidents !== null && trafficIncidents.length > 0 ? (() => {
-    const byType: Record<string, number> = {};
-    for (const inc of trafficIncidents) {
-      const t = String((inc as Readonly<Record<string, unknown>>)["type"] ?? "unknown");
-      byType[t] = (byType[t] ?? 0) + 1;
-    }
-    return { total: trafficIncidents.length, byType };
-  })() : null;
   const counts = {
     trainAlerts: trainAlerts?.alerts.length ?? 0,
     trainMessages: trainAlerts?.messages.length ?? 0,
@@ -1599,41 +1709,72 @@ export const handleTransportBrief = async (
   const opsLevel = getTransportOpsLevel(params, counts, nextArrival);
   const opsHeadline = buildTransportHeadline(opsLevel, focus, counts, primaryTrainLine, primaryIncidentType);
   const signals = buildTransportSignals(params, nextArrival, counts, primaryTrainLine, primaryIncidentType, coverage);
-  const nextChecks = buildTransportNextChecks(params);
+  const followups = buildTransportNextChecks(params);
+  const stop = buildStopDetail(
+    params,
+    nextArrival,
+    busArrivals as readonly Readonly<Record<string, unknown>>[] | null,
+  );
+  const primaryDriver = getTransportPrimaryDriver(opsLevel, nextArrival, primaryTrainLine, primaryIncidentType);
+  const trainByLine = buildTrainByLine(
+    trainAlerts?.alerts as unknown as readonly Readonly<Record<string, unknown>>[] ?? [],
+  );
+  const trafficByType = buildTrafficByType(
+    trafficIncidents as unknown as readonly Readonly<Record<string, unknown>>[] ?? [],
+  );
 
   const payload: BriefArtifact = {
     title: "Transport Brief",
     summary: [
-      { label: "Network status", value: opsHeadline, source: "LTA" },
+      { label: "Transport status", value: opsLevel, source: "LTA" },
       { label: "Focus", value: focus, source: "LTA" },
-      { label: "Next bus ETA", value: nextArrival, source: "LTA" },
-      { label: "Train disruption count", value: counts.trainSignals, source: "LTA" },
-      { label: "Traffic incident count", value: counts.trafficSignals, source: "LTA" },
+      { label: "Primary driver", value: primaryDriver, source: "LTA" },
     ],
     evidence: [
-      { label: "Bus coverage", value: coverage.busCoverage, source: "LTA" },
       { label: "Bus services observed", value: busArrivals?.length ?? 0, source: "LTA" },
       { label: "Train alerts observed", value: counts.trainAlerts, source: "LTA" },
       { label: "Train messages observed", value: counts.trainMessages, source: "LTA" },
       { label: "Traffic incidents observed", value: counts.trafficSignals, source: "LTA" },
     ],
     records: {
-      opsStatus: {
+      status: {
         level: opsLevel,
         headline: opsHeadline,
         focus,
-        busCoverage: coverage.busCoverage,
-        trainCoverage: coverage.trainCoverage,
-        trafficCoverage: coverage.trafficCoverage,
+      },
+      coverage: {
+        bus: {
+          status: coverage.busCoverage,
+          requestedBusStopCode: params.busStopCode ?? null,
+          requestedServiceNo: params.serviceNo ?? null,
+          servicesObserved: busArrivals?.length ?? 0,
+        },
+        train: {
+          status: coverage.trainCoverage,
+          alertCount: counts.trainAlerts,
+          messageCount: counts.trainMessages,
+        },
+        traffic: {
+          status: coverage.trafficCoverage,
+          incidentCount: counts.trafficSignals,
+        },
       },
       signals,
-      nextChecks,
-      ...(stopSummary !== null ? { stopSummary } : {}),
-      ...(incidentSummary !== null ? { incidentSummary } : {}),
-      busArrivals: busArrivals ?? [],
-      trainAlerts: trainAlerts?.alerts ?? [],
-      trainAlertMessages: trainAlerts?.messages ?? [],
-      trafficIncidents: trafficIncidents ?? [],
+      network: {
+        trainAlertCount: counts.trainAlerts,
+        trainMessageCount: counts.trainMessages,
+        trainByLine,
+        trafficIncidentCount: counts.trafficSignals,
+        trafficByType,
+      },
+      ...(stop === null ? {} : { stop }),
+      followups,
+      raw: {
+        busArrivals: busArrivals ?? [],
+        trainAlerts: trainAlerts?.alerts ?? [],
+        trainMessages: trainAlerts?.messages ?? [],
+        trafficIncidents: trafficIncidents ?? [],
+      },
     },
     gaps,
     provenance: [
@@ -1716,7 +1857,7 @@ export const handleEnvironmentBrief = async (
     primaryRainfall as Readonly<Record<string, unknown>> | undefined,
     thresholds,
   );
-  const outdoorConditions = (() => {
+  const thresholdAdvisory = (() => {
     if (opsLevel === "caution") {
       const reasons: string[] = [];
       if (thresholds.forecastRisk === "caution") reasons.push("thunderstorms or heavy rain expected");
@@ -1734,52 +1875,84 @@ export const handleEnvironmentBrief = async (
     if (opsLevel === "clear") return { advisory: "Safe for outdoor activities", reasons: [] };
     return { advisory: "Conditions unknown, check individual signals", reasons: [] };
   })();
-  const nextChecks = buildEnvironmentNextChecks(params, {
+  const followups = buildEnvironmentNextChecks(params, {
     focusArea,
     focusRegion,
     stationId: focusStationId,
   });
+  const primaryDriver = getEnvironmentPrimaryDriver(opsLevel, thresholds);
+  const forecastCoverage = forecast === null
+    ? "unavailable"
+    : primaryForecast === undefined
+      ? "missing"
+      : "available";
+  const airQualityCoverage = airQuality === null
+    ? "unavailable"
+    : primaryAirQuality === undefined
+      ? "missing"
+      : "available";
+  const rainfallCoverage = rainfall === null
+    ? "unavailable"
+    : primaryRainfall === undefined
+      ? "missing"
+      : "available";
 
   const payload: BriefArtifact = {
     title: "Environment Brief",
     summary: [
-      { label: "Monitoring status", value: opsHeadline, source: "NEA" },
-      { label: "Forecast risk", value: thresholds.forecastRisk, source: "NEA" },
-      { label: "PSI band", value: thresholds.airQualityBand, source: "NEA" },
-      { label: "PSI 24h", value: primaryAirQuality?.psi24h ?? null, source: "NEA" },
-      { label: "Rainfall band", value: thresholds.rainfallBand, source: "NEA" },
-      { label: "Rainfall", value: primaryRainfall?.value ?? null, source: "NEA" },
-      { label: "Focus area", value: focusArea, source: "NEA" },
-      { label: "Focus region", value: focusRegion, source: "NEA" },
-      { label: "Focus station", value: focusStation, source: "NEA" },
+      { label: "Monitoring status", value: opsLevel, source: "NEA" },
+      { label: "Focus", value: buildEnvironmentScopeLabel(focusArea, focusRegion, focusStation), source: "NEA" },
+      { label: "Primary driver", value: primaryDriver, source: "NEA" },
     ],
     evidence: [
       { label: "Forecast rows", value: forecast?.length ?? 0, source: "NEA" },
       { label: "Air-quality rows", value: airQuality?.length ?? 0, source: "NEA" },
       { label: "Rainfall rows", value: rainfall?.length ?? 0, source: "NEA" },
-      { label: "Forecast input", value: primaryForecast?.forecast ?? null, source: "NEA" },
-      { label: "PSI input", value: primaryAirQuality?.psi24h ?? null, source: "NEA" },
-      { label: "Rainfall input", value: primaryRainfall?.value ?? null, source: "NEA" },
     ],
     records: {
-      opsStatus: {
+      status: {
         level: opsLevel,
         headline: opsHeadline,
-        focusArea,
-        focusRegion,
-        focusStation,
       },
-      outdoorConditions,
-      thresholds,
+      coverage: {
+        forecast: {
+          status: forecastCoverage,
+          requestedArea: params.area ?? null,
+          resolvedArea: focusArea,
+          rowCount: forecast?.length ?? 0,
+        },
+        airQuality: {
+          status: airQualityCoverage,
+          requestedRegion: params.region ?? null,
+          resolvedRegion: focusRegion,
+          rowCount: airQuality?.length ?? 0,
+        },
+        rainfall: {
+          status: rainfallCoverage,
+          requestedStationId: params.stationId ?? null,
+          resolvedStationId: focusStationId,
+          resolvedStationName: focusStation,
+          rowCount: rainfall?.length ?? 0,
+        },
+      },
       signals,
-      nextChecks,
-      rainfallStation: primaryRainfall !== undefined ? {
-        stationId: primaryRainfall.stationId ?? null,
-        stationName: primaryRainfall.stationName ?? null,
-      } : null,
-      forecast: forecast ?? [],
-      airQuality: airQuality ?? [],
-      rainfall: rainfall ?? [],
+      thresholds: {
+        ...thresholds,
+        advisory: thresholdAdvisory.advisory,
+        reasons: thresholdAdvisory.reasons,
+      },
+      focus: {
+        area: focusArea,
+        region: focusRegion,
+        stationId: focusStationId,
+        stationName: focusStation,
+      },
+      followups,
+      raw: {
+        forecastRows: forecast ?? [],
+        airQualityRows: airQuality ?? [],
+        rainfallRows: rainfall ?? [],
+      },
     },
     gaps,
     provenance: [

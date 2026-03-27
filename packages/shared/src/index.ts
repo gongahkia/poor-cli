@@ -101,6 +101,18 @@ export {
   ConfigGetSchema,
   ConfigSetSchema,
   QuerySchema,
+  ToolErrorPayloadSchema,
+  QueryBlockerSchema,
+  QueryPlannedStepSchema,
+  QueryExecutedStepSchema,
+  QueryResultSummarySchema,
+  QueryPlannedResultSchema,
+  QueryCompletedResultSchema,
+  QueryBlockedResultSchema,
+  QueryUnsupportedResultSchema,
+  QueryFailedResultSchema,
+  QueryOutcomeSchema,
+  NextCheckSchema,
 } from "./schemas/index.js";
 export { loadConfig } from "./config/index.js";
 export type { Config } from "./config/index.js";
@@ -150,8 +162,19 @@ export type {
   KeyInfo,
   LatLng,
   OutputFormat,
+  CredentialSource,
   ToolErrorPayload,
   ToolResult,
+  QueryBlocker,
+  QueryPlannedStep,
+  QueryExecutedStep,
+  QueryResultSummary,
+  QueryPlannedResult,
+  QueryCompletedResult,
+  QueryBlockedResult,
+  QueryUnsupportedResult,
+  QueryFailedResult,
+  QueryOutcome,
 } from "./types/index.js";
 export type {
   CivicDirectoryRecord as CivicDirectoryRecordType,

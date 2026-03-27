@@ -14,15 +14,25 @@ export type ApiCatalogEntry = {
 };
 
 export type WorkflowCatalogEntry = {
+  readonly id?: string;
   readonly name: string;
   readonly intent: string;
   readonly entrypoints: readonly {
     readonly tool: string;
     readonly input: Readonly<Record<string, unknown>>;
   }[];
+  readonly requiredInputs?: readonly string[];
+  readonly blockerFields?: readonly string[];
+  readonly authPrerequisites?: readonly string[];
+  readonly fallbackTools?: readonly string[];
+  readonly continuationTools?: readonly string[];
+  readonly continuationHints?: readonly string[];
+  readonly outputShapeVersion?: string;
+  readonly outputShapeNotes?: readonly string[];
 };
 
 export type RecipeCatalogEntry = {
+  readonly id?: string;
   readonly name: string;
   readonly goal: string;
   readonly prompt: string;
@@ -32,6 +42,70 @@ export type RecipeCatalogEntry = {
   };
   readonly fallbackTools: readonly string[];
   readonly notes: readonly string[];
+  readonly requiredInputs?: readonly string[];
+  readonly blockerFields?: readonly string[];
+  readonly authPrerequisites?: readonly string[];
+  readonly continuationTools?: readonly string[];
+  readonly continuationHints?: readonly string[];
+  readonly outputShapeVersion?: string;
+  readonly outputShapeNotes?: readonly string[];
+};
+
+export type RuntimeCatalog = {
+  readonly authDependencies: readonly {
+    readonly api: string;
+    readonly authRequired: boolean;
+    readonly envVars: readonly string[];
+    readonly keystoreKeys: readonly string[];
+    readonly dependentFamilies?: readonly string[];
+    readonly notes: readonly string[];
+  }[];
+  readonly credentialSourceRules: readonly string[];
+  readonly latency: {
+    readonly hardCapMs: number;
+    readonly targets: readonly {
+      readonly api: string;
+      readonly timeoutMs: number;
+      readonly typicalLatency: string;
+      readonly notes: string;
+    }[];
+  };
+  readonly cacheTiers: readonly {
+    readonly tier: string;
+    readonly ttlSeconds: number;
+    readonly usedBy: readonly string[];
+    readonly rationale: string;
+  }[];
+  readonly rateLimits: readonly {
+    readonly api: string;
+    readonly maxTokens: number;
+    readonly refillPerSecond: number;
+    readonly effectiveRate: string;
+  }[];
+  readonly retryPolicy: {
+    readonly retryable: readonly string[];
+    readonly nonRetryable: readonly string[];
+    readonly backoffSeconds: readonly number[];
+    readonly maxRetries: number;
+    readonly respectsRetryAfter: boolean;
+  };
+  readonly circuitBreaker: {
+    readonly threshold: number;
+    readonly resetTimeoutSeconds: number;
+    readonly states: readonly string[];
+    readonly note: string;
+  };
+  readonly partialFailureSemantics: readonly string[];
+  readonly healthCoverage: readonly {
+    readonly api: string;
+    readonly coversFamilies: readonly string[];
+    readonly notes: readonly string[];
+  }[];
+  readonly queryStatusContract: readonly {
+    readonly status: "planned" | "completed" | "blocked" | "unsupported" | "failed";
+    readonly isError: boolean;
+    readonly notes: string;
+  }[];
 };
 
 export const API_CATALOG: readonly ApiCatalogEntry[] = [
@@ -323,6 +397,18 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
 
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = ALL_TOOL_DEFINITIONS.map(toToolCatalogEntry);
 
+const ONEMAP_AUTH_NOTES = [
+  "Requires OneMap credentials when the workflow needs geocoding, routing, reverse geocoding, or planning-area demographics.",
+] as const;
+
+const URA_AUTH_NOTES = [
+  "Requires a URA API key when the workflow resolves planning areas or reads URA transactions and development-charge tables.",
+] as const;
+
+const LTA_AUTH_NOTES = [
+  "Requires an LTA DataMall API key for live bus, train, and traffic status reads.",
+] as const;
+
 export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   {
     name: "Macro Snapshot",
@@ -333,6 +419,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_mas_exchange_rates", input: { currency: "USD", startDate: "2026-03-01", endDate: "2026-03-26" } },
       { tool: "sg_singstat_search", input: { keyword: "Singapore GDP" } },
     ],
+    requiredInputs: ["query"],
+    fallbackTools: ["sg_macro_brief", "sg_mas_exchange_rates", "sg_singstat_search"],
+    continuationTools: ["sg_singstat_table", "sg_singstat_timeseries", "sg_mas_interest_rates"],
+    continuationHints: [
+      "Start with sg_macro_brief for the compact artifact, then drop to SingStat table and time-series reads once you know the table IDs.",
+    ],
   },
   {
     name: "Demographic Profile",
@@ -341,6 +433,14 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_query", input: { query: "Demographic profile for postal code 168742", mode: "execute" } },
       { tool: "sg_onemap_population", input: { planningArea: "Tampines", dataType: "getPopulationAgeGroup" } },
       { tool: "sg_onemap_population", input: { planningArea: "Tampines", dataType: "getHouseholdMonthlyIncomeWork" } },
+    ],
+    requiredInputs: ["planningArea or postalCode"],
+    blockerFields: ["planningArea", "postalCode"],
+    authPrerequisites: [...ONEMAP_AUTH_NOTES, ...URA_AUTH_NOTES],
+    fallbackTools: ["sg_onemap_population", "sg_onemap_geocode", "sg_ura_planning_area"],
+    continuationTools: ["sg_onemap_population", "sg_ura_planning_area"],
+    continuationHints: [
+      "Postal-code prompts route through geocode plus planning-area resolution before the two demographic reads execute.",
     ],
   },
   {
@@ -355,6 +455,31 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_sportsg_facilities", input: { facilityType: "swimming_complex", postalCode: "560123" } },
       { tool: "sg_ecda_childcare_centres", input: { postalCode: "560123", hasVacancy: true } },
     ],
+    requiredInputs: ["directory intent", "postalCode or planningArea or address or lat/lng or exact name"],
+    blockerFields: ["directory", "postalCode", "address", "planningArea", "lat", "lng", "name"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    fallbackTools: [
+      "sg_onemap_geocode",
+      "sg_msf_family_services",
+      "sg_msf_student_care_services",
+      "sg_msf_social_service_offices",
+      "sg_pa_community_outlets",
+      "sg_pa_resident_network_centres",
+      "sg_sportsg_facilities",
+      "sg_ecda_childcare_centres",
+    ],
+    continuationTools: [
+      "sg_msf_family_services",
+      "sg_msf_student_care_services",
+      "sg_msf_social_service_offices",
+      "sg_pa_community_outlets",
+      "sg_pa_resident_network_centres",
+      "sg_sportsg_facilities",
+      "sg_ecda_childcare_centres",
+    ],
+    continuationHints: [
+      "Use exact quoted facility names for direct lookups, or coordinates when an agent already resolved location outside sg_query.",
+    ],
   },
   {
     name: "Property And Regulatory Due Diligence",
@@ -364,6 +489,14 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_property_brief", input: { planningArea: "Bedok", flatType: "4 ROOM", includeEnvironment: true } },
       { tool: "sg_ura_property_transactions", input: { propertyType: "residential", area: "Bedok" } },
       { tool: "sg_hdb_resale_prices", input: { town: "Bedok", flatType: "4 ROOM" } },
+    ],
+    requiredInputs: ["planningArea or postalCode"],
+    blockerFields: ["planningArea", "postalCode"],
+    authPrerequisites: URA_AUTH_NOTES,
+    fallbackTools: ["sg_property_brief", "sg_ura_property_transactions", "sg_hdb_resale_prices"],
+    continuationTools: ["sg_ura_dev_charges", "sg_hdb_rental_prices", "sg_environment_brief", "sg_transport_brief"],
+    continuationHints: [
+      "Use sg_property_brief for the combined artifact, then continue into URA, HDB, environment, or transport direct tools when you need deeper evidence.",
     ],
   },
   {
@@ -377,6 +510,19 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_bca_licensed_builders", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
       { tool: "sg_bca_registered_contractors", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
     ],
+    requiredInputs: ["planningArea or town", "companyName or entityName or registrationNo"],
+    fallbackTools: [
+      "sg_ura_property_transactions",
+      "sg_hdb_resale_prices",
+      "sg_cea_salespersons",
+      "sg_acra_entities",
+      "sg_bca_licensed_builders",
+      "sg_bca_registered_contractors",
+    ],
+    continuationTools: ["sg_business_dossier", "sg_datagov_resources"],
+    continuationHints: [
+      "This is intentionally a direct-tool workflow; use sg_business_dossier when you want the registry synthesis artifact first.",
+    ],
   },
   {
     name: "Business Registry Diligence",
@@ -389,6 +535,13 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_bca_registered_contractors", input: { companyName: "ABC CONSTRUCTION PTE LTD" } },
       { tool: "sg_cea_salespersons", input: { registrationNo: "R123456A" } },
     ],
+    requiredInputs: ["entityName or companyName or uen or registrationNo or salespersonName"],
+    blockerFields: ["entityName", "uen", "registrationNo"],
+    fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors", "sg_cea_salespersons"],
+    continuationTools: ["sg_datagov_resources", "sg_datagov_rows"],
+    continuationHints: [
+      "Use the dossier for the high-signal artifact, then drop to direct registries when you need raw source records or narrower filters.",
+    ],
   },
   {
     name: "Dataset Discovery Fallback",
@@ -399,6 +552,13 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_datagov_resources", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" } },
       { tool: "sg_datagov_rows", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", limit: 5, sort: "month desc" } },
     ],
+    requiredInputs: ["keyword"],
+    blockerFields: ["datasetId"],
+    fallbackTools: ["sg_datagov_search", "sg_datagov_get", "sg_datagov_resources", "sg_datagov_rows"],
+    continuationTools: ["sg_datagov_resources", "sg_datagov_rows"],
+    continuationHints: [
+      "Search first, inspect resources second, and only then run bounded row reads with explicit limits and filters.",
+    ],
   },
   {
     name: "Route Planning",
@@ -407,6 +567,14 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_query", input: { query: "Walk from 049178 to 048616", mode: "execute" } },
       { tool: "sg_onemap_route", input: { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" } },
       { tool: "sg_onemap_reverse_geocode", input: { lat: 1.284, lng: 103.851 } },
+    ],
+    requiredInputs: ["origin and destination as postal codes or coordinate pairs"],
+    blockerFields: ["originPostalCode", "destinationPostalCode", "startLat", "startLng", "endLat", "endLng"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    fallbackTools: ["sg_onemap_geocode", "sg_onemap_route", "sg_onemap_reverse_geocode"],
+    continuationTools: ["sg_onemap_reverse_geocode", "sg_onemap_convert_coords"],
+    continuationHints: [
+      "Postal-code prompts geocode both endpoints before routing; direct coordinate pairs skip that step.",
     ],
   },
   {
@@ -418,6 +586,13 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_singstat_table", input: { tableId: "M650151" } },
       { tool: "sg_singstat_timeseries", input: { tableId: "M650151", indicator: "Vehicle population", startYear: 2022, endYear: 2025 } },
     ],
+    requiredInputs: ["category or tableId"],
+    blockerFields: ["tableId", "indicator", "startYear", "endYear"],
+    fallbackTools: ["sg_singstat_browse", "sg_singstat_search", "sg_singstat_table", "sg_singstat_timeseries"],
+    continuationTools: ["sg_singstat_table", "sg_singstat_timeseries"],
+    continuationHints: [
+      "Use browse or search to discover the right table ID first; then switch to direct table or time-series reads with explicit identifiers.",
+    ],
   },
   {
     name: "Dataset Collection Browse",
@@ -428,8 +603,16 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_datagov_search", input: { keyword: "hawker centres" } },
       { tool: "sg_datagov_resources", input: { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" } },
     ],
+    requiredInputs: ["collection or keyword"],
+    blockerFields: ["datasetId"],
+    fallbackTools: ["sg_datagov_browse", "sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
+    continuationTools: ["sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
+    continuationHints: [
+      "This is the broadest discovery path; continue into sg_datagov_resources or sg_datagov_rows once you have a datasetId.",
+    ],
   },
   {
+    id: "transport_status",
     name: "Transport Status",
     intent: "Build a live transport operations brief and optionally drill into stop-level arrivals, train alerts, and traffic incidents.",
     entrypoints: [
@@ -439,8 +622,21 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_lta_train_alerts", input: {} },
       { tool: "sg_lta_traffic_incidents", input: {} },
     ],
+    requiredInputs: ["optional busStopCode"],
+    blockerFields: ["busStopCode"],
+    authPrerequisites: LTA_AUTH_NOTES,
+    fallbackTools: ["sg_transport_brief", "sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
+    continuationTools: ["sg_lta_bus_arrivals", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
+    continuationHints: [
+      "Use sg_transport_brief for the ops snapshot, or drop directly to stop-level arrivals when you already know the bus stop code.",
+    ],
+    outputShapeVersion: "transport-brief/v2",
+    outputShapeNotes: [
+      "sg_transport_brief.records exposes status, coverage, signals, network, optional stop, followups, and raw.",
+    ],
   },
   {
+    id: "environment_snapshot",
     name: "Environment Snapshot",
     intent: "Build a live environment monitoring brief and optionally drill into forecast, air quality, and rainfall detail.",
     entrypoints: [
@@ -449,6 +645,16 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       { tool: "sg_nea_forecast_2hr", input: { area: "Tampines" } },
       { tool: "sg_nea_air_quality", input: { region: "East" } },
       { tool: "sg_nea_rainfall", input: {} },
+    ],
+    requiredInputs: ["optional planningArea or region"],
+    fallbackTools: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
+    continuationTools: ["sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
+    continuationHints: [
+      "Use the brief for the combined artifact, then drop to the NEA tools when you need specific regional or station-level detail.",
+    ],
+    outputShapeVersion: "environment-brief/v2",
+    outputShapeNotes: [
+      "sg_environment_brief.records exposes status, coverage, signals, thresholds, focus, followups, and raw.",
     ],
   },
 ];
@@ -467,6 +673,13 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "sg_query geocodes both postal codes before calling sg_onemap_route.",
       "If one endpoint is missing, sg_query returns an explicit blocker instead of guessing.",
     ],
+    requiredInputs: ["originPostalCode", "destinationPostalCode"],
+    blockerFields: ["originPostalCode", "destinationPostalCode"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_onemap_reverse_geocode", "sg_onemap_convert_coords"],
+    continuationHints: [
+      "Drop to sg_onemap_route directly when an agent already has resolved coordinates.",
+    ],
   },
   {
     name: "Reverse Geocode",
@@ -481,6 +694,13 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "Best for turning GPS-like coordinates into a nearest address lookup.",
       "Requires one latitude and longitude pair.",
     ],
+    requiredInputs: ["lat", "lng"],
+    blockerFields: ["lat", "lng"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_onemap_route"],
+    continuationHints: [
+      "Use the returned address as a follow-on input for routing or civic discovery prompts.",
+    ],
   },
   {
     name: "Coordinate Conversion",
@@ -494,6 +714,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "Use this when a caller has a local map coordinate pair and needs GPS coordinates, or the reverse.",
     ],
+    requiredInputs: ["from", "x", "y"],
+    blockerFields: ["from", "x", "y"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_onemap_reverse_geocode", "sg_onemap_route"],
   },
   {
     name: "SingStat Drilldown",
@@ -508,6 +732,12 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "Use sg_singstat_search if you still need to discover a table ID.",
       "Use sg_singstat_timeseries when you already know the table ID and indicator.",
     ],
+    requiredInputs: ["category or keyword", "tableId for drilldown"],
+    blockerFields: ["tableId", "indicator", "startYear", "endYear"],
+    continuationTools: ["sg_singstat_table", "sg_singstat_timeseries"],
+    continuationHints: [
+      "Once the tableId is known, stop using natural language and switch to direct table or time-series reads.",
+    ],
   },
   {
     name: "data.gov Collection Browse",
@@ -521,6 +751,9 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "Good for agent builders that need a broad fallback surface before committing to a dataset ID.",
     ],
+    requiredInputs: ["collection or keyword", "datasetId for follow-up"],
+    blockerFields: ["datasetId"],
+    continuationTools: ["sg_datagov_search", "sg_datagov_resources", "sg_datagov_rows"],
   },
   {
     name: "URA Development Charges",
@@ -534,6 +767,8 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "Use quoted or explicit use-group and sector terms when you want a narrower result set.",
     ],
+    authPrerequisites: URA_AUTH_NOTES,
+    continuationTools: ["sg_ura_planning_area"],
   },
   {
     name: "HDB Rental Check",
@@ -547,6 +782,8 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "Use this when the caller has a town and flat type but does not want to construct the direct tool payload manually.",
     ],
+    requiredInputs: ["town", "flatType"],
+    continuationTools: ["sg_hdb_resale_prices", "sg_property_brief"],
   },
   {
     name: "Demographic Profile",
@@ -561,6 +798,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "sg_query geocodes the postal code first, then fetches population data for the resolved planning area.",
       "Available data types include economic_status, education, ethnic_group, household_size, and more.",
     ],
+    requiredInputs: ["planningArea or postalCode"],
+    blockerFields: ["planningArea", "postalCode"],
+    authPrerequisites: [...ONEMAP_AUTH_NOTES, ...URA_AUTH_NOTES],
+    continuationTools: ["sg_onemap_population", "sg_ura_planning_area"],
   },
   {
     name: "Community Club Near Postal Code",
@@ -575,6 +816,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "sg_query geocodes the postal code first, then applies a bounded proximity search.",
       "Use sg_pa_community_outlets directly when you already have latitude and longitude.",
     ],
+    requiredInputs: ["postalCode"],
+    blockerFields: ["postalCode"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_pa_community_outlets"],
   },
   {
     name: "Family Service Near Postal Code",
@@ -589,6 +834,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "sg_query geocodes the postal code first, then applies a bounded proximity search.",
       "Use sg_msf_family_services directly when you already have latitude and longitude.",
     ],
+    requiredInputs: ["postalCode"],
+    blockerFields: ["postalCode"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_msf_family_services"],
   },
   {
     name: "Student Care Near Planning Area",
@@ -603,6 +852,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "sg_query resolves the planning area before applying a bounded proximity search.",
       "Use audit-status and SCFA filters directly when you need stricter student care screening.",
     ],
+    requiredInputs: ["planningArea"],
+    blockerFields: ["planningArea"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_msf_student_care_services"],
   },
   {
     name: "SCFA Student Care Near Planning Area",
@@ -617,6 +870,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "SCFA or SCFA-approved language maps to the direct tool's scfaOnly filter.",
       "Combine with audit-status language such as Grade A when you want narrower student care results.",
     ],
+    requiredInputs: ["planningArea"],
+    blockerFields: ["planningArea"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_msf_student_care_services"],
   },
   {
     name: "Social Service Office Near Address",
@@ -630,6 +887,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "Use an exact office name in quotes when you want a direct name lookup instead of a proximity search.",
     ],
+    requiredInputs: ["address or exact name"],
+    blockerFields: ["address", "name"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_msf_social_service_offices"],
   },
   {
     name: "Sport Facility Near Planning Area",
@@ -644,6 +905,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "sg_query resolves the planning area before applying a bounded civic proximity search.",
       "Facility types are currently derived from venue-name patterns such as swimming, stadium, or sport centre.",
     ],
+    requiredInputs: ["planningArea"],
+    blockerFields: ["planningArea"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_sportsg_facilities"],
   },
   {
     name: "Childcare Vacancy Near Planning Area",
@@ -658,6 +923,10 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "Childcare discovery joins ECDA geospatial centres with the Listing of Centres vacancy dataset.",
       "Current-month vacancy statuses are treated as bounded availability signals, not admissions guarantees.",
     ],
+    requiredInputs: ["planningArea"],
+    blockerFields: ["planningArea"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_ecda_childcare_centres"],
   },
   {
     name: "Residents Network Near Address",
@@ -671,8 +940,13 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "Use an exact facility name in quotes when you want a direct name lookup instead of a proximity search.",
     ],
+    requiredInputs: ["address or exact name"],
+    blockerFields: ["address", "name"],
+    authPrerequisites: ONEMAP_AUTH_NOTES,
+    continuationTools: ["sg_pa_resident_network_centres"],
   },
   {
+    id: "bus_stop_status",
     name: "Bus Stop Status",
     goal: "Get live bus arrival timings and transport context for a specific bus stop.",
     prompt: "Bus arrivals at stop 83139",
@@ -685,8 +959,17 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "Use sg_transport_brief for a broader snapshot including train alerts and traffic incidents.",
       "Bus stop codes are 5-digit numbers found at bus stop poles.",
     ],
+    requiredInputs: ["busStopCode"],
+    blockerFields: ["busStopCode"],
+    authPrerequisites: LTA_AUTH_NOTES,
+    continuationTools: ["sg_transport_brief", "sg_lta_train_alerts", "sg_lta_traffic_incidents"],
+    outputShapeVersion: "transport-brief/v2",
+    outputShapeNotes: [
+      "The transport brief's analyst view now lives in records.status, coverage, signals, network, optional stop, followups, and raw.",
+    ],
   },
   {
+    id: "outdoor_event_check",
     name: "Outdoor Event Check",
     goal: "Check if weather and air quality conditions are safe for outdoor activities.",
     prompt: "Is it safe for outdoor activities in Bedok?",
@@ -696,8 +979,13 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     },
     fallbackTools: ["sg_environment_brief", "sg_nea_forecast_2hr", "sg_nea_air_quality"],
     notes: [
-      "The environment brief includes an outdoorConditions advisory derived from forecast, air quality, and rainfall.",
-      "Check the outdoorConditions.advisory field for a plain-language recommendation.",
+      "The environment brief now surfaces the plain-language recommendation under records.thresholds.advisory.",
+      "Use records.status.headline when you need the compact analyst headline instead of the advisory string.",
+    ],
+    continuationTools: ["sg_nea_forecast_2hr", "sg_nea_air_quality", "sg_nea_rainfall"],
+    outputShapeVersion: "environment-brief/v2",
+    outputShapeNotes: [
+      "The environment brief's analyst view now lives in records.status, coverage, signals, thresholds, focus, followups, and raw.",
     ],
   },
   {
@@ -713,12 +1001,177 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
       "The dossier includes riskFlags for expired licenses and inactive entities.",
       "Check matchConfidence to understand whether results are exact-match or fuzzy.",
     ],
+    requiredInputs: ["entityName or uen or registrationNo"],
+    blockerFields: ["entityName", "uen", "registrationNo"],
+    continuationTools: ["sg_acra_entities", "sg_bca_licensed_builders", "sg_bca_registered_contractors", "sg_cea_salespersons"],
+    continuationHints: [
+      "Use the direct registries when you need raw source records after the synthesized dossier.",
+    ],
   },
 ];
+
+export const RUNTIME_CATALOG: RuntimeCatalog = {
+  authDependencies: [
+    {
+      api: "OneMap",
+      authRequired: true,
+      envVars: ["SG_API_ONEMAP_EMAIL", "SG_API_ONEMAP_PASSWORD"],
+      keystoreKeys: ["onemap_email", "onemap_password"],
+      notes: [
+        "Both email and password must be configured before OneMap is considered ready.",
+        "Used by geocoding, routing, reverse geocoding, demographic resolution, and civic-discovery workflows that need location resolution.",
+      ],
+    },
+    {
+      api: "URA",
+      authRequired: true,
+      envVars: ["SG_API_URA_KEY"],
+      keystoreKeys: ["ura"],
+      notes: [
+        "URA uses an API key that is exchanged for an access token at runtime.",
+        "Used by planning-area, property, and development-charge workflows.",
+      ],
+    },
+    {
+      api: "LTA DataMall",
+      authRequired: true,
+      envVars: ["SG_API_LTA_KEY"],
+      keystoreKeys: ["lta"],
+      notes: [
+        "LTA uses a header-based API key for live transport data.",
+        "Used by transport briefs and direct bus, train, and traffic checks.",
+      ],
+    },
+    {
+      api: "data.gov.sg-backed families",
+      authRequired: false,
+      envVars: [],
+      keystoreKeys: [],
+      dependentFamilies: [
+        "HDB",
+        "CEA",
+        "BCA",
+        "ACRA",
+        "PA",
+        "Sport Singapore",
+        "ECDA",
+        "MSF Family Services",
+        "MSF Student Care Services",
+        "MSF Social Service Offices",
+        "GeBIZ",
+        "Hawker Centres",
+        "MOE Schools",
+        "MOH Healthcare",
+        "SFA",
+        "NParks",
+        "PUB",
+        "MOM",
+        "STB",
+      ],
+      notes: [
+        "These families inherit the shared data.gov.sg API or official file-download path instead of separate credentials.",
+      ],
+    },
+  ],
+  credentialSourceRules: [
+    "Environment variables take precedence when upstream clients resolve credentials, with the keystore as the persistent fallback.",
+    "sg_health_check reports credentialSource as env, keystore, mixed, none, or not_required per upstream.",
+    "OneMap only reports configured when both the email and password are available from env or keystore.",
+  ],
+  latency: {
+    hardCapMs: 30000,
+    targets: [
+      { api: "SingStat", timeoutMs: 15000, typicalLatency: "2-8s", notes: "Large table queries can be slow." },
+      { api: "MAS", timeoutMs: 10000, typicalLatency: "1-3s", notes: "CKAN datastore queries." },
+      { api: "OneMap", timeoutMs: 10000, typicalLatency: "0.5-2s", notes: "Token refresh can add about one second on first call." },
+      { api: "URA", timeoutMs: 20000, typicalLatency: "3-10s", notes: "Token exchange and bulky property reads are the slow path." },
+      { api: "LTA DataMall", timeoutMs: 10000, typicalLatency: "0.5-2s", notes: "Realtime endpoints are fast when authenticated." },
+      { api: "NEA", timeoutMs: 10000, typicalLatency: "0.5-2s", notes: "Weather endpoints are typically responsive." },
+      { api: "data.gov.sg", timeoutMs: 10000, typicalLatency: "1-5s", notes: "Dataset size and CKAN load dominate latency." },
+    ],
+  },
+  cacheTiers: [
+    {
+      tier: "REALTIME",
+      ttlSeconds: 30,
+      usedBy: ["sg_lta_bus_arrivals", "sg_nea_forecast_2hr", "sg_nea_rainfall"],
+      rationale: "Live operational data goes stale quickly.",
+    },
+    {
+      tier: "NEAR_REALTIME",
+      ttlSeconds: 300,
+      usedBy: ["sg_mas_exchange_rates"],
+      rationale: "Market data updates every few minutes.",
+    },
+    {
+      tier: "DAILY",
+      ttlSeconds: 3600,
+      usedBy: ["sg_singstat_table", "sg_singstat_timeseries", "sg_ura_property_transactions", "sg_hdb_resale_prices"],
+      rationale: "These datasets update at most daily or less frequently.",
+    },
+    {
+      tier: "STATIC",
+      ttlSeconds: 86400,
+      usedBy: ["sg_onemap_geocode", "sg_ura_planning_area", "sg_cea_salespersons", "sg_bca_licensed_builders", "sg_acra_entities"],
+      rationale: "Registry and geocoding responses change slowly compared with live feeds.",
+    },
+    {
+      tier: "ARCHIVAL",
+      ttlSeconds: 604800,
+      usedBy: ["historical brief enrichments", "long-range time-series fixtures"],
+      rationale: "Historical records are effectively immutable.",
+    },
+  ],
+  rateLimits: [
+    { api: "SingStat", maxTokens: 10, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
+    { api: "MAS", maxTokens: 10, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
+    { api: "OneMap", maxTokens: 50, refillPerSecond: 4, effectiveRate: "~4 req/s sustained" },
+    { api: "URA", maxTokens: 5, refillPerSecond: 1, effectiveRate: "~1 req/s sustained" },
+    { api: "LTA DataMall", maxTokens: 20, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
+    { api: "NEA", maxTokens: 20, refillPerSecond: 2, effectiveRate: "~2 req/s sustained" },
+    { api: "data.gov.sg", maxTokens: 20, refillPerSecond: 3, effectiveRate: "~3 req/s sustained" },
+  ],
+  retryPolicy: {
+    retryable: ["HTTP 429", "HTTP 5xx"],
+    nonRetryable: ["HTTP 401", "HTTP 403", "HTTP 404", "other HTTP 4xx"],
+    backoffSeconds: [1, 2, 4, 8],
+    maxRetries: 3,
+    respectsRetryAfter: true,
+  },
+  circuitBreaker: {
+    threshold: 3,
+    resetTimeoutSeconds: 60,
+    states: ["closed", "open", "half-open"],
+    note: "Each API family has an independent circuit breaker and fails fast when open.",
+  },
+  partialFailureSemantics: [
+    "Brief tools use safeRead so one failing upstream does not collapse the whole artifact.",
+    "Partial failures surface in gaps with code and message, while provenance keeps recordCount at 0 for failed sources.",
+    "Freshness is still reported for the successful sources so callers can reason about missing context explicitly.",
+  ],
+  healthCoverage: [
+    {
+      api: "sg_health_check",
+      coversFamilies: ["SingStat", "MAS", "OneMap", "URA", "LTA DataMall", "data.gov.sg", "NEA"],
+      notes: [
+        "The data.gov.sg probe also covers curated registry, amenity, procurement, and file-download families that share the same upstream path.",
+        "Structured records expose configured, credentialSource, reachable, latencyMs, dependentFamilies, and coverageNotes.",
+      ],
+    },
+  ],
+  queryStatusContract: [
+    { status: "planned", isError: false, notes: "Plan mode produced a bounded workflow without executing upstream calls." },
+    { status: "completed", isError: false, notes: "Execution finished successfully and may include continuationHints or ops nextActions." },
+    { status: "blocked", isError: false, notes: "sg_query recognized the workflow but needs more user input before execution can continue." },
+    { status: "unsupported", isError: false, notes: "The prompt shape or requested format is outside the bounded sg_query contract." },
+    { status: "failed", isError: true, notes: "Execution started but a step failed; failedStep identifies the failing tool and suggested action." },
+  ],
+};
 
 export const RESOURCE_URIS = {
   apis: "sg://apis",
   tools: "sg://tools",
   workflows: "sg://workflows",
   recipes: "sg://recipes",
+  runtime: "sg://runtime",
 } as const;

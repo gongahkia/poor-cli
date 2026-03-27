@@ -251,7 +251,8 @@ describe("brief tools", () => {
       {
         busStopCode: "83139",
         serviceNo: "851",
-        arrivals: [{ estimatedArrival: "2026-03-26T08:05:00+08:00" }],
+        operator: "SBST",
+        arrivals: [{ estimatedArrival: "2099-03-26T08:05:00+08:00" }],
       },
     ] as never);
     vi.mocked(getTrainAlerts).mockResolvedValue({
@@ -271,10 +272,23 @@ describe("brief tools", () => {
 
     expect(payload.title).toBe("Transport Brief");
     expect(payload.provenance).toHaveLength(3);
-    expect(payload.summary.some((item) => item.label === "Next bus ETA")).toBe(true);
-    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("disrupted");
+    expect(payload.summary.some((item) => item.label === "Transport status")).toBe(true);
+    expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("disrupted");
+    expect((payload.records["coverage"] as Record<string, unknown>)["train"]).toMatchObject({
+      status: "alerts_active",
+      alertCount: 1,
+      messageCount: 1,
+    });
     expect(payload.records["signals"]).toBeDefined();
-    expect(payload.records["nextChecks"]).toBeDefined();
+    expect((payload.records["network"] as Record<string, unknown>)["trainByLine"]).toMatchObject({ NSL: 1 });
+    expect(payload.records["followups"]).toBeDefined();
+    expect((payload.records["stop"] as Record<string, unknown>)).toMatchObject({
+      busStopCode: "83139",
+      serviceNo: "851",
+      serviceCount: 1,
+      nextArrival: "2099-03-26T08:05:00+08:00",
+    });
+    expect((payload.records["raw"] as Record<string, unknown>)["trainMessages"]).toBeDefined();
 
     const markdownResult = await handleTransportBrief({
       busStopCode: "83139",
@@ -297,10 +311,16 @@ describe("brief tools", () => {
       format: "json",
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
-    const opsStatus = payload.records["opsStatus"] as Record<string, unknown>;
+    const status = payload.records["status"] as Record<string, unknown>;
+    const network = payload.records["network"] as Record<string, unknown>;
 
-    expect(opsStatus["level"]).toBe("advisory");
-    expect(opsStatus["focus"]).toBe("network-wide");
+    expect(status["level"]).toBe("advisory");
+    expect(status["focus"]).toBe("network-wide");
+    expect(network["trafficByType"]).toMatchObject({ Accident: 1 });
+    expect((payload.records["coverage"] as Record<string, unknown>)["traffic"]).toMatchObject({
+      status: "incidents_active",
+      incidentCount: 1,
+    });
   });
 
   it("returns unknown transport status when a requested bus stop has no ETA and no broader signals", async () => {
@@ -323,17 +343,19 @@ describe("brief tools", () => {
       format: "json",
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
-    const opsStatus = payload.records["opsStatus"] as Record<string, unknown>;
-    const nextChecks = payload.records["nextChecks"] as readonly Record<string, unknown>[];
+    const status = payload.records["status"] as Record<string, unknown>;
+    const followups = payload.records["followups"] as readonly Record<string, unknown>[];
+    const stop = payload.records["stop"] as Record<string, unknown>;
 
-    expect(opsStatus["level"]).toBe("unknown");
-    expect(nextChecks.map((check) => check["tool"])).toEqual([
+    expect(status["level"]).toBe("unknown");
+    expect(followups.map((check) => check["tool"])).toEqual([
       "sg_lta_bus_arrivals",
       "sg_lta_train_alerts",
       "sg_lta_traffic_incidents",
     ]);
-    expect((nextChecks[0]?.["input"] as Record<string, unknown>)["busStopCode"]).toBe("83139");
-    expect((nextChecks[0]?.["input"] as Record<string, unknown>)["serviceNo"]).toBe("851");
+    expect((followups[0]?.["input"] as Record<string, unknown>)["busStopCode"]).toBe("83139");
+    expect((followups[0]?.["input"] as Record<string, unknown>)["serviceNo"]).toBe("851");
+    expect(stop["nextArrival"]).toBeNull();
   });
 
   it("returns normal transport status when the requested stop has arrivals and no disruptions", async () => {
@@ -341,7 +363,7 @@ describe("brief tools", () => {
       {
         busStopCode: "83139",
         serviceNo: "851",
-        arrivals: [{ estimatedArrival: "2026-03-26T08:05:00+08:00" }],
+        arrivals: [{ estimatedArrival: "2099-03-26T08:05:00+08:00" }],
       },
     ] as never);
     vi.mocked(getTrainAlerts).mockResolvedValue({
@@ -356,10 +378,11 @@ describe("brief tools", () => {
       format: "json",
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
-    const opsStatus = payload.records["opsStatus"] as Record<string, unknown>;
+    const status = payload.records["status"] as Record<string, unknown>;
 
-    expect(opsStatus["level"]).toBe("normal");
-    expect(opsStatus["focus"]).toBe("bus stop 83139 service 851");
+    expect(status["level"]).toBe("normal");
+    expect(status["focus"]).toBe("bus stop 83139 service 851");
+    expect((payload.records["stop"] as Record<string, unknown>)["avgWaitMinutes"]).not.toBeNull();
   });
 
   it("returns the expanded environment brief envelope", async () => {
@@ -396,11 +419,22 @@ describe("brief tools", () => {
 
     expect(payload.title).toBe("Environment Brief");
     expect(payload.provenance).toHaveLength(3);
-    expect(payload.summary.some((item) => item.label === "PSI 24h")).toBe(true);
-    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("watch");
+    expect(payload.summary.some((item) => item.label === "Monitoring status")).toBe(true);
+    expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("watch");
+    expect((payload.records["coverage"] as Record<string, unknown>)["forecast"]).toMatchObject({
+      status: "available",
+      requestedArea: "Tampines",
+      resolvedArea: "Tampines",
+    });
     expect(payload.records["thresholds"]).toBeDefined();
     expect(payload.records["signals"]).toBeDefined();
-    expect(payload.records["nextChecks"]).toBeDefined();
+    expect((payload.records["focus"] as Record<string, unknown>)).toMatchObject({
+      area: "Tampines",
+      region: "East",
+      stationName: "Tampines",
+    });
+    expect(payload.records["followups"]).toBeDefined();
+    expect((payload.records["raw"] as Record<string, unknown>)["forecastRows"]).toBeDefined();
 
     const markdownResult = await handleEnvironmentBrief({
       area: "Tampines",
@@ -443,8 +477,9 @@ describe("brief tools", () => {
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
 
-    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("caution");
+    expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("caution");
     expect((payload.records["thresholds"] as Record<string, unknown>)["forecastRisk"]).toBe("caution");
+    expect((payload.records["thresholds"] as Record<string, unknown>)["advisory"]).toBe("Avoid prolonged outdoor activities");
   });
 
   it("returns watch environment status for moderate PSI with no rain", async () => {
@@ -478,13 +513,13 @@ describe("brief tools", () => {
       format: "json",
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
-    const nextChecks = payload.records["nextChecks"] as readonly Record<string, unknown>[];
+    const followups = payload.records["followups"] as readonly Record<string, unknown>[];
 
-    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("watch");
+    expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("watch");
     expect((payload.records["thresholds"] as Record<string, unknown>)["airQualityBand"]).toBe("watch");
-    expect((nextChecks[0]?.["input"] as Record<string, unknown>)["area"]).toBe("Tampines");
-    expect((nextChecks[1]?.["input"] as Record<string, unknown>)["region"]).toBe("East");
-    expect((nextChecks[2]?.["input"] as Record<string, unknown>)["stationId"]).toBe("S107");
+    expect((followups[0]?.["input"] as Record<string, unknown>)["area"]).toBe("Tampines");
+    expect((followups[1]?.["input"] as Record<string, unknown>)["region"]).toBe("East");
+    expect((followups[2]?.["input"] as Record<string, unknown>)["stationId"]).toBe("S107");
   });
 
   it("returns clear environment status when forecast, air quality, and rainfall are all clear", async () => {
@@ -519,7 +554,7 @@ describe("brief tools", () => {
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
 
-    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("clear");
+    expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("clear");
     expect((payload.records["thresholds"] as Record<string, unknown>)["rainfallBand"]).toBe("clear");
   });
 
@@ -536,8 +571,13 @@ describe("brief tools", () => {
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
 
-    expect((payload.records["opsStatus"] as Record<string, unknown>)["level"]).toBe("unknown");
+    expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("unknown");
     expect(payload.gaps).toHaveLength(3);
     expect(payload.records["signals"]).toEqual([]);
+    expect((payload.records["raw"] as Record<string, unknown>)).toEqual({
+      forecastRows: [],
+      airQualityRows: [],
+      rainfallRows: [],
+    });
   });
 });

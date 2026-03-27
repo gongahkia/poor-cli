@@ -1,37 +1,48 @@
 {
   "title": "Environment Brief",
   "summary": [
-    { "label": "Monitoring status", "value": "Environmental watch signals detected for area Bedok, region east.", "source": "NEA" },
-    { "label": "Forecast risk", "value": "watch", "source": "NEA" },
-    { "label": "PSI band", "value": "clear", "source": "NEA" },
-    { "label": "PSI 24h", "value": 42, "source": "NEA" },
-    { "label": "Rainfall band", "value": "watch", "source": "NEA" },
-    { "label": "Rainfall", "value": 2.4, "source": "NEA" },
-    { "label": "Focus area", "value": "Bedok", "source": "NEA" },
-    { "label": "Focus region", "value": "east", "source": "NEA" },
-    { "label": "Focus station", "value": "Bedok South", "source": "NEA" }
+    { "label": "Monitoring status", "value": "watch", "source": "NEA" },
+    { "label": "Focus", "value": "area Bedok, region east, station Bedok South", "source": "NEA" },
+    { "label": "Primary driver", "value": "rainfall", "source": "NEA" }
   ],
   "evidence": [
     { "label": "Forecast rows", "value": 47, "source": "NEA" },
     { "label": "Air-quality rows", "value": 5, "source": "NEA" },
-    { "label": "Rainfall rows", "value": 12, "source": "NEA" },
-    { "label": "Forecast input", "value": "Light Showers", "source": "NEA" },
-    { "label": "PSI input", "value": 42, "source": "NEA" },
-    { "label": "Rainfall input", "value": 2.4, "source": "NEA" }
+    { "label": "Rainfall rows", "value": 12, "source": "NEA" }
   ],
   "records": {
-    "opsStatus": {
+    "status": {
       "level": "watch",
-      "headline": "Environmental watch signals detected for area Bedok, region east.",
-      "focusArea": "Bedok",
-      "focusRegion": "east",
-      "focusStation": "Bedok South"
+      "headline": "Environmental watch signals detected for area Bedok, region east, station Bedok South."
     },
-    "outdoorConditions": {
+    "coverage": {
+      "forecast": { "status": "available", "requestedArea": "Bedok", "resolvedArea": "Bedok", "rowCount": 47 },
+      "airQuality": { "status": "available", "requestedRegion": null, "resolvedRegion": "east", "rowCount": 5 },
+      "rainfall": { "status": "available", "requestedStationId": null, "resolvedStationId": "S104", "resolvedStationName": "Bedok South", "rowCount": 12 }
+    },
+    "signals": [
+      { "source": "forecast", "level": "watch", "headline": "Forecast Light Showers for Bedok.", "area": "Bedok", "forecast": "Light Showers", "updatedAt": "2026-03-26T09:30:00+08:00", "validFrom": "2026-03-26T09:00:00+08:00", "validTo": "2026-03-26T11:00:00+08:00" },
+      { "source": "air_quality", "level": "clear", "headline": "PSI 24h is 42 for east.", "region": "east", "psi24h": 42, "pm25OneHourly": 12, "updatedAt": "2026-03-26T09:00:00+08:00" },
+      { "source": "rainfall", "level": "watch", "headline": "Rainfall is 2.4 mm at Bedok South.", "stationId": "S104", "stationName": "Bedok South", "value": 2.4, "unit": "mm", "timestamp": "2026-03-26T09:55:00+08:00" }
+    ],
+    "thresholds": {
+      "forecastRisk": "watch",
+      "airQualityBand": "clear",
+      "rainfallBand": "watch",
       "advisory": "Carry umbrella, monitor conditions",
       "reasons": ["rain or showers possible", "light rainfall detected"]
     },
-    "rainfallStation": { "stationId": "S104", "stationName": "Bedok South" }
+    "focus": { "area": "Bedok", "region": "east", "stationId": "S104", "stationName": "Bedok South" },
+    "followups": [
+      { "tool": "sg_nea_forecast_2hr", "reason": "Inspect the focused 2-hour forecast directly.", "input": { "area": "Bedok" } },
+      { "tool": "sg_nea_air_quality", "reason": "Inspect the focused air-quality reading directly.", "input": { "region": "east" } },
+      { "tool": "sg_nea_rainfall", "reason": "Inspect the focused rainfall station directly.", "input": { "stationId": "S104" } }
+    ],
+    "raw": {
+      "forecastRows": [],
+      "airQualityRows": [],
+      "rainfallRows": []
+    }
   },
   "gaps": [],
   "provenance": [

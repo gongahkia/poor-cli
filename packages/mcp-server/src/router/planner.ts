@@ -1,5 +1,5 @@
 import { ApiError } from "@sg-apis/shared";
-import type { ToolResult } from "@sg-apis/shared";
+import type { QueryBlocker, ToolResult } from "@sg-apis/shared";
 import { DEFAULT_CIVIC_RADIUS_KM } from "../apis/civic/utils.js";
 import { classifyIntent, resolveToolInput } from "./classifier.js";
 
@@ -26,21 +26,38 @@ export type QueryStep = {
   readonly resolveInput?: QueryStepResolver;
 };
 
-export type QueryPlan =
-  | {
-      readonly supported: true;
-      readonly workflow: string;
-      readonly intent: string;
-      readonly confidence: number;
-      readonly apis: readonly string[];
-      readonly steps: readonly QueryStep[];
-    }
-  | {
-      readonly supported: false;
-      readonly blocked?: boolean;
-      readonly reason: string;
-      readonly suggestion: string;
-    };
+type SupportedQueryPlan = {
+  readonly supported: true;
+  readonly workflow: string;
+  readonly intent: string;
+  readonly confidence: number;
+  readonly apis: readonly string[];
+  readonly steps: readonly QueryStep[];
+};
+
+type BlockedQueryPlan = {
+  readonly supported: false;
+  readonly blocked: true;
+  readonly workflow: string;
+  readonly intent: string;
+  readonly confidence: number;
+  readonly apis: readonly string[];
+  readonly steps: readonly QueryStep[];
+  readonly blockers: readonly QueryBlocker[];
+  readonly reason: string;
+  readonly suggestion: string;
+};
+
+type UnsupportedQueryPlan = {
+  readonly supported: false;
+  readonly blocked?: false;
+  readonly reason: string;
+  readonly suggestion: string;
+};
+
+export type QueryPlan = SupportedQueryPlan | BlockedQueryPlan | UnsupportedQueryPlan;
+
+type QueryPlanContext = Pick<SupportedQueryPlan, "workflow" | "intent" | "confidence" | "apis" | "steps">;
 
 const buildUnsupportedPlan = (reason: string, suggestion: string): QueryPlan => ({
   supported: false,
@@ -48,12 +65,63 @@ const buildUnsupportedPlan = (reason: string, suggestion: string): QueryPlan => 
   suggestion,
 });
 
-const buildBlockedPlan = (reason: string, suggestion: string): QueryPlan => ({
+const buildBlockedPlan = (
+  context: QueryPlanContext,
+  blockers: readonly QueryBlocker[],
+  reason: string,
+  suggestion: string,
+): QueryPlan => ({
   supported: false,
   blocked: true,
+  ...context,
+  blockers,
   reason,
   suggestion,
 });
+
+const createBlocker = (
+  field: string,
+  reason: string,
+  directTool: string,
+  exampleInput: Readonly<Record<string, unknown>>,
+  suggestedPrompt: string,
+): QueryBlocker => ({
+  field,
+  reason,
+  directTool,
+  exampleInput,
+  suggestedPrompt,
+});
+
+const buildDirectToolBlockedPlan = (
+  workflow: string,
+  intent: string,
+  confidence: number,
+  apis: readonly string[],
+  tool: string,
+  input: Readonly<Record<string, unknown>>,
+  blockers: readonly QueryBlocker[],
+  reason: string,
+  suggestion: string,
+): QueryPlan => buildBlockedPlan(
+  {
+    workflow,
+    intent,
+    confidence,
+    apis,
+    steps: [
+      {
+        id: "direct_tool",
+        purpose: `Execute ${tool}.`,
+        tool,
+        input,
+      },
+    ],
+  },
+  blockers,
+  reason,
+  suggestion,
+);
 
 const dependencyError = (message: string, suggestedAction: string): ApiError => {
   return new ApiError({
@@ -234,7 +302,23 @@ const buildCivicDiscoveryPlan = (
   params: Readonly<Record<string, unknown>>,
 ): QueryPlan => {
   if (tool === undefined) {
-    return buildUnsupportedPlan(
+    return buildBlockedPlan(
+      {
+        workflow: "civic_discovery",
+        intent: "civic",
+        confidence: 0.7,
+        apis: [],
+        steps: [],
+      },
+      [
+        createBlocker(
+          "directory",
+          "Specify which civic directory you want to search before sg_query can build a bounded civic workflow.",
+          "sg://recipes",
+          {},
+          "Find a family service centre near 560230",
+        ),
+      ],
       "sg_query could not determine which civic directory to search.",
       "Specify whether you want family services, student care, social service offices, community outlets, residents' network centres, SportSG facilities, or childcare centres.",
     );
@@ -338,6 +422,43 @@ const buildCivicDiscoveryPlan = (
   }
 
   return buildBlockedPlan(
+    {
+      workflow: "civic_discovery",
+      intent: "civic",
+      confidence: 0.76,
+      apis: [tool.replace(/^sg_/, "").split("_")[0]!],
+      steps: [
+        {
+          id: "civic_search",
+          purpose: "Search the civic directory once the missing location or exact name is supplied.",
+          tool,
+          input: toCivicSearchInput(tool, params, {}),
+        },
+      ],
+    },
+    [
+      createBlocker(
+        "postalCode",
+        "Provide a Singapore postal code to run a bounded proximity search.",
+        "sg_onemap_geocode",
+        { searchVal: "560230" },
+        "Find a family service centre near 560230",
+      ),
+      createBlocker(
+        "address",
+        "Provide a Singapore address to run a bounded proximity search.",
+        "sg_onemap_geocode",
+        { searchVal: "1 Raffles Place" },
+        "Find a social service office near 1 Raffles Place",
+      ),
+      createBlocker(
+        "name",
+        "Provide an exact quoted facility name to run a direct civic lookup.",
+        tool,
+        { name: "Social Service Office @ Queenstown" },
+        "Find a social service office named \"Social Service Office @ Queenstown\"",
+      ),
+    ],
     "sg_query recognized a civic-discovery request, but it still needs a Singapore postal code, planning area, address, coordinates, or an explicit facility name.",
     "Try prompts like \"Find a family service centre near 560230\" or \"Find a social service office named \\\"Social Service Office @ Queenstown\\\"\".",
   );
@@ -485,7 +606,49 @@ const buildDemographicProfilePlan = (
     };
   }
 
-  return buildUnsupportedPlan(
+  return buildBlockedPlan(
+    {
+      workflow: "demographic_profile",
+      intent: "demographic",
+      confidence: 0.72,
+      apis: ["onemap", "ura"],
+      steps: [
+        {
+          id: "demographic_age",
+          purpose: "Fetch age-group demographics once the missing location is supplied.",
+          tool: "sg_onemap_population",
+          input: {
+            planningArea: "<required>",
+            dataType: "getPopulationAgeGroup",
+          },
+        },
+        {
+          id: "demographic_income",
+          purpose: "Fetch household income distribution once the missing location is supplied.",
+          tool: "sg_onemap_population",
+          input: {
+            planningArea: "<required>",
+            dataType: "getHouseholdMonthlyIncomeWork",
+          },
+        },
+      ],
+    },
+    [
+      createBlocker(
+        "planningArea",
+        "Provide a planning area to request demographic data directly.",
+        "sg_onemap_population",
+        { planningArea: "Tampines", dataType: "getPopulationAgeGroup" },
+        "Demographic profile for Tampines",
+      ),
+      createBlocker(
+        "postalCode",
+        "Provide a Singapore postal code so sg_query can resolve the planning area first.",
+        "sg_onemap_geocode",
+        { searchVal: "168742" },
+        "Demographic profile for postal code 168742",
+      ),
+    ],
     "sg_query needs a planning area or Singapore postal code to build a demographic profile.",
     "Call sg_onemap_population directly with planningArea, or provide a postal code so sg_query can resolve it.",
   );
@@ -545,7 +708,40 @@ const buildPropertyDueDiligencePlan = (
     };
   }
 
-  return buildUnsupportedPlan(
+  return buildBlockedPlan(
+    {
+      workflow: "property_brief",
+      intent: "property",
+      confidence: 0.76,
+      apis: includeHdb ? ["onemap", "ura", "hdb"] : ["onemap", "ura"],
+      steps: [
+        {
+          id: "property_brief",
+          purpose: "Build a location and property brief once the missing area hint is supplied.",
+          tool: "sg_property_brief",
+          input: {
+            propertyType,
+            ...(includeHdb ? {} : { includeEnvironment: false }),
+          },
+        },
+      ],
+    },
+    [
+      createBlocker(
+        "planningArea",
+        "Provide a planning area to build the property brief directly.",
+        "sg_property_brief",
+        { planningArea: "Bedok", propertyType },
+        "Property due diligence for Bedok HDB resale",
+      ),
+      createBlocker(
+        "postalCode",
+        "Provide a Singapore postal code so sg_query can resolve the area first.",
+        "sg_property_brief",
+        { postalCode: "460123", propertyType },
+        "Property due diligence for postal code 460123",
+      ),
+    ],
     "sg_query needs a planning area or Singapore postal code to run property or regulatory diligence.",
     "Provide a planning area like Bedok, or give a postal code and let sg_query resolve the area first.",
   );
@@ -628,7 +824,44 @@ const buildBusinessRegistryPlan = (
   }
 
   if (steps.length === 0) {
-    return buildUnsupportedPlan(
+    return buildBlockedPlan(
+      {
+        workflow: "business_dossier",
+        intent: "business",
+        confidence: 0.78,
+        apis: ["acra", "bca", "cea"],
+        steps: [
+          {
+            id: "business_dossier",
+            purpose: "Build a cross-registry business dossier once a business identifier is supplied.",
+            tool: "sg_business_dossier",
+            input: {},
+          },
+        ],
+      },
+      [
+        createBlocker(
+          "entityName",
+          "Provide a company or entity name to run the business dossier.",
+          "sg_business_dossier",
+          { entityName: "ABC CONSTRUCTION PTE LTD" },
+          "Business dossier for ABC CONSTRUCTION PTE LTD",
+        ),
+        createBlocker(
+          "uen",
+          "Provide a UEN to run an exact registry dossier.",
+          "sg_business_dossier",
+          { uen: "201912345K" },
+          "Business dossier for UEN 201912345K",
+        ),
+        createBlocker(
+          "registrationNo",
+          "Provide a salesperson registration number to inspect CEA records.",
+          "sg_cea_salespersons",
+          { registrationNo: "R123456A" },
+          "Registry diligence for registration number R123456A",
+        ),
+      ],
       "sg_query needs a company name, entity name, UEN, salesperson, or estate-agent identifier to run registry diligence.",
       "Provide an explicit company or salesperson identifier, or call the direct ACRA, CEA, or BCA tool yourself.",
     );
@@ -807,7 +1040,55 @@ const buildRoutePlan = (
     };
   }
 
-  return buildUnsupportedPlan(
+  return buildBlockedPlan(
+    {
+      workflow: "route_plan",
+      intent: "geospatial",
+      confidence: 0.72,
+      apis: ["onemap"],
+      steps: [
+        {
+          id: "route_origin_geocode",
+          purpose: "Resolve the origin postal code or address to coordinates.",
+          tool: "sg_onemap_geocode",
+          input: { searchVal: "<required origin>" },
+        },
+        {
+          id: "route_destination_geocode",
+          purpose: "Resolve the destination postal code or address to coordinates.",
+          tool: "sg_onemap_geocode",
+          input: { searchVal: "<required destination>" },
+        },
+        {
+          id: "route_plan",
+          purpose: "Build directions between the resolved origin and destination.",
+          tool: "sg_onemap_route",
+          input: {
+            startLat: "<required>",
+            startLng: "<required>",
+            endLat: "<required>",
+            endLng: "<required>",
+            routeType,
+          },
+        },
+      ],
+    },
+    [
+      createBlocker(
+        "originPostalCode",
+        "Provide a Singapore postal code or explicit coordinates for the route origin.",
+        "sg_onemap_geocode",
+        { searchVal: "049178" },
+        "Walk from 049178 to 048616",
+      ),
+      createBlocker(
+        "destinationPostalCode",
+        "Provide a Singapore postal code or explicit coordinates for the route destination.",
+        "sg_onemap_geocode",
+        { searchVal: "048616" },
+        "Walk from 049178 to 048616",
+      ),
+    ],
     "sg_query needs either two coordinate pairs or two Singapore postal codes to plan a route.",
     "Ask for directions between two postal codes like 018989 and 048616, or call sg_onemap_route directly with startLat/startLng/endLat/endLng.",
   );
@@ -822,14 +1103,44 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
   const resolved = resolveToolInput(intent, query);
 
   if (resolved.tool === "sg_lta_bus_arrivals" && resolved.input["busStopCode"] === undefined) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "busStopCode",
+          "Provide a 5-digit Singapore bus stop code for live arrival timings.",
+          "sg_lta_bus_arrivals",
+          { busStopCode: "83139", serviceNo: "851" },
+          "Bus arrivals at stop 83139",
+        ),
+      ],
       "sg_query needs a 5-digit Singapore bus stop code for bus-arrival lookups.",
       "Call sg_lta_bus_arrivals directly with busStopCode and optionally serviceNo.",
     );
   }
 
   if (resolved.tool === "sg_onemap_population" && resolved.input["planningArea"] === "") {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "planningArea",
+          "Provide a planning area to request demographic data directly.",
+          "sg_onemap_population",
+          { planningArea: "Tampines", dataType: "getPopulationAgeGroup" },
+          "Population profile for Tampines",
+        ),
+      ],
       "sg_query needs a planning area name before it can request demographic data directly.",
       "Provide a planning area, or ask for a demographic profile with a postal code instead.",
     );
@@ -839,7 +1150,29 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     resolved.tool === "sg_onemap_reverse_geocode"
     && (resolved.input["lat"] === undefined || resolved.input["lng"] === undefined)
   ) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "lat",
+          "Provide a latitude value for reverse geocoding.",
+          "sg_onemap_reverse_geocode",
+          { lat: 1.284, lng: 103.851 },
+          "Reverse geocode 1.2840, 103.8510",
+        ),
+        createBlocker(
+          "lng",
+          "Provide a longitude value for reverse geocoding.",
+          "sg_onemap_reverse_geocode",
+          { lat: 1.284, lng: 103.851 },
+          "Reverse geocode 1.2840, 103.8510",
+        ),
+      ],
       "sg_query needs one latitude and longitude pair for reverse geocoding.",
       "Ask for the address at coordinates like 1.2840, 103.8510, or call sg_onemap_reverse_geocode directly.",
     );
@@ -854,7 +1187,43 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
       || resolved.input["endLng"] === undefined
     )
   ) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "startLat",
+          "Provide the route origin latitude.",
+          "sg_onemap_route",
+          { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" },
+          "Walk from 049178 to 048616",
+        ),
+        createBlocker(
+          "startLng",
+          "Provide the route origin longitude.",
+          "sg_onemap_route",
+          { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" },
+          "Walk from 049178 to 048616",
+        ),
+        createBlocker(
+          "endLat",
+          "Provide the route destination latitude.",
+          "sg_onemap_route",
+          { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" },
+          "Walk from 049178 to 048616",
+        ),
+        createBlocker(
+          "endLng",
+          "Provide the route destination longitude.",
+          "sg_onemap_route",
+          { startLat: 1.2864, startLng: 103.8537, endLat: 1.284, endLng: 103.851, routeType: "walk" },
+          "Walk from 049178 to 048616",
+        ),
+      ],
       "sg_query needs both a start and end location before it can call sg_onemap_route directly.",
       "Provide two coordinate pairs, or ask for directions between two Singapore postal codes so sg_query can geocode them first.",
     );
@@ -868,7 +1237,36 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
       || resolved.input["y"] === undefined
     )
   ) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "from",
+          "Provide the source coordinate system so the converter knows what to transform from.",
+          "sg_onemap_convert_coords",
+          { from: "SVY21", x: 28001, y: 38744 },
+          "Convert SVY21 28001 38744 to WGS84",
+        ),
+        createBlocker(
+          "x",
+          "Provide the first coordinate value for conversion.",
+          "sg_onemap_convert_coords",
+          { from: "SVY21", x: 28001, y: 38744 },
+          "Convert SVY21 28001 38744 to WGS84",
+        ),
+        createBlocker(
+          "y",
+          "Provide the second coordinate value for conversion.",
+          "sg_onemap_convert_coords",
+          { from: "SVY21", x: 28001, y: 38744 },
+          "Convert SVY21 28001 38744 to WGS84",
+        ),
+      ],
       "sg_query needs a source coordinate system plus one coordinate pair for conversion.",
       "Ask to convert SVY21 28001 38744 to WGS84, or convert WGS84 1.2840, 103.8510 to SVY21.",
     );
@@ -879,56 +1277,211 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     && resolved.input["planningArea"] === undefined
     && (resolved.input["lat"] === undefined || resolved.input["lng"] === undefined)
   ) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "planningArea",
+          "Provide a planning area for a direct zoning lookup.",
+          "sg_ura_planning_area",
+          { planningArea: "Bedok" },
+          "Show the master plan zoning for Bedok",
+        ),
+        createBlocker(
+          "lat",
+          "Provide latitude and longitude for a coordinate-based zoning lookup.",
+          "sg_ura_planning_area",
+          { lat: 1.3521, lng: 103.8198 },
+          "Show the master plan zoning at 1.3521, 103.8198",
+        ),
+      ],
       "sg_query needs a planning area name or coordinates for a URA zoning lookup.",
       "Call sg_ura_planning_area directly with planningArea, or provide latitude and longitude.",
     );
   }
 
   if (resolved.tool === "sg_cea_salespersons" && Object.keys(resolved.input).length === 0) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "registrationNo",
+          "Provide a salesperson registration number for an exact CEA lookup.",
+          "sg_cea_salespersons",
+          { registrationNo: "R123456A" },
+          "Show CEA record for registration number R123456A",
+        ),
+        createBlocker(
+          "estateAgentName",
+          "Provide an estate agent name for a directory lookup.",
+          "sg_cea_salespersons",
+          { estateAgentName: "ERA REALTY NETWORK PTE LTD" },
+          "Show CEA record for ERA REALTY NETWORK PTE LTD",
+        ),
+      ],
       "sg_query needs a salesperson, registration number, estate agent, or estate-agent licence number for CEA lookups.",
       "Provide a salesperson or estate-agent identifier, or call sg_cea_salespersons directly.",
     );
   }
 
   if (resolved.tool === "sg_bca_licensed_builders" && Object.keys(resolved.input).length === 0) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "companyName",
+          "Provide a company name for the licensed-builder lookup.",
+          "sg_bca_licensed_builders",
+          { companyName: "ABC CONSTRUCTION PTE LTD" },
+          "Show BCA licensed builder record for ABC CONSTRUCTION PTE LTD",
+        ),
+        createBlocker(
+          "uenNo",
+          "Provide a UEN for the licensed-builder lookup.",
+          "sg_bca_licensed_builders",
+          { uenNo: "201912345K" },
+          "Show BCA licensed builder record for UEN 201912345K",
+        ),
+      ],
       "sg_query needs a company, UEN, or builder class identifier for BCA licensed-builder lookups.",
       "Provide a company name, UEN, or builder class code, or call sg_bca_licensed_builders directly.",
     );
   }
 
   if (resolved.tool === "sg_bca_registered_contractors" && Object.keys(resolved.input).length === 0) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "companyName",
+          "Provide a company name for the registered-contractor lookup.",
+          "sg_bca_registered_contractors",
+          { companyName: "ABC CONSTRUCTION PTE LTD" },
+          "Show BCA registered contractor record for ABC CONSTRUCTION PTE LTD",
+        ),
+        createBlocker(
+          "workhead",
+          "Provide a workhead when you want to filter the contractor register more tightly.",
+          "sg_bca_registered_contractors",
+          { workhead: "CW01", grade: "C3" },
+          "Show BCA registered contractors for workhead CW01 grade C3",
+        ),
+      ],
       "sg_query needs a company, UEN, workhead, or grade for BCA registered-contractor lookups.",
       "Provide a company name, UEN, workhead, or grade, or call sg_bca_registered_contractors directly.",
     );
   }
 
   if (resolved.tool === "sg_acra_entities" && Object.keys(resolved.input).length === 0) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "entityName",
+          "Provide a company or entity name for the ACRA lookup.",
+          "sg_acra_entities",
+          { entityName: "ABC CONSTRUCTION PTE LTD" },
+          "Show ACRA record for ABC CONSTRUCTION PTE LTD",
+        ),
+        createBlocker(
+          "uen",
+          "Provide a UEN for an exact ACRA lookup.",
+          "sg_acra_entities",
+          { uen: "201912345K" },
+          "Show ACRA record for UEN 201912345K",
+        ),
+      ],
       "sg_query needs an entity name or UEN for ACRA lookups.",
       "Provide an explicit company name or UEN, or call sg_acra_entities directly.",
     );
   }
 
   if (resolved.tool === "sg_datagov_resources" && resolved.input["datasetId"] === undefined) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "datasetId",
+          "Provide a data.gov.sg datasetId before inspecting resource metadata.",
+          "sg_datagov_resources",
+          { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" },
+          "Inspect resources for dataset d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+        ),
+      ],
       "sg_query needs a data.gov.sg datasetId like d_8b84c4ee58e3cfc0ece0d773c8ca6abc to inspect resource metadata.",
       "Call sg_datagov_resources directly with datasetId, or use sg_datagov_search first to discover a dataset ID.",
     );
   }
 
   if (resolved.tool === "sg_datagov_rows" && resolved.input["datasetId"] === undefined) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "datasetId",
+          "Provide a data.gov.sg datasetId before reading bounded rows.",
+          "sg_datagov_rows",
+          { datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc", limit: 5 },
+          "Read rows from dataset d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+        ),
+      ],
       "sg_query needs a data.gov.sg datasetId like d_8b84c4ee58e3cfc0ece0d773c8ca6abc to read bounded rows.",
       "Call sg_datagov_rows directly with datasetId or resourceId, or inspect sg_datagov_resources first.",
     );
   }
 
   if (resolved.tool === "sg_singstat_table" && resolved.input["tableId"] === undefined) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "tableId",
+          "Provide a SingStat table ID before reading a table directly.",
+          "sg_singstat_table",
+          { tableId: "M015631" },
+          "Show SingStat table M015631",
+        ),
+      ],
       "sg_query needs a SingStat table ID like M015631 before it can read a table directly.",
       "Ask sg_singstat_search for matching datasets first, then call sg_singstat_table with the tableId you want.",
     );
@@ -943,7 +1496,43 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
       || resolved.input["endYear"] === undefined
     )
   ) {
-    return buildUnsupportedPlan(
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "tableId",
+          "Provide a SingStat table ID for the time-series read.",
+          "sg_singstat_timeseries",
+          { tableId: "M015631", indicator: "GDP at current market prices", startYear: 2020, endYear: 2025 },
+          "Time series for table M015631 indicator \"GDP at current market prices\" from 2020 to 2025",
+        ),
+        createBlocker(
+          "indicator",
+          "Provide the indicator name to read from the table.",
+          "sg_singstat_timeseries",
+          { tableId: "M015631", indicator: "GDP at current market prices", startYear: 2020, endYear: 2025 },
+          "Time series for table M015631 indicator \"GDP at current market prices\" from 2020 to 2025",
+        ),
+        createBlocker(
+          "startYear",
+          "Provide the start year for the time-series range.",
+          "sg_singstat_timeseries",
+          { tableId: "M015631", indicator: "GDP at current market prices", startYear: 2020, endYear: 2025 },
+          "Time series for table M015631 indicator \"GDP at current market prices\" from 2020 to 2025",
+        ),
+        createBlocker(
+          "endYear",
+          "Provide the end year for the time-series range.",
+          "sg_singstat_timeseries",
+          { tableId: "M015631", indicator: "GDP at current market prices", startYear: 2020, endYear: 2025 },
+          "Time series for table M015631 indicator \"GDP at current market prices\" from 2020 to 2025",
+        ),
+      ],
       "sg_query needs tableId, indicator, startYear, and endYear for SingStat time-series reads.",
       "Ask for a quoted indicator and a year range, for example: time series for table M015631 indicator \"GDP at current market prices\" from 2020 to 2025.",
     );

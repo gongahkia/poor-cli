@@ -90,6 +90,11 @@ All brief tools return the same bounded envelope:
 - `freshness`
 - `limits`
 
+Transport and environment brief records expose analyst-oriented subshapes:
+
+- `sg_transport_brief.records`: `status`, `coverage`, `signals`, `network`, optional `stop`, `followups`, and `raw`
+- `sg_environment_brief.records`: `status`, `coverage`, `signals`, `thresholds`, `focus`, `followups`, and `raw`
+
 Notes:
 
 - `sg_mas_exchange_rates`, `sg_mas_interest_rates`, and `sg_mas_financial_stats` support latest, exact-date, and bounded date-range reads.
@@ -178,10 +183,11 @@ Read the built-in catalogs before wiring your own client logic:
 - `sg://tools`
 - `sg://workflows`
 - `sg://recipes`
+- `sg://runtime`
 
-`sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools.
+`sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract.
 
-For application wiring, start with [`examples/integration/basic-client.ts`](./examples/integration/basic-client.ts). It connects once, caches `sg://recipes`, uses `sg_query` for covered prompts, surfaces blocked or unsupported outcomes directly, and falls back to direct `sg_*` tools when the caller already has exact parameters.
+For application wiring, start with [`examples/integration/basic-client.ts`](./examples/integration/basic-client.ts). It connects once, caches `sg://recipes` plus `sg://runtime`, uses `sg_query` for covered prompts, surfaces blocked or unsupported outcomes directly, demonstrates a failed execution, and falls back to direct `sg_*` tools when the caller already has exact parameters.
 
 ## Authentication
 
@@ -199,7 +205,7 @@ The keystore helpers are still available for local use:
 - `sg_key_set { "apiName": "ura", "key": "..." }`
 - `sg_key_set { "apiName": "lta", "key": "..." }`
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. HDB, CEA, BCA, and ACRA are intentionally covered operationally through the shared data.gov.sg path.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. It now returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, and ACRA are intentionally covered operationally through the shared data.gov.sg path.
 
 Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 

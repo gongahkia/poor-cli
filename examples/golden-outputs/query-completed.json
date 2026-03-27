@@ -1,0 +1,34 @@
+{
+  "status": "completed",
+  "mode": "execute",
+  "workflow": "direct_tool",
+  "intent": "geospatial",
+  "apis": ["onemap"],
+  "confidence": 0.9,
+  "toolsUsed": ["sg_onemap_reverse_geocode"],
+  "steps": [
+    {
+      "id": "direct_tool",
+      "purpose": "Execute sg_onemap_reverse_geocode.",
+      "tool": "sg_onemap_reverse_geocode",
+      "status": "completed",
+      "input": {
+        "lat": 1.284,
+        "lng": 103.851
+      },
+      "outputText": "Nearest address: 5 Raffles Place, Singapore 048618",
+      "structuredOutput": {
+        "record": {
+          "address": "5 RAFFLES PLACE",
+          "postal": "048618",
+          "lat": 1.284,
+          "lng": 103.851
+        }
+      }
+    }
+  ],
+  "routingExplanation": "Routed to direct_tool (confidence 0.90) via sg_onemap_reverse_geocode. Drop to direct sg_* tools when you have exact identifiers.",
+  "continuationHints": [
+    "Use sg://recipes to discover related workflows."
+  ]
+}

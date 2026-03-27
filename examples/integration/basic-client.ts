@@ -26,16 +26,34 @@ type RecipeCatalogEntry = Readonly<{
   }>;
 }>;
 
+type QueryBlocker = Readonly<{
+  field: string;
+  directTool: string;
+  suggestedPrompt: string;
+}>;
+
 type QueryOutcome = Readonly<{
-  status?: "completed" | "blocked" | "unsupported" | "failed";
+  status?: "planned" | "completed" | "blocked" | "unsupported" | "failed";
   workflow?: string;
   reason?: string;
   suggestion?: string;
   toolsUsed?: readonly string[];
+  blockers?: readonly QueryBlocker[];
+  routingExplanation?: string;
+  failedStep?: Readonly<{
+    tool?: string;
+  }> | null;
 }>;
 
 type DirectoryPayload = Readonly<{
   records?: readonly Readonly<Record<string, unknown>>[];
+}>;
+
+type RuntimeCatalog = Readonly<{
+  queryStatusContract?: readonly Readonly<{
+    status: string;
+    isError: boolean;
+  }>[];
 }>;
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -105,6 +123,17 @@ const logQueryOutcome = (label: string, outcome: QueryOutcome): void => {
   if (typeof outcome.suggestion === "string") {
     console.log(`suggestion: ${outcome.suggestion}`);
   }
+  if (Array.isArray(outcome.blockers) && outcome.blockers.length > 0) {
+    const firstBlocker = outcome.blockers[0];
+    console.log(`first blocker: ${firstBlocker.field} -> ${firstBlocker.directTool}`);
+    console.log(`recovery prompt: ${firstBlocker.suggestedPrompt}`);
+  }
+  if (typeof outcome.routingExplanation === "string") {
+    console.log(`routing: ${outcome.routingExplanation}`);
+  }
+  if (outcome.failedStep?.tool !== undefined) {
+    console.log(`failed step: ${outcome.failedStep.tool}`);
+  }
 };
 
 const main = async () => {
@@ -123,6 +152,7 @@ const main = async () => {
 
   try {
     const recipes = await readJsonResource<readonly RecipeCatalogEntry[]>(client, "sg://recipes");
+    const runtime = await readJsonResource<RuntimeCatalog>(client, "sg://runtime");
     const recipeCache = new Map(recipes.map((recipe) => [recipe.name, recipe]));
     const officeRecipe = recipeCache.get("Social Service Office Near Address");
     const singStatRecipe = recipeCache.get("SingStat Drilldown");
@@ -133,6 +163,7 @@ const main = async () => {
 
     console.log(`connected to sg-apis-mcp`);
     console.log(`cached ${recipeCache.size} recipes from sg://recipes`);
+    console.log(`runtime statuses: ${(runtime.queryStatusContract ?? []).map((entry) => `${entry.status}:${entry.isError ? "error" : "ok"}`).join(", ")}`);
     console.log(`office fallback tools: ${officeRecipe.fallbackTools.join(", ")}`);
     console.log(`singstat prompt shape: ${singStatRecipe.prompt}`);
 
@@ -145,10 +176,13 @@ const main = async () => {
     const blockedOutcome = await callQuery(client, "Find a social service office near me");
     logQueryOutcome("blocked prompt", blockedOutcome);
 
-    const unsupportedOutcome = await callQuery(client, "Show me the SingStat table for GDP");
+    const unsupportedOutcome = await callQuery(client, "Compare GDP and CPI in Singapore");
     logQueryOutcome("unsupported prompt", unsupportedOutcome);
 
-    // For unsupported table requests, fall back to an explicit discovery tool instead of guessing a table ID.
+    const failedOutcome = await callQuery(client, "Find datasets about a definitely unknown topic");
+    logQueryOutcome("failed prompt", failedOutcome);
+
+    // For unsupported comparison prompts, fall back to an explicit discovery tool instead of guessing a workflow.
     const directFallback = await callToolPayload<{ records?: readonly Readonly<Record<string, unknown>>[] }>(client, "sg_singstat_browse", {});
     console.log("\ndirect tool fallback");
     console.log(`tool: sg_singstat_browse`);

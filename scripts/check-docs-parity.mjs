@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
-const { API_CATALOG, RECIPE_CATALOG, TOOL_CATALOG, WORKFLOW_CATALOG } = await import(
+const { API_CATALOG, RECIPE_CATALOG, RUNTIME_CATALOG, TOOL_CATALOG, WORKFLOW_CATALOG } = await import(
   pathToFileURL(resolve(root, "packages/mcp-server/dist/tools/catalog.js")).href
 );
 
@@ -48,6 +48,7 @@ ensureIncludes("README.md", [
   "Business Registry Diligence",
   "sg_acra_entities",
   "sg://recipes",
+  "sg://runtime",
   "docs/product-audit.md",
   "docs/agent-builder-quickstart.md",
   "Route Planning",
@@ -67,6 +68,7 @@ ensureIncludes("packages/skill/SKILL.md", [
   "Business Registry Diligence",
   "sg_acra_entities",
   "sg://recipes",
+  "sg://runtime",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
@@ -82,6 +84,7 @@ ensureIncludes("docs/architecture.md", [
   `bounded preferred interface across ${routedFamilyCount} routed families`,
   "business-registry workflows can route to ACRA, CEA, and BCA",
   "sg://recipes",
+  "sg://runtime",
   "route planning can geocode postal codes before calling `sg_onemap_route`",
   "SingStat table drilldowns can move from browse to table to time-series reads",
   "data.gov collection browsing can continue into metadata, resources, and bounded rows",
@@ -122,8 +125,10 @@ ensureIncludes("docs/product-audit.md", [
 ensureIncludes("docs/agent-builder-quickstart.md", [
   "sg://recipes",
   "sg://workflows",
+  "sg://runtime",
   "blocked",
   "unsupported",
+  "failed",
   "sg_onemap_route",
   "sg_singstat_browse",
   "sg_datagov_browse",
@@ -132,7 +137,18 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
 ensureIncludes("examples/README.md", [
   "geospatial-routing.md",
   "npm run demo:mcp -- geospatial",
+  "sg://runtime",
+  "failed outcomes",
+  "sg_query completed, blocked, unsupported, and failed outcomes",
 ]);
+
+ensureIncludes("docs/production-notes.md", [
+  "sg://runtime",
+]);
+
+if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.queryStatusContract.length !== 5) {
+  throw new Error("Built runtime catalog is missing the full sg_query status contract.");
+}
 
 for (const workflowName of ["Business Registry Diligence", "Property Counterparty Diligence", "Route Planning", "SingStat Table Drilldown", "Dataset Collection Browse"]) {
   ensureIncludes("README.md", [workflowName]);

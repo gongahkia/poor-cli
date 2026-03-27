@@ -3,6 +3,7 @@ import {
   API_CATALOG,
   RECIPE_CATALOG,
   RESOURCE_URIS,
+  RUNTIME_CATALOG,
   TOOL_CATALOG,
   WORKFLOW_CATALOG,
 } from "../catalog.js";
@@ -174,5 +175,63 @@ describe("resource catalog parity", () => {
     const result = await resourceHandlers.get(RESOURCE_URIS.recipes)!();
 
     expect(JSON.parse(result.contents[0]!.text!)).toEqual(RECIPE_CATALOG);
+  });
+
+  it("serves the runtime catalog through sg://runtime", async () => {
+    const { resourceHandlers } = collectSurface();
+    const result = await resourceHandlers.get(RESOURCE_URIS.runtime)!();
+
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(RUNTIME_CATALOG);
+  });
+
+  it("enriches workflow and recipe catalogs with trust metadata", () => {
+    expect(WORKFLOW_CATALOG).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Civic Discovery",
+          blockerFields: expect.arrayContaining(["directory", "postalCode", "name"]),
+          continuationTools: expect.arrayContaining(["sg_msf_family_services", "sg_ecda_childcare_centres"]),
+        }),
+        expect.objectContaining({
+          name: "Route Planning",
+          authPrerequisites: expect.arrayContaining([expect.stringContaining("OneMap credentials")]),
+        }),
+        expect.objectContaining({
+          id: "transport_status",
+          outputShapeVersion: "transport-brief/v2",
+        }),
+        expect.objectContaining({
+          id: "environment_snapshot",
+          outputShapeVersion: "environment-brief/v2",
+        }),
+      ]),
+    );
+    expect(RECIPE_CATALOG).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Postal Route",
+          blockerFields: ["originPostalCode", "destinationPostalCode"],
+        }),
+        expect.objectContaining({
+          name: "Business Due Diligence",
+          continuationTools: expect.arrayContaining(["sg_acra_entities", "sg_bca_registered_contractors"]),
+        }),
+        expect.objectContaining({
+          id: "bus_stop_status",
+          outputShapeVersion: "transport-brief/v2",
+        }),
+        expect.objectContaining({
+          id: "outdoor_event_check",
+          outputShapeVersion: "environment-brief/v2",
+        }),
+      ]),
+    );
+    expect(RUNTIME_CATALOG.queryStatusContract).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "blocked", isError: false }),
+        expect.objectContaining({ status: "unsupported", isError: false }),
+        expect.objectContaining({ status: "failed", isError: true }),
+      ]),
+    );
   });
 });

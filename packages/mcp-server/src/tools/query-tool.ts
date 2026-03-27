@@ -1,5 +1,14 @@
 import { formatResponse, QuerySchema, resolveOutputFormat, validateInput } from "@sg-apis/shared";
-import type { OutputFormat, ToolErrorPayload, ToolResult } from "@sg-apis/shared";
+import type {
+  NextCheck,
+  OutputFormat,
+  QueryBlocker,
+  QueryExecutedStep,
+  QueryPlannedStep,
+  QueryResultSummary,
+  ToolErrorPayload,
+  ToolResult,
+} from "@sg-apis/shared";
 import { planQuery } from "../router/planner.js";
 import type { QueryExecutionContext, QueryPlan, QueryStep } from "../router/planner.js";
 import { toToolErrorPayload } from "../middleware/error-handler.js";
@@ -70,34 +79,25 @@ import { handleStbVisitorStats } from "./stb-tools.js";
 
 type ToolExecutor = (params: Readonly<Record<string, unknown>>) => Promise<ToolResult>;
 
-type QueryStepStatus = "planned" | "completed" | "failed";
-
-type ExecutedQueryStep = {
-  readonly id: string;
-  readonly purpose: string;
-  readonly tool: string;
-  readonly status: QueryStepStatus;
-  readonly input: Readonly<Record<string, unknown>>;
-  readonly dependsOn?: readonly string[];
-  readonly outputText?: string;
-  readonly structuredOutput?: Readonly<Record<string, unknown>>;
-  readonly error?: ToolErrorPayload;
-};
+type ExecutedQueryStep = QueryExecutedStep;
 
 type QueryFormatSupport =
   | { readonly supported: true }
   | { readonly supported: false; readonly reason: string; readonly suggestion: string };
 
 type WorkflowOpsMetadata = {
-  readonly resultSummary?: {
-    readonly level: string;
-    readonly headline: string;
-  };
-  readonly nextActions?: readonly Readonly<Record<string, unknown>>[];
+  readonly resultSummary?: QueryResultSummary;
+  readonly nextActions?: readonly NextCheck[];
   readonly continuationHints?: readonly string[];
 };
 
-const buildRoutingExplanation = (plan: Extract<QueryPlan, { supported: true }>): string => {
+const buildRoutingExplanation = (
+  plan: Readonly<{
+    workflow: string;
+    confidence: number;
+    steps: readonly Pick<QueryStep, "tool">[];
+  }>,
+): string => {
   const tools = plan.steps.map((s) => s.tool).join(" → ");
   return `Routed to ${plan.workflow} (confidence ${plan.confidence.toFixed(2)}) via ${tools}. Drop to direct sg_* tools when you have exact identifiers.`;
 };
@@ -505,7 +505,7 @@ const withRequestedFormat = (
   };
 };
 
-const toSerializableSteps = (steps: readonly QueryStep[]): readonly Readonly<Record<string, unknown>>[] => {
+const toSerializableSteps = (steps: readonly QueryStep[]): readonly QueryPlannedStep[] => {
   return steps.map((step) => ({
     id: step.id,
     purpose: step.purpose,
@@ -537,10 +537,18 @@ const extractWorkflowOpsMetadata = (
     return {};
   }
 
-  const opsStatus = records["opsStatus"];
-  const nextChecks = records["nextChecks"];
+  const opsStatus = isRecord(records["status"])
+    ? records["status"]
+    : isRecord(records["opsStatus"])
+      ? records["opsStatus"]
+      : undefined;
+  const nextChecks = Array.isArray(records["followups"])
+    ? records["followups"]
+    : Array.isArray(records["nextChecks"])
+      ? records["nextChecks"]
+      : undefined;
   const resultSummary =
-    isRecord(opsStatus)
+    opsStatus !== undefined
     && typeof opsStatus["level"] === "string"
     && typeof opsStatus["headline"] === "string"
       ? {
@@ -549,7 +557,11 @@ const extractWorkflowOpsMetadata = (
         }
       : undefined;
   const nextActions = Array.isArray(nextChecks)
-    ? nextChecks.filter((item): item is Readonly<Record<string, unknown>> => isRecord(item))
+    ? nextChecks.filter((item): item is NextCheck =>
+      isRecord(item)
+      && typeof item["tool"] === "string"
+      && typeof item["reason"] === "string"
+      && isRecord(item["input"]))
     : undefined;
 
   return {
@@ -622,15 +634,27 @@ const formatQueryIssue = (
   reason: string,
   suggestion: string,
   format: OutputFormat,
+  blockers: readonly QueryBlocker[] = [],
 ): string => {
   if (format === "markdown") {
-    return [
+    const lines = [
       status === "blocked"
-        ? "**sg_query needs one more civic input before it can continue.**"
+        ? "**sg_query needs one more required input before it can continue.**"
         : "**sg_query could not build a supported workflow.**",
       reason,
-      `Try this instead: ${suggestion}`,
-    ].join("\n\n");
+    ];
+
+    if (status === "blocked" && blockers.length > 0) {
+      lines.push("Missing inputs:");
+      for (const blocker of blockers) {
+        lines.push(
+          `- \`${blocker.field}\`: ${blocker.reason} Try \`${blocker.directTool} ${JSON.stringify(blocker.exampleInput)}\` or prompt: "${blocker.suggestedPrompt}"`,
+        );
+      }
+    }
+
+    lines.push(`Try this instead: ${suggestion}`);
+    return lines.join("\n\n");
   }
 
   return formatResponse(
@@ -638,6 +662,7 @@ const formatQueryIssue = (
       status,
       reason,
       suggestion,
+      ...(status === "blocked" && blockers.length > 0 ? { blockers } : {}),
     },
     "json",
   );
@@ -859,12 +884,34 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       const plan = planQuery(query);
 
       if (!plan.supported) {
-        const status = plan.blocked === true ? "blocked" : "unsupported";
+        if (plan.blocked === true) {
+          const routingExplanation = buildRoutingExplanation(plan);
+          return {
+            content: [{
+              type: "text",
+              text: formatQueryIssue("blocked", plan.reason, plan.suggestion, resolvedFormat, plan.blockers),
+            }],
+            structuredContent: {
+              status: "blocked",
+              mode,
+              workflow: plan.workflow,
+              intent: plan.intent,
+              apis: plan.apis,
+              confidence: plan.confidence,
+              toolsUsed: plan.steps.map((step) => step.tool),
+              steps: toSerializableSteps(plan.steps),
+              blockers: plan.blockers,
+              reason: plan.reason,
+              suggestion: plan.suggestion,
+              routingExplanation,
+            },
+          };
+        }
+
         return {
-          isError: true,
-          content: [{ type: "text", text: formatQueryIssue(status, plan.reason, plan.suggestion, resolvedFormat) }],
+          content: [{ type: "text", text: formatQueryIssue("unsupported", plan.reason, plan.suggestion, resolvedFormat) }],
           structuredContent: {
-            status,
+            status: "unsupported",
             mode,
             reason: plan.reason,
             suggestion: plan.suggestion,
@@ -875,12 +922,16 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       const formatSupport = getWorkflowFormatSupport(mode, plan, resolvedFormat);
       if (!formatSupport.supported) {
         return {
-          isError: true,
           content: [{ type: "text", text: formatQueryIssue("unsupported", formatSupport.reason, formatSupport.suggestion, resolvedFormat) }],
           structuredContent: {
             status: "unsupported",
             mode,
             workflow: plan.workflow,
+            intent: plan.intent,
+            apis: plan.apis,
+            confidence: plan.confidence,
+            toolsUsed: plan.steps.map((step) => step.tool),
+            steps: toSerializableSteps(plan.steps),
             reason: formatSupport.reason,
             suggestion: formatSupport.suggestion,
           },
@@ -917,7 +968,6 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
           const singleStepFormatSupport = getSingleStepFormatSupport(step, resolvedFormat);
           if (!singleStepFormatSupport.supported) {
             return {
-              isError: true,
               content: [{
                 type: "text",
                 text: formatQueryIssue(
@@ -931,6 +981,11 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
                 status: "unsupported",
                 mode,
                 workflow: plan.workflow,
+                intent: plan.intent,
+                apis: plan.apis,
+                confidence: plan.confidence,
+                toolsUsed: plan.steps.map((step) => step.tool),
+                steps: toSerializableSteps(plan.steps),
                 reason: singleStepFormatSupport.reason,
                 suggestion: singleStepFormatSupport.suggestion,
               },

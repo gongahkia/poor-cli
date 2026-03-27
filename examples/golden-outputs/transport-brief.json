@@ -1,30 +1,59 @@
 {
   "title": "Transport Brief",
   "summary": [
-    { "label": "Network status", "value": "No active train or traffic disruptions detected for bus stop 83139.", "source": "LTA" },
+    { "label": "Transport status", "value": "advisory", "source": "LTA" },
     { "label": "Focus", "value": "bus stop 83139", "source": "LTA" },
-    { "label": "Next bus ETA", "value": "2026-03-26T10:05:00+08:00", "source": "LTA" },
-    { "label": "Train disruption count", "value": 0, "source": "LTA" },
-    { "label": "Traffic incident count", "value": 2, "source": "LTA" }
+    { "label": "Primary driver", "value": "Roadwork", "source": "LTA" }
   ],
   "evidence": [
-    { "label": "Bus coverage", "value": "available", "source": "LTA" },
     { "label": "Bus services observed", "value": 4, "source": "LTA" },
     { "label": "Train alerts observed", "value": 0, "source": "LTA" },
     { "label": "Train messages observed", "value": 0, "source": "LTA" },
     { "label": "Traffic incidents observed", "value": 2, "source": "LTA" }
   ],
   "records": {
-    "opsStatus": {
+    "status": {
       "level": "advisory",
       "headline": "Traffic advisory: 2 incident(s) including Roadwork for bus stop 83139.",
-      "focus": "bus stop 83139",
-      "busCoverage": "available",
-      "trainCoverage": "clear",
-      "trafficCoverage": "incidents_active"
+      "focus": "bus stop 83139"
     },
-    "stopSummary": { "serviceCount": 4, "avgWaitMinutes": 3.2 },
-    "incidentSummary": { "total": 2, "byType": { "Roadwork": 1, "Vehicle Breakdown": 1 } }
+    "coverage": {
+      "bus": { "status": "available", "requestedBusStopCode": "83139", "requestedServiceNo": null, "servicesObserved": 4 },
+      "train": { "status": "clear", "alertCount": 0, "messageCount": 0 },
+      "traffic": { "status": "incidents_active", "incidentCount": 2 }
+    },
+    "signals": [
+      { "source": "bus", "level": "normal", "headline": "Next bus ETA for bus stop 83139 is 2026-03-26T10:05:00+08:00.", "focus": "bus stop 83139", "busStopCode": "83139", "nextArrival": "2026-03-26T10:05:00+08:00", "coverage": "available" },
+      { "source": "train", "level": "normal", "headline": "No active train alerts reported.", "alertCount": 0, "messageCount": 0, "primaryLine": null, "coverage": "clear" },
+      { "source": "traffic", "level": "advisory", "headline": "2 traffic incident(s) reported, including Roadwork.", "incidentCount": 2, "primaryIncidentType": "Roadwork", "coverage": "incidents_active" }
+    ],
+    "network": {
+      "trainAlertCount": 0,
+      "trainMessageCount": 0,
+      "trainByLine": {},
+      "trafficIncidentCount": 2,
+      "trafficByType": { "Roadwork": 1, "Vehicle Breakdown": 1 }
+    },
+    "stop": {
+      "busStopCode": "83139",
+      "serviceCount": 4,
+      "nextArrival": "2026-03-26T10:05:00+08:00",
+      "avgWaitMinutes": 3.2,
+      "arrivals": [
+        { "serviceNo": "851", "operator": "SBST", "nextArrival": "2026-03-26T10:05:00+08:00", "arrivalCount": 3, "arrivals": [] }
+      ]
+    },
+    "followups": [
+      { "tool": "sg_lta_bus_arrivals", "reason": "Inspect stop-level bus arrivals for the current transport focus.", "input": { "busStopCode": "83139" } },
+      { "tool": "sg_lta_train_alerts", "reason": "Inspect network-wide train service alerts and operator messages.", "input": {} },
+      { "tool": "sg_lta_traffic_incidents", "reason": "Inspect live traffic incidents across Singapore.", "input": {} }
+    ],
+    "raw": {
+      "busArrivals": [],
+      "trainAlerts": [],
+      "trainMessages": [],
+      "trafficIncidents": []
+    }
   },
   "gaps": [],
   "provenance": [

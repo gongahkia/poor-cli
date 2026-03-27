@@ -443,10 +443,49 @@ const MatchConfidenceSchema = z.object({
   confidence: z.enum(["exact", "name-fuzzy", "no-match"]),
   matchedOn: z.string().nullable(),
 }).strict();
-const NextCheckSchema = z.object({
+export const NextCheckSchema = z.object({
   tool: z.string().min(1),
   reason: z.string().min(1),
   input: z.record(z.unknown()),
+}).strict();
+
+export const ToolErrorPayloadSchema = z.object({
+  source: z.string().min(1),
+  tool: z.string().min(1),
+  code: z.string().min(1),
+  retryable: z.boolean(),
+  message: z.string().min(1),
+  suggestedAction: z.string().min(1).optional(),
+  statusCode: z.number().int().optional(),
+  details: z.unknown().optional(),
+}).strict();
+
+export const QueryBlockerSchema = z.object({
+  field: z.string().min(1),
+  reason: z.string().min(1),
+  directTool: z.string().min(1),
+  exampleInput: z.record(z.unknown()),
+  suggestedPrompt: z.string().min(1),
+}).strict();
+
+export const QueryPlannedStepSchema = z.object({
+  id: z.string().min(1),
+  purpose: z.string().min(1),
+  tool: z.string().min(1),
+  input: z.record(z.unknown()),
+  dependsOn: z.array(z.string().min(1)).optional(),
+}).strict();
+
+export const QueryExecutedStepSchema = QueryPlannedStepSchema.extend({
+  status: z.enum(["completed", "failed"]),
+  outputText: z.string().optional(),
+  structuredOutput: z.record(z.unknown()).optional(),
+  error: ToolErrorPayloadSchema.optional(),
+}).strict();
+
+export const QueryResultSummarySchema = z.object({
+  level: z.string().min(1),
+  headline: z.string().min(1),
 }).strict();
 
 export const BriefArtifactSchema = z.object({
@@ -601,6 +640,83 @@ export const QuerySchema = z.object({
   format: OutputFormatSchema.optional(),
   mode: z.enum(["execute", "plan"]).optional(),
 }).strict();
+
+export const QueryPlannedResultSchema = z.object({
+  status: z.literal("planned"),
+  mode: z.literal("plan"),
+  workflow: z.string().min(1),
+  intent: z.string().min(1),
+  apis: z.array(z.string().min(1)),
+  confidence: z.number().min(0).max(1),
+  toolsUsed: z.array(z.string().min(1)),
+  steps: z.array(QueryPlannedStepSchema),
+}).strict();
+
+export const QueryCompletedResultSchema = z.object({
+  status: z.literal("completed"),
+  mode: z.literal("execute"),
+  workflow: z.string().min(1),
+  intent: z.string().min(1),
+  apis: z.array(z.string().min(1)),
+  confidence: z.number().min(0).max(1),
+  toolsUsed: z.array(z.string().min(1)),
+  steps: z.array(QueryExecutedStepSchema),
+  routingExplanation: z.string().min(1),
+  continuationHints: z.array(z.string().min(1)).optional(),
+  resultSummary: QueryResultSummarySchema.optional(),
+  nextActions: z.array(NextCheckSchema).optional(),
+}).strict();
+
+export const QueryBlockedResultSchema = z.object({
+  status: z.literal("blocked"),
+  mode: z.enum(["execute", "plan"]),
+  workflow: z.string().min(1),
+  intent: z.string().min(1),
+  apis: z.array(z.string().min(1)),
+  confidence: z.number().min(0).max(1),
+  toolsUsed: z.array(z.string().min(1)),
+  steps: z.array(QueryPlannedStepSchema),
+  blockers: z.array(QueryBlockerSchema).min(1),
+  reason: z.string().min(1),
+  suggestion: z.string().min(1),
+  routingExplanation: z.string().min(1),
+}).strict();
+
+export const QueryUnsupportedResultSchema = z.object({
+  status: z.literal("unsupported"),
+  mode: z.enum(["execute", "plan"]),
+  reason: z.string().min(1),
+  suggestion: z.string().min(1),
+  workflow: z.string().min(1).optional(),
+  intent: z.string().min(1).optional(),
+  apis: z.array(z.string().min(1)).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  toolsUsed: z.array(z.string().min(1)).optional(),
+  steps: z.array(QueryPlannedStepSchema).optional(),
+}).strict();
+
+export const QueryFailedResultSchema = z.object({
+  status: z.literal("failed"),
+  mode: z.literal("execute"),
+  workflow: z.string().min(1),
+  intent: z.string().min(1),
+  apis: z.array(z.string().min(1)),
+  confidence: z.number().min(0).max(1),
+  toolsUsed: z.array(z.string().min(1)),
+  steps: z.array(QueryExecutedStepSchema),
+  routingExplanation: z.string().min(1),
+  resultSummary: QueryResultSummarySchema.optional(),
+  nextActions: z.array(NextCheckSchema).optional(),
+  failedStep: QueryExecutedStepSchema.nullable(),
+}).strict();
+
+export const QueryOutcomeSchema = z.discriminatedUnion("status", [
+  QueryPlannedResultSchema,
+  QueryCompletedResultSchema,
+  QueryBlockedResultSchema,
+  QueryUnsupportedResultSchema,
+  QueryFailedResultSchema,
+]);
 
 export const validateInput = <T>(schema: ZodSchema<T>, input: unknown): T => {
   const result = schema.safeParse(input);

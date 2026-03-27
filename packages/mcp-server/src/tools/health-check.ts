@@ -1,5 +1,5 @@
 import { formatResponse, Keystore, getMockApiBaseUrl } from "@sg-apis/shared";
-import type { ToolResult, HealthStatus } from "@sg-apis/shared";
+import type { CredentialSource, ToolResult, HealthStatus } from "@sg-apis/shared";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 type CredentialLookup = Pick<Keystore, "getKey">;
@@ -9,6 +9,9 @@ type HealthCheckTarget = {
   readonly url: string;
   readonly authRequired: boolean;
   readonly configured: (lookup: CredentialLookup) => boolean;
+  readonly credentialSource?: (lookup: CredentialLookup) => CredentialSource;
+  readonly dependentFamilies?: readonly string[];
+  readonly coverageNotes?: readonly string[];
 };
 
 type HealthFetch = (
@@ -24,6 +27,73 @@ const getHealthBaseUrl = (apiPath: string, productionUrl: string): string => {
 const hasConfiguredValue = (value: string | null | undefined): boolean => {
   return value !== undefined && value !== null && value !== "";
 };
+
+const resolveCredentialSource = (
+  envValue: string | undefined,
+  keystoreValue: string | null,
+): CredentialSource => {
+  const hasEnv = hasConfiguredValue(envValue);
+  const hasKeystore = hasConfiguredValue(keystoreValue);
+
+  if (hasEnv && hasKeystore) {
+    return "mixed";
+  }
+  if (hasEnv) {
+    return "env";
+  }
+  if (hasKeystore) {
+    return "keystore";
+  }
+  return "none";
+};
+
+export const getOneMapCredentialSource = (lookup: CredentialLookup): CredentialSource => {
+  const emailSource = resolveCredentialSource(process.env["SG_API_ONEMAP_EMAIL"], lookup.getKey("onemap_email"));
+  const passwordSource = resolveCredentialSource(process.env["SG_API_ONEMAP_PASSWORD"], lookup.getKey("onemap_password"));
+
+  if (emailSource === "none" && passwordSource === "none") {
+    return "none";
+  }
+  if (emailSource === "env" && passwordSource === "env") {
+    return "env";
+  }
+  if (emailSource === "keystore" && passwordSource === "keystore") {
+    return "keystore";
+  }
+  return "mixed";
+};
+
+export const getUraCredentialSource = (lookup: CredentialLookup): CredentialSource => {
+  return resolveCredentialSource(process.env["SG_API_URA_KEY"], lookup.getKey("ura"));
+};
+
+export const getLtaCredentialSource = (lookup: CredentialLookup): CredentialSource => {
+  return resolveCredentialSource(process.env["SG_API_LTA_KEY"], lookup.getKey("lta"));
+};
+
+const NOT_REQUIRED: CredentialSource = "not_required";
+
+const DATAGOV_DEPENDENT_FAMILIES = [
+  "HDB",
+  "CEA",
+  "BCA",
+  "ACRA",
+  "PA",
+  "Sport Singapore",
+  "ECDA",
+  "MSF Family Services",
+  "MSF Student Care Services",
+  "MSF Social Service Offices",
+  "GeBIZ",
+  "Hawker Centres",
+  "MOE Schools",
+  "MOH Healthcare",
+  "SFA",
+  "NParks",
+  "PUB",
+  "MOM",
+  "STB",
+] as const;
 
 export const hasOneMapCredentials = (lookup: CredentialLookup): boolean => {
   const email = process.env["SG_API_ONEMAP_EMAIL"] ?? lookup.getKey("onemap_email");
@@ -51,6 +121,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: false,
       configured: () => true,
+      credentialSource: () => NOT_REQUIRED,
     },
     {
       api: "MAS",
@@ -60,6 +131,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: false,
       configured: () => true,
+      credentialSource: () => NOT_REQUIRED,
     },
     {
       api: "OneMap",
@@ -69,6 +141,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: true,
       configured: hasOneMapCredentials,
+      credentialSource: getOneMapCredentialSource,
     },
     {
       api: "URA",
@@ -78,6 +151,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: true,
       configured: hasUraKey,
+      credentialSource: getUraCredentialSource,
     },
     {
       api: "LTA",
@@ -87,6 +161,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: true,
       configured: hasLtaKey,
+      credentialSource: getLtaCredentialSource,
     },
     {
       api: "data.gov.sg",
@@ -96,6 +171,11 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: false,
       configured: () => true,
+      credentialSource: () => NOT_REQUIRED,
+      dependentFamilies: DATAGOV_DEPENDENT_FAMILIES,
+      coverageNotes: [
+        "This target also covers curated registry, civic-directory, amenity, procurement, and statistics families backed by the shared data.gov.sg API or official file-download path.",
+      ],
     },
     {
       api: "NEA",
@@ -105,6 +185,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       ),
       authRequired: false,
       configured: () => true,
+      credentialSource: () => NOT_REQUIRED,
     },
   ];
 };
@@ -115,6 +196,7 @@ export const checkApiHealth = async (
   lookup: CredentialLookup,
 ): Promise<HealthStatus> => {
   const configured = target.configured(lookup);
+  const credentialSource = target.credentialSource?.(lookup) ?? (target.authRequired ? "none" : NOT_REQUIRED);
   const start = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -127,8 +209,11 @@ export const checkApiHealth = async (
       api: target.api,
       authRequired: target.authRequired,
       configured,
+      credentialSource,
       reachable: true,
       latencyMs: Date.now() - start,
+      ...(target.dependentFamilies === undefined ? {} : { dependentFamilies: target.dependentFamilies }),
+      ...(target.coverageNotes === undefined ? {} : { coverageNotes: target.coverageNotes }),
       ...(response.ok ? {} : { error: `HTTP ${response.status} ${response.statusText}` }),
     };
   } catch (error) {
@@ -137,8 +222,11 @@ export const checkApiHealth = async (
       api: target.api,
       authRequired: target.authRequired,
       configured,
+      credentialSource,
       reachable: false,
       latencyMs: Date.now() - start,
+      ...(target.dependentFamilies === undefined ? {} : { dependentFamilies: target.dependentFamilies }),
+      ...(target.coverageNotes === undefined ? {} : { coverageNotes: target.coverageNotes }),
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -160,7 +248,10 @@ export const healthCheckToolDefinitions: readonly RegisteredToolDefinition[] = [
       keystore.close();
 
       const text = formatResponse(statuses as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: { records: statuses },
+      };
     },
   },
 ];
