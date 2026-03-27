@@ -76,3 +76,5 @@ dmypy.json
 target/
 
 conversation*.json
+CLAUDE.md
+GEMINI.md
