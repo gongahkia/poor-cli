@@ -3,6 +3,9 @@
 module Main (main) where
 
 import qualified Data.Map.Strict as Map
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Key as Key
+import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Time (fromGregorian)
@@ -16,11 +19,27 @@ import Seuss.Import.JSONLD
 import Seuss.Lang.AST
 import Seuss.Lang.Parser
 import Seuss.Model.Types
+import Seuss.Tooling.LSP
 import System.Directory (removeFile)
 import Test.Hspec
 
 main :: IO ()
 main = hspec spec
+
+lookupJsonObject :: T.Text -> Aeson.Object -> Maybe Aeson.Object
+lookupJsonObject keyName obj =
+    case KeyMap.lookup (Key.fromText keyName) obj of
+        Just (Aeson.Object nestedObj) -> Just nestedObj
+        _ -> Nothing
+
+lookupJsonInt :: T.Text -> Aeson.Object -> Maybe Int
+lookupJsonInt keyName obj =
+    case KeyMap.lookup (Key.fromText keyName) obj of
+        Just (Aeson.Number numberValue) ->
+            case Aeson.fromJSON (Aeson.Number numberValue) of
+                Aeson.Success value -> Just value
+                Aeson.Error _ -> Nothing
+        _ -> Nothing
 
 spec :: Spec
 spec = do
@@ -52,6 +71,71 @@ spec = do
                         Right worldValue ->
                             any ((== DiagnosticError) . diagnosticLevel) (validateWorld worldValue)
                                 `shouldBe` False
+
+    describe "lsp tooling" $ do
+        it "maps diagnostic source spans to concrete LSP ranges" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: nonsense,"
+                        , "  start: 1,"
+                        , "  end: 2,"
+                        , "}"
+                        ]
+                diagnostics = getDiagnostics "<inline>" source
+            case diagnostics of
+                [] ->
+                    expectationFailure "expected diagnostics for invalid timeline kind"
+                diagnostic : _ ->
+                    case diagnosticToLsp diagnostic of
+                        Aeson.Object diagnosticObj -> do
+                            let maybeRangeObj = lookupJsonObject "range" diagnosticObj
+                                maybeStartObj = maybeRangeObj >>= lookupJsonObject "start"
+                                maybeEndObj = maybeRangeObj >>= lookupJsonObject "end"
+                            case (maybeStartObj, maybeEndObj) of
+                                (Just startObj, Just endObj) -> do
+                                    lookupJsonInt "line" startObj `shouldBe` Just 0
+                                    lookupJsonInt "line" endObj `shouldSatisfy` maybe False (> 0)
+                                _ ->
+                                    expectationFailure "expected concrete LSP range objects"
+                        other ->
+                            expectationFailure ("expected diagnostic object, got " <> show other)
+
+        it "offers document symbols, fields, and local bindings in completions" $ do
+            let source =
+                    T.unlines
+                        [ "type leader {"
+                        , "  nation: string,"
+                        , "}"
+                        , ""
+                        , "timeline main {"
+                        , "  start: 1,"
+                        , "  end: 10,"
+                        , "}"
+                        , ""
+                        , "entity churchill : leader {"
+                        , "  nation: \"United Kingdom\","
+                        , "  appears_on: main @ 1..2,"
+                        , "}"
+                        , ""
+                        , "let mut counter = 0;"
+                        , ""
+                        , "fn summarize(count: int) {"
+                        , "  let total = count;"
+                        , "  coun"
+                        , "}"
+                        ]
+                globalLabels = map completionLabel (getDocumentCompletions "<inline>" source 0 0)
+                scopedLabels =
+                    map
+                        completionLabel
+                        (getDocumentCompletions "<inline>" source 18 (T.length "  coun"))
+            globalLabels `shouldSatisfy` elem "leader"
+            globalLabels `shouldSatisfy` elem "main"
+            globalLabels `shouldSatisfy` elem "churchill"
+            globalLabels `shouldSatisfy` elem "appears_on"
+            scopedLabels `shouldSatisfy` elem "counter"
+            scopedLabels `shouldSatisfy` elem "count"
 
     describe "timeline and temporal validation" $ do
         it "rejects invalid explicit timeline kinds" $ do
