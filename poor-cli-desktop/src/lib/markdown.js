@@ -26,6 +26,12 @@ export function renderMarkdown(text) {
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
   // links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  // confidence badge
+  html = html.replace(/Confidence:\s*(Very High|High|Medium|Low|Very Low)\s*\((\d+)%\)/gi, (_, level, pct) => {
+    const n = parseInt(pct, 10);
+    const tier = n >= 80 ? 'high' : n >= 50 ? 'mid' : 'low';
+    return `<span class="confidence-badge confidence-${tier}"><span class="confidence-dot"></span>${level} <span class="confidence-pct">${pct}%</span></span>`;
+  });
   // line breaks (double newline = paragraph, single = br)
   html = html.replace(/\n\n/g, '</p><p>');
   html = html.replace(/\n/g, '<br>');
