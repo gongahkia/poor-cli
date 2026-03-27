@@ -76,7 +76,9 @@ validateEntities world =
     appearanceDiagnostics entity appearance =
         timelineDiagnostics
             ++ rangeDiagnostics
+            ++ timelineBoundsDiagnostics
       where
+        referencedTimeline = findTimeline (appearanceTimeline appearance) world
         timelineDiagnostics =
             [ Diagnostic
                 { diagnosticLevel = DiagnosticError
@@ -101,6 +103,21 @@ validateEntities world =
             | let rangeValue = appearanceRange appearance
             , timePointOrdinal (rangeStart rangeValue) > timePointOrdinal (rangeEnd rangeValue)
             ]
+        timelineBoundsDiagnostics =
+            [ Diagnostic
+                { diagnosticLevel = DiagnosticError
+                , diagnosticSource = "validation"
+                , diagnosticMessage =
+                    "entity "
+                        <> entityName entity
+                        <> " has an appearance outside the bounds of timeline "
+                        <> appearanceTimeline appearance
+                }
+            | Just timeline <- [referencedTimeline]
+            , let rangeValue = appearanceRange appearance
+            , timePointOrdinal (rangeStart rangeValue) < timePointOrdinal (timelineStart timeline)
+                || timePointOrdinal (rangeEnd rangeValue) > timePointOrdinal (timelineEnd timeline)
+            ]
 
 validateRelationships :: World -> [Diagnostic]
 validateRelationships world =
@@ -109,6 +126,7 @@ validateRelationships world =
     validateRelationship relationship =
         sourceDiagnostics
             ++ targetDiagnostics
+            ++ temporalScopeDiagnostics
       where
         sourceDiagnostics =
             [ Diagnostic
@@ -125,4 +143,17 @@ validateRelationships world =
                 , diagnosticMessage = "relationship target not found: " <> relTarget relationship
                 }
             | isNothing (findEntity (relTarget relationship) world)
+            ]
+        temporalScopeDiagnostics =
+            [ Diagnostic
+                { diagnosticLevel = DiagnosticError
+                , diagnosticSource = "validation"
+                , diagnosticMessage =
+                    "relationship temporal scope has start after end: "
+                        <> relSource relationship
+                        <> " -> "
+                        <> relTarget relationship
+                }
+            | Just rangeValue <- [relTemporalScope relationship]
+            , timePointOrdinal (rangeStart rangeValue) > timePointOrdinal (rangeEnd rangeValue)
             ]

@@ -23,7 +23,7 @@ module Seuss.Lang.AST
 
 import Data.Map.Strict (Map)
 import Data.Text (Text)
-import Seuss.Model.Types (BinaryOp(..), TimelineKind(..), TypeField(..), Value(..))
+import Seuss.Model.Types (BinaryOp(..), TypeField(..), Value(..))
 
 data Expr
     = ExprValue Value
@@ -47,7 +47,7 @@ data TypeDecl = TypeDecl
 
 data TimelineDecl = TimelineDecl
     { timelineDeclName :: Text
-    , timelineDeclKind :: TimelineKind
+    , timelineDeclKind :: Maybe Expr
     , timelineDeclStart :: Expr
     , timelineDeclEnd :: Expr
     , timelineDeclParent :: Maybe Text

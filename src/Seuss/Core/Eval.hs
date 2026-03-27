@@ -64,6 +64,7 @@ evalStmt state statement =
                     pure state1{evalWorld = world'}
                 StmtTimeline decl -> do
                     rejectDuplicate "timeline" (timelineDeclName decl) (worldTimelines (evalWorld state))
+                    kindValue <- resolveTimelineKind (timelineDeclName decl) (timelineDeclKind decl)
                     (state1, startValue) <- exprToTimePoint state (timelineDeclStart decl)
                     (state2, endValue) <- exprToTimePoint state1 (timelineDeclEnd decl)
                     (state3, loopCountValue) <- evalOptionalInteger state2 (timelineDeclLoopCount decl)
@@ -76,7 +77,7 @@ evalStmt state statement =
                                         (timelineDeclName decl)
                                         Timeline
                                             { timelineName = timelineDeclName decl
-                                            , timelineKind = timelineDeclKind decl
+                                            , timelineKind = kindValue
                                             , timelineStart = startValue
                                             , timelineEnd = endValue
                                             , timelineParent = timelineDeclParent decl
@@ -870,6 +871,20 @@ evalForIterable state iterable =
 restoreBinding :: Maybe Value -> Text -> Map Text Value -> Map Text Value
 restoreBinding Nothing name env = Map.delete name env
 restoreBinding (Just value) name env = Map.insert name value env
+
+resolveTimelineKind :: Text -> Maybe Expr -> Either Diagnostic TimelineKind
+resolveTimelineKind _ Nothing = Right TimelineLinear
+resolveTimelineKind _ (Just (ExprIdent "linear")) = Right TimelineLinear
+resolveTimelineKind _ (Just (ExprIdent "branch")) = Right TimelineBranch
+resolveTimelineKind _ (Just (ExprIdent "parallel")) = Right TimelineParallel
+resolveTimelineKind _ (Just (ExprIdent "loop")) = Right TimelineLoop
+resolveTimelineKind timelineNameValue (Just _) =
+    Left $
+        Diagnostic
+            { diagnosticLevel = DiagnosticError
+            , diagnosticSource = "evaluator"
+            , diagnosticMessage = "invalid timeline kind for " <> timelineNameValue
+            }
 
 evalRepeatLoop :: EvalState -> RepeatDecl -> Either Diagnostic EvalState
 evalRepeatLoop state decl = do

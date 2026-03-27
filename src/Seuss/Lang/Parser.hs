@@ -267,7 +267,7 @@ timelineDeclParser = do
     _ <- symbol "timeline"
     name <- identifier
     fields <- braces (many timelineFieldParser)
-    let kindValue = maybe TimelineLinear id (extractField "kind" fields >>= asTimelineKind)
+    let kindValue = extractField "kind" fields
         startValue = maybe (ExprValue (VInt 0)) id (extractField "start" fields)
         endValue = maybe (ExprValue (VInt 100)) id (extractField "end" fields)
         parentValue = extractField "parent" fields >>= asIdentifier
@@ -582,13 +582,6 @@ extractField fieldName = lookup fieldName
 asIdentifier :: Expr -> Maybe Text
 asIdentifier (ExprIdent name) = Just name
 asIdentifier _ = Nothing
-
-asTimelineKind :: Expr -> Maybe TimelineKind
-asTimelineKind (ExprIdent "linear") = Just TimelineLinear
-asTimelineKind (ExprIdent "branch") = Just TimelineBranch
-asTimelineKind (ExprIdent "parallel") = Just TimelineParallel
-asTimelineKind (ExprIdent "loop") = Just TimelineLoop
-asTimelineKind _ = Nothing
 
 asTimelineRef :: Expr -> Maybe (Text, Expr)
 asTimelineRef (ExprBinary OpEq (ExprIdent name) point) = Just (name, point)

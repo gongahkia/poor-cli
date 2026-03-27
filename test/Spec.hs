@@ -53,6 +53,74 @@ spec = do
                             any ((== DiagnosticError) . diagnosticLevel) (validateWorld worldValue)
                                 `shouldBe` False
 
+    describe "timeline and temporal validation" $ do
+        it "rejects invalid explicit timeline kinds" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  kind: nonsense,"
+                        , "  start: 1,"
+                        , "  end: 2,"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            diagnosticMessage diag `shouldSatisfy` T.isInfixOf "invalid timeline kind"
+                        Right _ ->
+                            expectationFailure "expected invalid timeline kind failure"
+
+        it "flags entity appearances that exceed timeline bounds" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  start: 1,"
+                        , "  end: 10,"
+                        , "}"
+                        , "entity late : event {"
+                        , "  appears_on: main @ 11..12,"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            any (T.isInfixOf "outside the bounds of timeline" . diagnosticMessage) (validateWorld worldValue)
+                                `shouldBe` True
+
+        it "flags reversed relationship temporal scopes" $ do
+            let source =
+                    T.unlines
+                        [ "timeline main {"
+                        , "  start: 1,"
+                        , "  end: 10,"
+                        , "}"
+                        , "entity a : event {"
+                        , "  appears_on: main @ 1..2,"
+                        , "}"
+                        , "entity b : event {"
+                        , "  appears_on: main @ 3..4,"
+                        , "}"
+                        , "rel a -[\"x\"]-> b @ 9..2;"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue ->
+                            any (T.isInfixOf "relationship temporal scope has start after end" . diagnosticMessage) (validateWorld worldValue)
+                                `shouldBe` True
+
     describe "csv import" $
         it "creates seuss entity declarations from a CSV schema" $ do
             let csvInput =
