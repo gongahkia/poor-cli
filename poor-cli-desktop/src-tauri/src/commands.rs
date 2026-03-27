@@ -3,9 +3,11 @@
 use crate::state::{AppState, BackendProcess};
 use serde_json::{json, Value};
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::State;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+use tokio::time::timeout;
 
 fn find_project_root() -> Option<PathBuf> { // walk up from cwd looking for pyproject.toml
     let mut dir = std::env::current_dir().ok()?;
@@ -35,7 +37,14 @@ fn which_exists(name: &str) -> bool {
     std::process::Command::new("which").arg(name).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
+const RPC_TIMEOUT: Duration = Duration::from_secs(10);
+
 async fn send_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
+    let fut = send_rpc_inner(state, method, params);
+    timeout(RPC_TIMEOUT, fut).await.map_err(|_| format!("rpc timeout: {method}"))? // bail after 10s
+}
+
+async fn send_rpc_inner(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
     let mut guard = state.backend.lock().await;
     let backend = guard.as_mut().ok_or("backend not initialized")?;
     let id = state.next_request_id();
@@ -51,6 +60,7 @@ async fn send_rpc(state: &AppState, method: &str, params: Value) -> Result<Value
     backend.stdin.flush().await.map_err(|e| e.to_string())?;
     let mut line = String::new();
     backend.stdout.read_line(&mut line).await.map_err(|e| e.to_string())?;
+    if line.is_empty() { return Err("backend process died".into()); } // EOF = process crashed
     let response: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
     if let Some(error) = response.get("error") {
         return Err(error.to_string());
@@ -92,9 +102,16 @@ pub async fn initialize_backend(
     if let Some(m) = model {
         params["model"] = json!(m);
     }
-    let result = send_rpc(&state, "initialize", params).await?;
-    *state.initialized.lock().await = true;
-    Ok(result)
+    match send_rpc(&state, "initialize", params).await {
+        Ok(result) => {
+            *state.initialized.lock().await = true;
+            Ok(result)
+        }
+        Err(e) => { // backend spawned but not responding — tear it down
+            *state.backend.lock().await = None;
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
