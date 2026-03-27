@@ -121,6 +121,35 @@ spec = do
                             any (T.isInfixOf "relationship temporal scope has start after end" . diagnosticMessage) (validateWorld worldValue)
                                 `shouldBe` True
 
+    describe "declared entity type validation" $
+        it "enforces required fields and declared field value types" $ do
+            let source =
+                    T.unlines
+                        [ "type leader {"
+                        , "  nation: string,"
+                        , "  rank: string,"
+                        , "}"
+                        , "timeline main {"
+                        , "  start: 1,"
+                        , "  end: 10,"
+                        , "}"
+                        , "entity churchill : leader {"
+                        , "  nation: 1,"
+                        , "  appears_on: main @ 1..2,"
+                        , "}"
+                        ]
+            case parseProgram "<inline>" source of
+                Left diags ->
+                    expectationFailure ("parse failed: " <> show diags)
+                Right program ->
+                    case evalProgram program of
+                        Left diag ->
+                            expectationFailure ("eval failed: " <> show diag)
+                        Right worldValue -> do
+                            let messages = map diagnosticMessage (validateWorld worldValue)
+                            any (T.isInfixOf "missing required field rank") messages `shouldBe` True
+                            any (T.isInfixOf "field nation does not match declared type string") messages `shouldBe` True
+
     describe "csv import" $
         it "creates seuss entity declarations from a CSV schema" $ do
             let csvInput =
