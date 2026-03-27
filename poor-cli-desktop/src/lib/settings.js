@@ -146,6 +146,92 @@ function removeKey(def, row, stored) {
   if (rm) rm.remove();
 }
 
+// --- font customisation ---
+const FONT_STORAGE_KEY = 'poor-cli-custom-fonts';
+function getStoredFonts() { return JSON.parse(localStorage.getItem(FONT_STORAGE_KEY) || '{}'); }
+function saveStoredFonts(obj) { localStorage.setItem(FONT_STORAGE_KEY, JSON.stringify(obj)); }
+
+function parseFontFamily(url) { // extract family name from Google Fonts URL
+  try {
+    const u = new URL(url);
+    const family = u.searchParams.get('family');
+    if (!family) return null;
+    return family.split(':')[0].replace(/\+/g, ' ');
+  } catch { return null; }
+}
+
+function isGoogleFontsUrl(url) {
+  try { return new URL(url).hostname.endsWith('googleapis.com'); }
+  catch { return false; }
+}
+
+function injectFontLink(id, url) { // inject or replace a <link> for the font
+  let link = document.getElementById(id);
+  if (!url) { if (link) link.remove(); return; }
+  if (!link) { link = document.createElement('link'); link.id = id; link.rel = 'stylesheet'; document.head.appendChild(link); }
+  link.href = url;
+}
+
+export function applyCustomFonts() { // call on startup
+  const fonts = getStoredFonts();
+  if (fonts.uiUrl) {
+    injectFontLink('custom-font-ui', fonts.uiUrl);
+    const name = parseFontFamily(fonts.uiUrl);
+    if (name) document.documentElement.style.setProperty('--font-sans', `'${name}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`);
+  }
+  if (fonts.codeUrl) {
+    injectFontLink('custom-font-code', fonts.codeUrl);
+    const name = parseFontFamily(fonts.codeUrl);
+    if (name) document.documentElement.style.setProperty('--font-mono', `'${name}', 'JetBrains Mono', 'Fira Code', monospace`);
+  }
+}
+
+function renderFontsGroup() {
+  const group = document.createElement('div');
+  group.className = 'settings-group';
+  group.dataset.category = 'Fonts';
+  group.innerHTML = '<h2>Fonts</h2>';
+  const fonts = getStoredFonts();
+  const defs = [
+    { key: 'uiUrl', label: 'UI Font', hint: 'Google Fonts URL for interface text', placeholder: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' },
+    { key: 'codeUrl', label: 'Code Font', hint: 'Google Fonts URL for code snippets', placeholder: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap' },
+  ];
+  for (const def of defs) {
+    const row = document.createElement('div');
+    row.className = 'settings-row font-row';
+    const cur = fonts[def.key] || '';
+    const curName = cur ? (parseFontFamily(cur) || '') : '';
+    row.innerHTML = `
+      <div class="settings-row-info">
+        <label>${def.label}${curName ? ` <span class="font-active-name">${curName}</span>` : ''}</label>
+        <div class="desc">${def.hint}</div>
+      </div>
+      <div class="font-actions">
+        <input type="text" class="font-url-input" value="${cur}" placeholder="${def.placeholder}" />
+        <button class="btn btn-sm btn-primary font-save">Apply</button>
+        ${cur ? '<button class="btn btn-sm font-reset">Reset</button>' : ''}
+      </div>`;
+    row.querySelector('.font-save').addEventListener('click', () => {
+      const url = row.querySelector('.font-url-input').value.trim();
+      if (url && !isGoogleFontsUrl(url)) { alert('Please provide a valid Google Fonts URL'); return; }
+      fonts[def.key] = url;
+      saveStoredFonts(fonts);
+      applyCustomFonts();
+      renderOptions(document.getElementById('settings-content'), defaultOptions); // refresh
+    });
+    const resetBtn = row.querySelector('.font-reset');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      delete fonts[def.key];
+      saveStoredFonts(fonts);
+      injectFontLink(def.key === 'uiUrl' ? 'custom-font-ui' : 'custom-font-code', null);
+      document.documentElement.style.removeProperty(def.key === 'uiUrl' ? '--font-sans' : '--font-mono');
+      renderOptions(document.getElementById('settings-content'), defaultOptions);
+    });
+    group.appendChild(row);
+  }
+  return group;
+}
+
 function renderOptions(container, options) {
   container.innerHTML = '';
   const grouped = {};
@@ -158,6 +244,7 @@ function renderOptions(container, options) {
   // render in category order
   const orderedCats = Object.keys(categories);
   for (const cat of orderedCats) {
+    if (cat === 'Fonts') { container.appendChild(renderFontsGroup()); continue; }
     if (cat === 'API Keys') { container.appendChild(renderApiKeysGroup()); continue; }
     const opts = grouped[cat];
     if (!opts) continue;

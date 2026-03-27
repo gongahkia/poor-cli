@@ -2,7 +2,7 @@
 import { rpc } from './rpc.js';
 import { registerView, showView } from './views.js';
 import { renderMarkdown } from './markdown.js';
-import { initSettings } from './settings.js';
+import { initSettings, applyCustomFonts } from './settings.js';
 import { initSkills } from './skills.js';
 import { initHistory, refreshHistorySidebar } from './history.js';
 
@@ -323,4 +323,5 @@ window.addEventListener('beforeunload', () => {
 });
 
 // auto-init
+applyCustomFonts();
 ensureInitialized();
