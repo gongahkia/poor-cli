@@ -33,7 +33,6 @@ data ExportOptions = ExportOptions
     , exportOutput :: Maybe FilePath
     , exportWidth :: Maybe Int
     , exportHeight :: Maybe Int
-    , exportDpi :: Maybe Int
     }
     deriving (Eq, Show)
 
@@ -100,7 +99,6 @@ exportParser =
                 <*> optional (strOption (short 'o' <> long "output" <> metavar "PATH"))
                 <*> optional (option auto (long "width" <> metavar "PIXELS"))
                 <*> optional (option auto (long "height" <> metavar "PIXELS"))
-                <*> optional (option auto (long "dpi" <> metavar "DPI"))
             )
 
 checkParser :: Parser Command

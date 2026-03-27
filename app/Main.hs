@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import Control.Monad (filterM, unless, when)
+import Control.Monad (when)
 import Data.List (isSuffixOf, sort)
 import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Data.Map.Strict as Map
