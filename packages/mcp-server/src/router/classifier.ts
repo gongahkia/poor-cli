@@ -1,4 +1,7 @@
 import { resolveAlias } from "./aliases.js";
+import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
+
+const BUSINESS_DILIGENCE_PATTERN = /\bdiligence\b|regulatory|registration\s*check|registry\s*check|registry\s*diligence|business\s*diligence|counterparty\s*diligence|licen[cs]e\s*check|business\s*dossier|company\s*dossier/i;
 
 export type IntentResult = {
   readonly intent: string;
@@ -340,8 +343,9 @@ const extractNamedSubject = (
 
 const extractCompanyName = (query: string): string | null => {
   return extractNamedSubject(query, [
-    /\b(?:company|entity|business|counterparty)\s+(.+?)(?=\s+(?:with|using|under)\b|[?.!,]|$)/i,
-    /\b(?:builder|contractor|vendor)\s+(.+?)(?=\s+(?:with|using|under)\b|[?.!,]|$)/i,
+    /\b(?:company|entity|business|counterparty)\s+(.+?)(?=\s+(?:with|using|under)\b|[?!,;:]|$)/i,
+    /\b(?:builder|contractor|vendor)\s+(.+?)(?=\s+(?:with|using|under)\b|[?!,;:]|$)/i,
+    /\b(?:architect|architecture\s+firm|pharmacy|supplier|manufacturer|importer|wholesaler|hotel|hotel\s+operator|keeper|operator)\s+(.+?)(?=\s+(?:with|using|under)\b|[?!,;:]|$)/i,
   ]) ?? extractQuotedTerm(query);
 };
 
@@ -421,14 +425,41 @@ const getApiForTool = (tool: string): string => {
   if (tool.startsWith("sg_hdb_")) return "hdb";
   if (tool.startsWith("sg_cea_")) return "cea";
   if (tool.startsWith("sg_bca_")) return "bca";
+  if (tool.startsWith("sg_boa_")) return "boa";
   if (tool.startsWith("sg_acra_")) return "acra";
+  if (tool.startsWith("sg_hsa_")) return "hsa";
+  if (tool.startsWith("sg_hlb_")) return "hlb";
   if (tool.startsWith("sg_pa_")) return "pa";
   if (tool.startsWith("sg_sportsg_")) return "sportsg";
   if (tool.startsWith("sg_ecda_")) return "ecda";
   if (tool === "sg_msf_family_services") return "msf_family_services";
   if (tool === "sg_msf_student_care_services") return "msf_student_care_services";
   if (tool === "sg_msf_social_service_offices") return "msf_social_service_offices";
+  if (tool === "sg_gebiz_tenders") return "gebiz";
   return "datagov";
+};
+
+const extractSectorHints = (query: string): readonly BusinessSectorHint[] => {
+  const hints: BusinessSectorHint[] = [];
+  if (/\bconstruction|builder|contractor|workhead\b/i.test(query)) hints.push("construction");
+  if (/\breal\s*estate|estate\s*agent|salesperson|property\b/i.test(query)) hints.push("real_estate");
+  if (/\barchitect|architecture\s+firm|boa\b/i.test(query)) hints.push("architecture");
+  if (/\bpharmacy|pharmacies|health\s+product|healthcare|medical\s+device|hsa\b/i.test(query)) hints.push("healthcare");
+  if (/\bhotel|hospitality|keeper|hlb\b/i.test(query)) hints.push("hospitality");
+  if (/\bprocurement|supplier|tender|gebiz\b/i.test(query)) hints.push("procurement");
+  return Array.from(new Set(hints));
+};
+
+const extractExplicitModules = (query: string): readonly BusinessDossierModule[] => {
+  const modules: BusinessDossierModule[] = [];
+  if (/\bacra|company|entity|\buen\b|incorporat/i.test(query)) modules.push("acra");
+  if (/\bbca|builder|contractor|workhead|class\s+[a-z]{2}\d/i.test(query)) modules.push("bca");
+  if (/\bcea|salesperson|estate\s+agent|real\s*estate/i.test(query)) modules.push("cea");
+  if (/\bgebiz|procurement|supplier|tender/i.test(query)) modules.push("gebiz");
+  if (/\bboa|architect|architecture\s+firm/i.test(query)) modules.push("boa");
+  if (/\bhsa|pharmacy|health\s+product|medical\s+device|wholesale\s+licen[cs]e|manufacture\s+health\s+products/i.test(query)) modules.push("hsa");
+  if (/\bhlb|hotel|keeper|hospitality/i.test(query)) modules.push("hlb");
+  return Array.from(new Set(modules));
 };
 
 const buildIntentResult = (
@@ -595,6 +626,17 @@ export const classifyIntent = (query: string): IntentResult => {
     params["entityName"] = companyName;
   }
 
+  const sectorHints = extractSectorHints(query);
+  if (sectorHints.length > 0) {
+    params["sectorHints"] = sectorHints;
+  }
+
+  const explicitModules = extractExplicitModules(query);
+  if (explicitModules.length > 0) {
+    params["modules"] = explicitModules;
+  }
+  const hasExpandedBusinessScope = explicitModules.some((module) => !["acra", "bca", "cea"].includes(module));
+
   const salespersonName = extractSalespersonName(query);
   if (salespersonName !== null) {
     params["salespersonName"] = salespersonName;
@@ -638,12 +680,49 @@ export const classifyIntent = (query: string): IntentResult => {
   }
 
   if (
-    /due\s*diligence|regulatory|registration\s*check|registry\s*check|registry\s*diligence|business\s*diligence|counterparty\s*diligence|licen[cs]e\s*check|business\s*dossier|company\s*dossier/i.test(lower)
-    && /acra|company|entity|uen|salesperson|estate\s*agent|builder|contractor|bca|cea/i.test(lower)
+    BUSINESS_DILIGENCE_PATTERN.test(lower)
+    && /architect|architecture\s+firm|boa/i.test(lower)
   ) {
     return {
-      ...buildIntentResult("business", "business_registry_diligence", 0.91, params),
-      apis: ["acra", "bca", "cea"],
+      ...buildIntentResult("business", "architecture_firm_diligence", 0.92, params),
+      apis: ["acra", "boa", "gebiz"],
+    };
+  }
+
+  if (
+    BUSINESS_DILIGENCE_PATTERN.test(lower)
+    && /pharmacy|health\s+product|healthcare|hsa/i.test(lower)
+  ) {
+    return {
+      ...buildIntentResult("business", "healthcare_supplier_diligence", 0.92, params),
+      apis: ["acra", "hsa", "gebiz"],
+    };
+  }
+
+  if (
+    (/lookup|operator\s+lookup|licen[cs]e\s*check/i.test(lower) || BUSINESS_DILIGENCE_PATTERN.test(lower))
+    && /hotel|keeper|hlb|hospitality/i.test(lower)
+  ) {
+    return {
+      ...buildIntentResult("business", "hotel_operator_lookup", 0.92, params),
+      apis: ["acra", "hlb"],
+    };
+  }
+
+  if (
+    BUSINESS_DILIGENCE_PATTERN.test(lower)
+    && /acra|company|entity|uen|salesperson|estate\s*agent|builder|contractor|bca|cea|gebiz|architect|pharmacy|health\s+product|hotel/i.test(lower)
+  ) {
+    if (!hasExpandedBusinessScope) {
+      return {
+        ...buildIntentResult("business", "business_registry_diligence", 0.91, params),
+        apis: ["acra", "bca", "cea"],
+      };
+    }
+
+    return {
+      ...buildIntentResult("business", "sector_scoped_business_diligence", 0.91, params),
+      apis: Array.from(new Set(explicitModules.map((module) => module))),
     };
   }
 
@@ -798,10 +877,35 @@ export const classifyIntent = (query: string): IntentResult => {
   }
 
   if (
+    aliasedTool?.includes("boa")
+    || /\barchitect|architecture\s+firm|board\s+of\s+architects\b/i.test(lower)
+  ) {
+    const tool = /architecture\s+firm/i.test(lower) ? "sg_boa_architecture_firms" : "sg_boa_architects";
+    return buildIntentResult("business", "direct_tool", 0.9, params, tool);
+  }
+
+  if (
     aliasedTool?.includes("acra")
     || /acra|company\s*registration|corporate\s*entity|\buen\b|incorporat/i.test(lower)
   ) {
     return buildIntentResult("business", "direct_tool", 0.9, params, "sg_acra_entities");
+  }
+
+  if (
+    aliasedTool?.includes("hsa")
+    || /pharmacy|health\s+product|healthcare\s+supplier|medical\s+device|wholesale\s+licen[cs]e|manufacture\s+health\s+products/i.test(lower)
+  ) {
+    const tool = /pharmacy|pharmacies/i.test(lower)
+      ? "sg_hsa_licensed_pharmacies"
+      : "sg_hsa_health_product_licensees";
+    return buildIntentResult("business", "direct_tool", 0.9, params, tool);
+  }
+
+  if (
+    aliasedTool?.includes("hlb")
+    || /hotel|keeper|hotel\s+operator|hospitality/i.test(lower)
+  ) {
+    return buildIntentResult("business", "direct_tool", 0.89, params, "sg_hlb_hotels");
   }
 
   if (aliasedTool?.includes("mas") || /exchange\s*rate|forex|sgd|currency\s*rate|sora|interest\s*rate/i.test(lower)) {
@@ -1195,6 +1299,51 @@ export const resolveToolInput = (
           ...(params["uen"] !== undefined ? { uen: params["uen"] } : {}),
         },
       };
+    case "sg_boa_architects":
+      return {
+        tool,
+        input: {
+          ...(params["entityName"] !== undefined ? { name: params["entityName"] } : {}),
+          ...(params["registrationNo"] !== undefined ? { registrationNo: params["registrationNo"] } : {}),
+          ...(params["companyName"] !== undefined ? { firmName: params["companyName"] } : {}),
+        },
+      };
+    case "sg_boa_architecture_firms":
+      return {
+        tool,
+        input: {
+          ...(params["companyName"] !== undefined ? { firmName: params["companyName"] } : {}),
+        },
+      };
+    case "sg_hsa_licensed_pharmacies":
+      return {
+        tool,
+        input: {
+          ...(params["entityName"] !== undefined ? { pharmacyName: params["entityName"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+        },
+      };
+    case "sg_hsa_health_product_licensees":
+      return {
+        tool,
+        input: {
+          ...(params["companyName"] !== undefined ? { companyName: params["companyName"] } : {}),
+        },
+      };
+    case "sg_hlb_hotels":
+      return {
+        tool,
+        input: {
+          ...(params["entityName"] !== undefined
+            ? (/keeper|operator/i.test(query) ? { keeperName: params["entityName"] } : { name: params["entityName"] })
+            : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
     case "sg_business_dossier":
       return {
         tool,
@@ -1208,6 +1357,8 @@ export const resolveToolInput = (
           ...(params["classCode"] !== undefined ? { classCode: params["classCode"] } : {}),
           ...(params["workhead"] !== undefined ? { workhead: params["workhead"] } : {}),
           ...(params["grade"] !== undefined ? { grade: params["grade"] } : {}),
+          ...(params["modules"] !== undefined ? { modules: params["modules"] } : {}),
+          ...(params["sectorHints"] !== undefined ? { sectorHints: params["sectorHints"] } : {}),
         },
       };
     case "sg_property_brief":

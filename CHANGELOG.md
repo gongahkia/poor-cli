@@ -8,6 +8,11 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 
 ### Added
 
+- Added BOA, HSA, and HLB direct tool families with `sg_boa_architects`, `sg_boa_architecture_firms`, `sg_hsa_licensed_pharmacies`, `sg_hsa_health_product_licensees`, and `sg_hlb_hotels`.
+- Added bounded workflows and recipes for Architecture Firm Diligence, Healthcare Supplier Diligence, Hotel Operator Lookup, and Sector Scoped Business Diligence.
+- Added explicit `modules` and `sectorHints` support to `sg_business_dossier`.
+- Added shared entity-resolution logic with deterministic `matchConfidence`, `matchedOn`, and `unmatchedModules` reporting.
+- Added sector-specific walkthroughs and golden query outputs for architecture, healthcare-supplier, and hotel-operator diligence.
 - Expanded brief artifacts now return `title`, `summary`, `evidence`, `records`, `gaps`, `provenance`, `freshness`, and `limits`.
 - Brief artifacts now support optional `riskFlags`, `matchConfidence`, and `nextChecks` fields.
 - `sg_business_dossier` now returns risk flags (expired licenses, inactive entities), match confidence per source, and next check suggestions.
@@ -34,9 +39,11 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 
 ### Changed
 
+- Tool count increased from 63 to 68; API family count from 26 to 29; routed families from 17 to 20.
+- `sg_business_dossier` now stays backward-compatible by default while supporting explicit BOA, HSA, HLB, and GeBIZ module selection.
+- README, skill docs, architecture notes, auth docs, and docs parity checks now track BOA, HSA, HLB, and the new diligence workflows.
 - Tool count increased from 47 to 56; API family count from 11 to 20.
 - All 9 new tool schemas are exported from `@sg-apis/shared`.
 - `sg_query` now routes broad transport snapshot prompts to `sg_transport_brief`.
 - `sg_query` now routes broad environment snapshot prompts to `sg_environment_brief`.
 - README, examples, auth docs, and skill docs now document the expanded brief contract and truthful install paths.
-

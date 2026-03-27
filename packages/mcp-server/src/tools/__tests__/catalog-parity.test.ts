@@ -65,8 +65,8 @@ describe("tool catalog parity", () => {
   });
 
   it("tracks the expected post-tranche public surface counts", () => {
-    expect(API_CATALOG).toHaveLength(26);
-    expect(TOOL_CATALOG).toHaveLength(63);
+    expect(API_CATALOG).toHaveLength(29);
+    expect(TOOL_CATALOG).toHaveLength(68);
   });
 
   it("keeps the business-diligence tool families visible in catalog resources", () => {
@@ -85,6 +85,21 @@ describe("tool catalog parity", () => {
         expect.objectContaining({
           name: "ACRA",
           tools: ["sg_acra_entities"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "BOA",
+          tools: ["sg_boa_architects", "sg_boa_architecture_firms"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "HSA",
+          tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "HLB",
+          tools: ["sg_hlb_hotels"],
           preferredInterface: "sg_query",
         }),
         expect.objectContaining({
@@ -125,6 +140,11 @@ describe("tool catalog parity", () => {
         expect.objectContaining({ name: "sg_cea_salespersons", surface: "canonical" }),
         expect.objectContaining({ name: "sg_bca_licensed_builders", surface: "canonical" }),
         expect.objectContaining({ name: "sg_bca_registered_contractors", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_boa_architects", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_boa_architecture_firms", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_hsa_licensed_pharmacies", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_hsa_health_product_licensees", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_hlb_hotels", surface: "canonical" }),
         expect.objectContaining({ name: "sg_pa_community_outlets", surface: "canonical" }),
         expect.objectContaining({ name: "sg_pa_resident_network_centres", surface: "canonical" }),
         expect.objectContaining({ name: "sg_sportsg_facilities", surface: "canonical" }),
@@ -231,6 +251,18 @@ describe("resource catalog parity", () => {
         expect.objectContaining({
           name: "Business Due Diligence",
           continuationTools: expect.arrayContaining(["sg_acra_entities", "sg_bca_registered_contractors"]),
+        }),
+        expect.objectContaining({
+          name: "Architecture Firm Diligence",
+          continuationTools: expect.arrayContaining(["sg_boa_architecture_firms", "sg_boa_architects"]),
+        }),
+        expect.objectContaining({
+          name: "Healthcare Supplier Diligence",
+          continuationTools: expect.arrayContaining(["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies"]),
+        }),
+        expect.objectContaining({
+          name: "Hotel Operator Lookup",
+          continuationTools: expect.arrayContaining(["sg_hlb_hotels"]),
         }),
         expect.objectContaining({
           id: "bus_stop_status",

@@ -17,6 +17,7 @@ import {
   handleBcaLicensedBuilders,
   handleBcaRegisteredContractors,
 } from "./bca-tools.js";
+import { handleBoaArchitects, handleBoaArchitectureFirms } from "./boa-tools.js";
 import {
   handleBusinessDossier,
   handleEnvironmentBrief,
@@ -34,6 +35,8 @@ import {
 } from "./datagov-tools.js";
 import { handleEcdaChildcareCentres } from "./ecda-tools.js";
 import { handleHdbRentalPrices, handleHdbResalePrices } from "./hdb-tools.js";
+import { handleHlbHotels } from "./hlb-tools.js";
+import { handleHsaHealthProductLicensees, handleHsaLicensedPharmacies } from "./hsa-tools.js";
 import { handleLtaBusArrivals, handleLtaTrafficIncidents, handleLtaTrainAlerts } from "./lta-tools.js";
 import {
   handleMasExchangeRates,
@@ -179,6 +182,10 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleBcaLicensedBuilders(params as Parameters<typeof handleBcaLicensedBuilders>[0]),
   sg_bca_registered_contractors: async (params) =>
     handleBcaRegisteredContractors(params as Parameters<typeof handleBcaRegisteredContractors>[0]),
+  sg_boa_architects: async (params) =>
+    handleBoaArchitects(params as Parameters<typeof handleBoaArchitects>[0]),
+  sg_boa_architecture_firms: async (params) =>
+    handleBoaArchitectureFirms(params as Parameters<typeof handleBoaArchitectureFirms>[0]),
   sg_cea_salespersons: async (params) =>
     handleCeaSalespersons(params as Parameters<typeof handleCeaSalespersons>[0]),
   sg_business_dossier: async (params) =>
@@ -269,6 +276,12 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleMoeSchools(params as Parameters<typeof handleMoeSchools>[0]),
   sg_moh_facilities: async (params) =>
     handleMohFacilities(params as Parameters<typeof handleMohFacilities>[0]),
+  sg_hsa_licensed_pharmacies: async (params) =>
+    handleHsaLicensedPharmacies(params as Parameters<typeof handleHsaLicensedPharmacies>[0]),
+  sg_hsa_health_product_licensees: async (params) =>
+    handleHsaHealthProductLicensees(params as Parameters<typeof handleHsaHealthProductLicensees>[0]),
+  sg_hlb_hotels: async (params) =>
+    handleHlbHotels(params as Parameters<typeof handleHlbHotels>[0]),
   sg_sfa_establishments: async (params) =>
     handleSfaEstablishments(params as Parameters<typeof handleSfaEstablishments>[0]),
   sg_nparks_parks: async (params) =>
@@ -290,6 +303,8 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_acra_entities",
   "sg_bca_licensed_builders",
   "sg_bca_registered_contractors",
+  "sg_boa_architects",
+  "sg_boa_architecture_firms",
   "sg_cea_salespersons",
   "sg_mas_exchange_rates",
   "sg_mas_interest_rates",
@@ -318,6 +333,9 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_hawker_centres",
   "sg_moe_schools",
   "sg_moh_facilities",
+  "sg_hsa_licensed_pharmacies",
+  "sg_hsa_health_product_licensees",
+  "sg_hlb_hotels",
   "sg_sfa_establishments",
   "sg_nparks_parks",
   "sg_pub_water_levels",

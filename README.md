@@ -6,18 +6,18 @@ Official Singapore public data for agents with deterministic contracts.
 
 ## Surface Snapshot
 
-The repo currently exposes 63 `sg_*` tools total across 26 official data families.
+The repo currently exposes 68 `sg_*` tools total across 29 official data families.
 
-- 49 direct data tools
+- 54 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers for health, keys, cache, and config
 - 1 bounded preferred interface, `sg_query`
 
-`sg_query` is the bounded preferred interface across 17 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 20 routed families. It plans or executes bounded deterministic workflows with transparent step metadata. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Why This Exists
 
-This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg manually.
+This repo is for agent builders who want one honest MCP server for Singapore public data instead of stitching together SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, NParks, PUB, MOM, STB, HLB, and data.gov.sg manually.
 
 The value is not hidden magic. The value is:
 
@@ -33,7 +33,10 @@ If you are evaluating whether the repo is actually useful for developers, start 
 
 | Need | Best entrypoint | Better than raw API calls because | Auth | Freshness surface | Intentionally unsupported |
 | --- | --- | --- | --- | --- | --- |
-| Business Registry Diligence | `sg_business_dossier` or `sg_query` | ACRA, BCA, and CEA are combined into one brief with `summary`, `evidence`, `records`, `gaps`, `provenance`, `freshness`, and `limits` | None | observed-at and upstream registry timestamps are returned per source | broad corporate graph analysis |
+| Business Registry Diligence | `sg_business_dossier` or `sg_query` | ACRA, BCA, and CEA are combined into one brief and can extend explicitly into GeBIZ, BOA, HSA, and HLB with `modules` and `sectorHints` | None | observed-at and upstream registry timestamps are returned per source | broad corporate graph analysis |
+| Architecture Firm Diligence | `sg_business_dossier` or `sg_query` | BOA, ACRA, and optional GeBIZ evidence stay bounded to architecture-firm diligence with match confidence and unmatched-module reporting | None | observed-at and upstream registry timestamps are returned per source | generic architecture-market analysis |
+| Healthcare Supplier Diligence | `sg_business_dossier` or `sg_query` | HSA, ACRA, and optional GeBIZ evidence stay bounded to healthcare supplier diligence with licensing-focused continuation hints | None | observed-at and upstream licence timestamps are returned per source | open-ended healthcare research |
+| Hotel Operator Lookup | `sg_hlb_hotels` or `sg_query` | HLB hotel and keeper facts stay bounded to hospitality diligence without widening into travel planning | None | observed-at plus HLB dataset timestamps are returned when available | hotel ranking or recommendation |
 | Property And Regulatory Due Diligence | `sg_property_brief` or `sg_query` | OneMap, URA, HDB, and optional NEA/LTA context are combined with explicit location resolution and workflow limits | OneMap optional, URA key for live planning data, LTA optional | observed-at plus first available market or live-signal timestamps | hidden property scoring or recommendations |
 | Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and SingStat dataset entrypoints are returned as one starter brief with dataset IDs and scope notes | None | observed-at plus returned MAS dates | open-ended macro commentary |
 | Transport Status | `sg_transport_brief` or `sg_query` | bus arrivals, train alerts, and traffic incidents are normalized into one operational snapshot | LTA key for live data | observed-at plus next ETA or alert timestamps when available | route planning or delay prediction |
@@ -53,6 +56,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | HDB | 2 | Curated resale and rental market reads over official data.gov.sg datasets | None |
 | CEA | 1 | Curated salesperson and estate-agent registry lookup | None |
 | BCA | 2 | Curated licensed-builder and contractor registry lookup | None |
+| BOA | 2 | Curated architect and architecture-firm registry lookup | None |
 | ACRA | 1 | Curated exact-match company and UEN lookup over the official sharded registry | None |
 | PA | 2 | Community clubs, PAssion WaVe outlets, and residents' network centres | None |
 | Sport Singapore | 1 | Public sports facility discovery across swimming complexes, sports halls, stadiums, and sport centres | None |
@@ -64,11 +68,13 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | Hawker Centres | 1 | Hawker centre directory with locations and stall counts | None |
 | MOE Schools | 1 | School directory filtered by level, zone, and name | None |
 | MOH Healthcare | 1 | Healthcare facility directory (hospitals, clinics) | None |
+| HSA | 2 | Licensed pharmacies plus health-product import, wholesale, and manufacturing licensees | None |
 | SFA | 1 | Licensed food establishment directory | None |
 | NParks | 1 | Parks and nature reserves directory | None |
 | PUB | 1 | Water level monitoring station readings | None |
 | MOM | 1 | Labour market statistics | None |
 | STB | 1 | Visitor arrival statistics | None |
+| HLB | 1 | Hotel directory with keeper names, room counts, and geospatial location context | None |
 | data.gov.sg | 5 | Dataset search, metadata, resource inspection, bounded row reads, collection browse | None |
 
 Additive brief tools:
@@ -102,7 +108,7 @@ Notes:
 - `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
 - OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback outside mock mode.
-- HDB, CEA, BCA, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
+- HDB, CEA, BCA, BOA, HSA, HLB, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 - PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.
 
 ## Quickstart
@@ -207,15 +213,19 @@ The keystore helpers are still available for local use:
 - `sg_key_set { "apiName": "ura", "key": "..." }`
 - `sg_key_set { "apiName": "lta", "key": "..." }`
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. It now returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, and ACRA are intentionally covered operationally through the shared data.gov.sg path.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. It now returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
 
 Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 
 ## Workflow Demos
 
-The primary runnable demos for this tranche are:
+The primary walkthroughs for this tranche are:
 
 - [Business Registry Diligence](./examples/business-dossier.md)
+- [Architecture Firm Diligence](./examples/architecture-firm-diligence.md)
+- [Healthcare Supplier Diligence](./examples/healthcare-supplier-diligence.md)
+- [Hotel Operator Lookup](./examples/hotel-operator-lookup.md)
+- [Sector Scoped Business Diligence](./examples/sector-scoped-business-diligence.md)
 - [Property And Regulatory Due Diligence](./examples/property-brief.md)
 - [Macro Snapshot](./examples/macro-brief.md)
 - [Transport Status](./examples/transport-brief.md)
@@ -228,6 +238,10 @@ Additional bounded workflow names exposed in the catalog:
 - Demographic Profile
 - Civic Discovery
 - Property Counterparty Diligence
+- Architecture Firm Diligence
+- Healthcare Supplier Diligence
+- Hotel Operator Lookup
+- Sector Scoped Business Diligence
 - Dataset Discovery Fallback
 - Route Planning
 - SingStat Table Drilldown
@@ -237,11 +251,49 @@ Additional bounded workflow names exposed in the catalog:
 
 ```text
 sg_query { "query": "Registry diligence for UEN 201912345K", "mode": "execute" }
-sg_business_dossier { "uen": "201912345K", "format": "json" }
+sg_business_dossier { "uen": "201912345K", "modules": ["acra", "bca", "cea"], "format": "json" }
 sg_acra_entities { "uen": "201912345K", "format": "json" }
 sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 sg_cea_salespersons { "registrationNo": "R123456A", "format": "json" }
+```
+
+### Architecture Firm Diligence
+
+```text
+sg_query { "query": "Architecture firm diligence for DP Architects", "mode": "execute" }
+sg_business_dossier { "entityName": "DP Architects", "modules": ["acra", "boa", "gebiz"], "sectorHints": ["architecture", "procurement"], "format": "json" }
+sg_boa_architecture_firms { "firmName": "DP Architects", "format": "json" }
+sg_boa_architects { "firmName": "DP Architects", "format": "json" }
+sg_gebiz_tenders { "supplierName": "DP Architects", "format": "json" }
+```
+
+### Healthcare Supplier Diligence
+
+```text
+sg_query { "query": "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "mode": "execute" }
+sg_business_dossier { "entityName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "modules": ["acra", "hsa", "gebiz"], "sectorHints": ["healthcare", "procurement"], "format": "json" }
+sg_hsa_health_product_licensees { "companyName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "format": "json" }
+sg_hsa_licensed_pharmacies { "pharmacyName": "A.M. Pharmacy Pte Ltd", "format": "json" }
+sg_gebiz_tenders { "supplierName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "format": "json" }
+```
+
+### Hotel Operator Lookup
+
+```text
+sg_query { "query": "Hotel operator lookup for Marina Bay Sands", "mode": "execute" }
+sg_hlb_hotels { "name": "Marina Bay Sands", "format": "json" }
+sg_hlb_hotels { "keeperName": "Marina Bay Sands Pte. Ltd.", "format": "json" }
+sg_acra_entities { "entityName": "MARINA BAY SANDS PTE. LTD.", "format": "json" }
+```
+
+### Sector Scoped Business Diligence
+
+```text
+sg_query { "query": "Sector-scoped business diligence for Marina Bay Sands in hospitality", "mode": "execute" }
+sg_business_dossier { "entityName": "MARINA BAY SANDS PTE. LTD.", "modules": ["acra", "hlb"], "sectorHints": ["hospitality"], "format": "json" }
+sg_hlb_hotels { "keeperName": "Marina Bay Sands Pte. Ltd.", "format": "json" }
+sg_acra_entities { "entityName": "MARINA BAY SANDS PTE. LTD.", "format": "json" }
 ```
 
 ### Property And Regulatory Due Diligence
@@ -316,7 +368,10 @@ sg_onemap_convert_coords { "from": "SVY21", "x": 28001, "y": 38744, "format": "j
 
 | Workflow | Raw upstream path | MCP path | What the repo adds |
 | --- | --- | --- | --- |
-| Business Registry Diligence | call `sg_acra_entities`, `sg_bca_licensed_builders`, `sg_bca_registered_contractors`, and `sg_cea_salespersons`, then normalize exact-match misses yourself | `sg_business_dossier` or `sg_query` | one envelope, explicit coverage, exact-match gaps, freshness markers, and scope limits |
+| Business Registry Diligence | call `sg_acra_entities`, `sg_bca_licensed_builders`, `sg_bca_registered_contractors`, and `sg_cea_salespersons`, then normalize exact-match misses and module selection yourself | `sg_business_dossier` or `sg_query` | one envelope, explicit coverage, sector-aware module selection, exact-match gaps, freshness markers, and scope limits |
+| Architecture Firm Diligence | call BOA architect and firm registries, then decide whether to add ACRA and GeBIZ evidence | `sg_business_dossier` or `sg_query` | one bounded architecture-focused artifact with BOA-first evidence, match confidence, and procurement-only continuation |
+| Healthcare Supplier Diligence | call HSA licensee rows, optional pharmacy rows, ACRA, and GeBIZ separately, then reconcile exact and fuzzy matches yourself | `sg_business_dossier` or `sg_query` | one bounded healthcare supplier artifact with licensing emphasis, unmatched-module reporting, and next checks |
+| Hotel Operator Lookup | call `sg_hlb_hotels`, then optionally widen into company evidence yourself | `sg_hlb_hotels` or `sg_query` | one bounded hotel-operator lookup path with keeper facts, room counts, and explicit hospitality scope |
 | Property And Regulatory Due Diligence | geocode, resolve planning area, fetch URA transactions, fetch HDB market reads, then optionally stitch NEA and LTA signals | `sg_property_brief` or `sg_query` | resolved location, bounded live context, provenance per source, and clear non-recommendation boundaries |
 | Macro Snapshot | call 3 MAS series plus separate SingStat dataset search calls, then decide which dataset IDs to keep | `sg_macro_brief` or `sg_query` | one starter artifact with dataset entrypoints, freshness, and explicit limits |
 | Transport Status | call bus arrivals, train alerts, and traffic incidents separately, then decide what counts as a useful operations snapshot | `sg_transport_brief` or `sg_query` | one snapshot contract with stop-level optionality, provenance, and no hidden route-planning claims |
@@ -330,6 +385,10 @@ Supported intents:
 - demographic profile
 - property or regulatory due diligence
 - business registry diligence
+- architecture firm diligence
+- healthcare supplier diligence
+- hotel operator lookup
+- sector-scoped business diligence
 - dataset discovery fallback
 - route planning between Singapore postal codes or coordinate pairs
 - civic discovery for community clubs, residents' network centres, SportSG facilities, and childcare centres
@@ -370,7 +429,7 @@ Release workflow notes live in [docs/release.md](./docs/release.md).
 ## Current Limits
 
 - The repo is still a tool-first infrastructure product for agents, not a broad end-user analytics assistant.
-- `sg_business_dossier` is registry-focused and exact-match oriented.
+- `sg_business_dossier` is registry-focused, module-bounded, and entity-match oriented.
 - `sg_property_brief` is a bounded diligence brief, not an automated investment recommendation.
 - `sg_macro_brief` is a compact starter snapshot, not a full macro research product.
 - `sg_transport_brief` is an operational snapshot, not a route planner or prediction engine.

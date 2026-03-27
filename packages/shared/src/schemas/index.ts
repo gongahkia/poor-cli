@@ -353,6 +353,8 @@ export const BusinessDossierBaseSchema = z.object({
   classCode: z.string().min(1).optional(),
   workhead: z.string().min(1).optional(),
   grade: z.string().min(1).optional(),
+  modules: z.array(z.enum(["acra", "bca", "cea", "gebiz", "boa", "hsa", "hlb"])).min(1).optional(),
+  sectorHints: z.array(z.enum(["construction", "real_estate", "architecture", "healthcare", "hospitality", "procurement"])).min(1).optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 
@@ -440,7 +442,7 @@ const RiskFlagSchema = z.object({
 }).strict();
 const MatchConfidenceSchema = z.object({
   source: z.string().min(1),
-  confidence: z.enum(["exact", "name-fuzzy", "no-match"]),
+  confidence: z.enum(["exact", "name-exact", "name-fuzzy", "no-match"]),
   matchedOn: z.string().nullable(),
 }).strict();
 export const NextCheckSchema = z.object({
@@ -542,6 +544,84 @@ export const GeBIZTendersSchema = z.object({
   limit: z.number().int().positive().optional(),
   format: z.enum(["json", "markdown", "csv"]).optional(),
 }).strict();
+
+export const BoaArchitectsBaseSchema = z.object({
+  name: z.string().min(1).optional(),
+  registrationNo: z.string().min(1).optional(),
+  firmName: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const BoaArchitectsSchema = BoaArchitectsBaseSchema.refine(
+  ({ name, registrationNo, firmName }) =>
+    name !== undefined || registrationNo !== undefined || firmName !== undefined,
+  {
+    message: "Provide at least one architect, registration, or firm identifier.",
+  },
+);
+
+export const BoaArchitectureFirmsBaseSchema = z.object({
+  firmName: z.string().min(1).optional(),
+  email: z.string().min(1).optional(),
+  phone: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const BoaArchitectureFirmsSchema = BoaArchitectureFirmsBaseSchema.refine(
+  ({ firmName, email, phone }) =>
+    firmName !== undefined || email !== undefined || phone !== undefined,
+  {
+    message: "Provide at least one architecture-firm identifier.",
+  },
+);
+
+export const HsaLicensedPharmaciesBaseSchema = z.object({
+  pharmacyName: z.string().min(1).optional(),
+  pharmacistInCharge: z.string().min(1).optional(),
+  pharmacyAddress: z.string().min(1).optional(),
+  postalCode: z.string().regex(/^\d{6}$/).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const HsaLicensedPharmaciesSchema = HsaLicensedPharmaciesBaseSchema.refine(
+  ({ pharmacyName, pharmacistInCharge, pharmacyAddress, postalCode }) =>
+    pharmacyName !== undefined
+    || pharmacistInCharge !== undefined
+    || pharmacyAddress !== undefined
+    || postalCode !== undefined,
+  {
+    message: "Provide at least one pharmacy identifier.",
+  },
+);
+
+export const HsaHealthProductLicenseesBaseSchema = z.object({
+  companyName: z.string().min(1).optional(),
+  licenseType: z.string().min(1).optional(),
+  activityType: z.string().min(1).optional(),
+  dosageForm: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  format: z.enum(["json", "markdown", "csv"]).optional(),
+}).strict();
+
+export const HsaHealthProductLicenseesSchema = HsaHealthProductLicenseesBaseSchema.refine(
+  ({ companyName, licenseType, activityType, dosageForm }) =>
+    companyName !== undefined
+    || licenseType !== undefined
+    || activityType !== undefined
+    || dosageForm !== undefined,
+  {
+    message: "Provide at least one health-product licensee identifier.",
+  },
+);
+
+export const HlbHotelsInputSchema = CivicDirectoryBaseSchema.extend({
+  keeperName: z.string().min(1).optional(),
+});
+
+export const HlbHotelsSchema = requireLatLngPair(HlbHotelsInputSchema);
 
 export const PaCommunityOutletsInputSchema = CivicDirectoryBaseSchema.extend({
   type: z.enum(["community_club", "passion_wave"]).optional(),

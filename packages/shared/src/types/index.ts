@@ -119,7 +119,7 @@ export type RiskFlag = {
 
 export type MatchConfidence = {
   readonly source: string;
-  readonly confidence: "exact" | "name-fuzzy" | "no-match";
+  readonly confidence: "exact" | "name-exact" | "name-fuzzy" | "no-match";
   readonly matchedOn: string | null;
 };
 
@@ -259,3 +259,18 @@ export type {
   SportSgFacilityRecord,
   SportSgFacilityType,
 } from "./civic.js";
+export type {
+  BoaArchitectRecord,
+  BoaArchitectureFirmRecord,
+  BoaNormalizedArchitectRecord,
+  BoaNormalizedArchitectureFirmRecord,
+} from "./boa.js";
+export type {
+  HsaHealthProductLicenseeRecord,
+  HsaLicensedPharmacyRecord,
+  HsaNormalizedHealthProductLicenseeRecord,
+  HsaNormalizedLicensedPharmacyRecord,
+} from "./hsa.js";
+export type {
+  HlbHotelRecord,
+} from "./hlb.js";

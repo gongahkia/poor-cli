@@ -1,8 +1,12 @@
 # Examples
 
-This folder contains seven runnable walkthroughs: five additive brief outcomes plus two recipe-driven discovery flows.
+This folder contains eleven walkthroughs: five additive brief outcomes, two recipe-driven discovery flows, and four sector-specific diligence references.
 
 - `business-dossier.md`
+- `architecture-firm-diligence.md`
+- `healthcare-supplier-diligence.md`
+- `hotel-operator-lookup.md`
+- `sector-scoped-business-diligence.md`
 - `property-brief.md`
 - `macro-brief.md`
 - `transport-brief.md`
@@ -53,7 +57,7 @@ Published-package snippet after the first npm release:
 
 ## Runnable Demo Profiles
 
-Each example file maps to one built-in profile:
+Seven walkthroughs map to built-in demo profiles:
 
 - `npm run demo:mcp -- business`
 - `npm run demo:mcp -- property`
@@ -64,6 +68,13 @@ Each example file maps to one built-in profile:
 - `npm run demo:mcp -- geospatial`
 
 Every profile reads one resource, calls one direct tool, calls one supporting tool, and then runs the equivalent `sg_query` workflow against the mock upstream server.
+
+The sector-specific diligence walkthroughs are reference docs backed by the same tool contracts and golden outputs:
+
+- `architecture-firm-diligence.md`
+- `healthcare-supplier-diligence.md`
+- `hotel-operator-lookup.md`
+- `sector-scoped-business-diligence.md`
 
 ## Integration Example
 
@@ -81,7 +92,7 @@ python3 examples/integration/basic-client.py
 
 ## Golden Outputs
 
-`golden-outputs/` contains realistic JSON fixtures for each brief tool plus sg_query completed, blocked, unsupported, and failed outcomes, useful as reference for expected output shapes, believable headline fields, and contract semantics.
+`golden-outputs/` contains realistic JSON fixtures for each brief tool plus sg_query completed, blocked, unsupported, and failed outcomes, along with sector-specific diligence outcomes, useful as reference for expected output shapes, believable headline fields, and contract semantics.
 
 ## Quick Start
 

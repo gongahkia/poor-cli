@@ -1,0 +1,51 @@
+{
+  "status": "completed",
+  "mode": "execute",
+  "workflow": "architecture_firm_diligence",
+  "intent": "business",
+  "apis": ["boa", "acra", "gebiz"],
+  "confidence": 0.93,
+  "toolsUsed": ["sg_business_dossier"],
+  "steps": [
+    {
+      "id": "business_dossier",
+      "purpose": "Build a cross-registry business dossier.",
+      "tool": "sg_business_dossier",
+      "status": "completed",
+      "input": {
+        "entityName": "DP Architects",
+        "modules": ["acra", "boa", "gebiz"],
+        "sectorHints": ["architecture", "procurement"]
+      },
+      "outputText": "Architecture-firm diligence completed for DP Architects.",
+      "structuredOutput": {
+        "title": "Business Dossier",
+        "records": {
+          "resolution": {
+            "selectedModules": ["acra", "boa", "gebiz"],
+            "matchedModules": ["acra", "boa"],
+            "unmatchedModules": ["gebiz"]
+          }
+        }
+      }
+    }
+  ],
+  "routingExplanation": "Routed to architecture_firm_diligence (confidence 0.93) via sg_business_dossier with BOA, ACRA, and procurement-scoped modules.",
+  "continuationHints": [
+    "Use sg_boa_architects next when you need architect-level registration detail.",
+    "Use sg://benchmarks to compare expected latency and credibility for business-diligence workflows."
+  ],
+  "resultSummary": {
+    "level": "informational",
+    "headline": "Architecture-firm diligence completed with BOA and ACRA evidence."
+  },
+  "nextActions": [
+    {
+      "tool": "sg_boa_architects",
+      "reason": "Inspect the architects linked to the matched firm.",
+      "input": {
+        "firmName": "DP Architects"
+      }
+    }
+  ]
+}

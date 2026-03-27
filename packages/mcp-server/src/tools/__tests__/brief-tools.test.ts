@@ -10,12 +10,30 @@ vi.mock("../../apis/bca/client.js", () => ({
   getBcaRegisteredContractors: vi.fn(),
 }));
 
+vi.mock("../../apis/boa/client.js", () => ({
+  getBoaArchitects: vi.fn(),
+  getBoaArchitectureFirms: vi.fn(),
+}));
+
 vi.mock("../../apis/cea/client.js", () => ({
   getCeaSalespersons: vi.fn(),
 }));
 
+vi.mock("../../apis/gebiz/client.js", () => ({
+  getGeBIZTenders: vi.fn(),
+}));
+
 vi.mock("../../apis/hdb/client.js", () => ({
   getHdbResalePrices: vi.fn(),
+}));
+
+vi.mock("../../apis/hlb/client.js", () => ({
+  getHlbHotels: vi.fn(),
+}));
+
+vi.mock("../../apis/hsa/client.js", () => ({
+  getHsaHealthProductLicensees: vi.fn(),
+  getHsaLicensedPharmacies: vi.fn(),
 }));
 
 vi.mock("../../apis/lta/client.js", () => ({
@@ -55,7 +73,11 @@ import {
   getBcaLicensedBuilders,
   getBcaRegisteredContractors,
 } from "../../apis/bca/client.js";
+import { getBoaArchitects, getBoaArchitectureFirms } from "../../apis/boa/client.js";
+import { getGeBIZTenders } from "../../apis/gebiz/client.js";
 import { getHdbResalePrices } from "../../apis/hdb/client.js";
+import { getHlbHotels } from "../../apis/hlb/client.js";
+import { getHsaHealthProductLicensees, getHsaLicensedPharmacies } from "../../apis/hsa/client.js";
 import {
   getBusArrivals,
   getTrainAlerts,
@@ -93,7 +115,13 @@ describe("brief tools", () => {
     vi.mocked(getAcraEntities).mockReset();
     vi.mocked(getBcaLicensedBuilders).mockReset();
     vi.mocked(getBcaRegisteredContractors).mockReset();
+    vi.mocked(getBoaArchitects).mockReset();
+    vi.mocked(getBoaArchitectureFirms).mockReset();
+    vi.mocked(getGeBIZTenders).mockReset();
     vi.mocked(getHdbResalePrices).mockReset();
+    vi.mocked(getHlbHotels).mockReset();
+    vi.mocked(getHsaHealthProductLicensees).mockReset();
+    vi.mocked(getHsaLicensedPharmacies).mockReset();
     vi.mocked(getBusArrivals).mockReset();
     vi.mocked(getTrainAlerts).mockReset();
     vi.mocked(getTrafficIncidents).mockReset();
@@ -146,6 +174,54 @@ describe("brief tools", () => {
       format: "markdown",
     });
     expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+  });
+
+  it("supports explicit module selection, sector hints, and unmatched module reporting", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "DESIGN LAB PTE LTD",
+        uen: "202012345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBoaArchitectureFirms).mockResolvedValue([
+      {
+        firmName: "DESIGN LAB PTE LTD",
+        firmAddress: "1 MAIN STREET",
+        firmPhone: "61234567",
+        firmFax: null,
+        firmEmail: "hello@designlab.sg",
+      },
+    ] as never);
+    vi.mocked(getBoaArchitects).mockResolvedValue([] as never);
+    vi.mocked(getGeBIZTenders).mockResolvedValue([] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "DESIGN LAB PTE LTD",
+      modules: ["acra", "boa", "gebiz"],
+      sectorHints: ["architecture", "procurement"],
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const resolution = payload.records["resolution"] as Record<string, unknown>;
+
+    expect(resolution).toMatchObject({
+      selectedModules: ["acra", "boa", "gebiz"],
+      matchedModules: ["acra", "boa"],
+      unmatchedModules: ["gebiz"],
+    });
+    expect(payload.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool: "sg_boa_architecture_firms" }),
+        expect.objectContaining({ tool: "sg_gebiz_tenders", recordCount: 0 }),
+      ]),
+    );
+    expect(payload.matchConfidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "BOA architecture firms", confidence: "name-exact" }),
+        expect.objectContaining({ source: "GeBIZ", confidence: "no-match" }),
+      ]),
+    );
   });
 
   it("treats Live Company as active and preserves exact UEN match confidence", async () => {

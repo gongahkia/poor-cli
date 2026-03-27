@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AcraEntitiesSchema,
+  BoaArchitectsSchema,
+  BoaArchitectureFirmsSchema,
   BcaLicensedBuildersSchema,
   BcaRegisteredContractorsSchema,
   BriefArtifactSchema,
@@ -11,6 +13,9 @@ import {
   EnvironmentBriefSchema,
   HdbRentalPricesSchema,
   HdbResalePricesSchema,
+  HlbHotelsSchema,
+  HsaHealthProductLicenseesSchema,
+  HsaLicensedPharmaciesSchema,
   MacroBriefSchema,
   OneMapRouteSchema,
   QueryBlockedResultSchema,
@@ -98,6 +103,35 @@ describe("query and HDB schema contracts", () => {
     ).toBe(true);
   });
 
+  it("accepts bounded BOA, HSA, and HLB direct-tool filters", () => {
+    expect(
+      BoaArchitectsSchema.safeParse({
+        name: "ALICE TAN",
+      }).success,
+    ).toBe(true);
+    expect(
+      BoaArchitectureFirmsSchema.safeParse({
+        firmName: "DESIGN LAB PTE LTD",
+      }).success,
+    ).toBe(true);
+    expect(
+      HsaLicensedPharmaciesSchema.safeParse({
+        postalCode: "238841",
+      }).success,
+    ).toBe(true);
+    expect(
+      HsaHealthProductLicenseesSchema.safeParse({
+        companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+      }).success,
+    ).toBe(true);
+    expect(
+      HlbHotelsSchema.safeParse({
+        keeperName: "RAFFLES HOTEL SINGAPORE",
+        format: "geojson",
+      }).success,
+    ).toBe(true);
+  });
+
   it("requires an entity name or UEN for ACRA lookups", () => {
     expect(
       AcraEntitiesSchema.safeParse({
@@ -146,6 +180,8 @@ describe("query and HDB schema contracts", () => {
       BusinessDossierSchema.safeParse({
         entityName: "ABC CONSTRUCTION PTE LTD",
         workhead: "CW01",
+        modules: ["acra", "bca", "gebiz"],
+        sectorHints: ["construction", "procurement"],
         format: "markdown",
       }).success,
     ).toBe(true);
