@@ -184,6 +184,8 @@ export function applyCustomFonts() { // call on startup
     const name = parseFontFamily(fonts.codeUrl);
     if (name) document.documentElement.style.setProperty('--font-mono', `'${name}', 'JetBrains Mono', 'Fira Code', monospace`);
   }
+  if (fonts.uiSize) document.documentElement.style.setProperty('--font-size-ui', `${fonts.uiSize}px`);
+  if (fonts.codeSize) document.documentElement.style.setProperty('--font-size-code', `${fonts.codeSize}px`);
 }
 
 function renderFontsGroup() {
@@ -195,6 +197,10 @@ function renderFontsGroup() {
   const defs = [
     { key: 'uiUrl', label: 'UI Font', hint: 'Google Fonts URL for interface text', placeholder: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' },
     { key: 'codeUrl', label: 'Code Font', hint: 'Google Fonts URL for code snippets', placeholder: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap' },
+  ];
+  const sizeDefs = [
+    { key: 'uiSize', label: 'UI Font Size', cssVar: '--font-size-ui', fallback: 14, min: 10, max: 24 },
+    { key: 'codeSize', label: 'Code Font Size', cssVar: '--font-size-code', fallback: 13, min: 8, max: 24 },
   ];
   for (const def of defs) {
     const row = document.createElement('div');
@@ -226,6 +232,31 @@ function renderFontsGroup() {
       injectFontLink(def.key === 'uiUrl' ? 'custom-font-ui' : 'custom-font-code', null);
       document.documentElement.style.removeProperty(def.key === 'uiUrl' ? '--font-sans' : '--font-mono');
       renderOptions(document.getElementById('settings-content'), defaultOptions);
+    });
+    group.appendChild(row);
+  }
+  for (const sd of sizeDefs) {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    const cur = fonts[sd.key] || sd.fallback;
+    row.innerHTML = `
+      <div class="settings-row-info">
+        <label>${sd.label}</label>
+        <div class="desc">${sd.min}px – ${sd.max}px</div>
+      </div>
+      <div class="font-size-control">
+        <input type="range" min="${sd.min}" max="${sd.max}" value="${cur}" class="font-size-range" />
+        <span class="font-size-value">${cur}px</span>
+      </div>`;
+    const range = row.querySelector('.font-size-range');
+    const label = row.querySelector('.font-size-value');
+    range.addEventListener('input', () => {
+      label.textContent = `${range.value}px`;
+      document.documentElement.style.setProperty(sd.cssVar, `${range.value}px`);
+    });
+    range.addEventListener('change', () => {
+      fonts[sd.key] = parseInt(range.value, 10);
+      saveStoredFonts(fonts);
     });
     group.appendChild(row);
   }
