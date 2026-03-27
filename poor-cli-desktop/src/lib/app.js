@@ -280,11 +280,14 @@ modalCancel.addEventListener('click', () => { newSessionModal.hidden = true; });
 modalCreate.addEventListener('click', async () => {
   const label = newSessionNameInput.value.trim() || `session-${Date.now()}`;
   newSessionModal.hidden = true;
+  await ensureInitialized();
   try {
     await rpc('create_session', { label });
     await refreshSessions();
     await refreshHistorySidebar();
-  } catch (_) {}
+  } catch (e) {
+    addMessage(`Failed to create session: ${e}`, 'assistant').style.color = 'var(--error)';
+  }
 });
 newSessionModal.addEventListener('click', (e) => { if (e.target === newSessionModal) newSessionModal.hidden = true; });
 // file changes panel toggle

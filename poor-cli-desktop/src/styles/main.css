@@ -1,4 +1,6 @@
 /* poor-cli desktop — themes */
+/* prevent CSS display rules from overriding hidden attribute */
+[hidden] { display: none !important; }
 /* shared fonts */
 :root {
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
@@ -240,6 +242,7 @@ body {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -314,6 +317,9 @@ body {
   border-radius: 8px;
   font-size: var(--font-size-ui);
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
 }
 .message-user { align-self: flex-end; background: var(--accent); color: var(--bg-primary); }
 .message-assistant {
