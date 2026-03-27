@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>poor-cli</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles/main.css" />
 </head>
 <body>
@@ -19,11 +22,6 @@
         <div class="sidebar-nav-item" data-nav="automations">Automations</div>
         <div class="sidebar-nav-item" data-nav="history">History</div>
         <div class="sidebar-nav-item" data-nav="settings">Settings</div>
-      </div>
-      <div class="sidebar-section">
-        <h3>Sessions</h3>
-        <div id="session-list"></div>
-        <button id="new-session-btn" class="btn btn-sm">+ New Session</button>
       </div>
       <div class="sidebar-section">
         <h3>History</h3>
@@ -42,6 +40,9 @@
       <div class="sidebar-footer" hidden></div>
     </div>
     <div class="main-panel">
+      <div class="session-tab-bar" id="session-tab-bar">
+        <div class="session-tab-add" id="session-tab-add" title="New session">+</div>
+      </div>
       <div id="top-bar" class="top-bar">
         <span id="thread-title">New thread</span>
         <div class="top-bar-actions">
@@ -49,6 +50,24 @@
           <div id="thread-menu" class="thread-menu" hidden>
             <div class="thread-menu-item" data-action="rename">Rename</div>
             <div class="thread-menu-item" data-action="delete">Delete</div>
+          </div>
+        </div>
+      </div>
+      <div class="workspace-bar" id="workspace-bar">
+        <div class="workspace-bar-left">
+          <div class="project-avatar" id="project-avatar">P</div>
+          <div class="project-info">
+            <div class="project-name" id="project-name">Project</div>
+            <div class="project-path" id="project-path">~/project</div>
+          </div>
+        </div>
+        <div class="workspace-bar-right">
+          <div class="workspace-badge" id="wb-git">&#x2387; <span id="wb-git-branch">--</span></div>
+          <div class="workspace-badge" id="wb-permission"><span id="wb-permission-mode">--</span></div>
+          <div class="file-changes-btn" id="wb-file-changes" hidden>
+            <span id="wb-fc-count">0</span> files
+            <span class="added" id="wb-fc-added">+0</span>
+            <span class="removed" id="wb-fc-removed">-0</span>
           </div>
         </div>
       </div>
@@ -109,6 +128,25 @@
         <span id="sb-spinner" class="spinner" hidden></span>
         <span id="sb-changes" class="file-changes-badge" hidden></span>
       </footer>
+    </div>
+    <div class="file-changes-panel collapsed" id="file-changes-panel">
+      <div class="fcp-header">
+        <h3>File Changes</h3>
+        <span class="fcp-close" id="fcp-close">&times;</span>
+      </div>
+      <div class="fcp-body" id="fcp-body"></div>
+      <div class="fcp-diff-preview" id="fcp-diff-preview" hidden></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="new-session-modal" hidden>
+    <div class="modal">
+      <h3>New Session</h3>
+      <label>Session name</label>
+      <input type="text" id="new-session-name" placeholder="e.g. feature-auth" />
+      <div class="modal-actions">
+        <button class="btn" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-create">Create</button>
+      </div>
     </div>
   </div>
   <script type="module" src="lib/app.js"></script>
