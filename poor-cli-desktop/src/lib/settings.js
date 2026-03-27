@@ -14,6 +14,29 @@ const categories = { // display name -> config key prefix
   'Fallback': 'fallback',
 };
 
+const defaultOptions = [ // fallback when backend unavailable
+  { path: 'ui.theme', value: 'dark', choices: ['dark', 'light'] },
+  { path: 'ui.stream', value: true, isBoolean: true },
+  { path: 'ui.markdown', value: true, isBoolean: true },
+  { path: 'model.default_provider', value: '', choices: ['gemini', 'openai', 'anthropic', 'ollama'] },
+  { path: 'model.temperature', value: 0.7 },
+  { path: 'model.max_tokens', value: 4096 },
+  { path: 'security.require_approval', value: true, isBoolean: true },
+  { path: 'security.audit_log', value: true, isBoolean: true },
+  { path: 'sandbox.enabled', value: false, isBoolean: true },
+  { path: 'sandbox.preset', value: 'permissive', choices: ['strict', 'moderate', 'permissive'] },
+  { path: 'plan_mode.auto_plan', value: false, isBoolean: true },
+  { path: 'checkpoint.enabled', value: true, isBoolean: true },
+  { path: 'checkpoint.interval_minutes', value: 5 },
+  { path: 'history.max_entries', value: 1000 },
+  { path: 'history.persist', value: true, isBoolean: true },
+  { path: 'context_compression.enabled', value: true, isBoolean: true },
+  { path: 'cost_guardrail.enabled', value: false, isBoolean: true },
+  { path: 'cost_guardrail.max_cost', value: 10.0 },
+  { path: 'fallback.enabled', value: true, isBoolean: true },
+  { path: 'fallback.chain', value: 'gemini,openai,ollama' },
+];
+
 export async function initSettings() {
   const sidebar = document.querySelector('.settings-sidebar');
   const content = document.getElementById('settings-content');
@@ -30,14 +53,16 @@ export async function initSettings() {
     });
     sidebar.appendChild(el);
   }
-  // fetch options
+  // fetch options, fall back to defaults if backend unavailable
+  let options;
   try {
     const result = await rpc('list_config_options', {});
-    const options = result.options || result || [];
-    renderOptions(content, options);
-  } catch (e) {
-    content.innerHTML = `<p style="color:var(--error)">Failed to load config: ${e}</p>`;
+    options = result.options || result || [];
+    if (!options.length) options = defaultOptions;
+  } catch (_) {
+    options = defaultOptions;
   }
+  renderOptions(content, options);
 }
 
 function renderOptions(container, options) {
