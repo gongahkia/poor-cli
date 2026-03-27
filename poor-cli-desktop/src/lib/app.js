@@ -18,7 +18,7 @@ const effortToggle = document.getElementById('effort-toggle');
 const threadTitle = document.getElementById('thread-title');
 const threadMenuBtn = document.getElementById('thread-menu-btn');
 const threadMenu = document.getElementById('thread-menu');
-const accountBtn = document.getElementById('account-btn');
+const accountBtn = document.getElementById('account-btn'); // removed from DOM
 const accountMenu = document.getElementById('account-menu');
 const settingsBack = document.getElementById('settings-back');
 const sbCwd = document.getElementById('sb-cwd');
@@ -70,7 +70,12 @@ async function ensureInitialized() {
     initialized = true;
     await Promise.all([refreshProviderInfo(), refreshSessions(), populateModels(), refreshStatusBar(), refreshHistorySidebar()]);
   } catch (e) {
-    providerInfo.textContent = `Error: ${e}`;
+    const msg = String(e);
+    if (msg.includes('timeout') || msg.includes('spawn') || msg.includes('No such file')) {
+      providerInfo.innerHTML = '<span style="color:var(--warning)">Server not running</span> — check Python venv';
+    } else {
+      providerInfo.textContent = `Error: ${msg}`;
+    }
   }
 }
 
@@ -241,7 +246,7 @@ threadMenuBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   threadMenu.hidden = !threadMenu.hidden;
 });
-document.addEventListener('click', () => { threadMenu.hidden = true; accountMenu.hidden = true; });
+document.addEventListener('click', () => { threadMenu.hidden = true; if (accountMenu) accountMenu.hidden = true; });
 threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
   item.addEventListener('click', async () => {
     threadMenu.hidden = true;
@@ -266,31 +271,18 @@ threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
   });
 });
 
-// account menu
-accountBtn.addEventListener('click', async (e) => {
-  e.stopPropagation();
-  accountMenu.hidden = !accountMenu.hidden;
-  if (!accountMenu.hidden) {
-    try {
-      const keys = await rpc('get_api_key_status', {});
-      const el = document.getElementById('api-key-status');
-      if (keys && typeof keys === 'object') {
-        el.innerHTML = Object.entries(keys).map(([k, v]) =>
-          `<div>${v.isSet ? '\u2705' : '\u274c'} ${k}</div>`
-        ).join('');
-      }
-    } catch (_) {}
-    try {
-      const cost = await rpc('get_session_cost', {});
-      document.getElementById('session-cost-display').textContent =
-        cost && cost.totalCost ? `$${cost.totalCost.toFixed(4)}` : '$0.00';
-    } catch (_) {}
-  }
-});
-accountMenu.querySelector('[data-action="settings"]').addEventListener('click', () => {
-  accountMenu.hidden = true;
-  showView('settings');
-});
+// account menu (removed from DOM — guarded)
+if (accountBtn && accountMenu) {
+  accountBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    accountMenu.hidden = !accountMenu.hidden;
+  });
+  const settingsAction = accountMenu.querySelector('[data-action="settings"]');
+  if (settingsAction) settingsAction.addEventListener('click', () => {
+    accountMenu.hidden = true;
+    showView('settings');
+  });
+}
 
 // attach button (file dialog)
 document.getElementById('attach-btn').addEventListener('click', async () => {
@@ -305,6 +297,15 @@ document.getElementById('attach-btn').addEventListener('click', async () => {
       }
     }
   } catch (_) {}
+});
+
+// api key link in sidebar
+document.getElementById('api-key-link').addEventListener('click', () => {
+  showView('settings');
+  setTimeout(() => {
+    const target = document.querySelector('[data-category="API Keys"]');
+    if (target) target.scrollIntoView({ behavior: 'smooth' });
+  }, 100);
 });
 
 // register views

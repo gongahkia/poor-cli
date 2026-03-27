@@ -18,6 +18,7 @@
         <div class="sidebar-nav-item" data-nav="skills">Skills</div>
         <div class="sidebar-nav-item" data-nav="automations">Automations</div>
         <div class="sidebar-nav-item" data-nav="history">History</div>
+        <div class="sidebar-nav-item" data-nav="settings">Settings</div>
       </div>
       <div class="sidebar-section">
         <h3>Sessions</h3>
@@ -37,23 +38,9 @@
           <option value="anthropic">Anthropic</option>
           <option value="ollama">Ollama</option>
         </select>
+        <div id="api-key-link" class="api-key-link">Set API Key</div>
       </div>
-      <div class="sidebar-footer">
-        <button id="account-btn" class="btn btn-sm" title="Settings">&#9881; Settings</button>
-        <div id="account-menu" class="account-menu" hidden>
-          <div class="account-menu-item" data-action="settings">Settings</div>
-          <div class="account-menu-divider"></div>
-          <div class="account-menu-section">
-            <h4>API Keys</h4>
-            <div id="api-key-status"></div>
-          </div>
-          <div class="account-menu-divider"></div>
-          <div class="account-menu-section">
-            <h4>Session Cost</h4>
-            <div id="session-cost-display">--</div>
-          </div>
-        </div>
-      </div>
+      <div class="sidebar-footer" hidden></div>
     </div>
     <div class="main-panel">
       <div id="top-bar" class="top-bar">

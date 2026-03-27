@@ -1,33 +1,128 @@
 /* poor-cli desktop — themes */
-:root, [data-theme="dark"] {
-  --bg-primary: #1a1b26;
-  --bg-secondary: #24283b;
-  --bg-tertiary: #292e42;
-  --text-primary: #c0caf5;
-  --text-secondary: #a9b1d6;
-  --text-muted: #565f89;
-  --accent: #7aa2f7;
-  --accent-hover: #89b4fa;
-  --border: #3b4261;
-  --success: #9ece6a;
-  --error: #f7768e;
-  --warning: #e0af68;
+/* shared fonts */
+:root {
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
-[data-theme="light"] {
-  --bg-primary: #f0f0f3;
-  --bg-secondary: #e4e4e9;
-  --bg-tertiary: #d8d8de;
-  --text-primary: #1a1b26;
-  --text-secondary: #3b3d4a;
-  --text-muted: #7c7f8e;
-  --accent: #4a6cf7;
-  --accent-hover: #3958e0;
-  --border: #c0c1ca;
-  --success: #4d8c2a;
-  --error: #d6344a;
-  --warning: #b8841e;
+/* GitHub Light (default) */
+:root, [data-theme="github-light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eaeef2;
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-muted: #8b949e;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --border: #d0d7de;
+  --success: #1a7f37;
+  --error: #cf222e;
+  --warning: #9a6700;
+}
+/* Quiet Light */
+[data-theme="quiet-light"] {
+  --bg-primary: #f5f5f5;
+  --bg-secondary: #ebebeb;
+  --bg-tertiary: #e0e0e0;
+  --text-primary: #333333;
+  --text-secondary: #555555;
+  --text-muted: #888888;
+  --accent: #4b69c6;
+  --accent-hover: #3a56a5;
+  --border: #cbcbcb;
+  --success: #7a9f37;
+  --error: #c03030;
+  --warning: #c08000;
+}
+/* Solarized Light */
+[data-theme="solarized-light"] {
+  --bg-primary: #fdf6e3;
+  --bg-secondary: #eee8d5;
+  --bg-tertiary: #e4ddc8;
+  --text-primary: #073642;
+  --text-secondary: #586e75;
+  --text-muted: #93a1a1;
+  --accent: #268bd2;
+  --accent-hover: #1a6fa0;
+  --border: #d3cbb7;
+  --success: #859900;
+  --error: #dc322f;
+  --warning: #b58900;
+}
+/* One Dark Pro */
+[data-theme="one-dark"] {
+  --bg-primary: #282c34;
+  --bg-secondary: #21252b;
+  --bg-tertiary: #2c313a;
+  --text-primary: #abb2bf;
+  --text-secondary: #828997;
+  --text-muted: #5c6370;
+  --accent: #61afef;
+  --accent-hover: #528bcc;
+  --border: #3e4452;
+  --success: #98c379;
+  --error: #e06c75;
+  --warning: #e5c07b;
+}
+/* Dracula */
+[data-theme="dracula"] {
+  --bg-primary: #282a36;
+  --bg-secondary: #21222c;
+  --bg-tertiary: #343746;
+  --text-primary: #f8f8f2;
+  --text-secondary: #bfbfbf;
+  --text-muted: #6272a4;
+  --accent: #bd93f9;
+  --accent-hover: #a67ae8;
+  --border: #44475a;
+  --success: #50fa7b;
+  --error: #ff5555;
+  --warning: #f1fa8c;
+}
+/* GitHub Dark */
+[data-theme="github-dark"] {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8d96a0;
+  --text-muted: #484f58;
+  --accent: #58a6ff;
+  --accent-hover: #79c0ff;
+  --border: #30363d;
+  --success: #3fb950;
+  --error: #f85149;
+  --warning: #d29922;
+}
+/* Monokai */
+[data-theme="monokai"] {
+  --bg-primary: #272822;
+  --bg-secondary: #1e1f1c;
+  --bg-tertiary: #3e3d32;
+  --text-primary: #f8f8f2;
+  --text-secondary: #cfcfc2;
+  --text-muted: #75715e;
+  --accent: #66d9ef;
+  --accent-hover: #51b4c5;
+  --border: #49483e;
+  --success: #a6e22e;
+  --error: #f92672;
+  --warning: #e6db74;
+}
+/* Nord */
+[data-theme="nord"] {
+  --bg-primary: #2e3440;
+  --bg-secondary: #3b4252;
+  --bg-tertiary: #434c5e;
+  --text-primary: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted: #616e88;
+  --accent: #88c0d0;
+  --accent-hover: #5e81ac;
+  --border: #4c566a;
+  --success: #a3be8c;
+  --error: #bf616a;
+  --warning: #ebcb8b;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -300,6 +395,8 @@ select {
   margin-top: 4px;
 }
 #provider-info { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.api-key-link { font-size: 12px; color: var(--accent); cursor: pointer; margin-top: 6px; }
+.api-key-link:hover { text-decoration: underline; }
 
 /* session list */
 #session-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
@@ -431,6 +528,37 @@ select {
 .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(16px); background: var(--bg-primary); }
 
+/* api key rows */
+.api-key-row { flex-wrap: wrap; gap: 8px; }
+.api-key-actions { display: flex; align-items: center; gap: 6px; }
+.api-key-input {
+  width: 220px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.api-key-input:focus { border-color: var(--accent); }
+.api-key-input::placeholder { color: var(--text-muted); }
+.api-key-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.api-key-status.set { background: var(--success); }
+.api-key-hint { color: var(--accent); text-decoration: none; font-size: 11px; }
+.api-key-hint:hover { text-decoration: underline; }
+.api-key-remove { color: var(--error); border-color: var(--error); }
+.api-key-remove:hover { background: var(--error); color: var(--bg-primary); }
+
 /* skills & automations */
 .skills-container, .history-container { padding: 24px; overflow-y: auto; flex: 1; }
 .skills-container h2, .history-container h2 { font-size: 18px; margin-bottom: 16px; }
@@ -482,3 +610,37 @@ select {
   text-overflow: ellipsis;
 }
 .history-sidebar-item:hover { background: var(--bg-tertiary); }
+
+/* CRT distortion effect */
+.crt::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+.crt::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.3) 100%);
+  animation: crt-flicker 0.05s infinite alternate;
+}
+@keyframes crt-flicker {
+  0% { opacity: 0.97; }
+  100% { opacity: 1; }
+}
+.crt {
+  text-shadow: 0.5px 0 1px rgba(0,30,255,0.5), -0.5px 0 1px rgba(255,0,80,0.3), 0 0 3px;
+}
+.crt * { animation: none; } /* don't override individual element animations */
+.crt .spinner { animation: spin 0.8s linear infinite; } /* keep spinner */

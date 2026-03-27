@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::State;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -54,14 +54,27 @@ async fn send_rpc_inner(state: &AppState, method: &str, params: Value) -> Result
         "method": method,
         "params": params,
     });
-    let mut msg = serde_json::to_string(&request).map_err(|e| e.to_string())?;
-    msg.push('\n');
-    backend.stdin.write_all(msg.as_bytes()).await.map_err(|e| e.to_string())?;
+    let body = serde_json::to_string(&request).map_err(|e| e.to_string())?;
+    let header = format!("Content-Length: {}\r\n\r\n", body.len()); // LSP-style framing
+    backend.stdin.write_all(header.as_bytes()).await.map_err(|e| e.to_string())?;
+    backend.stdin.write_all(body.as_bytes()).await.map_err(|e| e.to_string())?;
     backend.stdin.flush().await.map_err(|e| e.to_string())?;
-    let mut line = String::new();
-    backend.stdout.read_line(&mut line).await.map_err(|e| e.to_string())?;
-    if line.is_empty() { return Err("backend process died".into()); } // EOF = process crashed
-    let response: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
+    // read Content-Length header from response
+    let mut header_buf = String::new();
+    loop {
+        let mut byte = [0u8; 1];
+        backend.stdout.read_exact(&mut byte).await.map_err(|e| e.to_string())?;
+        header_buf.push(byte[0] as char);
+        if header_buf.ends_with("\r\n\r\n") || header_buf.ends_with("\n\n") { break; }
+        if header_buf.len() > 256 { return Err("malformed response header".into()); }
+    }
+    let content_length: usize = header_buf.lines()
+        .find(|l| l.to_lowercase().starts_with("content-length:"))
+        .and_then(|l| l.split(':').nth(1)?.trim().parse().ok())
+        .ok_or("missing Content-Length in response")?;
+    let mut body_buf = vec![0u8; content_length];
+    backend.stdout.read_exact(&mut body_buf).await.map_err(|e| e.to_string())?;
+    let response: Value = serde_json::from_slice(&body_buf).map_err(|e| e.to_string())?;
     if let Some(error) = response.get("error") {
         return Err(error.to_string());
     }
