@@ -64,6 +64,10 @@
         <div class="workspace-bar-right">
           <div class="workspace-badge" id="wb-git">&#x2387; <span id="wb-git-branch">--</span></div>
           <div class="workspace-badge" id="wb-permission"><span id="wb-permission-mode">--</span></div>
+          <div class="collab-btn" id="wb-collab" hidden>
+            <span id="wb-collab-label">Collab</span>
+            <span id="wb-collab-count" class="collab-count"></span>
+          </div>
           <div class="file-changes-btn" id="wb-file-changes" hidden>
             <span id="wb-fc-count">0</span> files
             <span class="added" id="wb-fc-added">+0</span>
@@ -125,9 +129,46 @@
         <span id="sb-cwd" title="Working directory">Local</span>
         <span id="sb-permission" title="Permission mode">--</span>
         <span id="sb-git" title="Git branch">--</span>
+        <span id="sb-collab" class="sb-collab" hidden></span>
         <span id="sb-spinner" class="spinner" hidden></span>
         <span id="sb-changes" class="file-changes-badge" hidden></span>
       </footer>
+    </div>
+    <div class="collab-panel collapsed" id="collab-panel">
+      <div class="cp-header">
+        <h3 id="cp-title">Collaborate</h3>
+        <span class="cp-close" id="cp-close">&times;</span>
+      </div>
+      <div class="cp-body" id="cp-body">
+        <div id="cp-idle">
+          <div class="cp-section">
+            <h4>Start Session</h4>
+            <div class="cp-preset-btns">
+              <button class="btn btn-sm" data-preset="pairing">Pair</button>
+              <button class="btn btn-sm" data-preset="mob">Mob</button>
+              <button class="btn btn-sm" data-preset="review">Review</button>
+            </div>
+          </div>
+          <div class="cp-section">
+            <h4>Join Session</h4>
+            <input type="text" id="cp-invite-input" placeholder="Paste invite code..." />
+            <button class="btn btn-sm btn-primary" id="cp-join-btn">Join</button>
+          </div>
+        </div>
+        <div id="cp-active" hidden>
+          <div class="cp-section" id="cp-session-info"></div>
+          <div class="cp-section" id="cp-members"></div>
+          <div class="cp-section" id="cp-lobby" hidden></div>
+          <div class="cp-section" id="cp-queue" hidden></div>
+          <div class="cp-section" id="cp-suggestions"></div>
+          <div class="cp-section" id="cp-agenda"></div>
+          <div class="cp-section" id="cp-activity"></div>
+          <div class="cp-section cp-actions">
+            <button class="btn btn-sm" id="cp-invite-btn">Share Invite</button>
+            <button class="btn btn-sm" id="cp-leave-btn">Leave</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="file-changes-panel collapsed" id="file-changes-panel">
       <div class="fcp-header">
@@ -146,6 +187,16 @@
       <div class="modal-actions">
         <button class="btn" id="modal-cancel">Cancel</button>
         <button class="btn btn-primary" id="modal-create">Create</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="invite-modal" hidden>
+    <div class="modal">
+      <h3>Invite Code</h3>
+      <textarea id="invite-code-display" readonly rows="3"></textarea>
+      <div class="modal-actions">
+        <button class="btn" id="invite-modal-close">Close</button>
+        <button class="btn btn-primary" id="invite-modal-copy">Copy</button>
       </div>
     </div>
   </div>

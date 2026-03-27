@@ -304,3 +304,169 @@ pub async fn search_history(state: State<'_, AppState>, term: String, limit: Opt
 pub async fn get_session_cost(state: State<'_, AppState>) -> Result<Value, String> {
     send_rpc(&state, "poor-cli/getSessionCost", json!({})).await
 }
+
+// multiplayer — hosting
+#[tauri::command]
+pub async fn start_host_server(state: State<'_, AppState>, room: Option<String>, preset: Option<String>, lobby: Option<bool>) -> Result<Value, String> {
+    let mut p = json!({});
+    if let Some(r) = room { p["room"] = json!(r); }
+    if let Some(pr) = preset { p["preset"] = json!(pr); }
+    if let Some(l) = lobby { p["lobby"] = json!(l); }
+    send_rpc(&state, "poor-cli/startHostServer", p).await
+}
+#[tauri::command]
+pub async fn stop_host_server(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/stopHostServer", json!({})).await
+}
+#[tauri::command]
+pub async fn get_host_server_status(state: State<'_, AppState>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/getHostServerStatus", json!({})).await
+}
+#[tauri::command]
+pub async fn pair_start(state: State<'_, AppState>, lobby: Option<bool>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/pairStart", json!({"lobby": lobby.unwrap_or(false)})).await
+}
+#[tauri::command]
+pub async fn join_remote_session(state: State<'_, AppState>, invite: String) -> Result<Value, String> {
+    // kill current backend and restart in bridge mode
+    {
+        let mut backend = state.backend.lock().await;
+        *backend = None; // drop existing process
+        *state.initialized.lock().await = false;
+    }
+    let (cmd, args) = find_bridge_command(&invite);
+    let mut cmd_builder = Command::new(&cmd);
+    cmd_builder.args(&args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd_builder.spawn()
+        .map_err(|e| format!("failed to spawn bridge: {e}"))?;
+    let stdin = child.stdin.take().ok_or("failed to capture bridge stdin")?;
+    let stdout = child.stdout.take().ok_or("failed to capture bridge stdout")?;
+    {
+        let mut backend = state.backend.lock().await;
+        *backend = Some(BackendProcess {
+            _child: child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        });
+    }
+    // initialize the bridge connection
+    match send_rpc(&state, "initialize", json!({})).await {
+        Ok(result) => {
+            *state.initialized.lock().await = true;
+            Ok(result)
+        }
+        Err(e) => {
+            *state.backend.lock().await = None;
+            Err(e)
+        }
+    }
+}
+#[tauri::command]
+pub async fn leave_remote_session(state: State<'_, AppState>) -> Result<Value, String> {
+    // kill bridge process and restart normal stdio server
+    {
+        let mut backend = state.backend.lock().await;
+        *backend = None;
+        *state.initialized.lock().await = false;
+    }
+    // respawn normal server (will be re-initialized on next RPC call)
+    Ok(json!({"left": true}))
+}
+
+fn find_bridge_command(invite: &str) -> (String, Vec<String>) {
+    if let Some(root) = find_project_root() {
+        let venv_python = root.join(".venv").join("bin").join("python");
+        if venv_python.exists() {
+            return (venv_python.to_string_lossy().into_owned(), vec!["-m".into(), "poor_cli.server".into(), "--bridge".into(), "--invite".into(), invite.into()]);
+        }
+    }
+    if which_exists("poor-cli-server") {
+        return ("poor-cli-server".into(), vec!["--bridge".into(), "--invite".into(), invite.into()]);
+    }
+    ("python3".into(), vec!["-m".into(), "poor_cli.server".into(), "--bridge".into(), "--invite".into(), invite.into()])
+}
+
+// multiplayer — invites
+#[tauri::command]
+pub async fn rotate_host_token(state: State<'_, AppState>, role: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/rotateHostToken", json!({"role": role, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn revoke_host_token(state: State<'_, AppState>, value: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/revokeHostToken", json!({"value": value, "room": room.unwrap_or_default()})).await
+}
+
+// multiplayer — members
+#[tauri::command]
+pub async fn list_host_members(state: State<'_, AppState>, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listHostMembers", json!({"room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn remove_host_member(state: State<'_, AppState>, connection_id: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/removeHostMember", json!({"connectionId": connection_id, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn set_host_member_role(state: State<'_, AppState>, connection_id: String, role: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setHostMemberRole", json!({"connectionId": connection_id, "role": role, "room": room.unwrap_or_default()})).await
+}
+
+// multiplayer — lobby
+#[tauri::command]
+pub async fn set_host_lobby(state: State<'_, AppState>, enabled: bool, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setHostLobby", json!({"enabled": enabled, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn approve_host_member(state: State<'_, AppState>, connection_id: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/approveHostMember", json!({"connectionId": connection_id, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn deny_host_member(state: State<'_, AppState>, connection_id: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/denyHostMember", json!({"connectionId": connection_id, "room": room.unwrap_or_default()})).await
+}
+
+// multiplayer — driver control
+#[tauri::command]
+pub async fn handoff_host_member(state: State<'_, AppState>, connection_id: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/handoffHostMember", json!({"connectionId": connection_id, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn next_driver(state: State<'_, AppState>, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/nextDriver", json!({"room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn pass_driver(state: State<'_, AppState>, connection_id: Option<String>, display_name: Option<String>, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/passDriver", json!({"connectionId": connection_id.unwrap_or_default(), "displayName": display_name.unwrap_or_default(), "room": room.unwrap_or_default()})).await
+}
+
+// multiplayer — session features
+#[tauri::command]
+pub async fn set_host_preset(state: State<'_, AppState>, preset: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setHostPreset", json!({"preset": preset, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn list_host_activity(state: State<'_, AppState>, room: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listHostActivity", json!({"room": room.unwrap_or_default(), "limit": limit.unwrap_or(20)})).await
+}
+#[tauri::command]
+pub async fn suggest_text(state: State<'_, AppState>, text: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/suggestText", json!({"text": text, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn set_hand_raised(state: State<'_, AppState>, connection_id: String, raised: bool, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setHandRaised", json!({"connectionId": connection_id, "raised": raised, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn add_agenda_item(state: State<'_, AppState>, text: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/addAgendaItem", json!({"text": text, "room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn list_agenda(state: State<'_, AppState>, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listAgenda", json!({"room": room.unwrap_or_default()})).await
+}
+#[tauri::command]
+pub async fn resolve_agenda_item(state: State<'_, AppState>, item_id: String, room: Option<String>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/resolveAgendaItem", json!({"itemId": item_id, "room": room.unwrap_or_default()})).await
+}

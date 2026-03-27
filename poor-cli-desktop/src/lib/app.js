@@ -6,6 +6,7 @@ import { initSettings, applyCustomFonts } from './settings.js';
 import { initSkills } from './skills.js';
 import { initHistory, refreshHistorySidebar } from './history.js';
 import { initFileChangesPanel, updateFileChanges, openFileChangesPanel, toggleFileChangesPanel } from './filechanges.js';
+import { initCollabPanel, toggleCollabPanel, showCollabButton, cleanupCollab } from './multiplayer.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -81,6 +82,7 @@ async function ensureInitialized() {
     for (const [id, key] of Object.entries(storedKeys)) { if (key && envMap[id]) envKeys[envMap[id]] = key; }
     await rpc('initialize_backend', { env_keys: envKeys });
     initialized = true;
+    showCollabButton();
     await Promise.all([refreshProviderInfo(), refreshSessions(), refreshStatusBar(), refreshHistorySidebar()]);
   } catch (e) {
     const msg = String(e);
@@ -287,6 +289,8 @@ modalCreate.addEventListener('click', async () => {
 newSessionModal.addEventListener('click', (e) => { if (e.target === newSessionModal) newSessionModal.hidden = true; });
 // file changes panel toggle
 wbFileChanges.addEventListener('click', toggleFileChangesPanel);
+// collab panel toggle
+document.getElementById('wb-collab').addEventListener('click', toggleCollabPanel);
 
 
 // thread menu
@@ -339,10 +343,12 @@ setInterval(refreshStatusBar, 10000);
 
 // auto-save on unload
 window.addEventListener('beforeunload', () => {
+  cleanupCollab();
   if (initialized) rpc('save_session', {}).catch(() => {});
 });
 
 // auto-init
 applyCustomFonts();
 initFileChangesPanel();
+initCollabPanel();
 ensureInitialized();
