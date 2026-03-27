@@ -34,8 +34,10 @@ The repo currently exposes 63 `sg_*` tools total across 26 official data familie
 - `sg://workflows`
 - `sg://recipes`
 - `sg://runtime`
+- `sg://playbooks`
+- `sg://benchmarks`
 
-Use `sg://recipes` first when the caller has a goal-shaped prompt and you need the fastest honest entrypoint. Use `sg://runtime` when you need auth, timeout, cache, health, or `sg_query` status-contract details without opening the docs.
+Use `sg://recipes` first when the caller has a goal-shaped prompt and you need the fastest honest entrypoint. Use `sg://runtime` when you need auth, timeout, cache, health, or `sg_query` status-contract details without opening the docs. Use `sg://playbooks` when the task is bigger than one prompt and you need the strongest bounded workflow combination for an agent job. Use `sg://benchmarks` when you need adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
 
 ## Preferred Entry Points
 
@@ -187,7 +189,7 @@ sg_singstat_search { "keyword": "Singapore GDP", "format": "json" }
 
 ```text
 sg_query { "query": "Property due diligence for Bedok HDB resale", "mode": "execute" }
-sg_property_brief { "planningArea": "Bedok", "flatType": "4 ROOM", "includeEnvironment": true, "includeTransport": true, "format": "json" }
+sg_property_brief { "planningArea": "Bedok", "flatType": "4 ROOM", "format": "json" }
 sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok", "format": "json" }
 sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM", "format": "json" }
 ```

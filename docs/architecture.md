@@ -17,7 +17,7 @@ The product boundary is:
 - stable direct `sg_*` tools first
 - additive briefs where composition creates clear user value
 - a bounded preferred interface across 17 routed families
-- machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime`
+- machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`
 
 That boundary keeps the repo useful without pretending to solve arbitrary analyst workflows.
 
@@ -101,6 +101,8 @@ Consequence:
 - transport workflows can collapse to `sg_transport_brief`
 - environment workflows can collapse to `sg_environment_brief`
 - HDB rental checks and URA development-charge lookups can route directly with extracted parameters
+- `sg://playbooks` provides bounded workflow entrypoints for common agent-builder jobs without replacing direct-tool composition
+- `sg://benchmarks` publishes latency, cache, freshness, and adoption expectations so runtime behavior stays inspectable
 - comparisons and arbitrary multi-step synthesis remain out of scope
 
 ### 4. Additive brief tools must return bounded artifacts

@@ -148,6 +148,47 @@ describe("brief tools", () => {
     expectMarkdownSections(markdownResult.content[0]?.text ?? "");
   });
 
+  it("treats Live Company as active and preserves exact UEN match confidence", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      {
+        uenNo: "201912345K",
+        classCode: "GB1",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      {
+        uenNo: "201912345K",
+        workhead: "CW01",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      uen: "201912345K",
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect(payload.riskFlags ?? []).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "ENTITY_NOT_ACTIVE" })]),
+    );
+    expect(payload.matchConfidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "ACRA", confidence: "exact", matchedOn: "uen" }),
+        expect.objectContaining({ source: "BCA licensed builders", confidence: "exact", matchedOn: "uenNo" }),
+        expect.objectContaining({ source: "BCA registered contractors", confidence: "exact", matchedOn: "uenNo" }),
+      ]),
+    );
+  });
+
   it("returns the expanded property brief envelope", async () => {
     vi.mocked(lookupPlanningArea).mockResolvedValue([
       { planningArea: "Bedok", region: "East Region" },
@@ -183,6 +224,19 @@ describe("brief tools", () => {
     expect(payload.title).toBe("Property Brief");
     expect(payload.provenance.length).toBeGreaterThanOrEqual(6);
     expect(payload.records["trainAlerts"]).toBeDefined();
+    expect(payload.records["locationResolution"]).toMatchObject({
+      requestedPlanningArea: "Bedok",
+      resolvedPlanningArea: "Bedok",
+      resolvedRegion: "East",
+    });
+    expect(payload.nextChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: "sg_ura_property_transactions",
+          input: expect.objectContaining({ area: "Bedok" }),
+        }),
+      ]),
+    );
 
     const markdownResult = await handlePropertyBrief({
       planningArea: "Bedok",
@@ -238,6 +292,12 @@ describe("brief tools", () => {
     expect(evidenceByLabel.get("Primary banking key")).toBe("total_deposits");
     expect(evidenceByLabel.get("Primary SORA key")).not.toBe("preliminary");
     expect(evidenceByLabel.get("Primary banking key")).not.toBe("preliminary");
+    expect(payload.records["kpis"]).toMatchObject({
+      currency: "USD",
+      interestRate: { metric: "3M SORA", key: "sora_3m", value: 3.2 },
+      banking: { metric: "Total deposits", key: "total_deposits", value: 1000 },
+      singstatEntrypoints: { gdpTableId: "gdp", cpiTableId: "cpi" },
+    });
 
     const markdownResult = await handleMacroBrief({
       currency: "USD",

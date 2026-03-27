@@ -67,15 +67,21 @@ Every profile reads one resource, calls one direct tool, calls one supporting to
 
 ## Integration Example
 
-`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes` plus `sg://runtime`, runs one covered `sg_query` prompt, demonstrates blocked, unsupported, and failed outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters:
+`integration/basic-client.ts` is the recommended app-integration starting point. It connects once, caches `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`, runs one covered `sg_query` prompt, demonstrates blocked, unsupported, and failed outcomes, and then drops to direct `sg_*` tools when the caller has exact parameters:
 
 ```bash
 npx tsx examples/integration/basic-client.ts
 ```
 
+`integration/basic-client.py` is the minimal stdlib-only Python variant for teams evaluating the MCP surface from a non-TypeScript stack:
+
+```bash
+python3 examples/integration/basic-client.py
+```
+
 ## Golden Outputs
 
-`golden-outputs/` contains realistic JSON fixtures for each brief tool plus sg_query completed, blocked, unsupported, and failed outcomes, useful as reference for expected output shapes and contract semantics.
+`golden-outputs/` contains realistic JSON fixtures for each brief tool plus sg_query completed, blocked, unsupported, and failed outcomes, useful as reference for expected output shapes, believable headline fields, and contract semantics.
 
 ## Quick Start
 

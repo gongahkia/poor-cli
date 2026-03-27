@@ -2,7 +2,7 @@
 
 Operational guidance for teams deploying sg-apis-mcp in production.
 
-The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs.
+The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs. Adoption-oriented latency, cache-tier, and credibility expectations for the headline workflows are also exposed through `sg://benchmarks`.
 
 ## Latency Expectations
 

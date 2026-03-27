@@ -27,7 +27,7 @@ The direct tools are the stable low-level contract. Additive briefs are allowed 
 4. Create direct tool definitions in `packages/mcp-server/src/tools/<family>-tools.ts`.
 5. Register the definitions in `packages/mcp-server/src/tools/tool-set.ts` as a `RegisteredToolDefinition[]`.
 6. Update public catalogs in `packages/mcp-server/src/tools/catalog.ts`.
-7. Keep `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime` truthful.
+7. Keep `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` truthful.
 8. Add tests for schemas, clients, tools, routing, and catalog parity.
 9. Update docs and marketplace metadata in the same change.
 10. Keep `scripts/check-docs-parity.mjs` green.

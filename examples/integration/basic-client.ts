@@ -56,6 +56,20 @@ type RuntimeCatalog = Readonly<{
   }>[];
 }>;
 
+type PlaybookCatalogEntry = Readonly<{
+  id?: string;
+  name: string;
+  persona: string;
+  directTools: readonly string[];
+}>;
+
+type BenchmarkCatalog = Readonly<{
+  workflowProfiles?: readonly Readonly<{
+    workflow: string;
+    primaryCacheTier: string;
+  }>[];
+}>;
+
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(currentDir, "..", "..");
 const serverEntry = resolve(root, "packages/mcp-server/dist/index.js");
@@ -153,19 +167,25 @@ const main = async () => {
   try {
     const recipes = await readJsonResource<readonly RecipeCatalogEntry[]>(client, "sg://recipes");
     const runtime = await readJsonResource<RuntimeCatalog>(client, "sg://runtime");
+    const playbooks = await readJsonResource<readonly PlaybookCatalogEntry[]>(client, "sg://playbooks");
+    const benchmarks = await readJsonResource<BenchmarkCatalog>(client, "sg://benchmarks");
     const recipeCache = new Map(recipes.map((recipe) => [recipe.name, recipe]));
     const officeRecipe = recipeCache.get("Social Service Office Near Address");
     const singStatRecipe = recipeCache.get("SingStat Drilldown");
+    const relocationPlaybook = playbooks.find((playbook) => playbook.id === "relocation_neighbourhood_brief");
 
-    if (officeRecipe === undefined || singStatRecipe === undefined) {
+    if (officeRecipe === undefined || singStatRecipe === undefined || relocationPlaybook === undefined) {
       throw new Error("Expected recipe catalog entries were not found.");
     }
 
     console.log(`connected to sg-apis-mcp`);
     console.log(`cached ${recipeCache.size} recipes from sg://recipes`);
+    console.log(`cached ${playbooks.length} playbooks from sg://playbooks`);
     console.log(`runtime statuses: ${(runtime.queryStatusContract ?? []).map((entry) => `${entry.status}:${entry.isError ? "error" : "ok"}`).join(", ")}`);
+    console.log(`benchmark workflows: ${(benchmarks.workflowProfiles ?? []).map((profile) => `${profile.workflow}:${profile.primaryCacheTier}`).join(", ")}`);
     console.log(`office fallback tools: ${officeRecipe.fallbackTools.join(", ")}`);
     console.log(`singstat prompt shape: ${singStatRecipe.prompt}`);
+    console.log(`relocation playbook direct tools: ${relocationPlaybook.directTools.join(", ")}`);
 
     const supportedOutcome = await callQuery(
       client,

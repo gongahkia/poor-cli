@@ -9,6 +9,8 @@ Use the catalog resources before you build prompt routing logic:
 - `sg://workflows`: bounded workflow entrypoints and examples
 - `sg://recipes`: common prompt shapes mapped to the preferred entrypoint and fallback tools
 - `sg://runtime`: auth dependencies, credential-source rules, timeout/cache policy, health coverage, and `sg_query` status semantics
+- `sg://playbooks`: grouped workflow combinations for relocation, diligence, and social-support style agents
+- `sg://benchmarks`: latency, cache-tier, freshness, and credibility expectations for the strongest workflows
 
 If you only read one resource first, read `sg://recipes`.
 
@@ -51,20 +53,20 @@ Expect two important non-success outcomes:
 Build your client around those outcomes:
 
 1. If the status is blocked, ask the user for the missing field shown in the blocker message.
-2. If the status is unsupported, drop to discovery through `sg://recipes`, `sg://workflows`, or direct tool selection.
+2. If the status is unsupported, drop to discovery through `sg://recipes`, `sg://playbooks`, `sg://workflows`, or direct tool selection.
 3. If the status is failed, inspect `failedStep`, surface the suggested action, and retry only after fixing the failing direct-tool input.
 4. If the workflow is completed, continue from the returned `structuredContent` and underlying direct-tool outputs.
 
 ## Recommended Integration Pattern
 
-1. Read `sg://recipes` and `sg://runtime` at startup and cache them in your planner.
+1. Read `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks` at startup and cache them in your planner.
 2. Route covered natural-language prompts to `sg_query`.
 3. Route exact-parameter tasks to direct `sg_*` tools.
 4. Surface blocker messages directly to the caller instead of trying to infer missing data.
 5. Treat `blocked` and `unsupported` as non-error control-flow outcomes; only `failed` is an execution error.
 6. Keep the direct tool names visible in logs and traces so developers can debug routing decisions.
 
-The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts).
+The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts). A minimal stdlib-only Python variant lives in [`examples/integration/basic-client.py`](../examples/integration/basic-client.py).
 
 ## Useful Starter Paths
 
@@ -128,4 +130,4 @@ These complement the property brief with amenity context and the business dossie
 
 ## Practical Rule
 
-If your application needs auditability, use the direct tools. If your application needs onboarding speed for supported Singapore public-data prompts, start with `sg_query` plus `sg://recipes`.
+If your application needs auditability, use the direct tools. If your application needs onboarding speed for supported Singapore public-data prompts, start with `sg_query` plus `sg://recipes`, then use `sg://playbooks` and `sg://benchmarks` to choose the next bounded workflow and the right runtime expectations.
