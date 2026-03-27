@@ -13,8 +13,8 @@ const providerSelect = document.getElementById('provider-select');
 const providerInfo = document.getElementById('provider-info');
 const sessionList = document.getElementById('session-list');
 const newSessionBtn = document.getElementById('new-session-btn');
-const modelSelector = document.getElementById('model-selector');
-const effortToggle = document.getElementById('effort-toggle');
+const modelSelector = document.getElementById('model-selector'); // removed
+const effortToggle = document.getElementById('effort-toggle'); // removed
 const threadTitle = document.getElementById('thread-title');
 const threadMenuBtn = document.getElementById('thread-menu-btn');
 const threadMenu = document.getElementById('thread-menu');
@@ -28,7 +28,6 @@ const sbSpinner = document.getElementById('sb-spinner');
 const sbChanges = document.getElementById('sb-changes');
 
 let initialized = false;
-let currentEffort = 'low';
 let activeSessionId = null;
 
 // helpers
@@ -93,6 +92,7 @@ async function refreshProviderInfo() {
 
 // models
 async function populateModels() {
+  if (!modelSelector) return;
   try {
     const result = await rpc('list_providers', {});
     const providers = result.providers || result;
@@ -219,7 +219,7 @@ providerSelect.addEventListener('change', async () => {
     await refreshProviderInfo();
   } catch (_) {}
 });
-modelSelector.addEventListener('change', async () => {
+if (modelSelector) modelSelector.addEventListener('change', async () => {
   const val = modelSelector.value;
   if (!val) return;
   const [provider, ...modelParts] = val.split(':');
@@ -236,14 +236,6 @@ newSessionBtn.addEventListener('click', async () => {
   } catch (_) {}
 });
 
-// effort toggle
-effortToggle.querySelectorAll('.effort-opt').forEach(opt => {
-  opt.addEventListener('click', () => {
-    effortToggle.querySelectorAll('.effort-opt').forEach(o => o.classList.remove('active'));
-    opt.classList.add('active');
-    currentEffort = opt.dataset.effort;
-  });
-});
 
 // thread menu
 threadMenuBtn.addEventListener('click', (e) => {
@@ -288,20 +280,6 @@ if (accountBtn && accountMenu) {
   });
 }
 
-// attach button (file dialog)
-document.getElementById('attach-btn').addEventListener('click', async () => {
-  try {
-    const dialog = window.__TAURI__?.dialog;
-    if (dialog) {
-      const files = await dialog.open({ multiple: true });
-      if (files) {
-        const paths = Array.isArray(files) ? files : [files];
-        chatInput.value += paths.map(f => `[file: ${f}]`).join(' ');
-        chatInput.focus();
-      }
-    }
-  } catch (_) {}
-});
 
 // register views
 registerView('chat', () => {});
