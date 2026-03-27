@@ -2,9 +2,38 @@
 
 use crate::state::{AppState, BackendProcess};
 use serde_json::{json, Value};
+use std::path::PathBuf;
 use tauri::State;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+
+fn find_project_root() -> Option<PathBuf> { // walk up from cwd looking for pyproject.toml
+    let mut dir = std::env::current_dir().ok()?;
+    for _ in 0..10 {
+        if dir.join("pyproject.toml").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() { break; }
+    }
+    None
+}
+
+fn find_server_command() -> (String, Vec<String>) { // resolve poor-cli-server location
+    if let Some(root) = find_project_root() {
+        let venv_python = root.join(".venv").join("bin").join("python");
+        if venv_python.exists() {
+            return (venv_python.to_string_lossy().into_owned(), vec!["-m".into(), "poor_cli.server".into(), "--stdio".into()]);
+        }
+    }
+    if which_exists("poor-cli-server") {
+        return ("poor-cli-server".into(), vec!["--stdio".into()]);
+    }
+    ("python3".into(), vec!["-m".into(), "poor_cli.server".into(), "--stdio".into()])
+}
+
+fn which_exists(name: &str) -> bool {
+    std::process::Command::new("which").arg(name).output().map(|o| o.status.success()).unwrap_or(false)
+}
 
 async fn send_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
     let mut guard = state.backend.lock().await;
@@ -39,8 +68,9 @@ pub async fn initialize_backend(
     {
         let mut backend = state.backend.lock().await;
         if backend.is_none() {
-            let mut child = Command::new("poor-cli-server")
-                .arg("--stdio")
+            let (cmd, args) = find_server_command();
+            let mut child = Command::new(&cmd)
+                .args(&args)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
