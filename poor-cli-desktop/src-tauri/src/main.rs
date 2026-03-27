@@ -29,6 +29,7 @@ fn main() {
             commands::set_config,
             commands::list_config_options,
             commands::get_api_key_status,
+            commands::set_api_key,
             commands::list_skills,
             commands::list_automations,
             commands::preview_mutation,

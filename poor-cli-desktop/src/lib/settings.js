@@ -111,7 +111,7 @@ function renderApiKeysGroup() {
       if (!val) return;
       stored[def.id] = val;
       localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
-      rpc('set_config', { keyPath: `api_keys.${def.env}`, value: val }).catch(() => {});
+      rpc('set_api_key', { provider: def.id, apiKey: val, persist: true, reloadActiveProvider: true }).catch(() => {});
       input.value = '';
       input.placeholder = '••••••••';
       const dot = row.querySelector('.api-key-status');
@@ -136,7 +136,7 @@ function renderApiKeysGroup() {
 function removeKey(def, row, stored) {
   delete stored[def.id];
   localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
-  rpc('set_config', { keyPath: `api_keys.${def.env}`, value: '' }).catch(() => {});
+  // no backend RPC for key removal yet — only clear local cache
   const dot = row.querySelector('.api-key-status');
   dot.classList.remove('set');
   dot.title = 'No key configured';

@@ -235,6 +235,22 @@ pub async fn get_api_key_status(state: State<'_, AppState>) -> Result<Value, Str
 }
 
 #[tauri::command]
+pub async fn set_api_key(
+    state: State<'_, AppState>,
+    provider: String,
+    api_key: String,
+    persist: Option<bool>,
+    reload_active_provider: Option<bool>,
+) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/setApiKey", json!({
+        "provider": provider,
+        "apiKey": api_key,
+        "persist": persist.unwrap_or(true),
+        "reloadActiveProvider": reload_active_provider.unwrap_or(true),
+    })).await
+}
+
+#[tauri::command]
 pub async fn list_skills(state: State<'_, AppState>) -> Result<Value, String> {
     send_rpc(&state, "poor-cli/listSkills", json!({})).await
 }
