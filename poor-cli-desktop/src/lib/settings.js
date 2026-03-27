@@ -137,7 +137,7 @@ function renderApiKeysGroup() {
 function removeKey(def, row, stored) {
   delete stored[def.id];
   localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
-  // no backend RPC for key removal yet — only clear local cache
+  rpc('set_api_key', { provider: def.id, apiKey: '', persist: true, reloadActiveProvider: true }).catch(() => {});
   const dot = row.querySelector('.api-key-status');
   dot.classList.remove('set');
   dot.title = 'No key configured';
