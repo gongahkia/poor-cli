@@ -217,6 +217,123 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const NON_METRIC_NUMERIC_KEYS = new Set([
+  "preliminary",
+]);
+
+const METRIC_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  sora: "SORA",
+  sora_1m: "1M SORA",
+  sora_3m: "3M SORA",
+  sora_6m: "6M SORA",
+  sor_average: "SOR Average",
+  total_deposits: "Total deposits",
+  total_loans: "Total loans",
+  total_assets: "Total assets",
+  resident_non_bank: "Resident non-bank deposits",
+  resident_deposits: "Resident deposits",
+  dbd_deposit: "DBU deposits",
+};
+
+type MacroDatasetIntent = "gdp" | "cpi";
+
+type DatasetCandidate = Readonly<{
+  id: string;
+  title?: string | undefined;
+  subject?: string | undefined;
+  topic?: string | undefined;
+  frequency?: string | undefined;
+  theme?: string | undefined;
+}>;
+
+const isMeaningfulMetricKey = (key: string): boolean => {
+  return !NON_METRIC_NUMERIC_KEYS.has(key.trim().toLowerCase());
+};
+
+const formatMetricLabel = (key: string): string => {
+  return METRIC_LABEL_OVERRIDES[key] ?? key
+    .split("_")
+    .filter((part) => part !== "")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const getMacroDatasetText = (dataset: DatasetCandidate): Readonly<{
+  title: string;
+  topic: string;
+  subject: string;
+  combined: string;
+}> => {
+  const title = (dataset.title ?? "").toLowerCase();
+  const topic = (dataset.topic ?? "").toLowerCase();
+  const subject = (dataset.subject ?? "").toLowerCase();
+  const combined = [title, topic, subject, (dataset.theme ?? "").toLowerCase()]
+    .filter((part) => part !== "")
+    .join(" ");
+
+  return { title, topic, subject, combined };
+};
+
+const scoreMacroDataset = (
+  dataset: DatasetCandidate,
+  intent: MacroDatasetIntent,
+): number => {
+  const includeTerms = intent === "gdp"
+    ? ["gross domestic product", "gdp", "national accounts"]
+    : ["consumer price index", "cpi", "inflation", "prices"];
+  const excludeTerms = intent === "gdp"
+    ? ["consumer price index", "cpi", "inflation"]
+    : ["gross domestic product", "gdp"];
+  const { title, topic, subject, combined } = getMacroDatasetText(dataset);
+
+  if (excludeTerms.some((term) => combined.includes(term))) {
+    return -1;
+  }
+
+  let score = 0;
+  for (const term of includeTerms) {
+    if (title.includes(term)) {
+      score += 4;
+      continue;
+    }
+    if (topic.includes(term)) {
+      score += 3;
+      continue;
+    }
+    if (subject.includes(term)) {
+      score += 2;
+      continue;
+    }
+    if (combined.includes(term)) {
+      score += 1;
+    }
+  }
+
+  return score;
+};
+
+const rankMacroDatasets = (
+  datasets: readonly DatasetCandidate[] | null | undefined,
+  intent: MacroDatasetIntent,
+): readonly DatasetCandidate[] => {
+  if (!Array.isArray(datasets)) {
+    return [];
+  }
+
+  return datasets
+    .map((dataset) => ({
+      dataset,
+      score: scoreMacroDataset(dataset, intent),
+    }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) =>
+      right.score - left.score
+      || left.dataset.id.localeCompare(right.dataset.id)
+      || (left.dataset.title ?? "").localeCompare(right.dataset.title ?? ""),
+    )
+    .map((candidate) => candidate.dataset);
+};
+
 const findFirstNumericField = (
   record: Readonly<Record<string, unknown>> | undefined,
 ): { key: string; value: number } | null => {
@@ -225,7 +342,7 @@ const findFirstNumericField = (
   }
 
   for (const [key, value] of Object.entries(record)) {
-    if (key === "date") {
+    if (key === "date" || !isMeaningfulMetricKey(key)) {
       continue;
     }
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -849,7 +966,7 @@ const extractNamedMasMetric = (
   if (record === undefined) return null;
   for (const key of preferredKeys) {
     const v = record[key];
-    if (typeof v === "number" && Number.isFinite(v)) return { key, value: v };
+    if (typeof v === "number" && Number.isFinite(v) && isMeaningfulMetricKey(key)) return { key, value: v };
   }
   return findFirstNumericField(record);
 };
@@ -1319,6 +1436,21 @@ export const handleMacroBrief = async (
       gaps,
     ),
   ]);
+  const rankedGdpDatasets = rankMacroDatasets(gdpDatasets, "gdp");
+  const rankedCpiDatasets = rankMacroDatasets(cpiDatasets, "cpi");
+
+  if (Array.isArray(gdpDatasets) && gdpDatasets.length > 0 && rankedGdpDatasets.length === 0) {
+    gaps.push({
+      code: "SINGSTAT_GDP_NO_RELEVANT_DATASET",
+      message: "SingStat GDP search returned datasets, but none matched GDP-specific criteria.",
+    });
+  }
+  if (Array.isArray(cpiDatasets) && cpiDatasets.length > 0 && rankedCpiDatasets.length === 0) {
+    gaps.push({
+      code: "SINGSTAT_CPI_NO_RELEVANT_DATASET",
+      message: "SingStat CPI search returned datasets, but none matched CPI-specific criteria.",
+    });
+  }
 
   const latestExchange = exchangeRates?.[0];
   const latestInterest = interestRates?.[0];
@@ -1331,8 +1463,8 @@ export const handleMacroBrief = async (
   const bankingMetric = extractNamedMasMetric(latestBanking, ["total_deposits", "total_loans", "total_assets", "dbd_deposit"]);
   const fxDelta = computeMasDelta(exchangeRates, exchangeKey);
   const soraDelta = soraMetric !== null ? computeMasDelta(interestRates, soraMetric.key) : null;
-  const gdpTableId = gdpDatasets?.[0]?.id ?? null;
-  const cpiTableId = cpiDatasets?.[0]?.id ?? null;
+  const gdpTableId = rankedGdpDatasets[0]?.id ?? null;
+  const cpiTableId = rankedCpiDatasets[0]?.id ?? null;
   const macroNextChecks = buildMacroNextChecks(gdpTableId, cpiTableId);
 
   const payload: BriefArtifact = {
@@ -1341,20 +1473,20 @@ export const handleMacroBrief = async (
       { label: `${currency}/SGD`, value: typeof exchangeValue === "number" ? exchangeValue : exchangeValue as string | null, source: "MAS" },
       { label: "FX date", value: typeof latestExchange?.["date"] === "string" ? latestExchange["date"] : null, source: "MAS" },
       { label: "FX period delta %", value: fxDelta, source: "MAS" },
-      { label: soraMetric?.key ?? "SORA", value: soraMetric?.value ?? null, source: "MAS" },
+      { label: soraMetric === null ? "SORA" : formatMetricLabel(soraMetric.key), value: soraMetric?.value ?? null, source: "MAS" },
       { label: "SORA period delta %", value: soraDelta, source: "MAS" },
-      { label: bankingMetric?.key ?? "Banking metric", value: bankingMetric?.value ?? null, source: "MAS" },
-      { label: "GDP dataset", value: gdpDatasets?.[0]?.title ?? null, source: "SingStat" },
+      { label: bankingMetric === null ? "Banking metric" : formatMetricLabel(bankingMetric.key), value: bankingMetric?.value ?? null, source: "MAS" },
+      { label: "GDP dataset", value: rankedGdpDatasets[0]?.title ?? null, source: "SingStat" },
       { label: "GDP table ID", value: gdpTableId, source: "SingStat" },
-      { label: "CPI dataset", value: cpiDatasets?.[0]?.title ?? null, source: "SingStat" },
+      { label: "CPI dataset", value: rankedCpiDatasets[0]?.title ?? null, source: "SingStat" },
       { label: "CPI table ID", value: cpiTableId, source: "SingStat" },
     ],
     evidence: [
       { label: "FX rows", value: exchangeRates?.length ?? 0, source: "MAS" },
       { label: "SORA rows", value: interestRates?.length ?? 0, source: "MAS" },
       { label: "Banking rows", value: financialStats?.length ?? 0, source: "MAS" },
-      { label: "GDP candidates", value: gdpDatasets?.length ?? 0, source: "SingStat" },
-      { label: "CPI candidates", value: cpiDatasets?.length ?? 0, source: "SingStat" },
+      { label: "GDP candidates", value: rankedGdpDatasets.length, source: "SingStat" },
+      { label: "CPI candidates", value: rankedCpiDatasets.length, source: "SingStat" },
       { label: "Primary SORA key", value: soraMetric?.key ?? null, source: "MAS" },
       { label: "Primary banking key", value: bankingMetric?.key ?? null, source: "MAS" },
     ],
@@ -1362,8 +1494,8 @@ export const handleMacroBrief = async (
       exchangeRates: exchangeRates ?? [],
       interestRates: interestRates ?? [],
       financialStats: financialStats ?? [],
-      gdpDatasets: gdpDatasets ?? [],
-      cpiDatasets: cpiDatasets ?? [],
+      gdpDatasets: rankedGdpDatasets,
+      cpiDatasets: rankedCpiDatasets,
     },
     gaps,
     provenance: [

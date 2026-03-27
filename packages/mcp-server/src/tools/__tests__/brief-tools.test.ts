@@ -196,26 +196,48 @@ describe("brief tools", () => {
   it("returns the expanded macro brief envelope", async () => {
     vi.mocked(fetchNormalizedMasRecords).mockImplementation(async (dataset) => {
       if (dataset === MasDataset.EXCHANGE_RATES) {
-        return [{ date: "2026-03-26", usd_sgd: 1.35 }] as never;
+        return [
+          { date: "2026-03-26", usd_sgd: 1.35 },
+          { date: "2026-03-25", usd_sgd: 1.34 },
+        ] as never;
       }
       if (dataset === MasDataset.INTEREST_RATES_SORA) {
-        return [{ date: "2026-03-26", sora: 3.2 }] as never;
+        return [
+          { date: "2026-03-26", preliminary: 0, sora_3m: 3.2 },
+          { date: "2026-03-25", preliminary: 0, sora_3m: 3.1 },
+        ] as never;
       }
-      return [{ date: "2026-03-26", resident_deposits: 1000 }] as never;
+      return [
+        { date: "2026-03-26", preliminary: 0, total_deposits: 1000 },
+        { date: "2026-03-25", preliminary: 0, total_deposits: 980 },
+      ] as never;
     });
     vi.mocked(searchSingStatDatasets)
       .mockResolvedValueOnce([{ id: "gdp", title: "Singapore GDP" }] as never)
-      .mockResolvedValueOnce([{ id: "cpi", title: "Singapore CPI" }] as never);
+      .mockResolvedValueOnce([
+        { id: "gdp-wrong", title: "Gross Domestic Product, Year On Year Growth Rate, Quarterly", topic: "Gross Domestic Product (GDP)" },
+        { id: "cpi", title: "Consumer Price Index, All Items, Monthly", topic: "Consumer Price Index (CPI)" },
+      ] as never);
 
     const jsonResult = await handleMacroBrief({
       currency: "USD",
       format: "json",
     });
     const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const summaryByLabel = new Map(payload.summary.map((item) => [item.label, item.value]));
+    const evidenceByLabel = new Map(payload.evidence.map((item) => [item.label, item.value]));
 
     expect(payload.title).toBe("Macro Brief");
     expect(payload.provenance).toHaveLength(4);
     expect(payload.summary.some((item) => item.label === "GDP table ID")).toBe(true);
+    expect(summaryByLabel.get("3M SORA")).toBe(3.2);
+    expect(summaryByLabel.get("Total deposits")).toBe(1000);
+    expect(summaryByLabel.get("CPI table ID")).toBe("cpi");
+    expect(summaryByLabel.get("CPI table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
+    expect(evidenceByLabel.get("Primary SORA key")).toBe("sora_3m");
+    expect(evidenceByLabel.get("Primary banking key")).toBe("total_deposits");
+    expect(evidenceByLabel.get("Primary SORA key")).not.toBe("preliminary");
+    expect(evidenceByLabel.get("Primary banking key")).not.toBe("preliminary");
 
     const markdownResult = await handleMacroBrief({
       currency: "USD",

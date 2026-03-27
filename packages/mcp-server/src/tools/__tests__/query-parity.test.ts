@@ -960,9 +960,24 @@ describe("sg_query parity", () => {
   });
 
   it("matches the direct macro brief handler", async () => {
-    vi.mocked(masQuery).mockResolvedValue([
-      { _id: 1, end_of_day: "2024-01-31", preliminary: "N", usd_sgd: "1.35", sora: "3.56", resident_non_bank: "100" },
-    ]);
+    vi.mocked(masQuery).mockImplementation(async (resourceId) => {
+      if (resourceId === "95932927-c8bc-4e7a-b484-68a66a24edfe") {
+        return [
+          { _id: 1, end_of_day: "2024-01-31", preliminary: "0", usd_sgd: "1.35" },
+          { _id: 2, end_of_day: "2024-01-30", preliminary: "0", usd_sgd: "1.34" },
+        ];
+      }
+      if (resourceId === "9a0bf149-308c-4bd2-832d-76c8e6cb47ed") {
+        return [
+          { _id: 1, end_of_day: "2024-01-31", preliminary: "0", sora_3m: "3.56" },
+          { _id: 2, end_of_day: "2024-01-30", preliminary: "0", sora_3m: "3.51" },
+        ];
+      }
+      return [
+        { _id: 1, end_of_day: "2024-01-31", preliminary: "0", total_deposits: "100" },
+        { _id: 2, end_of_day: "2024-01-30", preliminary: "0", total_deposits: "99" },
+      ];
+    });
     vi.mocked(singstatSearch).mockImplementation(async (keyword) => {
       if (keyword === "Singapore GDP") {
         return [
@@ -971,6 +986,7 @@ describe("sg_query parity", () => {
       }
       if (keyword === "Singapore CPI inflation") {
         return [
+          { id: "M015631", title: "Singapore GDP", theme: "Economy", subject: "National Accounts", topic: "GDP", frequency: "Annual" },
           { id: "M212261", title: "Singapore CPI", theme: "Economy", subject: "Prices", topic: "CPI", frequency: "Monthly" },
         ];
       }
@@ -985,6 +1001,13 @@ describe("sg_query parity", () => {
     ]);
 
     expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
+    const briefPayload = JSON.parse((directResult.content[0] as { text?: string }).text ?? "");
+    const evidenceByLabel = new Map(briefPayload.evidence.map((item: { label: string; value: unknown }) => [item.label, item.value]));
+    const summaryByLabel = new Map(briefPayload.summary.map((item: { label: string; value: unknown }) => [item.label, item.value]));
+    expect(evidenceByLabel.get("Primary SORA key")).toBe("sora_3m");
+    expect(evidenceByLabel.get("Primary banking key")).toBe("total_deposits");
+    expect(summaryByLabel.get("CPI table ID")).toBe("M212261");
+    expect(summaryByLabel.get("CPI table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
   });
 
   it("matches the direct PA community outlets handler", async () => {

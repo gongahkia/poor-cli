@@ -79,6 +79,17 @@ const EXPECTED_TOOL_NAMES = [
 
 const EXPECTED_RESOURCE_URIS = ["sg://apis", "sg://tools", "sg://workflows", "sg://recipes"];
 
+const toValueMap = (items) => {
+  if (!Array.isArray(items)) {
+    return new Map();
+  }
+  return new Map(
+    items
+      .filter((item) => item !== null && typeof item === "object" && "label" in item)
+      .map((item) => [item.label, item.value]),
+  );
+};
+
 const run = (args, cwd = root) => {
   return execFileSync("npm", args, {
     cwd,
@@ -326,6 +337,17 @@ try {
       if (!Array.isArray(macroBriefPayload[key])) {
         throw new Error(`Packaged sg_macro_brief did not include ${key}${formatServerLogs()}`);
       }
+    }
+    const macroSummary = toValueMap(macroBriefPayload.summary);
+    const macroEvidence = toValueMap(macroBriefPayload.evidence);
+    if (macroEvidence.get("Primary SORA key") === "preliminary") {
+      throw new Error(`Packaged sg_macro_brief selected a non-metric SORA field${formatServerLogs()}`);
+    }
+    if (macroEvidence.get("Primary banking key") === "preliminary") {
+      throw new Error(`Packaged sg_macro_brief selected a non-metric banking field${formatServerLogs()}`);
+    }
+    if (macroSummary.get("CPI table ID") === macroSummary.get("GDP table ID")) {
+      throw new Error(`Packaged sg_macro_brief reused the GDP dataset as CPI${formatServerLogs()}`);
     }
 
     const environmentBriefResult = await client.callTool({

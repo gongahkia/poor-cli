@@ -14,10 +14,12 @@ const loadFixture = (apiPath: string): string => {
   }
 };
 
+const loadJsonFixture = (apiPath: string): unknown => {
+  return JSON.parse(loadFixture(apiPath));
+};
+
 const ROUTES: Record<string, string> = {
-  "/singstat/resourceId": "singstat/__tests__/fixtures/search-response.json",
   "/singstat/tabledata/": "singstat/__tests__/fixtures/data-response.json",
-  "/mas/search.json": "mas/__tests__/fixtures/search-response.json",
   "/onemap/common/elastic/search": "onemap/__tests__/fixtures/search-response.json",
   "/onemap/public/revgeocode": "onemap/__tests__/fixtures/reverse-geocode-response.json",
   "/onemap/public/routingsvc/route": "onemap/__tests__/fixtures/route-response.json",
@@ -97,6 +99,12 @@ const DATASTORE_FIXTURES_BY_RESOURCE_ID: Record<string, string> = {
   d_07c63be0f37e6e59c07a4ddc2fd87fcb: "cea/__tests__/fixtures/search-response.json",
 };
 
+const MAS_FIXTURES_BY_RESOURCE_ID: Record<string, string> = {
+  "95932927-c8bc-4e7a-b484-68a66a24edfe": "mas/__tests__/fixtures/search-response.json",
+  "9a0bf149-308c-4bd2-832d-76c8e6cb47ed": "mas/__tests__/fixtures/search-response-sora.json",
+  "5f2b18a8-0883-4e5b-9dc7-990de1383525": "mas/__tests__/fixtures/search-response-banking.json",
+};
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost`);
   const delay = parseInt(url.searchParams.get("delay") ?? "0", 10);
@@ -152,6 +160,44 @@ const server = createServer((req, res) => {
         : DATASTORE_FIXTURES_BY_RESOURCE_ID[resourceId] ?? "hdb/__tests__/fixtures/resale-response.json";
       res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
       res.end(loadFixture(fixture));
+      return;
+    }
+
+    if (url.pathname === "/mas/search.json") {
+      const resourceId = url.searchParams.get("resource_id");
+      const fixture = resourceId === null
+        ? "mas/__tests__/fixtures/search-response.json"
+        : MAS_FIXTURES_BY_RESOURCE_ID[resourceId] ?? "mas/__tests__/fixtures/search-response.json";
+      res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
+      res.end(loadFixture(fixture));
+      return;
+    }
+
+    if (url.pathname === "/singstat/resourceId") {
+      const keyword = (url.searchParams.get("keyword") ?? "").toLowerCase();
+      const fixture = keyword.includes("cpi") || keyword.includes("inflation")
+        ? "singstat/__tests__/fixtures/search-response-cpi.json"
+        : "singstat/__tests__/fixtures/search-response.json";
+      const payload = loadJsonFixture(fixture) as {
+        Data: {
+          records: readonly unknown[];
+          total: number;
+        };
+      };
+      const requestedLimit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
+      const effectiveLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? requestedLimit
+        : payload.Data.records.length;
+      const records = payload.Data.records.slice(0, effectiveLimit);
+      res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
+      res.end(JSON.stringify({
+        ...payload,
+        Data: {
+          ...payload.Data,
+          total: records.length,
+          records,
+        },
+      }));
       return;
     }
 
