@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Seuss.Lang.AST
     ( AppearanceDecl(..)
@@ -13,9 +14,26 @@ module Seuss.Lang.AST
     , MatchDecl(..)
     , MatchPattern(..)
     , Program(..)
+    , pattern Program
     , RepeatDecl(..)
     , RelationshipDecl(..)
     , Stmt(..)
+    , pattern StmtAssign
+    , pattern StmtEntity
+    , pattern StmtExpr
+    , pattern StmtFor
+    , pattern StmtFunction
+    , pattern StmtIf
+    , pattern StmtImport
+    , pattern StmtLet
+    , pattern StmtMatch
+    , pattern StmtRelationship
+    , pattern StmtRepeat
+    , pattern StmtReturn
+    , pattern StmtTimeline
+    , pattern StmtType
+    , pattern StmtWhile
+    , StmtNode(..)
     , TimelineDecl(..)
     , TypeDecl(..)
     , WhileDecl(..)
@@ -23,7 +41,7 @@ module Seuss.Lang.AST
 
 import Data.Map.Strict (Map)
 import Data.Text (Text)
-import Seuss.Model.Types (BinaryOp(..), TypeField(..), Value(..))
+import Seuss.Model.Types (BinaryOp(..), SourceSpan, TypeField(..), Value(..), noSourceSpan)
 
 data Expr
     = ExprValue Value
@@ -148,23 +166,138 @@ data MatchDecl = MatchDecl
     }
     deriving (Eq, Show)
 
-data Stmt
-    = StmtType TypeDecl
-    | StmtTimeline TimelineDecl
-    | StmtEntity EntityDecl
-    | StmtRelationship RelationshipDecl
-    | StmtImport Text
-    | StmtLet LetDecl
-    | StmtFor ForDecl
-    | StmtRepeat RepeatDecl
-    | StmtWhile WhileDecl
-    | StmtFunction FnDecl
-    | StmtIf IfDecl
-    | StmtMatch MatchDecl
-    | StmtReturn (Maybe Expr)
-    | StmtAssign Text Expr
-    | StmtExpr Expr
+data StmtNode
+    = StmtTypeNode TypeDecl
+    | StmtTimelineNode TimelineDecl
+    | StmtEntityNode EntityDecl
+    | StmtRelationshipNode RelationshipDecl
+    | StmtImportNode Text
+    | StmtLetNode LetDecl
+    | StmtForNode ForDecl
+    | StmtRepeatNode RepeatDecl
+    | StmtWhileNode WhileDecl
+    | StmtFunctionNode FnDecl
+    | StmtIfNode IfDecl
+    | StmtMatchNode MatchDecl
+    | StmtReturnNode (Maybe Expr)
+    | StmtAssignNode Text Expr
+    | StmtExprNode Expr
     deriving (Eq, Show)
 
-newtype Program = Program [Stmt]
-    deriving (Eq, Show)
+data Stmt = StmtData
+    { stmtSpan :: SourceSpan
+    , stmtNode :: StmtNode
+    }
+    deriving (Show)
+
+instance Eq Stmt where
+    left == right = stmtNode left == stmtNode right
+
+pattern StmtType :: TypeDecl -> Stmt
+pattern StmtType decl <- StmtData _ (StmtTypeNode decl)
+  where
+    StmtType decl = StmtData noSourceSpan (StmtTypeNode decl)
+
+pattern StmtTimeline :: TimelineDecl -> Stmt
+pattern StmtTimeline decl <- StmtData _ (StmtTimelineNode decl)
+  where
+    StmtTimeline decl = StmtData noSourceSpan (StmtTimelineNode decl)
+
+pattern StmtEntity :: EntityDecl -> Stmt
+pattern StmtEntity decl <- StmtData _ (StmtEntityNode decl)
+  where
+    StmtEntity decl = StmtData noSourceSpan (StmtEntityNode decl)
+
+pattern StmtRelationship :: RelationshipDecl -> Stmt
+pattern StmtRelationship decl <- StmtData _ (StmtRelationshipNode decl)
+  where
+    StmtRelationship decl = StmtData noSourceSpan (StmtRelationshipNode decl)
+
+pattern StmtImport :: Text -> Stmt
+pattern StmtImport pathValue <- StmtData _ (StmtImportNode pathValue)
+  where
+    StmtImport pathValue = StmtData noSourceSpan (StmtImportNode pathValue)
+
+pattern StmtLet :: LetDecl -> Stmt
+pattern StmtLet decl <- StmtData _ (StmtLetNode decl)
+  where
+    StmtLet decl = StmtData noSourceSpan (StmtLetNode decl)
+
+pattern StmtFor :: ForDecl -> Stmt
+pattern StmtFor decl <- StmtData _ (StmtForNode decl)
+  where
+    StmtFor decl = StmtData noSourceSpan (StmtForNode decl)
+
+pattern StmtRepeat :: RepeatDecl -> Stmt
+pattern StmtRepeat decl <- StmtData _ (StmtRepeatNode decl)
+  where
+    StmtRepeat decl = StmtData noSourceSpan (StmtRepeatNode decl)
+
+pattern StmtWhile :: WhileDecl -> Stmt
+pattern StmtWhile decl <- StmtData _ (StmtWhileNode decl)
+  where
+    StmtWhile decl = StmtData noSourceSpan (StmtWhileNode decl)
+
+pattern StmtFunction :: FnDecl -> Stmt
+pattern StmtFunction decl <- StmtData _ (StmtFunctionNode decl)
+  where
+    StmtFunction decl = StmtData noSourceSpan (StmtFunctionNode decl)
+
+pattern StmtIf :: IfDecl -> Stmt
+pattern StmtIf decl <- StmtData _ (StmtIfNode decl)
+  where
+    StmtIf decl = StmtData noSourceSpan (StmtIfNode decl)
+
+pattern StmtMatch :: MatchDecl -> Stmt
+pattern StmtMatch decl <- StmtData _ (StmtMatchNode decl)
+  where
+    StmtMatch decl = StmtData noSourceSpan (StmtMatchNode decl)
+
+pattern StmtReturn :: Maybe Expr -> Stmt
+pattern StmtReturn maybeExpr <- StmtData _ (StmtReturnNode maybeExpr)
+  where
+    StmtReturn maybeExpr = StmtData noSourceSpan (StmtReturnNode maybeExpr)
+
+pattern StmtAssign :: Text -> Expr -> Stmt
+pattern StmtAssign name expr <- StmtData _ (StmtAssignNode name expr)
+  where
+    StmtAssign name expr = StmtData noSourceSpan (StmtAssignNode name expr)
+
+pattern StmtExpr :: Expr -> Stmt
+pattern StmtExpr expr <- StmtData _ (StmtExprNode expr)
+  where
+    StmtExpr expr = StmtData noSourceSpan (StmtExprNode expr)
+
+{-# COMPLETE
+    StmtType,
+    StmtTimeline,
+    StmtEntity,
+    StmtRelationship,
+    StmtImport,
+    StmtLet,
+    StmtFor,
+    StmtRepeat,
+    StmtWhile,
+    StmtFunction,
+    StmtIf,
+    StmtMatch,
+    StmtReturn,
+    StmtAssign,
+    StmtExpr
+    #-}
+
+data Program = ProgramData
+    { programFile :: FilePath
+    , programStatements :: [Stmt]
+    }
+    deriving (Show)
+
+instance Eq Program where
+    left == right = programStatements left == programStatements right
+
+pattern Program :: [Stmt] -> Program
+pattern Program statements <- ProgramData _ statements
+  where
+    Program statements = ProgramData "<unknown>" statements
+
+{-# COMPLETE Program #-}

@@ -335,4 +335,5 @@ diag lineNumber message =
         { diagnosticLevel = DiagnosticError
         , diagnosticSource = "import:csv:line:" <> T.pack (show lineNumber)
         , diagnosticMessage = message
+        , diagnosticSpan = Nothing
         }

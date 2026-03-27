@@ -30,11 +30,11 @@ importJsonLdToSeuss :: Text -> Either [Diagnostic] Text
 importJsonLdToSeuss input =
     case Aeson.eitherDecodeStrict' (TE.encodeUtf8 input) of
         Left err ->
-            Left [Diagnostic DiagnosticError "import:jsonld" (T.pack err)]
+            Left [Diagnostic DiagnosticError "import:jsonld" (T.pack err) Nothing]
         Right value ->
             case extractObjects value of
                 [] ->
-                    Left [Diagnostic DiagnosticError "import:jsonld" "no object records found in JSON-LD input"]
+                    Left [Diagnostic DiagnosticError "import:jsonld" "no object records found in JSON-LD input" Nothing]
                 objects ->
                     let indexedObjects = zip [1 :: Int ..] objects
                         identifierMap = buildIdentifierMap indexedObjects

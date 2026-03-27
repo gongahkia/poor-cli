@@ -18,6 +18,15 @@ validateWorld world =
         , validateRelationships world
         ]
 
+validationDiagnostic :: Maybe SourceSpan -> DiagnosticLevel -> Text -> Diagnostic
+validationDiagnostic sourceSpan level message =
+    Diagnostic
+        { diagnosticLevel = level
+        , diagnosticSource = "validation"
+        , diagnosticMessage = message
+        , diagnosticSpan = sourceSpan
+        }
+
 validateTimelines :: World -> [Diagnostic]
 validateTimelines world =
     concatMap validateTimeline (Map.elems (worldTimelines world))
@@ -28,33 +37,30 @@ validateTimelines world =
             ++ maybe [] (forkMergeDiagnostics "fork_from") (timelineForkFrom timeline)
             ++ maybe [] (forkMergeDiagnostics "merge_into") (timelineMergeInto timeline)
     timelineRefDiagnostics timeline label refName =
-        [ Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "validation"
-            , diagnosticMessage =
-                "timeline "
-                    <> timelineName timeline
-                    <> " references missing "
-                    <> label
-                    <> " timeline "
-                    <> refName
-            }
+        [ validationDiagnostic
+            (timelineSourceSpan timeline)
+            DiagnosticError
+            ( "timeline "
+                <> timelineName timeline
+                <> " references missing "
+                <> label
+                <> " timeline "
+                <> refName
+            )
         | isNothing (findTimeline refName world)
         ]
     forkMergeDiagnostics label (refName, _) =
-        [ Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "validation"
-            , diagnosticMessage = "missing " <> label <> " timeline " <> refName
-            }
+        [ validationDiagnostic
+            Nothing
+            DiagnosticError
+            ("missing " <> label <> " timeline " <> refName)
         | isNothing (findTimeline refName world)
         ]
     timelineBoundsDiagnostics timeline =
-        [ Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "validation"
-            , diagnosticMessage = "timeline " <> timelineName timeline <> " has start after end"
-            }
+        [ validationDiagnostic
+            (timelineSourceSpan timeline)
+            DiagnosticError
+            ("timeline " <> timelineName timeline <> " has start after end")
         | timePointOrdinal (timelineStart timeline) > timePointOrdinal (timelineEnd timeline)
         ]
 validateEntities :: World -> [Diagnostic]
@@ -68,42 +74,39 @@ validateEntities world =
             ++ fieldTypeDiagnostics entity
             ++ concatMap (appearanceDiagnostics entity) (entityAppearances entity)
     typeDiagnostics entity =
-        [ Diagnostic
-            { diagnosticLevel = DiagnosticWarning
-            , diagnosticSource = "validation"
-            , diagnosticMessage = "entity " <> entityName entity <> " uses unknown type " <> entityType entity
-            }
+        [ validationDiagnostic
+            (entitySourceSpan entity)
+            DiagnosticWarning
+            ("entity " <> entityName entity <> " uses unknown type " <> entityType entity)
         | Set.notMember (entityType entity) builtInTypes
         , Map.notMember (entityType entity) definedTypes
         ]
     requiredFieldDiagnostics entity =
-        [ Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "validation"
-            , diagnosticMessage =
-                "entity "
-                    <> entityName entity
-                    <> " is missing required field "
-                    <> typeFieldName fieldDef
-                    <> " for type "
-                    <> entityType entity
-            }
+        [ validationDiagnostic
+            (entitySourceSpan entity)
+            DiagnosticError
+            ( "entity "
+                <> entityName entity
+                <> " is missing required field "
+                <> typeFieldName fieldDef
+                <> " for type "
+                <> entityType entity
+            )
         | fieldDef <- resolvedTypeFields entity
         , not (typeFieldOptional fieldDef)
         , Map.notMember (typeFieldName fieldDef) (entityFields entity)
         ]
     fieldTypeDiagnostics entity =
-        [ Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "validation"
-            , diagnosticMessage =
-                "entity "
-                    <> entityName entity
-                    <> " field "
-                    <> fieldName
-                    <> " does not match declared type "
-                    <> typeFieldType fieldDef
-            }
+        [ validationDiagnostic
+            (entitySourceSpan entity)
+            DiagnosticError
+            ( "entity "
+                <> entityName entity
+                <> " field "
+                <> fieldName
+                <> " does not match declared type "
+                <> typeFieldType fieldDef
+            )
         | fieldDef <- resolvedTypeFields entity
         , let fieldName = typeFieldName fieldDef
         , Just fieldValue <- [Map.lookup fieldName (entityFields entity)]
@@ -120,39 +123,33 @@ validateEntities world =
       where
         referencedTimeline = findTimeline (appearanceTimeline appearance) world
         timelineDiagnostics =
-            [ Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "validation"
-                , diagnosticMessage =
-                    "entity "
-                        <> entityName entity
-                        <> " references missing timeline "
-                        <> appearanceTimeline appearance
-                }
+            [ validationDiagnostic
+                (entitySourceSpan entity)
+                DiagnosticError
+                ( "entity "
+                    <> entityName entity
+                    <> " references missing timeline "
+                    <> appearanceTimeline appearance
+                )
             | isNothing (findTimeline (appearanceTimeline appearance) world)
             ]
         rangeDiagnostics =
-            [ Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "validation"
-                , diagnosticMessage =
-                    "entity "
-                        <> entityName entity
-                        <> " has an appearance range with start after end"
-                }
+            [ validationDiagnostic
+                (entitySourceSpan entity)
+                DiagnosticError
+                ("entity " <> entityName entity <> " has an appearance range with start after end")
             | let rangeValue = appearanceRange appearance
             , timePointOrdinal (rangeStart rangeValue) > timePointOrdinal (rangeEnd rangeValue)
             ]
         timelineBoundsDiagnostics =
-            [ Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "validation"
-                , diagnosticMessage =
-                    "entity "
-                        <> entityName entity
-                        <> " has an appearance outside the bounds of timeline "
-                        <> appearanceTimeline appearance
-                }
+            [ validationDiagnostic
+                (entitySourceSpan entity)
+                DiagnosticError
+                ( "entity "
+                    <> entityName entity
+                    <> " has an appearance outside the bounds of timeline "
+                    <> appearanceTimeline appearance
+                )
             | Just timeline <- [referencedTimeline]
             , let rangeValue = appearanceRange appearance
             , timePointOrdinal (rangeStart rangeValue) < timePointOrdinal (timelineStart timeline)
@@ -169,31 +166,28 @@ validateRelationships world =
             ++ temporalScopeDiagnostics
       where
         sourceDiagnostics =
-            [ Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "validation"
-                , diagnosticMessage = "relationship source not found: " <> relSource relationship
-                }
+            [ validationDiagnostic
+                (relSourceSpan relationship)
+                DiagnosticError
+                ("relationship source not found: " <> relSource relationship)
             | isNothing (findEntity (relSource relationship) world)
             ]
         targetDiagnostics =
-            [ Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "validation"
-                , diagnosticMessage = "relationship target not found: " <> relTarget relationship
-                }
+            [ validationDiagnostic
+                (relSourceSpan relationship)
+                DiagnosticError
+                ("relationship target not found: " <> relTarget relationship)
             | isNothing (findEntity (relTarget relationship) world)
             ]
         temporalScopeDiagnostics =
-            [ Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "validation"
-                , diagnosticMessage =
-                    "relationship temporal scope has start after end: "
-                        <> relSource relationship
-                        <> " -> "
-                        <> relTarget relationship
-                }
+            [ validationDiagnostic
+                (relSourceSpan relationship)
+                DiagnosticError
+                ( "relationship temporal scope has start after end: "
+                    <> relSource relationship
+                    <> " -> "
+                    <> relTarget relationship
+                )
             | Just rangeValue <- [relTemporalScope relationship]
             , timePointOrdinal (rangeStart rangeValue) > timePointOrdinal (rangeEnd rangeValue)
             ]

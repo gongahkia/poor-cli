@@ -7,6 +7,7 @@ module Seuss.Lang.Parser
 
 import Data.Char (isAlphaNum)
 import Data.Functor (($>))
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isJust)
 import Data.Text (Text)
@@ -24,49 +25,69 @@ type Parser = Parsec Void Text
 
 parseProgram :: FilePath -> Text -> Either [Diagnostic] Program
 parseProgram file input =
-    case runParser (between sc eof (Program <$> many statementParser)) file input of
-        Left bundle ->
-            Left
-                [ Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "parser"
-                    , diagnosticMessage = T.pack (errorBundlePretty bundle)
-                    }
-                ]
+    case runParser (between sc eof (ProgramData file <$> many statementParser)) file input of
+        Left bundle -> Left [parserDiagnostic bundle]
         Right program -> Right program
 
 parseStatement :: FilePath -> Text -> Either [Diagnostic] Stmt
 parseStatement file input =
     case runParser (between sc eof statementParser) file input of
-        Left bundle ->
-            Left
-                [ Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "parser"
-                    , diagnosticMessage = T.pack (errorBundlePretty bundle)
-                    }
-                ]
+        Left bundle -> Left [parserDiagnostic bundle]
         Right statement -> Right statement
 
 statementParser :: Parser Stmt
 statementParser =
     choice
-        [ StmtType <$> typeDeclParser
-        , StmtTimeline <$> timelineDeclParser
-        , StmtEntity <$> entityDeclParser
-        , StmtRelationship <$> relationshipDeclParser
-        , StmtImport <$> importStmtParser
-        , StmtLet <$> letDeclParser
-        , StmtFor <$> forDeclParser
-        , StmtRepeat <$> repeatDeclParser
-        , StmtWhile <$> whileDeclParser
-        , StmtFunction <$> fnDeclParser
-        , StmtIf <$> ifDeclParser
-        , StmtMatch <$> matchDeclParser
-        , StmtReturn <$> returnStmtParser
-        , try (uncurry StmtAssign <$> assignStmtParser)
-        , StmtExpr <$> exprStmtParser
+        [ withStatementSpan (StmtTypeNode <$> typeDeclParser)
+        , withStatementSpan (StmtTimelineNode <$> timelineDeclParser)
+        , withStatementSpan (StmtEntityNode <$> entityDeclParser)
+        , withStatementSpan (StmtRelationshipNode <$> relationshipDeclParser)
+        , withStatementSpan (StmtImportNode <$> importStmtParser)
+        , withStatementSpan (StmtLetNode <$> letDeclParser)
+        , withStatementSpan (StmtForNode <$> forDeclParser)
+        , withStatementSpan (StmtRepeatNode <$> repeatDeclParser)
+        , withStatementSpan (StmtWhileNode <$> whileDeclParser)
+        , withStatementSpan (StmtFunctionNode <$> fnDeclParser)
+        , withStatementSpan (StmtIfNode <$> ifDeclParser)
+        , withStatementSpan (StmtMatchNode <$> matchDeclParser)
+        , withStatementSpan (StmtReturnNode <$> returnStmtParser)
+        , withStatementSpan (uncurry StmtAssignNode <$> try assignStmtParser)
+        , withStatementSpan (StmtExprNode <$> exprStmtParser)
         ]
+
+withStatementSpan :: Parser StmtNode -> Parser Stmt
+withStatementSpan parser = do
+    start <- getSourcePos
+    stmtNodeValue <- parser
+    end <- getSourcePos
+    pure (StmtData (sourceSpanFromPositions start end) stmtNodeValue)
+
+parserDiagnostic :: ParseErrorBundle Text Void -> Diagnostic
+parserDiagnostic bundle =
+    Diagnostic
+        { diagnosticLevel = DiagnosticError
+        , diagnosticSource = "parser"
+        , diagnosticMessage = T.pack (errorBundlePretty bundle)
+        , diagnosticSpan = Just (bundleSourceSpan bundle)
+        }
+
+bundleSourceSpan :: ParseErrorBundle Text Void -> SourceSpan
+bundleSourceSpan bundle =
+    sourceSpanFromPositions sourcePos sourcePos
+  where
+    offset = errorOffset (NE.head (bundleErrors bundle))
+    (_, posState) = reachOffset offset (bundlePosState bundle)
+    sourcePos = pstateSourcePos posState
+
+sourceSpanFromPositions :: SourcePos -> SourcePos -> SourceSpan
+sourceSpanFromPositions start end =
+    SourceSpan
+        { spanFile = sourceName start
+        , spanStartLine = unPos (sourceLine start)
+        , spanStartColumn = unPos (sourceColumn start)
+        , spanEndLine = unPos (sourceLine end)
+        , spanEndColumn = max (unPos (sourceColumn end)) (unPos (sourceColumn start) + 1)
+        }
 
 sc :: Parser ()
 sc =

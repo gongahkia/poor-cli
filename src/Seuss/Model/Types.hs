@@ -20,7 +20,9 @@ module Seuss.Model.Types
     , emptyWorld
     , findEntity
     , findTimeline
+    , noSourceSpan
     , renderDiagnostic
+    , SourceSpan(..)
     , timePointFromValue
     , timePointOrdinal
     ) where
@@ -84,11 +86,21 @@ data TypeField = TypeField
     }
     deriving (Eq, Show)
 
+data SourceSpan = SourceSpan
+    { spanFile :: FilePath
+    , spanStartLine :: Int
+    , spanStartColumn :: Int
+    , spanEndLine :: Int
+    , spanEndColumn :: Int
+    }
+    deriving (Eq, Ord, Show)
+
 data TypeDef = TypeDef
     { typeName :: Text
     , typeParent :: Maybe Text
     , typeFields :: [TypeField]
     , typeMeta :: Map Text Value
+    , typeSourceSpan :: Maybe SourceSpan
     }
     deriving (Eq, Show)
 
@@ -101,6 +113,7 @@ data Timeline = Timeline
     , timelineForkFrom :: Maybe (Text, TimePoint)
     , timelineMergeInto :: Maybe (Text, TimePoint)
     , timelineLoopCount :: Maybe Integer
+    , timelineSourceSpan :: Maybe SourceSpan
     }
     deriving (Eq, Show)
 
@@ -115,6 +128,7 @@ data Entity = Entity
     , entityType :: Text
     , entityFields :: Map Text Value
     , entityAppearances :: [Appearance]
+    , entitySourceSpan :: Maybe SourceSpan
     }
     deriving (Eq, Show)
 
@@ -124,6 +138,7 @@ data Relationship = Relationship
     , relTarget :: Text
     , relDirected :: Bool
     , relTemporalScope :: Maybe TimeRange
+    , relSourceSpan :: Maybe SourceSpan
     }
     deriving (Eq, Show)
 
@@ -131,6 +146,7 @@ data FunctionSig = FunctionSig
     { functionName :: Text
     , functionParams :: [(Text, Text)]
     , functionReturnType :: Maybe Text
+    , functionSourceSpan :: Maybe SourceSpan
     }
     deriving (Eq, Show)
 
@@ -143,6 +159,7 @@ data Diagnostic = Diagnostic
     { diagnosticLevel :: DiagnosticLevel
     , diagnosticSource :: Text
     , diagnosticMessage :: Text
+    , diagnosticSpan :: Maybe SourceSpan
     }
     deriving (Eq, Show)
 
@@ -180,6 +197,16 @@ builtInTypes =
         , "faction"
         ]
 
+noSourceSpan :: SourceSpan
+noSourceSpan =
+    SourceSpan
+        { spanFile = "<unknown>"
+        , spanStartLine = 1
+        , spanStartColumn = 1
+        , spanEndLine = 1
+        , spanEndColumn = 1
+        }
+
 findTimeline :: Text -> World -> Maybe Timeline
 findTimeline name = Map.lookup name . worldTimelines
 
@@ -203,11 +230,20 @@ renderDiagnostic diagnostic =
         " "
         [ levelLabel (diagnosticLevel diagnostic) <> ":"
         , diagnosticSource diagnostic <> "-"
+        , maybe "" ((<> "-") . renderSourceSpan) (diagnosticSpan diagnostic)
         , diagnosticMessage diagnostic
         ]
   where
     levelLabel DiagnosticError = "error"
     levelLabel DiagnosticWarning = "warning"
+
+renderSourceSpan :: SourceSpan -> Text
+renderSourceSpan sourceSpan =
+    T.pack (spanFile sourceSpan)
+        <> ":"
+        <> T.pack (show (spanStartLine sourceSpan))
+        <> ":"
+        <> T.pack (show (spanStartColumn sourceSpan))
 
 _unusedTextHelper :: [Text] -> Text
 _unusedTextHelper = T.pack . intercalate ", " . map T.unpack

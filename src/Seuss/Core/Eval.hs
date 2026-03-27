@@ -24,6 +24,7 @@ data EvalState = EvalState
     , evalNextClosureId :: Integer
     , evalFunctionDepth :: Int
     , evalReturnValue :: Maybe Value
+    , evalCurrentSpan :: Maybe SourceSpan
     }
 
 data ClosureDef = ClosureDef
@@ -35,19 +36,29 @@ data ClosureDef = ClosureDef
 maxWhileIterations :: Integer
 maxWhileIterations = 10000
 
+evaluatorDiagnostic :: EvalState -> Text -> Diagnostic
+evaluatorDiagnostic state message =
+    Diagnostic
+        { diagnosticLevel = DiagnosticError
+        , diagnosticSource = "evaluator"
+        , diagnosticMessage = message
+        , diagnosticSpan = evalCurrentSpan state
+        }
+
 evalProgram :: Program -> Either Diagnostic World
-evalProgram (Program statements) =
-    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Set.empty Map.empty Map.empty 0 0 Nothing) statements
+evalProgram (ProgramData _ statements) =
+    evalWorld <$> foldM evalStmt (EvalState emptyWorld Map.empty Set.empty Map.empty Map.empty 0 0 Nothing Nothing) statements
 
 evalStmt :: EvalState -> Stmt -> Either Diagnostic EvalState
-evalStmt state statement =
+evalStmt state (StmtData currentSpan statement) =
     case evalReturnValue state of
         Just _ -> pure state
         Nothing ->
-            case statement of
-                StmtType decl -> do
-                    rejectDuplicate "type" (typeDeclName decl) (worldTypes (evalWorld state))
-                    (state1, metaValues) <- evalExprMap state (typeDeclMeta decl)
+            let scopedState = state{evalCurrentSpan = Just currentSpan}
+             in case statement of
+                StmtTypeNode decl -> do
+                    rejectDuplicate scopedState "type" (typeDeclName decl) (worldTypes (evalWorld scopedState))
+                    (state1, metaValues) <- evalExprMap scopedState (typeDeclMeta decl)
                     let world' =
                             (evalWorld state1)
                                 { worldTypes =
@@ -58,14 +69,15 @@ evalStmt state statement =
                                             , typeParent = typeDeclParent decl
                                             , typeFields = typeDeclFields decl
                                             , typeMeta = metaValues
+                                            , typeSourceSpan = evalCurrentSpan scopedState
                                             }
                                         (worldTypes (evalWorld state1))
                                 }
                     pure state1{evalWorld = world'}
-                StmtTimeline decl -> do
-                    rejectDuplicate "timeline" (timelineDeclName decl) (worldTimelines (evalWorld state))
-                    kindValue <- resolveTimelineKind (timelineDeclName decl) (timelineDeclKind decl)
-                    (state1, startValue) <- exprToTimePoint state (timelineDeclStart decl)
+                StmtTimelineNode decl -> do
+                    rejectDuplicate scopedState "timeline" (timelineDeclName decl) (worldTimelines (evalWorld scopedState))
+                    kindValue <- resolveTimelineKind scopedState (timelineDeclName decl) (timelineDeclKind decl)
+                    (state1, startValue) <- exprToTimePoint scopedState (timelineDeclStart decl)
                     (state2, endValue) <- exprToTimePoint state1 (timelineDeclEnd decl)
                     (state3, loopCountValue) <- evalOptionalInteger state2 (timelineDeclLoopCount decl)
                     (state4, forkValue) <- evalOptionalTimelineRef state3 (timelineDeclForkFrom decl)
@@ -84,13 +96,14 @@ evalStmt state statement =
                                             , timelineForkFrom = forkValue
                                             , timelineMergeInto = mergeValue
                                             , timelineLoopCount = loopCountValue
+                                            , timelineSourceSpan = evalCurrentSpan scopedState
                                             }
                                         (worldTimelines (evalWorld state5))
                                 }
                     pure state5{evalWorld = world'}
-                StmtEntity decl -> do
-                    rejectDuplicate "entity" (entityDeclName decl) (worldEntities (evalWorld state))
-                    (state1, fieldValues) <- evalExprMap state (entityDeclFields decl)
+                StmtEntityNode decl -> do
+                    rejectDuplicate scopedState "entity" (entityDeclName decl) (worldEntities (evalWorld scopedState))
+                    (state1, fieldValues) <- evalExprMap scopedState (entityDeclFields decl)
                     (state2, appearances) <- evalAppearances state1 (entityDeclAppearances decl)
                     let world' =
                             (evalWorld state2)
@@ -102,16 +115,17 @@ evalStmt state statement =
                                             , entityType = maybe "entity" id (entityDeclType decl)
                                             , entityFields = fieldValues
                                             , entityAppearances = appearances
+                                            , entitySourceSpan = evalCurrentSpan scopedState
                                             }
                                         (worldEntities (evalWorld state2))
                                 }
                     pure state2{evalWorld = world'}
-                StmtRelationship decl -> do
+                StmtRelationshipNode decl -> do
                     (state1, scope) <-
                         case relationshipDeclTemporalScope decl of
-                            Nothing -> pure (state, Nothing)
+                            Nothing -> pure (scopedState, Nothing)
                             Just (startExpr, endExpr) -> do
-                                (state', startValue) <- exprToTimePoint state startExpr
+                                (state', startValue) <- exprToTimePoint scopedState startExpr
                                 (state'', endValue) <- exprToTimePoint state' endExpr
                                 pure (state'', Just (TimeRange startValue endValue))
                     let world' =
@@ -124,14 +138,15 @@ evalStmt state statement =
                                                 , relTarget = relationshipDeclTarget decl
                                                 , relDirected = relationshipDeclDirected decl
                                                 , relTemporalScope = scope
+                                                , relSourceSpan = evalCurrentSpan scopedState
                                                 }
                                            ]
                                 }
                     pure state1{evalWorld = world'}
-                StmtImport _ ->
+                StmtImportNode _ ->
                     pure state
-                StmtLet decl -> do
-                    (state1, value) <- evalExpr state (letValue decl)
+                StmtLetNode decl -> do
+                    (state1, value) <- evalExpr scopedState (letValue decl)
                     maybe (pure ()) (assertTypeMatches state1 value) (letTypeAnnotation decl)
                     pure $
                         state1
@@ -141,36 +156,26 @@ evalStmt state statement =
                                     then Set.insert (letName decl) (evalMutableNames state1)
                                     else Set.delete (letName decl) (evalMutableNames state1)
                             }
-                StmtAssign name expr ->
-                    if Map.member name (evalEnv state)
+                StmtAssignNode name expr ->
+                    if Map.member name (evalEnv scopedState)
                         then
-                            if Set.member name (evalMutableNames state)
+                            if Set.member name (evalMutableNames scopedState)
                                 then do
-                                    (state1, value) <- evalExpr state expr
+                                    (state1, value) <- evalExpr scopedState expr
                                     pure state1{evalEnv = Map.insert name value (evalEnv state1)}
                                 else
-                                    Left $
-                                        Diagnostic
-                                            { diagnosticLevel = DiagnosticError
-                                            , diagnosticSource = "evaluator"
-                                            , diagnosticMessage = "cannot assign to immutable variable: " <> name
-                                            }
+                                    Left (evaluatorDiagnostic scopedState ("cannot assign to immutable variable: " <> name))
                         else
-                            Left $
-                                Diagnostic
-                                    { diagnosticLevel = DiagnosticError
-                                    , diagnosticSource = "evaluator"
-                                    , diagnosticMessage = "cannot assign to undefined variable: " <> name
-                                    }
-                StmtFor decl ->
-                    evalForLoop state decl
-                StmtRepeat decl ->
-                    evalRepeatLoop state decl
-                StmtWhile decl ->
-                    evalWhileLoop state decl
-                StmtFunction decl -> do
+                            Left (evaluatorDiagnostic scopedState ("cannot assign to undefined variable: " <> name))
+                StmtForNode decl ->
+                    evalForLoop scopedState decl
+                StmtRepeatNode decl ->
+                    evalRepeatLoop scopedState decl
+                StmtWhileNode decl ->
+                    evalWhileLoop scopedState decl
+                StmtFunctionNode decl -> do
                     let world' =
-                            (evalWorld state)
+                            (evalWorld scopedState)
                                 { worldFunctions =
                                     Map.insert
                                         (fnName decl)
@@ -178,45 +183,35 @@ evalStmt state statement =
                                             { functionName = fnName decl
                                             , functionParams = fnParams decl
                                             , functionReturnType = fnReturnType decl
+                                            , functionSourceSpan = evalCurrentSpan scopedState
                                             }
-                                        (worldFunctions (evalWorld state))
+                                        (worldFunctions (evalWorld scopedState))
                                 }
                     pure
-                        state
+                        scopedState
                             { evalWorld = world'
-                            , evalFunctions = Map.insert (fnName decl) decl (evalFunctions state)
+                            , evalFunctions = Map.insert (fnName decl) decl (evalFunctions scopedState)
                             }
-                StmtIf decl -> do
-                    (state1, conditionValue) <- evalExpr state (ifCondition decl)
+                StmtIfNode decl -> do
+                    (state1, conditionValue) <- evalExpr scopedState (ifCondition decl)
                     case conditionValue of
                         VBool True -> foldM evalStmt state1 (ifThenBlock decl)
                         VBool False -> evalElseBranches state1 (ifElseIfBlocks decl) (ifElseBlock decl)
-                        _ ->
-                            Left $
-                                Diagnostic
-                                    { diagnosticLevel = DiagnosticError
-                                    , diagnosticSource = "evaluator"
-                                    , diagnosticMessage = "if condition must evaluate to a boolean"
-                                    }
-                StmtMatch decl ->
-                    evalMatch state decl
-                StmtReturn maybeExpr ->
-                    if evalFunctionDepth state <= 0
+                        _ -> Left (evaluatorDiagnostic state1 "if condition must evaluate to a boolean")
+                StmtMatchNode decl ->
+                    evalMatch scopedState decl
+                StmtReturnNode maybeExpr ->
+                    if evalFunctionDepth scopedState <= 0
                         then
-                            Left $
-                                Diagnostic
-                                    { diagnosticLevel = DiagnosticError
-                                    , diagnosticSource = "evaluator"
-                                    , diagnosticMessage = "return can only be used inside a function"
-                                    }
+                            Left (evaluatorDiagnostic scopedState "return can only be used inside a function")
                         else do
                             (state1, returnValue) <-
                                 case maybeExpr of
-                                    Nothing -> pure (state, VNull)
-                                    Just expr -> evalExpr state expr
+                                    Nothing -> pure (scopedState, VNull)
+                                    Just expr -> evalExpr scopedState expr
                             pure state1{evalReturnValue = Just returnValue}
-                StmtExpr expr ->
-                    fst <$> evalExpr state expr
+                StmtExprNode expr ->
+                    fst <$> evalExpr scopedState expr
 
 evalExpr :: EvalState -> Expr -> Either Diagnostic (EvalState, Value)
 evalExpr state (ExprValue value) = Right (state, value)
@@ -230,12 +225,7 @@ evalExpr state (ExprIdent name) =
                     case findTimeline name (evalWorld state) of
                         Just _ -> Right (state, VTimelineRef name)
                         Nothing ->
-                            Left $
-                                Diagnostic
-                                    { diagnosticLevel = DiagnosticError
-                                    , diagnosticSource = "evaluator"
-                                    , diagnosticMessage = "unresolved identifier: " <> name
-                                    }
+                            Left (evaluatorDiagnostic state ("unresolved identifier: " <> name))
 evalExpr state (ExprList exprs) = do
     (nextState, values) <- evalExprList state exprs
     pure (nextState, VList values)
@@ -260,23 +250,13 @@ evalExpr state (ExprIndex objectExpr indexExpr) = do
     case indexValue of
         VInt indexInt
             | indexInt < 0 ->
-                Left $
-                    Diagnostic
-                        { diagnosticLevel = DiagnosticError
-                        , diagnosticSource = "evaluator"
-                        , diagnosticMessage = "index must be non-negative"
-                        }
+                Left (evaluatorDiagnostic state2 "index must be non-negative")
             | otherwise ->
                 do
-                    indexedValue <- evalIndex objectValue (fromInteger indexInt)
+                    indexedValue <- evalIndex state2 objectValue (fromInteger indexInt)
                     pure (state2, indexedValue)
         _ ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "index expression must evaluate to an integer"
-                    }
+            Left (evaluatorDiagnostic state2 "index expression must evaluate to an integer")
 evalExpr state (ExprField objectExpr fieldName) = do
     (state1, objectValue) <- evalExpr state objectExpr
     fieldValue <- evalFieldAccess state1 objectValue fieldName
@@ -330,24 +310,20 @@ evalBinary op leftValue rightValue =
                     <> T.pack (show leftValue)
                     <> " and "
                     <> T.pack (show rightValue)
+            , diagnosticSpan = Nothing
             }
 
-evalIndex :: Value -> Int -> Either Diagnostic Value
-evalIndex (VList values) indexValue
+evalIndex :: EvalState -> Value -> Int -> Either Diagnostic Value
+evalIndex _ (VList values) indexValue
     | indexValue < length values = Right (values !! indexValue)
     | otherwise = Left (indexOutOfBounds "list" indexValue (length values))
-evalIndex (VString textValue) indexValue
+evalIndex _ (VString textValue) indexValue
     | indexValue < T.length textValue =
         Right (VString (T.singleton (T.index textValue indexValue)))
     | otherwise =
         Left (indexOutOfBounds "string" indexValue (T.length textValue))
-evalIndex value _ =
-    Left $
-        Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "evaluator"
-            , diagnosticMessage = "cannot index into value " <> T.pack (show value)
-            }
+evalIndex state value _ =
+    Left (evaluatorDiagnostic state ("cannot index into value " <> T.pack (show value)))
 
 indexOutOfBounds :: Text -> Int -> Int -> Diagnostic
 indexOutOfBounds targetName indexValue targetLength =
@@ -361,6 +337,7 @@ indexOutOfBounds targetName indexValue targetLength =
                 <> targetName
                 <> " of length "
                 <> T.pack (show targetLength)
+        , diagnosticSpan = Nothing
         }
 
 evalCall :: EvalState -> Expr -> [Expr] -> Either Diagnostic (EvalState, Value)
@@ -378,14 +355,9 @@ evalCall state (ExprIdent name) argExprs = do
                         Just (VClosureRef closureId) ->
                             callClosure state1 closureId argValues
                         Just _ ->
-                            Left $
-                                Diagnostic
-                                    { diagnosticLevel = DiagnosticError
-                                    , diagnosticSource = "evaluator"
-                                    , diagnosticMessage = "only named functions and closure values are callable in the current implementation"
-                                    }
+                            Left (evaluatorDiagnostic state1 "only named functions and closure values are callable in the current implementation")
                         Nothing ->
-                            undefinedFunction name
+                            undefinedFunction state1 name
 evalCall state calleeExpr argExprs = do
     (state1, calleeValue) <- evalExpr state calleeExpr
     (state2, argValues) <- evalExprList state1 argExprs
@@ -393,29 +365,22 @@ evalCall state calleeExpr argExprs = do
         VClosureRef closureId ->
             callClosure state2 closureId argValues
         _ ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "only named functions and closure values are callable in the current implementation"
-                    }
+            Left (evaluatorDiagnostic state2 "only named functions and closure values are callable in the current implementation")
 
 callNamedFunction :: EvalState -> Text -> FnDecl -> [Value] -> Either Diagnostic (EvalState, Value)
 callNamedFunction state name fnDecl argValues =
     if length argValues /= length (fnParams fnDecl)
         then
             Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage =
-                        "function "
-                            <> name
-                            <> " expected "
-                            <> T.pack (show (length (fnParams fnDecl)))
-                            <> " arguments but got "
-                            <> T.pack (show (length argValues))
-                    }
+                evaluatorDiagnostic
+                    state
+                    ( "function "
+                        <> name
+                        <> " expected "
+                        <> T.pack (show (length (fnParams fnDecl)))
+                        <> " arguments but got "
+                        <> T.pack (show (length argValues))
+                    )
         else do
             traverse_ (uncurry (assertTypeMatches state)) (zip argValues (map snd (fnParams fnDecl)))
             let savedEnv = evalEnv state
@@ -447,25 +412,18 @@ callClosure :: EvalState -> Integer -> [Value] -> Either Diagnostic (EvalState, 
 callClosure state closureId argValues =
     case Map.lookup closureId (evalClosures state) of
         Nothing ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "unknown closure reference: " <> T.pack (show closureId)
-                    }
+            Left (evaluatorDiagnostic state ("unknown closure reference: " <> T.pack (show closureId)))
         Just closureDef ->
             if length argValues /= length (closureParams closureDef)
                 then
                     Left $
-                        Diagnostic
-                            { diagnosticLevel = DiagnosticError
-                            , diagnosticSource = "evaluator"
-                            , diagnosticMessage =
-                                "closure expected "
-                                    <> T.pack (show (length (closureParams closureDef)))
-                                    <> " arguments but got "
-                                    <> T.pack (show (length argValues))
-                            }
+                        evaluatorDiagnostic
+                            state
+                            ( "closure expected "
+                                <> T.pack (show (length (closureParams closureDef)))
+                                <> " arguments but got "
+                                <> T.pack (show (length argValues))
+                            )
                 else do
                     let savedEnv = evalEnv state
                         savedMutableNames = evalMutableNames state
@@ -524,15 +482,13 @@ assertTypeMatches state value expectedType
     | valueMatchesType state value expectedType = pure ()
     | otherwise =
         Left $
-            Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "evaluator"
-                , diagnosticMessage =
-                    "type mismatch: expected "
-                        <> expectedType
-                        <> " but got "
-                        <> renderValueType state value
-                }
+            evaluatorDiagnostic
+                state
+                ( "type mismatch: expected "
+                    <> expectedType
+                    <> " but got "
+                    <> renderValueType state value
+                )
 
 valueMatchesType :: EvalState -> Value -> Text -> Bool
 valueMatchesType _ VNull _ = True
@@ -574,14 +530,9 @@ hasTypeAncestor worldValue currentType expectedType =
                     Nothing -> False
                     Just parentName -> hasTypeAncestor worldValue parentName expectedType
 
-undefinedFunction :: Text -> Either Diagnostic a
-undefinedFunction name =
-    Left $
-        Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "evaluator"
-            , diagnosticMessage = "undefined function: " <> name
-            }
+undefinedFunction :: EvalState -> Text -> Either Diagnostic a
+undefinedFunction state name =
+    Left (evaluatorDiagnostic state ("undefined function: " <> name))
 
 evalFieldAccess :: EvalState -> Value -> Text -> Either Diagnostic Value
 evalFieldAccess state objectValue fieldName =
@@ -602,12 +553,7 @@ evalFieldAccess state objectValue fieldName =
                                 Right
                                 (Map.lookup fieldName (entityFields entity))
                 Nothing ->
-                    Left $
-                        Diagnostic
-                            { diagnosticLevel = DiagnosticError
-                            , diagnosticSource = "evaluator"
-                            , diagnosticMessage = "unknown entity reference: " <> name
-                            }
+                    Left (evaluatorDiagnostic state ("unknown entity reference: " <> name))
         VTimelineRef name ->
             case findTimeline name (evalWorld state) of
                 Just timeline ->
@@ -620,23 +566,16 @@ evalFieldAccess state objectValue fieldName =
                         "loop_count" -> Right (maybe VNull VInt (timelineLoopCount timeline))
                         _ -> unknownField "timeline" fieldName
                 Nothing ->
-                    Left $
-                        Diagnostic
-                            { diagnosticLevel = DiagnosticError
-                            , diagnosticSource = "evaluator"
-                            , diagnosticMessage = "unknown timeline reference: " <> name
-                            }
+                    Left (evaluatorDiagnostic state ("unknown timeline reference: " <> name))
         _ ->
             Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage =
-                        "cannot access field "
-                            <> fieldName
-                            <> " on value "
-                            <> T.pack (show objectValue)
-                    }
+                evaluatorDiagnostic
+                    state
+                    ( "cannot access field "
+                        <> fieldName
+                        <> " on value "
+                        <> T.pack (show objectValue)
+                    )
 
 timelineKindText :: TimelineKind -> Text
 timelineKindText TimelineLinear = "linear"
@@ -655,6 +594,7 @@ unknownField targetKind fieldName =
             { diagnosticLevel = DiagnosticError
             , diagnosticSource = "evaluator"
             , diagnosticMessage = "unknown " <> targetKind <> " field: " <> fieldName
+            , diagnosticSpan = Nothing
             }
 
 lookupTypeMetaValue :: World -> Text -> Text -> Maybe Value
@@ -746,12 +686,7 @@ exprToTimePoint state expr = do
     (nextState, value) <- evalExpr state expr
     case timePointFromValue value of
         Left message ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = message
-                    }
+            Left (evaluatorDiagnostic nextState message)
         Right point -> Right (nextState, point)
 
 exprToInteger :: EvalState -> Expr -> Either Diagnostic (EvalState, Integer)
@@ -760,22 +695,12 @@ exprToInteger state expr = do
     case value of
         VInt intValue -> Right (nextState, intValue)
         _ ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "expected an integer expression"
-                    }
+            Left (evaluatorDiagnostic nextState "expected an integer expression")
 
-rejectDuplicate :: Text -> Text -> Map Text a -> Either Diagnostic ()
-rejectDuplicate kind name entries =
+rejectDuplicate :: EvalState -> Text -> Text -> Map Text a -> Either Diagnostic ()
+rejectDuplicate state kind name entries =
     unless (Map.notMember name entries) $
-        Left $
-            Diagnostic
-                { diagnosticLevel = DiagnosticError
-                , diagnosticSource = "evaluator"
-                , diagnosticMessage = "duplicate " <> kind <> ": " <> name
-                }
+        Left (evaluatorDiagnostic state ("duplicate " <> kind <> ": " <> name))
 
 evalElseBranches :: EvalState -> [(Expr, [Stmt])] -> Maybe [Stmt] -> Either Diagnostic EvalState
 evalElseBranches state [] Nothing = pure state
@@ -785,13 +710,7 @@ evalElseBranches state ((conditionExpr, branchBody) : rest) elseBlock = do
     case conditionValue of
         VBool True -> foldM evalStmt state1 branchBody
         VBool False -> evalElseBranches state1 rest elseBlock
-        _ ->
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "else-if condition must evaluate to a boolean"
-                    }
+        _ -> Left (evaluatorDiagnostic state1 "else-if condition must evaluate to a boolean")
 
 evalMatch :: EvalState -> MatchDecl -> Either Diagnostic EvalState
 evalMatch state decl = do
@@ -872,31 +791,21 @@ restoreBinding :: Maybe Value -> Text -> Map Text Value -> Map Text Value
 restoreBinding Nothing name env = Map.delete name env
 restoreBinding (Just value) name env = Map.insert name value env
 
-resolveTimelineKind :: Text -> Maybe Expr -> Either Diagnostic TimelineKind
-resolveTimelineKind _ Nothing = Right TimelineLinear
-resolveTimelineKind _ (Just (ExprIdent "linear")) = Right TimelineLinear
-resolveTimelineKind _ (Just (ExprIdent "branch")) = Right TimelineBranch
-resolveTimelineKind _ (Just (ExprIdent "parallel")) = Right TimelineParallel
-resolveTimelineKind _ (Just (ExprIdent "loop")) = Right TimelineLoop
-resolveTimelineKind timelineNameValue (Just _) =
-    Left $
-        Diagnostic
-            { diagnosticLevel = DiagnosticError
-            , diagnosticSource = "evaluator"
-            , diagnosticMessage = "invalid timeline kind for " <> timelineNameValue
-            }
+resolveTimelineKind :: EvalState -> Text -> Maybe Expr -> Either Diagnostic TimelineKind
+resolveTimelineKind _ _ Nothing = Right TimelineLinear
+resolveTimelineKind _ _ (Just (ExprIdent "linear")) = Right TimelineLinear
+resolveTimelineKind _ _ (Just (ExprIdent "branch")) = Right TimelineBranch
+resolveTimelineKind _ _ (Just (ExprIdent "parallel")) = Right TimelineParallel
+resolveTimelineKind _ _ (Just (ExprIdent "loop")) = Right TimelineLoop
+resolveTimelineKind state timelineNameValue (Just _) =
+    Left (evaluatorDiagnostic state ("invalid timeline kind for " <> timelineNameValue))
 
 evalRepeatLoop :: EvalState -> RepeatDecl -> Either Diagnostic EvalState
 evalRepeatLoop state decl = do
     (state1, countValue) <- exprToInteger state (repeatCount decl)
     if countValue < 0
         then
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "repeat count must be non-negative"
-                    }
+            Left (evaluatorDiagnostic state1 "repeat count must be non-negative")
         else
             foldM
                 ( \currentState _ ->
@@ -913,12 +822,7 @@ evalWhileLoop = go 0
     go iterations state decl
         | isJust (evalReturnValue state) = pure state
         | iterations >= maxWhileIterations =
-            Left $
-                Diagnostic
-                    { diagnosticLevel = DiagnosticError
-                    , diagnosticSource = "evaluator"
-                    , diagnosticMessage = "while loop exceeded the maximum iteration limit"
-                    }
+            Left (evaluatorDiagnostic state "while loop exceeded the maximum iteration limit")
         | otherwise = do
             (state1, conditionValue) <- evalExpr state (whileCondition decl)
             case conditionValue of
@@ -926,10 +830,4 @@ evalWhileLoop = go 0
                     steppedState <- foldM evalStmt state1 (whileBody decl)
                     go (iterations + 1) steppedState decl
                 VBool False -> pure state
-                _ ->
-                    Left $
-                        Diagnostic
-                            { diagnosticLevel = DiagnosticError
-                            , diagnosticSource = "evaluator"
-                            , diagnosticMessage = "while condition must evaluate to a boolean"
-                            }
+                _ -> Left (evaluatorDiagnostic state1 "while condition must evaluate to a boolean")

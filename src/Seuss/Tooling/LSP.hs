@@ -2,8 +2,10 @@
 
 module Seuss.Tooling.LSP
     ( CompletionItem(..)
+    , diagnosticToLsp
     , getCompletions
     , getDiagnostics
+    , getDocumentCompletions
     , getHoverInfo
     , runLspServer
     ) where
@@ -18,12 +20,15 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import Data.Char (isAlphaNum)
 import Data.IORef
+import Data.List (find)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as Vector
 import Seuss.Core.Eval
 import Seuss.Core.Validation
+import Seuss.Lang.AST
 import Seuss.Lang.Parser
 import Seuss.Model.Types
 import Seuss.Tooling.Syntax
@@ -41,12 +46,35 @@ data LspMessage = LspMessage
     , messageParams :: Maybe Aeson.Value
     }
 
+data Cursor = Cursor
+    { cursorLine :: Int
+    , cursorColumn :: Int
+    }
+    deriving (Eq, Show)
+
 getCompletions :: Text -> [CompletionItem]
 getCompletions prefix =
     [ CompletionItem keyword "keyword"
     | keyword <- syntaxKeywords
     , T.toLower prefix `T.isPrefixOf` T.toLower keyword
     ]
+
+getDocumentCompletions :: FilePath -> Text -> Int -> Int -> [CompletionItem]
+getDocumentCompletions file input lineIndex charIndex =
+    filterCompletionItems prefixValue $
+        dedupeCompletionItems $
+            localCompletionItems
+                ++ globalCompletionItems
+                ++ commonFieldCompletionItems
+                ++ getCompletions prefixValue
+  where
+    prefixValue = prefixAtPosition input lineIndex charIndex
+    cursor = Cursor{cursorLine = lineIndex + 1, cursorColumn = charIndex + 1}
+    (globalCompletionItems, localCompletionItems) =
+        case parseProgram file input of
+            Left _ -> ([], [])
+            Right program ->
+                (collectGlobalCompletions program, collectScopedCompletions cursor (programStatements program))
 
 getDiagnostics :: FilePath -> Text -> [Diagnostic]
 getDiagnostics file input =
@@ -282,13 +310,13 @@ completionResponse documentsRef message = do
     pure $
         case completionContext documents message of
             Nothing -> Aeson.toJSON ([] :: [Aeson.Value])
-            Just prefixValue ->
+            Just (uriValue, sourceText, lineIndex, charIndex) ->
                 Aeson.toJSON
                     [ Aeson.object
                         [ "label" .= completionLabel item
                         , "detail" .= completionDetail item
                         ]
-                    | item <- getCompletions prefixValue
+                    | item <- getDocumentCompletions (uriToFilePath uriValue) sourceText lineIndex charIndex
                     ]
 
 hoverResponse :: IORef (Map.Map Text Text) -> LspMessage -> IO Aeson.Value
@@ -303,7 +331,7 @@ hoverResponse documentsRef message = do
                     (\infoText -> Aeson.object ["contents" .= Aeson.object ["kind" .= ("plaintext" :: Text), "value" .= infoText]])
                     (getHoverInfo (uriToFilePath uriValue) sourceText hoveredWord)
 
-completionContext :: Map.Map Text Text -> LspMessage -> Maybe Text
+completionContext :: Map.Map Text Text -> LspMessage -> Maybe (Text, Text, Int, Int)
 completionContext documents message = do
     paramsObj <- messageParams message >>= asObject
     textDocObj <- lookupObject "textDocument" paramsObj
@@ -312,7 +340,7 @@ completionContext documents message = do
     positionObj <- lookupObject "position" paramsObj
     lineIndex <- lookupInt "line" positionObj
     charIndex <- lookupInt "character" positionObj
-    pure (prefixAtPosition sourceText lineIndex charIndex)
+    pure (uriValue, sourceText, lineIndex, charIndex)
 
 hoverContext :: Map.Map Text Text -> LspMessage -> Maybe (Text, Text, Text)
 hoverContext documents message = do
@@ -349,14 +377,192 @@ diagnosticToLsp :: Diagnostic -> Aeson.Value
 diagnosticToLsp diagnostic =
     Aeson.object
         [ "range"
-            .= Aeson.object
-                [ "start" .= Aeson.object ["line" .= (0 :: Int), "character" .= (0 :: Int)]
-                , "end" .= Aeson.object ["line" .= (0 :: Int), "character" .= (1 :: Int)]
-                ]
+            .= maybe defaultLspRange sourceSpanToLspRange (diagnosticSpan diagnostic)
         , "severity" .= if diagnosticLevel diagnostic == DiagnosticError then (1 :: Int) else (2 :: Int)
         , "source" .= diagnosticSource diagnostic
         , "message" .= diagnosticMessage diagnostic
         ]
+
+defaultLspRange :: Aeson.Value
+defaultLspRange =
+    Aeson.object
+        [ "start" .= lspPosition 0 0
+        , "end" .= lspPosition 0 1
+        ]
+
+sourceSpanToLspRange :: SourceSpan -> Aeson.Value
+sourceSpanToLspRange sourceSpan =
+    Aeson.object
+        [ "start"
+            .= lspPosition
+                (max 0 (spanStartLine sourceSpan - 1))
+                (max 0 (spanStartColumn sourceSpan - 1))
+        , "end"
+            .= lspPosition
+                (max 0 (spanEndLine sourceSpan - 1))
+                (max 0 (spanEndColumn sourceSpan - 1))
+        ]
+
+lspPosition :: Int -> Int -> Aeson.Value
+lspPosition lineIndex charIndex =
+    Aeson.object
+        [ "line" .= lineIndex
+        , "character" .= charIndex
+        ]
+
+collectGlobalCompletions :: Program -> [CompletionItem]
+collectGlobalCompletions program =
+    concatMap globalItemsForStmt (programStatements program)
+
+globalItemsForStmt :: Stmt -> [CompletionItem]
+globalItemsForStmt stmt =
+    case stmtNode stmt of
+        StmtTypeNode decl ->
+            CompletionItem (typeDeclName decl) "type"
+                : [ CompletionItem (typeFieldName fieldDef) "type field"
+                  | fieldDef <- typeDeclFields decl
+                  ]
+        StmtTimelineNode decl -> [CompletionItem (timelineDeclName decl) "timeline"]
+        StmtEntityNode decl -> [CompletionItem (entityDeclName decl) "entity"]
+        StmtFunctionNode decl -> [CompletionItem (fnName decl) "function"]
+        _ -> []
+
+collectScopedCompletions :: Cursor -> [Stmt] -> [CompletionItem]
+collectScopedCompletions cursor = go
+  where
+    go [] = []
+    go (stmt : remaining)
+        | spanStartsAfterCursor cursor (stmtSpan stmt) = []
+        | otherwise =
+            scopedItemsForStmt cursor stmt
+                ++ go remaining
+
+scopedItemsForStmt :: Cursor -> Stmt -> [CompletionItem]
+scopedItemsForStmt cursor stmt =
+    case stmtNode stmt of
+        StmtLetNode decl -> [bindingCompletionItem decl]
+        StmtFunctionNode decl ->
+            functionScopedItems cursor (stmtSpan stmt) decl
+        StmtForNode decl ->
+            nestedBlockItems cursor (forBody decl) [CompletionItem (forVar decl) "loop variable"]
+        StmtRepeatNode decl ->
+            nestedBlockItems cursor (repeatBody decl) []
+        StmtWhileNode decl ->
+            nestedBlockItems cursor (whileBody decl) []
+        StmtIfNode decl ->
+            scopedItemsForBranches cursor (ifThenBlock decl : map snd (ifElseIfBlocks decl) ++ maybe [] pure (ifElseBlock decl))
+        StmtMatchNode decl ->
+            scopedItemsForArms cursor (matchArms decl)
+        _ -> []
+
+functionScopedItems :: Cursor -> SourceSpan -> FnDecl -> [CompletionItem]
+functionScopedItems cursor functionSpan decl
+    | cursorWithinSpan cursor functionSpan =
+        parameterItems
+            ++ nestedBlockItems cursor (fnBody decl) []
+    | otherwise = []
+  where
+    parameterItems =
+        [ CompletionItem paramName "parameter"
+        | (paramName, _) <- fnParams decl
+        ]
+
+scopedItemsForBranches :: Cursor -> [[Stmt]] -> [CompletionItem]
+scopedItemsForBranches cursor branches =
+    maybe [] (collectScopedCompletions cursor) (find (cursorWithinStatements cursor) branches)
+
+scopedItemsForArms :: Cursor -> [MatchArm] -> [CompletionItem]
+scopedItemsForArms cursor arms =
+    maybe [] armScopedItems (find (cursorWithinStatements cursor . matchArmBody) arms)
+  where
+    armScopedItems arm =
+        armBindingItems arm ++ collectScopedCompletions cursor (matchArmBody arm)
+
+armBindingItems :: MatchArm -> [CompletionItem]
+armBindingItems arm =
+    case matchArmPattern arm of
+        MatchPatternBind name -> [CompletionItem name "pattern binding"]
+        _ -> []
+
+nestedBlockItems :: Cursor -> [Stmt] -> [CompletionItem] -> [CompletionItem]
+nestedBlockItems cursor body inheritedItems
+    | cursorWithinStatements cursor body = inheritedItems ++ collectScopedCompletions cursor body
+    | otherwise = []
+
+statementListSpan :: [Stmt] -> Maybe SourceSpan
+statementListSpan [] = Nothing
+statementListSpan (firstStatement : remainingStatements) =
+    Just $
+        SourceSpan
+            { spanFile = spanFile (stmtSpan firstStatement)
+            , spanStartLine = spanStartLine (stmtSpan firstStatement)
+            , spanStartColumn = spanStartColumn (stmtSpan firstStatement)
+            , spanEndLine = spanEndLine (stmtSpan lastStatement)
+            , spanEndColumn = spanEndColumn (stmtSpan lastStatement)
+            }
+  where
+    lastStatement =
+        case reverse remainingStatements of
+            [] -> firstStatement
+            trailingStatement : _ -> trailingStatement
+
+cursorWithinStatements :: Cursor -> [Stmt] -> Bool
+cursorWithinStatements cursor statements =
+    maybe False (cursorWithinSpan cursor) (statementListSpan statements)
+
+cursorWithinSpan :: Cursor -> SourceSpan -> Bool
+cursorWithinSpan cursor sourceSpan =
+    not (cursorBeforeStart cursor sourceSpan) && not (cursorAfterEnd cursor sourceSpan)
+
+cursorBeforeStart :: Cursor -> SourceSpan -> Bool
+cursorBeforeStart cursor sourceSpan =
+    cursorLine cursor < spanStartLine sourceSpan
+        || (cursorLine cursor == spanStartLine sourceSpan && cursorColumn cursor < spanStartColumn sourceSpan)
+
+cursorAfterEnd :: Cursor -> SourceSpan -> Bool
+cursorAfterEnd cursor sourceSpan =
+    cursorLine cursor > spanEndLine sourceSpan
+        || (cursorLine cursor == spanEndLine sourceSpan && cursorColumn cursor > spanEndColumn sourceSpan)
+
+spanStartsAfterCursor :: Cursor -> SourceSpan -> Bool
+spanStartsAfterCursor cursor sourceSpan =
+    spanStartLine sourceSpan > cursorLine cursor
+        || (spanStartLine sourceSpan == cursorLine cursor && spanStartColumn sourceSpan > cursorColumn cursor)
+
+bindingCompletionItem :: LetDecl -> CompletionItem
+bindingCompletionItem decl =
+    CompletionItem
+        (letName decl)
+        (if letMutable decl then "mutable binding" else "binding")
+
+commonFieldCompletionItems :: [CompletionItem]
+commonFieldCompletionItems =
+    [ CompletionItem "appears_on" "field"
+    , CompletionItem "fork_from" "field"
+    , CompletionItem "kind" "field"
+    , CompletionItem "loop_count" "field"
+    , CompletionItem "merge_into" "field"
+    , CompletionItem "name" "field"
+    , CompletionItem "parent" "field"
+    , CompletionItem "start" "field"
+    , CompletionItem "end" "field"
+    , CompletionItem "type" "field"
+    ]
+
+filterCompletionItems :: Text -> [CompletionItem] -> [CompletionItem]
+filterCompletionItems prefixValue =
+    filter matchesPrefix
+  where
+    matchesPrefix item =
+        T.toLower prefixValue `T.isPrefixOf` T.toLower (completionLabel item)
+
+dedupeCompletionItems :: [CompletionItem] -> [CompletionItem]
+dedupeCompletionItems = go Set.empty
+  where
+    go _ [] = []
+    go seen (item : items)
+        | Set.member (completionLabel item) seen = go seen items
+        | otherwise = item : go (Set.insert (completionLabel item) seen) items
 
 extractOpenedDocument :: Aeson.Object -> Maybe (Text, Text)
 extractOpenedDocument paramsObj = do

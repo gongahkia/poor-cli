@@ -48,7 +48,7 @@ importGedcomToSeuss :: Text -> Either [Diagnostic] Text
 importGedcomToSeuss input
     | null persons =
         Left
-            [ Diagnostic DiagnosticError "import:gedcom" "no INDI records found in GEDCOM input"
+            [ Diagnostic DiagnosticError "import:gedcom" "no INDI records found in GEDCOM input" Nothing
             ]
     | otherwise =
         Right $
