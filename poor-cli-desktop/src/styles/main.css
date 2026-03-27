@@ -620,8 +620,8 @@ select {
   pointer-events: none;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 0, 0, 0.15) 0px,
-    rgba(0, 0, 0, 0.15) 1px,
+    rgba(0, 0, 0, 0.04) 0px,
+    rgba(0, 0, 0, 0.04) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -632,15 +632,8 @@ select {
   inset: 0;
   z-index: 9998;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.3) 100%);
-  animation: crt-flicker 0.05s infinite alternate;
-}
-@keyframes crt-flicker {
-  0% { opacity: 0.97; }
-  100% { opacity: 1; }
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.15) 100%);
 }
 .crt {
-  text-shadow: 0.5px 0 1px rgba(0,30,255,0.5), -0.5px 0 1px rgba(255,0,80,0.3), 0 0 3px;
+  text-shadow: 0.3px 0 0.5px rgba(0,30,255,0.2), -0.3px 0 0.5px rgba(255,0,80,0.1);
 }
-.crt * { animation: none; } /* don't override individual element animations */
-.crt .spinner { animation: spin 0.8s linear infinite; } /* keep spinner */

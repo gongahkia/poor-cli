@@ -86,18 +86,22 @@ pub async fn initialize_backend(
     state: State<'_, AppState>,
     provider: Option<String>,
     model: Option<String>,
+    env_keys: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Value, String> {
     // spawn poor-cli-server if not already running
     {
         let mut backend = state.backend.lock().await;
         if backend.is_none() {
             let (cmd, args) = find_server_command();
-            let mut child = Command::new(&cmd)
-                .args(&args)
+            let mut cmd_builder = Command::new(&cmd);
+            cmd_builder.args(&args)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .spawn()
+                .stderr(std::process::Stdio::null());
+            if let Some(ref keys) = env_keys { // pass API keys as env vars
+                for (k, v) in keys { cmd_builder.env(k, v); }
+            }
+            let mut child = cmd_builder.spawn()
                 .map_err(|e| format!("failed to spawn poor-cli-server: {e}"))?;
             let stdin = child.stdin.take().ok_or("failed to capture stdin")?;
             let stdout = child.stdout.take().ok_or("failed to capture stdout")?;

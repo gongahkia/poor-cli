@@ -98,7 +98,7 @@ function renderApiKeysGroup() {
       </div>
       <div class="api-key-actions">
         <input type="password" class="api-key-input" placeholder="${hasKey ? '••••••••' : 'Paste API key...'}" data-id="${def.id}" data-env="${def.env}" />
-        <button class="btn btn-sm api-key-toggle" title="Show/hide">&#128065;</button>
+        <button class="btn btn-sm api-key-toggle" title="Show/hide">Show</button>
         <button class="btn btn-sm btn-primary api-key-save" title="Save">Save</button>
         ${hasKey ? '<button class="btn btn-sm api-key-remove" title="Remove">Remove</button>' : ''}
       </div>`;

@@ -66,7 +66,11 @@ function clearWelcome() {
 async function ensureInitialized() {
   if (initialized) return;
   try {
-    await rpc('initialize_backend', {});
+    const storedKeys = JSON.parse(localStorage.getItem('poor-cli-api-keys') || '{}');
+    const envKeys = {};
+    const envMap = { gemini: 'GEMINI_API_KEY', openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY', ollama: 'OLLAMA_API_KEY', brave: 'BRAVE_SEARCH_API_KEY' };
+    for (const [id, key] of Object.entries(storedKeys)) { if (key && envMap[id]) envKeys[envMap[id]] = key; }
+    await rpc('initialize_backend', { env_keys: envKeys });
     initialized = true;
     await Promise.all([refreshProviderInfo(), refreshSessions(), populateModels(), refreshStatusBar(), refreshHistorySidebar()]);
   } catch (e) {
@@ -297,15 +301,6 @@ document.getElementById('attach-btn').addEventListener('click', async () => {
       }
     }
   } catch (_) {}
-});
-
-// api key link in sidebar
-document.getElementById('api-key-link').addEventListener('click', () => {
-  showView('settings');
-  setTimeout(() => {
-    const target = document.querySelector('[data-category="API Keys"]');
-    if (target) target.scrollIntoView({ behavior: 'smooth' });
-  }, 100);
 });
 
 // register views
