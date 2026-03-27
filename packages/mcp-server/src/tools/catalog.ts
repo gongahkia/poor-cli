@@ -172,6 +172,42 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     ],
   },
   {
+    name: "MSF Family Services",
+    description: "Ministry of Social and Family Development family service centre directory for neighbourhood support discovery.",
+    tools: ["sg_msf_family_services"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Neighbourhood social-support discovery for family service centres.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Backed by the official Family Services GeoJSON dataset on data.gov.sg.",
+    ],
+  },
+  {
+    name: "MSF Student Care Services",
+    description: "Ministry of Social and Family Development student care directory with audit status, SCFA signal, and fee metadata.",
+    tools: ["sg_msf_student_care_services"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Family-focused discovery for student care options and SCFA coverage.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Supports audit-status and SCFA-only filters over the official Student Care Services GeoJSON dataset.",
+    ],
+  },
+  {
+    name: "MSF Social Service Offices",
+    description: "Ministry of Social and Family Development social service office directory for in-person assistance and office lookup.",
+    tools: ["sg_msf_social_service_offices"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Assistance-office discovery for nearby government support locations.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Backed by the official Social Service Offices GeoJSON dataset on data.gov.sg.",
+    ],
+  },
+  {
     name: "GeBIZ",
     description: "Singapore government procurement portal for tender awards and contract data.",
     tools: ["sg_gebiz_tenders"],
@@ -309,9 +345,12 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     name: "Civic Discovery",
-    intent: "Find nearby community outlets, residents' network centres, SportSG facilities, or childcare centres from a postal code, address, planning area, or exact facility name.",
+    intent: "Find nearby family service centres, student care centres, social service offices, community outlets, residents' network centres, SportSG facilities, or childcare centres from a postal code, address, planning area, coordinates, or exact facility name.",
     entrypoints: [
-      { tool: "sg_query", input: { query: "Find a community club near 560123", mode: "execute" } },
+      { tool: "sg_query", input: { query: "Find a family service centre near 560230", mode: "execute" } },
+      { tool: "sg_msf_family_services", input: { postalCode: "560230" } },
+      { tool: "sg_msf_student_care_services", input: { postalCode: "750471", scfaOnly: true } },
+      { tool: "sg_msf_social_service_offices", input: { name: "Social Service Office @ Queenstown" } },
       { tool: "sg_pa_community_outlets", input: { type: "community_club", postalCode: "560123" } },
       { tool: "sg_sportsg_facilities", input: { facilityType: "swimming_complex", postalCode: "560123" } },
       { tool: "sg_ecda_childcare_centres", input: { postalCode: "560123", hasVacancy: true } },
@@ -535,6 +574,61 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     notes: [
       "sg_query geocodes the postal code first, then applies a bounded proximity search.",
       "Use sg_pa_community_outlets directly when you already have latitude and longitude.",
+    ],
+  },
+  {
+    name: "Family Service Near Postal Code",
+    goal: "Find a nearby family service centre from a postal code prompt.",
+    prompt: "Find a family service centre near 560230",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find a family service centre near 560230", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_msf_family_services"],
+    notes: [
+      "sg_query geocodes the postal code first, then applies a bounded proximity search.",
+      "Use sg_msf_family_services directly when you already have latitude and longitude.",
+    ],
+  },
+  {
+    name: "Student Care Near Planning Area",
+    goal: "Find nearby student care centres from a planning-area prompt.",
+    prompt: "Find student care centres near Bedok",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find student care centres near Bedok", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_msf_student_care_services"],
+    notes: [
+      "sg_query resolves the planning area before applying a bounded proximity search.",
+      "Use audit-status and SCFA filters directly when you need stricter student care screening.",
+    ],
+  },
+  {
+    name: "SCFA Student Care Near Planning Area",
+    goal: "Find SCFA student care centres from a planning-area prompt.",
+    prompt: "Find SCFA student care near Tampines",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find SCFA student care near Tampines", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_msf_student_care_services"],
+    notes: [
+      "SCFA or SCFA-approved language maps to the direct tool's scfaOnly filter.",
+      "Combine with audit-status language such as Grade A when you want narrower student care results.",
+    ],
+  },
+  {
+    name: "Social Service Office Near Address",
+    goal: "Find a nearby social service office from an address prompt.",
+    prompt: "Find a social service office near 1 Raffles Place",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Find a social service office near 1 Raffles Place", mode: "execute" },
+    },
+    fallbackTools: ["sg_onemap_geocode", "sg_msf_social_service_offices"],
+    notes: [
+      "Use an exact office name in quotes when you want a direct name lookup instead of a proximity search.",
     ],
   },
   {

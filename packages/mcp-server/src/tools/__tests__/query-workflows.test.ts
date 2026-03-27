@@ -68,6 +68,12 @@ vi.mock("../../apis/ecda/client.js", () => ({
   getEcdaChildcareCentres: vi.fn(),
 }));
 
+vi.mock("../../apis/msf/client.js", () => ({
+  getMsfFamilyServices: vi.fn(),
+  getMsfStudentCareServices: vi.fn(),
+  getMsfSocialServiceOffices: vi.fn(),
+}));
+
 import { query as masQuery } from "../../apis/mas/client.js";
 import { geocode, getPopulationData, getRoute } from "../../apis/onemap/client.js";
 import { searchDatasets as singstatSearch } from "../../apis/singstat/client.js";
@@ -88,6 +94,11 @@ import { getAcraEntities } from "../../apis/acra/client.js";
 import { getPaCommunityOutlets, getPaResidentNetworkCentres } from "../../apis/pa/client.js";
 import { getSportSgFacilities } from "../../apis/sportsg/client.js";
 import { getEcdaChildcareCentres } from "../../apis/ecda/client.js";
+import {
+  getMsfFamilyServices,
+  getMsfSocialServiceOffices,
+  getMsfStudentCareServices,
+} from "../../apis/msf/client.js";
 import { queryToolDefinitions } from "../query-tool.js";
 
 const runQuery = async (input: Readonly<Record<string, unknown>>) => {
@@ -122,6 +133,9 @@ describe("sg_query workflows", () => {
     vi.mocked(getPaResidentNetworkCentres).mockReset();
     vi.mocked(getSportSgFacilities).mockReset();
     vi.mocked(getEcdaChildcareCentres).mockReset();
+    vi.mocked(getMsfFamilyServices).mockReset();
+    vi.mocked(getMsfStudentCareServices).mockReset();
+    vi.mocked(getMsfSocialServiceOffices).mockReset();
   });
 
   it("returns a macro workflow plan without executing steps", async () => {

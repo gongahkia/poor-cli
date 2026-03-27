@@ -218,6 +218,12 @@ const toCivicSearchInput = (
         ...(params["operatorType"] !== undefined ? { operatorType: params["operatorType"] } : {}),
         ...(params["hasVacancy"] !== undefined ? { hasVacancy: params["hasVacancy"] } : {}),
       };
+    case "sg_msf_student_care_services":
+      return {
+        ...common,
+        ...(params["auditStatus"] !== undefined ? { auditStatus: params["auditStatus"] } : {}),
+        ...(params["scfaOnly"] !== undefined ? { scfaOnly: params["scfaOnly"] } : {}),
+      };
     default:
       return common;
   }
@@ -230,7 +236,7 @@ const buildCivicDiscoveryPlan = (
   if (tool === undefined) {
     return buildUnsupportedPlan(
       "sg_query could not determine which civic directory to search.",
-      "Specify whether you want community outlets, residents' network centres, SportSG facilities, or childcare centres.",
+      "Specify whether you want family services, student care, social service offices, community outlets, residents' network centres, SportSG facilities, or childcare centres.",
     );
   }
 
@@ -333,7 +339,7 @@ const buildCivicDiscoveryPlan = (
 
   return buildBlockedPlan(
     "sg_query recognized a civic-discovery request, but it still needs a Singapore postal code, planning area, address, coordinates, or an explicit facility name.",
-    "Try prompts like \"Find a community club near 560123\" or \"Find childcare centres named \\\"MY FIRST SKOOL\\\"\".",
+    "Try prompts like \"Find a family service centre near 560230\" or \"Find a social service office named \\\"Social Service Office @ Queenstown\\\"\".",
   );
 };
 

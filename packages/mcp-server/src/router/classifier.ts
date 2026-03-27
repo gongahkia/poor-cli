@@ -207,7 +207,7 @@ const extractNamedFacility = (query: string): string | null => {
   return extractNamedSubject(query, [
     /\b(?:named|called)\s+(.+?)(?=\s+(?:near|around|by|at|in|with|for)\b|[?.!,]|$)/i,
   ]) ?? (
-    /(community\s+club|passion\s*wave|resident(?:s')?\s*(?:committee|network)|sportsg|sports?\s+facility|child\s*care|childcare|preschool|kindergarten)/i.test(query)
+    /(community\s+club|passion\s*wave|resident(?:s')?\s*(?:committee|network)|sportsg|sports?\s+facility|child\s*care|childcare|preschool|kindergarten|family\s+service\s+cent(?:re|er)|student\s+care|social\s+service\s+office)/i.test(query)
       ? extractQuotedTerm(query)
       : null
   );
@@ -231,7 +231,21 @@ const extractChildcareCentreType = (query: string): string | null => {
   return null;
 };
 
+const extractAuditStatus = (query: string): string | null => {
+  const match = query.match(/\bgrade\s*([abc])\b/i);
+  return match?.[1] === undefined ? null : `Grade ${match[1].toUpperCase()}`;
+};
+
 const detectCivicTool = (query: string): string | null => {
+  if (/\bfamily\s+service\s+cent(?:re|er)s?\b|\bfsc\b/i.test(query)) {
+    return "sg_msf_family_services";
+  }
+  if (/\bstudent\s+care\b|\bscfa\b/i.test(query)) {
+    return "sg_msf_student_care_services";
+  }
+  if (/\bsocial\s+service\s+offices?\b|\bsso\b/i.test(query)) {
+    return "sg_msf_social_service_offices";
+  }
   if (/\bcommunity\s+club\b|\bpassion\s*wave\b/i.test(query)) {
     return "sg_pa_community_outlets";
   }
@@ -411,6 +425,9 @@ const getApiForTool = (tool: string): string => {
   if (tool.startsWith("sg_pa_")) return "pa";
   if (tool.startsWith("sg_sportsg_")) return "sportsg";
   if (tool.startsWith("sg_ecda_")) return "ecda";
+  if (tool === "sg_msf_family_services") return "msf_family_services";
+  if (tool === "sg_msf_student_care_services") return "msf_student_care_services";
+  if (tool === "sg_msf_social_service_offices") return "msf_social_service_offices";
   return "datagov";
 };
 
@@ -518,8 +535,15 @@ export const classifyIntent = (query: string): IntentResult => {
   const centreType = extractChildcareCentreType(query);
   if (centreType !== null) params["centreType"] = centreType;
 
+  const auditStatus = extractAuditStatus(query);
+  if (auditStatus !== null) params["auditStatus"] = auditStatus;
+
   if (/\bvacanc(?:y|ies)|available\s+slots?|openings?\b/i.test(lower)) {
     params["hasVacancy"] = true;
+  }
+
+  if (/\bscfa(?:\s*approved|-approved)?\b/i.test(lower)) {
+    params["scfaOnly"] = true;
   }
 
   if (/\bpassion\s*wave\b/i.test(lower)) {
@@ -1076,6 +1100,44 @@ export const resolveToolInput = (
           ...(params["centreType"] !== undefined ? { centreType: params["centreType"] } : {}),
           ...(params["operatorType"] !== undefined ? { operatorType: params["operatorType"] } : {}),
           ...(params["hasVacancy"] !== undefined ? { hasVacancy: params["hasVacancy"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
+    case "sg_msf_family_services":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
+    case "sg_msf_student_care_services":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
+          ...(params["auditStatus"] !== undefined ? { auditStatus: params["auditStatus"] } : {}),
+          ...(params["scfaOnly"] !== undefined ? { scfaOnly: params["scfaOnly"] } : {}),
+          ...(params["lat"] !== undefined && params["lng"] !== undefined
+            ? { lat: params["lat"], lng: params["lng"] }
+            : {}),
+          ...(params["radiusKm"] !== undefined ? { radiusKm: params["radiusKm"] } : {}),
+        },
+      };
+    case "sg_msf_social_service_offices":
+      return {
+        tool,
+        input: {
+          ...(params["name"] !== undefined ? { name: params["name"] } : {}),
+          ...(params["postalCode"] !== undefined ? { postalCode: params["postalCode"] } : {}),
           ...(params["lat"] !== undefined && params["lng"] !== undefined
             ? { lat: params["lat"], lng: params["lng"] }
             : {}),

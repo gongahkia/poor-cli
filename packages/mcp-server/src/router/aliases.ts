@@ -94,6 +94,11 @@ const ALIAS_MAP: Readonly<Record<string, string>> = {
   childcare: "sg_ecda_childcare_centres",
   preschool: "sg_ecda_childcare_centres",
   kindergarten: "sg_ecda_childcare_centres",
+  "family service centre": "sg_msf_family_services",
+  "family service centers": "sg_msf_family_services",
+  "student care": "sg_msf_student_care_services",
+  scfa: "sg_msf_student_care_services",
+  "social service office": "sg_msf_social_service_offices",
   sportsg: "sg_sportsg_facilities",
   "sports facility": "sg_sportsg_facilities",
 };

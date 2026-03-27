@@ -55,6 +55,11 @@ import { handleGeBIZTenders } from "./gebiz-tools.js";
 import { handleHawkerCentres } from "./hawker-tools.js";
 import { handleMoeSchools } from "./moe-tools.js";
 import { handleMohFacilities } from "./moh-tools.js";
+import {
+  handleMsfFamilyServices,
+  handleMsfSocialServiceOffices,
+  handleMsfStudentCareServices,
+} from "./msf-tools.js";
 import { handleSfaEstablishments } from "./sfa-tools.js";
 import { handleNParks } from "./nparks-tools.js";
 import { handlePubWaterLevels } from "./pub-tools.js";
@@ -196,6 +201,12 @@ const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {
     handleSportSgFacilities(params as Parameters<typeof handleSportSgFacilities>[0]),
   sg_ecda_childcare_centres: async (params) =>
     handleEcdaChildcareCentres(params as Parameters<typeof handleEcdaChildcareCentres>[0]),
+  sg_msf_family_services: async (params) =>
+    handleMsfFamilyServices(params as Parameters<typeof handleMsfFamilyServices>[0]),
+  sg_msf_student_care_services: async (params) =>
+    handleMsfStudentCareServices(params as Parameters<typeof handleMsfStudentCareServices>[0]),
+  sg_msf_social_service_offices: async (params) =>
+    handleMsfSocialServiceOffices(params as Parameters<typeof handleMsfSocialServiceOffices>[0]),
   sg_lta_bus_arrivals: async (params) =>
     handleLtaBusArrivals(params as Parameters<typeof handleLtaBusArrivals>[0]),
   sg_lta_train_alerts: async (params) =>
@@ -254,6 +265,9 @@ const FORMAT_CAPABLE_TOOLS = new Set([
   "sg_pa_resident_network_centres",
   "sg_sportsg_facilities",
   "sg_ecda_childcare_centres",
+  "sg_msf_family_services",
+  "sg_msf_student_care_services",
+  "sg_msf_social_service_offices",
   "sg_lta_bus_arrivals",
   "sg_lta_train_alerts",
   "sg_lta_traffic_incidents",

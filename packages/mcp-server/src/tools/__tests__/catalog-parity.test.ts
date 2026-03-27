@@ -62,8 +62,8 @@ describe("tool catalog parity", () => {
   });
 
   it("tracks the expected post-tranche public surface counts", () => {
-    expect(API_CATALOG).toHaveLength(23);
-    expect(TOOL_CATALOG).toHaveLength(60);
+    expect(API_CATALOG).toHaveLength(26);
+    expect(TOOL_CATALOG).toHaveLength(63);
   });
 
   it("keeps the business-diligence tool families visible in catalog resources", () => {
@@ -99,6 +99,21 @@ describe("tool catalog parity", () => {
           tools: ["sg_ecda_childcare_centres"],
           preferredInterface: "sg_query",
         }),
+        expect.objectContaining({
+          name: "MSF Family Services",
+          tools: ["sg_msf_family_services"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "MSF Student Care Services",
+          tools: ["sg_msf_student_care_services"],
+          preferredInterface: "sg_query",
+        }),
+        expect.objectContaining({
+          name: "MSF Social Service Offices",
+          tools: ["sg_msf_social_service_offices"],
+          preferredInterface: "sg_query",
+        }),
       ]),
     );
     expect(TOOL_CATALOG).toEqual(
@@ -111,6 +126,9 @@ describe("tool catalog parity", () => {
         expect.objectContaining({ name: "sg_pa_resident_network_centres", surface: "canonical" }),
         expect.objectContaining({ name: "sg_sportsg_facilities", surface: "canonical" }),
         expect.objectContaining({ name: "sg_ecda_childcare_centres", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_msf_family_services", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_msf_student_care_services", surface: "canonical" }),
+        expect.objectContaining({ name: "sg_msf_social_service_offices", surface: "canonical" }),
         expect.objectContaining({ name: "sg_business_dossier", surface: "canonical" }),
         expect.objectContaining({ name: "sg_property_brief", surface: "canonical" }),
         expect.objectContaining({ name: "sg_macro_brief", surface: "canonical" }),
