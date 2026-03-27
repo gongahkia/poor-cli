@@ -1,5 +1,5 @@
-/* poor-cli desktop — dark theme */
-:root {
+/* poor-cli desktop — themes */
+:root, [data-theme="dark"] {
   --bg-primary: #1a1b26;
   --bg-secondary: #24283b;
   --bg-tertiary: #292e42;
@@ -14,6 +14,20 @@
   --warning: #e0af68;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+[data-theme="light"] {
+  --bg-primary: #f0f0f3;
+  --bg-secondary: #e4e4e9;
+  --bg-tertiary: #d8d8de;
+  --text-primary: #1a1b26;
+  --text-secondary: #3b3d4a;
+  --text-muted: #7c7f8e;
+  --accent: #4a6cf7;
+  --accent-hover: #3958e0;
+  --border: #c0c1ca;
+  --success: #4d8c2a;
+  --error: #d6344a;
+  --warning: #b8841e;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {

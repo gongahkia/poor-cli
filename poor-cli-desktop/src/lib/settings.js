@@ -53,16 +53,11 @@ export async function initSettings() {
     });
     sidebar.appendChild(el);
   }
-  // fetch options, fall back to defaults if backend unavailable
-  let options;
-  try {
-    const result = await rpc('list_config_options', {});
-    options = result.options || result || [];
-    if (!options.length) options = defaultOptions;
-  } catch (_) {
-    options = defaultOptions;
-  }
-  renderOptions(content, options);
+  renderOptions(content, defaultOptions); // render defaults immediately
+  rpc('list_config_options', {}).then(result => { // update from backend if available
+    const options = result.options || result || [];
+    if (options.length) renderOptions(content, options);
+  }).catch(() => {});
 }
 
 function renderOptions(container, options) {
@@ -105,6 +100,7 @@ function renderOptions(container, options) {
         });
         sel.addEventListener('change', () => {
           rpc('set_config', { keyPath: opt.path, value: sel.value }).catch(() => {});
+          if (opt.path === 'ui.theme') document.documentElement.setAttribute('data-theme', sel.value);
         });
         row.appendChild(sel);
       } else {
