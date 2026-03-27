@@ -28,7 +28,7 @@ const defaultOptions = [ // fallback when backend unavailable
   { path: 'ui.crt_effect', value: false, isBoolean: true },
   { path: 'ui.stream', value: true, isBoolean: true },
   { path: 'ui.markdown', value: true, isBoolean: true },
-  { path: 'model.default_provider', value: '', choices: ['gemini', 'openai', 'anthropic', 'ollama'] },
+  { path: 'model.default_provider', value: 'openai', choices: ['gemini', 'openai', 'anthropic', 'ollama'] },
   { path: 'model.temperature', value: 0.7 },
   { path: 'model.max_tokens', value: 4096 },
   { path: 'security.require_approval', value: true, isBoolean: true },

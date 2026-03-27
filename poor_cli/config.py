@@ -40,8 +40,8 @@ class ProviderConfig:
 @dataclass
 class ModelConfig:
     """Configuration for AI model settings"""
-    provider: str = "gemini"  # Active provider: gemini, openai, anthropic, ollama
-    model_name: str = field(default_factory=lambda: default_model_for_provider("gemini"))
+    provider: str = "openai"  # Active provider: gemini, openai, anthropic, ollama
+    model_name: str = field(default_factory=lambda: default_model_for_provider("openai"))
     routing_mode: str = "manual"
     temperature: float = 0.7
     max_tokens: Optional[int] = None
