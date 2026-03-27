@@ -108,30 +108,68 @@ const buildContinuationHints = (_plan: Extract<QueryPlan, { supported: true }>, 
   if (lastStep === undefined) return hints;
   const structured = lastStep.structuredOutput;
   if (isRecord(structured)) {
-    const record = structured["record"] ?? structured["records"];
-    if (isRecord(record)) {
-      // extract table IDs from SingStat
-      for (const key of ["gdpDatasets", "cpiDatasets"]) {
-        const datasets = record[key];
-        if (Array.isArray(datasets) && datasets.length > 0) {
-          const first = datasets[0] as Readonly<Record<string, unknown>> | undefined;
-          const tableId = first?.["id"];
-          if (typeof tableId === "string") hints.push(`Call sg_singstat_table with tableId "${tableId}" for detailed data.`);
+    const artifact = isRecord(structured["record"])
+      ? structured["record"]
+      : undefined;
+    if (artifact !== undefined) {
+      const nextChecks = artifact["nextChecks"];
+      if (Array.isArray(nextChecks)) {
+        for (const check of nextChecks) {
+          if (!isRecord(check) || typeof check["tool"] !== "string") {
+            continue;
+          }
+          const input = isRecord(check["input"]) ? check["input"] : {};
+          hints.push(`Call ${check["tool"]} with ${JSON.stringify(input)} next.`);
         }
       }
-      // extract planning area for deeper property
-      const pa = record["planningArea"];
-      if (Array.isArray(pa) && pa.length > 0) {
-        const first = pa[0] as Readonly<Record<string, unknown>> | undefined;
-        const area = first?.["planningArea"];
-        if (typeof area === "string") hints.push(`Call sg_ura_dev_charges with planningArea "${area}" for development charge context.`);
+    }
+
+    const record = structured["record"] ?? structured["records"];
+    if (isRecord(record)) {
+      const kpis = isRecord(record["kpis"]) ? record["kpis"] : undefined;
+      const singstatEntrypoints = kpis !== undefined && isRecord(kpis["singstatEntrypoints"])
+        ? kpis["singstatEntrypoints"]
+        : undefined;
+      for (const key of ["gdpTableId", "cpiTableId"]) {
+        const tableId = singstatEntrypoints?.[key];
+        if (typeof tableId === "string" && tableId.trim() !== "") {
+          hints.push(`Call sg_singstat_table with tableId "${tableId}" for detailed data.`);
+        }
+      }
+
+      const locationResolution = isRecord(record["locationResolution"])
+        ? record["locationResolution"]
+        : undefined;
+      const resolvedArea = locationResolution?.["resolvedPlanningArea"];
+      if (typeof resolvedArea === "string" && resolvedArea.trim() !== "") {
+        hints.push(`Call sg_ura_dev_charges with planningArea "${resolvedArea}" for development charge context.`);
+      }
+
+      const datasetId = record["datasetId"];
+      if (typeof datasetId === "string" && datasetId.trim() !== "") {
+        hints.push(`Call sg_datagov_resources with datasetId "${datasetId}" to inspect the current resource shape.`);
       }
     }
   }
-  if (hints.length === 0) {
-    hints.push(`Use sg://recipes to discover related workflows.`);
+
+  if (_plan.workflow === "civic_discovery") {
+    hints.push("Use exact quoted names when you want a direct civic-directory lookup instead of proximity search.");
   }
-  return hints;
+
+  if (_plan.workflow === "transport_brief" || _plan.workflow === "environment_brief") {
+    hints.push("Use sg://benchmarks to set refresh cadence and alert expectations for live operational workflows.");
+  }
+
+  if (_plan.workflow === "business_dossier" || _plan.workflow === "property_brief") {
+    hints.push("Use sg://playbooks when you need the next bounded workflow after the initial brief artifact.");
+  }
+
+  const dedupedHints = Array.from(new Set(hints)).slice(0, 4);
+  if (dedupedHints.length === 0) {
+    return ["Use sg://recipes or sg://playbooks to discover the next bounded workflow."];
+  }
+
+  return dedupedHints;
 };
 
 const TOOL_EXECUTORS: Readonly<Record<string, ToolExecutor>> = {

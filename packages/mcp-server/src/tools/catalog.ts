@@ -51,6 +51,18 @@ export type RecipeCatalogEntry = {
   readonly outputShapeNotes?: readonly string[];
 };
 
+export type PlaybookCatalogEntry = {
+  readonly id?: string;
+  readonly name: string;
+  readonly persona: string;
+  readonly jobsToBeDone: readonly string[];
+  readonly recommendedResources: readonly string[];
+  readonly primaryWorkflows: readonly string[];
+  readonly starterPrompts: readonly string[];
+  readonly directTools: readonly string[];
+  readonly notes: readonly string[];
+};
+
 export type RuntimeCatalog = {
   readonly authDependencies: readonly {
     readonly api: string;
@@ -1168,10 +1180,176 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
   ],
 };
 
+export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
+  {
+    id: "relocation_neighbourhood_brief",
+    name: "Relocation And Neighbourhood Brief",
+    persona: "relocation assistant or property-search agent",
+    jobsToBeDone: [
+      "Resolve a postal code or planning area into a Singapore neighbourhood context.",
+      "Combine HDB, transport, school, childcare, healthcare, community, and park signals without inventing a recommendation score.",
+      "Keep the final artifact auditable by preserving direct-tool fallbacks for each family.",
+    ],
+    recommendedResources: ["sg://recipes", "sg://runtime", "sg://benchmarks"],
+    primaryWorkflows: ["Property And Regulatory Due Diligence", "Civic Discovery", "Transport Status", "Environment Snapshot"],
+    starterPrompts: [
+      "Property due diligence for Bedok HDB resale",
+      "Find childcare centres near Bedok with vacancies",
+      "Find a community club near 560123",
+      "Transport status in Singapore right now",
+    ],
+    directTools: [
+      "sg_hdb_resale_prices",
+      "sg_onemap_geocode",
+      "sg_ecda_childcare_centres",
+      "sg_moe_schools",
+      "sg_moh_facilities",
+      "sg_pa_community_outlets",
+      "sg_sportsg_facilities",
+      "sg_nparks_parks",
+      "sg_lta_bus_arrivals",
+    ],
+    notes: [
+      "Start from sg_query when the user has a neighbourhood goal, then drop to direct tools once identifiers are known.",
+      "Treat transport and environment as bounded context, not hidden scoring inputs.",
+    ],
+  },
+  {
+    id: "business_opportunity_scan",
+    name: "Business Opportunity Scan",
+    persona: "business-development, diligence, or procurement agent",
+    jobsToBeDone: [
+      "Cross-check a company, procurement surface, and macro or labour context without building a fake general analyst.",
+      "Move from a high-signal dossier into procurement and economic follow-up reads.",
+      "Expose the next direct tools to run when the initial artifact is insufficient.",
+    ],
+    recommendedResources: ["sg://workflows", "sg://recipes", "sg://benchmarks"],
+    primaryWorkflows: ["Business Registry Diligence", "Macro Snapshot", "Dataset Discovery Fallback"],
+    starterPrompts: [
+      "Business dossier for UEN 201912345A",
+      "Macro snapshot of Singapore",
+      "Find datasets about procurement awards",
+    ],
+    directTools: [
+      "sg_business_dossier",
+      "sg_gebiz_tenders",
+      "sg_mas_exchange_rates",
+      "sg_mom_labour_stats",
+      "sg_stb_visitor_stats",
+      "sg_singstat_search",
+    ],
+    notes: [
+      "Use the dossier first for registry truth, then add GeBIZ, MAS, MOM, STB, or SingStat only when the workflow needs it.",
+      "This playbook is intentionally evidence-first rather than recommendation-first.",
+    ],
+  },
+  {
+    id: "social_support_navigation",
+    name: "Social Support Navigator",
+    persona: "casework, community-support, or public-service agent",
+    jobsToBeDone: [
+      "Find the nearest support services from a postal code, address, or planning area.",
+      "Distinguish family service, student care, childcare, social-service-office, and healthcare follow-ups cleanly.",
+      "Handle blocked prompts explicitly when location context is missing.",
+    ],
+    recommendedResources: ["sg://recipes", "sg://runtime"],
+    primaryWorkflows: ["Civic Discovery", "Environment Snapshot"],
+    starterPrompts: [
+      "Find a family service centre near 560230",
+      "Find a social service office near 1 Raffles Place",
+      "Find SCFA student care near Tampines",
+    ],
+    directTools: [
+      "sg_msf_family_services",
+      "sg_msf_student_care_services",
+      "sg_msf_social_service_offices",
+      "sg_ecda_childcare_centres",
+      "sg_moh_facilities",
+      "sg_pa_resident_network_centres",
+    ],
+    notes: [
+      "Use exact quoted names when you want a direct lookup instead of a proximity search.",
+      "Keep blocked and unsupported outcomes visible so the caller can ask for the missing location signal.",
+    ],
+  },
+];
+
+export const BENCHMARK_CATALOG = {
+  summary: [
+    "Adoption targets are framed for agent developers, not consumer chat products.",
+    "Use these expectations as integration guardrails; the machine-readable runtime contract remains the source of truth.",
+  ],
+  workflowProfiles: [
+    {
+      workflow: "Business Registry Diligence",
+      typicalColdPath: "1-5s with data.gov.sg-backed registries",
+      typicalWarmPath: "<1s when registry records are cached",
+      primaryCacheTier: "STATIC",
+      freshnessRule: "Check freshness.upstreamTimestamp per registry source before treating the artifact as current.",
+      notes: [
+        "Best first-run artifact for diligence-heavy agents.",
+        "Treat riskFlags and matchConfidence as the quickest trust indicators.",
+      ],
+    },
+    {
+      workflow: "Property And Regulatory Due Diligence",
+      typicalColdPath: "3-10s when URA planning and transactions are involved",
+      typicalWarmPath: "1-3s with cached planning and market context",
+      primaryCacheTier: "DAILY",
+      freshnessRule: "Use URA and HDB upstream timestamps separately; stale market context should remain visible in riskFlags or gaps.",
+      notes: [
+        "This is the stickiest cross-source workflow in the current repo.",
+        "Live transport context is optional and should not be assumed unless requested.",
+      ],
+    },
+    {
+      workflow: "Macro Snapshot",
+      typicalColdPath: "2-8s depending on SingStat discovery latency",
+      typicalWarmPath: "1-3s with cached MAS and SingStat responses",
+      primaryCacheTier: "NEAR_REALTIME + DAILY",
+      freshnessRule: "Treat MAS dates as headline freshness and SingStat discovery as an entrypoint, not a final macro conclusion.",
+      notes: [
+        "Keep GDP and CPI entrypoints distinct in demos and tests.",
+        "Named MAS metrics are mandatory for believable outputs.",
+      ],
+    },
+    {
+      workflow: "Transport And Environment Snapshots",
+      typicalColdPath: "0.5-2s per live upstream when authenticated",
+      typicalWarmPath: "<1s inside the REALTIME cache window",
+      primaryCacheTier: "REALTIME",
+      freshnessRule: "Expect live signals to age quickly; observedAt without a recent upstream timestamp should be treated cautiously.",
+      notes: [
+        "These workflows are operational building blocks, not predictive systems.",
+        "Ops result headlines should stay compact and source-backed.",
+      ],
+    },
+  ],
+  adoptionCheckpoints: [
+    {
+      name: "Five-minute success",
+      expectation: "A new developer should be able to run one mock-backed demo and one integration example locally.",
+      evidence: "Use npm run demo:mcp plus the examples/integration clients.",
+    },
+    {
+      name: "Bounded routing trust",
+      expectation: "Blocked, unsupported, and failed query outcomes should be obvious in application code without reading the source tree.",
+      evidence: "Use sg://recipes, sg://runtime, and the basic integration examples.",
+    },
+    {
+      name: "Artifact credibility",
+      expectation: "Golden outputs should validate both schema shape and believable headline fields for the strongest workflows.",
+      evidence: "Use the examples/golden-outputs fixtures and semantic tests.",
+    },
+  ],
+} as const;
+
 export const RESOURCE_URIS = {
   apis: "sg://apis",
   tools: "sg://tools",
   workflows: "sg://workflows",
   recipes: "sg://recipes",
   runtime: "sg://runtime",
+  playbooks: "sg://playbooks",
+  benchmarks: "sg://benchmarks",
 } as const;

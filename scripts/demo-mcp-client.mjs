@@ -40,8 +40,6 @@ const PROFILES = {
       arguments: {
         planningArea: "Bedok",
         flatType: "4 ROOM",
-        includeEnvironment: true,
-        includeTransport: true,
         format: "json",
       },
     },

@@ -49,6 +49,8 @@ ensureIncludes("README.md", [
   "sg_acra_entities",
   "sg://recipes",
   "sg://runtime",
+  "sg://playbooks",
+  "sg://benchmarks",
   "docs/product-audit.md",
   "docs/agent-builder-quickstart.md",
   "Route Planning",
@@ -69,6 +71,8 @@ ensureIncludes("packages/skill/SKILL.md", [
   "sg_acra_entities",
   "sg://recipes",
   "sg://runtime",
+  "sg://playbooks",
+  "sg://benchmarks",
   "Route Planning",
   "SingStat Table Drilldown",
   "Dataset Collection Browse",
@@ -85,6 +89,8 @@ ensureIncludes("docs/architecture.md", [
   "business-registry workflows can route to ACRA, CEA, and BCA",
   "sg://recipes",
   "sg://runtime",
+  "sg://playbooks",
+  "sg://benchmarks",
   "route planning can geocode postal codes before calling `sg_onemap_route`",
   "SingStat table drilldowns can move from browse to table to time-series reads",
   "data.gov collection browsing can continue into metadata, resources, and bounded rows",
@@ -109,6 +115,8 @@ ensureIncludes("docs/contributing.md", [
   "scripts/check-docs-parity.mjs",
   `${directToolCount} direct data tools`,
   "sg://recipes",
+  "sg://playbooks",
+  "sg://benchmarks",
   "RECIPE_CATALOG",
   "docs/agent-builder-quickstart.md",
 ]);
@@ -126,6 +134,8 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
   "sg://recipes",
   "sg://workflows",
   "sg://runtime",
+  "sg://playbooks",
+  "sg://benchmarks",
   "blocked",
   "unsupported",
   "failed",
@@ -138,12 +148,16 @@ ensureIncludes("examples/README.md", [
   "geospatial-routing.md",
   "npm run demo:mcp -- geospatial",
   "sg://runtime",
+  "sg://playbooks",
+  "sg://benchmarks",
   "failed outcomes",
   "sg_query completed, blocked, unsupported, and failed outcomes",
+  "basic-client.py",
 ]);
 
 ensureIncludes("docs/production-notes.md", [
   "sg://runtime",
+  "sg://benchmarks",
 ]);
 
 if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.queryStatusContract.length !== 5) {

@@ -42,6 +42,7 @@ import {
 } from "../apis/nea/client.js";
 import { geocode } from "../apis/onemap/client.js";
 import { searchDatasets as searchSingStatDatasets } from "../apis/singstat/client.js";
+import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { getPropertyTransactions } from "../apis/ura/client.js";
 import { fetchNormalizedMasRecords } from "./mas-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
@@ -919,7 +920,7 @@ const buildBusinessRiskFlags = (
   const primary = acra[0];
   if (primary !== undefined) {
     const status = String(primary["entityStatusDescription"] ?? "").toLowerCase();
-    if (status !== "" && status !== "live" && status !== "registered") {
+    if (status !== "" && !status.includes("live") && !status.includes("registered")) {
       flags.push({ code: "ENTITY_NOT_ACTIVE", severity: "high", message: `Entity status is "${primary["entityStatusDescription"]}", not Live or Registered.`, source: "ACRA" });
     }
   }
@@ -998,7 +999,7 @@ const buildBusinessNextChecks = (
     checks.push({ tool: "sg_bca_licensed_builders", reason: "Inspect all licensed-builder records for the entity.", input: { companyName: params.entityName } });
     checks.push({ tool: "sg_bca_registered_contractors", reason: "Inspect all registered-contractor records for the entity.", input: { companyName: params.entityName } });
   }
-  checks.push({ tool: "sg_datagov_search", reason: "Search data.gov.sg for additional public records related to this entity.", input: { query: params.entityName ?? params.uen ?? "" } });
+  checks.push({ tool: "sg_datagov_search", reason: "Search data.gov.sg for additional public records related to this entity.", input: { keyword: params.entityName ?? params.uen ?? "" } });
   return checks;
 };
 
@@ -1071,7 +1072,7 @@ const buildPropertyNextChecks = (
 ): readonly NextCheck[] => {
   const checks: NextCheck[] = [];
   if (planningArea !== null) {
-    checks.push({ tool: "sg_ura_property_transactions", reason: "Retrieve detailed URA transactions for deeper price analysis.", input: { propertyType: "residential", planningArea } });
+    checks.push({ tool: "sg_ura_property_transactions", reason: "Retrieve detailed URA transactions for deeper price analysis.", input: { propertyType: "residential", area: planningArea } });
     checks.push({ tool: "sg_hdb_resale_prices", reason: "Retrieve detailed HDB resale records for the planning area.", input: { town: planningArea } });
     checks.push({ tool: "sg_ura_dev_charges", reason: "Check development charges for the planning area.", input: { planningArea } });
   }
@@ -1360,7 +1361,7 @@ export const handlePropertyBrief = async (
   const planningArea = planning?.planningArea ?? params.planningArea ?? null;
   const region = toShortRegion(planning?.region);
 
-  const uraTransactions = planningArea === null
+  const uraTransactionsRaw = planningArea === null
     ? null
     : await safeRead(
         "URA_TRANSACTIONS_FAILED",
@@ -1368,6 +1369,9 @@ export const handlePropertyBrief = async (
         () => getPropertyTransactions(params.propertyType ?? "residential", planningArea, undefined),
         gaps,
       );
+  const uraTransactions = uraTransactionsRaw === null
+    ? null
+    : normalizeTransactions(uraTransactionsRaw);
 
   const hdbResale = planningArea === null || (params.propertyType !== undefined && params.propertyType !== "residential")
     ? null
@@ -1436,6 +1440,16 @@ export const handlePropertyBrief = async (
     : null;
   const dealChecklist = buildPropertyDealChecklist(uraRollup, hdbRollup, planningArea, params.propertyType);
   const propertyNextChecks = buildPropertyNextChecks(planningArea, firstGeocode?.postal ?? params.postalCode ?? null, firstGeocode?.lat ?? null, firstGeocode?.lng ?? null);
+  const locationResolution = {
+    requestedPlanningArea: params.planningArea ?? null,
+    requestedPostalCode: params.postalCode ?? null,
+    requestedAddress: params.address ?? null,
+    resolvedPlanningArea: planningArea,
+    resolvedRegion: region,
+    resolvedPostalCode: firstGeocode?.postal ?? params.postalCode ?? null,
+    lat: firstGeocode?.lat ?? null,
+    lng: firstGeocode?.lng ?? null,
+  };
 
   const payload: BriefArtifact = {
     title: "Property Brief",
@@ -1459,6 +1473,7 @@ export const handlePropertyBrief = async (
       { label: "Traffic incidents", value: trafficIncidents?.length ?? 0, source: "LTA" },
     ],
     records: {
+      locationResolution,
       geocode: firstGeocode === null ? [] : [firstGeocode],
       planningArea: planningRecords ?? [],
       uraTransactions: uraTransactions ?? [],
@@ -1604,6 +1619,30 @@ export const handleMacroBrief = async (
   const gdpTableId = rankedGdpDatasets[0]?.id ?? null;
   const cpiTableId = rankedCpiDatasets[0]?.id ?? null;
   const macroNextChecks = buildMacroNextChecks(gdpTableId, cpiTableId);
+  const trackedKpis = {
+    currency,
+    fx: {
+      metric: `${currency}/SGD`,
+      value: typeof exchangeValue === "number" ? exchangeValue : exchangeValue as string | null,
+      date: typeof latestExchange?.["date"] === "string" ? latestExchange["date"] : null,
+      deltaPercent: fxDelta,
+    },
+    interestRate: {
+      metric: soraMetric === null ? "SORA" : formatMetricLabel(soraMetric.key),
+      key: soraMetric?.key ?? null,
+      value: soraMetric?.value ?? null,
+      deltaPercent: soraDelta,
+    },
+    banking: {
+      metric: bankingMetric === null ? "Banking metric" : formatMetricLabel(bankingMetric.key),
+      key: bankingMetric?.key ?? null,
+      value: bankingMetric?.value ?? null,
+    },
+    singstatEntrypoints: {
+      gdpTableId,
+      cpiTableId,
+    },
+  };
 
   const payload: BriefArtifact = {
     title: "Macro Brief",
@@ -1629,6 +1668,7 @@ export const handleMacroBrief = async (
       { label: "Primary banking key", value: bankingMetric?.key ?? null, source: "MAS" },
     ],
     records: {
+      kpis: trackedKpis,
       exchangeRates: exchangeRates ?? [],
       interestRates: interestRates ?? [],
       financialStats: financialStats ?? [],

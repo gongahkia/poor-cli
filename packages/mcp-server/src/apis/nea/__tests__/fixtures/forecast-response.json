@@ -4,6 +4,13 @@
   "data": {
     "area_metadata": [
       {
+        "name": "Bedok",
+        "label_location": {
+          "latitude": 1.3236,
+          "longitude": 103.9273
+        }
+      },
+      {
         "name": "Tampines",
         "label_location": {
           "latitude": 1.3526,
@@ -21,6 +28,10 @@
           "text": "8 AM to 10 AM"
         },
         "forecasts": [
+          {
+            "area": "Bedok",
+            "forecast": "Partly Cloudy"
+          },
           {
             "area": "Tampines",
             "forecast": "Partly Cloudy"

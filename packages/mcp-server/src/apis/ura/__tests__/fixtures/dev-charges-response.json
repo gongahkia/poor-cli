@@ -1,0 +1,17 @@
+{
+  "Status": "Success",
+  "Result": [
+    {
+      "use_grp": "Residential",
+      "sector": "A",
+      "rate": "3550",
+      "effDate": "2025-03-01"
+    },
+    {
+      "use_grp": "Residential",
+      "sector": "B1",
+      "rate": "2820",
+      "effDate": "2025-03-01"
+    }
+  ]
+}

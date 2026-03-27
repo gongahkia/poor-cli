@@ -184,10 +184,12 @@ Read the built-in catalogs before wiring your own client logic:
 - `sg://workflows`
 - `sg://recipes`
 - `sg://runtime`
+- `sg://playbooks`
+- `sg://benchmarks`
 
-`sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract.
+`sg://recipes` is the fastest way to see which natural-language prompt shapes already map cleanly to `sg_query` versus direct fallback tools. `sg://runtime` exposes the machine-readable trust layer for auth dependencies, credential-source rules, timeouts, cache tiers, retry policy, health coverage, and the `planned | completed | blocked | unsupported | failed` query contract. `sg://playbooks` groups the strongest workflow combinations by agent job, and `sg://benchmarks` exposes adoption-grade latency, cache-tier, freshness, and credibility expectations for the headline workflows.
 
-For application wiring, start with [`examples/integration/basic-client.ts`](./examples/integration/basic-client.ts). It connects once, caches `sg://recipes` plus `sg://runtime`, uses `sg_query` for covered prompts, surfaces blocked or unsupported outcomes directly, demonstrates a failed execution, and falls back to direct `sg_*` tools when the caller already has exact parameters.
+For application wiring, start with [`examples/integration/basic-client.ts`](./examples/integration/basic-client.ts) for the TypeScript planner pattern and [`examples/integration/basic-client.py`](./examples/integration/basic-client.py) for a minimal stdlib-only Python client. The TypeScript example caches `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`, uses `sg_query` for covered prompts, surfaces blocked or unsupported outcomes directly, demonstrates a failed execution, and falls back to direct `sg_*` tools when the caller already has exact parameters.
 
 ## Authentication
 
@@ -246,7 +248,7 @@ sg_cea_salespersons { "registrationNo": "R123456A", "format": "json" }
 
 ```text
 sg_query { "query": "Property due diligence for Bedok HDB resale", "mode": "execute" }
-sg_property_brief { "planningArea": "Bedok", "flatType": "4 ROOM", "includeEnvironment": true, "includeTransport": true, "format": "json" }
+sg_property_brief { "planningArea": "Bedok", "flatType": "4 ROOM", "format": "json" }
 sg_ura_property_transactions { "propertyType": "residential", "area": "Bedok", "format": "json" }
 sg_hdb_resale_prices { "town": "Bedok", "flatType": "4 ROOM", "format": "json" }
 ```

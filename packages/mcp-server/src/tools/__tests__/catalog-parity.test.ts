@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   API_CATALOG,
+  BENCHMARK_CATALOG,
+  PLAYBOOK_CATALOG,
   RECIPE_CATALOG,
   RESOURCE_URIS,
   RUNTIME_CATALOG,
@@ -184,6 +186,20 @@ describe("resource catalog parity", () => {
     expect(JSON.parse(result.contents[0]!.text!)).toEqual(RUNTIME_CATALOG);
   });
 
+  it("serves the playbook catalog through sg://playbooks", async () => {
+    const { resourceHandlers } = collectSurface();
+    const result = await resourceHandlers.get(RESOURCE_URIS.playbooks)!();
+
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(PLAYBOOK_CATALOG);
+  });
+
+  it("serves the benchmark catalog through sg://benchmarks", async () => {
+    const { resourceHandlers } = collectSurface();
+    const result = await resourceHandlers.get(RESOURCE_URIS.benchmarks)!();
+
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(BENCHMARK_CATALOG);
+  });
+
   it("enriches workflow and recipe catalogs with trust metadata", () => {
     expect(WORKFLOW_CATALOG).toEqual(
       expect.arrayContaining([
@@ -231,6 +247,34 @@ describe("resource catalog parity", () => {
         expect.objectContaining({ status: "blocked", isError: false }),
         expect.objectContaining({ status: "unsupported", isError: false }),
         expect.objectContaining({ status: "failed", isError: true }),
+      ]),
+    );
+    expect(PLAYBOOK_CATALOG).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "relocation_neighbourhood_brief",
+          recommendedResources: expect.arrayContaining(["sg://recipes", "sg://runtime", "sg://benchmarks"]),
+        }),
+        expect.objectContaining({
+          id: "business_opportunity_scan",
+          directTools: expect.arrayContaining(["sg_business_dossier", "sg_gebiz_tenders", "sg_singstat_search"]),
+        }),
+        expect.objectContaining({
+          id: "social_support_navigation",
+          primaryWorkflows: expect.arrayContaining(["Civic Discovery"]),
+        }),
+      ]),
+    );
+    expect(BENCHMARK_CATALOG.workflowProfiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workflow: "Business Registry Diligence",
+          primaryCacheTier: "STATIC",
+        }),
+        expect.objectContaining({
+          workflow: "Property And Regulatory Due Diligence",
+          primaryCacheTier: "DAILY",
+        }),
       ]),
     );
   });
