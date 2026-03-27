@@ -34,7 +34,7 @@ jobs:
       - name: Install executable
         run: |
           mkdir -p dist/bin
-          cabal install exe:seuss --installdir=dist/bin --overwrite-policy=always
+          cabal install exe:seuss --installdir=dist/bin --install-method=copy --overwrite-policy=always
 
       - name: Package
         run: |
