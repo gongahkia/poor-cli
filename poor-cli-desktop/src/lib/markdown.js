@@ -3,9 +3,12 @@ function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 export function renderMarkdown(text) {
   if (!text) return '';
   let html = esc(text);
-  // fenced code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre><code class="lang-${lang}">${code}</code></pre>`);
+  // fenced code blocks — wrap with copy button
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const langLabel = lang ? `<span class="code-lang">${lang}</span>` : '';
+    const escaped = code.replace(/"/g, '&quot;');
+    return `<div class="code-block-wrapper">${langLabel}<button class="code-copy-btn" onclick="this.parentElement.querySelector('code').textContent.trim().replace(/^\\s+/gm,'').length&&navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button><pre><code class="lang-${lang}">${code}</code></pre></div>`;
+  });
   // inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
   // headers

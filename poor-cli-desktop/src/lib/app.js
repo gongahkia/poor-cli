@@ -95,6 +95,17 @@ export function addMessage(text, role) {
   div.className = `message message-${role}`;
   if (role === 'assistant') {
     div.innerHTML = renderMarkdown(text);
+    // add copy-message button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-copy-btn';
+    copyBtn.textContent = 'Copy';
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+      });
+    };
+    div.appendChild(copyBtn);
   } else {
     div.textContent = text;
   }
