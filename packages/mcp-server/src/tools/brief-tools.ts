@@ -34,7 +34,7 @@ import {
   getRainfall,
 } from "../apis/nea/client.js";
 import { geocode } from "../apis/onemap/client.js";
-import { searchDatasets as searchSingStatDatasets } from "../apis/singstat/client.js";
+import { getTableData as getSingStatTableData } from "../apis/singstat/client.js";
 import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { getPropertyTransactions } from "../apis/ura/client.js";
 import { buildBusinessDossierArtifact } from "../diligence/business-dossier.js";
@@ -230,17 +230,6 @@ const METRIC_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
   dbd_deposit: "DBU deposits",
 };
 
-type MacroDatasetIntent = "gdp" | "cpi";
-
-type DatasetCandidate = Readonly<{
-  id: string;
-  title?: string | undefined;
-  subject?: string | undefined;
-  topic?: string | undefined;
-  frequency?: string | undefined;
-  theme?: string | undefined;
-}>;
-
 const isMeaningfulMetricKey = (key: string): boolean => {
   return !NON_METRIC_NUMERIC_KEYS.has(key.trim().toLowerCase());
 };
@@ -251,82 +240,6 @@ const formatMetricLabel = (key: string): string => {
     .filter((part) => part !== "")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-};
-
-const getMacroDatasetText = (dataset: DatasetCandidate): Readonly<{
-  title: string;
-  topic: string;
-  subject: string;
-  combined: string;
-}> => {
-  const title = (dataset.title ?? "").toLowerCase();
-  const topic = (dataset.topic ?? "").toLowerCase();
-  const subject = (dataset.subject ?? "").toLowerCase();
-  const combined = [title, topic, subject, (dataset.theme ?? "").toLowerCase()]
-    .filter((part) => part !== "")
-    .join(" ");
-
-  return { title, topic, subject, combined };
-};
-
-const scoreMacroDataset = (
-  dataset: DatasetCandidate,
-  intent: MacroDatasetIntent,
-): number => {
-  const includeTerms = intent === "gdp"
-    ? ["gross domestic product", "gdp", "national accounts"]
-    : ["consumer price index", "cpi", "inflation", "prices"];
-  const excludeTerms = intent === "gdp"
-    ? ["consumer price index", "cpi", "inflation"]
-    : ["gross domestic product", "gdp"];
-  const { title, topic, subject, combined } = getMacroDatasetText(dataset);
-
-  if (excludeTerms.some((term) => combined.includes(term))) {
-    return -1;
-  }
-
-  let score = 0;
-  for (const term of includeTerms) {
-    if (title.includes(term)) {
-      score += 4;
-      continue;
-    }
-    if (topic.includes(term)) {
-      score += 3;
-      continue;
-    }
-    if (subject.includes(term)) {
-      score += 2;
-      continue;
-    }
-    if (combined.includes(term)) {
-      score += 1;
-    }
-  }
-
-  return score;
-};
-
-const rankMacroDatasets = (
-  datasets: readonly DatasetCandidate[] | null | undefined,
-  intent: MacroDatasetIntent,
-): readonly DatasetCandidate[] => {
-  if (!Array.isArray(datasets)) {
-    return [];
-  }
-
-  return datasets
-    .map((dataset) => ({
-      dataset,
-      score: scoreMacroDataset(dataset, intent),
-    }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) =>
-      right.score - left.score
-      || left.dataset.id.localeCompare(right.dataset.id)
-      || (left.dataset.title ?? "").localeCompare(right.dataset.title ?? ""),
-    )
-    .map((candidate) => candidate.dataset);
 };
 
 const findFirstNumericField = (
@@ -1016,6 +929,86 @@ const computeMasDelta = (
   return Math.round(((latest - prev) / Math.abs(prev)) * 10000) / 100;
 };
 
+const SINGSTAT_PERIOD_MONTHS: Readonly<Record<string, number>> = {
+  Jan: 1,
+  Feb: 2,
+  Mar: 3,
+  Apr: 4,
+  May: 5,
+  Jun: 6,
+  Jul: 7,
+  Aug: 8,
+  Sep: 9,
+  Oct: 10,
+  Nov: 11,
+  Dec: 12,
+};
+
+const MACRO_SINGSTAT_TABLES = {
+  gdp: {
+    tableId: "M015631",
+    label: "GDP growth rate",
+    preferredVariables: ["GDP At Current Market Prices"],
+  },
+  cpiYoY: {
+    tableId: "M213781",
+    label: "CPI YoY",
+    preferredVariables: ["All Items"],
+  },
+  cpiIndex: {
+    tableId: "M213751",
+    label: "CPI index",
+    preferredVariables: ["All Items"],
+  },
+} as const;
+
+const getSingStatPeriodSortKey = (period: string): number => {
+  const quarterMatch = period.match(/^(\d{4})\s+(\d)Q$/i);
+  if (quarterMatch !== null) {
+    return Number(quarterMatch[1]) * 100 + Number(quarterMatch[2]) * 3;
+  }
+
+  const monthMatch = period.match(/^(\d{4})\s+([A-Za-z]{3})$/);
+  if (monthMatch !== null) {
+    return Number(monthMatch[1]) * 100 + (SINGSTAT_PERIOD_MONTHS[monthMatch[2] ?? ""] ?? 0);
+  }
+
+  const yearMatch = period.match(/^(\d{4})$/);
+  if (yearMatch !== null) {
+    return Number(yearMatch[1]) * 100;
+  }
+
+  return Number.NEGATIVE_INFINITY;
+};
+
+const selectSingStatRows = (
+  rows: readonly Readonly<Record<string, unknown>>[],
+  preferredVariables: readonly string[],
+): readonly Readonly<Record<string, unknown>>[] => {
+  const normalizedTargets = preferredVariables.map((value) => value.trim().toLowerCase());
+  return rows
+    .filter((row) => {
+      const variable = typeof row["variable"] === "string" ? row["variable"].trim().toLowerCase() : "";
+      return normalizedTargets.includes(variable);
+    })
+    .sort((left, right) => getSingStatPeriodSortKey(String(right["period"] ?? "")) - getSingStatPeriodSortKey(String(left["period"] ?? "")));
+};
+
+const getLatestSingStatMetric = (
+  rows: readonly Readonly<Record<string, unknown>>[],
+  preferredVariables: readonly string[],
+): Readonly<Record<string, unknown>> | null => {
+  return selectSingStatRows(rows, preferredVariables)[0] ?? null;
+};
+
+const sliceLatestSingStatMetrics = (
+  rows: readonly Readonly<Record<string, unknown>>[],
+  preferredVariables: readonly string[],
+  limit = 8,
+): readonly Readonly<Record<string, unknown>>[] => {
+  return selectSingStatRows(rows, preferredVariables).slice(0, limit);
+};
+
 const buildMacroNextChecks = (
   gdpTableId: string | null,
   cpiTableId: string | null,
@@ -1027,13 +1020,14 @@ const buildMacroNextChecks = (
   if (cpiTableId !== null) {
     checks.push({ tool: "sg_singstat_table", reason: "Retrieve full CPI table data for inflation analysis.", input: { tableId: cpiTableId } });
   }
+  checks.push({ tool: "sg_singstat_timeseries", reason: "Retrieve a bounded GDP time series for trend analysis.", input: { tableId: MACRO_SINGSTAT_TABLES.gdp.tableId, indicator: "GDP At Current Market Prices", startYear: 2020, endYear: new Date().getFullYear() } });
   checks.push({ tool: "sg_singstat_search", reason: "Discover additional SingStat datasets for deeper macro analysis.", input: { keyword: "Singapore unemployment" } });
   return checks;
 };
 
 const buildMacroLimits = (): readonly BriefLimit[] => [
   toLimit("STARTER_SNAPSHOT", "This brief is a compact macro starter, not a full economic research note or narrative analysis."),
-  toLimit("DATASET_ENTRYPOINTS_ONLY", "SingStat coverage is limited to bounded dataset discovery in this brief rather than full table extraction."),
+  toLimit("BOUNDED_SINGSTAT_SERIES", "SingStat coverage is limited to validated GDP and CPI tables with compact recent slices, not open-ended macro table coverage."),
   toLimit("NO_FORWARD_VIEW", "The brief reports current or requested historical values and does not forecast or interpret future macro conditions."),
 ];
 
@@ -1315,7 +1309,7 @@ export const handleMacroBrief = async (
   const gaps: EvidenceGap[] = [];
   const currency = (params.currency ?? "USD").toUpperCase();
 
-  const [exchangeRates, interestRates, financialStats, gdpDatasets, cpiDatasets] = await Promise.all([
+  const [exchangeRates, interestRates, financialStats, gdpTable, cpiYoYTable, cpiIndexTable] = await Promise.all([
     safeRead(
       "MAS_EXCHANGE_FAILED",
       "MAS exchange-rate lookup failed",
@@ -1348,32 +1342,23 @@ export const handleMacroBrief = async (
     ),
     safeRead(
       "SINGSTAT_GDP_FAILED",
-      "SingStat GDP dataset discovery failed",
-      () => searchSingStatDatasets("Singapore GDP", 3),
+      "SingStat GDP table lookup failed",
+      () => getSingStatTableData(MACRO_SINGSTAT_TABLES.gdp.tableId),
       gaps,
     ),
     safeRead(
-      "SINGSTAT_CPI_FAILED",
-      "SingStat CPI dataset discovery failed",
-      () => searchSingStatDatasets("Singapore CPI inflation", 3),
+      "SINGSTAT_CPI_YOY_FAILED",
+      "SingStat CPI inflation table lookup failed",
+      () => getSingStatTableData(MACRO_SINGSTAT_TABLES.cpiYoY.tableId),
+      gaps,
+    ),
+    safeRead(
+      "SINGSTAT_CPI_INDEX_FAILED",
+      "SingStat CPI index table lookup failed",
+      () => getSingStatTableData(MACRO_SINGSTAT_TABLES.cpiIndex.tableId),
       gaps,
     ),
   ]);
-  const rankedGdpDatasets = rankMacroDatasets(gdpDatasets, "gdp");
-  const rankedCpiDatasets = rankMacroDatasets(cpiDatasets, "cpi");
-
-  if (Array.isArray(gdpDatasets) && gdpDatasets.length > 0 && rankedGdpDatasets.length === 0) {
-    gaps.push({
-      code: "SINGSTAT_GDP_NO_RELEVANT_DATASET",
-      message: "SingStat GDP search returned datasets, but none matched GDP-specific criteria.",
-    });
-  }
-  if (Array.isArray(cpiDatasets) && cpiDatasets.length > 0 && rankedCpiDatasets.length === 0) {
-    gaps.push({
-      code: "SINGSTAT_CPI_NO_RELEVANT_DATASET",
-      message: "SingStat CPI search returned datasets, but none matched CPI-specific criteria.",
-    });
-  }
 
   const latestExchange = exchangeRates?.[0];
   const latestInterest = interestRates?.[0];
@@ -1386,8 +1371,15 @@ export const handleMacroBrief = async (
   const bankingMetric = extractNamedMasMetric(latestBanking, ["total_deposits", "total_loans", "total_assets", "dbd_deposit"]);
   const fxDelta = computeMasDelta(exchangeRates, exchangeKey);
   const soraDelta = soraMetric !== null ? computeMasDelta(interestRates, soraMetric.key) : null;
-  const gdpTableId = rankedGdpDatasets[0]?.id ?? null;
-  const cpiTableId = rankedCpiDatasets[0]?.id ?? null;
+  const gdpTableId = gdpTable?.metadata.title === undefined ? null : MACRO_SINGSTAT_TABLES.gdp.tableId;
+  const cpiTableId = cpiYoYTable?.metadata.title === undefined ? null : MACRO_SINGSTAT_TABLES.cpiYoY.tableId;
+  const cpiIndexTableId = cpiIndexTable?.metadata.title === undefined ? null : MACRO_SINGSTAT_TABLES.cpiIndex.tableId;
+  const latestGdp = gdpTable === null ? null : getLatestSingStatMetric(gdpTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.gdp.preferredVariables);
+  const latestCpiYoY = cpiYoYTable === null ? null : getLatestSingStatMetric(cpiYoYTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.cpiYoY.preferredVariables);
+  const latestCpiIndex = cpiIndexTable === null ? null : getLatestSingStatMetric(cpiIndexTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.cpiIndex.preferredVariables);
+  const gdpSeries = gdpTable === null ? [] : sliceLatestSingStatMetrics(gdpTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.gdp.preferredVariables);
+  const cpiYoYSeries = cpiYoYTable === null ? [] : sliceLatestSingStatMetrics(cpiYoYTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.cpiYoY.preferredVariables);
+  const cpiIndexSeries = cpiIndexTable === null ? [] : sliceLatestSingStatMetrics(cpiIndexTable.rows as readonly Readonly<Record<string, unknown>>[], MACRO_SINGSTAT_TABLES.cpiIndex.preferredVariables);
   const macroNextChecks = buildMacroNextChecks(gdpTableId, cpiTableId);
   const trackedKpis = {
     currency,
@@ -1408,9 +1400,16 @@ export const handleMacroBrief = async (
       key: bankingMetric?.key ?? null,
       value: bankingMetric?.value ?? null,
     },
-    singstatEntrypoints: {
+    singstatSeries: {
       gdpTableId,
-      cpiTableId,
+      gdpPeriod: typeof latestGdp?.["period"] === "string" ? latestGdp["period"] : null,
+      gdpValue: typeof latestGdp?.["value"] === "number" ? latestGdp["value"] : latestGdp?.["value"] ?? null,
+      cpiYoYTableId: cpiTableId,
+      cpiYoYPeriod: typeof latestCpiYoY?.["period"] === "string" ? latestCpiYoY["period"] : null,
+      cpiYoYValue: typeof latestCpiYoY?.["value"] === "number" ? latestCpiYoY["value"] : latestCpiYoY?.["value"] ?? null,
+      cpiIndexTableId,
+      cpiIndexPeriod: typeof latestCpiIndex?.["period"] === "string" ? latestCpiIndex["period"] : null,
+      cpiIndexValue: typeof latestCpiIndex?.["value"] === "number" ? latestCpiIndex["value"] : latestCpiIndex?.["value"] ?? null,
     },
   };
 
@@ -1423,17 +1422,22 @@ export const handleMacroBrief = async (
       { label: soraMetric === null ? "SORA" : formatMetricLabel(soraMetric.key), value: soraMetric?.value ?? null, source: "MAS" },
       { label: "SORA period delta %", value: soraDelta, source: "MAS" },
       { label: bankingMetric === null ? "Banking metric" : formatMetricLabel(bankingMetric.key), value: bankingMetric?.value ?? null, source: "MAS" },
-      { label: "GDP dataset", value: rankedGdpDatasets[0]?.title ?? null, source: "SingStat" },
+      { label: "GDP period", value: typeof latestGdp?.["period"] === "string" ? latestGdp["period"] : null, source: "SingStat" },
+      { label: "GDP at current prices", value: typeof latestGdp?.["value"] === "number" || typeof latestGdp?.["value"] === "string" ? latestGdp["value"] : null, source: "SingStat" },
       { label: "GDP table ID", value: gdpTableId, source: "SingStat" },
-      { label: "CPI dataset", value: rankedCpiDatasets[0]?.title ?? null, source: "SingStat" },
-      { label: "CPI table ID", value: cpiTableId, source: "SingStat" },
+      { label: "CPI YoY period", value: typeof latestCpiYoY?.["period"] === "string" ? latestCpiYoY["period"] : null, source: "SingStat" },
+      { label: "CPI YoY %", value: typeof latestCpiYoY?.["value"] === "number" || typeof latestCpiYoY?.["value"] === "string" ? latestCpiYoY["value"] : null, source: "SingStat" },
+      { label: "CPI YoY table ID", value: cpiTableId, source: "SingStat" },
+      { label: "CPI index", value: typeof latestCpiIndex?.["value"] === "number" || typeof latestCpiIndex?.["value"] === "string" ? latestCpiIndex["value"] : null, source: "SingStat" },
+      { label: "CPI index table ID", value: cpiIndexTableId, source: "SingStat" },
     ],
     evidence: [
       { label: "FX rows", value: exchangeRates?.length ?? 0, source: "MAS" },
       { label: "SORA rows", value: interestRates?.length ?? 0, source: "MAS" },
       { label: "Banking rows", value: financialStats?.length ?? 0, source: "MAS" },
-      { label: "GDP candidates", value: rankedGdpDatasets.length, source: "SingStat" },
-      { label: "CPI candidates", value: rankedCpiDatasets.length, source: "SingStat" },
+      { label: "GDP rows", value: gdpSeries.length, source: "SingStat" },
+      { label: "CPI YoY rows", value: cpiYoYSeries.length, source: "SingStat" },
+      { label: "CPI index rows", value: cpiIndexSeries.length, source: "SingStat" },
       { label: "Primary SORA key", value: soraMetric?.key ?? null, source: "MAS" },
       { label: "Primary banking key", value: bankingMetric?.key ?? null, source: "MAS" },
     ],
@@ -1442,22 +1446,24 @@ export const handleMacroBrief = async (
       exchangeRates: exchangeRates ?? [],
       interestRates: interestRates ?? [],
       financialStats: financialStats ?? [],
-      gdpDatasets: rankedGdpDatasets,
-      cpiDatasets: rankedCpiDatasets,
+      gdpSeries,
+      cpiYoYSeries,
+      cpiIndexSeries,
     },
     gaps,
     provenance: [
       toProvenance("MAS", "sg_mas_exchange_rates", "Exchange-rate coverage for the requested currency and date range.", false, exchangeRates?.length ?? 0),
       toProvenance("MAS", "sg_mas_interest_rates", "SORA interest-rate coverage for the requested date range.", false, interestRates?.length ?? 0),
       toProvenance("MAS", "sg_mas_financial_stats", "Banking-statistics coverage for the requested date range.", false, financialStats?.length ?? 0),
-      toProvenance("SingStat", "sg_singstat_search", "Bounded dataset discovery for GDP and CPI entrypoints.", false, (gdpDatasets?.length ?? 0) + (cpiDatasets?.length ?? 0)),
+      toProvenance("SingStat", "sg_singstat_table", "Validated GDP and CPI table reads for current macro series.", false, gdpSeries.length + cpiYoYSeries.length + cpiIndexSeries.length),
     ],
     freshness: [
       toFreshness("MAS exchange rates", observedAt, getFirstTimestamp(exchangeRates, ["date"])),
       toFreshness("MAS interest rates", observedAt, getFirstTimestamp(interestRates, ["date"])),
       toFreshness("MAS banking stats", observedAt, getFirstTimestamp(financialStats, ["date"])),
-      toFreshness("SingStat GDP search", observedAt, null),
-      toFreshness("SingStat CPI search", observedAt, null),
+      toFreshness("SingStat GDP table", observedAt, gdpTable?.metadata.lastUpdated ?? null),
+      toFreshness("SingStat CPI YoY table", observedAt, cpiYoYTable?.metadata.lastUpdated ?? null),
+      toFreshness("SingStat CPI index table", observedAt, cpiIndexTable?.metadata.lastUpdated ?? null),
     ],
     limits: buildMacroLimits(),
     nextChecks: macroNextChecks,
@@ -1802,7 +1808,7 @@ export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
   },
   {
     name: "sg_macro_brief",
-    description: "Build a compact Singapore macro starter brief using MAS market data and SingStat dataset entrypoints.",
+    description: "Build a compact Singapore macro starter brief using MAS market data and validated SingStat GDP and CPI tables.",
     surface: "canonical",
     positioning: "High-value additive brief over the direct MAS and SingStat tools.",
     inputSchema: MacroBriefSchema.shape,

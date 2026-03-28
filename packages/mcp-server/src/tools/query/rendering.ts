@@ -246,10 +246,10 @@ export const getWorkflowFormatSupport = (
     };
   }
 
-  if (plan.steps.length !== 1) {
+  if (plan.workflow !== "direct_tool" || plan.steps.length !== 1) {
     return {
       supported: false,
-      reason: `sg_query only supports ${format} for single-step direct executions, not multi-step workflows.`,
+      reason: `sg_query only supports markdown or json for named workflows; ${format} is available only for single-step direct executions.`,
       suggestion: "Use json or markdown for the workflow, or call the direct tool you need with csv or geojson.",
     };
   }

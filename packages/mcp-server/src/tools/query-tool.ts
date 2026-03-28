@@ -62,12 +62,12 @@ const buildContinuationHints = (
     const record = structured["record"] ?? structured["records"];
     if (isRecord(record)) {
       const kpis = isRecord(record["kpis"]) ? record["kpis"] : undefined;
-      const singstatEntrypoints = kpis !== undefined && isRecord(kpis["singstatEntrypoints"])
-        ? kpis["singstatEntrypoints"]
+      const singstatSeries = kpis !== undefined && isRecord(kpis["singstatSeries"])
+        ? kpis["singstatSeries"]
         : undefined;
 
-      for (const key of ["gdpTableId", "cpiTableId"]) {
-        const tableId = singstatEntrypoints?.[key];
+      for (const key of ["gdpTableId", "cpiYoYTableId", "cpiIndexTableId"]) {
+        const tableId = singstatSeries?.[key];
         if (typeof tableId === "string" && tableId.trim() !== "") {
           hints.push(`Call sg_singstat_table with tableId "${tableId}" for detailed data.`);
         }

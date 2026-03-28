@@ -53,7 +53,7 @@ vi.mock("../../apis/onemap/client.js", () => ({
 }));
 
 vi.mock("../../apis/singstat/client.js", () => ({
-  searchDatasets: vi.fn(),
+  getTableData: vi.fn(),
 }));
 
 vi.mock("../../apis/ura/client.js", () => ({
@@ -88,7 +88,7 @@ import {
   getForecast2Hr,
   getRainfall,
 } from "../../apis/nea/client.js";
-import { searchDatasets as searchSingStatDatasets } from "../../apis/singstat/client.js";
+import { getTableData as getSingStatTableData } from "../../apis/singstat/client.js";
 import { getPropertyTransactions } from "../../apis/ura/client.js";
 import { fetchNormalizedMasRecords } from "../mas-tools.js";
 import { lookupPlanningArea } from "../ura-tools.js";
@@ -128,7 +128,7 @@ describe("brief tools", () => {
     vi.mocked(getAirQuality).mockReset();
     vi.mocked(getForecast2Hr).mockReset();
     vi.mocked(getRainfall).mockReset();
-    vi.mocked(searchSingStatDatasets).mockReset();
+    vi.mocked(getSingStatTableData).mockReset();
     vi.mocked(getPropertyTransactions).mockReset();
     vi.mocked(fetchNormalizedMasRecords).mockReset();
     vi.mocked(lookupPlanningArea).mockReset();
@@ -381,12 +381,51 @@ describe("brief tools", () => {
         { date: "2026-03-25", preliminary: 0, total_deposits: 980 },
       ] as never;
     });
-    vi.mocked(searchSingStatDatasets)
-      .mockResolvedValueOnce([{ id: "gdp", title: "Singapore GDP" }] as never)
-      .mockResolvedValueOnce([
-        { id: "gdp-wrong", title: "Gross Domestic Product, Year On Year Growth Rate, Quarterly", topic: "Gross Domestic Product (GDP)" },
-        { id: "cpi", title: "Consumer Price Index, All Items, Monthly", topic: "Consumer Price Index (CPI)" },
-      ] as never);
+    vi.mocked(getSingStatTableData).mockImplementation(async (tableId) => {
+      if (tableId === "M015631") {
+        return {
+          rows: [
+            { period: "2025 4Q", variable: "GDP At Current Market Prices", value: 156000, unit: "million dollars" },
+            { period: "2025 3Q", variable: "GDP At Current Market Prices", value: 154000, unit: "million dollars" },
+          ],
+          metadata: {
+            title: "Gross Domestic Product",
+            frequency: "Quarterly",
+            source: "SingStat",
+            lastUpdated: "2026-03-01",
+          },
+          total: 2,
+        } as never;
+      }
+      if (tableId === "M213781") {
+        return {
+          rows: [
+            { period: "2026 Feb", variable: "All Items", value: 1.6, unit: "percent" },
+            { period: "2026 Jan", variable: "All Items", value: 1.4, unit: "percent" },
+          ],
+          metadata: {
+            title: "Consumer Price Index - Year on Year",
+            frequency: "Monthly",
+            source: "SingStat",
+            lastUpdated: "2026-03-01",
+          },
+          total: 2,
+        } as never;
+      }
+      return {
+        rows: [
+          { period: "2026 Feb", variable: "All Items", value: 116.2, unit: "index" },
+          { period: "2026 Jan", variable: "All Items", value: 115.9, unit: "index" },
+        ],
+        metadata: {
+          title: "Consumer Price Index",
+          frequency: "Monthly",
+          source: "SingStat",
+          lastUpdated: "2026-03-01",
+        },
+        total: 2,
+      } as never;
+    });
 
     const jsonResult = await handleMacroBrief({
       currency: "USD",
@@ -401,8 +440,10 @@ describe("brief tools", () => {
     expect(payload.summary.some((item) => item.label === "GDP table ID")).toBe(true);
     expect(summaryByLabel.get("3M SORA")).toBe(3.2);
     expect(summaryByLabel.get("Total deposits")).toBe(1000);
-    expect(summaryByLabel.get("CPI table ID")).toBe("cpi");
-    expect(summaryByLabel.get("CPI table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
+    expect(summaryByLabel.get("GDP at current prices")).toBe(156000);
+    expect(summaryByLabel.get("CPI YoY table ID")).toBe("M213781");
+    expect(summaryByLabel.get("CPI index table ID")).toBe("M213751");
+    expect(summaryByLabel.get("CPI YoY table ID")).not.toBe(summaryByLabel.get("GDP table ID"));
     expect(evidenceByLabel.get("Primary SORA key")).toBe("sora_3m");
     expect(evidenceByLabel.get("Primary banking key")).toBe("total_deposits");
     expect(evidenceByLabel.get("Primary SORA key")).not.toBe("preliminary");
@@ -411,7 +452,12 @@ describe("brief tools", () => {
       currency: "USD",
       interestRate: { metric: "3M SORA", key: "sora_3m", value: 3.2 },
       banking: { metric: "Total deposits", key: "total_deposits", value: 1000 },
-      singstatEntrypoints: { gdpTableId: "gdp", cpiTableId: "cpi" },
+      singstatSeries: {
+        gdpTableId: "M015631",
+        gdpPeriod: "2025 4Q",
+        cpiYoYTableId: "M213781",
+        cpiIndexTableId: "M213751",
+      },
     });
 
     const markdownResult = await handleMacroBrief({
