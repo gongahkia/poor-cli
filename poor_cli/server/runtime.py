@@ -722,6 +722,9 @@ class PoorCLIServer:
             "poor-cli/semanticSearch": self.handle_semantic_search,
             "poor-cli/indexCodebase": self.handle_index_codebase,
             "poor-cli/getIndexStats": self.handle_get_index_stats,
+            "poor-cli/indexEmbeddings": self.handle_index_embeddings,
+            "poor-cli/vectorSearch": self.handle_vector_search,
+            "poor-cli/hybridSearch": self.handle_hybrid_search,
             "poor-cli/createAgent": self.handle_create_agent,
             "poor-cli/listAgents": self.handle_list_agents,
             "poor-cli/getAgent": self.handle_get_agent,
@@ -4809,6 +4812,42 @@ class PoorCLIServer:
         from ..indexer import CodebaseIndexer
         indexer = CodebaseIndexer()
         return {"stats": indexer.get_stats().to_dict()}
+
+    async def handle_index_embeddings(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..indexer import CodebaseIndexer
+        from ..embeddings import get_embedding_provider
+        indexer = CodebaseIndexer()
+        preferred = params.get("provider") or None
+        provider = get_embedding_provider(preferred)
+        force = bool(params.get("force", False))
+        result = await indexer.index_embeddings(provider=provider, force=force)
+        return {"result": result}
+
+    async def handle_vector_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..indexer import CodebaseIndexer
+        indexer = CodebaseIndexer()
+        query = str(params.get("query", "")).strip()
+        if not query:
+            return {"error": "query required"}
+        results = await indexer.vector_search(
+            query,
+            max_results=int(params.get("maxResults", 10)),
+            file_filter=params.get("fileFilter") or None,
+        )
+        return {"results": [r.to_dict() for r in results]}
+
+    async def handle_hybrid_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..indexer import CodebaseIndexer
+        indexer = CodebaseIndexer()
+        query = str(params.get("query", "")).strip()
+        if not query:
+            return {"error": "query required"}
+        results = await indexer.hybrid_search(
+            query,
+            max_results=int(params.get("maxResults", 10)),
+            file_filter=params.get("fileFilter") or None,
+        )
+        return {"results": [r.to_dict() for r in results]}
 
     # =========================================================================
     # Agent handlers

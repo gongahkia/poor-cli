@@ -10,7 +10,9 @@ Index stored at .poor-cli/index/code.db.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -20,6 +22,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .exceptions import setup_logger
+from .embeddings import (
+    EmbeddingProvider,
+    cosine_similarity,
+    get_embedding_provider,
+    rank_by_similarity,
+)
 
 logger = setup_logger(__name__)
 
@@ -125,6 +133,16 @@ class CodebaseIndexer:
                     content=chunks,
                     content_rowid=chunk_id,
                     tokenize='porter unicode61'
+                )
+            """)
+            # embeddings table for vector search
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS embeddings (
+                    chunk_id INTEGER PRIMARY KEY,
+                    embedding TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    FOREIGN KEY (chunk_id) REFERENCES chunks(chunk_id) ON DELETE CASCADE
                 )
             """)
             # triggers to keep FTS in sync
@@ -304,9 +322,189 @@ class CodebaseIndexer:
             index_size_bytes=size,
         )
 
+    # ── embedding indexing ──────────────────────────────────────────────
+
+    async def index_embeddings(
+        self,
+        provider: Optional[EmbeddingProvider] = None,
+        batch_size: int = 50,
+        force: bool = False,
+        progress_callback: Any = None,
+    ) -> Dict[str, Any]:
+        """Generate and store embeddings for all indexed chunks."""
+        if provider is None:
+            provider = get_embedding_provider()
+        if provider is None:
+            return {"error": "no embedding provider available", "embedded": 0}
+
+        with self._connect() as conn:
+            if force:
+                conn.execute("DELETE FROM embeddings")
+                rows = conn.execute("SELECT chunk_id, content FROM chunks").fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT c.chunk_id, c.content FROM chunks c
+                    LEFT JOIN embeddings e ON c.chunk_id = e.chunk_id
+                    WHERE e.chunk_id IS NULL
+                """).fetchall()
+
+        if not rows:
+            return {"provider": provider.name, "embedded": 0, "message": "all chunks already embedded"}
+
+        embedded = 0
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i + batch_size]
+            texts = [row["content"][:2000] for row in batch]
+            chunk_ids = [row["chunk_id"] for row in batch]
+            try:
+                vectors = await provider.embed(texts)
+            except Exception as exc:
+                logger.error("embedding batch failed: %s", exc)
+                continue
+
+            with self._connect() as conn:
+                for cid, vec in zip(chunk_ids, vectors):
+                    if not vec:
+                        continue
+                    conn.execute(
+                        "INSERT OR REPLACE INTO embeddings (chunk_id, embedding, provider, dimensions) VALUES (?, ?, ?, ?)",
+                        (cid, json.dumps(vec), provider.name, len(vec)),
+                    )
+                    embedded += 1
+
+            if progress_callback:
+                progress_callback(f"embedded {embedded}/{len(rows)} chunks")
+
+        logger.info("embedding complete: %d chunks via %s", embedded, provider.name)
+        return {"provider": provider.name, "embedded": embedded, "total": len(rows)}
+
+    # ── vector search ────────────────────────────────────────────────────
+
+    async def vector_search(
+        self,
+        query: str,
+        max_results: int = 10,
+        file_filter: Optional[str] = None,
+        provider: Optional[EmbeddingProvider] = None,
+    ) -> List[SearchResult]:
+        """Search using embedding similarity. Falls back to FTS5 if no embeddings."""
+        if provider is None:
+            provider = get_embedding_provider()
+        if provider is None:
+            logger.debug("no embedding provider, falling back to FTS5")
+            return self.search(query, max_results, file_filter)
+
+        # check if we have embeddings
+        with self._connect() as conn:
+            emb_count = conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+        if emb_count == 0:
+            logger.debug("no embeddings in index, falling back to FTS5")
+            return self.search(query, max_results, file_filter)
+
+        # embed the query
+        try:
+            query_vecs = await provider.embed([query])
+            if not query_vecs or not query_vecs[0]:
+                return self.search(query, max_results, file_filter)
+            query_vec = query_vecs[0]
+        except Exception as exc:
+            logger.warning("query embedding failed, falling back to FTS5: %s", exc)
+            return self.search(query, max_results, file_filter)
+
+        # load candidate embeddings
+        with self._connect() as conn:
+            filter_clause = ""
+            params: List[Any] = []
+            if file_filter:
+                filter_clause = "AND c.file_path LIKE ?"
+                params.append(f"%{file_filter}%")
+            rows = conn.execute(f"""
+                SELECT c.chunk_id, c.file_path, c.chunk_index, c.content,
+                       f.language, e.embedding
+                FROM chunks c
+                JOIN files f ON c.file_path = f.file_path
+                JOIN embeddings e ON c.chunk_id = e.chunk_id
+                {filter_clause}
+            """, params).fetchall()
+
+        # rank by cosine similarity
+        candidates = []
+        for row in rows:
+            try:
+                vec = json.loads(row["embedding"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            candidates.append((row, vec))
+
+        ranked = rank_by_similarity(query_vec, candidates, top_k=max_results)
+
+        results = []
+        for row, score in ranked:
+            results.append(SearchResult(
+                file_path=row["file_path"],
+                chunk_index=row["chunk_index"],
+                content=row["content"],
+                score=round(score, 4),
+                language=row["language"],
+            ))
+        return results
+
+    # ── hybrid search ────────────────────────────────────────────────────
+
+    async def hybrid_search(
+        self,
+        query: str,
+        max_results: int = 10,
+        file_filter: Optional[str] = None,
+        provider: Optional[EmbeddingProvider] = None,
+        fts_weight: float = 0.3,
+        vec_weight: float = 0.7,
+    ) -> List[SearchResult]:
+        """
+        Combine FTS5 and vector search with weighted scoring.
+
+        Falls back gracefully: vector-only if FTS fails, FTS-only if no embeddings.
+        """
+        fts_results = self.search(query, max_results=max_results * 2, file_filter=file_filter)
+        vec_results = await self.vector_search(query, max_results=max_results * 2,
+                                                file_filter=file_filter, provider=provider)
+
+        # merge: combine scores by file_path:chunk_index key
+        scored: Dict[str, Tuple[SearchResult, float]] = {}
+        fts_max = max((r.score for r in fts_results), default=1.0) or 1.0
+        vec_max = max((r.score for r in vec_results), default=1.0) or 1.0
+
+        for r in fts_results:
+            key = f"{r.file_path}:{r.chunk_index}"
+            norm_score = (r.score / fts_max) * fts_weight
+            scored[key] = (r, norm_score)
+
+        for r in vec_results:
+            key = f"{r.file_path}:{r.chunk_index}"
+            norm_score = (r.score / vec_max) * vec_weight
+            if key in scored:
+                existing_result, existing_score = scored[key]
+                scored[key] = (existing_result, existing_score + norm_score)
+            else:
+                scored[key] = (r, norm_score)
+
+        # sort by combined score
+        ranked = sorted(scored.values(), key=lambda x: x[1], reverse=True)
+        results = []
+        for result, score in ranked[:max_results]:
+            results.append(SearchResult(
+                file_path=result.file_path,
+                chunk_index=result.chunk_index,
+                content=result.content,
+                score=round(score, 4),
+                language=result.language,
+            ))
+        return results
+
     def clear(self) -> None:
         """Drop and recreate the index."""
         with self._connect() as conn:
+            conn.execute("DELETE FROM embeddings")
             conn.execute("DELETE FROM chunks")
             conn.execute("DELETE FROM files")
         logger.info("index cleared")

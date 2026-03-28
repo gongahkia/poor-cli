@@ -3861,13 +3861,16 @@ class ToolRegistryAsync:
             stats = indexer.get_stats()
             if stats.total_files == 0:
                 indexer.index()
-            results = indexer.search(query, max_results=max_results,
-                                     file_filter=file_filter or None)
+            # use hybrid search (FTS5 + embeddings) when embeddings available
+            results = await indexer.hybrid_search(
+                query, max_results=max_results,
+                file_filter=file_filter or None,
+            )
             if not results:
                 return f"no results for: {query}"
             parts = [f"Found {len(results)} results for '{query}':\n"]
             for r in results:
-                parts.append(f"### {r.file_path} (chunk {r.chunk_index}, {r.language})\n```\n{r.content[:800]}\n```\n")
+                parts.append(f"### {r.file_path} (chunk {r.chunk_index}, score={r.score}, {r.language})\n```\n{r.content[:800]}\n```\n")
             return "\n".join(parts)
         except Exception as exc:
             return f"error: {exc}"
@@ -3877,11 +3880,18 @@ class ToolRegistryAsync:
             from .indexer import CodebaseIndexer
             indexer = CodebaseIndexer()
             stats = indexer.index(force=force)
-            return (
+            msg = (
                 f"Indexing complete: {stats.total_files} files, "
                 f"{stats.total_chunks} chunks, "
                 f"index size: {stats.index_size_bytes // 1024}KB"
             )
+            # auto-generate embeddings if a provider is available
+            emb_result = await indexer.index_embeddings(force=force)
+            if emb_result.get("embedded", 0) > 0:
+                msg += f"\nEmbeddings: {emb_result['embedded']} chunks via {emb_result['provider']}"
+            elif emb_result.get("error"):
+                msg += f"\nEmbeddings: skipped ({emb_result['error']})"
+            return msg
         except Exception as exc:
             return f"error: {exc}"
 
