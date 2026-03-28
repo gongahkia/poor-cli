@@ -25,6 +25,7 @@
         <div class="sidebar-nav-item" data-nav="workflows">Workflows</div>
         <div class="sidebar-nav-item" data-nav="checkpoints">Checkpoints</div>
         <div class="sidebar-nav-item" data-nav="tools">Tools</div>
+        <div class="sidebar-nav-item" data-nav="git">Git</div>
         <div class="sidebar-nav-item" data-nav="diagnostics">Diagnostics</div>
         <div class="sidebar-nav-item" data-nav="settings">Settings</div>
       </div>
@@ -41,6 +42,8 @@
           <option value="anthropic">Anthropic</option>
           <option value="ollama">Ollama</option>
         </select>
+        <label class="routing-label">Model</label>
+        <select id="model-select"><option value="">default</option></select>
         <label class="routing-label">Routing</label>
         <select id="routing-mode">
           <option value="manual">Manual</option>
@@ -178,6 +181,19 @@
           <div id="tools-content"></div>
         </div>
       </div>
+      <!-- git view -->
+      <div class="view-panel" data-view="git" hidden>
+        <div class="git-container">
+          <div class="git-header"><h2>Git</h2><button class="btn btn-sm" id="git-refresh-btn">Refresh</button></div>
+          <div class="git-tabs">
+            <button class="git-tab active" data-tab="status">Status</button>
+            <button class="git-tab" data-tab="log">Log</button>
+            <button class="git-tab" data-tab="diff">Diff</button>
+            <button class="git-tab" data-tab="branches">Branches</button>
+          </div>
+          <div id="git-content" class="git-content"></div>
+        </div>
+      </div>
       <!-- diagnostics view -->
       <div class="view-panel" data-view="diagnostics" hidden>
         <div class="diagnostics-container">
@@ -310,6 +326,13 @@
         <button class="btn" id="export-modal-cancel">Cancel</button>
         <button class="btn btn-primary" id="export-modal-go">Export</button>
       </div>
+    </div>
+  </div>
+  <!-- command palette -->
+  <div class="palette-overlay" id="command-palette" hidden>
+    <div class="palette">
+      <input type="text" id="palette-input" placeholder="Type a command..." autocomplete="off" />
+      <div id="palette-list" class="palette-list"></div>
     </div>
   </div>
   <script type="module" src="lib/app.js"></script>

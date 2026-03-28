@@ -644,6 +644,38 @@ pub async fn export_conversation(state: State<'_, AppState>, format: Option<Stri
     send_rpc_long(&state, "poor-cli/exportConversation", json!({"format": format.unwrap_or_else(|| "markdown".into())})).await
 }
 
+// --- git (local) ---
+#[tauri::command]
+pub async fn git_status(_state: State<'_, AppState>) -> Result<Value, String> {
+    let out = Command::new("git").args(["status", "-sb"]).output().await.map_err(|e| e.to_string())?;
+    Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string(), "error": String::from_utf8_lossy(&out.stderr).to_string()}))
+}
+#[tauri::command]
+pub async fn git_log(_state: State<'_, AppState>, count: Option<u32>) -> Result<Value, String> {
+    let n = count.unwrap_or(20).to_string();
+    let out = Command::new("git").args(["log", "--oneline", "--graph", "--decorate", "-n", &n]).output().await.map_err(|e| e.to_string())?;
+    Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string(), "error": String::from_utf8_lossy(&out.stderr).to_string()}))
+}
+#[tauri::command]
+pub async fn git_diff(_state: State<'_, AppState>, staged: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["diff", "--stat"];
+    if staged.unwrap_or(false) { args.push("--cached"); }
+    let out = Command::new("git").args(&args).output().await.map_err(|e| e.to_string())?;
+    Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string(), "error": String::from_utf8_lossy(&out.stderr).to_string()}))
+}
+#[tauri::command]
+pub async fn git_diff_full(_state: State<'_, AppState>, staged: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["diff"];
+    if staged.unwrap_or(false) { args.push("--cached"); }
+    let out = Command::new("git").args(&args).output().await.map_err(|e| e.to_string())?;
+    Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string(), "error": String::from_utf8_lossy(&out.stderr).to_string()}))
+}
+#[tauri::command]
+pub async fn git_branches(_state: State<'_, AppState>) -> Result<Value, String> {
+    let out = Command::new("git").args(["branch", "-a", "--no-color"]).output().await.map_err(|e| e.to_string())?;
+    Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string()}))
+}
+
 // --- services ---
 #[tauri::command]
 pub async fn start_service(state: State<'_, AppState>, name: String, options: Option<Value>) -> Result<Value, String> {

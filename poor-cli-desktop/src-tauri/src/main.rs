@@ -100,6 +100,12 @@ fn main() {
             commands::get_policy_status,
             commands::get_trust_view,
             commands::get_sandbox_status,
+            // git
+            commands::git_status,
+            commands::git_log,
+            commands::git_diff,
+            commands::git_diff_full,
+            commands::git_branches,
             // export
             commands::export_conversation,
             // services

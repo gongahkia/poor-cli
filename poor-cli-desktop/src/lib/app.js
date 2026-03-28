@@ -15,6 +15,8 @@ import { initWorkflows } from './workflows.js';
 import { initTools } from './tools.js';
 import { initDiagnostics } from './diagnostics.js';
 import { initContext } from './context.js';
+import { initGit } from './git.js';
+import { initPalette } from './palette.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -102,8 +104,11 @@ async function ensureInitialized() {
   }
 }
 
-// provider
+// provider + model
 let activeProvider = null;
+const modelSelect = document.getElementById('model-select');
+let providerModels = {}; // provider -> [models]
+
 async function refreshProviderInfo() {
   try {
     const info = await rpc('get_provider_info', {});
@@ -111,9 +116,33 @@ async function refreshProviderInfo() {
     const model = info.model || 'unknown';
     providerInfo.textContent = `${name} / ${model}`;
     activeProvider = name;
-    providerSelect.value = name; // sync dropdown to actual backend provider
+    providerSelect.value = name;
+    await refreshModelList(name, model);
   } catch (e) {
     providerInfo.textContent = 'Not connected';
+  }
+}
+
+async function refreshModelList(provider, currentModel) {
+  if (!providerModels[provider]) {
+    try {
+      const result = await rpc('list_providers', {});
+      for (const [name, info] of Object.entries(result || {})) {
+        providerModels[name] = info.models || [];
+      }
+    } catch (_) {}
+  }
+  const models = providerModels[provider] || [];
+  modelSelect.innerHTML = '';
+  if (!models.length) {
+    modelSelect.innerHTML = '<option value="">default</option>';
+  } else {
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      if (m === currentModel) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
   }
 }
 
@@ -382,11 +411,23 @@ providerSelect.addEventListener('change', async () => {
   const prev = activeProvider;
   try {
     await rpc('switch_provider', { provider: providerSelect.value });
+    providerModels = {}; // clear cache on provider switch
     await refreshProviderInfo();
   } catch (e) {
     providerInfo.textContent = `Switch failed: ${e}`;
     providerInfo.style.color = 'var(--error)';
-    if (prev) providerSelect.value = prev; // revert dropdown
+    if (prev) providerSelect.value = prev;
+  }
+});
+modelSelect.addEventListener('change', async () => {
+  const model = modelSelect.value;
+  if (!model) return;
+  try {
+    await rpc('switch_provider', { provider: providerSelect.value, model });
+    await refreshProviderInfo();
+  } catch (e) {
+    providerInfo.textContent = `Model switch failed: ${e}`;
+    providerInfo.style.color = 'var(--error)';
   }
 });
 // session tab bar
@@ -462,6 +503,7 @@ registerView('workflows', initWorkflows);
 registerView('tools', initTools);
 registerView('diagnostics', initDiagnostics);
 registerView('context', initContext);
+registerView('git', initGit);
 
 // sidebar nav
 document.querySelectorAll('.sidebar-nav-item').forEach(el => {
@@ -526,4 +568,5 @@ applyCustomFonts();
 initFileChangesPanel();
 initCollabPanel();
 initAutocomplete();
+initPalette();
 ensureInitialized();
