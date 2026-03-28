@@ -338,6 +338,9 @@ class Config:
     retry: RetryConfig = field(default_factory=RetryConfig)
     circuit_breaker: CircuitBreakerConfig = field(default_factory=CircuitBreakerConfig)
 
+    # auto-feedback: run lint/test after file mutations
+    _auto_feedback_enabled: bool = False
+
     # API keys stored separately (not in config file)
     api_keys: Dict[str, str] = field(default_factory=dict)
     mcp_servers: Dict[str, Any] = field(default_factory=dict)

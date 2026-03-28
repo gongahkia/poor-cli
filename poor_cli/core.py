@@ -2374,16 +2374,47 @@ class PoorCLICore:
                 tool_results.append(call_result)
 
         # execute mutating calls sequentially
+        had_mutations = False
         for fc in mutating_calls:
             call_events, call_result = await self._execute_single_call_events(
                 fc, iteration, max_iterations, request_id,
             )
             self._pending_events.extend(call_events)
             tool_results.append(call_result)
+            had_mutations = True
+
+        # auto-feedback: run lint/test after mutations and inject errors
+        if had_mutations and self._should_auto_feedback():
+            feedback_text = await self._run_auto_feedback()
+            if feedback_text:
+                tool_results.append({
+                    "id": "__auto_feedback__",
+                    "name": "auto_feedback",
+                    "result": feedback_text,
+                })
 
         if not self.provider:
             return tool_results
         return self.provider.format_tool_results(tool_results)
+
+    def _should_auto_feedback(self) -> bool:
+        """Check if auto-feedback loop is enabled in config."""
+        if not self.config:
+            return False
+        return getattr(self.config, "_auto_feedback_enabled", False)
+
+    async def _run_auto_feedback(self) -> str:
+        """Run lint/test and return formatted errors, or empty string if all passed."""
+        try:
+            from .feedback_loop import detect_project, run_feedback_pass, format_feedback_for_model
+            detection = detect_project()
+            if detection.project_type == "unknown":
+                return ""
+            results = await run_feedback_pass(detection=detection)
+            return format_feedback_for_model(results)
+        except Exception as exc:
+            logger.debug("auto-feedback failed: %s", exc)
+            return ""
 
     async def reload_mcp_servers(self) -> Dict[str, Any]:
         """Rebuild MCP tool registration from current config."""
