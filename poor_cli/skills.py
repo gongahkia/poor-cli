@@ -51,9 +51,20 @@ class SkillRegistry:
         )
 
     def list_skills(self) -> List[SkillDefinition]:
+        # trust check: filter repo-local skills in untrusted repos
+        _repo_skill_dir = self.repo_root / ".poor-cli" / "skills"
+        _skip_repo = False
+        try:
+            from .trust import TrustManager
+            if not TrustManager().is_trusted(str(self.repo_root)):
+                _skip_repo = True
+        except Exception:
+            pass
         discovered: List[SkillDefinition] = []
         seen: set[str] = set()
         for root in self.search_paths:
+            if _skip_repo and root == _repo_skill_dir:
+                continue
             if not root.is_dir():
                 continue
             for skill_dir in sorted(path for path in root.iterdir() if path.is_dir()):

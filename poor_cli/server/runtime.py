@@ -718,6 +718,9 @@ class PoorCLIServer:
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
             "poor-cli/renameSession": self.handle_rename_session,
+            "poor-cli/getTrustStatus": self.handle_get_trust_status,
+            "poor-cli/trustRepo": self.handle_trust_repo,
+            "poor-cli/untrustRepo": self.handle_untrust_repo,
             "poor-cli/memoryList": self.handle_memory_list,
             "poor-cli/memorySave": self.handle_memory_save,
             "poor-cli/memorySearch": self.handle_memory_search,
@@ -4745,6 +4748,29 @@ class PoorCLIServer:
 
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
+
+    # =========================================================================
+    # Trust handlers
+    # =========================================================================
+
+    async def handle_get_trust_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..trust import TrustManager
+        mgr = TrustManager()
+        return mgr.to_dict()
+
+    async def handle_trust_repo(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..trust import TrustManager
+        mgr = TrustManager()
+        path = params.get("path") or None
+        canonical = mgr.trust(path)
+        return {"trusted": True, "path": canonical}
+
+    async def handle_untrust_repo(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..trust import TrustManager
+        mgr = TrustManager()
+        path = params.get("path") or None
+        removed = mgr.untrust(path)
+        return {"untrusted": removed, "path": str(Path.cwd().resolve())}
 
     # =========================================================================
     # Memory handlers

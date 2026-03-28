@@ -459,6 +459,15 @@ class ConfigManager:
         if not repo_config_path.exists():
             return
 
+        # trust check: skip repo config in untrusted repos
+        try:
+            from .trust import TrustManager
+            if not TrustManager().is_trusted():
+                logger.warning("untrusted repo — skipping .poor-cli/config.yaml (run /trust to enable)")
+                return
+        except Exception:
+            pass # trust module unavailable, allow config
+
         try:
             with open(repo_config_path, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)

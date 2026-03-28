@@ -119,6 +119,13 @@ class InstructionManager:
         ]
 
     def _load_repo_root_instructions(self) -> List[InstructionSource]:
+        # trust check: skip repo instructions in untrusted repos
+        try:
+            from .trust import TrustManager
+            if not TrustManager().is_trusted(str(self.repo_root)):
+                return []
+        except Exception:
+            pass
         sources: List[InstructionSource] = []
         for file_name in INSTRUCTION_FILE_NAMES:
             path = self.repo_root / file_name
