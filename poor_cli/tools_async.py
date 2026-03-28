@@ -256,6 +256,10 @@ class ToolRegistryAsync:
                             "end_line": {
                                 "type": "INTEGER",
                                 "description": "Optional ending line number (1-indexed)"
+                            },
+                            "pages": {
+                                "type": "STRING",
+                                "description": "Page range for PDF files (e.g., '1-5', '3', '10-20'). Only for .pdf files."
                             }
                         },
                         "required": ["file_path"]
@@ -1879,13 +1883,14 @@ class ToolRegistryAsync:
         )
 
     async def read_file(self, file_path: str, start_line: Optional[int] = None,
-                       end_line: Optional[int] = None) -> str:
+                       end_line: Optional[int] = None, pages: Optional[str] = None) -> str:
         """Read file contents asynchronously
 
         Args:
             file_path: Path to file
             start_line: Optional starting line (1-indexed)
             end_line: Optional ending line (1-indexed)
+            pages: Optional page range for PDF files (e.g., "1-5")
 
         Returns:
             File contents
@@ -1896,6 +1901,15 @@ class ToolRegistryAsync:
         try:
             # Validate path
             file_path = validate_file_path(file_path, must_exist=True, must_be_file=True)
+
+            # route to specialized readers for non-text formats
+            ext = Path(file_path).suffix.lower()
+            if ext == ".pdf":
+                from .readers.pdf_reader import read_pdf
+                return read_pdf(file_path, pages=pages)
+            if ext == ".ipynb":
+                from .readers.notebook_reader import read_notebook
+                return read_notebook(file_path)
 
             # Read file asynchronously
             async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
