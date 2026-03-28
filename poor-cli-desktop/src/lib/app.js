@@ -225,6 +225,27 @@ export async function refreshSessions() {
       });
       tab.appendChild(close);
       tab.addEventListener('click', () => selectSession(s, tab));
+      // drag-to-reorder
+      tab.draggable = true;
+      tab.dataset.sessionId = s.sessionId;
+      tab.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', s.sessionId);
+        tab.classList.add('dragging');
+      });
+      tab.addEventListener('dragend', () => tab.classList.remove('dragging'));
+      tab.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const dragging = sessionTabBar.querySelector('.dragging');
+        if (dragging && dragging !== tab) {
+          const rect = tab.getBoundingClientRect();
+          const mid = rect.left + rect.width / 2;
+          if (e.clientX < mid) {
+            sessionTabBar.insertBefore(dragging, tab);
+          } else {
+            sessionTabBar.insertBefore(dragging, tab.nextSibling);
+          }
+        }
+      });
       sessionTabBar.insertBefore(tab, addBtn);
       if (s.isDefault) {
         activeSessionId = s.sessionId;

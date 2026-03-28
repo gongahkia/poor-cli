@@ -847,6 +847,9 @@ select {
 }
 .session-tab:hover .tab-close { opacity: 1; }
 .tab-close:hover { background: var(--error); color: var(--bg-primary); }
+.session-tab.dragging { opacity: 0.4; }
+.session-tab[draggable="true"] { cursor: grab; }
+.session-tab[draggable="true"]:active { cursor: grabbing; }
 .session-tab-add {
   display: inline-flex;
   align-items: center;
@@ -1658,6 +1661,8 @@ select {
 .palette-label { color: var(--text-primary); }
 
 /* mission control */
+.mission-control-container { padding: 20px 24px; }
+.mission-control-container h2 { margin: 0 0 16px; }
 .mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 12px; }
 .mc-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .mc-card-active { border-color: var(--accent); }
@@ -1676,4 +1681,27 @@ select {
 .mc-dot-active { background: #3c3; }
 .mc-dot-idle { background: #999; }
 .mc-empty { padding: 24px; text-align: center; color: var(--text-muted); }
+
+/* side-by-side diff */
+.diff-file { margin: 12px 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.diff-file-header { padding: 6px 12px; background: var(--bg-tertiary); font-family: var(--font-mono); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.diff-side-by-side { display: flex; }
+.diff-col { flex: 1; min-width: 0; overflow-x: auto; border-right: 1px solid var(--border); }
+.diff-col:last-child { border-right: none; }
+.diff-col-label { padding: 3px 10px; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
+.diff-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12px; line-height: 1.4; }
+.diff-table tr.diff-del { background: #ffeef0; }
+.diff-table tr.diff-add { background: #e6ffec; }
+.diff-table tr.diff-hunk { background: var(--bg-tertiary); color: var(--text-muted); }
+.diff-table tr.diff-pad { background: var(--bg-secondary); }
+.diff-num { width: 40px; padding: 0 6px; text-align: right; color: var(--text-muted); font-size: 11px; user-select: none; border-right: 1px solid var(--border); }
+.diff-code { padding: 0 8px; white-space: pre; }
+
+/* git tree */
+.git-tree { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; padding: 8px; }
+.git-tree-line { white-space: pre; }
+.git-tree-graph { color: var(--accent); }
+.git-tree-msg { color: var(--text-primary); }
+.git-tree-ref { color: var(--warning, #d29922); font-weight: 600; }
+.git-tree-head { color: var(--accent); font-weight: 700; }
 .palette-key { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
