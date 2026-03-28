@@ -839,16 +839,18 @@ poor-cli agent cancel <id>
 | 8 | G-04 Semantic Indexing | P0 | L | Embedding provider | ✅ Done |
 | 9 | G-03 Worktree Isolation | P0 | M | Git | ✅ Done |
 | 10 | G-02 Background Agents | P0 | L | G-03 | ✅ Done |
-| 11 | G-05 PR Review Agent | P1 | M | gh CLI |
-| 12 | G-12 Inline Autocomplete | P2 | L | Editor plugins |
-| 13 | G-11 VS Code Extension | P2 | L | JSON-RPC server |
-| 14 | G-14 Live Preview | P2 | M | None |
-| 15 | G-15 Voice Input | P2 | M | Optional deps |
-| 16 | G-13 External Integrations | P2 | M | MCP |
-| 17 | G-18 Auto Memory | P3 | S | G-01 |
-| 18 | G-19 IDE Watch Mode | P3 | S | Editor plugins |
-| 19 | G-17 Cloud Deploy | P3 | S | None |
-| 20 | G-20 Mission Control | P3 | M | Desktop only |
+| 11 | G-05 PR Review Agent | P1 | M | gh CLI | ✅ Done |
+| 12 | G-12 Inline Autocomplete | P2 | L | Editor plugins | ✅ Done |
+| 13 | G-11 VS Code Extension | P2 | L | JSON-RPC server | ✅ Done |
+| 14 | G-14 Live Preview | P2 | M | None | ✅ Done |
+| 15 | G-15 Voice Input | P2 | M | Optional deps | ✅ Done |
+| 16 | G-13 External Integrations | P2 | M | MCP | ✅ Done |
+| 17 | G-18 Auto Memory | P3 | S | G-01 | ✅ Done |
+| 18 | G-19 IDE Watch Mode | P3 | S | Editor plugins | ✅ Done |
+| 19 | G-17 Cloud Deploy | P3 | S | None | ✅ Done |
+| 20 | G-20 Mission Control | P3 | M | Desktop only | ✅ Done |
+
+**All 20 gaps implemented.** Total: ~5,500 LOC across 21 commits.
 
 **Size key:** S = <500 LOC, M = 500-1500 LOC, L = >1500 LOC
 
