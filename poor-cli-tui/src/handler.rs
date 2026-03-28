@@ -428,6 +428,20 @@ pub(super) fn handle_server_message(
                 for path in &paths {
                     app.remember_recent_edit(path);
                 }
+                // mutation summary: show file change stats
+                if changed == Some(true) && !paths.is_empty() {
+                    let adds = diff.lines().filter(|l| l.starts_with('+')).count();
+                    let dels = diff.lines().filter(|l| l.starts_with('-')).count();
+                    let files_str = if paths.len() == 1 {
+                        paths[0].clone()
+                    } else {
+                        format!("{} files", paths.len())
+                    };
+                    let summary = format!(
+                        "\u{2502} \u{1F4DD} {files_str} \u{2502} +{adds} -{dels}"
+                    );
+                    app.push_message(ChatMessage::system(summary));
+                }
                 refresh_workspace_status(app);
                 refresh_resume_dashboard(app, &rpc_cmd_tx.borrow());
                 app.push_timeline_entry(poor_cli_tui::app::TimelineEntry {

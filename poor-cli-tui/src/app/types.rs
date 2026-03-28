@@ -463,8 +463,14 @@ impl ResponseMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeMode {
-    Dark,
-    Light,
+    Dark,           // one-dark style (default dark)
+    Light,          // github-light style (default light)
+    Dracula,        // dracula purple
+    Nord,           // nord blue
+    Monokai,        // monokai warm
+    GithubDark,     // github dark dimmed
+    SolarizedLight, // solarized light
+    QuietLight,     // quiet light muted
 }
 
 impl ThemeMode {
@@ -472,21 +478,50 @@ impl ThemeMode {
         match self {
             Self::Dark => "dark",
             Self::Light => "light",
+            Self::Dracula => "dracula",
+            Self::Nord => "nord",
+            Self::Monokai => "monokai",
+            Self::GithubDark => "github-dark",
+            Self::SolarizedLight => "solarized-light",
+            Self::QuietLight => "quiet-light",
         }
+    }
+
+    pub const fn is_dark(self) -> bool {
+        matches!(self, Self::Dark | Self::Dracula | Self::Nord | Self::Monokai | Self::GithubDark)
+    }
+
+    pub fn all_themes() -> &'static [ThemeMode] {
+        &[
+            Self::Dark, Self::Light, Self::Dracula, Self::Nord,
+            Self::Monokai, Self::GithubDark, Self::SolarizedLight, Self::QuietLight,
+        ]
     }
 
     pub fn from_ui_theme(value: &str) -> Self {
         match value.trim().to_lowercase().as_str() {
-            "light" => Self::Light,
-            "dark" | "default" | "minimal" | "" => Self::Dark,
+            "light" | "github-light" => Self::Light,
+            "dracula" => Self::Dracula,
+            "nord" => Self::Nord,
+            "monokai" => Self::Monokai,
+            "github-dark" => Self::GithubDark,
+            "solarized-light" => Self::SolarizedLight,
+            "quiet-light" => Self::QuietLight,
+            "dark" | "one-dark" | "default" | "minimal" | "" => Self::Dark,
             _ => Self::Dark,
         }
     }
 
     pub fn from_user_input(value: &str) -> Option<Self> {
         match value.trim().to_lowercase().as_str() {
-            "dark" => Some(Self::Dark),
-            "light" => Some(Self::Light),
+            "dark" | "one-dark" => Some(Self::Dark),
+            "light" | "github-light" => Some(Self::Light),
+            "dracula" => Some(Self::Dracula),
+            "nord" => Some(Self::Nord),
+            "monokai" => Some(Self::Monokai),
+            "github-dark" => Some(Self::GithubDark),
+            "solarized-light" => Some(Self::SolarizedLight),
+            "quiet-light" => Some(Self::QuietLight),
             _ => None,
         }
     }

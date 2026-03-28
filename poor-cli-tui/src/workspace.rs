@@ -400,7 +400,7 @@ pub(crate) fn open_context_inspector_for_message(
 pub(crate) fn build_quick_open_items(app: &App, rpc_cmd_tx: &mpsc::Sender<RpcCommand>) -> Vec<QuickOpenItem> {
     let mut items = Vec::new();
 
-    for spec in input::SLASH_COMMANDS.iter().take(24) {
+    for spec in input::SLASH_COMMANDS.iter() {
         items.push(QuickOpenItem {
             kind: QuickOpenItemKind::Command,
             label: spec.command.to_string(),
