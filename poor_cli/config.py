@@ -367,7 +367,7 @@ class Config:
             "output_truncation": asdict(self.output_truncation),
             "repo_index": asdict(self.repo_index),
             "economy": asdict(self.economy),
-            "retry": asdict(self.retry),
+            "retry": {k: v for k, v in asdict(self.retry).items() if k != "retryable_exceptions"},
             "circuit_breaker": asdict(self.circuit_breaker),
             "mcp_servers": self.mcp_servers,
         }
@@ -573,7 +573,7 @@ class ConfigManager:
             config_dict = self.config.to_dict()
 
             with open(self.config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
+                yaml.safe_dump(config_dict, f, default_flow_style=False, sort_keys=False)
 
             logger.info(f"Configuration saved to {self.config_path}")
 
