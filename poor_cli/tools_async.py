@@ -109,6 +109,8 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "memory_delete": [],
     "memory_list": [],
     "spawn_parallel_agents": [ToolCapability.PROCESS_EXECUTE.value],
+    "semantic_search": [ToolCapability.FILESYSTEM_READ.value],
+    "index_codebase": [ToolCapability.FILESYSTEM_READ.value],
 }
 
 _CACHEABLE_TOOLS = frozenset({"read_file", "glob_files", "grep_files", "git_status", "git_diff", "git_log", "list_directory", "diff_files"})
@@ -982,6 +984,38 @@ class ToolRegistryAsync:
                         "description": {"type": "STRING", "description": "Optional new description"}
                     },
                     "required": ["id", "status"]
+                }
+            }
+        }
+
+        # ── semantic search tools ────────────────────────────────────────
+        self.tools["semantic_search"] = {
+            "function": self.semantic_search,
+            "declaration": {
+                "name": "semantic_search",
+                "description": "Search the codebase using full-text search over an index of all project files. More thorough than grep for conceptual queries.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Search query (keywords or concepts)"},
+                        "max_results": {"type": "INTEGER", "description": "Max results (default 10)"},
+                        "file_filter": {"type": "STRING", "description": "Optional filename filter (e.g., '.py' or 'auth')"},
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+        self.tools["index_codebase"] = {
+            "function": self.index_codebase,
+            "declaration": {
+                "name": "index_codebase",
+                "description": "Build or refresh the semantic search index for the codebase. Only re-indexes changed files.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "force": {"type": "BOOLEAN", "description": "Force full re-index (default false)"},
+                    },
+                    "required": []
                 }
             }
         }
@@ -3817,6 +3851,39 @@ class ToolRegistryAsync:
                 self._save_todos()
                 return f"todo #{id} updated to {status}"
         return f"error: todo #{id} not found"
+
+    # ── semantic search implementations ────────────────────────────────
+
+    async def semantic_search(self, query: str, max_results: int = 10, file_filter: str = "") -> str:
+        try:
+            from .indexer import CodebaseIndexer
+            indexer = CodebaseIndexer()
+            stats = indexer.get_stats()
+            if stats.total_files == 0:
+                indexer.index()
+            results = indexer.search(query, max_results=max_results,
+                                     file_filter=file_filter or None)
+            if not results:
+                return f"no results for: {query}"
+            parts = [f"Found {len(results)} results for '{query}':\n"]
+            for r in results:
+                parts.append(f"### {r.file_path} (chunk {r.chunk_index}, {r.language})\n```\n{r.content[:800]}\n```\n")
+            return "\n".join(parts)
+        except Exception as exc:
+            return f"error: {exc}"
+
+    async def index_codebase(self, force: bool = False) -> str:
+        try:
+            from .indexer import CodebaseIndexer
+            indexer = CodebaseIndexer()
+            stats = indexer.index(force=force)
+            return (
+                f"Indexing complete: {stats.total_files} files, "
+                f"{stats.total_chunks} chunks, "
+                f"index size: {stats.index_size_bytes // 1024}KB"
+            )
+        except Exception as exc:
+            return f"error: {exc}"
 
     # ── parallel agent implementation ──────────────────────────────────
 

@@ -718,6 +718,9 @@ class PoorCLIServer:
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
             "poor-cli/renameSession": self.handle_rename_session,
+            "poor-cli/semanticSearch": self.handle_semantic_search,
+            "poor-cli/indexCodebase": self.handle_index_codebase,
+            "poor-cli/getIndexStats": self.handle_get_index_stats,
             "poor-cli/createAgent": self.handle_create_agent,
             "poor-cli/listAgents": self.handle_list_agents,
             "poor-cli/getAgent": self.handle_get_agent,
@@ -4758,6 +4761,33 @@ class PoorCLIServer:
 
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
+
+    # =========================================================================
+    # Index handlers
+    # =========================================================================
+
+    async def handle_semantic_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..indexer import CodebaseIndexer
+        indexer = CodebaseIndexer()
+        query = str(params.get("query", "")).strip()
+        if not query:
+            return {"error": "query required"}
+        max_results = int(params.get("maxResults", 10))
+        file_filter = params.get("fileFilter") or None
+        results = indexer.search(query, max_results=max_results, file_filter=file_filter)
+        return {"results": [r.to_dict() for r in results]}
+
+    async def handle_index_codebase(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..indexer import CodebaseIndexer
+        indexer = CodebaseIndexer()
+        force = bool(params.get("force", False))
+        stats = indexer.index(force=force)
+        return {"stats": stats.to_dict()}
+
+    async def handle_get_index_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..indexer import CodebaseIndexer
+        indexer = CodebaseIndexer()
+        return {"stats": indexer.get_stats().to_dict()}
 
     # =========================================================================
     # Agent handlers
