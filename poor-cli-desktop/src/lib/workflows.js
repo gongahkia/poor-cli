@@ -52,9 +52,15 @@ export async function initWorkflows() {
 
 async function runWorkflow(name) {
   showView('chat');
-  try {
-    await rpc('send_chat', { message: `/${name}` });
-  } catch (_) {}
+  // inject into chat input and trigger send — goes through normal chat flow
+  const input = document.getElementById('chat-input');
+  if (input) {
+    input.value = `/${name}`;
+    input.dispatchEvent(new Event('input'));
+    // trigger the send button
+    const sendBtn = document.getElementById('send-btn');
+    if (sendBtn) sendBtn.click();
+  }
 }
 
 function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
