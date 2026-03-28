@@ -28,11 +28,9 @@ export async function initWorkflows() {
     for (const w of items) {
       const preset = w.preset || w.sandboxPreset || '';
       const title = w.title || w.name;
-      const icon = w.icon || '';
       const card = document.createElement('div');
       card.className = 'wf-card';
       card.innerHTML = `
-        <div class="wf-card-icon">${icon}</div>
         <div class="wf-card-body">
           <div class="wf-card-title">${esc(title)}</div>
           <div class="wf-card-desc">${esc(w.description || '')}</div>
