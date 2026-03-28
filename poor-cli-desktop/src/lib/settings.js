@@ -5,15 +5,20 @@ const categories = { // display name -> config key prefix
   'General': 'ui',
   'Fonts': 'fonts',
   'API Keys': 'api_keys',
-  'Providers': 'model',
+  'Model': 'model',
   'Security': 'security',
   'Sandbox': 'sandbox',
   'Plan Mode': 'plan_mode',
   'Checkpoints': 'checkpoint',
+  'Agentic': 'agentic',
   'History': 'history',
-  'Context': 'context_compression',
-  'Cost': 'cost_guardrail',
+  'Context Compression': 'context_compression',
+  'Output Truncation': 'output_truncation',
+  'Cost Guardrails': 'cost_guardrails',
   'Fallback': 'fallback',
+  'Economy': 'economy',
+  'Repo Index': 'repo_index',
+  'Tasks': 'tasks',
 };
 
 const apiKeyDefs = [
@@ -24,28 +29,78 @@ const apiKeyDefs = [
   { id: 'brave', label: 'Brave Search', env: 'BRAVE_SEARCH_API_KEY', hint: 'brave.com/search/api' },
 ];
 
-const defaultOptions = [ // fallback when backend unavailable
+// fallback options using exact backend field names
+const defaultOptions = [
+  // ui
   { path: 'ui.theme', value: 'github-light', choices: ['github-light', 'quiet-light', 'solarized-light', 'one-dark', 'dracula', 'github-dark', 'monokai', 'nord'] },
   { path: 'ui.crt_effect', value: false, isBoolean: true },
-  { path: 'ui.stream', value: true, isBoolean: true },
-  { path: 'ui.markdown', value: true, isBoolean: true },
-  { path: 'model.default_provider', value: 'openai', choices: ['gemini', 'openai', 'anthropic', 'ollama'] },
+  { path: 'ui.enable_streaming', value: true, isBoolean: true },
+  { path: 'ui.markdown_rendering', value: true, isBoolean: true },
+  { path: 'ui.show_token_count', value: true, isBoolean: true },
+  { path: 'ui.show_tool_calls', value: true, isBoolean: true },
+  { path: 'ui.verbose_logging', value: false, isBoolean: true },
+  // model
+  { path: 'model.provider', value: 'openai', choices: ['gemini', 'openai', 'anthropic', 'ollama'] },
+  { path: 'model.routing_mode', value: 'manual', choices: ['manual', 'quality', 'speed', 'cheap', 'private'] },
   { path: 'model.temperature', value: 0.7 },
-  { path: 'model.max_tokens', value: 4096 },
-  { path: 'security.require_approval', value: true, isBoolean: true },
-  { path: 'security.audit_log', value: true, isBoolean: true },
-  { path: 'sandbox.enabled', value: false, isBoolean: true },
-  { path: 'sandbox.preset', value: 'permissive', choices: ['strict', 'moderate', 'permissive'] },
-  { path: 'plan_mode.auto_plan', value: false, isBoolean: true },
+  { path: 'model.max_tokens', value: null },
+  { path: 'model.top_p', value: 0.95 },
+  { path: 'model.prompt_caching', value: true, isBoolean: true },
+  // security
+  { path: 'security.permission_mode', value: 'prompt', choices: ['prompt', 'auto-safe', 'danger-full-access'] },
+  { path: 'security.require_permission_for_write', value: true, isBoolean: true },
+  { path: 'security.require_permission_for_bash', value: true, isBoolean: true },
+  { path: 'security.enable_bash_execution', value: true, isBoolean: true },
+  { path: 'security.max_bash_timeout_seconds', value: 60 },
+  { path: 'security.unicode_scanning', value: true, isBoolean: true },
+  // sandbox
+  { path: 'sandbox.default_preset', value: 'workspace-write', choices: ['read-only', 'review-only', 'workspace-write', 'full-access'] },
+  // plan mode
+  { path: 'plan_mode.enabled', value: true, isBoolean: true },
+  { path: 'plan_mode.auto_plan_threshold', value: 2 },
+  { path: 'plan_mode.require_approval_for_high_risk', value: true, isBoolean: true },
+  { path: 'plan_mode.show_diff_in_plan', value: true, isBoolean: true },
+  // checkpoint
   { path: 'checkpoint.enabled', value: true, isBoolean: true },
-  { path: 'checkpoint.interval_minutes', value: 5 },
-  { path: 'history.max_entries', value: 1000 },
-  { path: 'history.persist', value: true, isBoolean: true },
+  { path: 'checkpoint.auto_checkpoint_before_write', value: true, isBoolean: true },
+  { path: 'checkpoint.max_checkpoints', value: 50 },
+  { path: 'checkpoint.max_age_hours', value: 0 },
+  { path: 'checkpoint.max_disk_mb', value: 0 },
+  // agentic
+  { path: 'agentic.max_iterations', value: 25 },
+  { path: 'agentic.sub_agent_max_depth', value: 2 },
+  { path: 'agentic.sub_agent_timeout', value: 120 },
+  // history
+  { path: 'history.max_turns', value: 50 },
+  { path: 'history.auto_save', value: true, isBoolean: true },
+  { path: 'history.restore_on_startup', value: true, isBoolean: true },
+  { path: 'history.max_messages_to_restore', value: 20 },
+  // context compression
   { path: 'context_compression.enabled', value: true, isBoolean: true },
-  { path: 'cost_guardrail.enabled', value: false, isBoolean: true },
-  { path: 'cost_guardrail.max_cost', value: 10.0 },
-  { path: 'fallback.enabled', value: true, isBoolean: true },
-  { path: 'fallback.chain', value: 'gemini,openai,ollama' },
+  { path: 'context_compression.compress_after_turns', value: 20 },
+  { path: 'context_compression.preserve_recent_turns', value: 8 },
+  // output truncation
+  { path: 'output_truncation.enabled', value: true, isBoolean: true },
+  { path: 'output_truncation.max_output_chars', value: 32000 },
+  { path: 'output_truncation.max_output_lines', value: 500 },
+  // cost guardrails
+  { path: 'cost_guardrails.session_max_cost_usd', value: 0.0 },
+  { path: 'cost_guardrails.task_max_cost_usd', value: 0.0 },
+  { path: 'cost_guardrails.pause_on_limit', value: true, isBoolean: true },
+  // fallback
+  { path: 'fallback.enabled', value: false, isBoolean: true },
+  { path: 'fallback.retry_on_rate_limit', value: true, isBoolean: true },
+  { path: 'fallback.max_fallback_attempts', value: 3 },
+  // economy
+  { path: 'economy.preset', value: 'balanced', choices: ['frugal', 'balanced', 'quality'] },
+  { path: 'economy.terse_system_prompt', value: false, isBoolean: true },
+  { path: 'economy.prefer_batched_reads', value: false, isBoolean: true },
+  // repo index
+  { path: 'repo_index.enabled', value: false, isBoolean: true },
+  { path: 'repo_index.auto_index_on_start', value: false, isBoolean: true },
+  // tasks
+  { path: 'tasks.enabled', value: true, isBoolean: true },
+  { path: 'tasks.auto_start_read_only', value: true, isBoolean: true },
 ];
 
 export async function initSettings() {
@@ -392,15 +447,8 @@ function applySettingImmediate(path, value) {
   } else if (path === 'ui.crt_effect') {
     document.documentElement.classList.toggle('crt', !!value);
     localStorage.setItem('poor-cli-crt', value ? '1' : '0');
-  } else if (path === 'ui.markdown') {
-    // will apply on next message render
-  } else if (path === 'ui.stream') {
-    // will apply on next chat request
-  } else if (path === 'model.temperature' || path === 'model.max_tokens' || path === 'model.default_provider') {
-    // reinitialize provider on next chat
-  } else if (path === 'sandbox.preset' || path === 'security.require_approval') {
-    // applies immediately via backend
   }
+  // all other settings apply via backend on next operation
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }

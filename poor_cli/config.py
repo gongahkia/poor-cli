@@ -102,12 +102,13 @@ class HistoryConfig:
 @dataclass
 class UIConfig:
     """Configuration for user interface"""
-    theme: str = "default"  # default, dark, light, minimal
+    theme: str = "github-light"
     show_token_count: bool = True
     enable_streaming: bool = True
     markdown_rendering: bool = True
     show_tool_calls: bool = True
-    verbose_logging: bool = False  # Show INFO/DEBUG logs in console
+    verbose_logging: bool = False
+    crt_effect: bool = False
 
 
 @dataclass

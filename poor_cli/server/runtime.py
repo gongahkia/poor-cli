@@ -4155,8 +4155,18 @@ class PoorCLIServer:
                 "count": len(events),
             }
 
+    # choices metadata for dropdown fields
+    _CHOICES_MAP: Dict[str, List[str]] = {
+        "ui.theme": ["github-light", "quiet-light", "solarized-light", "one-dark", "dracula", "github-dark", "monokai", "nord"],
+        "model.provider": ["gemini", "openai", "anthropic", "ollama"],
+        "model.routing_mode": ["manual", "quality", "speed", "cheap", "private"],
+        "sandbox.default_preset": ["read-only", "review-only", "workspace-write", "full-access"],
+        "security.permission_mode": ["prompt", "auto-safe", "danger-full-access"],
+        "economy.preset": ["frugal", "balanced", "quality"],
+    }
+
     def _flatten_config_values(self, value: Any, prefix: str, output: List[Dict[str, Any]]) -> None:
-        """Flatten nested dict/list/scalars into a dot-path list."""
+        """Flatten nested dict/list/scalars into a dot-path list with choices metadata."""
         if isinstance(value, dict):
             for key in sorted(value.keys()):
                 next_prefix = f"{prefix}.{key}" if prefix else key
@@ -4185,14 +4195,15 @@ class PoorCLIServer:
         else:
             value_type = "string"
 
-        output.append(
-            {
-                "path": prefix,
-                "value": value,
-                "type": value_type,
-                "isBoolean": isinstance(value, bool),
-            }
-        )
+        entry: Dict[str, Any] = {
+            "path": prefix,
+            "value": value,
+            "type": value_type,
+            "isBoolean": isinstance(value, bool),
+        }
+        if prefix in self._CHOICES_MAP:
+            entry["choices"] = self._CHOICES_MAP[prefix]
+        output.append(entry)
 
     def _resolve_config_parent(self, key_path: str) -> Tuple[Any, str]:
         keys = [k for k in key_path.split(".") if k]
