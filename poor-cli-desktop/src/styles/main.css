@@ -1697,11 +1697,21 @@ select {
 .diff-num { width: 40px; padding: 0 6px; text-align: right; color: var(--text-muted); font-size: 11px; user-select: none; border-right: 1px solid var(--border); }
 .diff-code { padding: 0 8px; white-space: pre; }
 
-/* git tree */
+/* git log (graph text) */
 .git-tree { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; padding: 8px; }
 .git-tree-line { white-space: pre; }
 .git-tree-graph { color: var(--accent); }
 .git-tree-msg { color: var(--text-primary); }
 .git-tree-ref { color: var(--warning, #d29922); font-weight: 600; }
 .git-tree-head { color: var(--accent); font-weight: 700; }
+
+/* git tree (SVG graph) */
+.git-graph-container { display: flex; align-items: flex-start; overflow-x: auto; padding: 8px; }
+.git-graph-svg { flex-shrink: 0; }
+.git-graph-labels { flex: 1; min-width: 0; }
+.git-graph-row { display: flex; align-items: center; gap: 6px; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.git-graph-hash { font-family: var(--font-mono); font-weight: 600; font-size: 11px; }
+.git-graph-msg { color: var(--text-primary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.git-graph-ref { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; color: #fff; }
+.git-graph-head { outline: 2px solid var(--accent); }
 .palette-key { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
