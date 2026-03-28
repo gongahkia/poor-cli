@@ -1,75 +1,60 @@
 /**
  * File/folder picker for poor-cli desktop.
  *
- * Shows pinned context files above the chat input, with an add button
- * that opens a searchable file browser modal for attaching files/folders.
+ * Always-visible bar above chat input with pinned context file chips
+ * and a + button that opens a searchable file browser modal.
  */
 
 import { rpc } from './rpc.js';
 
-let pinnedFiles = [];
-let pickerOpen = false;
+let pinnedFiles = []; // local tracking of @-attached files
 let searchResults = [];
-let searchQuery = '';
 let selectedIdx = 0;
 
 export function initFilePicker() {
-  const bar = document.getElementById('context-file-bar');
   const addBtn = document.getElementById('context-file-add');
-  if (!bar || !addBtn) return;
+  if (!addBtn) return;
   addBtn.addEventListener('click', openPicker);
-  refreshPinnedFiles();
-}
-
-export async function refreshPinnedFiles() {
+  // always show the bar (it has the + button)
   const bar = document.getElementById('context-file-bar');
-  const list = document.getElementById('context-file-list');
-  if (!bar || !list) return;
-  try {
-    const result = await rpc('send_chat', { message: '/files' });
-    const text = result?.response || '';
-    // parse pinned files from response
-    pinnedFiles = text.split('\n')
-      .map(l => l.replace(/^[-•*]\s*/, '').trim())
-      .filter(l => l && !l.startsWith('No ') && !l.startsWith('Pinned'));
-  } catch { pinnedFiles = []; }
-  renderPinnedFiles(list);
-  bar.hidden = pinnedFiles.length === 0;
+  if (bar) bar.hidden = false;
+  renderChips();
 }
 
-function renderPinnedFiles(container) {
-  container.innerHTML = '';
+function renderChips() {
+  const list = document.getElementById('context-file-list');
+  if (!list) return;
+  list.innerHTML = '';
   for (const f of pinnedFiles) {
     const chip = document.createElement('span');
     chip.className = 'context-file-chip';
     const name = f.split('/').pop();
-    chip.innerHTML = `<span class="chip-name" title="${esc(f)}">${esc(name)}</span><span class="chip-remove" data-path="${esc(f)}">&times;</span>`;
+    chip.innerHTML = `<span class="chip-name" title="${esc(f)}">${esc(name)}</span><span class="chip-remove">&times;</span>`;
     chip.querySelector('.chip-remove').onclick = (e) => {
       e.stopPropagation();
-      removeFile(f);
+      pinnedFiles = pinnedFiles.filter(p => p !== f);
+      renderChips();
     };
-    container.appendChild(chip);
+    list.appendChild(chip);
   }
 }
 
-async function removeFile(path) {
-  try {
-    await rpc('send_chat', { message: `/drop ${path}` });
-  } catch {}
-  await refreshPinnedFiles();
+export function getPinnedFiles() {
+  return [...pinnedFiles];
 }
 
-async function addFile(path) {
-  try {
-    await rpc('send_chat', { message: `/add ${path}` });
-  } catch {}
+function addFile(path) {
+  if (!pinnedFiles.includes(path)) {
+    pinnedFiles.push(path);
+    renderChips();
+  }
   closePicker();
-  await refreshPinnedFiles();
-  // also insert @path into chat input
+  // insert @path into chat input
   const input = document.getElementById('chat-input');
   if (input) {
     const ref = path.includes(' ') ? `@"${path}"` : `@${path}`;
-    input.value = input.value ? input.value + ' ' + ref : ref + ' ';
+    const cur = input.value;
+    input.value = cur ? cur + ' ' + ref : ref + ' ';
     input.focus();
   }
 }
@@ -94,9 +79,10 @@ function openPicker() {
     overlay.querySelector('.fp-close').onclick = closePicker;
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closePicker(); });
     const searchInput = overlay.querySelector('.fp-search');
+    let debounce;
     searchInput.addEventListener('input', () => {
-      searchQuery = searchInput.value;
-      doSearch(searchQuery);
+      clearTimeout(debounce);
+      debounce = setTimeout(() => doSearch(searchInput.value), 200);
     });
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { closePicker(); return; }
@@ -104,13 +90,14 @@ function openPicker() {
       if (e.key === 'ArrowUp') { e.preventDefault(); navigatePicker(-1); return; }
       if (e.key === 'Enter') {
         e.preventDefault();
+        e.stopPropagation();
         if (searchResults[selectedIdx]) addFile(searchResults[selectedIdx]);
         return;
       }
     });
   }
   overlay.classList.remove('hidden');
-  pickerOpen = true;
+  overlay.style.display = '';
   selectedIdx = 0;
   searchResults = [];
   const searchInput = overlay.querySelector('.fp-search');
@@ -121,27 +108,29 @@ function openPicker() {
 
 function closePicker() {
   const overlay = document.getElementById('file-picker-overlay');
-  if (overlay) overlay.classList.add('hidden');
-  pickerOpen = false;
+  if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
 }
 
-let searchDebounce = null;
 async function doSearch(query) {
-  if (searchDebounce) clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(async () => {
-    if (!query.trim()) {
-      renderResults([]);
-      return;
-    }
+  if (!query.trim()) {
+    searchResults = [];
+    renderResults([]);
+    return;
+  }
+  try {
+    const result = await rpc('search_workspace_files', { query, limit: 20 });
+    searchResults = result.files || [];
+  } catch {
+    // fallback: try glob via executeCommand
     try {
-      const result = await rpc('search_workspace_files', { query, limit: 20 });
-      searchResults = result.files || [];
-      renderResults(searchResults);
-    } catch {
-      searchResults = [];
-      renderResults([]);
-    }
-  }, 200);
+      const result = await rpc('poor-cli/executeCommand', {
+        command: `find . -maxdepth 4 -name "*${query.replace(/[^a-zA-Z0-9._-]/g, '')}*" -not -path "*/.*" 2>/dev/null | head -20`
+      });
+      const out = (result.output || result.stdout || '').trim();
+      searchResults = out ? out.split('\n').map(f => f.replace(/^\.\//, '')) : [];
+    } catch { searchResults = []; }
+  }
+  renderResults(searchResults);
 }
 
 function renderResults(files) {
@@ -158,8 +147,8 @@ function renderResults(files) {
     const name = f.split('/').pop();
     const dir = f.includes('/') ? f.substring(0, f.lastIndexOf('/')) : '';
     const sel = i === selectedIdx ? ' fp-selected' : '';
+    const isDir = f.endsWith('/');
     html += `<div class="fp-item${sel}" data-idx="${i}">
-      <span class="fp-item-icon">${f.endsWith('/') ? '📁' : '📄'}</span>
       <span class="fp-item-name">${esc(name)}</span>
       <span class="fp-item-path">${esc(dir)}</span>
     </div>`;
