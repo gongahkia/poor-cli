@@ -134,10 +134,17 @@ function onKeydown(e) {
   if (e.key === 'Escape') { e.preventDefault(); close(); return; }
   if (e.key === 'ArrowDown') { e.preventDefault(); navigate(1); return; }
   if (e.key === 'ArrowUp') { e.preventDefault(); navigate(-1); return; }
-  if (e.key === 'Tab' || (e.key === 'Enter' && items.length > 0 && popup.hidden === false)) {
-    if (items.length > 0) {
+  if (e.key === 'Tab' || e.key === 'Enter') {
+    if (items.length > 0 && !popup.hidden) {
       e.preventDefault();
+      e.stopPropagation();
       selectItem(activeIdx);
+      return;
+    }
+    // popup open but no items yet — block send so bare @ doesn't get submitted
+    if (!popup.hidden) {
+      e.preventDefault();
+      e.stopPropagation();
       return;
     }
   }

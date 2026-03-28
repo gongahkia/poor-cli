@@ -409,7 +409,7 @@ async function handleSlashCommand(text) {
 // send message
 async function sendMessage() {
   const text = chatInput.value.trim();
-  if (!text) return;
+  if (!text || text === '@') return; // don't send empty or bare @
   clearWelcome();
   addMessage(text, 'user');
   chatInput.value = '';
