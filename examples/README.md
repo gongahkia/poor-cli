@@ -1,6 +1,6 @@
 # Examples
 
-This folder contains eleven walkthroughs: five additive brief outcomes, two recipe-driven discovery flows, and four sector-specific diligence references.
+This folder contains eleven walkthroughs: five additive brief outcomes, two recipe-driven discovery flows, and four sector-specific diligence workflows.
 
 - `business-dossier.md`
 - `architecture-firm-diligence.md`
@@ -57,7 +57,7 @@ Published-package snippet after the first npm release:
 
 ## Runnable Demo Profiles
 
-Seven walkthroughs map to built-in demo profiles:
+Eleven walkthroughs map to built-in demo profiles:
 
 - `npm run demo:mcp -- business`
 - `npm run demo:mcp -- property`
@@ -66,15 +66,12 @@ Seven walkthroughs map to built-in demo profiles:
 - `npm run demo:mcp -- environment`
 - `npm run demo:mcp -- civic`
 - `npm run demo:mcp -- geospatial`
+- `npm run demo:mcp -- architecture`
+- `npm run demo:mcp -- healthcare`
+- `npm run demo:mcp -- hotel`
+- `npm run demo:mcp -- sector-business`
 
 Every profile reads one resource, calls one direct tool, calls one supporting tool, and then runs the equivalent `sg_query` workflow against the mock upstream server.
-
-The sector-specific diligence walkthroughs are reference docs backed by the same tool contracts and golden outputs:
-
-- `architecture-firm-diligence.md`
-- `healthcare-supplier-diligence.md`
-- `hotel-operator-lookup.md`
-- `sector-scoped-business-diligence.md`
 
 ## Integration Example
 

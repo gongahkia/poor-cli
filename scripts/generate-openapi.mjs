@@ -1,10 +1,156 @@
 #!/usr/bin/env node
-// generates openapi.yaml from the tool definitions
-// usage: node scripts/generate-openapi.mjs > openapi.yaml
+// generates OpenAPI JSON from the built tool definitions
+// usage: node scripts/generate-openapi.mjs > openapi.json
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { ZodFirstPartyTypeKind } from "zod";
 
-const pkgJson = JSON.parse(readFileSync(resolve("packages/mcp-server/package.json"), "utf8"));
+const root = resolve(import.meta.dirname, "..");
+const pkgJson = JSON.parse(readFileSync(resolve(root, "packages/mcp-server/package.json"), "utf8"));
+
+const loadToolDefinitions = async () => {
+  try {
+    const moduleUrl = pathToFileURL(resolve(root, "packages/mcp-server/dist/tools/tool-set.js")).href;
+    return (await import(moduleUrl)).ALL_TOOL_DEFINITIONS;
+  } catch (error) {
+    throw new Error(
+      `Unable to load built tool definitions. Run "npm run build" first. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+};
+
+const unwrapSchema = (schema) => {
+  let current = schema;
+  let nullable = false;
+
+  while (true) {
+    const typeName = current?._def?.typeName;
+    if (typeName === ZodFirstPartyTypeKind.ZodOptional || typeName === ZodFirstPartyTypeKind.ZodDefault) {
+      current = current._def.innerType;
+      continue;
+    }
+    if (typeName === ZodFirstPartyTypeKind.ZodNullable) {
+      nullable = true;
+      current = current._def.innerType;
+      continue;
+    }
+    if (typeName === ZodFirstPartyTypeKind.ZodEffects) {
+      current = current._def.schema;
+      continue;
+    }
+    return { schema: current, nullable };
+  }
+};
+
+const withNullable = (schema, nullable) => {
+  return nullable ? { ...schema, nullable: true } : schema;
+};
+
+const zodFieldToOpenApi = (inputSchema) => {
+  const { schema, nullable } = unwrapSchema(inputSchema);
+  const typeName = schema?._def?.typeName;
+
+  switch (typeName) {
+    case ZodFirstPartyTypeKind.ZodString:
+      return withNullable({ type: "string" }, nullable);
+    case ZodFirstPartyTypeKind.ZodNumber: {
+      const checks = Array.isArray(schema._def.checks) ? schema._def.checks : [];
+      const isInteger = checks.some((check) => check.kind === "int");
+      return withNullable({ type: isInteger ? "integer" : "number" }, nullable);
+    }
+    case ZodFirstPartyTypeKind.ZodBoolean:
+      return withNullable({ type: "boolean" }, nullable);
+    case ZodFirstPartyTypeKind.ZodEnum:
+      return withNullable({ type: "string", enum: [...schema._def.values] }, nullable);
+    case ZodFirstPartyTypeKind.ZodLiteral: {
+      const literalValue = schema._def.value;
+      return withNullable({
+        type: typeof literalValue,
+        enum: [literalValue],
+      }, nullable);
+    }
+    case ZodFirstPartyTypeKind.ZodArray:
+      return withNullable({
+        type: "array",
+        items: zodFieldToOpenApi(schema._def.type),
+      }, nullable);
+    case ZodFirstPartyTypeKind.ZodObject: {
+      const shape = schema.shape;
+      const properties = {};
+      const required = [];
+      for (const [key, value] of Object.entries(shape)) {
+        properties[key] = zodFieldToOpenApi(value);
+        if (!value.isOptional()) {
+          required.push(key);
+        }
+      }
+      return withNullable({
+        type: "object",
+        properties,
+        ...(required.length === 0 ? {} : { required }),
+      }, nullable);
+    }
+    default:
+      return withNullable({}, nullable);
+  }
+};
+
+const toRequestSchema = (shape) => {
+  const properties = {};
+  const required = [];
+
+  for (const [key, value] of Object.entries(shape)) {
+    properties[key] = zodFieldToOpenApi(value);
+    if (!value.isOptional()) {
+      required.push(key);
+    }
+  }
+
+  return {
+    type: "object",
+    properties,
+    ...(required.length === 0 ? {} : { required }),
+    additionalProperties: false,
+  };
+};
+
+const buildToolPath = (definition) => ({
+  post: {
+    summary: definition.description,
+    tags: [definition.surface],
+    requestBody: {
+      required: false,
+      content: {
+        "application/json": {
+          schema: toRequestSchema(definition.inputSchema),
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Tool result",
+        content: {
+          "application/json": {
+            schema: { type: "object" },
+          },
+        },
+      },
+      400: { description: "Tool error" },
+      500: { description: "Server error" },
+    },
+  },
+});
+
+const toolDefinitions = await loadToolDefinitions();
+
+const toolPaths = Object.fromEntries(
+  [...toolDefinitions]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((definition) => [`/api/v1/${definition.name}`, buildToolPath(definition)]),
+);
 
 const spec = {
   openapi: "3.1.0",
@@ -18,60 +164,50 @@ const spec = {
     "/api/v1/tools": {
       get: {
         summary: "List all available tools",
-        responses: { 200: { description: "Array of tool names and descriptions", content: { "application/json": { schema: { type: "array", items: { type: "object", properties: { name: { type: "string" }, description: { type: "string" } } } } } } } },
+        responses: {
+          200: {
+            description: "Array of tool names and descriptions",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      description: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/api/v1/health": {
       get: {
         summary: "Health check",
-        responses: { 200: { description: "Gateway health status", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, tools: { type: "integer" } } } } } } },
+        responses: {
+          200: {
+            description: "Gateway health status",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    status: { type: "string" },
+                    tools: { type: "integer" },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
+    ...toolPaths,
   },
 };
 
-// add paths for known tool families
-const toolFamilies = [
-  { path: "sg_query", summary: "Natural-language query interface", body: { query: "string", format: "string?", mode: "string?" } },
-  { path: "sg_nea_forecast_2hr", summary: "2-hour weather forecast", body: { area: "string?", date: "string?" } },
-  { path: "sg_nea_air_quality", summary: "Air quality readings", body: { region: "string?", date: "string?" } },
-  { path: "sg_hdb_resale_prices", summary: "HDB resale prices", body: { town: "string?", flatType: "string?", limit: "integer?" } },
-  { path: "sg_property_brief", summary: "Property brief", body: { planningArea: "string?", postalCode: "string?", format: "string?" } },
-  { path: "sg_business_dossier", summary: "Business dossier", body: { entityName: "string?", uen: "string?", format: "string?" } },
-  { path: "sg_macro_brief", summary: "Macro brief", body: { currency: "string?", format: "string?" } },
-  { path: "sg_transport_brief", summary: "Transport brief", body: { busStopCode: "string?", format: "string?" } },
-  { path: "sg_environment_brief", summary: "Environment brief", body: { area: "string?", region: "string?", format: "string?" } },
-  { path: "sg_pa_community_outlets", summary: "PA community outlets", body: { name: "string?", type: "string?", postalCode: "string?", lat: "string?", lng: "string?" } },
-  { path: "sg_pa_resident_network_centres", summary: "PA residents' network centres", body: { name: "string?", postalCode: "string?", lat: "string?", lng: "string?" } },
-  { path: "sg_sportsg_facilities", summary: "SportSG facilities", body: { name: "string?", facilityType: "string?", postalCode: "string?", lat: "string?", lng: "string?" } },
-  { path: "sg_ecda_childcare_centres", summary: "ECDA childcare centres", body: { name: "string?", centreType: "string?", operatorType: "string?", hasVacancy: "string?", postalCode: "string?", lat: "string?", lng: "string?" } },
-  { path: "sg_gebiz_tenders", summary: "GeBIZ tenders", body: { agency: "string?", category: "string?" } },
-  { path: "sg_hawker_centres", summary: "Hawker centres", body: { name: "string?" } },
-  { path: "sg_moe_schools", summary: "MOE schools", body: { level: "string?", zone: "string?" } },
-  { path: "sg_moh_facilities", summary: "Healthcare facilities", body: { type: "string?", name: "string?" } },
-];
-
-for (const tool of toolFamilies) {
-  const properties = {};
-  for (const [key, type] of Object.entries(tool.body)) {
-    const isOptional = type.endsWith("?");
-    const baseType = type.replace("?", "");
-    properties[key] = { type: baseType === "integer" ? "integer" : "string" };
-  }
-  spec.paths[`/api/v1/${tool.path}`] = {
-    post: {
-      summary: tool.summary,
-      requestBody: {
-        content: { "application/json": { schema: { type: "object", properties } } },
-      },
-      responses: {
-        200: { description: "Tool result", content: { "application/json": { schema: { type: "object" } } } },
-        400: { description: "Tool error" },
-        500: { description: "Server error" },
-      },
-    },
-  };
-}
-
-// output as YAML-like JSON (consumers can convert)
-console.log(JSON.stringify(spec, null, 2));
+process.stdout.write(`${JSON.stringify(spec, null, 2)}\n`);

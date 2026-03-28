@@ -155,6 +155,24 @@ try {
       throw new Error("Registry-installed server did not return sg_datagov_get content.");
     }
 
+    const diligenceDirectResult = await client.callTool({
+      name: "sg_boa_architecture_firms",
+      arguments: {
+        firmName: "DP Architects",
+        format: "json",
+      },
+    });
+    const diligenceDirectText = "content" in diligenceDirectResult
+      ? diligenceDirectResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (diligenceDirectText === undefined) {
+      throw new Error("Registry-installed server did not return sg_boa_architecture_firms content.");
+    }
+    const diligenceDirectPayload = JSON.parse(diligenceDirectText);
+    if (!Array.isArray(diligenceDirectPayload) || diligenceDirectPayload[0]?.firmName !== "DP Architects") {
+      throw new Error("Registry-installed sg_boa_architecture_firms returned an unexpected payload.");
+    }
+
     const briefResult = await client.callTool({
       name: "sg_environment_brief",
       arguments: {
@@ -201,6 +219,21 @@ try {
     });
     if (!("structuredContent" in routeRecipeResult) || routeRecipeResult.structuredContent?.workflow !== "route_plan") {
       throw new Error("Registry-installed sg_query did not complete the route recipe workflow.");
+    }
+
+    const diligenceQueryResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Architecture firm diligence for DP Architects",
+        mode: "execute",
+        format: "json",
+      },
+    });
+    if (
+      !("structuredContent" in diligenceQueryResult)
+      || diligenceQueryResult.structuredContent?.workflow !== "architecture_firm_diligence"
+    ) {
+      throw new Error("Registry-installed sg_query did not complete the architecture-firm diligence workflow.");
     }
   } finally {
     await client.close().catch(() => undefined);

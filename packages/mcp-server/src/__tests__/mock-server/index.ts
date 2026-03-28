@@ -83,6 +83,31 @@ const DATASET_DOWNLOADS_BY_ID: Record<
     fixture: "msf/__tests__/fixtures/social-service-offices.geojson",
     contentType: "application/geo+json",
   },
+  d_d77de0f78ca589a5c61da7a60fdee6ba: {
+    path: "/downloads/boa-architects.csv",
+    fixture: "boa/__tests__/fixtures/architects.csv",
+    contentType: "text/csv; charset=utf-8",
+  },
+  d_d5c0a4ffd076a3e40d772275619bbb66: {
+    path: "/downloads/boa-architecture-firms.csv",
+    fixture: "boa/__tests__/fixtures/architecture-firms.csv",
+    contentType: "text/csv; charset=utf-8",
+  },
+  d_bc50d72a9d61457964c6ea8d8ba7dce2: {
+    path: "/downloads/hsa-licensed-pharmacies.csv",
+    fixture: "hsa/__tests__/fixtures/licensed-pharmacies.csv",
+    contentType: "text/csv; charset=utf-8",
+  },
+  d_bf50ce0f3f42f69d7acd50635afa62da: {
+    path: "/downloads/hsa-health-product-licensees.csv",
+    fixture: "hsa/__tests__/fixtures/health-product-licensees.csv",
+    contentType: "text/csv; charset=utf-8",
+  },
+  d_654e22f14e5bb817423f0e0c9ac4f632: {
+    path: "/downloads/hlb-hotels.geojson",
+    fixture: "hlb/__tests__/fixtures/hotels.geojson",
+    contentType: "application/geo+json",
+  },
 };
 
 const DATASET_DOWNLOADS_BY_PATH = Object.fromEntries(
@@ -93,15 +118,128 @@ const DATASTORE_FIXTURES_BY_RESOURCE_ID: Record<string, string> = {
   d_8b84c4ee58e3cfc0ece0d773c8ca6abc: "hdb/__tests__/fixtures/resale-response.json",
   d_c9f57187485a850908655db0e8cfe651: "hdb/__tests__/fixtures/rental-response.json",
   d_8575e84912df3c28995b8e6e0e05205a: "acra/__tests__/fixtures/search-response.json",
+  d_acbc938ec77af18f94cecc4a7c9ec720: "acra/__tests__/fixtures/search-response.json",
+  d_9af9317c646a1c881bb5591c91817cc6: "acra/__tests__/fixtures/search-response.json",
+  d_4e3db8955fdcda6f9944097bef3d2724: "acra/__tests__/fixtures/search-response.json",
   d_19573c579879be15623f2e1e3854926d: "bca/__tests__/fixtures/licensed-builders-response.json",
   d_dcda79be4aded5f9e769b8e23ff69b47: "bca/__tests__/fixtures/registered-contractors-response.json",
   d_07c63be0f37e6e59c07a4ddc2fd87fcb: "cea/__tests__/fixtures/search-response.json",
+  d_c9bea4c28194866ab2e1313e6be430d6: "gebiz/__tests__/fixtures/search-response.json",
 };
 
 const MAS_FIXTURES_BY_RESOURCE_ID: Record<string, string> = {
   "95932927-c8bc-4e7a-b484-68a66a24edfe": "mas/__tests__/fixtures/search-response.json",
   "9a0bf149-308c-4bd2-832d-76c8e6cb47ed": "mas/__tests__/fixtures/search-response-sora.json",
   "5f2b18a8-0883-4e5b-9dc7-990de1383525": "mas/__tests__/fixtures/search-response-banking.json",
+};
+
+type DatastoreRecord = Record<string, unknown>;
+
+type DatastoreFixture = {
+  readonly success: true;
+  readonly result: {
+    readonly fields: readonly { readonly id: string; readonly type: string }[];
+    readonly records: readonly DatastoreRecord[];
+    readonly total: number;
+    readonly limit: number;
+    readonly offset: number;
+  };
+};
+
+const normalizeScalar = (value: unknown): string => {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+};
+
+const recordMatchesFilter = (
+  record: DatastoreRecord,
+  field: string,
+  filterValue: unknown,
+): boolean => {
+  const actual = normalizeScalar(record[field]);
+
+  if (filterValue !== null && typeof filterValue === "object" && !Array.isArray(filterValue)) {
+    const ilike = (filterValue as { ilike?: unknown }).ilike;
+    if (typeof ilike === "string") {
+      return actual.includes(normalizeScalar(ilike));
+    }
+  }
+
+  return actual === normalizeScalar(filterValue);
+};
+
+const applyDatastoreFilters = (
+  records: readonly DatastoreRecord[],
+  filters: Readonly<Record<string, unknown>> | null,
+): readonly DatastoreRecord[] => {
+  if (filters === null || Object.keys(filters).length === 0) {
+    return records;
+  }
+
+  return records.filter((record) =>
+    Object.entries(filters).every(([field, value]) => recordMatchesFilter(record, field, value)),
+  );
+};
+
+const applyDatastoreSort = (
+  records: readonly DatastoreRecord[],
+  sort: string | null,
+): readonly DatastoreRecord[] => {
+  if (sort === null || sort.trim() === "") {
+    return records;
+  }
+
+  const [field, direction] = sort.trim().split(/\s+/, 2);
+  if (field === undefined || field === "") {
+    return records;
+  }
+
+  const multiplier = direction?.toLowerCase() === "desc" ? -1 : 1;
+
+  return [...records].sort((left, right) => {
+    const leftValue = left[field];
+    const rightValue = right[field];
+
+    if (typeof leftValue === "number" && typeof rightValue === "number") {
+      return (leftValue - rightValue) * multiplier;
+    }
+
+    return normalizeScalar(leftValue).localeCompare(normalizeScalar(rightValue)) * multiplier;
+  });
+};
+
+const buildDatastorePayload = (
+  fixturePath: string,
+  url: URL,
+): DatastoreFixture => {
+  const payload = loadJsonFixture(fixturePath) as DatastoreFixture;
+  const rawFilters = url.searchParams.get("filters");
+  const filters =
+    rawFilters === null
+      ? null
+      : JSON.parse(rawFilters) as Readonly<Record<string, unknown>>;
+  const filteredRecords = applyDatastoreFilters(payload.result.records, filters);
+  const sortedRecords = applyDatastoreSort(filteredRecords, url.searchParams.get("sort"));
+  const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10) || 0, 0);
+  const requestedLimit = parseInt(url.searchParams.get("limit") ?? "", 10);
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? requestedLimit
+      : payload.result.limit;
+  const records = sortedRecords.slice(offset, offset + limit);
+
+  return {
+    ...payload,
+    result: {
+      ...payload.result,
+      total: sortedRecords.length,
+      offset,
+      limit,
+      records,
+    },
+  };
 };
 
 const server = createServer((req, res) => {
@@ -173,7 +311,7 @@ const server = createServer((req, res) => {
         ? "hdb/__tests__/fixtures/resale-response.json"
         : DATASTORE_FIXTURES_BY_RESOURCE_ID[resourceId] ?? "hdb/__tests__/fixtures/resale-response.json";
       res.writeHead(200, { "Content-Type": "application/json", Token: "mock-daily-token" });
-      res.end(loadFixture(fixture));
+      res.end(JSON.stringify(buildDatastorePayload(fixture, url)));
       return;
     }
 

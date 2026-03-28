@@ -1,8 +1,12 @@
 # Architecture Firm Diligence
 
-## Reference Walkthrough
+## Runnable Walkthrough
 
-This is a reference workflow for sector-specific diligence. It uses the same contracts as the runnable demos, but there is no dedicated `npm run demo:mcp -- architecture` profile yet.
+Run the built-in mock-backed profile end to end:
+
+```bash
+npm run demo:mcp -- architecture
+```
 
 ## Prompt
 

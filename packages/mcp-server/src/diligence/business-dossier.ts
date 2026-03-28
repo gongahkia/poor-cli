@@ -92,6 +92,7 @@ const getFirstTimestamp = (
 
 const buildBusinessRiskFlags = (
   params: Pick<BusinessDossierParams, "entityName" | "uen">,
+  searchedModules: ReadonlySet<BusinessDossierModule>,
   acra: readonly Readonly<Record<string, unknown>>[],
   builders: readonly Readonly<Record<string, unknown>>[],
   contractors: readonly Readonly<Record<string, unknown>>[],
@@ -110,7 +111,11 @@ const buildBusinessRiskFlags = (
       });
     }
   }
-  if ((params.entityName !== undefined || params.uen !== undefined) && acra.length === 0) {
+  if (
+    searchedModules.has("acra")
+    && (params.entityName !== undefined || params.uen !== undefined)
+    && acra.length === 0
+  ) {
     flags.push({
       code: "NO_ACRA_MATCH",
       severity: "high",
@@ -644,7 +649,7 @@ export const buildBusinessDossierArtifact = async (
         : []),
     ],
     limits: buildBusinessLimits(selectedModules),
-    riskFlags: buildBusinessRiskFlags(params, acra, builders, contractors, licensees),
+    riskFlags: buildBusinessRiskFlags(params, searchedModules, acra, builders, contractors, licensees),
     matchConfidence,
     nextChecks: buildBusinessNextChecks(params, selectedModules),
   };

@@ -105,6 +105,10 @@ const extractPlanningArea = (query: string): string | null => {
 };
 
 const extractCurrency = (query: string): string | null => {
+  if (!/\b(currency|exchange\s*rate|forex|fx|against|versus|vs\.?|to\s+[A-Z]{3}\b|in\s+[A-Z]{3}\b)\b/i.test(query)) {
+    return null;
+  }
+
   const upper = query.toUpperCase();
   const directionalMatch = upper.match(/\b(?:TO|AGAINST|VS\.?|VERSUS)\s+([A-Z]{3})\b/);
   if (directionalMatch !== null && !CURRENCY_STOPWORDS.has(directionalMatch[1]!)) {
@@ -265,6 +269,10 @@ const detectCivicTool = (query: string): string | null => {
 };
 
 const extractSingStatCategory = (query: string): string | null => {
+  if (!/\b(singstat|dataset|table|indicator|macro|economic|economy|statistics?|stats|category|browse)\b/i.test(query)) {
+    return null;
+  }
+
   for (const matcher of SINGSTAT_CATEGORY_MATCHERS) {
     if (matcher.pattern.test(query)) {
       return matcher.category;
@@ -308,17 +316,80 @@ const extractCoordinateSource = (query: string): "SVY21" | "WGS84" | null => {
   return null;
 };
 
+const GENERIC_BUSINESS_IDENTIFIER_VALUES = new Set([
+  "architect",
+  "architecture firm",
+  "builder",
+  "business",
+  "company",
+  "contractor",
+  "counterparty",
+  "entity",
+  "hotel",
+  "hotel operator",
+  "importer",
+  "keeper",
+  "manufacturer",
+  "operator",
+  "pharmacy",
+  "supplier",
+  "vendor",
+  "wholesaler",
+]);
+
+const normalizeBusinessIdentifier = (value: string): string => {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const trimTrailingBusinessPunctuation = (value: string): string => {
+  const withoutSentencePunctuation = value.replace(/[,;:!?]+$/, "").trim();
+  if (!withoutSentencePunctuation.endsWith(".")) {
+    return withoutSentencePunctuation;
+  }
+
+  return /\b(?:bhd|co|corp|inc|llc|llp|ltd|plc|pte)\.$/i.test(withoutSentencePunctuation)
+    ? withoutSentencePunctuation
+    : withoutSentencePunctuation.replace(/\.+$/, "");
+};
+
+const isGenericBusinessIdentifier = (value: string): boolean => {
+  const normalized = normalizeBusinessIdentifier(value).replace(/^(?:a|an|the)\s+/, "");
+  return normalized === "" || GENERIC_BUSINESS_IDENTIFIER_VALUES.has(normalized);
+};
+
 const stripTrailingBusinessContext = (value: string): string => {
   return value
     .replace(
+      /^(?:architecture\s+firm\s+diligence|healthcare\s+supplier\s+diligence|hotel\s+operator\s+lookup|sector[-\s]*scoped\s+business\s+diligence|business\s+diligence|business\s+dossier|registry\s+diligence|counterparty\s+diligence|diligence|lookup|check)\s+for\s+/i,
+      "",
+    )
+    .replace(
       /\s+(?:with|using|under|by|for)\s+(?:uen|registration|reg(?:istration)?|licen[cs]e|grade|workhead|builder\s*class|details|records?).*$/i,
+      "",
+    )
+    .replace(
+      /\s+in\s+(?:construction|procurement|healthcare|hospitality|architecture|real\s*estate)(?:\s+\w+)*$/i,
       "",
     )
     .replace(
       /\s+(?:uen(?:\s*(?:number|no\.?))?\s*[:#]?\s*[0-9A-Z]{8,10}|registration(?:\s*(?:number|no\.?))?\s*[:#]?\s*[0-9A-Z-]{5,}|reg(?:istration)?\s*[:#]?\s*[0-9A-Z-]{5,}|licen[cs]e(?:\s*(?:number|no\.?))?\s*[:#]?\s*[0-9A-Z-]{5,}|workhead\s+[A-Z]{2}\d{2}|grade\s+[A-Z]\d|class\s+[A-Z]{2}\d|builder\s*class\s+[A-Z]{2}\d|details?|records?)$/i,
       "",
     )
-    .replace(/[.,;:!?]+$/, "")
+    .replace(/^(?:the)\s+/, "")
+    .trim();
+};
+
+const sanitizeNamedSubject = (value: string): string => {
+  return trimTrailingBusinessPunctuation(
+    stripTrailingBusinessContext(value)
+      .replace(/^["“”'`]\s*|\s*["“”'`]$/g, "")
+      .trim(),
+  )
     .trim();
 };
 
@@ -330,10 +401,8 @@ const extractNamedSubject = (
     const match = query.match(pattern);
     const candidate = match?.[1];
     if (candidate !== undefined) {
-      const cleaned = stripTrailingBusinessContext(candidate)
-        .replace(/^["“”'`]\s*|\s*["“”'`]$/g, "")
-        .trim();
-      if (cleaned !== "") {
+      const cleaned = sanitizeNamedSubject(candidate);
+      if (cleaned !== "" && !isGenericBusinessIdentifier(cleaned)) {
         return cleaned;
       }
     }
@@ -343,9 +412,10 @@ const extractNamedSubject = (
 
 const extractCompanyName = (query: string): string | null => {
   return extractNamedSubject(query, [
-    /\b(?:company|entity|business|counterparty)\s+(.+?)(?=\s+(?:with|using|under)\b|[?!,;:]|$)/i,
-    /\b(?:builder|contractor|vendor)\s+(.+?)(?=\s+(?:with|using|under)\b|[?!,;:]|$)/i,
-    /\b(?:architect|architecture\s+firm|pharmacy|supplier|manufacturer|importer|wholesaler|hotel|hotel\s+operator|keeper|operator)\s+(.+?)(?=\s+(?:with|using|under)\b|[?!,;:]|$)/i,
+    /\b(?:architecture\s+firm\s+diligence|healthcare\s+supplier\s+diligence|hotel\s+operator\s+lookup|sector[-\s]*scoped\s+business\s+diligence|business\s+diligence|business\s+dossier|registry\s+diligence|counterparty\s+diligence)\s+for\s+(?:(?:a|an|the)\s+)?(?:architecture\s+firm|hotel\s+operator|company|entity|business|counterparty|builder|contractor|vendor|architect|pharmacy|supplier|manufacturer|importer|wholesaler|hotel|keeper|operator)?\s*(.+?)(?=\s+(?:with|using|under|and\s+include|include|return|in\s+(?:construction|procurement|healthcare|hospitality|architecture|real\s*estate))\b|[?!,;:]|$)/i,
+    /\b(?:company|entity|business|counterparty)\s+(.+?)(?=\s+(?:with|using|under|in\s+(?:construction|procurement|healthcare|hospitality|architecture|real\s*estate))\b|[?!,;:]|$)/i,
+    /\b(?:builder|contractor|vendor)\s+(.+?)(?=\s+(?:with|using|under|in\s+(?:construction|procurement|healthcare|hospitality|architecture|real\s*estate))\b|[?!,;:]|$)/i,
+    /\b(?:architecture\s+firm|hotel\s+operator|architect|pharmacy|supplier|manufacturer|importer|wholesaler|hotel|keeper|operator)\s+(.+?)(?=\s+(?:with|using|under|and\s+include|include|return|in\s+(?:construction|procurement|healthcare|hospitality|architecture|real\s*estate))\b|[?!,;:]|$)/i,
   ]) ?? extractQuotedTerm(query);
 };
 

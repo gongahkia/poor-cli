@@ -1,128 +1,17 @@
 import { ApiError } from "@sg-apis/shared";
-import type { QueryBlocker, ToolResult } from "@sg-apis/shared";
 import { DEFAULT_CIVIC_RADIUS_KM } from "../apis/civic/utils.js";
-import { selectBusinessDossierModules } from "../diligence/entity-resolution.js";
 import { classifyIntent, resolveToolInput } from "./classifier.js";
+import {
+  buildBlockedPlan,
+  buildDirectToolBlockedPlan,
+  buildUnsupportedPlan,
+  createBlocker,
+  type QueryExecutionContext,
+  type QueryPlan,
+} from "./planner-core.js";
+import { buildBusinessRegistryPlan } from "./plans/business.js";
 
-export type QueryExecutionContext = {
-  readonly results: ReadonlyMap<
-    string,
-    {
-      readonly input: Readonly<Record<string, unknown>>;
-      readonly output: ToolResult;
-    }
-  >;
-};
-
-type QueryStepResolver = (
-  context: QueryExecutionContext,
-) => Promise<Readonly<Record<string, unknown>>> | Readonly<Record<string, unknown>>;
-
-export type QueryStep = {
-  readonly id: string;
-  readonly purpose: string;
-  readonly tool: string;
-  readonly input: Readonly<Record<string, unknown>>;
-  readonly dependsOn?: readonly string[];
-  readonly resolveInput?: QueryStepResolver;
-};
-
-type SupportedQueryPlan = {
-  readonly supported: true;
-  readonly workflow: string;
-  readonly intent: string;
-  readonly confidence: number;
-  readonly apis: readonly string[];
-  readonly steps: readonly QueryStep[];
-};
-
-type BlockedQueryPlan = {
-  readonly supported: false;
-  readonly blocked: true;
-  readonly workflow: string;
-  readonly intent: string;
-  readonly confidence: number;
-  readonly apis: readonly string[];
-  readonly steps: readonly QueryStep[];
-  readonly blockers: readonly QueryBlocker[];
-  readonly reason: string;
-  readonly suggestion: string;
-};
-
-type UnsupportedQueryPlan = {
-  readonly supported: false;
-  readonly blocked?: false;
-  readonly reason: string;
-  readonly suggestion: string;
-};
-
-export type QueryPlan = SupportedQueryPlan | BlockedQueryPlan | UnsupportedQueryPlan;
-
-type QueryPlanContext = Pick<SupportedQueryPlan, "workflow" | "intent" | "confidence" | "apis" | "steps">;
-
-const buildUnsupportedPlan = (reason: string, suggestion: string): QueryPlan => ({
-  supported: false,
-  reason,
-  suggestion,
-});
-
-const buildBlockedPlan = (
-  context: QueryPlanContext,
-  blockers: readonly QueryBlocker[],
-  reason: string,
-  suggestion: string,
-): QueryPlan => ({
-  supported: false,
-  blocked: true,
-  ...context,
-  blockers,
-  reason,
-  suggestion,
-});
-
-const createBlocker = (
-  field: string,
-  reason: string,
-  directTool: string,
-  exampleInput: Readonly<Record<string, unknown>>,
-  suggestedPrompt: string,
-): QueryBlocker => ({
-  field,
-  reason,
-  directTool,
-  exampleInput,
-  suggestedPrompt,
-});
-
-const buildDirectToolBlockedPlan = (
-  workflow: string,
-  intent: string,
-  confidence: number,
-  apis: readonly string[],
-  tool: string,
-  input: Readonly<Record<string, unknown>>,
-  blockers: readonly QueryBlocker[],
-  reason: string,
-  suggestion: string,
-): QueryPlan => buildBlockedPlan(
-  {
-    workflow,
-    intent,
-    confidence,
-    apis,
-    steps: [
-      {
-        id: "direct_tool",
-        purpose: `Execute ${tool}.`,
-        tool,
-        input,
-      },
-    ],
-  },
-  blockers,
-  reason,
-  suggestion,
-);
+export type { QueryExecutionContext, QueryPlan, QueryStep } from "./planner-core.js";
 
 const dependencyError = (message: string, suggestedAction: string): ApiError => {
   return new ApiError({
@@ -258,19 +147,6 @@ const sanitizeDatasetKeyword = (query: string): string => {
 };
 
 const CIVIC_PLANNING_AREA_RADIUS_KM = 5;
-
-const inferBusinessApis = (params: Readonly<Record<string, unknown>>): readonly string[] => {
-  const modules = selectBusinessDossierModules(
-    Array.isArray(params["modules"])
-      ? params["modules"] as Parameters<typeof selectBusinessDossierModules>[0]
-      : undefined,
-    Array.isArray(params["sectorHints"])
-      ? params["sectorHints"] as Parameters<typeof selectBusinessDossierModules>[1]
-      : undefined,
-  );
-
-  return modules.map((module) => module === "gebiz" ? "gebiz" : module);
-};
 
 const toCivicSearchInput = (
   tool: string,
@@ -759,164 +635,6 @@ const buildPropertyDueDiligencePlan = (
     "sg_query needs a planning area or Singapore postal code to run property or regulatory diligence.",
     "Provide a planning area like Bedok, or give a postal code and let sg_query resolve the area first.",
   );
-};
-
-const buildBusinessRegistryPlan = (
-  params: Readonly<Record<string, unknown>>,
-  options?: Readonly<{
-    workflow?: string;
-    confidence?: number;
-  }>,
-): QueryPlan => {
-  const entityName = typeof params["entityName"] === "string" ? params["entityName"] : undefined;
-  const companyName = typeof params["companyName"] === "string" ? params["companyName"] : entityName;
-  const estateAgentName = typeof params["estateAgentName"] === "string" ? params["estateAgentName"] : undefined;
-  const acraName = estateAgentName ?? companyName;
-  const uen = typeof params["uen"] === "string" ? params["uen"] : undefined;
-  const salespersonName = typeof params["salespersonName"] === "string" ? params["salespersonName"] : undefined;
-  const registrationNo = typeof params["registrationNo"] === "string" ? params["registrationNo"] : undefined;
-  const estateAgentLicenseNo =
-    typeof params["estateAgentLicenseNo"] === "string" ? params["estateAgentLicenseNo"] : undefined;
-  const workhead = typeof params["workhead"] === "string" ? params["workhead"] : undefined;
-  const grade = typeof params["grade"] === "string" ? params["grade"] : undefined;
-  const classCode = typeof params["classCode"] === "string" ? params["classCode"] : undefined;
-  const workflow = options?.workflow ?? "business_dossier";
-  const apis = inferBusinessApis(params);
-
-  const steps: QueryStep[] = [];
-
-  if (
-    salespersonName !== undefined
-    || registrationNo !== undefined
-    || estateAgentName !== undefined
-    || estateAgentLicenseNo !== undefined
-  ) {
-    steps.push({
-      id: "registry_cea",
-      purpose: "Inspect CEA salesperson and estate-agent registration details.",
-      tool: "sg_cea_salespersons",
-      input: {
-        ...(salespersonName === undefined ? {} : { salespersonName }),
-        ...(registrationNo === undefined ? {} : { registrationNo }),
-        ...(estateAgentName === undefined ? {} : { estateAgentName }),
-        ...(estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo }),
-      },
-    });
-  }
-
-  if (acraName !== undefined || uen !== undefined) {
-    steps.push({
-      id: "registry_acra",
-      purpose: "Inspect ACRA corporate-entity registration details.",
-      tool: "sg_acra_entities",
-      input: {
-        ...(acraName === undefined ? {} : { entityName: acraName }),
-        ...(uen === undefined ? {} : { uen }),
-      },
-    });
-  }
-
-  if (companyName !== undefined || uen !== undefined || classCode !== undefined) {
-    steps.push({
-      id: "registry_bca_builders",
-      purpose: "Check whether the entity appears on the BCA licensed-builders register.",
-      tool: "sg_bca_licensed_builders",
-      input: {
-        ...(companyName === undefined ? {} : { companyName }),
-        ...(uen === undefined ? {} : { uenNo: uen }),
-        ...(classCode === undefined ? {} : { classCode }),
-      },
-    });
-  }
-
-  if (companyName !== undefined || uen !== undefined || workhead !== undefined || grade !== undefined) {
-    steps.push({
-      id: "registry_bca_contractors",
-      purpose: "Check whether the entity appears on the BCA registered-contractors register.",
-      tool: "sg_bca_registered_contractors",
-      input: {
-        ...(companyName === undefined ? {} : { companyName }),
-        ...(uen === undefined ? {} : { uenNo: uen }),
-        ...(workhead === undefined ? {} : { workhead }),
-        ...(grade === undefined ? {} : { grade }),
-      },
-    });
-  }
-
-  if (steps.length === 0) {
-    return buildBlockedPlan(
-      {
-        workflow,
-        intent: "business",
-        confidence: 0.78,
-        apis,
-        steps: [
-          {
-            id: "business_dossier",
-            purpose: "Build a cross-registry business dossier once a business identifier is supplied.",
-            tool: "sg_business_dossier",
-            input: {
-              ...(params["modules"] !== undefined ? { modules: params["modules"] } : {}),
-              ...(params["sectorHints"] !== undefined ? { sectorHints: params["sectorHints"] } : {}),
-            },
-          },
-        ],
-      },
-      [
-        createBlocker(
-          "entityName",
-          "Provide a company or entity name to run the business dossier.",
-          "sg_business_dossier",
-          { entityName: "ABC CONSTRUCTION PTE LTD" },
-          "Business dossier for ABC CONSTRUCTION PTE LTD",
-        ),
-        createBlocker(
-          "uen",
-          "Provide a UEN to run an exact registry dossier.",
-          "sg_business_dossier",
-          { uen: "201912345K" },
-          "Business dossier for UEN 201912345K",
-        ),
-        createBlocker(
-          "registrationNo",
-          "Provide a salesperson registration number to inspect CEA records.",
-          "sg_cea_salespersons",
-          { registrationNo: "R123456A" },
-          "Registry diligence for registration number R123456A",
-        ),
-      ],
-      "sg_query needs a company name, entity name, UEN, salesperson, or estate-agent identifier to run registry diligence.",
-      "Provide an explicit company or salesperson identifier, or call the direct ACRA, CEA, or BCA tool yourself.",
-    );
-  }
-
-  return {
-    supported: true,
-    workflow,
-    intent: "business",
-    confidence: options?.confidence ?? 0.9,
-    apis,
-    steps: [
-      {
-        id: "business_dossier",
-        purpose: "Build a cross-registry business dossier.",
-        tool: "sg_business_dossier",
-        input: {
-          ...(acraName === undefined ? {} : { entityName: acraName }),
-          ...(uen === undefined ? {} : { uen }),
-          ...(salespersonName === undefined ? {} : { salespersonName }),
-          ...(registrationNo === undefined ? {} : { registrationNo }),
-          ...(estateAgentName === undefined ? {} : { estateAgentName }),
-          ...(estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo }),
-          ...(classCode === undefined ? {} : { classCode }),
-          ...(workhead === undefined ? {} : { workhead }),
-          ...(grade === undefined ? {} : { grade }),
-          ...(params["modules"] !== undefined ? { modules: params["modules"] } : {}),
-          ...(params["sectorHints"] !== undefined ? { sectorHints: params["sectorHints"] } : {}),
-        },
-      },
-    ],
-  };
 };
 
 const buildTransportBriefPlan = (
@@ -1746,11 +1464,13 @@ export const planQuery = (query: string): QueryPlan => {
       return buildBusinessRegistryPlan(intent.extractedParams, {
         workflow: "architecture_firm_diligence",
         confidence: intent.confidence,
+        defaultModules: ["acra"],
       });
     case "healthcare_supplier_diligence":
       return buildBusinessRegistryPlan(intent.extractedParams, {
         workflow: "healthcare_supplier_diligence",
         confidence: intent.confidence,
+        defaultModules: ["acra"],
       });
     case "hotel_operator_lookup":
       return buildBusinessRegistryPlan(intent.extractedParams, {

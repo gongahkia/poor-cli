@@ -177,6 +177,10 @@ npm run demo:mcp -- transport
 npm run demo:mcp -- environment
 npm run demo:mcp -- civic
 npm run demo:mcp -- geospatial
+npm run demo:mcp -- architecture
+npm run demo:mcp -- healthcare
+npm run demo:mcp -- hotel
+npm run demo:mcp -- sector-business
 ```
 
 Those demos start the mock upstream server, connect to the built MCP server, read a catalog resource, and call one direct tool, one supporting tool, and `sg_query`.

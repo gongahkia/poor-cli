@@ -224,6 +224,45 @@ describe("brief tools", () => {
     );
   });
 
+  it("does not emit ACRA no-match risk flags when the dossier only searched hotel evidence", async () => {
+    vi.mocked(getHlbHotels).mockResolvedValue([
+      {
+        name: "Marina Bay Sands",
+        category: "hospitality",
+        subcategory: "hotel",
+        address: "10 BAYFRONT AVENUE",
+        postalCode: "018956",
+        lat: 1.2834,
+        lng: 103.8607,
+        sourceAgency: "Hotels Licensing Board",
+        sourceDataset: "Hotels",
+        sourceUrl: "https://data.gov.sg/collections/140/view",
+        lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+        keeperName: "MARINA BAY SANDS PTE. LTD.",
+        totalRooms: 2561,
+        url: "https://www.marinabaysands.com",
+        incCrc: "Y",
+      },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "Marina Bay Sands",
+      modules: ["hlb"],
+      sectorHints: ["hospitality"],
+      format: "json",
+    });
+    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+
+    expect(payload.riskFlags ?? []).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "NO_ACRA_MATCH" })]),
+    );
+    expect(payload.matchConfidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "HLB hotels", confidence: "name-exact", matchedOn: "name" }),
+      ]),
+    );
+  });
+
   it("treats Live Company as active and preserves exact UEN match confidence", async () => {
     vi.mocked(getAcraEntities).mockResolvedValue([
       {
