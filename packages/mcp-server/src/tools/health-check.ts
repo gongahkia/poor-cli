@@ -1,8 +1,12 @@
 import { formatResponse, Keystore, getMockApiBaseUrl } from "@sg-apis/shared";
 import type { CredentialSource, ToolResult, HealthStatus } from "@sg-apis/shared";
+import { getBusArrivals } from "../apis/lta/client.js";
+import { geocode } from "../apis/onemap/client.js";
+import { uraFetch } from "../apis/ura/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 type CredentialLookup = Pick<Keystore, "getKey">;
+type HealthProbeResult = Readonly<{ ok: boolean; status: number; statusText: string }>;
 
 type HealthCheckTarget = {
   readonly api: string;
@@ -12,12 +16,13 @@ type HealthCheckTarget = {
   readonly credentialSource?: (lookup: CredentialLookup) => CredentialSource;
   readonly dependentFamilies?: readonly string[];
   readonly coverageNotes?: readonly string[];
+  readonly probe?: () => Promise<HealthProbeResult>;
 };
 
 type HealthFetch = (
   input: string,
-  init?: Readonly<{ signal?: AbortSignal }>,
-) => Promise<Readonly<{ ok: boolean; status: number; statusText: string }>>;
+  init?: Readonly<RequestInit>,
+) => Promise<HealthProbeResult>;
 
 const getHealthBaseUrl = (apiPath: string, productionUrl: string): string => {
   const mockApiBaseUrl = getMockApiBaseUrl();
@@ -72,11 +77,18 @@ export const getLtaCredentialSource = (lookup: CredentialLookup): CredentialSour
 };
 
 const NOT_REQUIRED: CredentialSource = "not_required";
+const HEALTH_TIMEOUT_MS = 5000;
+const OK_HEALTH_RESPONSE: HealthProbeResult = {
+  ok: true,
+  status: 200,
+  statusText: "OK",
+};
 
 const DATAGOV_DEPENDENT_FAMILIES = [
   "HDB",
   "CEA",
   "BCA",
+  "BOA",
   "ACRA",
   "PA",
   "Sport Singapore",
@@ -88,12 +100,52 @@ const DATAGOV_DEPENDENT_FAMILIES = [
   "Hawker Centres",
   "MOE Schools",
   "MOH Healthcare",
+  "HSA",
   "SFA",
   "NParks",
   "PUB",
   "MOM",
   "STB",
+  "HLB",
 ] as const;
+
+const withHealthTimeout = async <T>(
+  task: Promise<T>,
+  onTimeout?: () => void,
+): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`Health check timed out after ${HEALTH_TIMEOUT_MS}ms`));
+    }, HEALTH_TIMEOUT_MS);
+
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+};
+
+export const probeOneMapHealth = async (): Promise<HealthProbeResult> => {
+  await geocode("049178", 1);
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeUraHealth = async (): Promise<HealthProbeResult> => {
+  await uraFetch<{ readonly Status?: string; readonly Result?: readonly unknown[] }>("DC_Rates");
+  return OK_HEALTH_RESPONSE;
+};
+
+export const probeLtaHealth = async (): Promise<HealthProbeResult> => {
+  await getBusArrivals("83139");
+  return OK_HEALTH_RESPONSE;
+};
 
 export const hasOneMapCredentials = (lookup: CredentialLookup): boolean => {
   const email = process.env["SG_API_ONEMAP_EMAIL"] ?? lookup.getKey("onemap_email");
@@ -142,6 +194,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       authRequired: true,
       configured: hasOneMapCredentials,
       credentialSource: getOneMapCredentialSource,
+      probe: probeOneMapHealth,
     },
     {
       api: "URA",
@@ -152,6 +205,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       authRequired: true,
       configured: hasUraKey,
       credentialSource: getUraCredentialSource,
+      probe: probeUraHealth,
     },
     {
       api: "LTA",
@@ -162,6 +216,7 @@ export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {
       authRequired: true,
       configured: hasLtaKey,
       credentialSource: getLtaCredentialSource,
+      probe: probeLtaHealth,
     },
     {
       api: "data.gov.sg",
@@ -199,11 +254,14 @@ export const checkApiHealth = async (
   const credentialSource = target.credentialSource?.(lookup) ?? (target.authRequired ? "none" : NOT_REQUIRED);
   const start = Date.now();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetchFn(target.url, { signal: controller.signal });
-    clearTimeout(timeout);
+    const response = await withHealthTimeout(
+      target.probe !== undefined
+        ? target.probe()
+        : fetchFn(target.url, { signal: controller.signal }),
+      () => controller.abort(),
+    );
 
     return {
       api: target.api,
@@ -217,7 +275,6 @@ export const checkApiHealth = async (
       ...(response.ok ? {} : { error: `HTTP ${response.status} ${response.statusText}` }),
     };
   } catch (error) {
-    clearTimeout(timeout);
     return {
       api: target.api,
       authRequired: target.authRequired,
