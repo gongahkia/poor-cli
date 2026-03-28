@@ -1,12 +1,4 @@
-# Macro Brief Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- macro
-```
+# Macro Brief Example
 
 ## Prompt
 
@@ -58,4 +50,3 @@ Raw macro setup means querying multiple MAS series and then separately discoveri
   ]
 }
 ```
-

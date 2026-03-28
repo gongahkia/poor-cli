@@ -1,12 +1,4 @@
-# Property Brief Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- property
-```
+# Property Brief Example
 
 ## Prompt
 
@@ -58,4 +50,3 @@ Raw property diligence means resolving the location first, then manually stitchi
   ]
 }
 ```
-

@@ -1,12 +1,4 @@
-# Civic Discovery Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- civic
-```
+# Civic Discovery Example
 
 ## Prompt
 

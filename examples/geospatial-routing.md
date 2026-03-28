@@ -1,12 +1,4 @@
-# Geospatial Routing Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- geospatial
-```
+# Geospatial Routing Example
 
 ## Prompt
 

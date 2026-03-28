@@ -1118,7 +1118,7 @@ blockedBy: [44, 47]
 ### Task 50 (B) +testing
 blockedBy: [0]
 
-**PURPOSE** — A mock API server allows offline development and demo without real API keys. It serves realistic fixture data for all 5 APIs.
+**PURPOSE** — A mock API server allows offline development and test execution without real API keys. It serves realistic fixture data for all 5 APIs.
 
 **WHAT TO DO**
 1. Create `packages/mcp-server/src/__tests__/mock-server/index.ts`.

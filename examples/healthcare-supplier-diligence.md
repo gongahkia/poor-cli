@@ -1,13 +1,5 @@
 # Healthcare Supplier Diligence
 
-## Runnable Walkthrough
-
-Run the built-in mock-backed profile end to end:
-
-```bash
-npm run demo:mcp -- healthcare
-```
-
 ## Prompt
 
 ```text

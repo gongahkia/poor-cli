@@ -28,12 +28,12 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 - Added Dockerfile for zero-config container deployment.
 - Added TypeScript integration example at `examples/integration/basic-client.ts`.
 - Added golden output fixtures at `examples/golden-outputs/`.
-- Added quick-start script (`node scripts/quick-start.mjs`).
+- Added live quick-start script (`npm run quick-start`).
 - Added production notes doc at `docs/production-notes.md`.
 - Added 4 new recipes: Demographic Profile, Bus Stop Status, Outdoor Event Check, Business Due Diligence.
 - Added `routingExplanation` and `continuationHints` to `sg_query` structured output.
 - Added OpenAPI spec generator at `scripts/generate-openapi.mjs`.
-- Added runnable MCP demo profiles through `npm run demo:mcp -- <profile>`.
+- Added credential-gated live smoke validation through `npm run test:smoke:live`.
 - Added registry smoke coverage through `npm run test:smoke:registry`.
 - Added release documentation and post-publish validation guidance.
 

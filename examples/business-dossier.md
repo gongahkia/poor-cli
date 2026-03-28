@@ -1,12 +1,4 @@
-# Business Dossier Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- business
-```
+# Business Dossier Example
 
 ## Prompt
 
@@ -58,4 +50,3 @@ Raw evidence collection means calling ACRA, BCA licensed builders, BCA registere
   ]
 }
 ```
-

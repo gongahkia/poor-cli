@@ -71,6 +71,11 @@ Build your client around those outcomes:
 
 The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts). A minimal stdlib-only Python variant lives in [`examples/integration/basic-client.py`](../examples/integration/basic-client.py).
 
+## Live Smoke
+
+- `npm run quick-start` is the credential-gated live quickstart for real OneMap, URA, LTA, data.gov datastore, and official file-download validation.
+- `npm run test:smoke:live` runs the same live validation flow without the build wrapper.
+
 ## Useful Starter Paths
 
 ### Geospatial

@@ -18,7 +18,7 @@ The current problem is not emptiness. The current problem is adoption depth. The
 - `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
 - The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.
-- The demo scripts are runnable and prove the server can complete end-to-end MCP flows against the bundled mock server.
+- The repo now includes a credential-gated live smoke path plus package and registry smoke checks for end-to-end MCP validation.
 
 That means this is already beyond a concept repo or README-only pitch.
 
@@ -75,13 +75,13 @@ That gap matters because real developers adopt runnable patterns, not just tool 
 
 ### 2. Trust Can Drop Fast When A Headline Brief Looks Wrong
 
-During this audit, `npm run demo:mcp -- macro` completed successfully, but the output still surfaced credibility problems:
+During this audit, the macro brief still surfaced credibility problems:
 
-- the CPI entrypoint resolved to a GDP dataset in the mock-backed demo
+- the CPI entrypoint resolved to a GDP dataset
 - the interest-rate and banking records mirrored the exchange-rate shape
 - summary metrics such as `SORA metric` and `Banking metric` were not persuasive developer-facing outputs
 
-Even if this is partly a mock-fixture issue, it is still a product issue because the demo is part of the developer trust surface. Developers will judge the repo by the first convincing output they see.
+Even if this is partly an output-shaping issue, it is still a product issue because first-run artifacts are part of the developer trust surface. Developers will judge the repo by the first convincing output they see.
 
 ### 3. The Best Features Are Narrower Than The Surface Count Suggests
 
@@ -108,7 +108,7 @@ But a real developer still sees:
 
 - no public package proof in the default path
 - credential setup for key live workflows
-- no "five minute success" script outside the mock demo path
+- credential-gated validation still depends on live upstream credentials
 
 This makes the repo feel more evaluable than immediately adoptable.
 
@@ -230,7 +230,7 @@ Deepen it by:
 - surfacing period-over-period deltas for supported metrics
 - pulling one or two actual SingStat tables rather than stopping at dataset discovery
 - separating starter discovery mode from "tracked KPI bundle" mode
-- adding stronger tests and demo fixtures so the headline macro path never looks incorrect
+- adding stronger tests and output checks so the headline macro path never looks incorrect
 
 Why this helps:
 
@@ -299,9 +299,9 @@ This would make the repo feel more production-adoptable outside a TypeScript-fir
 
 Keep the architecture, healthcare-supplier, and hotel-operator outputs believable, because these are now first-contact diligence workflows. Developers need to see what "good" looks like before they commit to an integration.
 
-### Strengthen Demo Trust
+### Strengthen First-Run Trust
 
-If a mock-backed demo cannot tell a believable story, fix the fixture or simplify the demo. First impressions matter more than tool count.
+If a first-run workflow cannot tell a believable story, fix the artifact or simplify the workflow. First impressions matter more than tool count.
 
 ### Keep Benchmarks And Production Notes Current
 
@@ -310,7 +310,7 @@ The repo now has `sg://benchmarks` and a production-notes doc. The next step is 
 ## Priority Order
 
 1. Deepen the five additive brief artifacts, especially property and macro.
-2. Improve demo credibility and golden outputs for the new sector-specific diligence workflows.
+2. Improve first-run credibility and golden outputs for the new sector-specific diligence workflows.
 3. Add more integration paths for non-TypeScript application developers.
 4. Make `sg_query` continuation guidance more useful.
 5. Only then expand breadth beyond the current business and compliance wedge.

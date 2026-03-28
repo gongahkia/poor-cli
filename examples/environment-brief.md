@@ -1,12 +1,4 @@
-# Environment Brief Demo
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run demo:mcp -- environment
-```
+# Environment Brief Example
 
 ## Prompt
 
