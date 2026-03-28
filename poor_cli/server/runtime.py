@@ -718,6 +718,8 @@ class PoorCLIServer:
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
             "poor-cli/renameSession": self.handle_rename_session,
+            "poor-cli/listProfiles": self.handle_list_profiles,
+            "poor-cli/applyProfile": self.handle_apply_profile,
             "poor-cli/getTrustStatus": self.handle_get_trust_status,
             "poor-cli/trustRepo": self.handle_trust_repo,
             "poor-cli/untrustRepo": self.handle_untrust_repo,
@@ -4748,6 +4750,27 @@ class PoorCLIServer:
 
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
+
+    # =========================================================================
+    # Profile handlers
+    # =========================================================================
+
+    async def handle_list_profiles(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..profiles import ProfileManager
+        mgr = ProfileManager()
+        return {"profiles": [p.to_dict() for p in mgr.list_profiles()]}
+
+    async def handle_apply_profile(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..profiles import ProfileManager
+        name = str(params.get("name", "")).strip()
+        if not name:
+            return {"error": "name required"}
+        mgr = ProfileManager()
+        session = self._session_manager.get_session(params.get("sessionId"))
+        if session.core.config:
+            mgr.apply_to_config(session.core.config, name)
+            return {"applied": name}
+        return {"error": "session not initialized"}
 
     # =========================================================================
     # Trust handlers
