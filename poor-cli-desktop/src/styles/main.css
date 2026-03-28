@@ -147,6 +147,13 @@ body {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  transition: width 0.15s ease, opacity 0.15s ease;
+}
+.sidebar.collapsed {
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  border-right: none;
   padding: 16px;
   gap: 12px;
   overflow-y: auto;
