@@ -166,32 +166,37 @@ function renderApiKeysGroup() {
       <div class="api-key-actions">
         <input type="password" class="api-key-input" placeholder="${hasKey ? '••••••••' : 'Paste API key...'}" data-id="${def.id}" data-env="${def.env}" />
         <button class="btn btn-sm api-key-toggle" title="Show/hide">Show</button>
-        <button class="btn btn-sm btn-primary api-key-save" title="Save">Save</button>
         ${hasKey ? '<button class="btn btn-sm api-key-remove" title="Remove">Remove</button>' : ''}
       </div>`;
     const input = row.querySelector('.api-key-input');
     row.querySelector('.api-key-toggle').addEventListener('click', () => {
       input.type = input.type === 'password' ? 'text' : 'password';
     });
-    row.querySelector('.api-key-save').addEventListener('click', () => {
-      const val = input.value.trim();
-      if (!val) return;
-      stored[def.id] = val;
-      localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
-      rpc('set_api_key', { provider: def.id, apiKey: val, persist: true, reloadActiveProvider: true }).catch(() => {});
-      input.value = '';
-      input.placeholder = '••••••••';
-      const dot = row.querySelector('.api-key-status');
-      dot.classList.add('set');
-      dot.title = 'Key is set';
-      if (!row.querySelector('.api-key-remove')) { // add remove btn
-        const rm = document.createElement('button');
-        rm.className = 'btn btn-sm api-key-remove';
-        rm.title = 'Remove';
-        rm.textContent = 'Remove';
-        rm.addEventListener('click', () => removeKey(def, row, stored));
-        row.querySelector('.api-key-actions').appendChild(rm);
-      }
+    // auto-save on input (debounced)
+    let keyTimer;
+    input.addEventListener('input', () => {
+      clearTimeout(keyTimer);
+      keyTimer = setTimeout(() => {
+        const val = input.value.trim();
+        if (!val) return;
+        stored[def.id] = val;
+        localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
+        rpc('set_api_key', { provider: def.id, apiKey: val, persist: true, reloadActiveProvider: true }).catch(() => {});
+        input.value = '';
+        input.placeholder = '••••••••';
+        const dot = row.querySelector('.api-key-status');
+        dot.classList.add('set');
+        dot.title = 'Key is set';
+        if (!row.querySelector('.api-key-remove')) {
+          const rm = document.createElement('button');
+          rm.className = 'btn btn-sm api-key-remove';
+          rm.title = 'Remove';
+          rm.textContent = 'Remove';
+          rm.addEventListener('click', () => removeKey(def, row, stored));
+          row.querySelector('.api-key-actions').appendChild(rm);
+        }
+        showSaveIndicator(`api.${def.id}`);
+      }, 600);
     });
     const rmBtn = row.querySelector('.api-key-remove');
     if (rmBtn) rmBtn.addEventListener('click', () => removeKey(def, row, stored));
