@@ -223,14 +223,18 @@ function renderFontsGroup() {
         <button class="btn btn-sm btn-primary font-save">Apply</button>
         ${cur ? '<button class="btn btn-sm font-reset">Reset</button>' : ''}
       </div>`;
-    row.querySelector('.font-save').addEventListener('click', () => {
-      const url = row.querySelector('.font-url-input').value.trim();
-      if (url && !isGoogleFontsUrl(url)) { alert('Please provide a valid Google Fonts URL'); return; }
+    // auto-apply on input with debounce
+    let fontTimer;
+    const fontInput = row.querySelector('.font-url-input');
+    const applyFont = () => {
+      const url = fontInput.value.trim();
+      if (url && !isGoogleFontsUrl(url)) return;
       fonts[def.key] = url;
       saveStoredFonts(fonts);
       applyCustomFonts();
-      renderOptions(document.getElementById('settings-content'), defaultOptions); // refresh
-    });
+    };
+    fontInput.addEventListener('input', () => { clearTimeout(fontTimer); fontTimer = setTimeout(applyFont, 800); });
+    row.querySelector('.font-save').addEventListener('click', () => { applyFont(); });
     const resetBtn = row.querySelector('.font-reset');
     if (resetBtn) resetBtn.addEventListener('click', () => {
       delete fonts[def.key];
@@ -304,8 +308,8 @@ function renderOptions(container, options) {
         toggle.className = 'toggle';
         toggle.innerHTML = `<input type="checkbox" ${opt.value ? 'checked' : ''}><span class="toggle-slider"></span>`;
         toggle.querySelector('input').addEventListener('change', (e) => {
-          rpc('set_config', { keyPath: opt.path, value: e.target.checked }).catch(() => {});
-          if (opt.path === 'ui.crt_effect') document.documentElement.classList.toggle('crt', e.target.checked);
+          autoSave(opt.path, e.target.checked);
+          applySettingImmediate(opt.path, e.target.checked);
         });
         row.appendChild(toggle);
       } else if (opt.choices && opt.choices.length) {
@@ -317,23 +321,71 @@ function renderOptions(container, options) {
           sel.appendChild(o);
         });
         sel.addEventListener('change', () => {
-          rpc('set_config', { keyPath: opt.path, value: sel.value }).catch(() => {});
-          if (opt.path === 'ui.theme') document.documentElement.setAttribute('data-theme', sel.value);
+          autoSave(opt.path, sel.value);
+          applySettingImmediate(opt.path, sel.value);
         });
         row.appendChild(sel);
       } else {
         const input = document.createElement('input');
         input.type = 'text';
         input.value = opt.value ?? '';
-        input.addEventListener('change', () => {
-          const v = isNaN(input.value) ? input.value : Number(input.value);
-          rpc('set_config', { keyPath: opt.path, value: v }).catch(() => {});
+        // auto-save on input with debounce
+        let saveTimer;
+        input.addEventListener('input', () => {
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(() => {
+            const v = isNaN(input.value) ? input.value : Number(input.value);
+            autoSave(opt.path, v);
+            applySettingImmediate(opt.path, v);
+          }, 500);
         });
         row.appendChild(input);
       }
       group.appendChild(row);
     }
     container.appendChild(group);
+  }
+}
+
+function autoSave(path, value) {
+  rpc('set_config', { keyPath: path, value }).catch(() => {});
+  showSaveIndicator(path);
+}
+
+function showSaveIndicator(path) {
+  // brief "saved" flash next to the setting
+  const row = document.querySelector(`.settings-row .desc`);
+  if (!row) return;
+  const rows = document.querySelectorAll('.settings-row');
+  for (const r of rows) {
+    const desc = r.querySelector('.desc');
+    if (desc && desc.textContent === path) {
+      const existing = r.querySelector('.save-flash');
+      if (existing) existing.remove();
+      const flash = document.createElement('span');
+      flash.className = 'save-flash';
+      flash.textContent = 'saved';
+      desc.appendChild(flash);
+      setTimeout(() => flash.remove(), 1500);
+      break;
+    }
+  }
+}
+
+function applySettingImmediate(path, value) {
+  // apply visual changes immediately without page reload
+  if (path === 'ui.theme') {
+    document.documentElement.setAttribute('data-theme', value);
+  } else if (path === 'ui.crt_effect') {
+    document.documentElement.classList.toggle('crt', !!value);
+  } else if (path === 'ui.markdown') {
+    // will apply on next message render
+  } else if (path === 'ui.stream') {
+    // will apply on next chat request
+  } else if (path === 'model.temperature' || path === 'model.max_tokens' || path === 'model.default_provider') {
+    // reinitialize provider on next chat
+  } else if (path === 'sandbox.preset' || path === 'security.require_approval') {
+    // applies immediately via backend
   }
 }
 
