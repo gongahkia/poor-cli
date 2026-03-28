@@ -1,127 +1,17 @@
 import { ApiError } from "@sg-apis/shared";
-import type { QueryBlocker, ToolResult } from "@sg-apis/shared";
 import { DEFAULT_CIVIC_RADIUS_KM } from "../apis/civic/utils.js";
 import { classifyIntent, resolveToolInput } from "./classifier.js";
+import {
+  buildBlockedPlan,
+  buildDirectToolBlockedPlan,
+  buildUnsupportedPlan,
+  createBlocker,
+  type QueryExecutionContext,
+  type QueryPlan,
+} from "./planner-core.js";
+import { buildBusinessRegistryPlan } from "./plans/business.js";
 
-export type QueryExecutionContext = {
-  readonly results: ReadonlyMap<
-    string,
-    {
-      readonly input: Readonly<Record<string, unknown>>;
-      readonly output: ToolResult;
-    }
-  >;
-};
-
-type QueryStepResolver = (
-  context: QueryExecutionContext,
-) => Promise<Readonly<Record<string, unknown>>> | Readonly<Record<string, unknown>>;
-
-export type QueryStep = {
-  readonly id: string;
-  readonly purpose: string;
-  readonly tool: string;
-  readonly input: Readonly<Record<string, unknown>>;
-  readonly dependsOn?: readonly string[];
-  readonly resolveInput?: QueryStepResolver;
-};
-
-type SupportedQueryPlan = {
-  readonly supported: true;
-  readonly workflow: string;
-  readonly intent: string;
-  readonly confidence: number;
-  readonly apis: readonly string[];
-  readonly steps: readonly QueryStep[];
-};
-
-type BlockedQueryPlan = {
-  readonly supported: false;
-  readonly blocked: true;
-  readonly workflow: string;
-  readonly intent: string;
-  readonly confidence: number;
-  readonly apis: readonly string[];
-  readonly steps: readonly QueryStep[];
-  readonly blockers: readonly QueryBlocker[];
-  readonly reason: string;
-  readonly suggestion: string;
-};
-
-type UnsupportedQueryPlan = {
-  readonly supported: false;
-  readonly blocked?: false;
-  readonly reason: string;
-  readonly suggestion: string;
-};
-
-export type QueryPlan = SupportedQueryPlan | BlockedQueryPlan | UnsupportedQueryPlan;
-
-type QueryPlanContext = Pick<SupportedQueryPlan, "workflow" | "intent" | "confidence" | "apis" | "steps">;
-
-const buildUnsupportedPlan = (reason: string, suggestion: string): QueryPlan => ({
-  supported: false,
-  reason,
-  suggestion,
-});
-
-const buildBlockedPlan = (
-  context: QueryPlanContext,
-  blockers: readonly QueryBlocker[],
-  reason: string,
-  suggestion: string,
-): QueryPlan => ({
-  supported: false,
-  blocked: true,
-  ...context,
-  blockers,
-  reason,
-  suggestion,
-});
-
-const createBlocker = (
-  field: string,
-  reason: string,
-  directTool: string,
-  exampleInput: Readonly<Record<string, unknown>>,
-  suggestedPrompt: string,
-): QueryBlocker => ({
-  field,
-  reason,
-  directTool,
-  exampleInput,
-  suggestedPrompt,
-});
-
-const buildDirectToolBlockedPlan = (
-  workflow: string,
-  intent: string,
-  confidence: number,
-  apis: readonly string[],
-  tool: string,
-  input: Readonly<Record<string, unknown>>,
-  blockers: readonly QueryBlocker[],
-  reason: string,
-  suggestion: string,
-): QueryPlan => buildBlockedPlan(
-  {
-    workflow,
-    intent,
-    confidence,
-    apis,
-    steps: [
-      {
-        id: "direct_tool",
-        purpose: `Execute ${tool}.`,
-        tool,
-        input,
-      },
-    ],
-  },
-  blockers,
-  reason,
-  suggestion,
-);
+export type { QueryExecutionContext, QueryPlan, QueryStep } from "./planner-core.js";
 
 const dependencyError = (message: string, suggestedAction: string): ApiError => {
   return new ApiError({
@@ -747,153 +637,6 @@ const buildPropertyDueDiligencePlan = (
   );
 };
 
-const buildBusinessRegistryPlan = (
-  params: Readonly<Record<string, unknown>>,
-): QueryPlan => {
-  const entityName = typeof params["entityName"] === "string" ? params["entityName"] : undefined;
-  const companyName = typeof params["companyName"] === "string" ? params["companyName"] : entityName;
-  const estateAgentName = typeof params["estateAgentName"] === "string" ? params["estateAgentName"] : undefined;
-  const acraName = estateAgentName ?? companyName;
-  const uen = typeof params["uen"] === "string" ? params["uen"] : undefined;
-  const salespersonName = typeof params["salespersonName"] === "string" ? params["salespersonName"] : undefined;
-  const registrationNo = typeof params["registrationNo"] === "string" ? params["registrationNo"] : undefined;
-  const estateAgentLicenseNo =
-    typeof params["estateAgentLicenseNo"] === "string" ? params["estateAgentLicenseNo"] : undefined;
-  const workhead = typeof params["workhead"] === "string" ? params["workhead"] : undefined;
-  const grade = typeof params["grade"] === "string" ? params["grade"] : undefined;
-  const classCode = typeof params["classCode"] === "string" ? params["classCode"] : undefined;
-
-  const steps: QueryStep[] = [];
-
-  if (
-    salespersonName !== undefined
-    || registrationNo !== undefined
-    || estateAgentName !== undefined
-    || estateAgentLicenseNo !== undefined
-  ) {
-    steps.push({
-      id: "registry_cea",
-      purpose: "Inspect CEA salesperson and estate-agent registration details.",
-      tool: "sg_cea_salespersons",
-      input: {
-        ...(salespersonName === undefined ? {} : { salespersonName }),
-        ...(registrationNo === undefined ? {} : { registrationNo }),
-        ...(estateAgentName === undefined ? {} : { estateAgentName }),
-        ...(estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo }),
-      },
-    });
-  }
-
-  if (acraName !== undefined || uen !== undefined) {
-    steps.push({
-      id: "registry_acra",
-      purpose: "Inspect ACRA corporate-entity registration details.",
-      tool: "sg_acra_entities",
-      input: {
-        ...(acraName === undefined ? {} : { entityName: acraName }),
-        ...(uen === undefined ? {} : { uen }),
-      },
-    });
-  }
-
-  if (companyName !== undefined || uen !== undefined || classCode !== undefined) {
-    steps.push({
-      id: "registry_bca_builders",
-      purpose: "Check whether the entity appears on the BCA licensed-builders register.",
-      tool: "sg_bca_licensed_builders",
-      input: {
-        ...(companyName === undefined ? {} : { companyName }),
-        ...(uen === undefined ? {} : { uenNo: uen }),
-        ...(classCode === undefined ? {} : { classCode }),
-      },
-    });
-  }
-
-  if (companyName !== undefined || uen !== undefined || workhead !== undefined || grade !== undefined) {
-    steps.push({
-      id: "registry_bca_contractors",
-      purpose: "Check whether the entity appears on the BCA registered-contractors register.",
-      tool: "sg_bca_registered_contractors",
-      input: {
-        ...(companyName === undefined ? {} : { companyName }),
-        ...(uen === undefined ? {} : { uenNo: uen }),
-        ...(workhead === undefined ? {} : { workhead }),
-        ...(grade === undefined ? {} : { grade }),
-      },
-    });
-  }
-
-  if (steps.length === 0) {
-    return buildBlockedPlan(
-      {
-        workflow: "business_dossier",
-        intent: "business",
-        confidence: 0.78,
-        apis: ["acra", "bca", "cea"],
-        steps: [
-          {
-            id: "business_dossier",
-            purpose: "Build a cross-registry business dossier once a business identifier is supplied.",
-            tool: "sg_business_dossier",
-            input: {},
-          },
-        ],
-      },
-      [
-        createBlocker(
-          "entityName",
-          "Provide a company or entity name to run the business dossier.",
-          "sg_business_dossier",
-          { entityName: "ABC CONSTRUCTION PTE LTD" },
-          "Business dossier for ABC CONSTRUCTION PTE LTD",
-        ),
-        createBlocker(
-          "uen",
-          "Provide a UEN to run an exact registry dossier.",
-          "sg_business_dossier",
-          { uen: "201912345K" },
-          "Business dossier for UEN 201912345K",
-        ),
-        createBlocker(
-          "registrationNo",
-          "Provide a salesperson registration number to inspect CEA records.",
-          "sg_cea_salespersons",
-          { registrationNo: "R123456A" },
-          "Registry diligence for registration number R123456A",
-        ),
-      ],
-      "sg_query needs a company name, entity name, UEN, salesperson, or estate-agent identifier to run registry diligence.",
-      "Provide an explicit company or salesperson identifier, or call the direct ACRA, CEA, or BCA tool yourself.",
-    );
-  }
-
-  return {
-    supported: true,
-    workflow: "business_dossier",
-    intent: "business",
-    confidence: 0.9,
-    apis: Array.from(new Set(steps.map((step) => step.tool.split("_")[1]!))),
-    steps: [
-      {
-        id: "business_dossier",
-        purpose: "Build a cross-registry business dossier.",
-        tool: "sg_business_dossier",
-        input: {
-          ...(acraName === undefined ? {} : { entityName: acraName }),
-          ...(uen === undefined ? {} : { uen }),
-          ...(salespersonName === undefined ? {} : { salespersonName }),
-          ...(registrationNo === undefined ? {} : { registrationNo }),
-          ...(estateAgentName === undefined ? {} : { estateAgentName }),
-          ...(estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo }),
-          ...(classCode === undefined ? {} : { classCode }),
-          ...(workhead === undefined ? {} : { workhead }),
-          ...(grade === undefined ? {} : { grade }),
-        },
-      },
-    ],
-  };
-};
-
 const buildTransportBriefPlan = (
   params: Readonly<Record<string, unknown>>,
 ): QueryPlan => {
@@ -1421,6 +1164,143 @@ const buildDirectToolPlan = (query: string): QueryPlan => {
     );
   }
 
+  if (resolved.tool === "sg_boa_architects" && Object.keys(resolved.input).length === 0) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "name",
+          "Provide an architect name for a BOA architect lookup.",
+          "sg_boa_architects",
+          { name: "ALICE TAN" },
+          "Show BOA architect record for ALICE TAN",
+        ),
+        createBlocker(
+          "registrationNo",
+          "Provide a BOA registration number for an exact lookup.",
+          "sg_boa_architects",
+          { registrationNo: "A1234" },
+          "Show BOA architect record for registration number A1234",
+        ),
+      ],
+      "sg_query needs an architect name, registration number, or architecture firm name for BOA architect lookups.",
+      "Provide an explicit architect identifier, or call sg_boa_architects directly.",
+    );
+  }
+
+  if (resolved.tool === "sg_boa_architecture_firms" && Object.keys(resolved.input).length === 0) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "firmName",
+          "Provide an architecture firm name for a BOA firm lookup.",
+          "sg_boa_architecture_firms",
+          { firmName: "DESIGN LAB PTE LTD" },
+          "Show BOA architecture firm record for DESIGN LAB PTE LTD",
+        ),
+      ],
+      "sg_query needs a firm name, email, or phone number for BOA architecture-firm lookups.",
+      "Provide an explicit firm identifier, or call sg_boa_architecture_firms directly.",
+    );
+  }
+
+  if (resolved.tool === "sg_hsa_licensed_pharmacies" && Object.keys(resolved.input).length === 0) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "pharmacyName",
+          "Provide a pharmacy name for an HSA pharmacy lookup.",
+          "sg_hsa_licensed_pharmacies",
+          { pharmacyName: "A.M. Pharmacy Pte Ltd" },
+          "Show HSA licensed pharmacy record for A.M. Pharmacy Pte Ltd",
+        ),
+        createBlocker(
+          "postalCode",
+          "Provide a postal code to narrow the HSA pharmacy lookup.",
+          "sg_hsa_licensed_pharmacies",
+          { postalCode: "238841" },
+          "Show HSA licensed pharmacy at postal code 238841",
+        ),
+      ],
+      "sg_query needs a pharmacy name, pharmacist, address, or postal code for HSA pharmacy lookups.",
+      "Provide a pharmacy identifier, or call sg_hsa_licensed_pharmacies directly.",
+    );
+  }
+
+  if (resolved.tool === "sg_hsa_health_product_licensees" && Object.keys(resolved.input).length === 0) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "companyName",
+          "Provide a company name for an HSA health-product licensee lookup.",
+          "sg_hsa_health_product_licensees",
+          { companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." },
+          "Show HSA health-product licence rows for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        ),
+      ],
+      "sg_query needs a company or licence filter for HSA health-product licensee lookups.",
+      "Provide a company or licence filter, or call sg_hsa_health_product_licensees directly.",
+    );
+  }
+
+  if (
+    resolved.tool === "sg_hlb_hotels"
+    && resolved.input["name"] === undefined
+    && resolved.input["postalCode"] === undefined
+    && resolved.input["keeperName"] === undefined
+    && (resolved.input["lat"] === undefined || resolved.input["lng"] === undefined)
+  ) {
+    return buildDirectToolBlockedPlan(
+      "direct_tool",
+      intent.intent,
+      intent.confidence,
+      intent.apis,
+      resolved.tool,
+      resolved.input,
+      [
+        createBlocker(
+          "name",
+          "Provide a hotel name for an HLB hotel lookup.",
+          "sg_hlb_hotels",
+          { name: "RAFFLES HOTEL SINGAPORE" },
+          "Show HLB hotel record for RAFFLES HOTEL SINGAPORE",
+        ),
+        createBlocker(
+          "keeperName",
+          "Provide a keeper or operator name for an HLB hotel lookup.",
+          "sg_hlb_hotels",
+          { keeperName: "RAFFLES HOTEL SINGAPORE" },
+          "Show HLB hotel records kept by RAFFLES HOTEL SINGAPORE",
+        ),
+      ],
+      "sg_query needs a hotel name, keeper name, postal code, or coordinates for HLB hotel lookups.",
+      "Provide a hotel identifier, or call sg_hlb_hotels directly.",
+    );
+  }
+
   if (resolved.tool === "sg_datagov_resources" && resolved.input["datasetId"] === undefined) {
     return buildDirectToolBlockedPlan(
       "direct_tool",
@@ -1580,6 +1460,28 @@ export const planQuery = (query: string): QueryPlan => {
       return buildPropertyDueDiligencePlan(query, intent.extractedParams);
     case "business_registry_diligence":
       return buildBusinessRegistryPlan(intent.extractedParams);
+    case "architecture_firm_diligence":
+      return buildBusinessRegistryPlan(intent.extractedParams, {
+        workflow: "architecture_firm_diligence",
+        confidence: intent.confidence,
+        defaultModules: ["acra"],
+      });
+    case "healthcare_supplier_diligence":
+      return buildBusinessRegistryPlan(intent.extractedParams, {
+        workflow: "healthcare_supplier_diligence",
+        confidence: intent.confidence,
+        defaultModules: ["acra"],
+      });
+    case "hotel_operator_lookup":
+      return buildBusinessRegistryPlan(intent.extractedParams, {
+        workflow: "hotel_operator_lookup",
+        confidence: intent.confidence,
+      });
+    case "sector_scoped_business_diligence":
+      return buildBusinessRegistryPlan(intent.extractedParams, {
+        workflow: "sector_scoped_business_diligence",
+        confidence: intent.confidence,
+      });
     case "dataset_discovery":
       return buildDatasetDiscoveryPlan(query);
     case "demographic_profile":

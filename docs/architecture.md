@@ -10,13 +10,13 @@ Accepted for the current product shape.
 
 ## Context
 
-This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 26 official data families.
+This repo is not a general Singapore analyst copilot. It is a tool-first MCP server for agent builders who need reliable, explicit interfaces over 29 official data families.
 
 The product boundary is:
 
 - stable direct `sg_*` tools first
 - additive briefs where composition creates clear user value
-- a bounded preferred interface across 17 routed families
+- a bounded preferred interface across 20 routed families
 - machine-readable catalogs through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, `sg://runtime`, `sg://playbooks`, and `sg://benchmarks`
 
 That boundary keeps the repo useful without pretending to solve arbitrary analyst workflows.
@@ -36,7 +36,7 @@ Consequence:
 - new scope is added with honest direct tools first
 - additive briefs are allowed only when they return a bounded artifact, not hidden orchestration
 
-### 2. The repo goes deep on 26 official data families
+### 2. The repo goes deep on 29 official data families
 
 The current families are:
 
@@ -49,6 +49,7 @@ The current families are:
 - HDB
 - CEA
 - BCA
+- BOA
 - ACRA
 - PA
 - Sport Singapore
@@ -60,17 +61,19 @@ The current families are:
 - Hawker Centres
 - MOE Schools
 - MOH Healthcare
+- HSA
 - SFA
 - NParks
 - PUB
 - MOM
 - STB
+- HLB
 - data.gov.sg
 
 Why:
 
 - together they cover macro, finance, location, property, transport, environment, housing, dataset discovery, business diligence, procurement, civic amenities, education, healthcare, food safety, parks, water, labour, and tourism
-- HDB, CEA, BCA, ACRA, the civic directories, and the later no-auth families deepen coverage without adding more credential surfaces (all route through data.gov.sg)
+- HDB, CEA, BCA, BOA, HSA, HLB, ACRA, the civic directories, and the later no-auth families deepen coverage without adding more credential surfaces (all route through data.gov.sg or the same no-auth file-download path)
 - every new upstream multiplies auth, rate-limit, schema, and support cost
 
 Consequence:
@@ -80,7 +83,7 @@ Consequence:
 
 ### 3. `sg_query` is a bounded usability layer, not a planner
 
-`sg_query` is the bounded preferred interface across 17 routed families.
+`sg_query` is the bounded preferred interface across 20 routed families.
 
 Why:
 
@@ -90,7 +93,7 @@ Why:
 
 Consequence:
 
-- business-registry workflows can route to ACRA, CEA, and BCA
+- business-registry workflows can route to ACRA, CEA, BCA, BOA, HSA, HLB, and GeBIZ
 - macro workflows can collapse to `sg_macro_brief`
 - property workflows can collapse to `sg_property_brief`
 - civic discovery can geocode postal codes, addresses, or planning areas before calling MSF, PA, Sport Singapore, or ECDA directory tools
@@ -181,7 +184,7 @@ Key tradeoffs:
 
 - `sg_query` is not a general planner
 - `sg_macro_brief` is a starter snapshot, not full analysis
-- `sg_business_dossier` is registry-focused and exact-match oriented
+- `sg_business_dossier` is registry-focused, module-bounded, and entity-match oriented
 - `sg_property_brief` is bounded diligence context, not a recommendation engine
 - `sg_transport_brief` is an operations snapshot, not route planning or predictive dispatch
 - `sg_environment_brief` is a live monitoring brief, not severe-weather forecasting

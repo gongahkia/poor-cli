@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8607, 1.2834]
+      },
+      "properties": {
+        "NAME": "Marina Bay Sands",
+        "DESCRIPTION": "10 BAYFRONT AVENUE",
+        "POSTALCODE": "018956",
+        "KEEPERNAME": "MARINA BAY SANDS PTE. LTD.",
+        "TOTALROOMS": "2561",
+        "HYPERLINK": "https://www.marinabaysands.com",
+        "INC_CRC": "Y",
+        "FMEL_UPD_D": "20240417181750"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8546, 1.2948]
+      },
+      "properties": {
+        "NAME": "RAFFLES HOTEL SINGAPORE",
+        "DESCRIPTION": "1 BEACH ROAD",
+        "POSTALCODE": "189673",
+        "KEEPERNAME": "RAFFLES HOTEL SINGAPORE",
+        "TOTALROOMS": "115",
+        "HYPERLINK": "https://www.raffles.com/singapore",
+        "INC_CRC": "Y",
+        "FMEL_UPD_D": "20240417181750"
+      }
+    }
+  ]
+}

@@ -45,4 +45,37 @@ describe("query golden outputs", () => {
       expect(payload.failedStep?.tool).toBe("sg_datagov_get");
     }
   });
+
+  it("keeps the architecture-firm diligence golden believable", () => {
+    const payload = QueryOutcomeSchema.parse(readGolden("query-architecture-firm-diligence.json"));
+
+    expect(payload.status).toBe("completed");
+    if (payload.status === "completed") {
+      expect(payload.workflow).toBe("architecture_firm_diligence");
+      expect(payload.toolsUsed).toEqual(["sg_business_dossier"]);
+      expect(payload.resultSummary?.headline).toContain("BOA");
+    }
+  });
+
+  it("keeps the healthcare-supplier diligence golden believable", () => {
+    const payload = QueryOutcomeSchema.parse(readGolden("query-healthcare-supplier-diligence.json"));
+
+    expect(payload.status).toBe("completed");
+    if (payload.status === "completed") {
+      expect(payload.workflow).toBe("healthcare_supplier_diligence");
+      expect(payload.nextActions?.[0]?.tool).toBe("sg_hsa_licensed_pharmacies");
+      expect(payload.resultSummary?.headline).toContain("HSA");
+    }
+  });
+
+  it("keeps the hotel-operator lookup golden believable", () => {
+    const payload = QueryOutcomeSchema.parse(readGolden("query-hotel-operator-lookup.json"));
+
+    expect(payload.status).toBe("completed");
+    if (payload.status === "completed") {
+      expect(payload.workflow).toBe("hotel_operator_lookup");
+      expect(payload.toolsUsed).toEqual(["sg_hlb_hotels"]);
+      expect(payload.resultSummary?.headline).toContain("HLB");
+    }
+  });
 });

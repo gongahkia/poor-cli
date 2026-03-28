@@ -153,6 +153,105 @@ const PROFILES = {
       },
     },
   },
+  architecture: {
+    resourceUri: "sg://workflows",
+    direct: {
+      name: "sg_boa_architecture_firms",
+      arguments: { firmName: "DP Architects", format: "json" },
+    },
+    supporting: {
+      name: "sg_business_dossier",
+      arguments: {
+        entityName: "DP Architects",
+        modules: ["acra", "boa", "gebiz"],
+        sectorHints: ["architecture", "procurement"],
+        format: "json",
+      },
+    },
+    query: {
+      name: "sg_query",
+      arguments: {
+        query: "Architecture firm diligence for DP Architects",
+        mode: "execute",
+        format: "json",
+      },
+    },
+  },
+  healthcare: {
+    resourceUri: "sg://workflows",
+    direct: {
+      name: "sg_hsa_health_product_licensees",
+      arguments: {
+        companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        format: "json",
+      },
+    },
+    supporting: {
+      name: "sg_business_dossier",
+      arguments: {
+        entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        modules: ["acra", "hsa", "gebiz"],
+        sectorHints: ["healthcare", "procurement"],
+        format: "json",
+      },
+    },
+    query: {
+      name: "sg_query",
+      arguments: {
+        query: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        mode: "execute",
+        format: "json",
+      },
+    },
+  },
+  hotel: {
+    resourceUri: "sg://workflows",
+    direct: {
+      name: "sg_hlb_hotels",
+      arguments: { name: "Marina Bay Sands", format: "json" },
+    },
+    supporting: {
+      name: "sg_business_dossier",
+      arguments: {
+        entityName: "MARINA BAY SANDS PTE. LTD.",
+        modules: ["acra", "hlb"],
+        sectorHints: ["hospitality"],
+        format: "json",
+      },
+    },
+    query: {
+      name: "sg_query",
+      arguments: {
+        query: "Hotel operator lookup for Marina Bay Sands",
+        mode: "execute",
+        format: "json",
+      },
+    },
+  },
+  "sector-business": {
+    resourceUri: "sg://recipes",
+    direct: {
+      name: "sg_gebiz_tenders",
+      arguments: { supplierName: "ABC CONSTRUCTION PTE LTD", format: "json" },
+    },
+    supporting: {
+      name: "sg_business_dossier",
+      arguments: {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        modules: ["acra", "bca", "gebiz"],
+        sectorHints: ["construction", "procurement"],
+        format: "json",
+      },
+    },
+    query: {
+      name: "sg_query",
+      arguments: {
+        query: "Sector-scoped business diligence for company ABC CONSTRUCTION PTE LTD in construction procurement",
+        mode: "execute",
+        format: "json",
+      },
+    },
+  },
 };
 
 const profileName = process.argv[2] ?? "macro";

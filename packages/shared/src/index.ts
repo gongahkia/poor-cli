@@ -70,6 +70,16 @@ export {
   EnvironmentBriefSchema,
   BriefArtifactSchema,
   GeBIZTendersSchema,
+  BoaArchitectsBaseSchema,
+  BoaArchitectsSchema,
+  BoaArchitectureFirmsBaseSchema,
+  BoaArchitectureFirmsSchema,
+  HsaLicensedPharmaciesBaseSchema,
+  HsaLicensedPharmaciesSchema,
+  HsaHealthProductLicenseesBaseSchema,
+  HsaHealthProductLicenseesSchema,
+  HlbHotelsInputSchema,
+  HlbHotelsSchema,
   PaCommunityOutletsInputSchema,
   PaCommunityOutletsSchema,
   PaResidentNetworkCentresInputSchema,
@@ -144,8 +154,13 @@ export type {
   MatchConfidence,
   NextCheck,
   CivicDirectoryRecord,
+  BoaNormalizedArchitectRecord,
+  BoaNormalizedArchitectureFirmRecord,
   EcdaChildcareCentreRecord,
   EcdaVacancyStatus,
+  HlbHotelRecord,
+  HsaNormalizedHealthProductLicenseeRecord,
+  HsaNormalizedLicensedPharmacyRecord,
   MsfFamilyServiceRecord,
   MsfSocialServiceOfficeRecord,
   MsfStudentCareServiceRecord,
@@ -177,6 +192,12 @@ export type {
   QueryOutcome,
 } from "./types/index.js";
 export type {
+  BoaArchitectRecord,
+  BoaArchitectureFirmRecord,
+  BoaNormalizedArchitectRecord as BoaNormalizedArchitectRecordType,
+  BoaNormalizedArchitectureFirmRecord as BoaNormalizedArchitectureFirmRecordType,
+} from "./types/boa.js";
+export type {
   CivicDirectoryRecord as CivicDirectoryRecordType,
   EcdaChildcareCentreRecord as EcdaChildcareCentreRecordType,
   EcdaVacancyStatus as EcdaVacancyStatusType,
@@ -188,6 +209,12 @@ export type {
   SportSgFacilityRecord as SportSgFacilityRecordType,
   SportSgFacilityType as SportSgFacilityTypeType,
 } from "./types/civic.js";
+export type {
+  HsaHealthProductLicenseeRecord,
+  HsaLicensedPharmacyRecord,
+  HsaNormalizedHealthProductLicenseeRecord as HsaNormalizedHealthProductLicenseeRecordType,
+  HsaNormalizedLicensedPharmacyRecord as HsaNormalizedLicensedPharmacyRecordType,
+} from "./types/hsa.js";
 export type {
   ComparisonResult,
   Dataset,

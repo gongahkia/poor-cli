@@ -1,6 +1,7 @@
 import { acraToolDefinitions } from "./acra-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { bcaToolDefinitions } from "./bca-tools.js";
+import { boaToolDefinitions } from "./boa-tools.js";
 import { briefToolDefinitions } from "./brief-tools.js";
 import { cacheToolDefinitions } from "./cache-tools.js";
 import { ceaToolDefinitions } from "./cea-tools.js";
@@ -11,6 +12,8 @@ import { gebizToolDefinitions } from "./gebiz-tools.js";
 import { hawkerToolDefinitions } from "./hawker-tools.js";
 import { healthCheckToolDefinitions } from "./health-check.js";
 import { hdbToolDefinitions } from "./hdb-tools.js";
+import { hlbToolDefinitions } from "./hlb-tools.js";
+import { hsaToolDefinitions } from "./hsa-tools.js";
 import { keystoreToolDefinitions } from "./keystore-tools.js";
 import { ltaToolDefinitions } from "./lta-tools.js";
 import { masToolDefinitions } from "./mas-tools.js";
@@ -45,16 +48,19 @@ export const ALL_TOOL_DEFINITIONS = [
   ...hdbToolDefinitions,
   ...ceaToolDefinitions,
   ...bcaToolDefinitions,
+  ...boaToolDefinitions,
   ...acraToolDefinitions,
   ...gebizToolDefinitions,
   ...hawkerToolDefinitions,
   ...moeToolDefinitions,
   ...mohToolDefinitions,
+  ...hsaToolDefinitions,
   ...sfaToolDefinitions,
   ...nparksToolDefinitions,
   ...pubToolDefinitions,
   ...momToolDefinitions,
   ...stbToolDefinitions,
+  ...hlbToolDefinitions,
   ...briefToolDefinitions,
   ...healthCheckToolDefinitions,
   ...cacheToolDefinitions,

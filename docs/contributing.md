@@ -2,7 +2,7 @@
 
 ## Scope First
 
-The repo currently prioritizes depth and contract honesty across 26 data families, with `sg_query` acting as a bounded preferred interface and five additive brief tools creating the main user-facing artifacts.
+The repo currently prioritizes depth and contract honesty across 29 data families, with `sg_query` acting as a bounded preferred interface and five additive brief tools creating the main user-facing artifacts.
 
 Before adding a new family, ask whether the user goal is better served by:
 
@@ -12,7 +12,7 @@ Before adding a new family, ask whether the user goal is better served by:
 
 ## Current Public Shape
 
-- 49 direct data tools across 26 data families
+- 54 direct data tools across 29 data families
 - 5 additive brief tools
 - 8 operational helpers
 - 1 bounded preferred interface, `sg_query`
@@ -50,6 +50,7 @@ Use the brief pattern only when the output is a bounded artifact with:
 The brief must improve one of the core product stories:
 
 - business diligence
+- sector-scoped business and compliance diligence
 - property or location diligence
 - macro snapshot
 - transport operations

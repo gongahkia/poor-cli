@@ -86,7 +86,7 @@ ensureExcludes("packages/skill/SKILL.md", [
 ensureIncludes("docs/architecture.md", [
   `${familyCount} official data families`,
   `bounded preferred interface across ${routedFamilyCount} routed families`,
-  "business-registry workflows can route to ACRA, CEA, and BCA",
+  "business-registry workflows can route to ACRA, CEA, BCA, BOA, HSA, HLB, and GeBIZ",
   "sg://recipes",
   "sg://runtime",
   "sg://playbooks",
@@ -105,7 +105,7 @@ ensureIncludes("docs/api-auth-guide.md", [
   `${authFamilies.length} authenticated upstreams`,
   ...authFamilies,
   ...publicFamilies,
-  "HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path",
+  "HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path",
 ]);
 
 ensureIncludes("docs/contributing.md", [
@@ -145,6 +145,10 @@ ensureIncludes("docs/agent-builder-quickstart.md", [
 ]);
 
 ensureIncludes("examples/README.md", [
+  "architecture-firm-diligence.md",
+  "healthcare-supplier-diligence.md",
+  "hotel-operator-lookup.md",
+  "sector-scoped-business-diligence.md",
   "geospatial-routing.md",
   "npm run demo:mcp -- geospatial",
   "sg://runtime",
@@ -160,11 +164,20 @@ ensureIncludes("docs/production-notes.md", [
   "sg://benchmarks",
 ]);
 
+ensureIncludes("CHANGELOG.md", [
+  `Tool count increased from 63 to ${totalTools}; API family count from 26 to ${familyCount}; routed families from 17 to ${routedFamilyCount}.`,
+  "BOA, HSA, and HLB direct tool families",
+  "Architecture Firm Diligence",
+  "Healthcare Supplier Diligence",
+  "Hotel Operator Lookup",
+  "Sector Scoped Business Diligence",
+]);
+
 if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.queryStatusContract.length !== 5) {
   throw new Error("Built runtime catalog is missing the full sg_query status contract.");
 }
 
-for (const workflowName of ["Business Registry Diligence", "Property Counterparty Diligence", "Route Planning", "SingStat Table Drilldown", "Dataset Collection Browse"]) {
+for (const workflowName of workflowNames) {
   ensureIncludes("README.md", [workflowName]);
   ensureIncludes("packages/skill/SKILL.md", [workflowName]);
 }

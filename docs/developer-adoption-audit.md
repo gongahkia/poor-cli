@@ -6,7 +6,7 @@ Observed on 2026-03-27 from the perspective of a developer deciding whether to i
 
 There is an actual value prop here.
 
-It is not "Singapore data for everyone." It is narrower and more defensible than that: one deterministic MCP server for Singapore public data with stable `sg_*` contracts, bounded workflow routing, additive brief artifacts, and enough runtime discipline to save a developer from wiring twenty-three separate public-data surfaces by hand.
+It is not "Singapore data for everyone." It is narrower and more defensible than that: one deterministic MCP server for Singapore public data with stable `sg_*` contracts, bounded workflow routing, additive brief artifacts, and enough runtime discipline to save a developer from wiring nearly thirty separate public-data surfaces by hand.
 
 That is real value for the right buyer.
 
@@ -14,7 +14,7 @@ The current problem is not emptiness. The current problem is adoption depth. The
 
 ## Evidence That The Repo Is Real
 
-- The codebase now exposes 26 official data families and 63 public `sg_*` tools.
+- The codebase now exposes 29 official data families and 68 public `sg_*` tools.
 - `npm run verify` is the repo-wide gate for lint, build, docs parity, tests, and packaging smoke.
 - The repo exposes machine-readable discovery resources through `sg://apis`, `sg://tools`, `sg://workflows`, `sg://recipes`, and `sg://runtime`.
 - The server has centralized cache, timeout, retry, rate-limit, and packaging checks instead of leaving those concerns to downstream consumers.
@@ -48,7 +48,7 @@ Also a strong fit.
 
 The repo is especially credible where cross-source composition matters:
 
-- business diligence across ACRA, BCA, and CEA
+- business diligence across ACRA, BCA, CEA, BOA, HSA, HLB, and GeBIZ
 - property diligence across URA, HDB, OneMap, and optional live context
 - geospatial resolution and routing for Singapore-specific addresses and postal codes
 
@@ -85,9 +85,12 @@ Even if this is partly a mock-fixture issue, it is still a product issue because
 
 ### 3. The Best Features Are Narrower Than The Surface Count Suggests
 
-The repo has 63 tools, but the truly differentiated user stories are concentrated in a smaller set:
+The repo has 68 tools, but the truly differentiated user stories are concentrated in a smaller set:
 
 - business dossier
+- architecture firm diligence
+- healthcare supplier diligence
+- hotel operator lookup
 - property brief
 - civic discovery
 - route planning
@@ -282,45 +285,35 @@ Developers will trust a bounded router more when it behaves like a disciplined c
 
 These are not feature breadth requests. They are leverage improvements for the existing product.
 
-### Add A Minimal TypeScript Integration Example
+### Add More Integration Examples Beyond TypeScript
 
-One file showing:
+One or two additional client examples showing:
 
-- connect to the MCP server
-- read `sg://recipes`
-- call `sg_query`
-- handle blocked or unsupported results
-- fall back to a direct tool
+- how to use the same routing pattern from Python or a backend worker
+- how to persist `sg://recipes`, `sg://runtime`, and `sg://benchmarks` across process restarts
+- how to render business-diligence blockers and continuation hints in a real UI or job log
 
-This would close a major onboarding gap.
+This would make the repo feel more production-adoptable outside a TypeScript-first audience.
 
-### Add Golden Example Outputs
+### Keep Golden Example Outputs Believable Across New Sector Workflows
 
-Put a few expected JSON outputs for the strongest workflows under version control and keep them believable. Developers need to see what "good" looks like before they commit to an integration.
+Keep the architecture, healthcare-supplier, and hotel-operator outputs believable, because these are now first-contact diligence workflows. Developers need to see what "good" looks like before they commit to an integration.
 
 ### Strengthen Demo Trust
 
 If a mock-backed demo cannot tell a believable story, fix the fixture or simplify the demo. First impressions matter more than tool count.
 
-### Publish A Production Notes Doc
+### Keep Benchmarks And Production Notes Current
 
-Document:
-
-- cache TTL intent by family
-- likely live-data latency expectations
-- auth behavior
-- blocked vs unsupported semantics
-- what partial failures look like in the brief artifacts
-
-That would speak directly to serious adopters.
+The repo now has `sg://benchmarks` and a production-notes doc. The next step is keeping those aligned with the new sector-specific diligence workflows so latency, cache-tier, and credibility expectations stay current.
 
 ## Priority Order
 
 1. Deepen the five additive brief artifacts, especially property and macro.
-2. Improve demo credibility and golden outputs.
-3. Add a minimal TypeScript integration path for real application developers.
+2. Improve demo credibility and golden outputs for the new sector-specific diligence workflows.
+3. Add more integration paths for non-TypeScript application developers.
 4. Make `sg_query` continuation guidance more useful.
-5. Only then expand breadth into new public-data families.
+5. Only then expand breadth beyond the current business and compliance wedge.
 
 ## Bottom Line
 

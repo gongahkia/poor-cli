@@ -25,6 +25,9 @@ Use `sg_query` when the caller starts with a goal instead of exact parameters:
 - `Browse SingStat transport datasets`
 - `Browse data.gov collections`
 - `Show URA development charge rates for Residential sector A`
+- `Architecture firm diligence for DP Architects`
+- `Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.`
+- `Hotel operator lookup for Marina Bay Sands`
 
 `sg_query` is the preferred interface for covered prompt shapes because it keeps the routing bounded and returns workflow metadata instead of hiding the steps.
 
@@ -106,10 +109,21 @@ sg_msf_student_care_services { "postalCode": "750471", "scfaOnly": true }
 sg_msf_social_service_offices { "name": "Social Service Office @ Queenstown" }
 ```
 
+### Business Diligence Expansion
+
+```text
+sg_query { "query": "Architecture firm diligence for DP Architects", "mode": "execute" }
+sg_business_dossier { "entityName": "DP Architects", "modules": ["acra", "boa", "gebiz"], "sectorHints": ["architecture", "procurement"] }
+sg_boa_architecture_firms { "firmName": "DP Architects" }
+sg_hsa_health_product_licensees { "companyName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." }
+sg_hlb_hotels { "name": "Marina Bay Sands" }
+```
+
 ## New Data Families
 
-Fifteen additional families are available as direct tools, all backed by data.gov.sg or the official no-auth file-download path:
+Eighteen additional families are available as direct tools, all backed by data.gov.sg or the official no-auth file-download path:
 
+- `sg_boa_architects` and `sg_boa_architecture_firms` — architect and architecture-firm registry checks
 - `sg_pa_community_outlets` and `sg_pa_resident_network_centres` — community clubs, PAssion WaVe outlets, and residents' network centres
 - `sg_sportsg_facilities` — public sport facilities by facility type, postal code, or proximity
 - `sg_ecda_childcare_centres` — childcare centres with joined vacancy signals
@@ -120,13 +134,15 @@ Fifteen additional families are available as direct tools, all backed by data.go
 - `sg_hawker_centres` — hawker centre directory with coordinates
 - `sg_moe_schools` — school directory by level, zone, name
 - `sg_moh_facilities` — hospitals, clinics, polyclinics
+- `sg_hsa_licensed_pharmacies` and `sg_hsa_health_product_licensees` — pharmacy and health-product licensing evidence
 - `sg_sfa_establishments` — licensed food establishments
 - `sg_nparks_parks` — parks and nature reserves
 - `sg_pub_water_levels` — water level station readings
 - `sg_mom_labour_stats` — labour market statistics
 - `sg_stb_visitor_stats` — tourism visitor arrivals
+- `sg_hlb_hotels` — hotel directory with keeper names and room counts
 
-These complement the property brief with amenity context and the business dossier with procurement history.
+These complement the property brief with amenity context and the business dossier with architecture, healthcare-supplier, hospitality, and procurement evidence.
 
 ## Practical Rule
 

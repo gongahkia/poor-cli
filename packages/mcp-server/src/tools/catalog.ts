@@ -208,6 +208,18 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     preferredInterface: "sg_query",
   },
   {
+    name: "BOA",
+    description: "Curated Board of Architects diligence surface over official architect and architecture-firm registers published on data.gov.sg.",
+    tools: ["sg_boa_architects", "sg_boa_architecture_firms"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Direct diligence surface for architecture-firm and architect registration checks.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Backed by the official BOA architect and architecture-firm CSV registers on data.gov.sg.",
+    ],
+  },
+  {
     name: "ACRA",
     description: "Curated company-registry surface over the official ACRA corporate-entities collection published on data.gov.sg.",
     tools: ["sg_acra_entities"],
@@ -342,6 +354,18 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     ],
   },
   {
+    name: "HSA",
+    description: "Health Sciences Authority licensing surface for licensed pharmacies and companies licensed to import, wholesale, or manufacture health products.",
+    tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Healthcare and life-sciences diligence surface for pharmacy and product-licensing checks.",
+    preferredInterface: "sg_query",
+    scopeNotes: [
+      "Backed by the official HSA licensed pharmacies and health-product licensee CSV datasets on data.gov.sg.",
+    ],
+  },
+  {
     name: "SFA",
     description: "Singapore Food Agency licensed food establishments directory.",
     tools: ["sg_sfa_establishments"],
@@ -390,6 +414,16 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     positioning: "Tourism industry analysis and visitor trend monitoring.",
     preferredInterface: "sg_stb_visitor_stats",
     scopeNotes: ["Backed by STB visitor arrival data on data.gov.sg."],
+  },
+  {
+    name: "HLB",
+    description: "Hotels Licensing Board hotel directory with keeper names, room counts, and geospatial location context.",
+    tools: ["sg_hlb_hotels"],
+    authRequired: false,
+    rateLimit: "20 tokens, 3/sec refill via data.gov.sg file downloads",
+    positioning: "Hospitality diligence and hotel-operator lookup surface.",
+    preferredInterface: "sg_query",
+    scopeNotes: ["Backed by the official HLB Hotels GeoJSON dataset on data.gov.sg."],
   },
   {
     name: "data.gov.sg",
@@ -538,7 +572,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     name: "Business Registry Diligence",
-    intent: "Build a cross-registry business dossier across ACRA, BCA, and CEA records.",
+    intent: "Build a cross-registry business dossier across ACRA, BCA, and CEA records, with explicit module extension into GeBIZ, BOA, HSA, and HLB when requested.",
     entrypoints: [
       { tool: "sg_query", input: { query: "Registry diligence for UEN 201912345K", mode: "execute" } },
       { tool: "sg_business_dossier", input: { uen: "201912345K" } },
@@ -553,6 +587,78 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     continuationTools: ["sg_datagov_resources", "sg_datagov_rows"],
     continuationHints: [
       "Use the dossier for the high-signal artifact, then drop to direct registries when you need raw source records or narrower filters.",
+    ],
+  },
+  {
+    id: "architecture_firm_diligence",
+    name: "Architecture Firm Diligence",
+    intent: "Build a bounded architecture-firm diligence artifact using BOA, ACRA, and optional GeBIZ procurement evidence.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Architecture firm diligence for DP Architects", mode: "execute" } },
+      { tool: "sg_business_dossier", input: { entityName: "DP Architects", modules: ["acra", "boa", "gebiz"], sectorHints: ["architecture", "procurement"] } },
+      { tool: "sg_boa_architecture_firms", input: { firmName: "DP Architects" } },
+      { tool: "sg_boa_architects", input: { firmName: "DP Architects" } },
+      { tool: "sg_gebiz_tenders", input: { supplierName: "DP Architects" } },
+    ],
+    requiredInputs: ["entityName or registrationNo"],
+    blockerFields: ["entityName", "registrationNo"],
+    fallbackTools: ["sg_business_dossier", "sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities", "sg_gebiz_tenders"],
+    continuationTools: ["sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities", "sg_gebiz_tenders"],
+    continuationHints: [
+      "Use modules and sectorHints to keep this bounded to architecture-firm evidence instead of broadening into generic company analysis.",
+    ],
+  },
+  {
+    id: "healthcare_supplier_diligence",
+    name: "Healthcare Supplier Diligence",
+    intent: "Build a bounded healthcare supplier diligence artifact using HSA, ACRA, and optional GeBIZ procurement evidence.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", mode: "execute" } },
+      { tool: "sg_business_dossier", input: { entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", modules: ["acra", "hsa", "gebiz"], sectorHints: ["healthcare", "procurement"] } },
+      { tool: "sg_hsa_health_product_licensees", input: { companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." } },
+      { tool: "sg_hsa_licensed_pharmacies", input: { pharmacyName: "A.M. Pharmacy Pte Ltd" } },
+      { tool: "sg_gebiz_tenders", input: { supplierName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD." } },
+    ],
+    requiredInputs: ["entityName"],
+    blockerFields: ["entityName"],
+    fallbackTools: ["sg_business_dossier", "sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities", "sg_gebiz_tenders"],
+    continuationTools: ["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities", "sg_gebiz_tenders"],
+    continuationHints: [
+      "Use HSA rows for licence evidence, then add procurement or company-registry evidence only when the use case needs it.",
+    ],
+  },
+  {
+    id: "hotel_operator_lookup",
+    name: "Hotel Operator Lookup",
+    intent: "Look up a hotel or keeper using HLB and optional ACRA company evidence without widening into a generic travel workflow.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Hotel operator lookup for Raffles Hotel Singapore", mode: "execute" } },
+      { tool: "sg_business_dossier", input: { entityName: "Raffles Hotel Singapore", modules: ["acra", "hlb"], sectorHints: ["hospitality"] } },
+      { tool: "sg_hlb_hotels", input: { name: "Raffles Hotel Singapore" } },
+      { tool: "sg_hlb_hotels", input: { keeperName: "Raffles Hotel Singapore" } },
+    ],
+    requiredInputs: ["entityName or hotel name"],
+    blockerFields: ["entityName"],
+    fallbackTools: ["sg_business_dossier", "sg_hlb_hotels", "sg_acra_entities"],
+    continuationTools: ["sg_hlb_hotels", "sg_acra_entities"],
+    continuationHints: [
+      "Use HLB for keeper and hotel facts first; only fall back to company-registry context when you need a wider entity check.",
+    ],
+  },
+  {
+    id: "sector_scoped_business_diligence",
+    name: "Sector Scoped Business Diligence",
+    intent: "Build a business dossier with explicit modules and sector hints so the workflow stays bounded to the target industry.",
+    entrypoints: [
+      { tool: "sg_query", input: { query: "Healthcare supplier business dossier for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", mode: "execute" } },
+      { tool: "sg_business_dossier", input: { entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", modules: ["acra", "hsa", "gebiz"], sectorHints: ["healthcare", "procurement"] } },
+    ],
+    requiredInputs: ["entityName plus module or sector scope"],
+    blockerFields: ["entityName", "modules", "sectorHints"],
+    fallbackTools: ["sg_business_dossier", "sg_acra_entities", "sg_gebiz_tenders", "sg_boa_architecture_firms", "sg_hsa_health_product_licensees", "sg_hlb_hotels"],
+    continuationTools: ["sg_business_dossier", "sg_gebiz_tenders", "sg_boa_architecture_firms", "sg_hsa_health_product_licensees", "sg_hlb_hotels"],
+    continuationHints: [
+      "Prefer explicit modules and sectorHints over free-form planning when you want the diligence surface to stay narrow and auditable.",
     ],
   },
   {
@@ -1002,7 +1108,7 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
   },
   {
     name: "Business Due Diligence",
-    goal: "Run a cross-registry business check across ACRA, BCA, and CEA for a company.",
+    goal: "Run a cross-registry business check across ACRA, BCA, and CEA for a company, or extend it into explicit BOA, HSA, HLB, and GeBIZ modules.",
     prompt: "Business dossier for UEN 201912345A",
     preferredEntrypoint: {
       tool: "sg_query",
@@ -1019,6 +1125,55 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
     continuationHints: [
       "Use the direct registries when you need raw source records after the synthesized dossier.",
     ],
+  },
+  {
+    name: "Architecture Firm Diligence",
+    goal: "Run a bounded architecture-firm diligence workflow over BOA, ACRA, and optional GeBIZ evidence.",
+    prompt: "Architecture firm diligence for DP Architects",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Architecture firm diligence for DP Architects", mode: "execute" },
+    },
+    fallbackTools: ["sg_business_dossier", "sg_boa_architecture_firms", "sg_boa_architects", "sg_gebiz_tenders"],
+    notes: [
+      "Use explicit modules and sector hints to keep the dossier bounded to BOA plus optional procurement evidence.",
+      "This is intentionally not a general construction analyst workflow.",
+    ],
+    requiredInputs: ["entityName or registrationNo"],
+    blockerFields: ["entityName", "registrationNo"],
+    continuationTools: ["sg_boa_architecture_firms", "sg_boa_architects", "sg_acra_entities", "sg_gebiz_tenders"],
+  },
+  {
+    name: "Healthcare Supplier Diligence",
+    goal: "Run a bounded healthcare supplier diligence workflow over HSA, ACRA, and optional GeBIZ evidence.",
+    prompt: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", mode: "execute" },
+    },
+    fallbackTools: ["sg_business_dossier", "sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_gebiz_tenders"],
+    notes: [
+      "Use HSA licence rows as the primary evidence surface and only widen into procurement when the prompt justifies it.",
+    ],
+    requiredInputs: ["entityName"],
+    blockerFields: ["entityName"],
+    continuationTools: ["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies", "sg_acra_entities", "sg_gebiz_tenders"],
+  },
+  {
+    name: "Hotel Operator Lookup",
+    goal: "Look up a hotel or operator using the HLB hotel register without broadening into a generic hospitality assistant.",
+    prompt: "Hotel operator lookup for Raffles Hotel Singapore",
+    preferredEntrypoint: {
+      tool: "sg_query",
+      input: { query: "Hotel operator lookup for Raffles Hotel Singapore", mode: "execute" },
+    },
+    fallbackTools: ["sg_business_dossier", "sg_hlb_hotels", "sg_acra_entities"],
+    notes: [
+      "Use hotel name or keeper name. HLB is the primary source; ACRA is secondary entity context.",
+    ],
+    requiredInputs: ["entityName or hotel name"],
+    blockerFields: ["entityName"],
+    continuationTools: ["sg_hlb_hotels", "sg_acra_entities"],
   },
 ];
 
@@ -1063,6 +1218,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
         "HDB",
         "CEA",
         "BCA",
+        "BOA",
         "ACRA",
         "PA",
         "Sport Singapore",
@@ -1074,11 +1230,13 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
         "Hawker Centres",
         "MOE Schools",
         "MOH Healthcare",
+        "HSA",
         "SFA",
         "NParks",
         "PUB",
         "MOM",
         "STB",
+        "HLB",
       ],
       notes: [
         "These families inherit the shared data.gov.sg API or official file-download path instead of separate credentials.",
@@ -1224,7 +1382,7 @@ export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
       "Expose the next direct tools to run when the initial artifact is insufficient.",
     ],
     recommendedResources: ["sg://workflows", "sg://recipes", "sg://benchmarks"],
-    primaryWorkflows: ["Business Registry Diligence", "Macro Snapshot", "Dataset Discovery Fallback"],
+    primaryWorkflows: ["Business Registry Diligence", "Architecture Firm Diligence", "Healthcare Supplier Diligence", "Hotel Operator Lookup", "Macro Snapshot", "Dataset Discovery Fallback"],
     starterPrompts: [
       "Business dossier for UEN 201912345A",
       "Macro snapshot of Singapore",
@@ -1233,6 +1391,11 @@ export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
     directTools: [
       "sg_business_dossier",
       "sg_gebiz_tenders",
+      "sg_boa_architecture_firms",
+      "sg_boa_architects",
+      "sg_hsa_health_product_licensees",
+      "sg_hsa_licensed_pharmacies",
+      "sg_hlb_hotels",
       "sg_mas_exchange_rates",
       "sg_mom_labour_stats",
       "sg_stb_visitor_stats",

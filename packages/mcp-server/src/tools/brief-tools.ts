@@ -17,18 +17,11 @@ import type {
   BriefLimit,
   BriefProvenanceItem,
   EvidenceGap,
-  MatchConfidence,
   NextCheck,
   RiskFlag,
   ToolResult,
 } from "@sg-apis/shared";
 import { MasDataset } from "@sg-apis/shared";
-import { getAcraEntities } from "../apis/acra/client.js";
-import {
-  getBcaLicensedBuilders,
-  getBcaRegisteredContractors,
-} from "../apis/bca/client.js";
-import { getCeaSalespersons } from "../apis/cea/client.js";
 import { getHdbResalePrices } from "../apis/hdb/client.js";
 import {
   getBusArrivals,
@@ -44,6 +37,7 @@ import { geocode } from "../apis/onemap/client.js";
 import { searchDatasets as searchSingStatDatasets } from "../apis/singstat/client.js";
 import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { getPropertyTransactions } from "../apis/ura/client.js";
+import { buildBusinessDossierArtifact } from "../diligence/business-dossier.js";
 import { fetchNormalizedMasRecords } from "./mas-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { lookupPlanningArea } from "./ura-tools.js";
@@ -910,105 +904,6 @@ const toFreshness = (
   upstreamTimestamp,
 });
 
-const buildBusinessRiskFlags = (
-  params: Readonly<{ entityName?: string | undefined; uen?: string | undefined }>,
-  acra: readonly Readonly<Record<string, unknown>>[],
-  builders: readonly Readonly<Record<string, unknown>>[],
-  contractors: readonly Readonly<Record<string, unknown>>[],
-): readonly RiskFlag[] => {
-  const flags: RiskFlag[] = [];
-  const primary = acra[0];
-  if (primary !== undefined) {
-    const status = String(primary["entityStatusDescription"] ?? "").toLowerCase();
-    if (status !== "" && !status.includes("live") && !status.includes("registered")) {
-      flags.push({ code: "ENTITY_NOT_ACTIVE", severity: "high", message: `Entity status is "${primary["entityStatusDescription"]}", not Live or Registered.`, source: "ACRA" });
-    }
-  }
-  if ((params.entityName !== undefined || params.uen !== undefined) && acra.length === 0) {
-    flags.push({ code: "NO_ACRA_MATCH", severity: "high", message: "No ACRA entity matched the provided identifier.", source: "ACRA" });
-  }
-  for (const b of builders) {
-    const expiry = b["expiryDate"];
-    if (typeof expiry === "string" && expiry.trim() !== "") {
-      const expiryDate = new Date(expiry);
-      if (!isNaN(expiryDate.getTime()) && expiryDate < new Date()) {
-        flags.push({ code: "BUILDER_LICENSE_EXPIRED", severity: "high", message: `Builder license expired on ${expiry}.`, source: "BCA" });
-      }
-    }
-  }
-  for (const c of contractors) {
-    const expiry = c["expiryDate"];
-    if (typeof expiry === "string" && expiry.trim() !== "") {
-      const expiryDate = new Date(expiry);
-      if (!isNaN(expiryDate.getTime()) && expiryDate < new Date()) {
-        flags.push({ code: "CONTRACTOR_EXPIRED", severity: "medium", message: `Contractor registration expired on ${expiry}.`, source: "BCA" });
-      }
-    }
-  }
-  return flags;
-};
-
-const buildBusinessMatchConfidence = (
-  params: Readonly<{ entityName?: string | undefined; uen?: string | undefined; salespersonName?: string | undefined; registrationNo?: string | undefined; estateAgentName?: string | undefined; estateAgentLicenseNo?: string | undefined }>,
-  acra: readonly Readonly<Record<string, unknown>>[],
-  builders: readonly Readonly<Record<string, unknown>>[],
-  contractors: readonly Readonly<Record<string, unknown>>[],
-  salespersons: readonly Readonly<Record<string, unknown>>[],
-): readonly MatchConfidence[] => {
-  const matches: MatchConfidence[] = [];
-  if (params.entityName !== undefined || params.uen !== undefined) {
-    const hasExactUen = params.uen !== undefined && acra.some((r) => String(r["uen"]).toUpperCase() === params.uen!.toUpperCase());
-    matches.push({
-      source: "ACRA",
-      confidence: acra.length === 0 ? "no-match" : hasExactUen ? "exact" : "name-fuzzy",
-      matchedOn: hasExactUen ? "uen" : acra.length > 0 ? "entityName" : null,
-    });
-  }
-  if (params.entityName !== undefined || params.uen !== undefined) {
-    matches.push({
-      source: "BCA licensed builders",
-      confidence: builders.length === 0 ? "no-match" : params.uen !== undefined ? "exact" : "name-fuzzy",
-      matchedOn: builders.length === 0 ? null : params.uen !== undefined ? "uenNo" : "companyName",
-    });
-    matches.push({
-      source: "BCA registered contractors",
-      confidence: contractors.length === 0 ? "no-match" : params.uen !== undefined ? "exact" : "name-fuzzy",
-      matchedOn: contractors.length === 0 ? null : params.uen !== undefined ? "uenNo" : "companyName",
-    });
-  }
-  if (params.salespersonName !== undefined || params.registrationNo !== undefined || params.estateAgentName !== undefined || params.estateAgentLicenseNo !== undefined) {
-    const hasExactReg = params.registrationNo !== undefined && salespersons.length > 0;
-    const hasExactLic = params.estateAgentLicenseNo !== undefined && salespersons.length > 0;
-    matches.push({
-      source: "CEA",
-      confidence: salespersons.length === 0 ? "no-match" : (hasExactReg || hasExactLic) ? "exact" : "name-fuzzy",
-      matchedOn: salespersons.length === 0 ? null : hasExactReg ? "registrationNo" : hasExactLic ? "estateAgentLicenseNo" : "name",
-    });
-  }
-  return matches;
-};
-
-const buildBusinessNextChecks = (
-  params: Readonly<{ entityName?: string | undefined; uen?: string | undefined }>,
-): readonly NextCheck[] => {
-  const checks: NextCheck[] = [];
-  if (params.uen !== undefined) {
-    checks.push({ tool: "sg_acra_entities", reason: "Retrieve full ACRA entity details for deeper officer and financial-year inspection.", input: { uen: params.uen } });
-  }
-  if (params.entityName !== undefined) {
-    checks.push({ tool: "sg_bca_licensed_builders", reason: "Inspect all licensed-builder records for the entity.", input: { companyName: params.entityName } });
-    checks.push({ tool: "sg_bca_registered_contractors", reason: "Inspect all registered-contractor records for the entity.", input: { companyName: params.entityName } });
-  }
-  checks.push({ tool: "sg_datagov_search", reason: "Search data.gov.sg for additional public records related to this entity.", input: { keyword: params.entityName ?? params.uen ?? "" } });
-  return checks;
-};
-
-const buildBusinessLimits = (): readonly BriefLimit[] => [
-  toLimit("EXACT_MATCH_ONLY", "Registry checks are exact-match oriented for company, UEN, salesperson, and estate-agent identifiers."),
-  toLimit("NO_CORPORATE_GRAPH", "This dossier does not infer subsidiaries, shareholders, officers, or beneficial ownership relationships."),
-  toLimit("PUBLIC_REGISTRY_SCOPE", "The brief only covers ACRA, BCA, and CEA public registry evidence exposed through the current direct tools."),
-];
-
 const medianSorted = (values: readonly number[]): number | null => {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -1180,137 +1075,12 @@ export const handleBusinessDossier = async (
     classCode?: string | undefined;
     workhead?: string | undefined;
     grade?: string | undefined;
+    modules?: readonly ("acra" | "bca" | "cea" | "gebiz" | "boa" | "hsa" | "hlb")[] | undefined;
+    sectorHints?: readonly ("construction" | "real_estate" | "architecture" | "healthcare" | "hospitality" | "procurement")[] | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
-  const observedAt = new Date().toISOString();
-  const gaps: EvidenceGap[] = [];
-  const companyName = params.entityName;
-
-  const [acraRecords, bcaLicensedBuilders, bcaRegisteredContractors, ceaSalespersons] = await Promise.all([
-    params.entityName !== undefined || params.uen !== undefined
-      ? safeRead(
-          "ACRA_UNAVAILABLE",
-          "ACRA lookup failed",
-          () => getAcraEntities({ entityName: params.entityName, uen: params.uen, limit: 5 }),
-          gaps,
-        )
-      : Promise.resolve(null),
-    params.entityName !== undefined || params.uen !== undefined || params.classCode !== undefined
-      ? safeRead(
-          "BCA_BUILDERS_UNAVAILABLE",
-          "BCA licensed-builder lookup failed",
-          () => getBcaLicensedBuilders({
-            companyName,
-            uenNo: params.uen,
-            classCode: params.classCode,
-            limit: 5,
-          }),
-          gaps,
-        )
-      : Promise.resolve(null),
-    params.entityName !== undefined || params.uen !== undefined || params.workhead !== undefined || params.grade !== undefined
-      ? safeRead(
-          "BCA_CONTRACTORS_UNAVAILABLE",
-          "BCA registered-contractor lookup failed",
-          () => getBcaRegisteredContractors({
-            companyName,
-            uenNo: params.uen,
-            workhead: params.workhead,
-            grade: params.grade,
-            limit: 5,
-          }),
-          gaps,
-        )
-      : Promise.resolve(null),
-    params.salespersonName !== undefined
-      || params.registrationNo !== undefined
-      || params.estateAgentName !== undefined
-      || params.estateAgentLicenseNo !== undefined
-      ? safeRead(
-          "CEA_UNAVAILABLE",
-          "CEA lookup failed",
-          () => getCeaSalespersons({
-            salespersonName: params.salespersonName,
-            registrationNo: params.registrationNo,
-            estateAgentName: params.estateAgentName,
-            estateAgentLicenseNo: params.estateAgentLicenseNo,
-            limit: 5,
-          }),
-          gaps,
-        )
-      : Promise.resolve(null),
-  ]);
-
-  const acra = acraRecords ?? [];
-  const builders = bcaLicensedBuilders ?? [];
-  const contractors = bcaRegisteredContractors ?? [];
-  const salespersons = ceaSalespersons ?? [];
-
-  if ((params.entityName !== undefined || params.uen !== undefined) && acra.length === 0) {
-    gaps.push(toGap("ACRA_NO_MATCH", "No exact ACRA entity matched the provided company name or UEN."));
-  }
-  if ((params.entityName !== undefined || params.uen !== undefined || params.classCode !== undefined) && builders.length === 0) {
-    gaps.push(toGap("BCA_BUILDERS_NO_MATCH", "No licensed-builder record matched the provided company, UEN, or class code."));
-  }
-  if ((params.entityName !== undefined || params.uen !== undefined || params.workhead !== undefined || params.grade !== undefined) && contractors.length === 0) {
-    gaps.push(toGap("BCA_CONTRACTORS_NO_MATCH", "No registered-contractor record matched the provided company, UEN, workhead, or grade."));
-  }
-  if ((params.salespersonName !== undefined || params.registrationNo !== undefined || params.estateAgentName !== undefined || params.estateAgentLicenseNo !== undefined) && salespersons.length === 0) {
-    gaps.push(toGap("CEA_NO_MATCH", "No CEA salesperson or estate-agent record matched the provided identifier."));
-  }
-
-  const primaryAcra = acra[0];
-  const primaryBuilder = builders[0];
-  const primaryContractor = contractors[0];
-  const primarySalesperson = salespersons[0];
-  const riskFlags = buildBusinessRiskFlags(params, acra, builders, contractors);
-  const matchConfidence = buildBusinessMatchConfidence(params, acra, builders, contractors, salespersons);
-  const nextChecks = buildBusinessNextChecks(params);
-
-  const payload: BriefArtifact = {
-    title: "Business Dossier",
-    summary: [
-      { label: "Entity", value: primaryAcra?.entityName ?? params.entityName ?? null, source: "ACRA" },
-      { label: "UEN", value: primaryAcra?.uen ?? params.uen ?? null, source: "ACRA" },
-      { label: "Entity status", value: primaryAcra?.entityStatusDescription ?? null, source: "ACRA" },
-      { label: "Licensed builder", value: primaryBuilder?.classCode ?? null, source: "BCA" },
-      { label: "Registered contractor", value: primaryContractor?.workhead ?? null, source: "BCA" },
-      { label: "Estate agent", value: primarySalesperson?.estateAgentName ?? params.estateAgentName ?? null, source: "CEA" },
-    ],
-    evidence: [
-      { label: "ACRA matches", value: acra.length, source: "ACRA" },
-      { label: "BCA licensed-builder matches", value: builders.length, source: "BCA" },
-      { label: "BCA contractor matches", value: contractors.length, source: "BCA" },
-      { label: "CEA matches", value: salespersons.length, source: "CEA" },
-      { label: "Officer count", value: primaryAcra?.noOfOfficers ?? null, source: "ACRA" },
-      { label: "Builder expiry", value: primaryBuilder?.expiryDate ?? null, source: "BCA" },
-    ],
-    records: {
-      acra,
-      bcaLicensedBuilders: builders,
-      bcaRegisteredContractors: contractors,
-      ceaSalespersons: salespersons,
-    },
-    gaps,
-    provenance: [
-      toProvenance("ACRA", "sg_acra_entities", "Exact-match company and UEN registry evidence.", false, acra.length),
-      toProvenance("BCA", "sg_bca_licensed_builders", "Licensed-builder registry evidence for the named entity or class code.", false, builders.length),
-      toProvenance("BCA", "sg_bca_registered_contractors", "Registered-contractor registry evidence for the named entity, workhead, or grade.", false, contractors.length),
-      toProvenance("CEA", "sg_cea_salespersons", "Salesperson and estate-agent registry evidence for the supplied identifiers.", false, salespersons.length),
-    ],
-    freshness: [
-      toFreshness("ACRA", observedAt, getFirstTimestamp(acra, ["annualReturnDate", "accountDueDate", "registrationIncorporationDate"])),
-      toFreshness("BCA licensed builders", observedAt, getFirstTimestamp(builders, ["expiryDate"])),
-      toFreshness("BCA registered contractors", observedAt, getFirstTimestamp(contractors, ["expiryDate"])),
-      toFreshness("CEA", observedAt, getFirstTimestamp(salespersons, ["registrationEndDate", "registrationStartDate"])),
-    ],
-    limits: buildBusinessLimits(),
-    riskFlags,
-    matchConfidence,
-    nextChecks,
-  };
-
+  const payload = await buildBusinessDossierArtifact(params);
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
 };
 
@@ -2014,7 +1784,7 @@ export const handleEnvironmentBrief = async (
 export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_business_dossier",
-    description: "Build a cross-registry business dossier across ACRA, BCA, and CEA using explicit company, UEN, or estate-agent identifiers.",
+    description: "Build a cross-registry business dossier across ACRA, BCA, CEA, and explicit BOA, HSA, HLB, or GeBIZ modules using company, UEN, or estate-agent identifiers.",
     surface: "canonical",
     positioning: "High-value additive brief over the direct business-diligence tools.",
     inputSchema: BusinessDossierBaseSchema.shape,

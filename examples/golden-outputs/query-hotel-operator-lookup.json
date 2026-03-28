@@ -1,0 +1,48 @@
+{
+  "status": "completed",
+  "mode": "execute",
+  "workflow": "hotel_operator_lookup",
+  "intent": "business",
+  "apis": ["hlb"],
+  "confidence": 0.9,
+  "toolsUsed": ["sg_hlb_hotels"],
+  "steps": [
+    {
+      "id": "hotel_lookup",
+      "purpose": "Search the hotel register by hotel or keeper name.",
+      "tool": "sg_hlb_hotels",
+      "status": "completed",
+      "input": {
+        "name": "Marina Bay Sands"
+      },
+      "outputText": "Hotel operator lookup completed for Marina Bay Sands.",
+      "structuredOutput": {
+        "records": [
+          {
+            "name": "Marina Bay Sands",
+            "keeperName": "Marina Bay Sands Pte. Ltd.",
+            "totalRooms": 2561
+          }
+        ]
+      }
+    }
+  ],
+  "routingExplanation": "Routed to hotel_operator_lookup (confidence 0.90) via sg_hlb_hotels because the prompt matched a bounded hotel-register lookup.",
+  "continuationHints": [
+    "Use sg_acra_entities next when you need wider company context for the keeper.",
+    "Use sg://playbooks to choose the next bounded diligence workflow."
+  ],
+  "resultSummary": {
+    "level": "informational",
+    "headline": "Hotel lookup completed with HLB keeper and room-count evidence."
+  },
+  "nextActions": [
+    {
+      "tool": "sg_acra_entities",
+      "reason": "Verify the keeper in the company register when wider entity context is needed.",
+      "input": {
+        "entityName": "MARINA BAY SANDS PTE. LTD."
+      }
+    }
+  ]
+}

@@ -11,20 +11,20 @@ Use this skill when an agent needs official Singapore public data through MCP wi
 
 ## Surface Snapshot
 
-The repo currently exposes 63 `sg_*` tools total across 26 official data families.
+The repo currently exposes 68 `sg_*` tools total across 29 official data families.
 
-- 49 direct data tools
+- 54 direct data tools
 - 5 additive brief tools: `sg_business_dossier`, `sg_property_brief`, `sg_macro_brief`, `sg_transport_brief`, `sg_environment_brief`
 - 8 operational helpers
 - 1 bounded preferred interface, `sg_query`
 
-`sg_query` is the bounded preferred interface across 17 routed families. The direct `sg_*` tools remain the stable low-level contract.
+`sg_query` is the bounded preferred interface across 20 routed families. The direct `sg_*` tools remain the stable low-level contract.
 
 ## Positioning
 
 - Best for agent builders who need deterministic Singapore public-data calls
 - Optimized for bounded workflows, not free-form analyst chat
-- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, STB, and data.gov.sg
+- Current depth spans SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, HSA, SFA, NParks, PUB, MOM, STB, HLB, and data.gov.sg
 - The core differentiator is explicit contracts plus additive briefs, not hidden orchestration
 
 ## Discovery Resources
@@ -42,7 +42,7 @@ Use `sg://recipes` first when the caller has a goal-shaped prompt and you need t
 ## Preferred Entry Points
 
 - `sg_business_dossier`
-  Cross-registry business diligence across ACRA, BCA, and CEA.
+  Cross-registry business diligence across ACRA, BCA, CEA, and explicit BOA, HSA, HLB, or GeBIZ modules.
 - `sg_property_brief`
   Location and property brief across OneMap, URA, HDB, and optional live context.
 - `sg_macro_brief`
@@ -56,7 +56,7 @@ Use `sg://recipes` first when the caller has a goal-shaped prompt and you need t
 
 ## Direct Tools Vs `sg_query`
 
-- Use `sg_query` when the user starts from a prompt such as route planning, reverse geocoding, SingStat browsing, data.gov collection browsing, or URA development-charge lookup.
+- Use `sg_query` when the user starts from a prompt such as architecture-firm diligence, healthcare supplier diligence, hotel operator lookup, route planning, reverse geocoding, SingStat browsing, data.gov collection browsing, or URA development-charge lookup.
 - Use direct `sg_*` tools when your application already has the exact coordinates, table IDs, dataset IDs, UENs, towns, or flat types.
 - Treat blocked and unsupported `sg_query` responses as useful contract outcomes, not something to hide.
 - Treat only `failed` as an execution error. Use `failedStep` plus the direct tool name to recover.
@@ -122,6 +122,11 @@ Live OneMap calls require valid credentials. There is no silent unauthenticated 
 - `sg_bca_licensed_builders`
 - `sg_bca_registered_contractors`
 
+### BOA
+
+- `sg_boa_architects`
+- `sg_boa_architecture_firms`
+
 ### ACRA
 
 - `sg_acra_entities`
@@ -150,6 +155,51 @@ Live OneMap calls require valid credentials. There is no silent unauthenticated 
 ### MSF Social Service Offices
 
 - `sg_msf_social_service_offices`
+
+### GeBIZ
+
+- `sg_gebiz_tenders`
+
+### Hawker Centres
+
+- `sg_hawker_centres`
+
+### MOE Schools
+
+- `sg_moe_schools`
+
+### MOH Healthcare
+
+- `sg_moh_facilities`
+
+### HSA
+
+- `sg_hsa_licensed_pharmacies`
+- `sg_hsa_health_product_licensees`
+
+### SFA
+
+- `sg_sfa_establishments`
+
+### NParks
+
+- `sg_nparks_parks`
+
+### PUB
+
+- `sg_pub_water_levels`
+
+### MOM
+
+- `sg_mom_labour_stats`
+
+### STB
+
+- `sg_stb_visitor_stats`
+
+### HLB
+
+- `sg_hlb_hotels`
 
 ### data.gov.sg
 
@@ -209,11 +259,49 @@ sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "form
 
 ```text
 sg_query { "query": "Registry diligence for UEN 201912345K", "mode": "execute" }
-sg_business_dossier { "uen": "201912345K", "format": "json" }
+sg_business_dossier { "uen": "201912345K", "modules": ["acra", "bca", "cea"], "format": "json" }
 sg_acra_entities { "uen": "201912345K", "format": "json" }
 sg_bca_licensed_builders { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 sg_bca_registered_contractors { "companyName": "ABC CONSTRUCTION PTE LTD", "format": "json" }
 sg_cea_salespersons { "registrationNo": "R123456A", "format": "json" }
+```
+
+### Architecture Firm Diligence
+
+```text
+sg_query { "query": "Architecture firm diligence for DP Architects", "mode": "execute" }
+sg_business_dossier { "entityName": "DP Architects", "modules": ["acra", "boa", "gebiz"], "sectorHints": ["architecture", "procurement"], "format": "json" }
+sg_boa_architecture_firms { "firmName": "DP Architects", "format": "json" }
+sg_boa_architects { "firmName": "DP Architects", "format": "json" }
+sg_gebiz_tenders { "supplierName": "DP Architects", "format": "json" }
+```
+
+### Healthcare Supplier Diligence
+
+```text
+sg_query { "query": "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "mode": "execute" }
+sg_business_dossier { "entityName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "modules": ["acra", "hsa", "gebiz"], "sectorHints": ["healthcare", "procurement"], "format": "json" }
+sg_hsa_health_product_licensees { "companyName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "format": "json" }
+sg_hsa_licensed_pharmacies { "pharmacyName": "A.M. Pharmacy Pte Ltd", "format": "json" }
+sg_gebiz_tenders { "supplierName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", "format": "json" }
+```
+
+### Hotel Operator Lookup
+
+```text
+sg_query { "query": "Hotel operator lookup for Marina Bay Sands", "mode": "execute" }
+sg_hlb_hotels { "name": "Marina Bay Sands", "format": "json" }
+sg_hlb_hotels { "keeperName": "Marina Bay Sands Pte. Ltd.", "format": "json" }
+sg_acra_entities { "entityName": "MARINA BAY SANDS PTE. LTD.", "format": "json" }
+```
+
+### Sector Scoped Business Diligence
+
+```text
+sg_query { "query": "Sector-scoped business diligence for Marina Bay Sands in hospitality", "mode": "execute" }
+sg_business_dossier { "entityName": "MARINA BAY SANDS PTE. LTD.", "modules": ["acra", "hlb"], "sectorHints": ["hospitality"], "format": "json" }
+sg_hlb_hotels { "keeperName": "Marina Bay Sands Pte. Ltd.", "format": "json" }
+sg_acra_entities { "entityName": "MARINA BAY SANDS PTE. LTD.", "format": "json" }
 ```
 
 ### Transport Status
@@ -282,6 +370,25 @@ sg_datagov_search { "keyword": "hawker centres" }
 sg_datagov_resources { "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc" }
 ```
 
+## Additional Bounded Workflow Names
+
+- Macro Snapshot
+- Demographic Profile
+- Civic Discovery
+- Property And Regulatory Due Diligence
+- Property Counterparty Diligence
+- Business Registry Diligence
+- Architecture Firm Diligence
+- Healthcare Supplier Diligence
+- Hotel Operator Lookup
+- Sector Scoped Business Diligence
+- Dataset Discovery Fallback
+- Route Planning
+- SingStat Table Drilldown
+- Dataset Collection Browse
+- Transport Status
+- Environment Snapshot
+
 ## Authentication
 
 Authenticated upstreams:
@@ -305,28 +412,38 @@ Public families:
 - HDB
 - CEA
 - BCA
+- BOA
 - ACRA
 - PA
 - Sport Singapore
 - ECDA
+- MSF Family Services
+- MSF Student Care Services
+- MSF Social Service Offices
 - GeBIZ
 - Hawker Centres
 - MOE Schools
 - MOH Healthcare
+- HSA
 - SFA
 - NParks
 - PUB
 - MOM
 - STB
+- HLB
 - data.gov.sg
 
-HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.
+HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path.
 
 ## Examples
 
 The workflow demos live in:
 
 - `examples/business-dossier.md`
+- `examples/architecture-firm-diligence.md`
+- `examples/healthcare-supplier-diligence.md`
+- `examples/hotel-operator-lookup.md`
+- `examples/sector-scoped-business-diligence.md`
 - `examples/property-brief.md`
 - `examples/macro-brief.md`
 - `examples/transport-brief.md`

@@ -44,6 +44,8 @@ const EXPECTED_TOOL_NAMES = [
   "sg_cea_salespersons",
   "sg_bca_licensed_builders",
   "sg_bca_registered_contractors",
+  "sg_boa_architects",
+  "sg_boa_architecture_firms",
   "sg_acra_entities",
   "sg_pa_community_outlets",
   "sg_pa_resident_network_centres",
@@ -56,11 +58,14 @@ const EXPECTED_TOOL_NAMES = [
   "sg_hawker_centres",
   "sg_moe_schools",
   "sg_moh_facilities",
+  "sg_hsa_licensed_pharmacies",
+  "sg_hsa_health_product_licensees",
   "sg_sfa_establishments",
   "sg_nparks_parks",
   "sg_pub_water_levels",
   "sg_mom_labour_stats",
   "sg_stb_visitor_stats",
+  "sg_hlb_hotels",
   "sg_business_dossier",
   "sg_property_brief",
   "sg_macro_brief",
@@ -372,6 +377,50 @@ try {
       throw new Error(`Packaged sg_environment_brief omitted provenance or freshness${formatServerLogs()}`);
     }
 
+    const businessDossierResult = await client.callTool({
+      name: "sg_business_dossier",
+      arguments: {
+        entityName: "DP Architects",
+        modules: ["acra", "boa", "gebiz"],
+        sectorHints: ["architecture", "procurement"],
+        format: "json",
+      },
+    });
+    const businessDossierText = "content" in businessDossierResult
+      ? businessDossierResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (businessDossierText === undefined) {
+      throw new Error(`Packaged sg_business_dossier did not return text content${formatServerLogs()}`);
+    }
+    const businessDossierPayload = JSON.parse(businessDossierText);
+    const selectedModules = businessDossierPayload.records?.resolution?.selectedModules;
+    if (
+      businessDossierPayload.title !== "Business Dossier"
+      || !Array.isArray(selectedModules)
+      || !selectedModules.includes("boa")
+      || !selectedModules.includes("gebiz")
+    ) {
+      throw new Error(`Packaged sg_business_dossier did not preserve explicit business modules${formatServerLogs()}`);
+    }
+
+    const hotelDirectoryResult = await client.callTool({
+      name: "sg_hlb_hotels",
+      arguments: {
+        name: "Marina Bay Sands",
+        format: "json",
+      },
+    });
+    const hotelDirectoryText = "content" in hotelDirectoryResult
+      ? hotelDirectoryResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
+      : undefined;
+    if (hotelDirectoryText === undefined) {
+      throw new Error(`Packaged sg_hlb_hotels did not return text content${formatServerLogs()}`);
+    }
+    const hotelDirectoryPayload = JSON.parse(hotelDirectoryText);
+    if (!Array.isArray(hotelDirectoryPayload) || hotelDirectoryPayload[0]?.name !== "Marina Bay Sands") {
+      throw new Error(`Packaged sg_hlb_hotels returned an unexpected payload${formatServerLogs()}`);
+    }
+
     const queryPlanResult = await client.callTool({
       name: "sg_query",
       arguments: {
@@ -413,6 +462,22 @@ try {
       || routeRecipeResult.structuredContent?.workflow !== "route_plan"
     ) {
       throw new Error(`Packaged sg_query route recipe did not complete successfully${formatServerLogs()}`);
+    }
+
+    const diligenceQueryResult = await client.callTool({
+      name: "sg_query",
+      arguments: {
+        query: "Architecture firm diligence for DP Architects",
+        mode: "execute",
+        format: "json",
+      },
+    });
+    if (
+      !("structuredContent" in diligenceQueryResult)
+      || diligenceQueryResult.structuredContent?.status !== "completed"
+      || diligenceQueryResult.structuredContent?.workflow !== "architecture_firm_diligence"
+    ) {
+      throw new Error(`Packaged sg_query architecture diligence did not complete successfully${formatServerLogs()}`);
     }
 
     const civicDirectoryResult = await client.callTool({

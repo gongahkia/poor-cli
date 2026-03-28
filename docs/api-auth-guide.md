@@ -43,6 +43,7 @@ These tool families do not require credentials:
 - HDB
 - CEA
 - BCA
+- BOA
 - ACRA
 - PA
 - Sport Singapore
@@ -54,14 +55,16 @@ These tool families do not require credentials:
 - Hawker Centres
 - MOE Schools
 - MOH Healthcare
+- HSA
 - SFA
 - NParks
 - PUB
 - MOM
 - STB
+- HLB
 - data.gov.sg
 
-HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path.
+HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path.
 PA, Sport Singapore, ECDA, MSF Family Services, MSF Student Care Services, MSF Social Service Offices, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB use the same no-auth data.gov.sg access layer or official file-download path.
 
 ## OneMap
@@ -130,7 +133,11 @@ Common failure modes:
 
 | Workflow | Sources | Required auth |
 | --- | --- | --- |
-| Business Registry Diligence | ACRA, BCA, CEA | None |
+| Business Registry Diligence | ACRA, BCA, CEA, optional BOA, HSA, HLB, GeBIZ | None |
+| Architecture Firm Diligence | BOA, ACRA, optional GeBIZ | None |
+| Healthcare Supplier Diligence | HSA, ACRA, optional GeBIZ | None |
+| Hotel Operator Lookup | HLB, optional ACRA | None |
+| Sector Scoped Business Diligence | ACRA plus explicit BOA, HSA, HLB, GeBIZ, BCA, or CEA modules | None |
 | Property And Regulatory Due Diligence | OneMap, URA, HDB, optional NEA, optional LTA | OneMap and URA for full live coverage, LTA only if live transport context is enabled |
 | Macro Snapshot | MAS, SingStat | None |
 | Transport Status | LTA DataMall | LTA key |
@@ -138,4 +145,4 @@ Common failure modes:
 
 ## Health Coverage Note
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. HDB, CEA, BCA, and ACRA are intentionally covered through the shared data.gov.sg path rather than separate upstream probes.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path rather than separate upstream probes.

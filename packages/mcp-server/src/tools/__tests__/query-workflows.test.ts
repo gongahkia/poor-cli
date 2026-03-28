@@ -51,8 +51,26 @@ vi.mock("../../apis/bca/client.js", () => ({
   getBcaRegisteredContractors: vi.fn(),
 }));
 
+vi.mock("../../apis/boa/client.js", () => ({
+  getBoaArchitects: vi.fn(),
+  getBoaArchitectureFirms: vi.fn(),
+}));
+
 vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
+}));
+
+vi.mock("../../apis/gebiz/client.js", () => ({
+  getGeBIZTenders: vi.fn(),
+}));
+
+vi.mock("../../apis/hlb/client.js", () => ({
+  getHlbHotels: vi.fn(),
+}));
+
+vi.mock("../../apis/hsa/client.js", () => ({
+  getHsaHealthProductLicensees: vi.fn(),
+  getHsaLicensedPharmacies: vi.fn(),
 }));
 
 vi.mock("../../apis/pa/client.js", () => ({
@@ -90,7 +108,11 @@ import {
   getBcaLicensedBuilders,
   getBcaRegisteredContractors,
 } from "../../apis/bca/client.js";
+import { getBoaArchitects, getBoaArchitectureFirms } from "../../apis/boa/client.js";
 import { getAcraEntities } from "../../apis/acra/client.js";
+import { getGeBIZTenders } from "../../apis/gebiz/client.js";
+import { getHlbHotels } from "../../apis/hlb/client.js";
+import { getHsaHealthProductLicensees, getHsaLicensedPharmacies } from "../../apis/hsa/client.js";
 import { getPaCommunityOutlets, getPaResidentNetworkCentres } from "../../apis/pa/client.js";
 import { getSportSgFacilities } from "../../apis/sportsg/client.js";
 import { getEcdaChildcareCentres } from "../../apis/ecda/client.js";
@@ -128,7 +150,13 @@ describe("sg_query workflows", () => {
     vi.mocked(getCeaSalespersons).mockReset();
     vi.mocked(getBcaLicensedBuilders).mockReset();
     vi.mocked(getBcaRegisteredContractors).mockReset();
+    vi.mocked(getBoaArchitects).mockReset();
+    vi.mocked(getBoaArchitectureFirms).mockReset();
     vi.mocked(getAcraEntities).mockReset();
+    vi.mocked(getGeBIZTenders).mockReset();
+    vi.mocked(getHlbHotels).mockReset();
+    vi.mocked(getHsaHealthProductLicensees).mockReset();
+    vi.mocked(getHsaLicensedPharmacies).mockReset();
     vi.mocked(getPaCommunityOutlets).mockReset();
     vi.mocked(getPaResidentNetworkCentres).mockReset();
     vi.mocked(getSportSgFacilities).mockReset();
@@ -1068,5 +1096,288 @@ describe("sg_query workflows", () => {
       }),
     );
     expect(vi.mocked(getCeaSalespersons)).not.toHaveBeenCalled();
+  });
+
+  it("executes the architecture-firm diligence workflow with explicit BOA scope", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "DESIGN LAB PTE LTD",
+        uen: "202012345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBoaArchitectureFirms).mockResolvedValue([
+      {
+        firmName: "DESIGN LAB PTE LTD",
+        firmAddress: "1 MAIN STREET",
+        firmPhone: "61234567",
+        firmFax: null,
+        firmEmail: "hello@designlab.sg",
+      },
+    ] as never);
+    vi.mocked(getBoaArchitects).mockResolvedValue([] as never);
+
+    const result = await runQuery({
+      query: "Architecture firm diligence for company DESIGN LAB PTE LTD",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "architecture_firm_diligence",
+      toolsUsed: ["sg_business_dossier"],
+    });
+    expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith(
+      expect.objectContaining({ firmName: "DESIGN LAB PTE LTD", limit: 5 }),
+    );
+    expect(vi.mocked(getGeBIZTenders)).not.toHaveBeenCalled();
+  });
+
+  it("extracts a clean entity name from the architecture-firm diligence prompt shape", async () => {
+    vi.mocked(getBoaArchitectureFirms).mockResolvedValue([
+      {
+        firmName: "DP Architects",
+        firmAddress: "6 RAFFLES BOULEVARD",
+        firmPhone: "63372288",
+        firmFax: null,
+        firmEmail: "info@dpa.com.sg",
+      },
+    ] as never);
+    vi.mocked(getBoaArchitects).mockResolvedValue([] as never);
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "DP Architects",
+        uen: "199100765E",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getGeBIZTenders).mockResolvedValue([] as never);
+
+    const result = await runQuery({
+      query: "Architecture firm diligence for DP Architects",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "architecture_firm_diligence",
+    });
+    expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith(
+      expect.objectContaining({ firmName: "DP Architects", limit: 5 }),
+    );
+    expect(vi.mocked(getAcraEntities)).toHaveBeenCalledWith(
+      expect.objectContaining({ entityName: "DP Architects", limit: 5 }),
+    );
+  });
+
+  it("executes the healthcare supplier diligence workflow with HSA scope", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        uen: "201012345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getHsaHealthProductLicensees).mockResolvedValue([
+      {
+        companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        licenseType: "Controlled Drugs - Wholesale Licence",
+        activityType: null,
+        dosageForm: null,
+        expiryDate: "2027-07-20 00:00:00",
+      },
+    ] as never);
+    vi.mocked(getHsaLicensedPharmacies).mockResolvedValue([] as never);
+
+    const result = await runQuery({
+      query: "Healthcare supplier diligence for company ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "healthcare_supplier_diligence",
+      toolsUsed: ["sg_business_dossier"],
+    });
+    expect(vi.mocked(getHsaHealthProductLicensees)).toHaveBeenCalledWith(
+      expect.objectContaining({ companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", limit: 10 }),
+    );
+  });
+
+  it("extracts a clean entity name from the healthcare supplier diligence prompt shape", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        uen: "201012345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getHsaHealthProductLicensees).mockResolvedValue([
+      {
+        companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        licenseType: "Controlled Drugs - Wholesale Licence",
+        activityType: null,
+        dosageForm: null,
+        expiryDate: "2027-07-20 00:00:00",
+      },
+    ] as never);
+    vi.mocked(getHsaLicensedPharmacies).mockResolvedValue([] as never);
+    vi.mocked(getGeBIZTenders).mockResolvedValue([] as never);
+
+    const result = await runQuery({
+      query: "Healthcare supplier diligence for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "healthcare_supplier_diligence",
+    });
+    expect(vi.mocked(getHsaHealthProductLicensees)).toHaveBeenCalledWith(
+      expect.objectContaining({ companyName: "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.", limit: 10 }),
+    );
+  });
+
+  it("executes the hotel-operator lookup workflow with HLB scope", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([] as never);
+    vi.mocked(getHlbHotels).mockResolvedValue([
+      {
+        name: "RAFFLES HOTEL SINGAPORE",
+        category: "hospitality",
+        subcategory: "hotel",
+        address: "1 BEACH ROAD",
+        postalCode: "189673",
+        lat: 1.2948,
+        lng: 103.8546,
+        sourceAgency: "Hotels Licensing Board",
+        sourceDataset: "Hotels",
+        sourceUrl: "https://data.gov.sg/collections/140/view",
+        lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+        keeperName: "RAFFLES HOTEL SINGAPORE",
+        totalRooms: 115,
+        url: null,
+        incCrc: "Y",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Hotel operator lookup for company Raffles Hotel Singapore",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "hotel_operator_lookup",
+      toolsUsed: ["sg_business_dossier"],
+    });
+    expect(vi.mocked(getHlbHotels)).toHaveBeenCalledWith(
+      expect.objectContaining({ keeperName: "Raffles Hotel Singapore", limit: 5 }),
+    );
+  });
+
+  it("extracts a clean entity name from the hotel operator lookup prompt shape", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([] as never);
+    vi.mocked(getHlbHotels)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([
+        {
+          name: "Marina Bay Sands",
+          category: "hospitality",
+          subcategory: "hotel",
+          address: "10 BAYFRONT AVENUE",
+          postalCode: "018956",
+          lat: 1.2834,
+          lng: 103.8607,
+          sourceAgency: "Hotels Licensing Board",
+          sourceDataset: "Hotels",
+          sourceUrl: "https://data.gov.sg/collections/140/view",
+          lastUpdatedAt: "2024-04-17T18:17:50+08:00",
+          keeperName: "MARINA BAY SANDS PTE. LTD.",
+          totalRooms: 2561,
+          url: "https://www.marinabaysands.com",
+          incCrc: "Y",
+        },
+      ] as never);
+
+    const result = await runQuery({
+      query: "Hotel operator lookup for Marina Bay Sands",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "hotel_operator_lookup",
+    });
+    expect(vi.mocked(getHlbHotels)).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ keeperName: "Marina Bay Sands", limit: 5 }),
+    );
+    expect(vi.mocked(getHlbHotels)).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ name: "Marina Bay Sands", limit: 5 }),
+    );
+  });
+
+  it("extracts a clean entity name from the sector-scoped business diligence prompt shape", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        classCode: "GB1",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      {
+        companyName: "ABC CONSTRUCTION PTE LTD",
+        workhead: "CW01",
+        grade: "C3",
+        expiryDate: "2026-12-31",
+      },
+    ] as never);
+    vi.mocked(getGeBIZTenders).mockResolvedValue([
+      {
+        agency: "MINDEF",
+        tenderNo: "MINDEF000ETQ25000001",
+        description: "Term contract for construction works",
+        awardDate: "2025-01-15",
+        status: "Awarded",
+        supplierName: "ABC CONSTRUCTION PTE LTD",
+        awardedAmount: 1250000,
+        category: "Construction Works",
+      },
+    ] as never);
+
+    const result = await runQuery({
+      query: "Sector-scoped business diligence for company ABC CONSTRUCTION PTE LTD in construction procurement",
+      mode: "execute",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      status: "completed",
+      workflow: "sector_scoped_business_diligence",
+    });
+    expect(vi.mocked(getAcraEntities)).toHaveBeenCalledWith(
+      expect.objectContaining({ entityName: "ABC CONSTRUCTION PTE LTD", limit: 5 }),
+    );
+    expect(vi.mocked(getBcaLicensedBuilders)).toHaveBeenCalledWith(
+      expect.objectContaining({ companyName: "ABC CONSTRUCTION PTE LTD", limit: 5 }),
+    );
+    expect(vi.mocked(getGeBIZTenders)).toHaveBeenCalledWith(
+      expect.objectContaining({ supplierName: "ABC CONSTRUCTION PTE LTD", limit: 10 }),
+    );
   });
 });

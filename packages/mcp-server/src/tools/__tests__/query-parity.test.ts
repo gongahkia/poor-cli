@@ -653,9 +653,12 @@ describe("sg_query parity", () => {
 
     const input = { busStopCode: "83139", serviceNo: "851", format: "json" } as const;
 
-    await expect(executeQueryStep("sg_lta_bus_arrivals", input)).resolves.toEqual(
-      await handleLtaBusArrivals(input),
-    );
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_lta_bus_arrivals", input),
+      handleLtaBusArrivals(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
   });
 
   it("matches the direct NEA forecast handler", async () => {
