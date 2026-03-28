@@ -64,10 +64,21 @@ export async function initSettings() {
     });
     sidebar.appendChild(el);
   }
+  // frontend-only options (not in backend config)
+  const frontendOnly = [
+    { path: 'ui.crt_effect', value: document.documentElement.classList.contains('crt'), isBoolean: true },
+  ];
   renderOptions(content, defaultOptions); // render defaults immediately
   rpc('list_config_options', {}).then(result => { // update from backend if available
     const options = result.options || result || [];
-    if (options.length) renderOptions(content, options);
+    if (options.length) {
+      // merge frontend-only options that backend doesn't know about
+      const paths = new Set(options.map(o => o.path));
+      for (const fo of frontendOnly) {
+        if (!paths.has(fo.path)) options.push(fo);
+      }
+      renderOptions(content, options);
+    }
   }).catch(() => {});
   rpc('get_api_key_status', {}).then(status => { // update key status from backend
     if (status && typeof status === 'object') {
@@ -173,6 +184,8 @@ function injectFontLink(id, url) { // inject or replace a <link> for the font
 }
 
 export function applyCustomFonts() { // call on startup
+  // restore CRT effect from localStorage
+  if (localStorage.getItem('poor-cli-crt') === '1') document.documentElement.classList.add('crt');
   const fonts = getStoredFonts();
   if (fonts.uiUrl) {
     injectFontLink('custom-font-ui', fonts.uiUrl);
@@ -378,6 +391,7 @@ function applySettingImmediate(path, value) {
     document.documentElement.setAttribute('data-theme', value);
   } else if (path === 'ui.crt_effect') {
     document.documentElement.classList.toggle('crt', !!value);
+    localStorage.setItem('poor-cli-crt', value ? '1' : '0');
   } else if (path === 'ui.markdown') {
     // will apply on next message render
   } else if (path === 'ui.stream') {
