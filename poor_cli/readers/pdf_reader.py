@@ -7,8 +7,11 @@ Uses pymupdf (fitz) if available, falls back to pdfplumber, then basic extractio
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 MAX_PAGES_PER_REQUEST = 20
 

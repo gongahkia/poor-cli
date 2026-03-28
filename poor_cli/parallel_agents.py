@@ -77,17 +77,20 @@ class ParallelAgentPool:
         # create and start all agents
         agents: List[AgentRecord] = []
         for task in tasks:
-            agent = self._mgr.create_agent(
-                prompt=task.prompt,
-                sandbox_preset=task.sandbox_preset,
-                source=source,
-                use_worktree=True,
-                max_runtime=task.max_runtime,
-                max_cost_usd=task.max_cost_usd,
-                auto_start=True,
-            )
-            agents.append(agent)
-            logger.info("launched parallel agent %s", agent.agent_id)
+            try:
+                agent = self._mgr.create_agent(
+                    prompt=task.prompt,
+                    sandbox_preset=task.sandbox_preset,
+                    source=source,
+                    use_worktree=True,
+                    max_runtime=task.max_runtime,
+                    max_cost_usd=task.max_cost_usd,
+                    auto_start=True,
+                )
+                agents.append(agent)
+                logger.info("launched parallel agent %s", agent.agent_id)
+            except Exception as exc:
+                logger.error("failed to create parallel agent: %s", exc)
 
         # poll until all agents are done
         agent_ids = [a.agent_id for a in agents]

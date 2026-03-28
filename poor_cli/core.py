@@ -3431,6 +3431,17 @@ class PoorCLICore:
 
     async def shutdown(self) -> None:
         """Release external resources owned by the core."""
+        # auto-save memorable patterns from this session
+        if self.provider and self._initialized:
+            try:
+                from .auto_memory import auto_save_session_memories
+                history = self.provider.get_history()
+                if history:
+                    saved = await auto_save_session_memories(history)
+                    if saved:
+                        logger.info("auto-saved %d memories on shutdown", len(saved))
+            except Exception as exc:
+                logger.debug("auto-memory on shutdown failed: %s", exc)
         if self._mcp_manager is not None:
             await self._mcp_manager.shutdown()
 

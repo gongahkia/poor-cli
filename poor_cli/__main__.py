@@ -679,6 +679,105 @@ def _wait_for_task_completion(manager: TaskManager, task_id: str, *, timeout_sec
     raise SystemExit(f"Timed out waiting for task {task_id} to finish.")
 
 
+def _run_watch_mode(argv: Sequence[str]) -> int:
+    """Handle 'poor-cli watch' — monitor files for inline instructions."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="poor-cli watch")
+    parser.add_argument("--debounce", type=float, default=2.0, help="Debounce seconds")
+    parser.add_argument("--scan", action="store_true", help="Scan once and exit (don't watch)")
+    args = parser.parse_args(list(argv))
+    from .ide_watch import scan_directory_for_instructions, FileWatcher
+    if args.scan:
+        instructions = scan_directory_for_instructions()
+        if not instructions:
+            print("No poor-cli instructions found.")
+        for instr in instructions:
+            print(f"  {instr['file']}:{instr['line']}: {instr['instruction']}")
+        return 0
+    async def _on_instruction(instr: dict) -> None:
+        print(f"[watch] {instr['file']}:{instr['line']}: {instr['instruction']}")
+    watcher = FileWatcher(debounce=args.debounce, on_instruction=_on_instruction)
+    print(f"Watching for # poor-cli: instructions (debounce={args.debounce}s)...")
+    try:
+        asyncio.run(watcher.start())
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def _run_deploy_mode(argv: Sequence[str]) -> int:
+    """Handle 'poor-cli deploy'."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="poor-cli deploy")
+    parser.add_argument("--target", "-t", help="Deploy target (vercel, netlify, fly, railway, cloudflare)")
+    parser.add_argument("--prod", action="store_true", help="Deploy to production")
+    parser.add_argument("--list", action="store_true", help="List detected targets")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(list(argv))
+    from .deploy import detect_deploy_targets, deploy
+    if args.list:
+        targets = detect_deploy_targets()
+        for t in targets:
+            status = "✓" if t.available else "✗"
+            cfg = f" ({t.config_file})" if t.config_file else ""
+            print(f"  [{status}] {t.name}: {t.description}{cfg}")
+        return 0
+    result = asyncio.run(deploy(target=args.target, prod=args.prod))
+    if args.json:
+        import json
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(result.message)
+        if result.url:
+            print(f"  URL: {result.url}")
+    return 0 if result.success else 1
+
+
+def _run_preview_mode(argv: Sequence[str]) -> int:
+    """Handle 'poor-cli preview'."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="poor-cli preview")
+    parser.add_argument("--port", type=int, default=3456)
+    parser.add_argument("--stop", action="store_true")
+    args = parser.parse_args(list(argv))
+    from .preview_server import PreviewServer
+    server = PreviewServer(port=args.port)
+    if args.stop:
+        result = asyncio.run(server.stop())
+        print(f"Stopped: {result}")
+        return 0
+    result = asyncio.run(server.start())
+    print(result.get("message", str(result)))
+    if result.get("mode") == "static":
+        print("Press Ctrl+C to stop.")
+        try:
+            asyncio.get_event_loop().run_forever()
+        except KeyboardInterrupt:
+            asyncio.run(server.stop())
+    return 0
+
+
+def _run_review_pr_mode(argv: Sequence[str]) -> int:
+    """Handle 'poor-cli review-pr <number>'."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="poor-cli review-pr")
+    parser.add_argument("pr_number", type=int, help="PR number to review")
+    parser.add_argument("--post", action="store_true", help="Post review as PR comment")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--ci", action="store_true", help="CI mode: exit code reflects severity")
+    args = parser.parse_args(list(argv))
+    from .review_agent import review_pr
+    result = asyncio.run(review_pr(args.pr_number, post_comment=args.post))
+    if args.json:
+        import json
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(result.to_markdown())
+    if args.ci:
+        return 0 if result.passed else 1
+    return 0
+
+
 def _run_agent_mode(argv: Sequence[str]) -> int:
     """Handle 'poor-cli agent' subcommands."""
     import argparse
@@ -1501,6 +1600,14 @@ def _main() -> None:
         raise SystemExit(_run_commands_mode(argv[1:]))
     if argv and argv[0] == "automation":
         raise SystemExit(_run_automation_mode(argv[1:]))
+    if argv and argv[0] == "watch":
+        raise SystemExit(_run_watch_mode(argv[1:]))
+    if argv and argv[0] == "deploy":
+        raise SystemExit(_run_deploy_mode(argv[1:]))
+    if argv and argv[0] == "preview":
+        raise SystemExit(_run_preview_mode(argv[1:]))
+    if argv and argv[0] == "review-pr":
+        raise SystemExit(_run_review_pr_mode(argv[1:]))
     if argv and argv[0] == "github-task":
         raise SystemExit(_run_github_task_mode(argv[1:]))
     if argv and argv[0] == "server":
