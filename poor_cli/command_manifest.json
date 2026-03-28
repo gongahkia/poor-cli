@@ -624,6 +624,108 @@
       "description": "Show economy savings dashboard",
       "recommended": false,
       "category": "Economy & Output"
+    },
+    {
+      "command": "/standup",
+      "description": "Summarize yesterday's git activity for standup",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/weekly-update",
+      "description": "Synthesize this week's PRs into a weekly update",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/pr-summary",
+      "description": "Summarize recent PRs by teammate and theme",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/release-notes",
+      "description": "Draft release notes from merged PRs",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/release-check",
+      "description": "Pre-release verification: changelog, migrations, tests",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/changelog",
+      "description": "Update changelog with this week's highlights",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/ci-failures",
+      "description": "Summarize CI failures and flaky tests; suggest fixes",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/ci-debug",
+      "description": "Debug latest CI failure; find root cause",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/triage",
+      "description": "Triage new issues; suggest owner, priority, labels",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/scan-bugs",
+      "description": "Scan recent commits for likely bugs",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/test-coverage",
+      "description": "Find untested paths and add focused tests",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/perf-audit",
+      "description": "Audit recent changes for performance regressions",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/dep-drift",
+      "description": "Detect dependency drift and propose alignment",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/dep-upgrade",
+      "description": "Scan outdated deps; propose safe upgrades",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/update-docs",
+      "description": "Update project docs with recent changes",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/skill-suggest",
+      "description": "Suggest next skills to deepen from recent work",
+      "recommended": false,
+      "category": "Workflows"
+    },
+    {
+      "command": "/perf-opportunity",
+      "description": "Find top performance improvement opportunities",
+      "recommended": false,
+      "category": "Workflows"
     }
   ]
 }

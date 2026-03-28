@@ -1485,11 +1485,18 @@ select {
 
 /* workflows view */
 .workflows-container { padding: 24px; overflow-y: auto; flex: 1; }
-.workflow-card { cursor: default; }
-.wf-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.wf-card-header h3 { flex: 1; margin: 0; font-size: 14px; }
-.wf-preset { font-family: var(--font-mono); }
-.wf-actions { margin-top: 8px; }
+/* workflow categories + grid */
+.wf-category { margin-bottom: 24px; }
+.wf-category-title { font-size: 16px; font-weight: 600; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+.wf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.wf-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; transition: border-color 0.15s, box-shadow 0.15s; }
+.wf-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.wf-card-icon { font-size: 24px; }
+.wf-card-body { flex: 1; }
+.wf-card-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-primary); }
+.wf-card-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+.wf-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.wf-preset-badge { font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; border-radius: 3px; background: var(--bg-tertiary); color: var(--text-muted); }
 
 /* tools view */
 .tools-container { padding: 24px; overflow-y: auto; flex: 1; }
