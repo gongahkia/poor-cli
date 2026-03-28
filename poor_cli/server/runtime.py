@@ -718,6 +718,7 @@ class PoorCLIServer:
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
             "poor-cli/renameSession": self.handle_rename_session,
+            "poor-cli/getCompletion": self.handle_get_completion,
             "poor-cli/semanticSearch": self.handle_semantic_search,
             "poor-cli/indexCodebase": self.handle_index_codebase,
             "poor-cli/getIndexStats": self.handle_get_index_stats,
@@ -4761,6 +4762,26 @@ class PoorCLIServer:
 
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
+
+    # =========================================================================
+    # Completion handler
+    # =========================================================================
+
+    async def handle_get_completion(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..completion import CompletionEngine, CompletionRequest
+        engine = CompletionEngine()
+        req = CompletionRequest(
+            file_path=str(params.get("filePath", "")),
+            line=int(params.get("line", 0)),
+            column=int(params.get("column", 0)),
+            prefix=str(params.get("prefix", "")),
+            suffix=str(params.get("suffix", "")),
+            language=str(params.get("language", "")),
+        )
+        session = self._session_manager.get_session(params.get("sessionId"))
+        provider = session.core.provider if session.core._initialized else None
+        result = await engine.complete(req, provider=provider)
+        return {"completion": result.to_dict()}
 
     # =========================================================================
     # Index handlers
