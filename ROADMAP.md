@@ -835,10 +835,10 @@ poor-cli agent cancel <id>
 | 4 | G-09 PDF/Jupyter Reading | P1 | S | None | ✅ Done |
 | 5 | G-10 Config Profiles | P1 | S | None | ✅ Done |
 | 6 | G-07 Conversation Forking | P1 | S | None | ✅ Done |
-| 7 | G-16 Branch-per-Session | P2 | S | None | |
-| 8 | G-04 Semantic Indexing | P0 | L | Embedding provider | |
-| 9 | G-03 Worktree Isolation | P0 | M | Git | |
-| 10 | G-02 Background Agents | P0 | L | G-03 | |
+| 7 | G-16 Branch-per-Session | P2 | S | None | ✅ Done |
+| 8 | G-04 Semantic Indexing | P0 | L | Embedding provider | ✅ Done |
+| 9 | G-03 Worktree Isolation | P0 | M | Git | ✅ Done |
+| 10 | G-02 Background Agents | P0 | L | G-03 | ✅ Done |
 | 11 | G-05 PR Review Agent | P1 | M | gh CLI |
 | 12 | G-12 Inline Autocomplete | P2 | L | Editor plugins |
 | 13 | G-11 VS Code Extension | P2 | L | JSON-RPC server |
