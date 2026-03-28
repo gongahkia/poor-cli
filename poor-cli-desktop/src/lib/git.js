@@ -61,7 +61,7 @@ async function renderStatus(el) {
 async function renderLog(el) {
   let result;
   try {
-    result = await rpc('execute_command', {
+    result = await rpc('poor-cli/executeCommand', {
       command: 'git log --graph --oneline --all --decorate -50'
     });
   } catch {
@@ -173,7 +173,7 @@ const LANE_COLORS = ['#4a9eff', '#ff6b9d', '#50e3c2', '#f5a623', '#bd10e0', '#7e
 async function renderTree(el) {
   let result;
   try {
-    result = await rpc('execute_command', {
+    result = await rpc('poor-cli/executeCommand', {
       command: 'git log --all --format="%H|%P|%s|%D" -60'
     });
   } catch {
