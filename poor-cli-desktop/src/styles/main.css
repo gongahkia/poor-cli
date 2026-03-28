@@ -1322,6 +1322,24 @@ select {
 }
 .modal input[type="checkbox"] { margin-right: 6px; }
 
+/* provider error */
+.provider-error {
+  display: block;
+  font-size: 11px;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 25%, transparent);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 4px 0;
+  line-height: 1.4;
+  word-break: break-word;
+  max-height: 60px;
+  overflow: hidden;
+  cursor: help;
+}
+.provider-error:hover { max-height: none; }
+
 /* routing label */
 .routing-label {
   display: block;
@@ -1488,3 +1506,115 @@ select {
 .skill-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .skill-card-header h3 { flex: 1; margin: 0; font-size: 14px; }
 .skill-actions { margin-top: 8px; }
+
+/* git view */
+.git-container { padding: 24px; overflow-y: auto; flex: 1; }
+.git-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.git-tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.git-tab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.git-tab:hover { color: var(--text-secondary); }
+.git-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.git-content { font-family: var(--font-mono); font-size: 13px; }
+.git-branch-bar { margin-bottom: 12px; font-size: 14px; }
+.git-branch-icon { color: var(--accent); }
+.git-clean { color: var(--success); font-size: 13px; }
+.git-file-list { display: flex; flex-direction: column; gap: 2px; }
+.git-file { display: flex; gap: 10px; padding: 3px 0; }
+.git-file-code { width: 20px; text-align: center; font-weight: 600; flex-shrink: 0; }
+.git-file-path { color: var(--text-primary); }
+.git-file-new .git-file-code { color: var(--success); }
+.git-file-add .git-file-code { color: var(--success); }
+.git-file-del .git-file-code { color: var(--error); }
+.git-file-mod .git-file-code { color: var(--warning); }
+.git-log-output {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: 6px;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 600px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+.git-diff-heading { font-size: 13px; margin: 12px 0 6px; color: var(--text-secondary); }
+.git-diff-output {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: 6px;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.git-diff-staged { border-left: 3px solid var(--success); }
+.git-show-full-btn { margin: 6px 0 12px; }
+.git-branch-list { display: flex; flex-direction: column; gap: 2px; }
+.git-branch-item { display: flex; gap: 8px; padding: 4px 6px; border-radius: 3px; }
+.git-branch-item:hover { background: var(--bg-tertiary); }
+.git-branch-current { color: var(--success); font-weight: 600; }
+.git-branch-remote { color: var(--text-muted); }
+.git-branch-marker { width: 12px; flex-shrink: 0; }
+
+/* command palette */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 20vh;
+}
+.palette {
+  width: 520px;
+  max-height: 420px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#palette-input {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-family: var(--font-sans);
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+#palette-input::placeholder { color: var(--text-muted); }
+.palette-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.palette-item:hover, .palette-item.active { background: var(--bg-tertiary); }
+.palette-label { color: var(--text-primary); }
+.palette-key { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }

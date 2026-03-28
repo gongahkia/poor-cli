@@ -51,6 +51,30 @@ const modalCreate = document.getElementById('modal-create');
 let initialized = false;
 let activeSessionId = null;
 
+function friendlyError(e) { // extract readable message from JSON-RPC error strings
+  const s = String(e);
+  try {
+    const obj = JSON.parse(s);
+    if (obj.message) return obj.message;
+    if (obj.data?.message) return obj.data.message;
+  } catch (_) {}
+  // pattern: {"code":...,"message":"..."}  or  "message":"..."
+  const msgMatch = s.match(/"message"\s*:\s*"([^"]+)"/);
+  if (msgMatch) return msgMatch[1];
+  // pattern: No API key found for provider: X
+  const keyMatch = s.match(/No API key found for provider:\s*\w+/i);
+  if (keyMatch) return keyMatch[0];
+  // strip JSON wrapper noise
+  const clean = s.replace(/^\{.*?"message"\s*:\s*"?|"?\s*\}$/g, '').trim();
+  if (clean.length < s.length && clean.length > 5) return clean;
+  return s.length > 80 ? s.slice(0, 77) + '...' : s;
+}
+
+function showProviderError(prefix, e) {
+  const msg = friendlyError(e);
+  providerInfo.innerHTML = `<span class="provider-error" title="${msg.replace(/"/g, '&quot;')}">${prefix}: ${msg}</span>`;
+}
+
 // helpers
 function relativeTime(iso) {
   if (!iso) return '';
@@ -97,9 +121,9 @@ async function ensureInitialized() {
   } catch (e) {
     const msg = String(e);
     if (msg.includes('timeout') || msg.includes('spawn') || msg.includes('No such file')) {
-      providerInfo.innerHTML = '<span style="color:var(--warning)">Server not running</span> — check Python venv';
+      providerInfo.innerHTML = '<span class="provider-error">Server not running — check Python venv</span>';
     } else {
-      providerInfo.textContent = `Error: ${msg}`;
+      showProviderError('Error', msg);
     }
   }
 }
@@ -414,8 +438,7 @@ providerSelect.addEventListener('change', async () => {
     providerModels = {}; // clear cache on provider switch
     await refreshProviderInfo();
   } catch (e) {
-    providerInfo.textContent = `Switch failed: ${e}`;
-    providerInfo.style.color = 'var(--error)';
+    showProviderError('Switch failed', e);
     if (prev) providerSelect.value = prev;
   }
 });
@@ -426,8 +449,7 @@ modelSelect.addEventListener('change', async () => {
     await rpc('switch_provider', { provider: providerSelect.value, model });
     await refreshProviderInfo();
   } catch (e) {
-    providerInfo.textContent = `Model switch failed: ${e}`;
-    providerInfo.style.color = 'var(--error)';
+    showProviderError('Model switch failed', e);
   }
 });
 // session tab bar
@@ -517,7 +539,7 @@ routingSelect.addEventListener('change', async () => {
   try {
     await rpc('set_config', { keyPath: 'model.routing_mode', value: routingSelect.value });
     await refreshProviderInfo();
-  } catch (e) { providerInfo.textContent = `Routing error: ${e}`; }
+  } catch (e) { showProviderError('Routing error', e); }
 });
 
 // cost display
