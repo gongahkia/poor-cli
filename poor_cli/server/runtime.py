@@ -4445,13 +4445,14 @@ class PoorCLIServer:
         return {"session": state.to_dict()}
 
     async def handle_fork_session(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Fork a new session from an existing one (copies config, not history)."""
+        """Fork a new session from an existing one, deep-copying conversation history."""
         source = str(params.get("sourceSessionId", "")).strip()
         label = str(params.get("label", "")).strip()
+        copy_history = bool(params.get("copyHistory", True))
         if not source:
             return {"error": "sourceSessionId required"}
-        state = self._session_manager.fork_session(source, label=label)
-        return {"session": state.to_dict()}
+        state = self._session_manager.fork_session(source, label=label, copy_history=copy_history)
+        return {"session": state.to_dict(), "historyForked": copy_history}
 
     async def handle_list_mux_sessions(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all active multiplexed sessions."""

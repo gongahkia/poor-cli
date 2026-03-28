@@ -470,7 +470,17 @@ class PoorCLICore:
                 tools=init_tools,
                 system_instruction=self._system_instruction
             )
-            
+
+            # restore forked history if this session was created via fork
+            fork_history = getattr(self, "_fork_history", None)
+            if fork_history and self.provider:
+                try:
+                    self.provider.set_history(fork_history)
+                    logger.info("restored %d forked history messages", len(fork_history))
+                    del self._fork_history
+                except Exception as exc:
+                    logger.warning("failed to restore forked history: %s", exc)
+
             # Initialize repository-backed history adapter if enabled
             if self.config.history.auto_save:
                 if self.history_adapter is None:

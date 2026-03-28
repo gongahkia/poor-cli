@@ -1,5 +1,6 @@
 """multi-session manager for parallel independent agent sessions."""
 
+import copy
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -119,8 +120,8 @@ class SessionManager:
             result.append(info)
         return result
 
-    def fork_session(self, source_id: str, label: str = "") -> SessionState:
-        """create a new session copying config from source (not history)."""
+    def fork_session(self, source_id: str, label: str = "", copy_history: bool = True) -> SessionState:
+        """create a new session forking from source, optionally copying conversation history."""
         if source_id not in self._sessions:
             raise ValidationError(f"unknown session: {source_id}")
         src = self._sessions[source_id]
@@ -128,6 +129,15 @@ class SessionManager:
             label=label or f"fork-{src.label}",
             cwd=src.working_directory,
         )
+        # deep-copy conversation history if the source is initialized
+        if copy_history and src.core.provider:
+            try:
+                history = src.core.provider.get_history()
+                if history:
+                    new.core._fork_history = copy.deepcopy(history)
+                    logger.info("forked %d history messages from %s to %s", len(history), source_id, new.session_id)
+            except Exception as exc:
+                logger.warning("failed to copy history during fork: %s", exc)
         return new
 
     @property
