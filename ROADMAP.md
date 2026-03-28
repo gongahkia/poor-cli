@@ -827,18 +827,18 @@ poor-cli agent cancel <id>
 
 ## Implementation Priority Order
 
-| Order | Gap | Phase | Est. Effort | Dependencies |
-|-------|-----|-------|-------------|--------------|
-| 1 | G-01 Memory System | P0 | M | None |
-| 2 | G-06 Trust Model | P1 | S | None |
-| 3 | G-08 Auto Lint+Test Loop | P1 | S | None |
-| 4 | G-09 PDF/Jupyter Reading | P1 | S | None |
-| 5 | G-10 Config Profiles | P1 | S | None |
-| 6 | G-07 Conversation Forking | P1 | S | None |
-| 7 | G-16 Branch-per-Session | P2 | S | None |
-| 8 | G-04 Semantic Indexing | P0 | L | Embedding provider |
-| 9 | G-03 Worktree Isolation | P0 | M | Git |
-| 10 | G-02 Background Agents | P0 | L | G-03 |
+| Order | Gap | Phase | Est. Effort | Dependencies | Status |
+|-------|-----|-------|-------------|--------------|--------|
+| 1 | G-01 Memory System | P0 | M | None | ✅ Done |
+| 2 | G-06 Trust Model | P1 | S | None | ✅ Done |
+| 3 | G-08 Auto Lint+Test Loop | P1 | S | None | ✅ Done |
+| 4 | G-09 PDF/Jupyter Reading | P1 | S | None | ✅ Done |
+| 5 | G-10 Config Profiles | P1 | S | None | ✅ Done |
+| 6 | G-07 Conversation Forking | P1 | S | None | ✅ Done |
+| 7 | G-16 Branch-per-Session | P2 | S | None | |
+| 8 | G-04 Semantic Indexing | P0 | L | Embedding provider | |
+| 9 | G-03 Worktree Isolation | P0 | M | Git | |
+| 10 | G-02 Background Agents | P0 | L | G-03 | |
 | 11 | G-05 PR Review Agent | P1 | M | gh CLI |
 | 12 | G-12 Inline Autocomplete | P2 | L | Editor plugins |
 | 13 | G-11 VS Code Extension | P2 | L | JSON-RPC server |

@@ -679,6 +679,104 @@ def _wait_for_task_completion(manager: TaskManager, task_id: str, *, timeout_sec
     raise SystemExit(f"Timed out waiting for task {task_id} to finish.")
 
 
+def _run_agent_mode(argv: Sequence[str]) -> int:
+    """Handle 'poor-cli agent' subcommands."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="poor-cli agent", description="Background agent management")
+    sub = parser.add_subparsers(dest="subcommand")
+
+    # agent start
+    p_start = sub.add_parser("start", help="Start a background agent")
+    p_start.add_argument("--prompt", "-p", required=True, help="Task prompt")
+    p_start.add_argument("--sandbox", default="workspace-write", help="Sandbox preset")
+    p_start.add_argument("--no-worktree", action="store_true", help="Run in current directory")
+    p_start.add_argument("--max-runtime", type=int, default=3600, help="Max runtime in seconds")
+    p_start.add_argument("--max-cost", type=float, default=5.0, help="Max cost in USD")
+    p_start.add_argument("--json", action="store_true")
+
+    # agent list
+    p_list = sub.add_parser("list", help="List agents")
+    p_list.add_argument("--status", nargs="*", help="Filter by status")
+    p_list.add_argument("--json", action="store_true")
+
+    # agent logs
+    p_logs = sub.add_parser("logs", help="Show agent logs")
+    p_logs.add_argument("agent_id", help="Agent ID")
+    p_logs.add_argument("--tail", type=int, default=100)
+
+    # agent result
+    p_result = sub.add_parser("result", help="Show agent result")
+    p_result.add_argument("agent_id", help="Agent ID")
+
+    # agent cancel
+    p_cancel = sub.add_parser("cancel", help="Cancel a running agent")
+    p_cancel.add_argument("agent_id", help="Agent ID")
+
+    # agent run (internal — called by subprocess)
+    p_run = sub.add_parser("run", help=argparse.SUPPRESS)
+    p_run.add_argument("--agent-id", required=True)
+    p_run.add_argument("--repo-root", required=True)
+
+    args = parser.parse_args(list(argv))
+    if not args.subcommand:
+        parser.print_help()
+        return 0
+
+    from .agent_runner import AgentManager, run_agent_worker
+    from pathlib import Path
+
+    if args.subcommand == "run":
+        asyncio.run(run_agent_worker(args.agent_id, args.repo_root))
+        return 0
+
+    mgr = AgentManager(Path.cwd())
+
+    if args.subcommand == "start":
+        agent = mgr.create_agent(
+            prompt=args.prompt,
+            sandbox_preset=args.sandbox,
+            use_worktree=not args.no_worktree,
+            max_runtime=args.max_runtime,
+            max_cost_usd=args.max_cost,
+            auto_start=True,
+        )
+        if args.json:
+            import json as _json
+            print(_json.dumps(agent.to_dict(), indent=2))
+        else:
+            print(f"Agent {agent.agent_id} started (pid {agent.worker_pid})")
+            print(f"  Branch: {agent.branch_name}")
+            print(f"  Logs: {agent.log_path}")
+        return 0
+
+    if args.subcommand == "list":
+        agents = mgr.list_agents(statuses=args.status or None)
+        if args.json:
+            import json as _json
+            print(_json.dumps([a.to_dict() for a in agents], indent=2))
+        else:
+            if not agents:
+                print("No agents found")
+            for a in agents:
+                print(f"  {a.agent_id}  {a.status:12s}  {a.prompt[:60]}")
+        return 0
+
+    if args.subcommand == "logs":
+        print(mgr.get_logs(args.agent_id, tail=args.tail))
+        return 0
+
+    if args.subcommand == "result":
+        print(mgr.get_result(args.agent_id))
+        return 0
+
+    if args.subcommand == "cancel":
+        agent = mgr.cancel_agent(args.agent_id)
+        print(f"Agent {agent.agent_id}: {agent.status}")
+        return 0
+
+    return 0
+
+
 def _run_task_mode(argv: Sequence[str]) -> int:
     parser = _build_task_parser()
     args = parser.parse_args(list(argv))
@@ -1393,6 +1491,8 @@ def _main() -> None:
         raise SystemExit(0)
     if argv and argv[0] == "exec":
         raise SystemExit(_run_exec_mode(argv[1:]))
+    if argv and argv[0] == "agent":
+        raise SystemExit(_run_agent_mode(argv[1:]))
     if argv and argv[0] == "task":
         raise SystemExit(_run_task_mode(argv[1:]))
     if argv and argv[0] == "skills":

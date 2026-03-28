@@ -718,6 +718,13 @@ class PoorCLIServer:
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
             "poor-cli/renameSession": self.handle_rename_session,
+            "poor-cli/createAgent": self.handle_create_agent,
+            "poor-cli/listAgents": self.handle_list_agents,
+            "poor-cli/getAgent": self.handle_get_agent,
+            "poor-cli/startAgent": self.handle_start_agent,
+            "poor-cli/cancelAgent": self.handle_cancel_agent,
+            "poor-cli/getAgentLogs": self.handle_get_agent_logs,
+            "poor-cli/getAgentResult": self.handle_get_agent_result,
             "poor-cli/listProfiles": self.handle_list_profiles,
             "poor-cli/applyProfile": self.handle_apply_profile,
             "poor-cli/getTrustStatus": self.handle_get_trust_status,
@@ -4751,6 +4758,70 @@ class PoorCLIServer:
 
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
+
+    # =========================================================================
+    # Agent handlers
+    # =========================================================================
+
+    async def handle_create_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        prompt = str(params.get("prompt", "")).strip()
+        if not prompt:
+            return {"error": "prompt required"}
+        agent = mgr.create_agent(
+            prompt=prompt,
+            sandbox_preset=str(params.get("sandboxPreset", "workspace-write")),
+            source=str(params.get("source", "rpc")),
+            use_worktree=bool(params.get("useWorktree", True)),
+            max_runtime=int(params.get("maxRuntime", 3600)),
+            max_cost_usd=float(params.get("maxCostUsd", 5.0)),
+            auto_start=bool(params.get("autoStart", False)),
+        )
+        return {"agent": agent.to_dict()}
+
+    async def handle_list_agents(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        statuses = params.get("statuses") or None
+        agents = mgr.list_agents(statuses=statuses)
+        return {"agents": [a.to_dict() for a in agents]}
+
+    async def handle_get_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        agent_id = str(params.get("agentId", "")).strip()
+        agent = mgr.get_agent(agent_id)
+        if not agent:
+            return {"error": f"unknown agent: {agent_id}"}
+        return {"agent": agent.to_dict()}
+
+    async def handle_start_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        agent_id = str(params.get("agentId", "")).strip()
+        agent = mgr.start_agent(agent_id)
+        return {"agent": agent.to_dict()}
+
+    async def handle_cancel_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        agent_id = str(params.get("agentId", "")).strip()
+        agent = mgr.cancel_agent(agent_id)
+        return {"agent": agent.to_dict()}
+
+    async def handle_get_agent_logs(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        agent_id = str(params.get("agentId", "")).strip()
+        tail = int(params.get("tail", 100))
+        return {"logs": mgr.get_logs(agent_id, tail=tail)}
+
+    async def handle_get_agent_result(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..agent_runner import AgentManager
+        mgr = AgentManager()
+        agent_id = str(params.get("agentId", "")).strip()
+        return {"result": mgr.get_result(agent_id)}
 
     # =========================================================================
     # Profile handlers
