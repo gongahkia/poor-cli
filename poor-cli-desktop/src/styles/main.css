@@ -600,6 +600,13 @@ select {
   margin-bottom: 12px;
 }
 .settings-back:hover { color: var(--text-primary); }
+.settings-search {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-primary); color: var(--text-primary); font-size: 12px;
+  margin-bottom: 8px; outline: none;
+}
+.settings-search:focus { border-color: var(--accent); }
+.settings-search::placeholder { color: var(--text-muted); }
 .settings-cat {
   padding: 6px 10px;
   border-radius: 4px;
@@ -1673,6 +1680,7 @@ select {
 }
 .palette-item:hover, .palette-item.active { background: var(--bg-tertiary); }
 .palette-label { color: var(--text-primary); }
+.palette-cat { padding: 6px 16px 2px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
 
 /* mission control */
 .mission-control-container { padding: 20px 24px; }

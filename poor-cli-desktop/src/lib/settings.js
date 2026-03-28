@@ -103,9 +103,29 @@ const defaultOptions = [
   { path: 'tasks.auto_start_read_only', value: true, isBoolean: true },
 ];
 
+let _allOptions = []; // stored for search filtering
+
 export async function initSettings() {
   const sidebar = document.querySelector('.settings-sidebar');
   const content = document.getElementById('settings-content');
+  // search bar at top of sidebar
+  const searchBox = document.createElement('input');
+  searchBox.type = 'text';
+  searchBox.className = 'settings-search';
+  searchBox.placeholder = 'Search settings...';
+  searchBox.addEventListener('input', () => {
+    const q = searchBox.value.trim().toLowerCase();
+    if (!q) {
+      renderOptions(content, _allOptions);
+      return;
+    }
+    const filtered = _allOptions.filter(o =>
+      o.path.toLowerCase().includes(q) ||
+      (o.path.split('.').pop() || '').replace(/_/g, ' ').includes(q)
+    );
+    renderOptions(content, filtered);
+  });
+  sidebar.appendChild(searchBox);
   // build category nav
   for (const [name] of Object.entries(categories)) {
     const el = document.createElement('div');
@@ -114,8 +134,12 @@ export async function initSettings() {
     el.addEventListener('click', () => {
       document.querySelectorAll('.settings-cat').forEach(c => c.classList.remove('active'));
       el.classList.add('active');
-      const target = content.querySelector(`[data-category="${name}"]`);
-      if (target) target.scrollIntoView({ behavior: 'smooth' });
+      searchBox.value = ''; // clear search on category click
+      renderOptions(content, _allOptions);
+      setTimeout(() => {
+        const target = content.querySelector(`[data-category="${name}"]`);
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
     });
     sidebar.appendChild(el);
   }
@@ -123,7 +147,8 @@ export async function initSettings() {
   const frontendOnly = [
     { path: 'ui.crt_effect', value: document.documentElement.classList.contains('crt'), isBoolean: true },
   ];
-  renderOptions(content, defaultOptions); // render defaults immediately
+  _allOptions = defaultOptions;
+  renderOptions(content, _allOptions); // render defaults immediately
   rpc('list_config_options', {}).then(result => { // update from backend if available
     const options = result.options || result || [];
     if (options.length) {
@@ -132,7 +157,8 @@ export async function initSettings() {
       for (const fo of frontendOnly) {
         if (!paths.has(fo.path)) options.push(fo);
       }
-      renderOptions(content, options);
+      _allOptions = options;
+      renderOptions(content, _allOptions);
     }
   }).catch(() => {});
   rpc('get_api_key_status', {}).then(status => { // update key status from backend
