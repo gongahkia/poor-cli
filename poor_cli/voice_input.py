@@ -59,8 +59,6 @@ class VoiceInputManager:
                 return await _transcribe_with_sox(duration)
             elif self._backend == "arecord":
                 return await _transcribe_with_arecord(duration)
-            elif self._backend == "whisper-ollama":
-                return await _transcribe_with_whisper_ollama(duration)
             return "error: unsupported backend"
         finally:
             self._recording = False
@@ -75,14 +73,15 @@ class VoiceInputManager:
 
 
 def _detect_backend() -> Optional[str]:
-    """Detect available audio recording backend."""
+    """Detect available audio recording + transcription backend."""
+    has_whisper = shutil.which("whisper") is not None
+    if shutil.which("sox") and shutil.which("rec") and has_whisper:
+        return "sox"
+    if sys.platform == "linux" and shutil.which("arecord") and has_whisper:
+        return "arecord"
+    # macOS: try sox even without whisper (will fail at transcription step)
     if shutil.which("sox") and shutil.which("rec"):
         return "sox"
-    if sys.platform == "linux" and shutil.which("arecord"):
-        return "arecord"
-    # check if Ollama has whisper model
-    if shutil.which("ollama"):
-        return "whisper-ollama"
     return None
 
 
@@ -135,12 +134,6 @@ async def _transcribe_with_arecord(duration: float) -> str:
         return "error: whisper CLI not found for transcription"
     finally:
         Path(wav_path).unlink(missing_ok=True)
-
-
-async def _transcribe_with_whisper_ollama(duration: float) -> str:
-    """Use Ollama's Whisper model for transcription (placeholder)."""
-    # ollama doesn't natively support audio yet; this is a future integration point
-    return "error: Ollama whisper transcription not yet supported — install whisper CLI"
 
 
 async def _run_whisper_cli(audio_path: str) -> str:
