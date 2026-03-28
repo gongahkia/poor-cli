@@ -104,6 +104,10 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "write_todos": [],
     "update_todo": [],
     "delegate_task": [ToolCapability.PROCESS_EXECUTE.value],
+    "memory_save": [],
+    "memory_search": [],
+    "memory_delete": [],
+    "memory_list": [],
 }
 
 _CACHEABLE_TOOLS = frozenset({"read_file", "glob_files", "grep_files", "git_status", "git_diff", "git_log", "list_directory", "diff_files"})
@@ -973,6 +977,69 @@ class ToolRegistryAsync:
                         "description": {"type": "STRING", "description": "Optional new description"}
                     },
                     "required": ["id", "status"]
+                }
+            }
+        }
+
+        # ── memory tools ─────────────────────────────────────────────────
+        self.tools["memory_save"] = {
+            "function": self.memory_save,
+            "declaration": {
+                "name": "memory_save",
+                "description": "Save a persistent memory that will be available in future sessions. Use for user preferences, project decisions, feedback, or external references.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Short descriptive name for this memory"},
+                        "type": {"type": "STRING", "description": "Memory type: user, feedback, project, or reference"},
+                        "description": {"type": "STRING", "description": "One-line description used to decide relevance in future sessions"},
+                        "content": {"type": "STRING", "description": "Full memory content (markdown)"},
+                    },
+                    "required": ["name", "type", "description", "content"]
+                }
+            }
+        }
+        self.tools["memory_search"] = {
+            "function": self.memory_search,
+            "declaration": {
+                "name": "memory_search",
+                "description": "Search persistent memories by keyword query. Returns relevant memories from past sessions.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Search query"},
+                        "type": {"type": "STRING", "description": "Optional filter: user, feedback, project, or reference"},
+                        "max_results": {"type": "INTEGER", "description": "Max results to return (default 10)"},
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+        self.tools["memory_delete"] = {
+            "function": self.memory_delete,
+            "declaration": {
+                "name": "memory_delete",
+                "description": "Delete a persistent memory by name.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Name of the memory to delete"},
+                    },
+                    "required": ["name"]
+                }
+            }
+        }
+        self.tools["memory_list"] = {
+            "function": self.memory_list,
+            "declaration": {
+                "name": "memory_list",
+                "description": "List all persistent memories, optionally filtered by type.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "type": {"type": "STRING", "description": "Optional filter: user, feedback, project, or reference"},
+                    },
+                    "required": []
                 }
             }
         }
@@ -3714,6 +3781,64 @@ class ToolRegistryAsync:
                 self._save_todos()
                 return f"todo #{id} updated to {status}"
         return f"error: todo #{id} not found"
+
+    # ── memory tool implementations ────────────────────────────────────
+
+    async def memory_save(self, name: str, type: str, description: str, content: str) -> str:
+        try:
+            from .memory import MemoryManager, MemoryEntry
+            mgr = MemoryManager()
+            mgr.load()
+            existing = mgr.get(name)
+            if existing:
+                mgr.update(name, content=content, description=description, type_=type)
+                return f"updated memory: {name}"
+            entry = MemoryEntry(name=name, description=description, type=type, content=content)
+            mgr.save(entry)
+            return f"saved memory: {name} ({type})"
+        except Exception as exc:
+            return f"error saving memory: {exc}"
+
+    async def memory_search(self, query: str, type: str = "", max_results: int = 10) -> str:
+        try:
+            from .memory import MemoryManager
+            mgr = MemoryManager()
+            mgr.load()
+            results = mgr.search(query, type_filter=type or None, max_results=max_results)
+            if not results:
+                return "no memories found"
+            lines = []
+            for r in results:
+                lines.append(f"## {r.name} ({r.type})\n{r.description}\n\n{r.content}\n")
+            return "\n---\n".join(lines)
+        except Exception as exc:
+            return f"error searching memory: {exc}"
+
+    async def memory_delete(self, name: str) -> str:
+        try:
+            from .memory import MemoryManager
+            mgr = MemoryManager()
+            mgr.load()
+            if mgr.delete(name):
+                return f"deleted memory: {name}"
+            return f"memory not found: {name}"
+        except Exception as exc:
+            return f"error deleting memory: {exc}"
+
+    async def memory_list(self, type: str = "") -> str:
+        try:
+            from .memory import MemoryManager
+            mgr = MemoryManager()
+            mgr.load()
+            entries = mgr.list_all(type_filter=type or None)
+            if not entries:
+                return "no memories stored"
+            lines = []
+            for e in entries:
+                lines.append(f"- **{e.name}** ({e.type}): {e.description}")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"error listing memories: {exc}"
 
     async def delegate_task(self, prompt: str, context_files: Optional[List[str]] = None, max_iterations: int = 10) -> str:
         if not self._core:

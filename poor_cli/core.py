@@ -404,6 +404,11 @@ class PoorCLICore:
             self._run_history = RunHistoryManager(repo_root)
             self._instruction_manager = InstructionManager(repo_root)
             self._hook_manager = PolicyHookManager(repo_root)
+
+            # persistent memory
+            from .memory import MemoryManager
+            self._memory_manager = MemoryManager()
+            self._memory_manager.load()
             self._audit_logger = AuditLogger(audit_dir=repo_root / ".poor-cli" / "audit")
 
             if self.config.mcp_servers:
@@ -438,6 +443,16 @@ class PoorCLICore:
                 str(repo_root), provider=self.config.model.provider,
                 terse_mode=terse, batched_reads=batched,
             )
+
+            # inject persistent memory context
+            memory_index = self._memory_manager.load_index()
+            if memory_index:
+                self._system_instruction += (
+                    "\n\n## Persistent Memory\n"
+                    "The following memories were saved in previous sessions. "
+                    "Use memory_save/memory_search/memory_delete/memory_list tools to manage them.\n\n"
+                    f"{memory_index}\n"
+                )
             
             provider_capabilities = self.provider.get_capabilities()
             init_tools = (

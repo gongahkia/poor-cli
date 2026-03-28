@@ -718,6 +718,10 @@ class PoorCLIServer:
             "poor-cli/forkSession": self.handle_fork_session,
             "poor-cli/listMuxSessions": self.handle_list_mux_sessions,
             "poor-cli/renameSession": self.handle_rename_session,
+            "poor-cli/memoryList": self.handle_memory_list,
+            "poor-cli/memorySave": self.handle_memory_save,
+            "poor-cli/memorySearch": self.handle_memory_search,
+            "poor-cli/memoryDelete": self.handle_memory_delete,
         }
 
     # =========================================================================
@@ -4741,6 +4745,56 @@ class PoorCLIServer:
 
         if not permitted:
             raise PermissionDeniedError(tool_name=tool_name, permission_mode=self.permission_mode)
+
+    # =========================================================================
+    # Memory handlers
+    # =========================================================================
+
+    async def handle_memory_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..memory import MemoryManager
+        mgr = MemoryManager()
+        mgr.load()
+        type_filter = params.get("type") or None
+        entries = mgr.list_all(type_filter=type_filter)
+        return {"memories": [e.to_dict() for e in entries]}
+
+    async def handle_memory_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..memory import MemoryManager, MemoryEntry
+        mgr = MemoryManager()
+        mgr.load()
+        name = str(params.get("name", "")).strip()
+        mtype = str(params.get("type", "project")).strip()
+        description = str(params.get("description", "")).strip()
+        content = str(params.get("content", "")).strip()
+        if not name:
+            return {"error": "name required"}
+        existing = mgr.get(name)
+        if existing:
+            mgr.update(name, content=content, description=description, type_=mtype)
+            return {"status": "updated", "name": name}
+        entry = MemoryEntry(name=name, description=description, type=mtype, content=content)
+        mgr.save(entry)
+        return {"status": "saved", "name": name}
+
+    async def handle_memory_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..memory import MemoryManager
+        mgr = MemoryManager()
+        mgr.load()
+        query = str(params.get("query", "")).strip()
+        type_filter = params.get("type") or None
+        max_results = int(params.get("maxResults", 10))
+        results = mgr.search(query, type_filter=type_filter, max_results=max_results)
+        return {"results": [e.to_dict() for e in results]}
+
+    async def handle_memory_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        from ..memory import MemoryManager
+        mgr = MemoryManager()
+        mgr.load()
+        name = str(params.get("name", "")).strip()
+        if not name:
+            return {"error": "name required"}
+        deleted = mgr.delete(name)
+        return {"deleted": deleted, "name": name}
 
     # =========================================================================
     # Message Dispatch
