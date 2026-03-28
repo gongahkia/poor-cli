@@ -473,7 +473,7 @@ settingsBack.addEventListener('click', () => showView('chat'));
 const routingSelect = document.getElementById('routing-mode');
 routingSelect.addEventListener('change', async () => {
   try {
-    await rpc('set_config', { key_path: 'model.routing_mode', value: routingSelect.value });
+    await rpc('set_config', { keyPath: 'model.routing_mode', value: routingSelect.value });
     await refreshProviderInfo();
   } catch (e) { providerInfo.textContent = `Routing error: ${e}`; }
 });
