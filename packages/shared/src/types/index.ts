@@ -73,6 +73,11 @@ export type HealthStatus = {
   readonly credentialSource: CredentialSource;
   readonly reachable: boolean;
   readonly latencyMs: number;
+  readonly classification?: "live_public" | "live_authenticated" | "shared_datagov_datastore" | "shared_file_download";
+  readonly probeMode?: "runtime_client";
+  readonly productionUrl?: string;
+  readonly representativeTool?: string;
+  readonly releaseBlocking?: boolean;
   readonly dependentFamilies?: readonly string[];
   readonly coverageNotes?: readonly string[];
   readonly error?: string;

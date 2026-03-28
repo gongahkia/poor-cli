@@ -128,7 +128,6 @@ export { loadConfig } from "./config/index.js";
 export type { Config } from "./config/index.js";
 export {
   getCacheTtl,
-  getMockApiBaseUrl,
   getRateLimit,
   getSupportedConfigKeys,
   getTimeout,
@@ -232,10 +231,8 @@ export type {
 } from "./types/singstat.js";
 export type {
   MasDatasetKey,
-  MasField,
   MasQueryParams,
   MasRecord,
-  MasResponse,
   NormalizedMasRecord,
 } from "./types/mas.js";
 export { MasDataset } from "./types/mas.js";

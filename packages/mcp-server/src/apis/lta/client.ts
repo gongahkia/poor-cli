@@ -1,4 +1,4 @@
-import { ApiError, Keystore, httpGet, getMockApiBaseUrl } from "@sg-apis/shared";
+import { ApiError, Keystore, httpGet } from "@sg-apis/shared";
 import type {
   LtaBusArrivalResponse,
   LtaNormalizedBusArrival,
@@ -10,12 +10,7 @@ import type {
 } from "@sg-apis/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
-const getBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/lta`
-    : "https://datamall2.mytransport.sg/ltaodataservice";
-};
+const BASE_URL = "https://datamall2.mytransport.sg/ltaodataservice";
 
 let keystoreInstance: Keystore | null = null;
 
@@ -52,7 +47,7 @@ const ltaGet = async <T>(
   params: Readonly<Record<string, string>> = {},
 ): Promise<T> => {
   const apiKey = getApiKey();
-  const url = new URL(`${getBaseUrl()}/${path}`);
+  const url = new URL(`${BASE_URL}/${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }

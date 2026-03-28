@@ -1,4 +1,4 @@
-import { ApiError, getMockApiBaseUrl } from "@sg-apis/shared";
+import { ApiError } from "@sg-apis/shared";
 import type {
   OneMapSearchResponse,
   GeocodeResult,
@@ -11,30 +11,9 @@ import type {
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 import { authenticatedFetch } from "./auth.js";
 
-const getBaseUrl = (): string => {
-  const mockApiBaseUrl = getMockApiBaseUrl();
-  return mockApiBaseUrl !== undefined
-    ? `${mockApiBaseUrl}/onemap`
-    : "https://www.onemap.gov.sg/api";
-};
-
-const isMockMode = (): boolean => getMockApiBaseUrl() !== undefined;
+const BASE_URL = "https://www.onemap.gov.sg/api";
 
 const onemapGet = async <T>(url: string): Promise<T> => {
-  if (isMockMode()) {
-    // In mock mode, skip auth
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new ApiError({
-        apiName: "onemap",
-        statusCode: response.status,
-        message: `OneMap request failed: ${response.statusText}`,
-        retryable: response.status >= 500,
-      });
-    }
-    return (await response.json()) as T;
-  }
-
   const response = await authenticatedFetch(url);
   if (!response.ok) {
     throw new ApiError({
@@ -50,7 +29,7 @@ const onemapGet = async <T>(url: string): Promise<T> => {
 export const geocode = async (searchVal: string, limit = 10): Promise<GeocodeResult[]> => {
   const cacheKey = buildCacheKey("onemap", "geocode", { searchVal, limit });
   const { data } = await withCache(cacheKey, "STATIC", async () => {
-    const url = `${getBaseUrl()}/common/elastic/search?searchVal=${encodeURIComponent(searchVal)}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
+    const url = `${BASE_URL}/common/elastic/search?searchVal=${encodeURIComponent(searchVal)}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
     const response = await onemapGet<OneMapSearchResponse>(url);
 
     return response.results.slice(0, limit).map((r) => ({
@@ -73,7 +52,7 @@ export const reverseGeocode = async (
 ): Promise<ReverseGeocodeResult | null> => {
   const cacheKey = buildCacheKey("onemap", "revgeocode", { lat, lng, buffer });
   const { data } = await withCache(cacheKey, "STATIC", async () => {
-    const url = `${getBaseUrl()}/public/revgeocode?location=${lat},${lng}&buffer=${buffer}&addressType=All`;
+    const url = `${BASE_URL}/public/revgeocode?location=${lat},${lng}&buffer=${buffer}&addressType=All`;
     const response = await onemapGet<ReverseGeocodeResponse>(url);
 
     const entry = response.GeocodeInfo?.[0];
@@ -99,7 +78,7 @@ export const getRoute = async (
   endLng: number,
   routeType: string,
 ): Promise<RouteResult> => {
-  const url = `${getBaseUrl()}/public/routingsvc/route?start=${startLat},${startLng}&end=${endLat},${endLng}&routeType=${routeType}`;
+  const url = `${BASE_URL}/public/routingsvc/route?start=${startLat},${startLng}&end=${endLat},${endLng}&routeType=${routeType}`;
   const response = await onemapGet<{
     status_message: string;
     status: number;
@@ -147,7 +126,7 @@ export const getPopulationData = async (
     dataType: type,
   });
   const { data } = await withCache(cacheKey, "STATIC", async () => {
-    const url = `${getBaseUrl()}/public/popapi/${type}?planningArea=${encodeURIComponent(planningArea)}&year=${yr}`;
+    const url = `${BASE_URL}/public/popapi/${type}?planningArea=${encodeURIComponent(planningArea)}&year=${yr}`;
     const response = await onemapGet<Record<string, string>[]>(url);
     return { planningArea, year: yr, data: response };
   });
@@ -160,7 +139,7 @@ export const convertSVY21toWGS84 = async (
 ): Promise<{ lat: number; lng: number }> => {
   const cacheKey = buildCacheKey("onemap", "convert", { from: "SVY21", x: easting, y: northing });
   const { data } = await withCache(cacheKey, "STATIC", async () => {
-    const url = `${getBaseUrl()}/common/convert/3414to4326?X=${easting}&Y=${northing}`;
+    const url = `${BASE_URL}/common/convert/3414to4326?X=${easting}&Y=${northing}`;
     const response = await onemapGet<{ latitude: number; longitude: number }>(url);
     return { lat: response.latitude, lng: response.longitude };
   });
@@ -173,7 +152,7 @@ export const convertWGS84toSVY21 = async (
 ): Promise<{ x: number; y: number }> => {
   const cacheKey = buildCacheKey("onemap", "convert", { from: "WGS84", x: lat, y: lng });
   const { data } = await withCache(cacheKey, "STATIC", async () => {
-    const url = `${getBaseUrl()}/common/convert/4326to3414?latitude=${lat}&longitude=${lng}`;
+    const url = `${BASE_URL}/common/convert/4326to3414?latitude=${lat}&longitude=${lng}`;
     const response = await onemapGet<{ X: number; Y: number }>(url);
     return { x: response.X, y: response.Y };
   });

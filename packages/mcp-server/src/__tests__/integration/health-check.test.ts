@@ -25,8 +25,42 @@ vi.mock("../../apis/lta/client.js", () => ({
   getBusArrivals: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("../../apis/mas/client.js", () => ({
+  query: vi.fn().mockResolvedValue([{ end_of_day: "2026-03-26", sora: 2.5 }]),
+}));
+
+vi.mock("../../apis/nea/client.js", () => ({
+  getForecast2Hr: vi.fn().mockResolvedValue([{ area: "Tampines", forecast: "Fair", updatedAt: "2026-03-28T00:00:00Z" }]),
+}));
+
+vi.mock("../../apis/singstat/client.js", () => ({
+  getTableData: vi.fn().mockResolvedValue({
+    rows: [{ period: "2025 4Q", variable: "GDP At Current Market Prices", value: 156000, unit: "million" }],
+    metadata: {
+      title: "Gross Domestic Product",
+      frequency: "Quarterly",
+      source: "SingStat",
+      lastUpdated: "2026-03-01",
+    },
+    total: 1,
+  }),
+}));
+
+vi.mock("../../apis/hdb/client.js", () => ({
+  getHdbResalePrices: vi.fn().mockResolvedValue([{ town: "Bedok", flatType: "4 ROOM", resalePrice: 500000 }]),
+}));
+
+vi.mock("../../apis/boa/client.js", () => ({
+  getBoaArchitectureFirms: vi.fn().mockResolvedValue([{ firmName: "DP ARCHITECTS PTE LTD" }]),
+}));
+
 import { getBusArrivals } from "../../apis/lta/client.js";
+import { query as queryMas } from "../../apis/mas/client.js";
+import { getForecast2Hr } from "../../apis/nea/client.js";
 import { geocode } from "../../apis/onemap/client.js";
+import { getTableData as getSingStatTableData } from "../../apis/singstat/client.js";
+import { getHdbResalePrices } from "../../apis/hdb/client.js";
+import { getBoaArchitectureFirms } from "../../apis/boa/client.js";
 import { uraFetch } from "../../apis/ura/client.js";
 import {
   checkApiHealth,
@@ -36,8 +70,13 @@ import {
   hasOneMapCredentials,
   hasUraKey,
   healthCheckToolDefinitions,
+  probeDatagovDatastoreHealth,
+  probeDatagovFileDownloadHealth,
   probeLtaHealth,
+  probeMasHealth,
+  probeNeaHealth,
   probeOneMapHealth,
+  probeSingStatHealth,
   probeUraHealth,
 } from "../../tools/health-check.js";
 
@@ -77,21 +116,23 @@ describe("Health Check", () => {
   });
 
   it("treats HTTP errors as reachable services", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: "Unauthorized",
-    });
-
     const status = await checkApiHealth(
       {
         api: "URA",
+        classification: "live_authenticated",
         url: "https://example.test",
+        probeMode: "runtime_client",
+        representativeTool: "sg_ura_dev_charges",
+        releaseBlocking: true,
         authRequired: true,
         configured: () => false,
         credentialSource: () => "none",
+        probe: vi.fn().mockResolvedValue({
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+        }),
       },
-      fetchFn,
       createLookup({}),
     );
 
@@ -102,17 +143,19 @@ describe("Health Check", () => {
   });
 
   it("treats thrown fetch errors as unreachable", async () => {
-    const fetchFn = vi.fn().mockRejectedValue(new Error("network down"));
-
     const status = await checkApiHealth(
       {
         api: "SingStat",
+        classification: "live_public",
         url: "https://example.test",
+        probeMode: "runtime_client",
+        representativeTool: "sg_singstat_table",
+        releaseBlocking: true,
         authRequired: false,
         configured: () => true,
         credentialSource: () => "not_required",
+        probe: vi.fn().mockRejectedValue(new Error("network down")),
       },
-      fetchFn,
       createLookup({}),
     );
 
@@ -129,7 +172,17 @@ describe("Health Check", () => {
     );
   });
 
-  it("uses the live runtime clients for authenticated upstream probes", async () => {
+  it("uses the live runtime clients for health probes", async () => {
+    await expect(probeSingStatHealth()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+    });
+    await expect(probeMasHealth()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+    });
     await expect(probeOneMapHealth()).resolves.toEqual({
       ok: true,
       status: 200,
@@ -145,10 +198,32 @@ describe("Health Check", () => {
       status: 200,
       statusText: "OK",
     });
+    await expect(probeDatagovDatastoreHealth()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+    });
+    await expect(probeDatagovFileDownloadHealth()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+    });
+    await expect(probeNeaHealth()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+    });
 
+    expect(vi.mocked(getSingStatTableData)).toHaveBeenCalledWith("M015631", {
+      variables: ["GDP At Current Market Prices"],
+    });
+    expect(vi.mocked(queryMas)).toHaveBeenCalledWith("interest_rates_sora", { limit: 1 });
     expect(vi.mocked(geocode)).toHaveBeenCalledWith("049178", 1);
     expect(vi.mocked(uraFetch)).toHaveBeenCalledWith("DC_Rates");
     expect(vi.mocked(getBusArrivals)).toHaveBeenCalledWith("83139");
+    expect(vi.mocked(getHdbResalePrices)).toHaveBeenCalledWith({ town: "Bedok", flatType: "4 ROOM", limit: 1 });
+    expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith({ limit: 1 });
+    expect(vi.mocked(getForecast2Hr)).toHaveBeenCalledWith("Tampines");
   });
 
   it("reports mixed credential sources when env and keystore are both present", () => {
@@ -168,40 +243,36 @@ describe("Health Check", () => {
     process.env["SG_API_URA_KEY"] = "ura-env";
     process.env["SG_API_LTA_KEY"] = "lta-env";
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-    });
-    const originalFetch = globalThis.fetch;
-    vi.stubGlobal("fetch", fetchMock);
+    const result = await definition.handler({});
+    const records = result.structuredContent?.["records"];
 
-    try {
-      const result = await definition.handler({});
-      const records = result.structuredContent?.["records"];
-
-      expect(result.isError).toBeUndefined();
-      expect(Array.isArray(records)).toBe(true);
-      expect(records).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            api: "data.gov.sg",
-            credentialSource: "not_required",
-            dependentFamilies: expect.arrayContaining(["HDB", "CEA", "BCA", "BOA", "ACRA", "HSA", "HLB"]),
-            coverageNotes: expect.arrayContaining([
-              expect.stringContaining("curated registry"),
-            ]),
-          }),
-          expect.objectContaining({
-            api: "OneMap",
-            configured: true,
-            credentialSource: "env",
-            reachable: true,
-          }),
-        ]),
-      );
-    } finally {
-      vi.stubGlobal("fetch", originalFetch);
-    }
+    expect(result.isError).toBeUndefined();
+    expect(Array.isArray(records)).toBe(true);
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          api: "data.gov.sg datastore",
+          classification: "shared_datagov_datastore",
+          credentialSource: "not_required",
+          dependentFamilies: expect.arrayContaining(["HDB", "CEA", "BCA", "ACRA", "STB"]),
+          representativeTool: "sg_hdb_resale_prices",
+          releaseBlocking: true,
+        }),
+        expect.objectContaining({
+          api: "data.gov.sg file downloads",
+          classification: "shared_file_download",
+          credentialSource: "not_required",
+          dependentFamilies: expect.arrayContaining(["BOA", "HSA", "HLB", "PA"]),
+          representativeTool: "sg_boa_architecture_firms",
+          releaseBlocking: true,
+        }),
+        expect.objectContaining({
+          api: "OneMap",
+          configured: true,
+          credentialSource: "env",
+          reachable: true,
+        }),
+      ]),
+    );
   });
 });

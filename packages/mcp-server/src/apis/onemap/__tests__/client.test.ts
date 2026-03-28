@@ -3,9 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-// Set mock mode to skip auth
-process.env["MOCK_API_BASE_URL"] = "http://mock";
-
 vi.mock("@sg-apis/shared", async () => {
   const actual = await vi.importActual<typeof import("@sg-apis/shared")>("@sg-apis/shared");
   return {
