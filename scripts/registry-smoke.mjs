@@ -7,7 +7,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-registry-smoke-"));
-const { MOCK_API_BASE_URL: _ignoredMockApiBaseUrl, ...runtimeEnv } = process.env;
+const runtimeEnv = { ...process.env };
 
 const serverPkg = JSON.parse(readFileSync(resolve(root, "packages/mcp-server/package.json"), "utf8"));
 const sharedPkg = JSON.parse(readFileSync(resolve(root, "packages/shared/package.json"), "utf8"));
@@ -102,6 +102,12 @@ try {
     const recipesText = recipesResource.contents.find((content) => "text" in content && typeof content.text === "string")?.text;
     if (recipesText === undefined) {
       throw new Error("Registry-installed server did not return recipe resource text.");
+    }
+
+    const runtimeResource = await client.readResource({ uri: "sg://runtime" });
+    const runtimeText = runtimeResource.contents.find((content) => "text" in content && typeof content.text === "string")?.text;
+    if (runtimeText === undefined) {
+      throw new Error("Registry-installed server did not return runtime resource text.");
     }
 
     const directResult = await client.callTool({

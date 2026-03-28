@@ -8,8 +8,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
 const tarballs = [];
-const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/"];
-const { MOCK_API_BASE_URL: _ignoredMockApiBaseUrl, ...runtimeEnv } = process.env;
+const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/", "/golden-outputs/"];
+const runtimeEnv = { ...process.env };
 
 const EXPECTED_TOOL_NAMES = [
   "sg_singstat_search",
@@ -82,7 +82,15 @@ const EXPECTED_TOOL_NAMES = [
   "sg_query",
 ];
 
-const EXPECTED_RESOURCE_URIS = ["sg://apis", "sg://tools", "sg://workflows", "sg://recipes"];
+const EXPECTED_RESOURCE_URIS = [
+  "sg://apis",
+  "sg://tools",
+  "sg://workflows",
+  "sg://recipes",
+  "sg://runtime",
+  "sg://playbooks",
+  "sg://benchmarks",
+];
 
 const run = (args, cwd = root) => {
   return execFileSync("npm", args, {
@@ -202,7 +210,9 @@ try {
         );
       }
 
-      if (!Array.isArray(parsed) || parsed.length === 0) {
+      const isNonEmptyArray = Array.isArray(parsed) && parsed.length > 0;
+      const isNonEmptyObject = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length > 0;
+      if (!isNonEmptyArray && !isNonEmptyObject) {
         throw new Error(`Packaged MCP resource returned empty catalog payload for ${uri}${formatServerLogs()}`);
       }
     }

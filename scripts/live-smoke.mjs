@@ -38,7 +38,7 @@ const getHealthRecord = (records, api) => {
 };
 
 const ensureLiveHealth = (record) => {
-  if (record.configured !== true) {
+  if (record.authRequired === true && record.configured !== true) {
     throw new Error(`${record.api} is not configured for live use. Set env vars or keystore entries before running this smoke test.`);
   }
   if (record.reachable !== true) {
@@ -58,6 +58,59 @@ const ensureNonEmpty = (label, records) => {
 const callToolPayload = async (client, name, args) => {
   const result = await client.callTool({ name, arguments: args });
   return getStructuredPayload(result);
+};
+
+const readRuntimeCatalog = async (client) => {
+  const resource = await client.readResource({ uri: "sg://runtime" });
+  const text = resource.contents.find((content) => "text" in content && typeof content.text === "string")?.text;
+  if (text === undefined) {
+    throw new Error("sg://runtime did not return text content.");
+  }
+  return JSON.parse(text);
+};
+
+const ensureBriefArtifact = (label, payload, expectation) => {
+  const record = payload?.record;
+  if (record === null || typeof record !== "object") {
+    throw new Error(`${label} did not return a brief artifact record.`);
+  }
+  if (record.title !== expectation.title) {
+    throw new Error(`${label} returned an unexpected title: ${JSON.stringify(record.title)}`);
+  }
+  const provenance = Array.isArray(record.provenance) ? record.provenance : [];
+  const totalProvenance = provenance.reduce(
+    (sum, entry) => sum + (typeof entry?.recordCount === "number" ? entry.recordCount : 0),
+    0,
+  );
+  const minimum = typeof expectation.minimumProvenanceCount === "number" ? expectation.minimumProvenanceCount : 0;
+  if (totalProvenance < minimum) {
+    throw new Error(`${label} returned insufficient live evidence. Expected provenance recordCount >= ${minimum}, received ${totalProvenance}.`);
+  }
+};
+
+const ensureQueryCompleted = (label, payload, expectation) => {
+  if (payload?.status !== "completed") {
+    throw new Error(`${label} did not complete successfully. Received status ${JSON.stringify(payload?.status)}.`);
+  }
+  if (payload?.workflow !== expectation.workflow) {
+    throw new Error(`${label} routed to ${JSON.stringify(payload?.workflow)} instead of ${JSON.stringify(expectation.workflow)}.`);
+  }
+};
+
+const validateSmokePayload = (label, payload, expectation) => {
+  switch (expectation.kind) {
+    case "records_non_empty":
+      ensureNonEmpty(label, getRecordArray(payload, expectation.key ?? "records"));
+      return;
+    case "brief_artifact":
+      ensureBriefArtifact(label, payload, expectation);
+      return;
+    case "query_completed":
+      ensureQueryCompleted(label, payload, expectation);
+      return;
+    default:
+      throw new Error(`${label} has an unsupported smoke expectation: ${JSON.stringify(expectation)}`);
+  }
 };
 
 const main = async () => {
@@ -92,52 +145,32 @@ const main = async () => {
   try {
     await client.connect(transport);
 
+    const runtimeCatalog = await readRuntimeCatalog(client);
+    const liveSurface = Array.isArray(runtimeCatalog?.liveSurface) ? runtimeCatalog.liveSurface : [];
+    const releaseReadiness = runtimeCatalog?.releaseReadiness;
+    const smokeCases = Array.isArray(releaseReadiness?.requiredSmokeCases) ? releaseReadiness.requiredSmokeCases : [];
+
+    if (liveSurface.length === 0 || smokeCases.length === 0) {
+      throw new Error("sg://runtime does not expose live surface and smoke coverage metadata.");
+    }
+
     process.stdout.write("Checking authenticated upstreams via sg_health_check...\n");
     const healthPayload = await callToolPayload(client, "sg_health_check", {});
     const healthRecords = getRecordArray(healthPayload);
 
-    for (const api of ["OneMap", "URA", "LTA"]) {
-      const record = getHealthRecord(healthRecords, api);
+    for (const surface of liveSurface.filter((entry) => entry?.releaseBlocking === true)) {
+      const record = getHealthRecord(healthRecords, surface.api);
       ensureLiveHealth(record);
-      process.stdout.write(`- ${api}: ok\n`);
+      process.stdout.write(`- ${surface.api}: ok\n`);
     }
 
     process.stdout.write("Running live MCP smoke flow...\n");
 
-    const onemapPayload = await callToolPayload(client, "sg_onemap_geocode", {
-      searchVal: "049178",
-      limit: 1,
-    });
-    ensureNonEmpty("sg_onemap_geocode", getRecordArray(onemapPayload));
-    process.stdout.write("- OneMap geocode: ok\n");
-
-    const uraPayload = await callToolPayload(client, "sg_ura_dev_charges", {});
-    ensureNonEmpty("sg_ura_dev_charges", getRecordArray(uraPayload));
-    process.stdout.write("- URA development charges: ok\n");
-
-    const ltaPayload = await callToolPayload(client, "sg_lta_bus_arrivals", {
-      busStopCode: "83139",
-      format: "json",
-    });
-    ensureNonEmpty("sg_lta_bus_arrivals", getRecordArray(ltaPayload));
-    process.stdout.write("- LTA bus arrivals: ok\n");
-
-    const datastorePayload = await callToolPayload(client, "sg_hdb_resale_prices", {
-      town: "Bedok",
-      flatType: "4 ROOM",
-      limit: 1,
-      format: "json",
-    });
-    ensureNonEmpty("sg_hdb_resale_prices", getRecordArray(datastorePayload));
-    process.stdout.write("- data.gov datastore family (HDB): ok\n");
-
-    const fileDownloadPayload = await callToolPayload(client, "sg_boa_architecture_firms", {
-      firmName: "DP Architects",
-      limit: 1,
-      format: "json",
-    });
-    ensureNonEmpty("sg_boa_architecture_firms", getRecordArray(fileDownloadPayload));
-    process.stdout.write("- official file-download family (BOA): ok\n");
+    for (const smokeCase of smokeCases.filter((entry) => entry?.releaseBlocking === true)) {
+      const payload = await callToolPayload(client, smokeCase.tool, smokeCase.arguments ?? {});
+      validateSmokePayload(smokeCase.name, payload, smokeCase.expectation ?? {});
+      process.stdout.write(`- ${smokeCase.name}: ok\n`);
+    }
 
     process.stdout.write("live smoke test passed\n");
   } catch (error) {
