@@ -108,6 +108,7 @@ DEFAULT_TOOL_CAPABILITIES: Dict[str, List[str]] = {
     "memory_search": [],
     "memory_delete": [],
     "memory_list": [],
+    "spawn_parallel_agents": [ToolCapability.PROCESS_EXECUTE.value],
 }
 
 _CACHEABLE_TOOLS = frozenset({"read_file", "glob_files", "grep_files", "git_status", "git_diff", "git_log", "list_directory", "diff_files"})
@@ -981,6 +982,27 @@ class ToolRegistryAsync:
                         "description": {"type": "STRING", "description": "Optional new description"}
                     },
                     "required": ["id", "status"]
+                }
+            }
+        }
+
+        # ── parallel agent tool ──────────────────────────────────────────
+        self.tools["spawn_parallel_agents"] = {
+            "function": self.spawn_parallel_agents,
+            "declaration": {
+                "name": "spawn_parallel_agents",
+                "description": "Spawn multiple isolated background agents running in parallel on separate git worktrees. Each agent works independently on its sub-task.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "prompts": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                            "description": "List of task prompts, one per parallel agent (max 4)"
+                        },
+                        "sandbox_preset": {"type": "STRING", "description": "Sandbox preset for all agents (default: workspace-write)"},
+                    },
+                    "required": ["prompts"]
                 }
             }
         }
@@ -3795,6 +3817,30 @@ class ToolRegistryAsync:
                 self._save_todos()
                 return f"todo #{id} updated to {status}"
         return f"error: todo #{id} not found"
+
+    # ── parallel agent implementation ──────────────────────────────────
+
+    async def spawn_parallel_agents(self, prompts: List[str], sandbox_preset: str = "workspace-write") -> str:
+        try:
+            from .agent_runner import AgentManager
+            mgr = AgentManager()
+            agents = []
+            for prompt in prompts[:4]: # cap at 4
+                agent = mgr.create_agent(
+                    prompt=prompt,
+                    sandbox_preset=sandbox_preset,
+                    source="parallel-tool",
+                    use_worktree=True,
+                    auto_start=True,
+                )
+                agents.append(agent)
+            lines = [f"spawned {len(agents)} parallel agents:"]
+            for a in agents:
+                lines.append(f"  - {a.agent_id}: {a.prompt[:60]}... (branch: {a.branch_name})")
+            lines.append("\nUse `poor-cli agent list` or `poor-cli agent result <id>` to check progress.")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"error spawning parallel agents: {exc}"
 
     # ── memory tool implementations ────────────────────────────────────
 
