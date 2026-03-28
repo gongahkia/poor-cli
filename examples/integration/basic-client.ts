@@ -50,6 +50,9 @@ type DirectoryPayload = Readonly<{
 }>;
 
 type RuntimeCatalog = Readonly<{
+  releaseReadiness?: Readonly<{
+    blockingCommands?: readonly string[];
+  }>;
   queryStatusContract?: readonly Readonly<{
     status: string;
     isError: boolean;
@@ -169,6 +172,7 @@ const main = async () => {
     const runtime = await readJsonResource<RuntimeCatalog>(client, "sg://runtime");
     const playbooks = await readJsonResource<readonly PlaybookCatalogEntry[]>(client, "sg://playbooks");
     const benchmarks = await readJsonResource<BenchmarkCatalog>(client, "sg://benchmarks");
+    const health = await callToolPayload<{ records: readonly Readonly<Record<string, unknown>>[] }>(client, "sg_health_check", {});
     const recipeCache = new Map(recipes.map((recipe) => [recipe.name, recipe]));
     const officeRecipe = recipeCache.get("Social Service Office Near Address");
     const singStatRecipe = recipeCache.get("SingStat Drilldown");
@@ -182,7 +186,9 @@ const main = async () => {
     console.log(`cached ${recipeCache.size} recipes from sg://recipes`);
     console.log(`cached ${playbooks.length} playbooks from sg://playbooks`);
     console.log(`runtime statuses: ${(runtime.queryStatusContract ?? []).map((entry) => `${entry.status}:${entry.isError ? "error" : "ok"}`).join(", ")}`);
+    console.log(`release gates: ${(runtime.releaseReadiness?.blockingCommands ?? []).join(", ")}`);
     console.log(`benchmark workflows: ${(benchmarks.workflowProfiles ?? []).map((profile) => `${profile.workflow}:${profile.primaryCacheTier}`).join(", ")}`);
+    console.log(`health probes: ${(health.records ?? []).map((record) => `${record.api}:${record.reachable === true ? "up" : "down"}`).join(", ")}`);
     console.log(`office fallback tools: ${officeRecipe.fallbackTools.join(", ")}`);
     console.log(`singstat prompt shape: ${singStatRecipe.prompt}`);
     console.log(`relocation playbook direct tools: ${relocationPlaybook.directTools.join(", ")}`);

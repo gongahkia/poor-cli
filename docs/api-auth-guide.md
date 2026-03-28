@@ -79,7 +79,7 @@ Expected keys:
 Operational notes:
 
 - live OneMap requests require valid credentials
-- there is no silent unauthenticated fallback outside mock mode
+- there is no silent unauthenticated fallback
 - `sg_health_check` reports OneMap as `configured: true` only when both email and password are present
 - `sg_health_check` uses the same authenticated runtime path as the live OneMap tools
 
@@ -148,4 +148,4 @@ Common failure modes:
 
 ## Health Coverage Note
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered through the shared data.gov.sg path or official file-download path rather than separate upstream probes.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg datastore, data.gov.sg file downloads, and NEA directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. HDB, CEA, BCA, ACRA, GeBIZ, Hawker Centres, MOE Schools, MOH Healthcare, SFA, NParks, PUB, MOM, and STB are intentionally covered through the shared data.gov.sg datastore path. BOA, HSA, HLB, PA, Sport Singapore, ECDA, and the MSF civic directories are intentionally covered through the shared official file-download path.

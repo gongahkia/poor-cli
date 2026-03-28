@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { QueryOutcomeSchema } from "../index.js";
 
 const readGolden = (name: string) => {
-  const url = new URL(`../../../../examples/golden-outputs/${name}`, import.meta.url);
+  const url = new URL(`./fixtures/golden/${name}`, import.meta.url);
   return JSON.parse(readFileSync(url, "utf8"));
 };
 

@@ -38,7 +38,7 @@ If you are evaluating whether the repo is actually useful for developers, start 
 | Healthcare Supplier Diligence | `sg_business_dossier` or `sg_query` | HSA, ACRA, and optional GeBIZ evidence stay bounded to healthcare supplier diligence with licensing-focused continuation hints | None | observed-at and upstream licence timestamps are returned per source | open-ended healthcare research |
 | Hotel Operator Lookup | `sg_hlb_hotels` or `sg_query` | HLB hotel and keeper facts stay bounded to hospitality diligence without widening into travel planning | None | observed-at plus HLB dataset timestamps are returned when available | hotel ranking or recommendation |
 | Property And Regulatory Due Diligence | `sg_property_brief` or `sg_query` | OneMap, URA, HDB, and optional NEA/LTA context are combined with explicit location resolution and workflow limits | OneMap optional, URA key for live planning data, LTA optional | observed-at plus first available market or live-signal timestamps | hidden property scoring or recommendations |
-| Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and SingStat dataset entrypoints are returned as one starter brief with dataset IDs and scope notes | None | observed-at plus returned MAS dates | open-ended macro commentary |
+| Macro Snapshot | `sg_macro_brief` or `sg_query` | MAS values and validated SingStat GDP and CPI table reads are returned as one starter brief with explicit table IDs and scope notes | None | observed-at plus MAS dates and SingStat table metadata | open-ended macro commentary |
 | Transport Status | `sg_transport_brief` or `sg_query` | bus arrivals, train alerts, and traffic incidents are normalized into one operational snapshot | LTA key for live data | observed-at plus next ETA or alert timestamps when available | route planning or delay prediction |
 | Environment Snapshot | `sg_environment_brief` or `sg_query` | forecast, air quality, and rainfall are normalized into one live monitoring snapshot | None | observed-at plus forecast, air-quality, and rainfall timestamps when available | long-range forecasting or severe-weather alerting |
 | Dataset Discovery Fallback | `sg_datagov_search` -> `sg_datagov_resources` -> `sg_datagov_rows` | dataset discovery continues into resource inspection and bounded row reads | None | data.gov.sg metadata timestamps are returned directly by the direct tools | unbounded scraping or arbitrary joins |
@@ -107,7 +107,7 @@ Notes:
 - `sg_datagov_get` is metadata only.
 - `sg_datagov_resources` exposes the current machine-readable resource shape and columns for a dataset.
 - `sg_datagov_rows` performs bounded datastore reads with explicit `filters`, `limit`, `offset`, and `sort`.
-- OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback outside mock mode.
+- OneMap now requires valid credentials for live requests. There is no silent unauthenticated fallback.
 - HDB, CEA, BCA, BOA, HSA, HLB, and `sg_acra_entities` are curated tools over official public datasets and do not introduce separate credentials.
 - PA, Sport Singapore, ECDA, and the MSF civic directories stay no-auth by using the same official data.gov.sg download path.
 
@@ -181,11 +181,9 @@ npm run test:smoke:live
 
 The quickstart path checks:
 
-- OneMap through the live authenticated runtime client
-- URA through the live authenticated runtime client
-- LTA DataMall through the live authenticated runtime client
-- one data.gov.sg datastore-backed family
-- one official file-download-backed family
+- all release-blocking live health probes from `sg_health_check`
+- representative live API smokes for SingStat, MAS, OneMap, URA, LTA DataMall, NEA, one data.gov.sg datastore family, and one file-download family
+- representative live workflow smokes for business, property, macro, transport, environment, and civic discovery
 
 It uses your existing environment variables or local keystore entries. See [docs/api-auth-guide.md](./docs/api-auth-guide.md) if any authenticated family is unconfigured.
 
@@ -381,7 +379,7 @@ sg_onemap_convert_coords { "from": "SVY21", "x": 28001, "y": 38744, "format": "j
 | Healthcare Supplier Diligence | call HSA licensee rows, optional pharmacy rows, ACRA, and GeBIZ separately, then reconcile exact and fuzzy matches yourself | `sg_business_dossier` or `sg_query` | one bounded healthcare supplier artifact with licensing emphasis, unmatched-module reporting, and next checks |
 | Hotel Operator Lookup | call `sg_hlb_hotels`, then optionally widen into company evidence yourself | `sg_hlb_hotels` or `sg_query` | one bounded hotel-operator lookup path with keeper facts, room counts, and explicit hospitality scope |
 | Property And Regulatory Due Diligence | geocode, resolve planning area, fetch URA transactions, fetch HDB market reads, then optionally stitch NEA and LTA signals | `sg_property_brief` or `sg_query` | resolved location, bounded live context, provenance per source, and clear non-recommendation boundaries |
-| Macro Snapshot | call 3 MAS series plus separate SingStat dataset search calls, then decide which dataset IDs to keep | `sg_macro_brief` or `sg_query` | one starter artifact with dataset entrypoints, freshness, and explicit limits |
+| Macro Snapshot | call 3 MAS series plus live SingStat GDP and CPI table reads, then reconcile the series yourself | `sg_macro_brief` or `sg_query` | one starter artifact with validated table IDs, freshness, and explicit limits |
 | Transport Status | call bus arrivals, train alerts, and traffic incidents separately, then decide what counts as a useful operations snapshot | `sg_transport_brief` or `sg_query` | one snapshot contract with stop-level optionality, provenance, and no hidden route-planning claims |
 | Environment Snapshot | call forecast, air quality, and rainfall separately, then reconcile area, region, and station coverage | `sg_environment_brief` or `sg_query` | one live snapshot contract with area and region caveats surfaced directly in `limits` |
 

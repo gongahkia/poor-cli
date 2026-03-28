@@ -275,7 +275,7 @@ Improve it with:
 - stronger workflow explanation in successful results: why this route was chosen and when to drop to direct tools
 - more polished blocked-state guidance with exact missing parameters
 - continuation hints after completion, for example "call `sg_datagov_rows` next with this datasetId"
-- more golden prompt coverage and fixture-backed demos for the recipes already claimed
+- more live-smoke-backed prompt coverage for the recipes already claimed
 
 Why this helps:
 
@@ -295,9 +295,9 @@ One or two additional client examples showing:
 
 This would make the repo feel more production-adoptable outside a TypeScript-first audience.
 
-### Keep Golden Example Outputs Believable Across New Sector Workflows
+### Keep Live Example Outputs Believable Across New Sector Workflows
 
-Keep the architecture, healthcare-supplier, and hotel-operator outputs believable, because these are now first-contact diligence workflows. Developers need to see what "good" looks like before they commit to an integration.
+Keep the architecture, healthcare-supplier, and hotel-operator live examples believable, because these are now first-contact diligence workflows. Developers need to see what "good" looks like before they commit to an integration.
 
 ### Strengthen First-Run Trust
 
@@ -310,7 +310,7 @@ The repo now has `sg://benchmarks` and a production-notes doc. The next step is 
 ## Priority Order
 
 1. Deepen the five additive brief artifacts, especially property and macro.
-2. Improve first-run credibility and golden outputs for the new sector-specific diligence workflows.
+2. Improve first-run credibility and live example coverage for the new sector-specific diligence workflows.
 3. Add more integration paths for non-TypeScript application developers.
 4. Make `sg_query` continuation guidance more useful.
 5. Only then expand breadth beyond the current business and compliance wedge.

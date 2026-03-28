@@ -9,12 +9,13 @@ The same runtime contract is also exposed as the machine-readable `sg://runtime`
 | API Family | Timeout (ms) | Typical Latency | Notes |
 |---|---|---|---|
 | SingStat | 15000 | 2-8s | Large table queries can be slow |
-| MAS | 10000 | 1-3s | CKAN datastore queries |
+| MAS | 10000 | 1-3s | Live statistics-page CSV downloads |
 | OneMap | 10000 | 0.5-2s | Auth token refresh adds ~1s on first call |
 | URA | 20000 | 3-10s | Token endpoint can be slow; bulk transaction queries are heavy |
 | LTA DataMall | 10000 | 0.5-2s | Real-time endpoints are fast |
 | NEA | 10000 | 0.5-2s | Weather API is responsive |
-| data.gov.sg | 10000 | 1-5s | Depends on dataset size and CKAN load |
+| data.gov.sg datastore | 10000 | 1-5s | Depends on dataset size and data.gov.sg datastore load |
+| data.gov.sg file downloads | 10000 | 1-5s | Depends on download polling plus CSV or GeoJSON parsing |
 
 Hard cap timeout: **30000ms**. No single upstream call will block longer than this.
 
@@ -89,7 +90,7 @@ Token refresh: OneMap and URA tokens are refreshed automatically on 401. The key
 | API | Stability | Notes |
 |---|---|---|
 | SingStat TableBuilder | Stable | JSON API, versioned endpoints |
-| MAS | Stable | CKAN datastore, rarely changes |
+| MAS | Moderate | Statistics-page form contracts can change and should be covered by live smoke |
 | OneMap | Moderate | Endpoints stable, response shapes occasionally adjusted |
 | URA | Moderate | Token endpoint can change; transaction fields are stable |
 | LTA DataMall | Stable | OData-style, well-documented |
@@ -106,8 +107,8 @@ Override any default via environment variables:
 
 ## Monitoring
 
-Use `sg_health_check` to probe all API families. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. Returns per-family: reachable status, latency, auth status, dependency coverage, and errors.
+Use `sg_health_check` to probe all release-blocking API families. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. SingStat, MAS, NEA, the shared data.gov.sg datastore path, and the shared data.gov.sg file-download path are also probed through their live runtime clients. Returns per-family: reachable status, latency, auth status, dependency coverage, representative tool, and release-blocking status.
 
-Use `npm run test:smoke:live` when you want one credential-gated smoke flow over the live MCP server plus representative data.gov datastore and file-download families.
+Use `npm run test:smoke:live` when you want the full release-blocking live smoke flow over the MCP server, including representative API and workflow checks.
 
 Use `sg_cache_stats` to inspect cache hit/miss rates and storage size.

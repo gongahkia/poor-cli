@@ -46,7 +46,7 @@ Use `sg://recipes` first when the caller has a goal-shaped prompt and you need t
 - `sg_property_brief`
   Location and property brief across OneMap, URA, HDB, and optional live context.
 - `sg_macro_brief`
-  Compact Singapore macro starter brief using MAS values and SingStat entrypoints.
+  Compact Singapore macro starter brief using MAS values and validated SingStat GDP and CPI tables.
 - `sg_transport_brief`
   Live transport operations brief over LTA bus arrivals, train alerts, and traffic incidents.
 - `sg_environment_brief`
@@ -88,7 +88,7 @@ Use `sg://recipes` first when the caller has a goal-shaped prompt and you need t
 - `sg_onemap_population`
 - `sg_onemap_convert_coords`
 
-Live OneMap calls require valid credentials. There is no silent unauthenticated fallback outside mock mode.
+Live OneMap calls require valid credentials. There is no silent unauthenticated fallback.
 
 ### URA
 

@@ -12,7 +12,7 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 - Added bounded workflows and recipes for Architecture Firm Diligence, Healthcare Supplier Diligence, Hotel Operator Lookup, and Sector Scoped Business Diligence.
 - Added explicit `modules` and `sectorHints` support to `sg_business_dossier`.
 - Added shared entity-resolution logic with deterministic `matchConfidence`, `matchedOn`, and `unmatchedModules` reporting.
-- Added sector-specific walkthroughs and golden query outputs for architecture, healthcare-supplier, and hotel-operator diligence.
+- Added sector-specific walkthroughs and query outcome coverage for architecture, healthcare-supplier, and hotel-operator diligence.
 - Expanded brief artifacts now return `title`, `summary`, `evidence`, `records`, `gaps`, `provenance`, `freshness`, and `limits`.
 - Brief artifacts now support optional `riskFlags`, `matchConfidence`, and `nextChecks` fields.
 - `sg_business_dossier` now returns risk flags (expired licenses, inactive entities), match confidence per source, and next check suggestions.
@@ -27,7 +27,7 @@ The format is based on Keep a Changelog, and the project follows semantic versio
 - Added REST gateway (`npm run rest-gateway`) exposing tools as HTTP POST endpoints.
 - Added Dockerfile for zero-config container deployment.
 - Added TypeScript integration example at `examples/integration/basic-client.ts`.
-- Added golden output fixtures at `examples/golden-outputs/`.
+- Added internal regression fixtures for brief and query contract coverage.
 - Added live quick-start script (`npm run quick-start`).
 - Added production notes doc at `docs/production-notes.md`.
 - Added 4 new recipes: Demographic Profile, Bus Stop Status, Outdoor Event Check, Business Due Diligence.
