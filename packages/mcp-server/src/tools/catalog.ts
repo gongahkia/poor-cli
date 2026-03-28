@@ -1247,6 +1247,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
     "Environment variables take precedence when upstream clients resolve credentials, with the keystore as the persistent fallback.",
     "sg_health_check reports credentialSource as env, keystore, mixed, none, or not_required per upstream.",
     "OneMap only reports configured when both the email and password are available from env or keystore.",
+    "Authenticated health probes use the same live runtime path as the protected direct tools, so missing or invalid credentials surface directly in the health record.",
   ],
   latency: {
     hardCapMs: 30000,
@@ -1324,6 +1325,7 @@ export const RUNTIME_CATALOG: RuntimeCatalog = {
       api: "sg_health_check",
       coversFamilies: ["SingStat", "MAS", "OneMap", "URA", "LTA DataMall", "data.gov.sg", "NEA"],
       notes: [
+        "OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live direct tools.",
         "The data.gov.sg probe also covers curated registry, amenity, procurement, and file-download families that share the same upstream path.",
         "Structured records expose configured, credentialSource, reachable, latencyMs, dependentFamilies, and coverageNotes.",
       ],
@@ -1491,8 +1493,8 @@ export const BENCHMARK_CATALOG = {
   adoptionCheckpoints: [
     {
       name: "Five-minute success",
-      expectation: "A new developer should be able to run one mock-backed demo and one integration example locally.",
-      evidence: "Use npm run demo:mcp plus the examples/integration clients.",
+      expectation: "A new developer should be able to run one live quickstart and one integration example locally.",
+      evidence: "Use npm run quick-start plus the examples/integration clients.",
     },
     {
       name: "Bounded routing trust",

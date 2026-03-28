@@ -23,4 +23,4 @@ run("build", ["run", "build"]);
 run("openapi parity", ["exec", "--", "node", "./scripts/check-openapi.mjs"]);
 run("docs parity", ["exec", "--", "node", "./scripts/check-docs-parity.mjs"]);
 run("test", ["test"], testEnv);
-run("packaging smoke", ["run", "test:smoke:packaging"], testEnv);
+run("packaging smoke", ["run", "test:smoke:packaging"]);

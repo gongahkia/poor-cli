@@ -24,10 +24,16 @@ npm install
 npm run verify
 ```
 
-5. Run the local end-to-end demo you care about most:
+5. Run the live validation pass:
 
 ```bash
-npm run demo:mcp -- macro
+npm run quick-start
+```
+
+If the build already exists and you only want the smoke flow:
+
+```bash
+npm run test:smoke:live
 ```
 
 ## Publish Order
@@ -61,7 +67,7 @@ The workflow runs:
 - `npm publish` for `sg-apis-mcp`
 - `npm run test:smoke:registry`
 
-The registry smoke step waits for npm propagation, installs both published packages into a temporary directory, starts the mock upstream server, performs an MCP handshake, reads the public workflow resource, and calls representative direct and brief tools.
+The registry smoke step waits for npm propagation, installs both published packages into a temporary directory, performs an MCP handshake, reads the public workflow and recipe resources, and calls representative live no-auth direct tools and routed workflows. It does not validate credential-gated upstreams; use `npm run test:smoke:live` separately when you need that proof.
 
 ## Post-Release Checks
 
@@ -85,4 +91,3 @@ Assume npm rollback is patch-forward, not history erasure.
 - If the package is already public, prefer a quick follow-up release over relying on unpublish.
 - If only one workspace package published successfully, publish the missing dependent fix rather than forcing consumers onto mismatched versions.
 - If the registry smoke job fails after publish, treat the release as suspect and ship a new tagged fix as soon as the root cause is known.
-

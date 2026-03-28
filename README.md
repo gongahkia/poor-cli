@@ -165,25 +165,29 @@ Published-package client config:
 }
 ```
 
-### Quick Demo
+### Quickstart
 
-After building locally, run one of the bundled end-to-end demos:
+Use this when you want to verify the real runtime surface against live upstreams and official no-auth datasets:
 
 ```bash
-npm run demo:mcp -- business
-npm run demo:mcp -- property
-npm run demo:mcp -- macro
-npm run demo:mcp -- transport
-npm run demo:mcp -- environment
-npm run demo:mcp -- civic
-npm run demo:mcp -- geospatial
-npm run demo:mcp -- architecture
-npm run demo:mcp -- healthcare
-npm run demo:mcp -- hotel
-npm run demo:mcp -- sector-business
+npm run quick-start
 ```
 
-Those demos start the mock upstream server, connect to the built MCP server, read a catalog resource, and call one direct tool, one supporting tool, and `sg_query`.
+If you already built the server, run the smoke flow directly:
+
+```bash
+npm run test:smoke:live
+```
+
+The quickstart path checks:
+
+- OneMap through the live authenticated runtime client
+- URA through the live authenticated runtime client
+- LTA DataMall through the live authenticated runtime client
+- one data.gov.sg datastore-backed family
+- one official file-download-backed family
+
+It uses your existing environment variables or local keystore entries. See [docs/api-auth-guide.md](./docs/api-auth-guide.md) if any authenticated family is unconfigured.
 
 ### Discovery Resources
 
@@ -217,7 +221,7 @@ The keystore helpers are still available for local use:
 - `sg_key_set { "apiName": "ura", "key": "..." }`
 - `sg_key_set { "apiName": "lta", "key": "..." }`
 
-`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. It now returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
+`sg_health_check` probes SingStat, MAS, OneMap, URA, LTA DataMall, data.gov.sg, and NEA directly. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. It returns structured records with `configured`, `credentialSource`, `reachable`, `latencyMs`, and dependency notes. HDB, CEA, BCA, BOA, HSA, HLB, and ACRA are intentionally covered operationally through the shared data.gov.sg path or official file-download path.
 
 Auth troubleshooting and failure modes live in [docs/api-auth-guide.md](./docs/api-auth-guide.md).
 
@@ -424,7 +428,8 @@ npm run verify
 
 Useful follow-up commands:
 
-- `npm run demo:mcp -- transport`
+- `npm run quick-start`
+- `npm run test:smoke:live`
 - `npm run test:smoke:packaging`
 - `npm run test:smoke:registry`
 

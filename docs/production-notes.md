@@ -103,10 +103,11 @@ Runtime config file: `~/.sg-apis/config.json`
 Override any default via environment variables:
 - `SG_APIS_LOG_LEVEL` — debug, info, warn, error
 - `SG_APIS_CACHE_TTL_DAILY` — override daily TTL in seconds
-- `MOCK_API_BASE_URL` — redirect all upstream calls to a mock server
 
 ## Monitoring
 
-Use `sg_health_check` to probe all API families. Returns per-family: reachable status, latency, auth status, and errors.
+Use `sg_health_check` to probe all API families. OneMap, URA, and LTA are checked through the same authenticated runtime path used by the live tools. Returns per-family: reachable status, latency, auth status, dependency coverage, and errors.
+
+Use `npm run test:smoke:live` when you want one credential-gated smoke flow over the live MCP server plus representative data.gov datastore and file-download families.
 
 Use `sg_cache_stats` to inspect cache hit/miss rates and storage size.

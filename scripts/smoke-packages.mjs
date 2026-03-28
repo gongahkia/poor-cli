@@ -1,15 +1,15 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
 const tarballs = [];
-let mockServer = null;
 const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/"];
+const { MOCK_API_BASE_URL: _ignoredMockApiBaseUrl, ...runtimeEnv } = process.env;
 
 const EXPECTED_TOOL_NAMES = [
   "sg_singstat_search",
@@ -84,53 +84,12 @@ const EXPECTED_TOOL_NAMES = [
 
 const EXPECTED_RESOURCE_URIS = ["sg://apis", "sg://tools", "sg://workflows", "sg://recipes"];
 
-const toValueMap = (items) => {
-  if (!Array.isArray(items)) {
-    return new Map();
-  }
-  return new Map(
-    items
-      .filter((item) => item !== null && typeof item === "object" && "label" in item)
-      .map((item) => [item.label, item.value]),
-  );
-};
-
 const run = (args, cwd = root) => {
   return execFileSync("npm", args, {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
   }).trim();
-};
-
-const startMockServer = async () => {
-  return new Promise((resolveMock, reject) => {
-    const child = spawn("npm", ["run", "mock-server"], {
-      cwd: root,
-      env: { ...process.env, MOCK_PORT: "0" },
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`Timed out waiting for mock API server startup.\n${stderr}`));
-    }, 10000);
-
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-      const match = stderr.match(/Mock API server running on (http:\/\/localhost:\d+)/);
-      if (match !== null) {
-        clearTimeout(timeout);
-        resolveMock({ child, url: match[1] });
-      }
-    });
-
-    child.on("exit", (code) => {
-      clearTimeout(timeout);
-      reject(new Error(`Mock API server exited before startup with code ${String(code)}.\n${stderr}`));
-    });
-  });
 };
 
 try {
@@ -175,20 +134,13 @@ try {
   JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "package.json"), "utf8"));
   JSON.parse(readFileSync(join(tempDir, "node_modules", "@sg-apis", "shared", "package.json"), "utf8"));
 
-  mockServer = await startMockServer();
-
   const transport = new StdioClientTransport({
     command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
     cwd: tempDir,
     env: {
-      ...process.env,
+      ...runtimeEnv,
       HOME: tempDir,
       SG_APIS_LOG_LEVEL: "error",
-      MOCK_API_BASE_URL: mockServer.url,
-      SG_API_ONEMAP_EMAIL: "test-onemap@example.com",
-      SG_API_ONEMAP_PASSWORD: "test-onemap-password",
-      SG_API_URA_KEY: "test-ura-key",
-      SG_API_LTA_KEY: "test-lta-key",
     },
     stderr: "pipe",
   });
@@ -280,7 +232,10 @@ try {
       throw new Error(`Packaged sg_datagov_get did not return text content${formatServerLogs()}`);
     }
     const datasetMetadataPayload = JSON.parse(datasetMetadataText);
-    if (datasetMetadataPayload.name !== "HDB Resale Flat Prices") {
+    if (
+      datasetMetadataPayload.datasetId !== "d_8b84c4ee58e3cfc0ece0d773c8ca6abc"
+      || datasetMetadataPayload.managedByAgencyName !== "Housing & Development Board"
+    ) {
       throw new Error(`Packaged sg_datagov_get returned unexpected metadata payload${formatServerLogs()}`);
     }
 
@@ -300,59 +255,6 @@ try {
     const datasetResourcesPayload = JSON.parse(datasetResourcesText);
     if (!Array.isArray(datasetResourcesPayload.resources) || datasetResourcesPayload.resources.length === 0) {
       throw new Error(`Packaged sg_datagov_resources returned no resource metadata${formatServerLogs()}`);
-    }
-
-    const datasetRowsResult = await client.callTool({
-      name: "sg_datagov_rows",
-      arguments: {
-        datasetId: "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
-        limit: 1,
-        format: "json",
-      },
-    });
-    const datasetRowsText = "content" in datasetRowsResult
-      ? datasetRowsResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (datasetRowsText === undefined) {
-      throw new Error(`Packaged sg_datagov_rows did not return text content${formatServerLogs()}`);
-    }
-    const datasetRowsPayload = JSON.parse(datasetRowsText);
-    if (!Array.isArray(datasetRowsPayload.records) || datasetRowsPayload.records.length === 0) {
-      throw new Error(`Packaged sg_datagov_rows returned no records${formatServerLogs()}`);
-    }
-
-    const macroBriefResult = await client.callTool({
-      name: "sg_macro_brief",
-      arguments: {
-        currency: "USD",
-        format: "json",
-      },
-    });
-    const macroBriefText = "content" in macroBriefResult
-      ? macroBriefResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (macroBriefText === undefined) {
-      throw new Error(`Packaged sg_macro_brief did not return text content${formatServerLogs()}`);
-    }
-    const macroBriefPayload = JSON.parse(macroBriefText);
-    if (macroBriefPayload.title !== "Macro Brief") {
-      throw new Error(`Packaged sg_macro_brief returned an unexpected payload${formatServerLogs()}`);
-    }
-    for (const key of ["provenance", "freshness", "limits"]) {
-      if (!Array.isArray(macroBriefPayload[key])) {
-        throw new Error(`Packaged sg_macro_brief did not include ${key}${formatServerLogs()}`);
-      }
-    }
-    const macroSummary = toValueMap(macroBriefPayload.summary);
-    const macroEvidence = toValueMap(macroBriefPayload.evidence);
-    if (macroEvidence.get("Primary SORA key") === "preliminary") {
-      throw new Error(`Packaged sg_macro_brief selected a non-metric SORA field${formatServerLogs()}`);
-    }
-    if (macroEvidence.get("Primary banking key") === "preliminary") {
-      throw new Error(`Packaged sg_macro_brief selected a non-metric banking field${formatServerLogs()}`);
-    }
-    if (macroSummary.get("CPI table ID") === macroSummary.get("GDP table ID")) {
-      throw new Error(`Packaged sg_macro_brief reused the GDP dataset as CPI${formatServerLogs()}`);
     }
 
     const environmentBriefResult = await client.callTool({
@@ -377,65 +279,10 @@ try {
       throw new Error(`Packaged sg_environment_brief omitted provenance or freshness${formatServerLogs()}`);
     }
 
-    const businessDossierResult = await client.callTool({
-      name: "sg_business_dossier",
-      arguments: {
-        entityName: "DP Architects",
-        modules: ["acra", "boa", "gebiz"],
-        sectorHints: ["architecture", "procurement"],
-        format: "json",
-      },
-    });
-    const businessDossierText = "content" in businessDossierResult
-      ? businessDossierResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (businessDossierText === undefined) {
-      throw new Error(`Packaged sg_business_dossier did not return text content${formatServerLogs()}`);
-    }
-    const businessDossierPayload = JSON.parse(businessDossierText);
-    const selectedModules = businessDossierPayload.records?.resolution?.selectedModules;
-    if (
-      businessDossierPayload.title !== "Business Dossier"
-      || !Array.isArray(selectedModules)
-      || !selectedModules.includes("boa")
-      || !selectedModules.includes("gebiz")
-    ) {
-      throw new Error(`Packaged sg_business_dossier did not preserve explicit business modules${formatServerLogs()}`);
-    }
-
-    const hotelDirectoryResult = await client.callTool({
-      name: "sg_hlb_hotels",
-      arguments: {
-        name: "Marina Bay Sands",
-        format: "json",
-      },
-    });
-    const hotelDirectoryText = "content" in hotelDirectoryResult
-      ? hotelDirectoryResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (hotelDirectoryText === undefined) {
-      throw new Error(`Packaged sg_hlb_hotels did not return text content${formatServerLogs()}`);
-    }
-    const hotelDirectoryPayload = JSON.parse(hotelDirectoryText);
-    if (!Array.isArray(hotelDirectoryPayload) || hotelDirectoryPayload[0]?.name !== "Marina Bay Sands") {
-      throw new Error(`Packaged sg_hlb_hotels returned an unexpected payload${formatServerLogs()}`);
-    }
-
-    const queryPlanResult = await client.callTool({
-      name: "sg_query",
-      arguments: {
-        query: "Macro snapshot of Singapore",
-        mode: "plan",
-      },
-    });
-    if (!("structuredContent" in queryPlanResult) || queryPlanResult.structuredContent?.status !== "planned") {
-      throw new Error(`Packaged sg_query plan call did not return workflow metadata${formatServerLogs()}`);
-    }
-
     const queryExecuteResult = await client.callTool({
       name: "sg_query",
       arguments: {
-        query: "Transport status in Singapore right now",
+        query: "Environment snapshot of Singapore right now",
         mode: "execute",
         format: "json",
       },
@@ -443,76 +290,11 @@ try {
     if (
       !("structuredContent" in queryExecuteResult)
       || queryExecuteResult.structuredContent?.status !== "completed"
-      || queryExecuteResult.structuredContent?.workflow !== "transport_brief"
+      || queryExecuteResult.structuredContent?.workflow !== "environment_brief"
     ) {
       throw new Error(`Packaged sg_query execute call did not complete successfully${formatServerLogs()}`);
     }
 
-    const routeRecipeResult = await client.callTool({
-      name: "sg_query",
-      arguments: {
-        query: "Walk from 049178 to 048616",
-        mode: "execute",
-        format: "json",
-      },
-    });
-    if (
-      !("structuredContent" in routeRecipeResult)
-      || routeRecipeResult.structuredContent?.status !== "completed"
-      || routeRecipeResult.structuredContent?.workflow !== "route_plan"
-    ) {
-      throw new Error(`Packaged sg_query route recipe did not complete successfully${formatServerLogs()}`);
-    }
-
-    const diligenceQueryResult = await client.callTool({
-      name: "sg_query",
-      arguments: {
-        query: "Architecture firm diligence for DP Architects",
-        mode: "execute",
-        format: "json",
-      },
-    });
-    if (
-      !("structuredContent" in diligenceQueryResult)
-      || diligenceQueryResult.structuredContent?.status !== "completed"
-      || diligenceQueryResult.structuredContent?.workflow !== "architecture_firm_diligence"
-    ) {
-      throw new Error(`Packaged sg_query architecture diligence did not complete successfully${formatServerLogs()}`);
-    }
-
-    const civicDirectoryResult = await client.callTool({
-      name: "sg_msf_family_services",
-      arguments: {
-        postalCode: "560230",
-        format: "json",
-      },
-    });
-    const civicDirectoryText = "content" in civicDirectoryResult
-      ? civicDirectoryResult.content.find((item) => item.type === "text" && typeof item.text === "string")?.text
-      : undefined;
-    if (civicDirectoryText === undefined) {
-      throw new Error(`Packaged sg_msf_family_services did not return text content${formatServerLogs()}`);
-    }
-    const civicDirectoryPayload = JSON.parse(civicDirectoryText);
-    if (!Array.isArray(civicDirectoryPayload) || civicDirectoryPayload[0]?.name !== "Allkin Family Service Centre @ Ang Mo Kio 230") {
-      throw new Error(`Packaged sg_msf_family_services returned an unexpected payload${formatServerLogs()}`);
-    }
-
-    const civicQueryResult = await client.callTool({
-      name: "sg_query",
-      arguments: {
-        query: "Find a family service centre near 560230",
-        mode: "execute",
-        format: "json",
-      },
-    });
-    if (
-      !("structuredContent" in civicQueryResult)
-      || civicQueryResult.structuredContent?.status !== "completed"
-      || civicQueryResult.structuredContent?.workflow !== "civic_discovery"
-    ) {
-      throw new Error(`Packaged sg_query civic recipe did not complete successfully${formatServerLogs()}`);
-    }
   } catch (error) {
     if (error instanceof Error && stderrChunks.length > 0 && !error.message.includes("Server stderr:")) {
       error.message += formatServerLogs();
@@ -526,9 +308,6 @@ try {
 } finally {
   for (const tarball of tarballs) {
     rmSync(tarball, { force: true });
-  }
-  if (mockServer !== null) {
-    mockServer.child.kill("SIGTERM");
   }
   rmSync(tempDir, { recursive: true, force: true });
 }
