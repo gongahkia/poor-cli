@@ -14,6 +14,7 @@ import { initCommands } from './commands.js';
 import { initWorkflows } from './workflows.js';
 import { initTools } from './tools.js';
 import { initDiagnostics } from './diagnostics.js';
+import { initMissionControl } from './mission_control.js';
 import { initContext } from './context.js';
 import { initGit } from './git.js';
 import { initPalette } from './palette.js';
@@ -524,6 +525,7 @@ registerView('commands', initCommands);
 registerView('workflows', initWorkflows);
 registerView('tools', initTools);
 registerView('diagnostics', initDiagnostics);
+registerView('mission-control', initMissionControl);
 registerView('context', initContext);
 registerView('git', initGit);
 

@@ -1617,4 +1617,24 @@ select {
 }
 .palette-item:hover, .palette-item.active { background: var(--bg-tertiary); }
 .palette-label { color: var(--text-primary); }
+
+/* mission control */
+.mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 12px; }
+.mc-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.mc-card-active { border-color: var(--accent); }
+.mc-card-agent { border-left: 3px solid var(--accent); }
+.mc-card-header { display: flex; align-items: center; gap: 8px; }
+.mc-card-title { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-card-branch { font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary); padding: 1px 6px; border-radius: 4px; }
+.mc-card-body { font-size: 12px; color: var(--text-secondary); }
+.mc-card-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-card-time { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.mc-card-actions { display: flex; gap: 6px; }
+.mc-btn { font-size: 11px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; }
+.mc-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.mc-btn-destroy { color: var(--error, #e55); }
+.mc-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.mc-dot-active { background: #3c3; }
+.mc-dot-idle { background: #999; }
+.mc-empty { padding: 24px; text-align: center; color: var(--text-muted); }
 .palette-key { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; }
