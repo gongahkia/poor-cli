@@ -1,6 +1,7 @@
 """multi-session manager for parallel independent agent sessions."""
 
 import copy
+import subprocess
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -23,15 +24,19 @@ class SessionState:
     working_directory: str = ""
     status: str = "active" # active | paused | completed
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    branch_name: str = "" # non-empty when branch-per-session is active
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "sessionId": self.session_id,
             "label": self.label,
             "workingDirectory": self.working_directory,
             "status": self.status,
             "createdAt": self.created_at,
         }
+        if self.branch_name:
+            d["branchName"] = self.branch_name
+        return d
 
 
 class SessionManager:
@@ -41,12 +46,15 @@ class SessionManager:
         self,
         max_sessions: int = MAX_SESSIONS_DEFAULT,
         config_path: Optional[Path] = None,
+        branch_per_session: bool = False,
     ):
         self._sessions: Dict[str, SessionState] = {}
         self._default_session_id: Optional[str] = None
         self._max_sessions = max_sessions
         self._config_path = config_path
         self._permission_callback: Optional[Callable[..., Any]] = None
+        self._branch_per_session = branch_per_session
+        self._original_branch: str = "" # stashed when branching
 
     @property
     def default_session(self) -> Optional[SessionState]:
@@ -65,8 +73,9 @@ class SessionManager:
         label: str = "",
         cwd: Optional[str] = None,
         make_default: bool = False,
+        branch: bool = False,
     ) -> SessionState:
-        """create a new independent session."""
+        """create a new independent session, optionally on its own git branch."""
         if len(self._sessions) >= self._max_sessions:
             raise ValidationError(
                 f"max sessions ({self._max_sessions}) reached; destroy one first"
@@ -75,16 +84,23 @@ class SessionManager:
         core = PoorCLICore(config_path=self._config_path)
         if self._permission_callback:
             core.permission_callback = self._permission_callback
+
+        branch_name = ""
+        use_branch = branch or self._branch_per_session
+        if use_branch:
+            branch_name = self._create_session_branch(sid, cwd)
+
         state = SessionState(
             session_id=sid,
             core=core,
             label=label or sid,
             working_directory=cwd or str(Path.cwd()),
+            branch_name=branch_name,
         )
         self._sessions[sid] = state
         if make_default or self._default_session_id is None:
             self._default_session_id = sid
-        logger.info("session created: %s (%s)", sid, label)
+        logger.info("session created: %s (%s) branch=%s", sid, label, branch_name or "none")
         return state
 
     def get_session(self, session_id: Optional[str] = None) -> SessionState:
@@ -99,6 +115,10 @@ class SessionManager:
         """destroy a session and release resources."""
         if session_id not in self._sessions:
             raise ValidationError(f"unknown session: {session_id}")
+        session = self._sessions[session_id]
+        # if session had a branch, switch back to original
+        if session.branch_name and self._original_branch:
+            self._checkout_branch(self._original_branch, session.working_directory)
         del self._sessions[session_id]
         if self._default_session_id == session_id:
             self._default_session_id = next(iter(self._sessions), None)
@@ -109,7 +129,11 @@ class SessionManager:
         if session_id not in self._sessions:
             raise ValidationError(f"unknown session: {session_id}")
         self._default_session_id = session_id
-        return self._sessions[session_id]
+        # if target session has a branch, switch to it
+        target = self._sessions[session_id]
+        if target.branch_name:
+            self._checkout_branch(target.branch_name, target.working_directory)
+        return target
 
     def list_sessions(self) -> List[Dict[str, Any]]:
         """return metadata for all sessions."""
@@ -129,7 +153,6 @@ class SessionManager:
             label=label or f"fork-{src.label}",
             cwd=src.working_directory,
         )
-        # deep-copy conversation history if the source is initialized
         if copy_history and src.core.provider:
             try:
                 history = src.core.provider.get_history()
@@ -143,3 +166,45 @@ class SessionManager:
     @property
     def session_count(self) -> int:
         return len(self._sessions)
+
+    # ── git branch helpers ───────────────────────────────────────────────
+
+    def _create_session_branch(self, session_id: str, cwd: Optional[str] = None) -> str:
+        """Create a git branch for this session."""
+        repo = cwd or str(Path.cwd())
+        # save original branch
+        if not self._original_branch:
+            self._original_branch = self._current_branch(repo)
+        branch = f"poor-cli/session/{session_id}"
+        try:
+            subprocess.run(
+                ["git", "checkout", "-b", branch],
+                cwd=repo, capture_output=True, text=True, check=True,
+            )
+            logger.info("created session branch: %s", branch)
+            return branch
+        except subprocess.CalledProcessError as exc:
+            logger.warning("failed to create session branch: %s", exc.stderr.strip())
+            return ""
+
+    @staticmethod
+    def _checkout_branch(branch: str, cwd: str) -> bool:
+        try:
+            subprocess.run(
+                ["git", "checkout", branch],
+                cwd=cwd, capture_output=True, text=True, check=True,
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
+    @staticmethod
+    def _current_branch(cwd: str) -> str:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=cwd, capture_output=True, text=True, check=True,
+            )
+            return result.stdout.strip()
+        except (subprocess.CalledProcessError, OSError):
+            return "main"
