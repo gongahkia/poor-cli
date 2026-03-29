@@ -571,16 +571,7 @@ pub(super) fn handle_collab_commands(
                     app.multiplayer.enabled = true;
                     app.multiplayer.room = short_code.to_string();
                     app.multiplayer.role = "prompter".to_string();
-                    let _ = std::process::Command::new("pbcopy")
-                        .stdin(std::process::Stdio::piped())
-                        .spawn()
-                        .and_then(|mut child| {
-                            use std::io::Write;
-                            if let Some(ref mut stdin) = child.stdin {
-                                let _ = stdin.write_all(invite_code.as_bytes());
-                            }
-                            child.wait()
-                        });
+                    let _ = copy_to_clipboard(invite_code);
                     app.push_message(ChatMessage::system(format!(
                         "Pair session started! Room: {short_code}\nInvite code copied to clipboard.\n\nNext steps:\n- Share the invite code with your partner\n- Use /collab members to see who joined\n- Use /collab handoff to pass driver control\n- Type /collab to see all session actions"
                     )));
@@ -604,16 +595,7 @@ pub(super) fn handle_collab_commands(
                     app.multiplayer.room = short_code.to_string();
                     app.multiplayer.role = "prompter".to_string();
                     app.multiplayer.lobby_enabled = true;
-                    let _ = std::process::Command::new("pbcopy")
-                        .stdin(std::process::Stdio::piped())
-                        .spawn()
-                        .and_then(|mut child| {
-                            use std::io::Write;
-                            if let Some(ref mut stdin) = child.stdin {
-                                let _ = stdin.write_all(invite_code.as_bytes());
-                            }
-                            child.wait()
-                        });
+                    let _ = copy_to_clipboard(invite_code);
                     app.push_message(ChatMessage::system(format!(
                         "Pair session started (lobby mode)! Room: {short_code}\nInvite code copied to clipboard.\n\nNext steps:\n- Share the invite code — joiners will wait in lobby\n- Use /collab approve or /collab deny to manage lobby\n- Type /collab to see all session actions"
                     )));
