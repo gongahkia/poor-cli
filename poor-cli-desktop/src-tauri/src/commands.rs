@@ -54,7 +54,22 @@ async fn read_one_message(backend: &mut BackendProcess) -> Result<Value, String>
     let mut header_buf = String::new();
     loop {
         let mut byte = [0u8; 1];
-        backend.stdout.read_exact(&mut byte).await.map_err(|e| e.to_string())?;
+        match backend.stdout.read_exact(&mut byte).await {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                // server process died — try to get stderr for context
+                let mut err_msg = String::from("server process died");
+                if let Some(mut se) = backend.stderr.take() {
+                    let mut buf = String::new();
+                    let _ = se.read_to_string(&mut buf).await;
+                    if let Some(line) = buf.lines().rev().find(|l| !l.trim().is_empty()) {
+                        err_msg = format!("server crashed: {line}");
+                    }
+                }
+                return Err(err_msg);
+            }
+            Err(e) => return Err(e.to_string()),
+        }
         header_buf.push(byte[0] as char);
         if header_buf.ends_with("\r\n\r\n") || header_buf.ends_with("\n\n") { break; }
         if header_buf.len() > 256 { return Err("malformed response header".into()); }
@@ -121,18 +136,39 @@ pub async fn initialize_backend(
             cmd_builder.args(&args)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null());
+                .stderr(std::process::Stdio::piped());
             if let Some(ref keys) = env_keys { // pass API keys as env vars
                 for (k, v) in keys { cmd_builder.env(k, v); }
             }
+            eprintln!("[backend] spawning: {cmd} {}", args.join(" "));
             let mut child = cmd_builder.spawn()
-                .map_err(|e| format!("failed to spawn poor-cli-server: {e}"))?;
+                .map_err(|e| format!("failed to spawn poor-cli-server ({cmd}): {e}"))?;
             let stdin = child.stdin.take().ok_or("failed to capture stdin")?;
             let stdout = child.stdout.take().ok_or("failed to capture stdout")?;
+            let stderr = child.stderr.take();
+            // brief health check — if the process dies instantly (e.g. import error), report it
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            if let Ok(Some(status)) = child.try_wait() {
+                let mut err_output = String::new();
+                if let Some(mut se) = stderr {
+                    let _ = se.read_to_string(&mut err_output).await;
+                }
+                let msg = if err_output.is_empty() {
+                    format!("server exited immediately ({status})")
+                } else {
+                    // extract the last meaningful line (usually the exception)
+                    let last_line = err_output.lines().rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or(&err_output);
+                    format!("server crashed: {last_line}")
+                };
+                return Err(msg);
+            }
             *backend = Some(BackendProcess {
-                _child: child,
+                child,
                 stdin,
                 stdout: BufReader::new(stdout),
+                stderr,
             });
         }
     }
@@ -379,9 +415,10 @@ pub async fn join_remote_session(state: State<'_, AppState>, invite: String) -> 
     {
         let mut backend = state.backend.lock().await;
         *backend = Some(BackendProcess {
-            _child: child,
+            child,
             stdin,
             stdout: BufReader::new(stdout),
+            stderr: None,
         });
     }
     // initialize the bridge connection
