@@ -52,7 +52,8 @@ export async function refreshTimeline() {
       list.appendChild(entry);
     });
     container.appendChild(list);
-  } catch (_) {
+  } catch (e) {
+    console.warn('[timeline] list_runs:', e);
     container.innerHTML = '<div class="tl-empty"><span class="tl-empty-icon">&#9888;</span><p>Timeline unavailable — backend not connected</p></div>';
   }
 }

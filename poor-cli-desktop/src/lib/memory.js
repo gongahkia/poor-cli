@@ -37,7 +37,8 @@ async function refreshMemory(list) {
     const items = Array.isArray(mem) ? mem : Object.entries(mem).map(([k, v]) => ({ key: k, value: v }));
     if (!items.length) { list.innerHTML = '<div class="view-empty"><p>No memories stored</p></div>'; return; }
     items.forEach(m => renderMemoryItem(m, list));
-  } catch (_) {
+  } catch (e) {
+    console.warn('[memory] get_config:', e);
     list.innerHTML = '<div class="view-empty"><p>Memory unavailable — backend not connected</p></div>';
   }
 }

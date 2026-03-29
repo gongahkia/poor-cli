@@ -18,7 +18,8 @@ export async function initCommands() {
       card.querySelector('.cmd-run-btn').onclick = () => runCommand(c.name);
       list.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[commands] initCommands:', e);
     list.innerHTML = '<p style="color:var(--text-muted)">Commands unavailable — backend not connected</p>';
   }
 }

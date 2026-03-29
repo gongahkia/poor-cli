@@ -5,7 +5,7 @@ export async function initTools() {
   const content = document.getElementById('tools-content');
   content.innerHTML = '<p class="view-empty-text">Loading...</p>';
   try {
-    const result = await rpc('get_tools', {}).catch(() => null);
+    const result = await rpc('get_tools', {}).catch(e => { console.warn('[tools] get_tools:', e); return null; });
     const toolList = result?.tools || result || [];
     if (!Array.isArray(toolList) || !toolList.length) {
       content.innerHTML = '<div class="view-empty"><p>No tools available</p></div>';
@@ -69,7 +69,8 @@ export async function initTools() {
     }
     render('');
     search.addEventListener('input', () => render(search.value.toLowerCase().trim()));
-  } catch (_) {
+  } catch (e) {
+    console.warn('[tools] initTools:', e);
     content.innerHTML = '<div class="view-empty"><p>Tools unavailable — backend not connected</p></div>';
   }
 }

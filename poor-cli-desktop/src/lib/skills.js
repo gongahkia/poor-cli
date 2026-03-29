@@ -18,7 +18,8 @@ export async function initSkills() {
       card.querySelector('.skill-run-btn').onclick = () => runSkill(s.name);
       list.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[skills] list_skills:', e);
     list.innerHTML = '<p style="color:var(--text-muted)">No skills available — backend not connected</p>';
   }
 }
@@ -72,7 +73,8 @@ async function refreshAutomations() {
       card.querySelector('[data-act="history"]').onclick = () => showAutomationHistory(aid, card.querySelector('.auto-history-panel'));
       list.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[skills] list_automations:', e);
     list.innerHTML = '<p style="color:var(--text-muted)">No automations available — backend not connected</p>';
   }
 }

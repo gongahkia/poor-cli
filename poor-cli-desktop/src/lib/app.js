@@ -1,5 +1,5 @@
 // poor-cli desktop — frontend app logic
-import { rpc } from './rpc.js';
+import { rpc, rpcNotify, rpcWarn } from './rpc.js';
 import { registerView, showView, initSplitDragDrop } from './views.js';
 import { renderMarkdown } from './markdown.js';
 import { initSettings, applyCustomFonts, applyTabLayout } from './settings.js';
@@ -112,7 +112,7 @@ export function desktopNotify(title, body) {
   notify({ title, body, type: isError ? 'error' : 'info', sessionId: activeSessionId });
   // native OS notification
   if (!notifyReady) return;
-  invoke('plugin:notification|notify', { title, body }).catch(() => {});
+  invoke('plugin:notification|notify', { title, body }).catch(e => console.warn('[desktop-notify] send failed:', e));
 }
 
 // toast notification
@@ -224,11 +224,11 @@ async function refreshProviderInfo() {
 async function refreshModelList(provider, currentModel) {
   if (!providerModels[provider]) {
     try {
-      const result = await rpc('list_providers', {});
-      for (const [name, info] of Object.entries(result || {})) {
+      const result = await rpcWarn('list_providers', {});
+      if (result) for (const [name, info] of Object.entries(result || {})) {
         providerModels[name] = info.models || [];
       }
-    } catch (_) {}
+    } catch (e) { console.warn('[app] refreshModelList:', e); }
   }
   const models = providerModels[provider] || [];
   modelSelect.innerHTML = '';
@@ -280,9 +280,9 @@ export async function refreshSessions() {
       close.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
-          await rpc('destroy_session', { session_id: s.sessionId });
+          await rpcNotify('destroy_session', { session_id: s.sessionId }, 'Close session failed');
           await refreshSessions();
-        } catch (_) {}
+        } catch (e) { console.warn('[app] destroy_session:', e); }
       });
       tab.appendChild(close);
       tab.addEventListener('click', () => selectSession(s, tab));
@@ -292,9 +292,9 @@ export async function refreshSessions() {
         const newName = prompt('Rename session:', s.label || '');
         if (newName === null) return;
         try {
-          await rpc('rename_session', { session_id: s.sessionId, label: newName });
+          await rpcNotify('rename_session', { session_id: s.sessionId, label: newName }, 'Rename failed');
           await refreshSessions();
-        } catch (_) {}
+        } catch (e) { console.warn('[app] rename_session:', e); }
       });
       // drag-to-reorder
       tab.draggable = true;
@@ -341,14 +341,14 @@ export async function refreshSessions() {
           const newName = prompt('Rename session:', s.label || '');
           if (newName === null) return;
           try {
-            await rpc('rename_session', { session_id: s.sessionId, label: newName });
+            await rpcNotify('rename_session', { session_id: s.sessionId, label: newName }, 'Rename failed');
             await refreshSessions();
-          } catch (_) {}
+          } catch (e) { console.warn('[app] vtab rename:', e); }
         });
         vtabsList.appendChild(item);
       });
     }
-  } catch (_) {}
+  } catch (e) { console.warn('[app] refreshSessions:', e); }
 }
 
 function selectSession(s, clickedEl) {
@@ -359,7 +359,7 @@ function selectSession(s, clickedEl) {
   showView('chat');
   // clear chat and show welcome for new session
   chatMessages.innerHTML = '<div class="welcome-message"><h1>poor-cli desktop</h1><p>Provider-agnostic AI coding assistant</p><p class="hint">Type a message below to start coding</p></div>';
-  rpc('switch_session', { session_id: s.sessionId }).then(() => refreshStatusBar()).catch(() => {});
+  rpc('switch_session', { session_id: s.sessionId }).then(() => refreshStatusBar()).catch(e => console.warn('[app] switch_session:', e));
 }
 
 // status bar + workspace bar
@@ -390,7 +390,7 @@ async function refreshStatusBar() {
         wbFileChanges.hidden = true;
       }
     }
-  } catch (_) {}
+  } catch (e) { console.warn('[app] refreshStatusBar:', e); }
 }
 
 function showSpinner(v) { sbSpinner.hidden = !v; }
@@ -417,7 +417,7 @@ async function renderActivity() {
       sbChanges.hidden = false;
       sbChanges.innerHTML = `${changes.filesChanged} files <span class="added">+${changes.additions || 0}</span> <span class="removed">-${changes.deletions || 0}</span>`;
     }
-  } catch (_) {}
+  } catch (e) { console.warn('[app] renderActivity:', e); }
 }
 
 // slash command dispatch — maps /commands to RPC calls
@@ -658,20 +658,20 @@ threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
       const name = prompt('Rename session:', threadTitle.textContent);
       if (name) {
         try {
-          await rpc('rename_session', { session_id: activeSessionId, label: name });
+          await rpcNotify('rename_session', { session_id: activeSessionId, label: name }, 'Rename failed');
           threadTitle.textContent = name;
           await refreshSessions();
-        } catch (_) {}
+        } catch (e) { console.warn('[app] thread rename:', e); }
       }
     } else if (item.dataset.action === 'export') {
       document.getElementById('export-modal').hidden = false;
     } else if (item.dataset.action === 'delete') {
       try {
-        await rpc('destroy_session', { session_id: activeSessionId });
+        await rpcNotify('destroy_session', { session_id: activeSessionId }, 'Delete session failed');
         activeSessionId = null;
         threadTitle.textContent = 'New thread';
         await refreshSessions();
-      } catch (_) {}
+      } catch (e) { console.warn('[app] thread delete:', e); }
     }
   });
 });
@@ -732,7 +732,7 @@ async function refreshCost() {
         sbCostEl.textContent = usd > 0 ? `$${usd.toFixed(4)} (${tokens} tok)` : `${tokens} tok`;
       } else { sbCostEl.hidden = true; }
     }
-  } catch (_) { sbCostEl.hidden = true; }
+  } catch (e) { sbCostEl.hidden = true; console.warn('[app] refreshCost:', e); }
 }
 
 // export handlers
@@ -765,7 +765,7 @@ setInterval(() => { refreshStatusBar(); refreshCost(); }, 10000);
 // auto-save on unload
 window.addEventListener('beforeunload', () => {
   cleanupCollab();
-  if (initialized) rpc('save_session', {}).catch(() => {});
+  if (initialized) rpc('save_session', {}).catch(e => console.warn('[app] save_session on unload:', e));
 });
 
 // auto-init

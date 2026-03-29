@@ -107,7 +107,8 @@ async function showDiffPreview(file) {
       else html += `<div class="diff-ctx">${escapeHtml(line)}</div>`;
     }
     diffPreview.innerHTML = html;
-  } catch (_) {
+  } catch (e) {
+    console.warn('[filechanges] showDiffPreview:', e);
     diffPreview.innerHTML = `<div class="diff-title">${file.name}</div>` +
       `<div class="diff-ctx">${escapeHtml(file.operation)} ${escapeHtml(file.path)}</div>`;
   }

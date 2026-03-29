@@ -59,7 +59,8 @@ export async function refreshQaWatch() {
         left.appendChild(el);
       });
     }
-  } catch (_) {
+  } catch (e) {
+    console.warn('[qa_watch] get_status_view:', e);
     left.innerHTML += '<p class="view-empty-text">Watcher unavailable</p>';
   }
   right.innerHTML += '<p class="view-empty-text">Run lint or tests to see results</p>';

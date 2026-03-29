@@ -9,7 +9,7 @@ export async function initWorkflows() {
   try {
     const result = await rpc('list_workflows', {});
     workflows = result.workflows || result || [];
-  } catch (_) { workflows = []; }
+  } catch (e) { console.warn('[workflows] list_workflows:', e); workflows = []; }
   if (!workflows.length) return;
 
   // group by category

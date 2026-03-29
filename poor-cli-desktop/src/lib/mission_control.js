@@ -28,7 +28,7 @@ export async function refreshMissionControl() {
         const result = await rpc('poor-cli/listMuxSessions', {});
         const sessions = result.sessions || [];
         const agents = await rpc('poor-cli/listAgents', { statuses: ['running', 'queued'] })
-            .then(r => r.agents || []).catch(() => []);
+            .then(r => r.agents || []).catch(e => { console.warn('[mission_control] listAgents:', e); return []; });
 
         container.innerHTML = renderGrid(sessions, agents);
         bindActions(container);

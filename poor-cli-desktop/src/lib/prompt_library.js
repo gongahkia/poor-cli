@@ -34,11 +34,11 @@ async function loadItems() {
   try {
     const skills = await rpc('list_skills', {});
     (skills.skills || skills || []).forEach(s => items.push({ ...s, _type: 'skill' }));
-  } catch (_) {}
+  } catch (e) { console.warn('[prompt_library] list_skills:', e); }
   try {
     const cmds = await rpc('list_custom_commands', {});
     (cmds.commands || cmds || []).forEach(c => items.push({ ...c, _type: 'command' }));
-  } catch (_) {}
+  } catch (e) { console.warn('[prompt_library] list_custom_commands:', e); }
   return items;
 }
 

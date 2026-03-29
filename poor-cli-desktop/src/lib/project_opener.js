@@ -6,6 +6,7 @@
 
 import { rpc } from './rpc.js';
 import { showView } from './views.js';
+import { notify } from './notifications.js';
 
 let _dialog = null;
 
@@ -13,7 +14,7 @@ async function getDialog() {
   if (_dialog) return _dialog;
   try {
     _dialog = window.__TAURI__?.dialog || (await import('@tauri-apps/plugin-dialog'));
-  } catch { _dialog = null; }
+  } catch (e) { console.warn('[project_opener] getDialog:', e); _dialog = null; }
   return _dialog;
 }
 
@@ -40,7 +41,7 @@ export async function openProjectDialog() {
         if (path) { await openProject(path); return; }
       }
       return; // user cancelled
-    } catch { /* fall through to custom modal */ }
+    } catch (e) { console.warn('[project_opener] openProjectDialog:', e); /* fall through to custom modal */ }
   }
   openFallbackDialog(); // no dialog plugin available
 }
@@ -100,7 +101,7 @@ async function openProject(folderPath) {
     const session = result?.session || result;
     const sid = session?.sessionId || session?.id;
     if (sid) {
-      await rpc('switch_session', { session_id: sid }).catch(() => {});
+      await rpc('switch_session', { session_id: sid }).catch(e => console.warn('[project_opener] switch_session:', e));
     }
     try {
       const app = await import('./app.js');
@@ -115,7 +116,7 @@ async function openProject(folderPath) {
       document.querySelectorAll('.vtab-item').forEach(vt => {
         vt.classList.toggle('active', vt.textContent.trim() === label);
       });
-    } catch {}
+    } catch (e) { console.warn('[project_opener] refreshSessions:', e); }
     showView('chat');
     // clear chat for fresh session
     const chatMessages = document.getElementById('chat-messages');
@@ -123,14 +124,14 @@ async function openProject(folderPath) {
       chatMessages.innerHTML = `<div class="welcome-message"><h1>${label}</h1><p>Project opened — type a message to start</p></div>`;
     }
   } catch (e) {
-    alert(`Failed to open project: ${e.message || e}`);
+    notify({ title: 'Open project failed', body: `${e.message || e}`, type: 'error' });
   }
 }
 
 // ── recents ─────────────────────────────────────────────────────────
 const RECENTS_KEY = 'poor-cli-recent-projects';
 const MAX_RECENTS = 8;
-function getRecents() { try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch { return []; } }
+function getRecents() { try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch (e) { console.warn('[project_opener] getRecents:', e); return []; } }
 function saveRecent(path) {
   let recents = getRecents().filter(p => p !== path);
   recents.unshift(path);

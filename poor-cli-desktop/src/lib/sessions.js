@@ -57,7 +57,8 @@ export async function refreshSessions() {
       };
       list.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[sessions] list_sessions:', e);
     list.innerHTML = '<div class="view-empty"><p>Sessions unavailable — backend not connected</p></div>';
   }
 }

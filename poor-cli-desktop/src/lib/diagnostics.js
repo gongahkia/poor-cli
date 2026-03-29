@@ -6,10 +6,10 @@ export async function initDiagnostics() {
   content.innerHTML = '<p>Loading diagnostics...</p>';
   try {
     const [doctor, policy, trust, sandbox] = await Promise.all([
-      rpc('get_doctor_report', {}).catch(() => null),
-      rpc('get_policy_status', {}).catch(() => null),
-      rpc('get_trust_view', {}).catch(() => null),
-      rpc('get_sandbox_status', {}).catch(() => null),
+      rpc('get_doctor_report', {}).catch(e => { console.warn('[diagnostics] get_doctor_report:', e); return null; }),
+      rpc('get_policy_status', {}).catch(e => { console.warn('[diagnostics] get_policy_status:', e); return null; }),
+      rpc('get_trust_view', {}).catch(e => { console.warn('[diagnostics] get_trust_view:', e); return null; }),
+      rpc('get_sandbox_status', {}).catch(e => { console.warn('[diagnostics] get_sandbox_status:', e); return null; }),
     ]);
     let html = '';
     html += renderDoctor(doctor);
@@ -30,7 +30,8 @@ export async function initDiagnostics() {
         });
       });
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[diagnostics] initDiagnostics:', e);
     content.innerHTML = '<p style="color:var(--text-muted)">Diagnostics unavailable — backend not connected</p>';
   }
 }

@@ -186,7 +186,7 @@ async function showAt(query) {
       const result = await rpc('list_skills', {});
       skills = (result.skills || []).map(s => ({ name: s.name || s.skillFile, desc: s.description || '', scope: s.scope || '' }));
       cachedSkills = skills;
-    } catch (_) { skills = []; }
+    } catch (e) { console.warn('[autocomplete] list_skills:', e); skills = []; }
   }
   const filteredSkills = skills.filter(s =>
     s.name.toLowerCase().includes(query) || s.desc.toLowerCase().includes(query)
@@ -204,7 +204,7 @@ async function searchFiles(query, skills) {
     const result = await rpc('search_workspace_files', { query, limit: 15 });
     const files = result.files || [];
     renderAt(skills, files, query);
-  } catch (_) {}
+  } catch (e) { console.warn('[autocomplete] searchFiles:', e); }
 }
 
 function renderAt(skills, files, query) {

@@ -35,7 +35,8 @@ async function refreshCheckpoints() {
       card.querySelector('[data-act="restore"]').onclick = () => restoreCheckpoint(cid);
       list.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[checkpoints] list_checkpoints:', e);
     list.innerHTML = '<p style="color:var(--text-muted)">Checkpoints unavailable — backend not connected</p>';
   }
 }

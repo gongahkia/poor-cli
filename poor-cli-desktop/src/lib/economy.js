@@ -49,7 +49,8 @@ export async function refreshEconomy() {
       + `<div class="econ-stat"><span class="econ-label">Output</span><strong>${output.toLocaleString()}</strong></div>`
       + `<div class="econ-stat"><span class="econ-label">Est. cost</span><strong>$${usd.toFixed(4)}</strong></div>`
       + `</div>`;
-  } catch (_) {
+  } catch (e) {
+    console.warn('[economy] get_session_cost:', e);
     summary.innerHTML = '<div class="view-empty"><p>Cost data unavailable</p></div>';
   }
   try {
@@ -57,7 +58,7 @@ export async function refreshEconomy() {
     const preset = sv.economy?.preset || sv.economyPreset || 'none';
     const sel = document.getElementById('economy-preset-select');
     if (sel) sel.value = preset;
-  } catch (_) {}
+  } catch (e) { console.warn('[economy] get_config:', e); }
   savings.innerHTML = '<h3>Savings</h3><p class="view-empty-text">Savings data tracked per session</p>';
 }
 

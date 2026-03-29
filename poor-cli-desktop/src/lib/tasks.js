@@ -79,7 +79,8 @@ async function refreshTasks() {
       };
       list.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[tasks] refreshTasks:', e);
     list.innerHTML = '<div class="view-empty"><p>Tasks unavailable — backend not connected</p></div>';
   }
 }

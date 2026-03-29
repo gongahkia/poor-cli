@@ -26,7 +26,7 @@ export function showCollabButton() {}
 
 export function cleanupCollab() {
   if (sessionActive) {
-    rpc('leave_remote_session', {}).catch(() => {});
+    rpc('leave_remote_session', {}).catch(e => console.warn('[multiplayer] leave_remote_session:', e));
     sessionActive = false;
   }
 }
@@ -80,7 +80,7 @@ async function joinSession() {
 }
 
 async function leaveSession() {
-  try { await rpc('leave_remote_session', {}); } catch (_) {}
+  try { await rpc('leave_remote_session', {}); } catch (e) { console.warn('[multiplayer] leaveSession:', e); }
   sessionActive = false;
   if (cpIdle) cpIdle.hidden = false;
   if (cpActive) cpActive.hidden = true;
@@ -114,7 +114,7 @@ async function refreshMembers() {
     el.innerHTML = '<h4>Members</h4>' + members.map(m =>
       `<div class="cp-member"><span>${esc(m.name || m.id || '?')}</span><span class="badge">${esc(m.role || '')}</span></div>`
     ).join('');
-  } catch (_) {}
+  } catch (e) { console.warn('[multiplayer] refreshMembers:', e); }
 }
 
 // invite modal handlers (guarded)
@@ -123,7 +123,7 @@ const inviteCopy = document.getElementById('invite-modal-copy');
 if (inviteClose) inviteClose.addEventListener('click', () => { document.getElementById('invite-modal').hidden = true; });
 if (inviteCopy) inviteCopy.addEventListener('click', () => {
   const ta = document.getElementById('invite-code-display');
-  if (ta) navigator.clipboard.writeText(ta.value).catch(() => { ta.select(); document.execCommand('copy'); });
+  if (ta) navigator.clipboard.writeText(ta.value).catch(e => { console.warn('[multiplayer] clipboard:', e); ta.select(); document.execCommand('copy'); });
 });
 
 function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }

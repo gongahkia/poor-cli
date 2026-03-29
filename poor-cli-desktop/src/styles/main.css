@@ -518,6 +518,16 @@ body {
 }
 .notif-item:hover .notif-dismiss { opacity: 1; }
 .notif-dismiss:hover { color: var(--error); }
+/* notification detail expansion */
+.notif-detail { display: none; margin-top: 8px; padding: 8px 10px; background: var(--bg-primary); border-radius: 6px; font-size: 11px; border: 1px solid var(--border); }
+.notif-item.expanded .notif-detail { display: block; }
+.notif-item.expanded .notif-text { white-space: normal; overflow: visible; text-overflow: unset; }
+.notif-detail-row { display: flex; gap: 8px; margin-bottom: 4px; }
+.notif-detail-label { color: var(--text-muted); min-width: 60px; flex-shrink: 0; font-weight: 600; }
+.notif-detail-value { color: var(--text-secondary); word-break: break-all; }
+.notif-detail pre { font-family: var(--font-mono); font-size: 10px; background: var(--bg-secondary); padding: 6px 8px; border-radius: 4px; overflow-x: auto; max-height: 200px; margin: 4px 0 0; white-space: pre-wrap; word-break: break-all; }
+.notif-copy-btn { margin-top: 6px; font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary); }
+.notif-copy-btn:hover { background: var(--accent); color: var(--bg-primary); }
 
 /* chat */
 .chat-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }

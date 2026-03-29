@@ -18,7 +18,8 @@ export async function initContext() {
     }
     html += '<p style="margin-top:12px;color:var(--text-muted);font-size:12px">Use <code>@filename</code> in chat to add files to context.</p>';
     content.innerHTML = html;
-  } catch (_) {
+  } catch (e) {
+    console.warn('[context] initContext:', e);
     content.innerHTML = '<p style="color:var(--text-muted)">Context unavailable — backend not connected</p>';
   }
 }

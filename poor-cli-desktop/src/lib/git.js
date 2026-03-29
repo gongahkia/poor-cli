@@ -64,7 +64,8 @@ async function renderLog(el) {
     result = await rpc('poor-cli/executeCommand', {
       command: 'git log --graph --oneline --all --decorate -50'
     });
-  } catch {
+  } catch (e) {
+    console.warn('[git] executeCommand git log:', e);
     result = await rpc('git_log', { count: 50 });
   }
   const out = (result.output || result.stdout || '').trim();
@@ -174,7 +175,8 @@ async function renderTree(el) {
   let result;
   try {
     result = await rpc('git_graph', { count: 60 });
-  } catch {
+  } catch (e) {
+    console.warn('[git] git_graph:', e);
     el.innerHTML = '<p style="color:var(--text-muted)">Could not load git graph</p>';
     return;
   }

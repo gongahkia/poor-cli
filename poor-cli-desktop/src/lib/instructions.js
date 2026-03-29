@@ -42,7 +42,8 @@ export async function refreshInstructions() {
       };
       container.appendChild(card);
     });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[instructions] get_config:', e);
     container.innerHTML = '<div class="view-empty"><p>Instructions unavailable — backend not connected</p></div>';
   }
 }

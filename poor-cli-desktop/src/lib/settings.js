@@ -163,7 +163,7 @@ export async function initSettings() {
       _allOptions = options;
       renderOptions(content, _allOptions);
     }
-  }).catch(() => {});
+  }).catch(e => console.warn('[settings] list_config_options:', e));
   rpc('get_api_key_status', {}).then(status => { // update key status from backend
     if (status && typeof status === 'object') {
       for (const [provider, info] of Object.entries(status)) {
@@ -174,7 +174,7 @@ export async function initSettings() {
         }
       }
     }
-  }).catch(() => {});
+  }).catch(e => console.warn('[settings] get_api_key_status:', e));
 }
 
 function renderApiKeysGroup() {
@@ -210,7 +210,7 @@ function renderApiKeysGroup() {
         if (!val) return;
         stored[def.id] = val;
         localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
-        rpc('set_api_key', { provider: def.id, apiKey: val, persist: true, reloadActiveProvider: true }).catch(() => {});
+        rpc('set_api_key', { provider: def.id, apiKey: val, persist: true, reloadActiveProvider: true }).catch(e => { import('./notifications.js').then(m => m.notify({ title: 'API key save failed', body: String(e), type: 'error' })); });
         input.value = '';
         input.placeholder = '••••••••';
         const dot = row.querySelector('.api-key-status');
@@ -237,7 +237,7 @@ function renderApiKeysGroup() {
 function removeKey(def, row, stored) {
   delete stored[def.id];
   localStorage.setItem('poor-cli-api-keys', JSON.stringify(stored));
-  rpc('set_api_key', { provider: def.id, apiKey: '', persist: true, reloadActiveProvider: true }).catch(() => {});
+  rpc('set_api_key', { provider: def.id, apiKey: '', persist: true, reloadActiveProvider: true }).catch(e => { import('./notifications.js').then(m => m.notify({ title: 'API key removal failed', body: String(e), type: 'error' })); });
   const dot = row.querySelector('.api-key-status');
   dot.classList.remove('set');
   dot.title = 'No key configured';
@@ -562,7 +562,7 @@ function renderOptions(container, options) {
 }
 
 function autoSave(path, value) {
-  rpc('set_config', { keyPath: path, value }).catch(() => {});
+  rpc('set_config', { keyPath: path, value }).catch(e => console.warn('[settings] autoSave:', e));
   showSaveIndicator(path);
 }
 
