@@ -21,6 +21,13 @@ import { initProjectOpener } from './project_opener.js';
 import { initContext } from './context.js';
 import { initGit } from './git.js';
 import { initPalette } from './palette.js';
+import { initTimeline } from './timeline.js';
+import { initMemory } from './memory.js';
+import { initSessions } from './sessions.js';
+import { initEconomy } from './economy.js';
+import { initInstructions } from './instructions.js';
+import { initPromptLibrary } from './prompt_library.js';
+import { initQaWatch } from './qa_watch.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -396,7 +403,7 @@ const SLASH_HANDLERS = {
   '/doctor': () => rpc('get_doctor_report', {}),
   '/context': async () => { showView('context'); return { content: 'Opened context view.' }; },
   '/compact': async () => rpc('send_chat', { message: '/compact' }),
-  '/economy': () => rpc('get_session_cost', {}),
+  '/economy': async () => { showView('economy'); return { content: 'Opened economy view.' }; },
   '/export': async () => { document.getElementById('export-modal').hidden = false; return { content: 'Select export format.' }; },
   // workflow shortcuts — send to AI as chat messages
   '/review': async () => rpc('send_chat', { message: '/review' }),
@@ -435,7 +442,32 @@ async function handleSlashCommand(text) {
   if (cmd === '/resume') return rpc('send_chat', { message: '/resume' });
   if (cmd === '/autopilot') return rpc('send_chat', { message: '/autopilot' });
   if (cmd === '/fix-failures') return rpc('send_chat', { message: '/fix-failures' });
-  if (cmd === '/timeline') return rpc('send_chat', { message: '/timeline' });
+  if (cmd === '/timeline') { showView('timeline'); return { content: 'Opened timeline view.' }; }
+  if (cmd === '/memory') { showView('memory'); return { content: 'Opened memory view.' }; }
+  if (cmd === '/sessions') { showView('sessions'); return { content: 'Opened sessions view.' }; }
+  if (cmd === '/instructions') { showView('instructions'); return { content: 'Opened instructions view.' }; }
+  if (cmd === '/prompt-library') { showView('prompt-library'); return { content: 'Opened prompt library.' }; }
+  if (cmd === '/qa-watch') { showView('qa-watch'); return { content: 'Opened QA watcher.' }; }
+  // workflow pass-through commands
+  if (cmd === '/standup') return rpc('send_chat', { message: '/standup' });
+  if (cmd === '/weekly-update') return rpc('send_chat', { message: '/weekly-update' });
+  if (cmd === '/pr-summary') return rpc('send_chat', { message: '/pr-summary' });
+  if (cmd === '/release-notes') return rpc('send_chat', { message: '/release-notes' });
+  if (cmd === '/changelog') return rpc('send_chat', { message: '/changelog' });
+  if (cmd === '/ci-failures') return rpc('send_chat', { message: '/ci-failures' });
+  if (cmd === '/ci-debug') return rpc('send_chat', { message: '/ci-debug' });
+  if (cmd === '/triage') return rpc('send_chat', { message: '/triage' });
+  if (cmd === '/scan-bugs') return rpc('send_chat', { message: '/scan-bugs' });
+  if (cmd === '/test-coverage') return rpc('send_chat', { message: '/test-coverage' });
+  if (cmd === '/bootstrap') return rpc('send_chat', { message: '/bootstrap' });
+  if (cmd === '/dep-drift') return rpc('send_chat', { message: '/dep-drift' });
+  if (cmd === '/dep-upgrade') return rpc('send_chat', { message: '/dep-upgrade' });
+  if (cmd === '/explain-diff') return rpc('send_chat', { message: '/explain-diff' });
+  if (cmd === '/perf-audit') return rpc('send_chat', { message: '/perf-audit' });
+  if (cmd === '/release-check') return rpc('send_chat', { message: '/release-check' });
+  if (cmd === '/update-docs') return rpc('send_chat', { message: '/update-docs' });
+  if (cmd === '/perf-opportunity') return rpc('send_chat', { message: '/perf-opportunity' });
+  if (cmd === '/skill-suggest') return rpc('send_chat', { message: '/skill-suggest' });
   if (cmd === '/workspace-map') return rpc('send_chat', { message: '/workspace-map' });
   if (cmd === '/read' && args) return rpc('send_chat', { message: `/read ${args}` });
   if (cmd === '/collab') { document.getElementById('wb-collab').click(); return { content: 'Toggled collaboration panel.' }; }
@@ -618,6 +650,13 @@ registerView('diagnostics', initDiagnostics);
 registerView('mission-control', initMissionControl);
 registerView('context', initContext);
 registerView('git', initGit);
+registerView('timeline', initTimeline);
+registerView('memory', initMemory);
+registerView('sessions', initSessions);
+registerView('economy', initEconomy);
+registerView('instructions', initInstructions);
+registerView('prompt-library', initPromptLibrary);
+registerView('qa-watch', initQaWatch);
 
 // sidebar nav
 document.querySelectorAll('.sidebar-nav-item').forEach(el => {

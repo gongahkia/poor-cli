@@ -1,4 +1,7 @@
 // view router — toggles .view-panel elements by data-view attribute
+// registered views: chat, settings, skills, automations, history, tasks, checkpoints,
+// commands, workflows, tools, diagnostics, mission-control, context, git,
+// timeline, memory, sessions, economy, instructions, prompt-library, qa-watch
 const views = {};
 let current = 'chat';
 export function registerView(name, initFn) { views[name] = { initFn, initialized: false }; }
