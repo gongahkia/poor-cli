@@ -1558,7 +1558,7 @@ def _run_telegram_mode(argv: Sequence[str]) -> int:
     allowed = set()
     if args.allowed_users:
         allowed = {int(uid.strip()) for uid in args.allowed_users.split(",") if uid.strip()}
-    from .telegram_bot import PoorCLITelegramBot
+    from .telegram import PoorCLITelegramBot
     bot = PoorCLITelegramBot(
         token=token,
         allowed_users=allowed or None,

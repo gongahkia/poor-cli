@@ -1,0 +1,12 @@
+app = "poor-cli-bot"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "../../../Dockerfile"
+
+[env]
+  BOT_MODE = "true"
+
+[mounts]
+  source = "bot_data"
+  destination = "/home/pooruser/.poor-cli"

@@ -63,8 +63,11 @@ VOLUME ["/home/pooruser/.poor-cli"]
 # Switch to non-root user
 USER pooruser
 
+# BOT_MODE: when set to "true", run Telegram bot instead of CLI
+ENV BOT_MODE=""
+
 # Entry point
-ENTRYPOINT ["poor-cli"]
+ENTRYPOINT ["/bin/sh", "-c", "if [ \"$BOT_MODE\" = \"true\" ]; then python -m poor_cli telegram --token \"$POOR_CLI_TELEGRAM_TOKEN\"; else exec poor-cli \"$@\"; fi", "--"]
 
 # Default command
 CMD []
