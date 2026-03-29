@@ -136,6 +136,33 @@ function M.check()
     else
         info("blink.cmp not found. poor-cli provides a source at require('poor-cli.blink')")
     end
+
+    start("poor-cli domains")
+    local domains = {
+        { mod = "poor-cli.tasks", name = "tasks" },
+        { mod = "poor-cli.automations", name = "automations" },
+        { mod = "poor-cli.agents", name = "agents" },
+        { mod = "poor-cli.sessions", name = "sessions" },
+        { mod = "poor-cli.memory", name = "memory" },
+        { mod = "poor-cli.checkpoints_ext", name = "checkpoints_ext" },
+        { mod = "poor-cli.config_mgr", name = "config_mgr" },
+        { mod = "poor-cli.history_browser", name = "history_browser" },
+        { mod = "poor-cli.custom_commands", name = "custom_commands" },
+        { mod = "poor-cli.skills_nvim", name = "skills" },
+        { mod = "poor-cli.trust", name = "trust" },
+        { mod = "poor-cli.context_mgr", name = "context_mgr" },
+        { mod = "poor-cli.cost", name = "cost" },
+        { mod = "poor-cli.providers", name = "providers" },
+        { mod = "poor-cli.collab_ext", name = "collab_ext" },
+    }
+    for _, d in ipairs(domains) do
+        local loaded, _ = pcall(require, d.mod)
+        if loaded then
+            ok(d.name .. " module loaded")
+        else
+            warn(d.name .. " module failed to load")
+        end
+    end
 end
 
 return M

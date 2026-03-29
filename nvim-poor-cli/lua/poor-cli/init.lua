@@ -15,6 +15,21 @@ M.diagnostics = nil
 M.telescope = nil
 M.cmp = nil
 M.blink = nil
+M.tasks = nil
+M.automations = nil
+M.agents = nil
+M.sessions = nil
+M.memory = nil
+M.checkpoints_ext = nil
+M.config_mgr = nil
+M.history_browser = nil
+M.custom_commands = nil
+M.skills_nvim = nil
+M.trust = nil
+M.context_mgr = nil
+M.cost = nil
+M.providers = nil
+M.collab_ext = nil
 M._setup_complete = false
 
 -- Setup function - call this from your Neovim config
@@ -33,11 +48,42 @@ function M.setup(opts)
     M.cmp = require("poor-cli.cmp")
     M.blink = require("poor-cli.blink")
 
+    M.tasks = require("poor-cli.tasks")
+    M.automations = require("poor-cli.automations")
+    M.agents = require("poor-cli.agents")
+    M.sessions = require("poor-cli.sessions")
+    M.memory = require("poor-cli.memory")
+    M.checkpoints_ext = require("poor-cli.checkpoints_ext")
+    M.config_mgr = require("poor-cli.config_mgr")
+    M.history_browser = require("poor-cli.history_browser")
+    M.custom_commands = require("poor-cli.custom_commands")
+    M.skills_nvim = require("poor-cli.skills_nvim")
+    M.trust = require("poor-cli.trust")
+    M.context_mgr = require("poor-cli.context_mgr")
+    M.cost = require("poor-cli.cost")
+    M.providers = require("poor-cli.providers")
+    M.collab_ext = require("poor-cli.collab_ext")
+
     M.commands.setup()
     M.keymaps.setup()
     M.autocmds.setup()
     M.chat.setup_streaming_autocmds()
     M.cmp.setup()
+    M.tasks.setup()
+    M.automations.setup()
+    M.agents.setup()
+    M.sessions.setup()
+    M.memory.setup()
+    M.checkpoints_ext.setup()
+    M.config_mgr.setup()
+    M.history_browser.setup()
+    M.custom_commands.setup()
+    M.skills_nvim.setup()
+    M.trust.setup()
+    M.context_mgr.setup()
+    M.cost.setup()
+    M.providers.setup()
+    M.collab_ext.setup()
     M._setup_complete = true
 
     if M.config.get("check_health_on_setup") then
