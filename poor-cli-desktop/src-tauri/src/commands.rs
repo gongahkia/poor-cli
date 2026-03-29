@@ -637,6 +637,12 @@ pub async fn run_custom_command(state: State<'_, AppState>, name: String, args: 
     send_rpc_long(&state, "poor-cli/runCustomCommand", json!({"name": name, "args": args.unwrap_or_default()})).await
 }
 
+// --- runs/timeline ---
+#[tauri::command]
+pub async fn list_runs(state: State<'_, AppState>, source_kind: Option<String>, source_id: Option<String>, limit: Option<u32>) -> Result<Value, String> {
+    send_rpc(&state, "poor-cli/listRuns", json!({"sourceKind": source_kind, "sourceId": source_id, "limit": limit})).await
+}
+
 // --- workflows ---
 #[tauri::command]
 pub async fn list_workflows(state: State<'_, AppState>) -> Result<Value, String> {
@@ -711,6 +717,12 @@ pub async fn git_diff_full(_state: State<'_, AppState>, staged: Option<bool>) ->
 pub async fn git_branches(_state: State<'_, AppState>) -> Result<Value, String> {
     let out = Command::new("git").args(["branch", "-a", "--no-color"]).output().await.map_err(|e| e.to_string())?;
     Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string()}))
+}
+#[tauri::command]
+pub async fn git_graph(_state: State<'_, AppState>, count: Option<u32>) -> Result<Value, String> {
+    let n = count.unwrap_or(60).to_string();
+    let out = Command::new("git").args(["log", "--all", "--format=%H|%P|%s|%D", "-n", &n]).output().await.map_err(|e| e.to_string())?;
+    Ok(json!({"output": String::from_utf8_lossy(&out.stdout).to_string(), "error": String::from_utf8_lossy(&out.stderr).to_string()}))
 }
 
 // --- services ---

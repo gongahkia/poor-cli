@@ -1,6 +1,5 @@
 // timeline view — agent run history with diffs
 import { rpc } from './rpc.js';
-import { addMessage } from './app.js';
 
 export async function initTimeline() {
   const container = document.getElementById('timeline-content');
@@ -13,40 +12,48 @@ export async function refreshTimeline() {
   if (!container) return;
   container.innerHTML = '<p style="color:var(--text-muted)">Loading...</p>';
   try {
-    const result = await rpc('poor-cli/listRuns', {});
+    const result = await rpc('list_runs', {});
     const runs = result.runs || result || [];
     container.innerHTML = '';
-    if (!runs.length) { container.innerHTML = '<p style="color:var(--text-muted)">No runs in timeline</p>'; return; }
+    if (!runs.length) {
+      container.innerHTML = '<div class="tl-empty"><span class="tl-empty-icon">&#9711;</span><p>No runs yet</p></div>';
+      return;
+    }
+    const list = document.createElement('div');
+    list.className = 'tl-list';
     runs.forEach((run, i) => {
+      const ok = run.status === 'success';
+      const fail = run.status === 'failed';
+      const statusCls = ok ? 'tl-badge-ok' : fail ? 'tl-badge-fail' : 'tl-badge';
+      const icon = ok ? '&#10003;' : fail ? '&#10007;' : '&#8226;';
       const entry = document.createElement('div');
-      entry.className = 'item-card timeline-entry';
-      const statusCls = run.status === 'success' ? 'badge-success' : run.status === 'failed' ? 'badge-error' : 'badge';
-      entry.innerHTML = `<div class="timeline-header">`
-        + `<span class="timeline-dot"></span>`
-        + `<h3>${esc(run.title || run.id || `Run #${i + 1}`)}</h3>`
-        + `<span class="${statusCls}">${esc(run.status || 'unknown')}</span>`
-        + `<span style="color:var(--text-muted);font-size:12px;margin-left:auto">${esc(run.timestamp || run.createdAt || '')}</span>`
-        + `</div>`
-        + `<p>${esc(run.summary || run.prompt || '')}</p>`
-        + `<div class="timeline-diff" hidden></div>`
-        + `<button class="btn btn-sm timeline-expand-btn">Show diff</button>`;
-      const diffPanel = entry.querySelector('.timeline-diff');
-      const expandBtn = entry.querySelector('.timeline-expand-btn');
+      entry.className = 'tl-entry';
+      entry.innerHTML = `<div class="tl-rail"><span class="tl-dot ${ok ? 'tl-dot-ok' : fail ? 'tl-dot-fail' : ''}">${icon}</span><span class="tl-line"></span></div>`
+        + `<div class="tl-body">`
+        + `<div class="tl-head"><h4>${esc(run.title || run.id || `Run #${i + 1}`)}</h4><span class="${statusCls}">${esc(run.status || 'unknown')}</span>`
+        + `<span class="tl-time">${esc(run.timestamp || run.createdAt || '')}</span></div>`
+        + `<p class="tl-summary">${esc(run.summary || run.prompt || '')}</p>`
+        + `<div class="tl-diff" hidden></div>`
+        + `<button class="btn btn-sm tl-expand-btn">Show diff</button>`
+        + `</div>`;
+      const diffPanel = entry.querySelector('.tl-diff');
+      const expandBtn = entry.querySelector('.tl-expand-btn');
       expandBtn.onclick = async () => {
         if (!diffPanel.hidden) { diffPanel.hidden = true; expandBtn.textContent = 'Show diff'; return; }
         diffPanel.innerHTML = '<p style="color:var(--text-muted)">Loading...</p>';
         diffPanel.hidden = false;
         expandBtn.textContent = 'Hide diff';
         try {
-          const wf = await rpc('poor-cli/getWorkflow', { runId: run.id || run.runId });
+          const wf = await rpc('get_workflow', { name: run.id || run.runId });
           const diff = wf.diff || wf.changes || JSON.stringify(wf, null, 2);
-          diffPanel.innerHTML = `<pre>${esc(typeof diff === 'string' ? diff : JSON.stringify(diff, null, 2))}</pre>`;
+          diffPanel.innerHTML = `<pre class="tl-diff-pre">${esc(typeof diff === 'string' ? diff : JSON.stringify(diff, null, 2))}</pre>`;
         } catch (e) { diffPanel.innerHTML = `<p style="color:var(--error)">${esc(String(e))}</p>`; }
       };
-      container.appendChild(entry);
+      list.appendChild(entry);
     });
+    container.appendChild(list);
   } catch (_) {
-    container.innerHTML = '<p style="color:var(--text-muted)">Timeline unavailable — backend not connected</p>';
+    container.innerHTML = '<div class="tl-empty"><span class="tl-empty-icon">&#9888;</span><p>Timeline unavailable — backend not connected</p></div>';
   }
 }
 

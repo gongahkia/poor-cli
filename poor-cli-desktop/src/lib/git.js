@@ -173,9 +173,7 @@ const LANE_COLORS = ['#4a9eff', '#ff6b9d', '#50e3c2', '#f5a623', '#bd10e0', '#7e
 async function renderTree(el) {
   let result;
   try {
-    result = await rpc('poor-cli/executeCommand', {
-      command: 'git log --all --format="%H|%P|%s|%D" -60'
-    });
+    result = await rpc('git_graph', { count: 60 });
   } catch {
     el.innerHTML = '<p style="color:var(--text-muted)">Could not load git graph</p>';
     return;

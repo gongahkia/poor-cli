@@ -90,6 +90,8 @@ fn main() {
             commands::list_custom_commands,
             commands::get_custom_command,
             commands::run_custom_command,
+            // runs/timeline
+            commands::list_runs,
             // workflows
             commands::list_workflows,
             commands::get_workflow,
@@ -107,6 +109,7 @@ fn main() {
             commands::git_diff,
             commands::git_diff_full,
             commands::git_branches,
+            commands::git_graph,
             // export
             commands::export_conversation,
             // services
