@@ -2,12 +2,14 @@
 // supports split view: drag a sidebar nav item onto the main area to split
 const views = {};
 let current = 'chat';
-let splitState = null; // null | { direction, primary, secondary }
-let _draggedView = null; // module-level to avoid dataTransfer quirks
+let splitState = null;
+let _draggedView = null;
+let _isDragging = false; // prevents click handler from firing after drag
 
 export function registerView(name, initFn) { views[name] = { initFn, initialized: false }; }
 
 export function showView(name) {
+  if (_isDragging) { console.log('[split] showView blocked — drag in progress'); return; }
   if (splitState) unsplit();
   _activateView(name);
   current = name;
@@ -33,9 +35,10 @@ function _ensureInit(name) {
 // ── split view ──────────────────────────────────────────────────────
 
 export function showSplit(secondaryName, direction) {
-  if (secondaryName === current) return;
+  console.log(`[split] showSplit called: secondary=${secondaryName}, dir=${direction}, current=${current}`);
+  if (secondaryName === current) { console.log('[split] aborted — same view'); return; }
   const mainPanel = document.querySelector('.main-panel');
-  if (!mainPanel) return;
+  if (!mainPanel) { console.log('[split] aborted — no .main-panel'); return; }
   if (splitState) unsplit();
   splitState = { direction, primary: current, secondary: secondaryName };
   const wrapper = document.createElement('div');
@@ -49,7 +52,6 @@ export function showSplit(secondaryName, direction) {
   divider.className = 'split-divider';
   divider.innerHTML = `<button class="split-unsplit-btn" title="Close split">&times;</button>`;
   divider.querySelector('.split-unsplit-btn').onclick = (e) => { e.stopPropagation(); unsplit(); };
-  // resize
   divider.addEventListener('mousedown', (e) => {
     if (e.target.closest('.split-unsplit-btn')) return;
     e.preventDefault();
@@ -67,10 +69,13 @@ export function showSplit(secondaryName, direction) {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
-  // move view panels into panes
   const primaryView = mainPanel.querySelector(`.view-panel[data-view="${current}"]`);
   const secondaryView = mainPanel.querySelector(`.view-panel[data-view="${secondaryName}"]`);
-  if (!primaryView || !secondaryView) { splitState = null; return; }
+  if (!primaryView || !secondaryView) {
+    console.log(`[split] aborted — missing panels: primary=${!!primaryView} secondary=${!!secondaryView}`);
+    splitState = null;
+    return;
+  }
   primaryPane.appendChild(primaryView);
   secondaryPane.appendChild(secondaryView);
   primaryView.hidden = false;
@@ -79,19 +84,19 @@ export function showSplit(secondaryName, direction) {
   wrapper.appendChild(primaryPane);
   wrapper.appendChild(divider);
   wrapper.appendChild(secondaryPane);
-  // insert after workspace-bar (before first view-panel or status bar)
   const anchor = mainPanel.querySelector('#workspace-bar');
   if (anchor && anchor.nextSibling) mainPanel.insertBefore(wrapper, anchor.nextSibling);
   else mainPanel.appendChild(wrapper);
-  // hide all other panels still in main-panel
   mainPanel.querySelectorAll(':scope > .view-panel').forEach(el => { el.hidden = true; });
   document.querySelectorAll('.sidebar-nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === current || el.dataset.nav === secondaryName);
   });
+  console.log('[split] split applied successfully');
 }
 
 export function unsplit() {
   if (!splitState) return;
+  console.log('[split] unsplit');
   const mainPanel = document.querySelector('.main-panel');
   const wrapper = document.getElementById('split-wrapper');
   if (!wrapper || !mainPanel) { splitState = null; return; }
@@ -111,29 +116,56 @@ export function unsplit() {
 // ── drag & drop ─────────────────────────────────────────────────────
 
 export function initSplitDragDrop() {
-  document.querySelectorAll('.sidebar-nav-item').forEach(el => {
+  console.log('[split] initSplitDragDrop — setting up drag on sidebar items');
+  const items = document.querySelectorAll('.sidebar-nav-item');
+  console.log(`[split] found ${items.length} sidebar items`);
+  items.forEach(el => {
     if (!el.dataset.nav) return;
     el.draggable = true;
     el.addEventListener('dragstart', (e) => {
       _draggedView = el.dataset.nav;
-      e.dataTransfer.setData('text/plain', el.dataset.nav); // required for drag to work
+      _isDragging = true;
+      e.dataTransfer.setData('text/plain', el.dataset.nav);
       e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => _showDropZones(), 10);
+      console.log(`[split] dragstart: view=${_draggedView}`);
+      setTimeout(() => _showDropZones(), 0);
     });
     el.addEventListener('dragend', () => {
+      console.log(`[split] dragend: view=${_draggedView}`);
       _draggedView = null;
       _hideDropZones();
+      // delay clearing _isDragging so the click handler doesn't fire
+      setTimeout(() => { _isDragging = false; }, 100);
     });
   });
+  // also allow dropping on the main panel itself as a fallback
+  const mainPanel = document.querySelector('.main-panel');
+  if (mainPanel) {
+    mainPanel.addEventListener('dragover', (e) => {
+      if (_draggedView) e.preventDefault();
+    });
+    mainPanel.addEventListener('drop', (e) => {
+      if (!_draggedView) return;
+      e.preventDefault();
+      console.log(`[split] drop on main-panel fallback: view=${_draggedView}`);
+      const viewName = _draggedView;
+      _draggedView = null;
+      _hideDropZones();
+      if (viewName && viewName !== current) {
+        showSplit(viewName, 'horizontal');
+      }
+      setTimeout(() => { _isDragging = false; }, 100);
+    });
+  }
 }
 
 function _showDropZones() {
-  _hideDropZones(); // remove old
+  _hideDropZones();
   const mainPanel = document.querySelector('.main-panel');
-  if (!mainPanel) return;
+  if (!mainPanel) { console.log('[split] _showDropZones — no main-panel'); return; }
+  console.log('[split] showing drop zones');
   const overlay = document.createElement('div');
   overlay.id = 'split-drop-overlay';
-  // append to main-panel (not view-panel) so overflow:hidden doesn't clip
   mainPanel.style.position = 'relative';
   mainPanel.appendChild(overlay);
   const zones = [
@@ -148,15 +180,25 @@ function _showDropZones() {
     zone.dataset.dir = z.dir;
     zone.dataset.side = z.side;
     zone.innerHTML = `<span>${z.label}</span>`;
-    zone.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; zone.classList.add('active'); });
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      zone.classList.add('active');
+    });
     zone.addEventListener('dragleave', () => zone.classList.remove('active'));
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
       e.stopPropagation();
       const viewName = _draggedView;
+      console.log(`[split] DROP on zone ${z.side}: view=${viewName}, current=${current}`);
       _draggedView = null;
       _hideDropZones();
-      if (!viewName || viewName === current) return;
+      if (!viewName || viewName === current) {
+        console.log('[split] drop ignored — same view or no view');
+        setTimeout(() => { _isDragging = false; }, 100);
+        return;
+      }
       if (z.side === 'right' || z.side === 'bottom') {
         showSplit(viewName, z.dir);
       } else {
@@ -165,12 +207,16 @@ function _showDropZones() {
         _ensureInit(viewName);
         showSplit(oldCurrent, z.dir);
       }
+      setTimeout(() => { _isDragging = false; }, 100);
     });
     overlay.appendChild(zone);
   });
+  // verify overlay is visible
+  const rect = overlay.getBoundingClientRect();
+  console.log(`[split] overlay rect: ${rect.width}x${rect.height} at (${rect.left},${rect.top})`);
 }
 
 function _hideDropZones() {
   const old = document.getElementById('split-drop-overlay');
-  if (old) old.remove();
+  if (old) { old.remove(); console.log('[split] drop zones removed'); }
 }

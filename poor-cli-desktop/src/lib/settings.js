@@ -30,6 +30,9 @@ const apiKeyDefs = [
 ];
 
 // fallback options using exact backend field names
+const LIGHT_THEMES = ['github-light', 'quiet-light', 'solarized-light', 'gruvbox-light', 'rose-pine-dawn', 'catppuccin-latte'];
+const DARK_THEMES = ['one-dark', 'dracula', 'github-dark', 'monokai', 'nord', 'gruvbox-dark', 'rose-pine', 'catppuccin-mocha', 'tokyo-night'];
+
 const defaultOptions = [
   // ui
   { path: 'ui.theme', value: 'github-light', choices: [...LIGHT_THEMES, ...DARK_THEMES] },
@@ -378,9 +381,6 @@ function renderFontsGroup() {
   }
   return group;
 }
-
-const LIGHT_THEMES = ['github-light', 'quiet-light', 'solarized-light', 'gruvbox-light', 'rose-pine-dawn', 'catppuccin-latte'];
-const DARK_THEMES = ['one-dark', 'dracula', 'github-dark', 'monokai', 'nord', 'gruvbox-dark', 'rose-pine', 'catppuccin-mocha', 'tokyo-night'];
 
 function renderThemeGroup(currentTheme) {
   const group = document.createElement('div');

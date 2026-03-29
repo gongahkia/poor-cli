@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use tokio::process::Child;
 
 pub struct BackendProcess {
+    #[allow(dead_code)] // kept alive to prevent subprocess from being killed on drop
     pub child: Child,
     pub stdin: tokio::process::ChildStdin,
     pub stdout: tokio::io::BufReader<tokio::process::ChildStdout>,

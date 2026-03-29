@@ -18,6 +18,7 @@
       </div>
       <div class="sidebar-nav">
         <div class="sidebar-nav-item active" data-nav="chat">New thread</div>
+        <div class="sidebar-nav-item" data-nav="notifications">Notifications <span class="notif-badge" id="notif-badge" hidden>0</span></div>
         <div class="sidebar-nav-item" data-nav="tasks">Tasks</div>
         <div class="sidebar-nav-item" data-nav="skills">Skills</div>
         <div class="sidebar-nav-item" data-nav="commands">Commands</div>
@@ -36,6 +37,7 @@
         <div class="sidebar-nav-item" data-nav="instructions">Instructions</div>
         <div class="sidebar-nav-item" data-nav="prompt-library">Prompt Library</div>
         <div class="sidebar-nav-item" data-nav="qa-watch">QA Watch</div>
+        <div class="sidebar-nav-item" data-nav="collab">Collaborate</div>
         <div class="sidebar-nav-item" data-nav="settings">Settings</div>
         <div class="sidebar-nav-item sidebar-open-project" id="open-project-btn">Open project</div>
       </div>
@@ -45,21 +47,9 @@
       </div>
       <div class="sidebar-footer" hidden></div>
     </div>
-    <!-- vertical tabs panel (hidden by default, toggled via setting) -->
-    <div class="vtabs-panel" id="vtabs-panel" hidden>
-      <div class="vtabs-header">
-        <span class="vtabs-title">Threads</span>
-        <button class="vtabs-btn" id="vtabs-add-btn" title="New session">+</button>
-      </div>
-      <div class="vtabs-list" id="vtabs-list"></div>
-      <div class="vtabs-footer">
-        <div class="vtabs-settings-btn" id="vtabs-settings-btn">Settings</div>
-      </div>
-    </div>
     <div class="main-panel">
       <div class="session-tab-bar" id="session-tab-bar">
-        <div class="session-tab-add" id="session-tab-add" title="New session">+</div>
-        <div class="session-tab-open-project" id="open-project-tab-btn" title="Open project (Cmd+O)">Open</div>
+        <div class="session-tab-add" id="session-tab-add" title="Open project (Cmd+O)">+</div>
       </div>
       <div id="top-bar" class="top-bar">
         <span id="thread-title">New thread</span>
@@ -77,19 +67,6 @@
           <div class="project-info">
             <div class="project-name" id="project-name">Project</div>
             <div class="project-path" id="project-path">~/project</div>
-          </div>
-        </div>
-        <div class="workspace-bar-right">
-          <div class="workspace-badge" id="wb-git">&#x2387; <span id="wb-git-branch">--</span></div>
-          <div class="workspace-badge" id="wb-permission"><span id="wb-permission-mode">--</span></div>
-          <div class="collab-btn" id="wb-collab" hidden>
-            <span id="wb-collab-label">Collab</span>
-            <span id="wb-collab-count" class="collab-count"></span>
-          </div>
-          <div class="file-changes-btn" id="wb-file-changes" hidden>
-            <span id="wb-fc-count">0</span> files
-            <span class="added" id="wb-fc-added">+0</span>
-            <span class="removed" id="wb-fc-removed">-0</span>
           </div>
         </div>
       </div>
@@ -287,6 +264,49 @@
           <div id="qa-watch-content"></div>
         </div>
       </div>
+      <!-- collab view -->
+      <div class="view-panel" data-view="collab" hidden>
+        <div class="collab-container" id="collab-panel">
+          <h2>Collaborate</h2>
+          <div id="cp-body">
+            <div id="cp-idle">
+              <div class="cp-section">
+                <h4>Start Session</h4>
+                <div class="cp-preset-btns">
+                  <button class="btn btn-sm" data-preset="pairing">Pair</button>
+                  <button class="btn btn-sm" data-preset="mob">Mob</button>
+                  <button class="btn btn-sm" data-preset="review">Review</button>
+                </div>
+              </div>
+              <div class="cp-section">
+                <h4>Join Session</h4>
+                <input type="text" id="cp-invite-input" class="search-input" placeholder="Paste invite code..." />
+                <button class="btn btn-sm btn-primary" id="cp-join-btn">Join</button>
+              </div>
+            </div>
+            <div id="cp-active" hidden>
+              <div class="cp-section" id="cp-session-info"></div>
+              <div class="cp-section" id="cp-members"></div>
+              <div class="cp-section" id="cp-lobby" hidden></div>
+              <div class="cp-section" id="cp-queue" hidden></div>
+              <div class="cp-section" id="cp-suggestions"></div>
+              <div class="cp-section" id="cp-agenda"></div>
+              <div class="cp-section" id="cp-activity"></div>
+              <div class="cp-section cp-actions">
+                <button class="btn btn-sm" id="cp-invite-btn">Share Invite</button>
+                <button class="btn btn-sm" id="cp-leave-btn">Leave</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- notifications view -->
+      <div class="view-panel" data-view="notifications" hidden>
+        <div class="notifications-container">
+          <h2>Notifications</h2>
+          <div id="notifications-content"></div>
+        </div>
+      </div>
       <!-- context view -->
       <div class="view-panel" data-view="context" hidden>
         <div class="context-container">
@@ -305,40 +325,15 @@
         <span id="sb-changes" class="file-changes-badge" hidden></span>
       </footer>
     </div>
-    <div class="collab-panel collapsed" id="collab-panel">
-      <div class="cp-header">
-        <h3 id="cp-title">Collaborate</h3>
-        <span class="cp-close" id="cp-close">&times;</span>
+    <!-- vertical tabs panel (right side, toggled via setting) -->
+    <div class="vtabs-panel" id="vtabs-panel" hidden>
+      <div class="vtabs-header">
+        <span class="vtabs-title">Threads</span>
+        <button class="vtabs-btn" id="vtabs-add-btn" title="Open project">+</button>
       </div>
-      <div class="cp-body" id="cp-body">
-        <div id="cp-idle">
-          <div class="cp-section">
-            <h4>Start Session</h4>
-            <div class="cp-preset-btns">
-              <button class="btn btn-sm" data-preset="pairing">Pair</button>
-              <button class="btn btn-sm" data-preset="mob">Mob</button>
-              <button class="btn btn-sm" data-preset="review">Review</button>
-            </div>
-          </div>
-          <div class="cp-section">
-            <h4>Join Session</h4>
-            <input type="text" id="cp-invite-input" placeholder="Paste invite code..." />
-            <button class="btn btn-sm btn-primary" id="cp-join-btn">Join</button>
-          </div>
-        </div>
-        <div id="cp-active" hidden>
-          <div class="cp-section" id="cp-session-info"></div>
-          <div class="cp-section" id="cp-members"></div>
-          <div class="cp-section" id="cp-lobby" hidden></div>
-          <div class="cp-section" id="cp-queue" hidden></div>
-          <div class="cp-section" id="cp-suggestions"></div>
-          <div class="cp-section" id="cp-agenda"></div>
-          <div class="cp-section" id="cp-activity"></div>
-          <div class="cp-section cp-actions">
-            <button class="btn btn-sm" id="cp-invite-btn">Share Invite</button>
-            <button class="btn btn-sm" id="cp-leave-btn">Leave</button>
-          </div>
-        </div>
+      <div class="vtabs-list" id="vtabs-list"></div>
+      <div class="vtabs-footer">
+        <div class="vtabs-settings-btn" id="vtabs-settings-btn">Settings</div>
       </div>
     </div>
     <div class="file-changes-panel collapsed" id="file-changes-panel">

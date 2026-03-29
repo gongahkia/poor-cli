@@ -29,6 +29,7 @@ import { initEconomy } from './economy.js';
 import { initInstructions } from './instructions.js';
 import { initPromptLibrary } from './prompt_library.js';
 import { initQaWatch } from './qa_watch.js';
+import { initNotifications, notify } from './notifications.js';
 
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
@@ -46,15 +47,16 @@ const sbSpinner = document.getElementById('sb-spinner');
 const sbChanges = document.getElementById('sb-changes');
 const sessionTabBar = document.getElementById('session-tab-bar');
 const sessionTabAdd = document.getElementById('session-tab-add');
-const projectAvatar = document.getElementById('project-avatar');
+const projectAvatar = document.getElementById('project-avatar') || document.createElement('span');
 const projectName = document.getElementById('project-name');
 const projectPath = document.getElementById('project-path');
-const wbGitBranch = document.getElementById('wb-git-branch');
-const wbPermission = document.getElementById('wb-permission-mode');
-const wbFileChanges = document.getElementById('wb-file-changes');
-const wbFcCount = document.getElementById('wb-fc-count');
-const wbFcAdded = document.getElementById('wb-fc-added');
-const wbFcRemoved = document.getElementById('wb-fc-removed');
+const _dummy = document.createElement('span');
+const wbGitBranch = document.getElementById('wb-git-branch') || _dummy;
+const wbPermission = document.getElementById('wb-permission-mode') || _dummy;
+const wbFileChanges = document.getElementById('wb-file-changes') || _dummy;
+const wbFcCount = document.getElementById('wb-fc-count') || _dummy;
+const wbFcAdded = document.getElementById('wb-fc-added') || _dummy;
+const wbFcRemoved = document.getElementById('wb-fc-removed') || _dummy;
 const newSessionModal = document.getElementById('new-session-modal');
 const newSessionNameInput = document.getElementById('new-session-name');
 const modalCancel = document.getElementById('modal-cancel');
@@ -105,6 +107,10 @@ let notifyReady = false;
 })();
 
 export function desktopNotify(title, body) {
+  // add to notification center
+  const isError = (body || '').toLowerCase().includes('error') || (body || '').toLowerCase().includes('fail');
+  notify({ title, body, type: isError ? 'error' : 'info', sessionId: activeSessionId });
+  // native OS notification
   if (!notifyReady) return;
   invoke('plugin:notification|notify', { title, body }).catch(() => {});
 }
@@ -280,6 +286,16 @@ export async function refreshSessions() {
       });
       tab.appendChild(close);
       tab.addEventListener('click', () => selectSession(s, tab));
+      // right-click to rename
+      tab.addEventListener('contextmenu', async (e) => {
+        e.preventDefault();
+        const newName = prompt('Rename session:', s.label || '');
+        if (newName === null) return;
+        try {
+          await rpc('rename_session', { session_id: s.sessionId, label: newName });
+          await refreshSessions();
+        } catch (_) {}
+      });
       // drag-to-reorder
       tab.draggable = true;
       tab.dataset.sessionId = s.sessionId;
@@ -319,6 +335,15 @@ export async function refreshSessions() {
           selectSession(s, null);
           vtabsList.querySelectorAll('.vtab-item').forEach(v => v.classList.remove('active'));
           item.classList.add('active');
+        });
+        item.addEventListener('contextmenu', async (e) => {
+          e.preventDefault();
+          const newName = prompt('Rename session:', s.label || '');
+          if (newName === null) return;
+          try {
+            await rpc('rename_session', { session_id: s.sessionId, label: newName });
+            await refreshSessions();
+          } catch (_) {}
         });
         vtabsList.appendChild(item);
       });
@@ -552,6 +577,10 @@ async function sendMessage() {
     else content = '```json\n' + JSON.stringify(result, null, 2) + '\n```';
     pending.innerHTML = renderMarkdown(content);
     await renderActivity();
+    // notify when response is ready (if user isn't looking at this tab)
+    if (document.hidden) {
+      notify({ title: 'Response ready', body: content.slice(0, 80), type: 'success', sessionId: activeSessionId });
+    }
   } catch (e) {
     const errText = `Error: ${e}`;
     pending.textContent = errText;
@@ -588,11 +617,9 @@ modelSelect.addEventListener('change', async () => {
     showProviderError('Model switch failed', e);
   }
 });
-// session tab bar
+// session tab bar — + opens folder picker directly
 sessionTabAdd.addEventListener('click', () => {
-  newSessionModal.hidden = false;
-  newSessionNameInput.value = '';
-  newSessionNameInput.focus();
+  document.getElementById('open-project-btn')?.click();
 });
 modalCancel.addEventListener('click', () => { newSessionModal.hidden = true; });
 modalCreate.addEventListener('click', async () => {
@@ -675,6 +702,8 @@ registerView('economy', initEconomy);
 registerView('instructions', initInstructions);
 registerView('prompt-library', initPromptLibrary);
 registerView('qa-watch', initQaWatch);
+registerView('notifications', initNotifications);
+registerView('collab', () => {}); // collab panel is inline HTML, already initialized
 
 // sidebar nav
 document.querySelectorAll('.sidebar-nav-item').forEach(el => {
@@ -747,7 +776,7 @@ const savedLayout = localStorage.getItem('poor-cli-tab-layout') || 'horizontal';
 applyTabLayout(savedLayout);
 // vertical tabs wiring
 const vtabsAddBtn = document.getElementById('vtabs-add-btn');
-if (vtabsAddBtn) vtabsAddBtn.addEventListener('click', () => sessionTabAdd.click());
+if (vtabsAddBtn) vtabsAddBtn.addEventListener('click', () => document.getElementById('open-project-btn')?.click());
 const vtabsSettings = document.getElementById('vtabs-settings-btn');
 if (vtabsSettings) vtabsSettings.addEventListener('click', () => showView('settings'));
 initFileChangesPanel();

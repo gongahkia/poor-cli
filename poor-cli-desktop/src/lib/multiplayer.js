@@ -1,35 +1,28 @@
 // multiplayer / collaboration panel
 import { rpc } from './rpc.js';
 
-const collabPanel = document.getElementById('collab-panel');
-const cpClose = document.getElementById('cp-close');
 const cpIdle = document.getElementById('cp-idle');
 const cpActive = document.getElementById('cp-active');
 const cpJoinBtn = document.getElementById('cp-join-btn');
 const cpInviteInput = document.getElementById('cp-invite-input');
 const cpLeaveBtn = document.getElementById('cp-leave-btn');
 const cpInviteBtn = document.getElementById('cp-invite-btn');
-const wbCollab = document.getElementById('wb-collab');
 
+const _d = document.createElement('span');
+const wbCollab = document.getElementById('wb-collab') || _d;
 let sessionActive = false;
 
 export function initCollabPanel() {
-  cpClose.addEventListener('click', () => collabPanel.classList.add('collapsed'));
-  cpJoinBtn.addEventListener('click', joinSession);
-  cpLeaveBtn.addEventListener('click', leaveSession);
-  cpInviteBtn.addEventListener('click', shareInvite);
+  if (cpJoinBtn) cpJoinBtn.addEventListener('click', joinSession);
+  if (cpLeaveBtn) cpLeaveBtn.addEventListener('click', leaveSession);
+  if (cpInviteBtn) cpInviteBtn.addEventListener('click', shareInvite);
   document.querySelectorAll('.cp-preset-btns button').forEach(btn => {
     btn.addEventListener('click', () => startSession(btn.dataset.preset));
   });
 }
 
-export function toggleCollabPanel() {
-  collabPanel.classList.toggle('collapsed');
-}
-
-export function showCollabButton() {
-  // show the collab button in workspace bar
-}
+export function toggleCollabPanel() {} // no-op, now a regular view
+export function showCollabButton() {}
 
 export function cleanupCollab() {
   if (sessionActive) {
