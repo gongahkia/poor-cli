@@ -307,6 +307,22 @@ export async function refreshSessions() {
         threadTitle.textContent = s.label || s.sessionId;
       }
     });
+    // sync vertical tabs
+    const vtabsList = document.getElementById('vtabs-list');
+    if (vtabsList) {
+      vtabsList.innerHTML = '';
+      sessions.forEach(s => {
+        const item = document.createElement('div');
+        item.className = `vtab-item${s.isDefault ? ' active' : ''}`;
+        item.innerHTML = `<span class="vtab-name">${(s.label || s.sessionId || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`;
+        item.addEventListener('click', () => {
+          selectSession(s, null);
+          vtabsList.querySelectorAll('.vtab-item').forEach(v => v.classList.remove('active'));
+          item.classList.add('active');
+        });
+        vtabsList.appendChild(item);
+      });
+    }
   } catch (_) {}
 }
 

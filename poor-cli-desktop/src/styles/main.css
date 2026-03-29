@@ -129,6 +129,111 @@
   --error: #bf616a;
   --warning: #ebcb8b;
 }
+/* Gruvbox Light */
+[data-theme="gruvbox-light"] {
+  --bg-primary: #fbf1c7;
+  --bg-secondary: #f2e5bc;
+  --bg-tertiary: #ebdbb2;
+  --text-primary: #3c3836;
+  --text-secondary: #504945;
+  --text-muted: #928374;
+  --accent: #b57614;
+  --accent-hover: #af3a03;
+  --border: #d5c4a1;
+  --success: #79740e;
+  --error: #cc241d;
+  --warning: #d79921;
+}
+/* Rose Pine Dawn */
+[data-theme="rose-pine-dawn"] {
+  --bg-primary: #faf4ed;
+  --bg-secondary: #f2e9e1;
+  --bg-tertiary: #eaddd2;
+  --text-primary: #575279;
+  --text-secondary: #6e6a86;
+  --text-muted: #9893a5;
+  --accent: #907aa9;
+  --accent-hover: #7c6995;
+  --border: #dfdad9;
+  --success: #286983;
+  --error: #b4637a;
+  --warning: #ea9d34;
+}
+/* Catppuccin Latte */
+[data-theme="catppuccin-latte"] {
+  --bg-primary: #eff1f5;
+  --bg-secondary: #e6e9ef;
+  --bg-tertiary: #dce0e8;
+  --text-primary: #4c4f69;
+  --text-secondary: #5c5f77;
+  --text-muted: #8c8fa1;
+  --accent: #1e66f5;
+  --accent-hover: #7287fd;
+  --border: #ccd0da;
+  --success: #40a02b;
+  --error: #d20f39;
+  --warning: #df8e1d;
+}
+/* Gruvbox Dark */
+[data-theme="gruvbox-dark"] {
+  --bg-primary: #282828;
+  --bg-secondary: #3c3836;
+  --bg-tertiary: #504945;
+  --text-primary: #ebdbb2;
+  --text-secondary: #d5c4a1;
+  --text-muted: #928374;
+  --accent: #fabd2f;
+  --accent-hover: #d79921;
+  --border: #665c54;
+  --success: #b8bb26;
+  --error: #fb4934;
+  --warning: #fe8019;
+}
+/* Rose Pine */
+[data-theme="rose-pine"] {
+  --bg-primary: #191724;
+  --bg-secondary: #1f1d2e;
+  --bg-tertiary: #26233a;
+  --text-primary: #e0def4;
+  --text-secondary: #908caa;
+  --text-muted: #6e6a86;
+  --accent: #c4a7e7;
+  --accent-hover: #9ccfd8;
+  --border: #403d52;
+  --success: #31748f;
+  --error: #eb6f92;
+  --warning: #f6c177;
+}
+/* Catppuccin Mocha */
+[data-theme="catppuccin-mocha"] {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-tertiary: #313244;
+  --text-primary: #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-muted: #6c7086;
+  --accent: #89b4fa;
+  --accent-hover: #b4befe;
+  --border: #45475a;
+  --success: #a6e3a1;
+  --error: #f38ba8;
+  --warning: #f9e2af;
+}
+/* Tokyo Night */
+[data-theme="tokyo-night"] {
+  --bg-primary: #1a1b26;
+  --bg-secondary: #24283b;
+  --bg-tertiary: #292e42;
+  --text-primary: #c0caf5;
+  --text-secondary: #a9b1d6;
+  --text-muted: #565f89;
+  --accent: #7aa2f7;
+  --accent-hover: #bb9af7;
+  --border: #3b4261;
+  --success: #9ece6a;
+  --error: #f7768e;
+  --warning: #e0af68;
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: var(--font-sans);
