@@ -553,6 +553,14 @@ LIMIT defaults to 50."
   (poor-cli-request "poor-cli/listHostActivity"
                     (list :room room :limit (or limit 50) :eventType event-type)))
 
+(defun poor-cli-create-task (params)
+  "Create a task with PARAMS."
+  (poor-cli-request "poor-cli/createTask" params))
+
+(defun poor-cli-create-automation (params)
+  "Create an automation with PARAMS."
+  (poor-cli-request "poor-cli/createAutomation" params))
+
 (provide 'poor-cli-rpc)
 
 ;;; poor-cli-rpc.el ends here

@@ -17,6 +17,18 @@
 (require 'poor-cli-lists)
 (require 'poor-cli-collab)
 (require 'poor-cli-commands)
+(require 'poor-cli-checkpoints)
+(require 'poor-cli-memory)
+(require 'poor-cli-sessions)
+(require 'poor-cli-agents)
+(require 'poor-cli-config)
+(require 'poor-cli-history)
+(require 'poor-cli-custom-commands)
+(require 'poor-cli-skills)
+(require 'poor-cli-trust-mgr)
+(require 'poor-cli-context-mgr)
+(require 'poor-cli-cost)
+(require 'poor-cli-providers)
 
 (defvar poor-cli-mode-map
   (let ((map (make-sparse-keymap)))

@@ -10,6 +10,18 @@
 (require 'poor-cli-collab)
 (require 'poor-cli-inline)
 (require 'poor-cli-lists)
+(require 'poor-cli-checkpoints)
+(require 'poor-cli-memory)
+(require 'poor-cli-sessions)
+(require 'poor-cli-agents)
+(require 'poor-cli-config)
+(require 'poor-cli-history)
+(require 'poor-cli-custom-commands)
+(require 'poor-cli-skills)
+(require 'poor-cli-trust-mgr)
+(require 'poor-cli-context-mgr)
+(require 'poor-cli-cost)
+(require 'poor-cli-providers)
 
 (defun poor-cli-commands--open-markdown (name content)
   "Open markdown scratch buffer NAME with CONTENT."
@@ -299,7 +311,26 @@
     ("m" "Dispatch" poor-cli-collab-dispatch)
     ("M" "Summary" poor-cli-collab-summary)
     ("L" "Open log" poor-cli-open-log)
-    ("q" "Clear chat" poor-cli-chat-clear)]])
+    ("q" "Clear chat" poor-cli-chat-clear)]]
+  [["Data"
+    ("K" "Checkpoints" poor-cli-checkpoints-open)
+    ("e" "Memory" poor-cli-memory-open)
+    ("E" "Sessions" poor-cli-sessions-open)
+    ("g" "Agents" poor-cli-agents-open)
+    ("H" "History" poor-cli-history-open)]
+   ["More"
+    ("F" "Config" poor-cli-config-dispatch)
+    ("G" "Custom commands" poor-cli-custom-commands-open)
+    ("j" "Skills" poor-cli-skills-open)
+    ("J" "Trust mgr" poor-cli-trust-dispatch)
+    ("n" "Context preview" poor-cli-context-preview)
+    ("v" "Context compact" poor-cli-context-compact)
+    ("V" "Mutation preview" poor-cli-mutation-preview)
+    ("N" "Cost" poor-cli-cost-show)
+    ("$" "Savings" poor-cli-savings-show)
+    ("%" "Economy preset" poor-cli-economy-preset)
+    ("o" "Providers" poor-cli-providers-open)
+    ("O" "Ollama models" poor-cli-ollama-models)]])
 
 (provide 'poor-cli-commands)
 

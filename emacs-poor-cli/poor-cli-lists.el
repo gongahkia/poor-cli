@@ -154,7 +154,17 @@
      ("s" . poor-cli-lists-task-start)
      ("c" . poor-cli-lists-task-cancel)
      ("r" . poor-cli-lists-task-retry)
-     ("p" . poor-cli-lists-task-replay))))
+     ("p" . poor-cli-lists-task-replay)
+     ("C" . poor-cli-lists-task-create))))
+
+(defun poor-cli-lists-task-create ()
+  "Create a new task interactively."
+  (interactive)
+  (let ((title (read-string "Task title: "))
+        (prompt (read-string "Task prompt: ")))
+    (poor-cli-create-task (list :title title :prompt prompt))
+    (message "[poor-cli] Task created")
+    (poor-cli-lists-refresh)))
 
 (defun poor-cli-lists--automation-entries ()
   "Return entries for automations."
@@ -216,7 +226,19 @@
    '(("e" . poor-cli-lists-automation-toggle)
      ("r" . poor-cli-lists-automation-run-now)
      ("R" . poor-cli-lists-automation-replay)
-     ("h" . poor-cli-lists-automation-history))))
+     ("h" . poor-cli-lists-automation-history)
+     ("C" . poor-cli-lists-automation-create))))
+
+(defun poor-cli-lists-automation-create ()
+  "Create a new automation interactively."
+  (interactive)
+  (let ((name (read-string "Automation name: "))
+        (prompt (read-string "Prompt: "))
+        (every (read-string "Every N minutes: ")))
+    (poor-cli-create-automation
+     (list :name name :prompt prompt :everyMinutes (string-to-number every)))
+    (message "[poor-cli] Automation created")
+    (poor-cli-lists-refresh)))
 
 (defun poor-cli-lists--member-entries (payload)
   "Return member entries from PAYLOAD."
