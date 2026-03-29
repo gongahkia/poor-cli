@@ -51,9 +51,6 @@ build-tui: ## build the Rust TUI binary
 build-desktop: ## build the Tauri desktop app
 	cd poor-cli-desktop && cargo tauri build
 
-build-vscode: ## build the VS Code extension
-	cd vscode-poor-cli && npm install && npm run compile
-
 install: ## install the Python package in dev mode
 	pip install -e ".[dev]"
 
