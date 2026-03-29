@@ -75,7 +75,28 @@ function friendlyError(e) { // extract readable message from JSON-RPC error stri
 
 function showProviderError(prefix, e) {
   const msg = friendlyError(e);
-  providerInfo.innerHTML = `<span class="provider-error" title="${msg.replace(/"/g, '&quot;')}">${prefix}: ${msg}</span>`;
+  providerInfo.innerHTML = `<span class="provider-error" title="Click to copy">${prefix}: ${msg}</span>`;
+  copyOnClick(providerInfo.querySelector('.provider-error'), `${prefix}: ${msg}`);
+}
+
+// toast notification
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+export function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+
+export function copyOnClick(el, text) {
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', () => {
+    navigator.clipboard.writeText(text).then(
+      () => showToast('Copied to clipboard'),
+      () => showToast('Failed to copy')
+    );
+  });
 }
 
 // helpers
@@ -135,7 +156,9 @@ async function ensureInitialized() {
   } catch (e) {
     const msg = String(e);
     if (msg.includes('timeout') || msg.includes('spawn') || msg.includes('No such file')) {
-      providerInfo.innerHTML = '<span class="provider-error">Server not running — check Python venv</span>';
+      const errText = 'Server not running — check Python venv';
+      providerInfo.innerHTML = `<span class="provider-error" title="Click to copy">${errText}</span>`;
+      copyOnClick(providerInfo.querySelector('.provider-error'), errText);
     } else {
       showProviderError('Error', msg);
     }
@@ -433,8 +456,10 @@ async function sendMessage() {
         return;
       }
     } catch (e) {
-      pending.textContent = `Command error: ${e}`;
+      const errText = `Command error: ${e}`;
+      pending.textContent = errText;
       pending.style.color = 'var(--error)';
+      copyOnClick(pending, errText);
       showSpinner(false);
       return;
     }
@@ -455,8 +480,10 @@ async function sendMessage() {
     pending.innerHTML = renderMarkdown(content);
     await renderActivity();
   } catch (e) {
-    pending.textContent = `Error: ${e}`;
+    const errText = `Error: ${e}`;
+    pending.textContent = errText;
     pending.style.color = 'var(--error)';
+    copyOnClick(pending, errText);
   }
   showSpinner(false);
 }
