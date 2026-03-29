@@ -34,10 +34,10 @@ dependencies = [
     "aiortc>=1.14,<1.15",
     "cryptography>=41.0.0",
     "pydantic>=2.0,<3",
+    "openai>=1.0.0",
 ]
 
 [project.optional-dependencies]
-openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 telegram = ["python-telegram-bot>=21.0"]
 all = [

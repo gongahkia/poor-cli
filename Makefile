@@ -1,5 +1,14 @@
 .PHONY: cli desktop server tui build-tui build-desktop install dev test lint clean help
 
+# ── venv guard ──────────────────────────────────────────────────────
+REQUIRE_VENV := cli server exec agent-start agent-list watch preview deploy review-pr install dev test lint index
+$(foreach t,$(REQUIRE_VENV),$(eval $(t): _check-venv))
+
+_check-venv:
+ifndef VIRTUAL_ENV
+	$(error virtualenv not activated — run 'source .venv/bin/activate' first)
+endif
+
 # ── launch surfaces ──────────────────────────────────────────────────
 
 cli: ## launch the Rust TUI (default surface)

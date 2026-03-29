@@ -5,9 +5,10 @@ use tokio::sync::Mutex;
 use tokio::process::Child;
 
 pub struct BackendProcess {
-    pub _child: Child,
+    pub child: Child,
     pub stdin: tokio::process::ChildStdin,
     pub stdout: tokio::io::BufReader<tokio::process::ChildStdout>,
+    pub stderr: Option<tokio::process::ChildStderr>,
 }
 
 pub struct AppState {

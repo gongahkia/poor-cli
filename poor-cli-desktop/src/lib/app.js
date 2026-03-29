@@ -76,7 +76,49 @@ function friendlyError(e) { // extract readable message from JSON-RPC error stri
 
 function showProviderError(prefix, e) {
   const msg = friendlyError(e);
-  providerInfo.innerHTML = `<span class="provider-error" title="${msg.replace(/"/g, '&quot;')}">${prefix}: ${msg}</span>`;
+  providerInfo.innerHTML = `<span class="provider-error" title="Click to copy">${prefix}: ${msg}</span>`;
+  copyOnClick(providerInfo.querySelector('.provider-error'), `${prefix}: ${msg}`);
+  desktopNotify('poor-cli', `${prefix}: ${msg}`);
+}
+
+// desktop notifications via Tauri notification plugin
+const { invoke } = window.__TAURI__.core;
+let notifyReady = false;
+(async () => {
+  try {
+    const granted = await invoke('plugin:notification|is_permission_granted');
+    if (!granted) {
+      const result = await invoke('plugin:notification|request_permission');
+      notifyReady = result === 'granted';
+    } else {
+      notifyReady = true;
+    }
+  } catch (_) { notifyReady = false; }
+})();
+
+export function desktopNotify(title, body) {
+  if (!notifyReady) return;
+  invoke('plugin:notification|notify', { title, body }).catch(() => {});
+}
+
+// toast notification
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+export function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+
+export function copyOnClick(el, text) {
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', () => {
+    navigator.clipboard.writeText(text).then(
+      () => showToast('Copied to clipboard'),
+      () => showToast('Failed to copy')
+    );
+  });
 }
 
 // helpers
@@ -136,7 +178,10 @@ async function ensureInitialized() {
   } catch (e) {
     const msg = String(e);
     if (msg.includes('timeout') || msg.includes('spawn') || msg.includes('No such file')) {
-      providerInfo.innerHTML = '<span class="provider-error">Server not running — check Python venv</span>';
+      const errText = 'Server not running — check Python venv';
+      providerInfo.innerHTML = `<span class="provider-error" title="Click to copy">${errText}</span>`;
+      copyOnClick(providerInfo.querySelector('.provider-error'), errText);
+      desktopNotify('poor-cli', errText);
     } else {
       showProviderError('Error', msg);
     }
@@ -434,8 +479,11 @@ async function sendMessage() {
         return;
       }
     } catch (e) {
-      pending.textContent = `Command error: ${e}`;
+      const errText = `Command error: ${e}`;
+      pending.textContent = errText;
       pending.style.color = 'var(--error)';
+      copyOnClick(pending, errText);
+      desktopNotify('poor-cli', errText);
       showSpinner(false);
       return;
     }
@@ -456,8 +504,11 @@ async function sendMessage() {
     pending.innerHTML = renderMarkdown(content);
     await renderActivity();
   } catch (e) {
-    pending.textContent = `Error: ${e}`;
+    const errText = `Error: ${e}`;
+    pending.textContent = errText;
     pending.style.color = 'var(--error)';
+    copyOnClick(pending, errText);
+    desktopNotify('poor-cli', errText);
   }
   showSpinner(false);
 }
@@ -504,7 +555,11 @@ modalCreate.addEventListener('click', async () => {
     await refreshSessions();
     await refreshHistorySidebar();
   } catch (e) {
-    addMessage(`Failed to create session: ${e}`, 'assistant').style.color = 'var(--error)';
+    const errText = `Failed to create session: ${e}`;
+    const el = addMessage(errText, 'assistant');
+    el.style.color = 'var(--error)';
+    copyOnClick(el, errText);
+    desktopNotify('poor-cli', errText);
   }
 });
 newSessionModal.addEventListener('click', (e) => { if (e.target === newSessionModal) newSessionModal.hidden = true; });
@@ -610,7 +665,13 @@ document.getElementById('export-modal-go').addEventListener('click', async () =>
     a.download = `conversation.${format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'txt'}`;
     a.click();
     URL.revokeObjectURL(url);
-  } catch (e) { addMessage(`Export failed: ${e}`, 'assistant'); }
+  } catch (e) {
+    const errText = `Export failed: ${e}`;
+    const el = addMessage(errText, 'assistant');
+    el.style.color = 'var(--error)';
+    copyOnClick(el, errText);
+    desktopNotify('poor-cli', errText);
+  }
 });
 
 // status polling
