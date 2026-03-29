@@ -21,7 +21,11 @@ done
 
 # Remove source line from .bashrc
 if [ -f ~/.bashrc ] && grep -q "poor-cli.bash" ~/.bashrc; then
-    sed -i '/# poor-cli completion/d;/poor-cli\.bash/d' ~/.bashrc
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' '/# poor-cli completion/d;/poor-cli\.bash/d' ~/.bashrc
+    else
+        sed -i '/# poor-cli completion/d;/poor-cli\.bash/d' ~/.bashrc
+    fi
     echo "  Cleaned ~/.bashrc"
 fi
 
