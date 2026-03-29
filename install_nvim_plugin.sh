@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_SRC="$SCRIPT_DIR/nvim-poor-cli"
-PLUGIN_DEST="$HOME/.local/share/nvim/site/pack/poor-cli/start/nvim-poor-cli"
+PLUGIN_DEST="${XDG_DATA_HOME:-$HOME/.local/share}/nvim/site/pack/poor-cli/start/nvim-poor-cli"
 
 echo "=== nvim-poor-cli Installation Script ==="
 echo ""
