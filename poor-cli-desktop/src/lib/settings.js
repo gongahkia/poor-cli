@@ -33,6 +33,7 @@ const apiKeyDefs = [
 const defaultOptions = [
   // ui
   { path: 'ui.theme', value: 'github-light', choices: ['github-light', 'quiet-light', 'solarized-light', 'one-dark', 'dracula', 'github-dark', 'monokai', 'nord'] },
+  { path: 'ui.tab_layout', value: 'horizontal', choices: ['horizontal', 'vertical'] },
   { path: 'ui.crt_effect', value: false, isBoolean: true },
   { path: 'ui.enable_streaming', value: true, isBoolean: true },
   { path: 'ui.markdown_rendering', value: true, isBoolean: true },
@@ -374,6 +375,74 @@ function renderFontsGroup() {
   return group;
 }
 
+const LIGHT_THEMES = ['github-light', 'quiet-light', 'solarized-light'];
+const DARK_THEMES = ['one-dark', 'dracula', 'github-dark', 'monokai', 'nord'];
+
+function renderThemeGroup(currentTheme) {
+  const group = document.createElement('div');
+  group.className = 'settings-group';
+  group.dataset.category = 'Appearance';
+  group.innerHTML = '<h2>Appearance</h2>';
+  const isDark = DARK_THEMES.includes(currentTheme);
+  // light/dark toggle
+  const modeRow = document.createElement('div');
+  modeRow.className = 'settings-row';
+  modeRow.innerHTML = `<div class="settings-row-info"><label>Mode</label><div class="desc">Switch between light and dark mode</div></div>`;
+  const modeToggle = document.createElement('div');
+  modeToggle.className = 'theme-mode-toggle';
+  modeToggle.innerHTML = `<button class="theme-mode-btn${!isDark ? ' active' : ''}" data-mode="light">Light</button>`
+    + `<button class="theme-mode-btn${isDark ? ' active' : ''}" data-mode="dark">Dark</button>`;
+  modeRow.appendChild(modeToggle);
+  group.appendChild(modeRow);
+  // theme picker
+  const themeRow = document.createElement('div');
+  themeRow.className = 'settings-row';
+  themeRow.innerHTML = `<div class="settings-row-info"><label>Theme</label><div class="desc">ui.theme</div></div>`;
+  const themeGrid = document.createElement('div');
+  themeGrid.className = 'theme-grid';
+  themeGrid.id = 'theme-grid';
+  const themes = isDark ? DARK_THEMES : LIGHT_THEMES;
+  themes.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = `theme-swatch${t === currentTheme ? ' active' : ''}`;
+    btn.dataset.theme = t;
+    btn.textContent = t.replace(/-/g, ' ');
+    btn.addEventListener('click', () => {
+      autoSave('ui.theme', t);
+      applySettingImmediate('ui.theme', t);
+      themeGrid.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t));
+    });
+    themeGrid.appendChild(btn);
+  });
+  themeRow.appendChild(themeGrid);
+  group.appendChild(themeRow);
+  // wire mode toggle
+  modeToggle.querySelectorAll('.theme-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modeToggle.querySelectorAll('.theme-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const newThemes = btn.dataset.mode === 'dark' ? DARK_THEMES : LIGHT_THEMES;
+      const first = newThemes[0];
+      autoSave('ui.theme', first);
+      applySettingImmediate('ui.theme', first);
+      themeGrid.innerHTML = '';
+      newThemes.forEach(t => {
+        const sw = document.createElement('button');
+        sw.className = `theme-swatch${t === first ? ' active' : ''}`;
+        sw.dataset.theme = t;
+        sw.textContent = t.replace(/-/g, ' ');
+        sw.addEventListener('click', () => {
+          autoSave('ui.theme', t);
+          applySettingImmediate('ui.theme', t);
+          themeGrid.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t));
+        });
+        themeGrid.appendChild(sw);
+      });
+    });
+  });
+  return group;
+}
+
 function renderOptions(container, options) {
   container.innerHTML = '';
   const grouped = {};
@@ -383,6 +452,9 @@ function renderOptions(container, options) {
     if (!grouped[catName]) grouped[catName] = [];
     grouped[catName].push(opt);
   }
+  // appearance group (theme) first
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'github-light';
+  container.appendChild(renderThemeGroup(currentTheme));
   // render in category order
   const orderedCats = Object.keys(categories);
   for (const cat of orderedCats) {
@@ -390,11 +462,14 @@ function renderOptions(container, options) {
     if (cat === 'API Keys') { container.appendChild(renderApiKeysGroup()); continue; }
     const opts = grouped[cat];
     if (!opts) continue;
+    // skip ui.theme — it's now in the Appearance group
+    const filtered = opts.filter(o => o.path !== 'ui.theme');
+    if (!filtered.length) continue;
     const group = document.createElement('div');
     group.className = 'settings-group';
     group.dataset.category = cat;
     group.innerHTML = `<h2>${cat}</h2>`;
-    for (const opt of opts) {
+    for (const opt of filtered) {
       const row = document.createElement('div');
       row.className = 'settings-row';
       const info = document.createElement('div');
@@ -428,7 +503,6 @@ function renderOptions(container, options) {
         const input = document.createElement('input');
         input.type = 'text';
         input.value = opt.value ?? '';
-        // auto-save on input with debounce
         let saveTimer;
         input.addEventListener('input', () => {
           clearTimeout(saveTimer);
@@ -472,14 +546,27 @@ function showSaveIndicator(path) {
 }
 
 function applySettingImmediate(path, value) {
-  // apply visual changes immediately without page reload
   if (path === 'ui.theme') {
     document.documentElement.setAttribute('data-theme', value);
   } else if (path === 'ui.crt_effect') {
     document.documentElement.classList.toggle('crt', !!value);
     localStorage.setItem('poor-cli-crt', value ? '1' : '0');
+  } else if (path === 'ui.tab_layout') {
+    applyTabLayout(value);
   }
-  // all other settings apply via backend on next operation
+}
+
+export function applyTabLayout(layout) {
+  const hBar = document.getElementById('session-tab-bar');
+  const vPanel = document.getElementById('vtabs-panel');
+  if (layout === 'vertical') {
+    if (hBar) hBar.hidden = true;
+    if (vPanel) vPanel.hidden = false;
+  } else {
+    if (hBar) hBar.hidden = false;
+    if (vPanel) vPanel.hidden = true;
+  }
+  localStorage.setItem('poor-cli-tab-layout', layout);
 }
 
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }

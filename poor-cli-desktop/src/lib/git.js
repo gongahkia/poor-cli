@@ -90,8 +90,8 @@ async function renderLog(el) {
 
 async function renderDiff(el) {
   const [unstaged, staged] = await Promise.all([
-    rpc('git_diff', { staged: false }),
-    rpc('git_diff', { staged: true }),
+    rpc('git_diff_full', { staged: false }),
+    rpc('git_diff_full', { staged: true }),
   ]);
   let html = '';
   const stagedOut = (staged.output || '').trim();

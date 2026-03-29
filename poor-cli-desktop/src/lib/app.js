@@ -1,8 +1,8 @@
 // poor-cli desktop — frontend app logic
 import { rpc } from './rpc.js';
-import { registerView, showView } from './views.js';
+import { registerView, showView, initSplitDragDrop } from './views.js';
 import { renderMarkdown } from './markdown.js';
-import { initSettings, applyCustomFonts } from './settings.js';
+import { initSettings, applyCustomFonts, applyTabLayout } from './settings.js';
 import { initSkills } from './skills.js';
 import { initHistory, refreshHistorySidebar } from './history.js';
 import { initFileChangesPanel, updateFileChanges, openFileChangesPanel, toggleFileChangesPanel } from './filechanges.js';
@@ -13,6 +13,7 @@ import { initCheckpoints } from './checkpoints.js';
 import { initCommands } from './commands.js';
 import { initWorkflows } from './workflows.js';
 import { initTools } from './tools.js';
+import { initMcp } from './mcp.js';
 import { initDiagnostics } from './diagnostics.js';
 import { initMissionControl } from './mission_control.js';
 import { initKeybindings } from './keybindings.js';
@@ -646,6 +647,7 @@ registerView('checkpoints', initCheckpoints);
 registerView('commands', initCommands);
 registerView('workflows', initWorkflows);
 registerView('tools', initTools);
+registerView('mcp', initMcp);
 registerView('diagnostics', initDiagnostics);
 registerView('mission-control', initMissionControl);
 registerView('context', initContext);
@@ -724,6 +726,14 @@ window.addEventListener('beforeunload', () => {
 
 // auto-init
 applyCustomFonts();
+// restore tab layout
+const savedLayout = localStorage.getItem('poor-cli-tab-layout') || 'horizontal';
+applyTabLayout(savedLayout);
+// vertical tabs wiring
+const vtabsAddBtn = document.getElementById('vtabs-add-btn');
+if (vtabsAddBtn) vtabsAddBtn.addEventListener('click', () => sessionTabAdd.click());
+const vtabsSettings = document.getElementById('vtabs-settings-btn');
+if (vtabsSettings) vtabsSettings.addEventListener('click', () => showView('settings'));
 initFileChangesPanel();
 initCollabPanel();
 initAutocomplete();
@@ -731,4 +741,5 @@ initPalette();
 initKeybindings();
 initFilePicker();
 initProjectOpener();
+initSplitDragDrop();
 ensureInitialized();

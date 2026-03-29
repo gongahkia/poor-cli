@@ -25,6 +25,7 @@
         <div class="sidebar-nav-item" data-nav="workflows">Workflows</div>
         <div class="sidebar-nav-item" data-nav="checkpoints">Checkpoints</div>
         <div class="sidebar-nav-item" data-nav="tools">Tools</div>
+        <div class="sidebar-nav-item" data-nav="mcp">MCP Servers</div>
         <div class="sidebar-nav-item" data-nav="git">Git</div>
         <div class="sidebar-nav-item" data-nav="mission-control">Mission Control</div>
         <div class="sidebar-nav-item" data-nav="diagnostics">Diagnostics</div>
@@ -42,27 +43,18 @@
         <h3>History</h3>
         <div id="history-sidebar-list"></div>
       </div>
-      <div class="sidebar-section">
-        <h3>Provider</h3>
-        <div id="provider-info">Not connected</div>
-        <select id="provider-select">
-          <option value="gemini">Gemini</option>
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="ollama">Ollama</option>
-        </select>
-        <label class="routing-label">Model</label>
-        <select id="model-select"><option value="">default</option></select>
-        <label class="routing-label">Routing</label>
-        <select id="routing-mode">
-          <option value="manual">Manual</option>
-          <option value="quality">Quality</option>
-          <option value="speed">Speed</option>
-          <option value="cheap">Cheap</option>
-          <option value="private">Private</option>
-        </select>
-      </div>
       <div class="sidebar-footer" hidden></div>
+    </div>
+    <!-- vertical tabs panel (hidden by default, toggled via setting) -->
+    <div class="vtabs-panel" id="vtabs-panel" hidden>
+      <div class="vtabs-header">
+        <span class="vtabs-title">Threads</span>
+        <button class="vtabs-btn" id="vtabs-add-btn" title="New session">+</button>
+      </div>
+      <div class="vtabs-list" id="vtabs-list"></div>
+      <div class="vtabs-footer">
+        <div class="vtabs-settings-btn" id="vtabs-settings-btn">Settings</div>
+      </div>
     </div>
     <div class="main-panel">
       <div class="session-tab-bar" id="session-tab-bar">
@@ -119,8 +111,25 @@
           <div class="chat-input-area">
             <div class="autocomplete-popup" id="autocomplete-popup" hidden></div>
             <div class="input-row">
-              <textarea id="chat-input" placeholder="Send a message..." rows="3"></textarea>
-              <button id="send-btn" class="btn btn-primary">Send</button>
+              <textarea id="chat-input" placeholder="Send a message, @ to add files, / for commands" rows="3"></textarea>
+              <button id="send-btn" class="btn btn-primary send-btn-circle">&#8593;</button>
+            </div>
+            <div class="input-model-bar">
+              <button class="context-file-add" id="context-file-add-inline" title="Add file/folder">+</button>
+              <select id="provider-select" class="input-bar-select" title="Provider">
+                <option value="gemini">Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="ollama">Ollama</option>
+              </select>
+              <select id="model-select" class="input-bar-select" title="Model"><option value="">default</option></select>
+              <select id="routing-mode" class="input-bar-select" title="Routing">
+                <option value="manual">Manual</option>
+                <option value="quality">Quality</option>
+                <option value="speed">Speed</option>
+                <option value="cheap">Cheap</option>
+                <option value="private">Private</option>
+              </select>
             </div>
           </div>
         </div>
@@ -191,8 +200,15 @@
       <!-- tools view -->
       <div class="view-panel" data-view="tools" hidden>
         <div class="tools-container">
-          <h2>Tools &amp; MCP</h2>
+          <h2>Tools</h2>
           <div id="tools-content"></div>
+        </div>
+      </div>
+      <!-- mcp view -->
+      <div class="view-panel" data-view="mcp" hidden>
+        <div class="mcp-container">
+          <h2>MCP Servers</h2>
+          <div id="mcp-content"></div>
         </div>
       </div>
       <!-- git view -->
