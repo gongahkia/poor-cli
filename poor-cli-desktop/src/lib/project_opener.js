@@ -30,7 +30,7 @@ export function initProjectOpener() {
   });
 }
 
-async function openProjectDialog() {
+export async function openProjectDialog() {
   const dialog = await getDialog();
   if (dialog?.open) {
     try {
@@ -98,19 +98,30 @@ async function openProject(folderPath) {
     const label = folderPath.split('/').pop() || folderPath;
     const result = await rpc('create_session', { label, working_directory: folderPath, make_default: true });
     const session = result?.session || result;
-    if (session?.sessionId) {
-      await rpc('switch_session', { session_id: session.sessionId }).catch(() => {});
+    const sid = session?.sessionId || session?.id;
+    if (sid) {
+      await rpc('switch_session', { session_id: sid }).catch(() => {});
     }
     try {
-      const { refreshSessions } = await import('./app.js');
-      await refreshSessions();
+      const app = await import('./app.js');
+      await app.refreshSessions();
+      // force-select the new session in the UI
+      const threadTitle = document.getElementById('thread-title');
+      if (threadTitle) threadTitle.textContent = label;
+      // highlight the correct tab
+      document.querySelectorAll('.session-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.sessionId === sid);
+      });
+      document.querySelectorAll('.vtab-item').forEach(vt => {
+        vt.classList.toggle('active', vt.textContent.trim() === label);
+      });
     } catch {}
     showView('chat');
-    setTimeout(() => {
-      const input = document.getElementById('chat-input');
-      const sendBtn = document.getElementById('send-btn');
-      if (input && sendBtn) { input.value = '/workspace-map'; sendBtn.click(); }
-    }, 500);
+    // clear chat for fresh session
+    const chatMessages = document.getElementById('chat-messages');
+    if (chatMessages) {
+      chatMessages.innerHTML = `<div class="welcome-message"><h1>${label}</h1><p>Project opened — type a message to start</p></div>`;
+    }
   } catch (e) {
     alert(`Failed to open project: ${e.message || e}`);
   }

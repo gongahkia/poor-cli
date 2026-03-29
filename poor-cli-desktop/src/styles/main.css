@@ -479,8 +479,15 @@ body {
 .collab-container h2 { font-size: 18px; margin-bottom: 16px; }
 .cp-section { margin-bottom: 16px; }
 .cp-section h4 { font-size: 13px; margin-bottom: 8px; }
-.cp-preset-btns { display: flex; gap: 6px; }
-.cp-actions { display: flex; gap: 6px; }
+.cp-preset-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.cp-preset-card { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.cp-preset-card button { min-width: 80px; }
+.cp-preset-desc { font-size: 11px; color: var(--text-muted); }
+.cp-join-row { display: flex; gap: 8px; align-items: center; }
+.cp-join-row .search-input { flex: 1; }
+.cp-status { font-size: 12px; margin-top: 8px; }
+.cp-member { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.cp-actions { display: flex; gap: 6px; margin-top: 12px; }
 /* notifications view */
 .notifications-container { padding: 24px; overflow-y: auto; flex: 1; }
 .notifications-container h2 { font-size: 18px; margin-bottom: 12px; }
@@ -1821,6 +1828,12 @@ select {
 .task-prompt-preview { font-size: 12px; color: var(--text-muted); margin: 4px 0; font-family: var(--font-mono); }
 .task-card-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .task-actions { display: flex; gap: 6px; margin-top: 8px; }
+.task-output {
+  font-family: var(--font-mono); font-size: 11px; background: var(--bg-tertiary);
+  padding: 10px; border-radius: 6px; white-space: pre-wrap; max-height: 300px;
+  overflow-y: auto; margin-top: 8px; line-height: 1.5;
+}
+.task-detail { margin-top: 8px; }
 .task-status-badge {
   display: inline-block;
   padding: 2px 8px;

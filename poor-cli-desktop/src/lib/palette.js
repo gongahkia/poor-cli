@@ -1,10 +1,11 @@
 // command palette — Cmd/Ctrl+P
 import { rpc } from './rpc.js';
 import { showView } from './views.js';
+import { openProjectDialog } from './project_opener.js';
 
 const COMMANDS = [
   // navigation
-  { label: 'Open project', key: 'Ctrl+O', action: () => document.getElementById('open-project-btn')?.click(), cat: 'Navigate' },
+  { label: 'Open project', key: 'Ctrl+O', action: () => openProjectDialog(), cat: 'Navigate' },
   { label: 'New thread', key: 'Ctrl+N', action: () => rpc('create_session', { label: `session-${Date.now()}` }), cat: 'Navigate' },
   { label: 'Chat', key: '/chat', action: () => showView('chat'), cat: 'Navigate' },
   { label: 'Tasks', key: '/tasks', action: () => showView('tasks'), cat: 'Navigate' },

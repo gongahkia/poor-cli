@@ -18,7 +18,7 @@ import { initDiagnostics } from './diagnostics.js';
 import { initMissionControl } from './mission_control.js';
 import { initKeybindings } from './keybindings.js';
 import { initFilePicker } from './filepicker.js';
-import { initProjectOpener } from './project_opener.js';
+import { initProjectOpener, openProjectDialog } from './project_opener.js';
 import { initContext } from './context.js';
 import { initGit } from './git.js';
 import { initPalette } from './palette.js';
@@ -280,7 +280,7 @@ export async function refreshSessions() {
       close.addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
-          await rpc('destroy_session', { sessionId: s.sessionId });
+          await rpc('destroy_session', { session_id: s.sessionId });
           await refreshSessions();
         } catch (_) {}
       });
@@ -356,6 +356,9 @@ function selectSession(s, clickedEl) {
   threadTitle.textContent = s.label || s.sessionId;
   document.querySelectorAll('.session-tab').forEach(el => el.classList.remove('active'));
   if (clickedEl) clickedEl.classList.add('active');
+  showView('chat');
+  // clear chat and show welcome for new session
+  chatMessages.innerHTML = '<div class="welcome-message"><h1>poor-cli desktop</h1><p>Provider-agnostic AI coding assistant</p><p class="hint">Type a message below to start coding</p></div>';
   rpc('switch_session', { session_id: s.sessionId }).then(() => refreshStatusBar()).catch(() => {});
 }
 
@@ -512,7 +515,7 @@ async function handleSlashCommand(text) {
   if (cmd === '/skill-suggest') return rpc('send_chat', { message: '/skill-suggest' });
   if (cmd === '/workspace-map') return rpc('send_chat', { message: '/workspace-map' });
   if (cmd === '/read' && args) return rpc('send_chat', { message: `/read ${args}` });
-  if (cmd === '/collab') { document.getElementById('wb-collab').click(); return { content: 'Toggled collaboration panel.' }; }
+  if (cmd === '/collab') { showView('collab'); return { content: 'Opened collaboration view.' }; }
   if (cmd === '/pass') return rpc('next_driver', {});
   if (cmd === '/suggest' && args) return rpc('suggest_text', { text: args });
   if (cmd === '/retry') return rpc('send_chat', { message: '/retry' });
@@ -618,9 +621,7 @@ modelSelect.addEventListener('change', async () => {
   }
 });
 // session tab bar — + opens folder picker directly
-sessionTabAdd.addEventListener('click', () => {
-  document.getElementById('open-project-btn')?.click();
-});
+sessionTabAdd.addEventListener('click', () => openProjectDialog());
 modalCancel.addEventListener('click', () => { newSessionModal.hidden = true; });
 modalCreate.addEventListener('click', async () => {
   const label = newSessionNameInput.value.trim() || `session-${Date.now()}`;
@@ -639,10 +640,8 @@ modalCreate.addEventListener('click', async () => {
   }
 });
 newSessionModal.addEventListener('click', (e) => { if (e.target === newSessionModal) newSessionModal.hidden = true; });
-// file changes panel toggle
-wbFileChanges.addEventListener('click', toggleFileChangesPanel);
-// collab panel toggle
-document.getElementById('wb-collab').addEventListener('click', toggleCollabPanel);
+// file changes panel toggle (guarded — element may be removed)
+if (wbFileChanges !== _dummy) wbFileChanges.addEventListener('click', toggleFileChangesPanel);
 
 
 // thread menu
@@ -659,7 +658,7 @@ threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
       const name = prompt('Rename session:', threadTitle.textContent);
       if (name) {
         try {
-          await rpc('rename_session', { sessionId: activeSessionId, label: name });
+          await rpc('rename_session', { session_id: activeSessionId, label: name });
           threadTitle.textContent = name;
           await refreshSessions();
         } catch (_) {}
@@ -668,7 +667,7 @@ threadMenu.querySelectorAll('.thread-menu-item').forEach(item => {
       document.getElementById('export-modal').hidden = false;
     } else if (item.dataset.action === 'delete') {
       try {
-        await rpc('destroy_session', { sessionId: activeSessionId });
+        await rpc('destroy_session', { session_id: activeSessionId });
         activeSessionId = null;
         threadTitle.textContent = 'New thread';
         await refreshSessions();
@@ -776,7 +775,7 @@ const savedLayout = localStorage.getItem('poor-cli-tab-layout') || 'horizontal';
 applyTabLayout(savedLayout);
 // vertical tabs wiring
 const vtabsAddBtn = document.getElementById('vtabs-add-btn');
-if (vtabsAddBtn) vtabsAddBtn.addEventListener('click', () => document.getElementById('open-project-btn')?.click());
+if (vtabsAddBtn) vtabsAddBtn.addEventListener('click', () => openProjectDialog());
 const vtabsSettings = document.getElementById('vtabs-settings-btn');
 if (vtabsSettings) vtabsSettings.addEventListener('click', () => showView('settings'));
 initFileChangesPanel();

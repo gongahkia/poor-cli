@@ -37,13 +37,9 @@
         <div class="sidebar-nav-item" data-nav="instructions">Instructions</div>
         <div class="sidebar-nav-item" data-nav="prompt-library">Prompt Library</div>
         <div class="sidebar-nav-item" data-nav="qa-watch">QA Watch</div>
+        <div class="sidebar-nav-item" data-nav="history">History</div>
         <div class="sidebar-nav-item" data-nav="collab">Collaborate</div>
         <div class="sidebar-nav-item" data-nav="settings">Settings</div>
-        <div class="sidebar-nav-item sidebar-open-project" id="open-project-btn">Open project</div>
-      </div>
-      <div class="sidebar-section">
-        <h3>History</h3>
-        <div id="history-sidebar-list"></div>
       </div>
       <div class="sidebar-footer" hidden></div>
     </div>
@@ -80,10 +76,6 @@
               <p class="hint">Type a message below to start coding</p>
             </div>
           </div>
-          <div class="context-file-bar" id="context-file-bar" hidden>
-            <span id="context-file-list"></span>
-            <button class="context-file-add" id="context-file-add" title="Add file/folder">+</button>
-          </div>
           <div class="chat-input-area">
             <div class="autocomplete-popup" id="autocomplete-popup" hidden></div>
             <div class="input-row">
@@ -91,7 +83,6 @@
               <button id="send-btn" class="btn btn-primary send-btn-circle">&#8593;</button>
             </div>
             <div class="input-model-bar">
-              <button class="context-file-add" id="context-file-add-inline" title="Add file/folder">+</button>
               <select id="provider-select" class="input-bar-select" title="Provider">
                 <option value="gemini">Gemini</option>
                 <option value="openai">OpenAI</option>
@@ -271,17 +262,31 @@
           <div id="cp-body">
             <div id="cp-idle">
               <div class="cp-section">
-                <h4>Start Session</h4>
+                <h4>Start a Session</h4>
+                <p class="view-empty-text">Host a collaboration session. Others can join with an invite code.</p>
                 <div class="cp-preset-btns">
-                  <button class="btn btn-sm" data-preset="pairing">Pair</button>
-                  <button class="btn btn-sm" data-preset="mob">Mob</button>
-                  <button class="btn btn-sm" data-preset="review">Review</button>
+                  <div class="cp-preset-card" data-preset="pairing">
+                    <button class="btn btn-sm btn-primary" data-preset="pairing">Pair</button>
+                    <span class="cp-preset-desc">1-on-1 coding</span>
+                  </div>
+                  <div class="cp-preset-card" data-preset="mob">
+                    <button class="btn btn-sm btn-primary" data-preset="mob">Mob</button>
+                    <span class="cp-preset-desc">Team session</span>
+                  </div>
+                  <div class="cp-preset-card" data-preset="review">
+                    <button class="btn btn-sm btn-primary" data-preset="review">Review</button>
+                    <span class="cp-preset-desc">Code review</span>
+                  </div>
                 </div>
+                <div id="cp-start-status" class="cp-status" hidden></div>
               </div>
               <div class="cp-section">
-                <h4>Join Session</h4>
-                <input type="text" id="cp-invite-input" class="search-input" placeholder="Paste invite code..." />
-                <button class="btn btn-sm btn-primary" id="cp-join-btn">Join</button>
+                <h4>Join a Session</h4>
+                <p class="view-empty-text">Enter an invite code from the host to join their session.</p>
+                <div class="cp-join-row">
+                  <input type="text" id="cp-invite-input" class="search-input" placeholder="Paste invite code..." style="margin-bottom:0" />
+                  <button class="btn btn-sm btn-primary" id="cp-join-btn">Join</button>
+                </div>
               </div>
             </div>
             <div id="cp-active" hidden>
@@ -293,8 +298,8 @@
               <div class="cp-section" id="cp-agenda"></div>
               <div class="cp-section" id="cp-activity"></div>
               <div class="cp-section cp-actions">
-                <button class="btn btn-sm" id="cp-invite-btn">Share Invite</button>
-                <button class="btn btn-sm" id="cp-leave-btn">Leave</button>
+                <button class="btn btn-sm" id="cp-invite-btn">Share Invite Code</button>
+                <button class="btn btn-sm btn-danger" id="cp-leave-btn">Leave Session</button>
               </div>
             </div>
           </div>
