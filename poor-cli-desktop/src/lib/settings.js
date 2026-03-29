@@ -269,27 +269,32 @@ function injectFontLink(id, url) { // inject or replace a <link> for the font
   link.href = url;
 }
 
-export function applyCustomFonts() { // call on startup
-  // restore CRT effect from localStorage
+export function applyCustomFonts() { // call on startup and on change
+  // restore CRT + compact from localStorage
   if (localStorage.getItem('poor-cli-crt') === '1') document.documentElement.classList.add('crt');
+  if (localStorage.getItem('poor-cli-compact') === '1') document.documentElement.classList.add('compact');
   const fonts = getStoredFonts();
+  const root = document.documentElement;
   if (fonts.uiUrl) {
     injectFontLink('custom-font-ui', fonts.uiUrl);
     const name = parseFontFamily(fonts.uiUrl);
-    if (name) document.documentElement.style.setProperty('--font-sans', `'${name}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`);
+    if (name) root.style.setProperty('--font-sans', `'${name}', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`);
   }
   if (fonts.codeUrl) {
     injectFontLink('custom-font-code', fonts.codeUrl);
     const name = parseFontFamily(fonts.codeUrl);
-    if (name) document.documentElement.style.setProperty('--font-mono', `'${name}', 'JetBrains Mono', 'Fira Code', monospace`);
+    if (name) root.style.setProperty('--font-mono', `'${name}', 'JetBrains Mono', 'Fira Code', monospace`);
   }
   if (fonts.displayUrl) {
     injectFontLink('custom-font-display', fonts.displayUrl);
     const name = parseFontFamily(fonts.displayUrl);
-    if (name) document.documentElement.style.setProperty('--font-display', `'${name}', 'Syne', var(--font-sans)`);
+    if (name) root.style.setProperty('--font-display', `'${name}', 'Syne', var(--font-sans)`);
   }
-  if (fonts.uiSize) document.documentElement.style.setProperty('--font-size-ui', `${fonts.uiSize}px`);
-  if (fonts.codeSize) document.documentElement.style.setProperty('--font-size-code', `${fonts.codeSize}px`);
+  if (fonts.uiSize) root.style.setProperty('--font-size-ui', `${fonts.uiSize}px`);
+  if (fonts.codeSize) root.style.setProperty('--font-size-code', `${fonts.codeSize}px`);
+  // force re-render all text by toggling a class
+  root.classList.add('font-refresh');
+  requestAnimationFrame(() => root.classList.remove('font-refresh'));
 }
 
 function renderFontsGroup() {
@@ -386,7 +391,7 @@ function renderThemeGroup(currentTheme) {
   // light/dark toggle
   const modeRow = document.createElement('div');
   modeRow.className = 'settings-row';
-  modeRow.innerHTML = `<div class="settings-row-info"><label>Mode</label><div class="desc">Switch between light and dark mode</div></div>`;
+  modeRow.innerHTML = `<div class="settings-row-info"><label>Mode</label><div class="desc">Switch between light and dark</div></div>`;
   const modeToggle = document.createElement('div');
   modeToggle.className = 'theme-mode-toggle';
   modeToggle.innerHTML = `<button class="theme-mode-btn${!isDark ? ' active' : ''}" data-mode="light">Light</button>`
@@ -395,27 +400,30 @@ function renderThemeGroup(currentTheme) {
   group.appendChild(modeRow);
   // theme picker
   const themeRow = document.createElement('div');
-  themeRow.className = 'settings-row';
+  themeRow.className = 'settings-row settings-row-wrap';
   themeRow.innerHTML = `<div class="settings-row-info"><label>Theme</label><div class="desc">ui.theme</div></div>`;
   const themeGrid = document.createElement('div');
   themeGrid.className = 'theme-grid';
   themeGrid.id = 'theme-grid';
-  const themes = isDark ? DARK_THEMES : LIGHT_THEMES;
-  themes.forEach(t => {
-    const btn = document.createElement('button');
-    btn.className = `theme-swatch${t === currentTheme ? ' active' : ''}`;
-    btn.dataset.theme = t;
-    btn.textContent = t.replace(/-/g, ' ');
-    btn.addEventListener('click', () => {
-      autoSave('ui.theme', t);
-      applySettingImmediate('ui.theme', t);
-      themeGrid.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t));
+  function populateThemes(themes, activeTheme) {
+    themeGrid.innerHTML = '';
+    themes.forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = `theme-swatch${t === activeTheme ? ' active' : ''}`;
+      btn.dataset.theme = t;
+      btn.textContent = t.replace(/-/g, ' ');
+      btn.addEventListener('click', () => {
+        autoSave('ui.theme', t);
+        applySettingImmediate('ui.theme', t);
+        themeGrid.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t));
+      });
+      themeGrid.appendChild(btn);
     });
-    themeGrid.appendChild(btn);
-  });
+  }
+  populateThemes(isDark ? DARK_THEMES : LIGHT_THEMES, currentTheme);
   themeRow.appendChild(themeGrid);
   group.appendChild(themeRow);
-  // wire mode toggle
+  // mode toggle handler
   modeToggle.querySelectorAll('.theme-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       modeToggle.querySelectorAll('.theme-mode-btn').forEach(b => b.classList.remove('active'));
@@ -424,21 +432,55 @@ function renderThemeGroup(currentTheme) {
       const first = newThemes[0];
       autoSave('ui.theme', first);
       applySettingImmediate('ui.theme', first);
-      themeGrid.innerHTML = '';
-      newThemes.forEach(t => {
-        const sw = document.createElement('button');
-        sw.className = `theme-swatch${t === first ? ' active' : ''}`;
-        sw.dataset.theme = t;
-        sw.textContent = t.replace(/-/g, ' ');
-        sw.addEventListener('click', () => {
-          autoSave('ui.theme', t);
-          applySettingImmediate('ui.theme', t);
-          themeGrid.querySelectorAll('.theme-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === t));
-        });
-        themeGrid.appendChild(sw);
-      });
+      populateThemes(newThemes, first);
     });
   });
+  // tab layout
+  const tabRow = document.createElement('div');
+  tabRow.className = 'settings-row';
+  tabRow.innerHTML = `<div class="settings-row-info"><label>Tab layout</label><div class="desc">Horizontal bar or vertical sidebar</div></div>`;
+  const tabToggle = document.createElement('div');
+  const curLayout = localStorage.getItem('poor-cli-tab-layout') || 'horizontal';
+  tabToggle.className = 'theme-mode-toggle';
+  tabToggle.innerHTML = `<button class="theme-mode-btn${curLayout === 'horizontal' ? ' active' : ''}" data-val="horizontal">Horizontal</button>`
+    + `<button class="theme-mode-btn${curLayout === 'vertical' ? ' active' : ''}" data-val="vertical">Vertical</button>`;
+  tabToggle.querySelectorAll('.theme-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabToggle.querySelectorAll('.theme-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      autoSave('ui.tab_layout', btn.dataset.val);
+      applySettingImmediate('ui.tab_layout', btn.dataset.val);
+    });
+  });
+  tabRow.appendChild(tabToggle);
+  group.appendChild(tabRow);
+  // CRT effect
+  const crtRow = document.createElement('div');
+  crtRow.className = 'settings-row';
+  crtRow.innerHTML = `<div class="settings-row-info"><label>CRT effect</label><div class="desc">Retro scanline overlay</div></div>`;
+  const crtToggle = document.createElement('label');
+  crtToggle.className = 'toggle';
+  const crtOn = document.documentElement.classList.contains('crt');
+  crtToggle.innerHTML = `<input type="checkbox" ${crtOn ? 'checked' : ''}><span class="toggle-slider"></span>`;
+  crtToggle.querySelector('input').addEventListener('change', (e) => {
+    applySettingImmediate('ui.crt_effect', e.target.checked);
+  });
+  crtRow.appendChild(crtToggle);
+  group.appendChild(crtRow);
+  // compact mode
+  const compactRow = document.createElement('div');
+  compactRow.className = 'settings-row';
+  compactRow.innerHTML = `<div class="settings-row-info"><label>Compact mode</label><div class="desc">Reduce padding and spacing</div></div>`;
+  const compactToggle = document.createElement('label');
+  compactToggle.className = 'toggle';
+  const compactOn = document.documentElement.classList.contains('compact');
+  compactToggle.innerHTML = `<input type="checkbox" ${compactOn ? 'checked' : ''}><span class="toggle-slider"></span>`;
+  compactToggle.querySelector('input').addEventListener('change', (e) => {
+    document.documentElement.classList.toggle('compact', e.target.checked);
+    localStorage.setItem('poor-cli-compact', e.target.checked ? '1' : '0');
+  });
+  compactRow.appendChild(compactToggle);
+  group.appendChild(compactRow);
   return group;
 }
 
