@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -18,25 +17,16 @@ const loadToolDefinitions = async () => {
   }
 };
 
-const output = execFileSync(process.execPath, ["./scripts/generate-openapi.mjs"], {
-  cwd: root,
-  encoding: "utf8",
-  maxBuffer: 5 * 1024 * 1024,
-});
+const generateOpenApiSpec = async () => {
+  const moduleUrl = pathToFileURL(resolve(root, "scripts/generate-openapi.mjs")).href;
+  const module = await import(moduleUrl);
+  if (typeof module.generateOpenApiSpec !== "function") {
+    throw new Error("OpenAPI generator did not export generateOpenApiSpec().");
+  }
+  return module.generateOpenApiSpec();
+};
 
-const trimmed = output.trim();
-if (trimmed === "") {
-  throw new Error("OpenAPI generator returned empty output.");
-}
-
-let spec;
-try {
-  spec = JSON.parse(trimmed);
-} catch (error) {
-  throw new Error(
-    `OpenAPI generator produced invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-  );
-}
+const spec = await generateOpenApiSpec();
 const toolDefinitions = await loadToolDefinitions();
 
 for (const definition of toolDefinitions) {
