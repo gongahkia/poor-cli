@@ -6,10 +6,28 @@ import { FURNITURE } from './furniture.js';
 const loader = new GLTFLoader();
 export function initIO() {
   const glbParam = new URLSearchParams(location.search).get('glb');
-  loader.load(glbParam || './model.glb', (gltf) => ingestGLB(gltf), undefined, () => {});
+  loader.load(
+    glbParam || './model.glb',
+    (gltf) => ingestGLB(gltf),
+    undefined,
+    (err) => {
+      if (glbParam) {
+        console.error('Failed loading GLB from query param', err);
+      } else {
+        console.warn('No default model.glb found yet. You can still place furniture manually.');
+      }
+    },
+  );
   document.getElementById('glb-input').addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) loader.load(URL.createObjectURL(file), (gltf) => ingestGLB(gltf));
+    if (file) {
+      loader.load(
+        URL.createObjectURL(file),
+        (gltf) => ingestGLB(gltf),
+        undefined,
+        (err) => console.error('Failed loading uploaded GLB', err),
+      );
+    }
   });
   document.getElementById('export-glb-btn').addEventListener('click', exportGLB);
   document.getElementById('export-json-btn').addEventListener('click', exportJSON);
@@ -96,6 +114,7 @@ function exportJSON() {
 let lastMcpText = '';
 let lastPushStamp = 0;
 let lastPullStamp = 0;
+let pullFailureCount = 0;
 function startMcpSync() {
   fn.pushLayoutToServer = pushLayoutToServer;
   pushLayoutToServer();
@@ -115,7 +134,13 @@ function startMcpSync() {
       if (data._stamp && data._stamp === lastPullStamp) return;
       lastPullStamp = data._stamp || 0;
       applyLayoutData(data);
-    } catch {}
+      pullFailureCount = 0;
+    } catch (err) {
+      pullFailureCount += 1;
+      if (pullFailureCount <= 3 || pullFailureCount % 10 === 0) {
+        console.warn('MCP layout pull failed', err);
+      }
+    }
   }, 2000);
 }
 async function pushLayoutToServer() {
@@ -129,15 +154,25 @@ async function pushLayoutToServer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-  } catch {}
+  } catch (err) {
+    console.warn('MCP layout push failed', err);
+  }
 }
 function applyLayoutData(data) {
+  if (!Array.isArray(data.items)) {
+    console.warn('Ignoring malformed MCP layout payload: items missing array');
+    return;
+  }
   const prev = serializeLayout();
   clearModelParts();
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0; S.redoStack.length = 0;
   fn.deselectFurniture();
   for (const item of data.items) {
+    if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
+      console.warn('Skipping malformed layout item', item);
+      continue;
+    }
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
       new THREE.MeshLambertMaterial({ color: item.color })
@@ -163,12 +198,19 @@ function importJSON(e) {
   reader.onload = () => {
     try {
       const data = JSON.parse(reader.result);
-      if (!data.items) return;
+      if (!Array.isArray(data.items)) {
+        console.warn('JSON import missing items array');
+        return;
+      }
       clearModelParts();
       while (S.draggables.length) S.scene.remove(S.draggables.pop());
       S.userWalls.length = 0; S.undoStack.length = 0; S.redoStack.length = 0;
       fn.deselectFurniture();
       for (const item of data.items) {
+        if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
+          console.warn('Skipping malformed imported item', item);
+          continue;
+        }
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
           new THREE.MeshLambertMaterial({ color: item.color })
