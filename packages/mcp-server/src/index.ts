@@ -36,6 +36,13 @@ const gracefulShutdown = async (): Promise<void> => {
 
 process.on("SIGTERM", () => void gracefulShutdown());
 process.on("SIGINT", () => void gracefulShutdown());
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled promise rejection", { reason });
+});
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught exception", { error });
+  process.exit(1);
+});
 
 const main = async (): Promise<void> => {
   const transport = new StdioServerTransport();
@@ -50,4 +57,7 @@ const main = async (): Promise<void> => {
   });
 };
 
-void main();
+void main().catch((error: unknown) => {
+  logger.error("Server startup failed", { error });
+  process.exit(1);
+});
