@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BriefArtifactSchema,
   BusinessDossierBaseSchema,
@@ -51,6 +52,7 @@ const logger = createLogger("brief-tools");
 const TransportBriefInputSchema = {
   busStopCode: z.string().min(5).optional(),
   serviceNo: z.string().min(1).optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 };
 
@@ -59,6 +61,7 @@ const EnvironmentBriefInputSchema = {
   region: z.string().min(1).optional(),
   stationId: z.string().min(1).optional(),
   date: z.string().min(1).optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 };
 
@@ -188,6 +191,19 @@ const toToolResult = (
 
 const toGap = (code: string, message: string): EvidenceGap => ({ code, message });
 const toLimit = (code: string, message: string): BriefLimit => ({ code, message });
+
+const buildContextIds = (
+  includeContextIds: boolean | undefined,
+): Readonly<Record<string, unknown>> | undefined => {
+  if (includeContextIds !== true) {
+    return undefined;
+  }
+  const requestId = randomUUID();
+  return {
+    traceId: requestId,
+    requestId,
+  };
+};
 
 const safeRead = async <T>(
   code: string,
@@ -1090,11 +1106,15 @@ export const handleBusinessDossier = async (
     grade?: string | undefined;
     modules?: readonly ("acra" | "bca" | "cea" | "gebiz" | "boa" | "hsa" | "hlb")[] | undefined;
     sectorHints?: readonly ("construction" | "real_estate" | "architecture" | "healthcare" | "hospitality" | "procurement")[] | undefined;
+    includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
   const payload = await buildBusinessDossierArtifact(params);
-  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+  const contextIds = buildContextIds(params.includeContextIds);
+  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
+    ...(contextIds === undefined ? {} : { structuredContent: { contextIds } }),
+  });
 };
 
 export const handlePropertyBrief = async (
@@ -1106,6 +1126,7 @@ export const handlePropertyBrief = async (
     propertyType?: "residential" | "commercial" | "industrial" | undefined;
     includeTransport?: boolean | undefined;
     includeEnvironment?: boolean | undefined;
+    includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
@@ -1320,9 +1341,17 @@ export const handlePropertyBrief = async (
       label: firstGeocode.building || firstGeocode.address || firstGeocode.postal || planningArea || "Resolved location",
       description: firstGeocode.address,
     }]);
+  const contextIds = buildContextIds(params.includeContextIds);
 
   return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
-    ...(mapPayload === null ? {} : { structuredContent: { mapPayload } }),
+    ...(mapPayload === null && contextIds === undefined
+      ? {}
+      : {
+          structuredContent: {
+            ...(mapPayload === null ? {} : { mapPayload }),
+            ...(contextIds === undefined ? {} : { contextIds }),
+          },
+        }),
     ...(mapPayload === null ? {} : { _meta: MAP_TOOL_META }),
   });
 };
@@ -1333,6 +1362,7 @@ export const handleMacroBrief = async (
     date?: string | undefined;
     startDate?: string | undefined;
     endDate?: string | undefined;
+    includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
@@ -1500,13 +1530,17 @@ export const handleMacroBrief = async (
     nextChecks: macroNextChecks,
   };
 
-  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+  const contextIds = buildContextIds(params.includeContextIds);
+  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
+    ...(contextIds === undefined ? {} : { structuredContent: { contextIds } }),
+  });
 };
 
 export const handleTransportBrief = async (
   params: Readonly<{
     busStopCode?: string | undefined;
     serviceNo?: string | undefined;
+    includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
@@ -1637,7 +1671,10 @@ export const handleTransportBrief = async (
     limits: buildTransportLimits(params.busStopCode !== undefined),
   };
 
-  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+  const contextIds = buildContextIds(params.includeContextIds);
+  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
+    ...(contextIds === undefined ? {} : { structuredContent: { contextIds } }),
+  });
 };
 
 const AREA_TO_REGION: Readonly<Record<string, string>> = {
@@ -1656,6 +1693,7 @@ export const handleEnvironmentBrief = async (
     region?: string | undefined;
     stationId?: string | undefined;
     date?: string | undefined;
+    includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;
   }>,
 ): Promise<ToolResult> => {
@@ -1815,7 +1853,10 @@ export const handleEnvironmentBrief = async (
     limits: buildEnvironmentLimits(params.area !== undefined, params.region !== undefined, params.stationId !== undefined),
   };
 
-  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+  const contextIds = buildContextIds(params.includeContextIds);
+  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
+    ...(contextIds === undefined ? {} : { structuredContent: { contextIds } }),
+  });
 };
 
 export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [

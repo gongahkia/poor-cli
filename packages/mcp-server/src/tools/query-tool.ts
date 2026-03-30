@@ -274,8 +274,14 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
     ],
     inputSchema: QuerySchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {
-      const { query, format, mode = "execute" } = validateInput(QuerySchema, input);
+      const { query, format, mode = "execute", includeContextIds } = validateInput(QuerySchema, input);
       const traceId = randomUUID();
+      const contextIds = includeContextIds === true
+        ? {
+            traceId,
+            requestId: traceId,
+          }
+        : undefined;
       const queryLogger = logger.child({ traceId, workflowInterface: "sg_query" });
       const resolvedFormat = resolveOutputFormat(format);
       const preview = query.length > 160 ? `${query.slice(0, 160)}...` : query;
@@ -322,6 +328,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
               reason: plan.reason,
               suggestion: plan.suggestion,
               routingExplanation: buildRoutingExplanation(plan),
+              ...(contextIds === undefined ? {} : { contextIds }),
             },
           };
         }
@@ -333,6 +340,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
             mode,
             reason: plan.reason,
             suggestion: plan.suggestion,
+            ...(contextIds === undefined ? {} : { contextIds }),
           },
         };
       }
@@ -352,6 +360,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
             steps: toSerializableSteps(plan.steps),
             reason: formatSupport.reason,
             suggestion: formatSupport.suggestion,
+            ...(contextIds === undefined ? {} : { contextIds }),
           },
         };
       }
@@ -373,6 +382,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
             confidence: plan.confidence,
             toolsUsed: plan.steps.map((step) => step.tool),
             steps: toSerializableSteps(plan.steps),
+            ...(contextIds === undefined ? {} : { contextIds }),
           },
         };
       }
@@ -418,6 +428,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
                 steps: toSerializableSteps(plan.steps),
                 reason: singleStepFormatSupport.reason,
                 suggestion: singleStepFormatSupport.suggestion,
+                ...(contextIds === undefined ? {} : { contextIds }),
               },
             };
           }
@@ -450,6 +461,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
           ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
           : {}),
         ...(mapPayload === undefined ? {} : { mapPayload }),
+        ...(contextIds === undefined ? {} : { contextIds }),
       } as const;
 
       const finalStep = execution.steps[execution.steps.length - 1];
@@ -457,7 +469,12 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
       if (shouldUseArtifact(executionText, rowCount)) {
         return buildArtifactResult({
           toolName: "sg_query",
-          input: { query, format: resolvedFormat, mode },
+          input: {
+            query,
+            format: resolvedFormat,
+            mode,
+            ...(includeContextIds === true ? { includeContextIds: true } : {}),
+          },
           kind: plan.workflow === "transport_brief" || plan.workflow === "environment_brief"
             ? "realtime-query"
             : "query",
@@ -490,6 +507,7 @@ export const queryToolDefinitions: readonly RegisteredToolDefinition[] = [
               ? { failedStep: execution.steps.find((step) => step.status === "failed") ?? null }
               : {}),
             ...(mapPayload === undefined ? {} : { mapPayload }),
+            ...(contextIds === undefined ? {} : { contextIds }),
           },
           ...(plan.workflow === "transport_brief" || plan.workflow === "environment_brief"
             ? { realtime: true }

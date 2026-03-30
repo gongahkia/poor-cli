@@ -186,6 +186,7 @@ export type {
   QueryBlocker,
   QueryPlannedStep,
   QueryExecutedStep,
+  QueryContextIds,
   QueryResultSummary,
   QueryPlannedResult,
   QueryCompletedResult,
