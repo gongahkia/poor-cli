@@ -172,6 +172,7 @@ function clearLocalLayout({ recordUndo = true } = {}) {
   }
 
   fn.deselectFurniture();
+  if (fn.clearSightlineOverlay) fn.clearSightlineOverlay();
   clearModelParts();
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0;
@@ -222,6 +223,7 @@ function applyLayoutData(data) {
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0; S.redoStack.length = 0;
   fn.deselectFurniture();
+  if (fn.clearSightlineOverlay) fn.clearSightlineOverlay();
   for (const item of data.items) {
     if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
       console.warn('Skipping malformed layout item', item);
@@ -260,6 +262,7 @@ function importJSON(e) {
       while (S.draggables.length) S.scene.remove(S.draggables.pop());
       S.userWalls.length = 0; S.undoStack.length = 0; S.redoStack.length = 0;
       fn.deselectFurniture();
+      if (fn.clearSightlineOverlay) fn.clearSightlineOverlay();
       for (const item of data.items) {
         if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
           console.warn('Skipping malformed imported item', item);

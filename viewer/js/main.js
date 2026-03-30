@@ -16,6 +16,7 @@ import { initMeasure } from './measure.js';
 import { initSvgExport } from './svgExport.js';
 import { initChat } from './chat.js';
 import { initCommandPalette } from './commandpalette.js';
+import { initSightline } from './sightline.js';
 initScene();
 initGrid();
 initCollision();
@@ -31,6 +32,7 @@ initContextMenu();
 initOverlay();
 initMeasure();
 initSvgExport();
+initSightline();
 initChat();
 initCommandPalette();
 function animate() {

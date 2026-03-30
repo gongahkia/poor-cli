@@ -213,9 +213,38 @@ function appendMessage(role, text) {
 }
 
 function appendTool(action) {
+  maybeShowSightlineOverlay(action);
   const args = action.args && Object.keys(action.args).length > 0 ? ` ${JSON.stringify(action.args)}` : '';
   const elapsed = action.elapsed_ms !== undefined ? ` (${action.elapsed_ms}ms)` : '';
   appendMessage('tool', `${action.tool}${args} -> ${action.result}${elapsed}`);
+}
+
+function parseSightlineBlockers(action) {
+  if (action.tool !== 'check_sightline') return [];
+  const text = String(action.result || '');
+  const args = action.args || {};
+  const from = Number(args.index_from);
+  const to = Number(args.index_to);
+
+  const values = [];
+  const matches = text.matchAll(/\[(\d+)\]/g);
+  for (const match of matches) {
+    const idx = Number(match[1]);
+    if (!Number.isFinite(idx)) continue;
+    if (idx === from || idx === to) continue;
+    values.push(idx);
+  }
+  return [...new Set(values)];
+}
+
+function maybeShowSightlineOverlay(action) {
+  if (action.tool !== 'check_sightline' || !fn.showSightlineOverlay) return;
+  const args = action.args || {};
+  fn.showSightlineOverlay({
+    indexFrom: args.index_from,
+    indexTo: args.index_to,
+    blockerIndices: parseSightlineBlockers(action),
+  });
 }
 
 function persistTranscript(role, text) {
