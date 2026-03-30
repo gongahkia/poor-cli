@@ -131,6 +131,12 @@ pub enum OverlayEffect {
     OpenCommandSearch,
     /// Close the command-history search overlay.
     CloseCommandSearch,
+    /// Open quick select for the viewport.
+    OpenQuickSelect,
+    /// Open quick select scoped to the selected block.
+    OpenQuickSelectBlock,
+    /// Close quick select.
+    CloseQuickSelect,
     /// Open block-local find or filter for the given block.
     OpenBlockQuery {
         /// Query mode to activate.

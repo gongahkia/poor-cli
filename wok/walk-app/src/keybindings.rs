@@ -87,6 +87,10 @@ pub enum Action {
     CommandPalette,
     /// Open pane-local command history search.
     CommandSearch,
+    /// Start quick select on the visible viewport.
+    QuickSelect,
+    /// Start quick select scoped to the selected block.
+    QuickSelectBlock,
     /// Toggle input position (top/bottom).
     ToggleInputPosition,
     /// Increase font size.
@@ -125,6 +129,8 @@ pub enum Context {
     BlockSelected,
     /// Search mode is active.
     SearchActive,
+    /// Quick-select label mode is active.
+    QuickSelect,
 }
 
 /// Keybinding configuration.
@@ -379,6 +385,20 @@ impl Default for KeybindingConfig {
                 modifiers: pm,
             },
             Action::CommandPalette,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('q'),
+                modifiers: pms,
+            },
+            Action::QuickSelect,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('q'),
+                modifiers: pma,
+            },
+            Action::QuickSelectBlock,
         );
         bindings.insert(
             KeyCombo {

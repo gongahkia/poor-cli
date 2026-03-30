@@ -50,6 +50,23 @@ pub enum TriggerRequest {
     },
 }
 
+/// Quick-select pattern work requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuickSelectPatternRequest {
+    /// Add or replace a custom quick-select regex pattern.
+    Add {
+        /// Pattern display name.
+        name: String,
+        /// Regex expression.
+        regex: String,
+    },
+    /// Remove a custom quick-select pattern.
+    Remove {
+        /// Pattern display name.
+        name: String,
+    },
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -67,6 +84,8 @@ pub struct LuaState {
     pub action_requests: Arc<Mutex<Vec<String>>>,
     /// Pending trigger registration requests requested by Lua.
     pub trigger_requests: Arc<Mutex<Vec<TriggerRequest>>>,
+    /// Pending quick-select pattern requests requested by Lua.
+    pub quick_select_pattern_requests: Arc<Mutex<Vec<QuickSelectPatternRequest>>>,
     /// Named commands registered from Lua as action aliases.
     pub commands: Arc<Mutex<HashMap<String, String>>>,
     /// Latest runtime snapshot exposed to plugin callbacks.
@@ -252,6 +271,32 @@ impl LuaRuntime {
         })?;
         walk.set("remove_trigger", remove_trigger_fn)?;
 
+        // walk.quick_select.add_pattern(name, regex)
+        let quick_select_table = self.lua.create_table()?;
+        let quick_select_state = self.state.quick_select_pattern_requests.clone();
+        let add_quick_pattern_fn =
+            self.lua
+                .create_function(move |_, (name, regex): (String, String)| {
+                    quick_select_state
+                        .lock()
+                        .unwrap()
+                        .push(QuickSelectPatternRequest::Add { name, regex });
+                    Ok(())
+                })?;
+        quick_select_table.set("add_pattern", add_quick_pattern_fn)?;
+
+        // walk.quick_select.remove_pattern(name)
+        let quick_select_state = self.state.quick_select_pattern_requests.clone();
+        let remove_quick_pattern_fn = self.lua.create_function(move |_, name: String| {
+            quick_select_state
+                .lock()
+                .unwrap()
+                .push(QuickSelectPatternRequest::Remove { name });
+            Ok(())
+        })?;
+        quick_select_table.set("remove_pattern", remove_quick_pattern_fn)?;
+        walk.set("quick_select", quick_select_table)?;
+
         // walk.run_action(action) — queue a built-in runtime action
         let action_state = self.state.action_requests.clone();
         let run_action_fn = self.lua.create_function(move |_, action: String| {
@@ -387,6 +432,11 @@ impl LuaRuntime {
     /// Drain pending trigger requests queued from Lua.
     pub fn take_trigger_requests(&self) -> Vec<TriggerRequest> {
         std::mem::take(&mut *self.state.trigger_requests.lock().unwrap())
+    }
+
+    /// Drain pending quick-select pattern requests queued from Lua.
+    pub fn take_quick_select_pattern_requests(&self) -> Vec<QuickSelectPatternRequest> {
+        std::mem::take(&mut *self.state.quick_select_pattern_requests.lock().unwrap())
     }
 
     /// Resolve a named command alias registered from Lua to an action string.

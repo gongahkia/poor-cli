@@ -1797,11 +1797,11 @@
 6. On selection: default action is copy to clipboard. If triggers (Task 74) define an action for the pattern type, offer that as an alternative (e.g., open URL).
 
 **DONE WHEN**
-- [ ] Pressing `Mod+Shift+Q` activates quick select mode. All URLs, file paths, and git hashes in the viewport are labeled.
-- [ ] Typing `a` copies the first match to the clipboard and exits the overlay.
-- [ ] `Mod+Alt+Q` activates quick select scoped to the currently selected block only.
-- [ ] Custom patterns can be added via `walk.quick_select.add_pattern(name, regex)` in Lua.
-- [ ] The overlay renders correctly with block decorations and does not interfere with existing search highlights.
+- [x] Pressing `Mod+Shift+Q` activates quick select mode. All URLs, file paths, and git hashes in the viewport are labeled.
+- [x] Typing `a` copies the first match to the clipboard and exits the overlay.
+- [x] `Mod+Alt+Q` activates quick select scoped to the currently selected block only.
+- [x] Custom patterns can be added via `walk.quick_select.add_pattern(name, regex)` in Lua.
+- [x] The overlay renders correctly with block decorations and does not interfere with existing search highlights.
 
 ---
 

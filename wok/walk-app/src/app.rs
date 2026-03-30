@@ -10,6 +10,7 @@ use walk_blocks::block_nav::BlockNavigator;
 use walk_input::editor::{EditorKey, InputEditor, InputPosition};
 use walk_terminal::terminal::SemanticEvent;
 use walk_ui::clipboard::ClipboardManager;
+use walk_ui::quick_select::QuickSelectState;
 use walk_ui::search::GlobalSearch;
 use walk_ui::selection::SelectionManager;
 use walk_ui::theme::Theme;
@@ -52,6 +53,8 @@ pub struct WalkApp {
     pub global_search: GlobalSearch,
     /// Command-history search overlay.
     pub command_search: Option<CommandSearchState>,
+    /// Quick-select overlay.
+    pub quick_select: QuickSelectState,
     /// Block-local find/filter overlay state.
     pub block_query: Option<BlockQueryState>,
     /// Draft to restore after dismissing the command palette.
@@ -103,6 +106,7 @@ impl WalkApp {
             selection: SelectionManager::new(),
             global_search: GlobalSearch::new(),
             command_search: None,
+            quick_select: QuickSelectState::new(),
             block_query: None,
             saved_draft: None,
             keybindings: KeybindingConfig::default(),
@@ -116,6 +120,8 @@ impl WalkApp {
             || self.command_search.is_some()
         {
             Context::SearchActive
+        } else if self.quick_select.active {
+            Context::QuickSelect
         } else if self.input_mode == InputMode::CommandPalette
             || (self.input_mode == InputMode::OwnedInput && self.input_editor.is_active)
         {
@@ -291,6 +297,12 @@ impl WalkApp {
             }
             Action::CommandSearch => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandSearch));
+            }
+            Action::QuickSelect => {
+                effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenQuickSelect));
+            }
+            Action::QuickSelectBlock => {
+                effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenQuickSelectBlock));
             }
             Action::ToggleInputPosition => {
                 let new_pos = match self.input_editor.render_data().position {

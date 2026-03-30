@@ -1,5 +1,9 @@
 //! URL detection and clickable links in terminal output.
 
+use std::sync::OnceLock;
+
+use crate::quick_select::{PatternRegistry, PatternType};
+
 /// A detected URL span in a line of text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UrlSpan {
@@ -13,42 +17,19 @@ pub struct UrlSpan {
 
 /// Detect URLs in a line of text.
 pub fn detect_urls(line_text: &str) -> Vec<UrlSpan> {
-    let mut spans = Vec::new();
-    let mut start = 0;
-
-    while start < line_text.len() {
-        if let Some(pos) = find_url_start(&line_text[start..]) {
-            let abs_start = start + pos;
-            let url_end = find_url_end(&line_text[abs_start..]);
-            let url = &line_text[abs_start..abs_start + url_end];
-
-            if url.len() > 8 {
-                // Minimum: https://x
-                spans.push(UrlSpan {
-                    col_start: abs_start as u16,
-                    col_end: (abs_start + url_end) as u16,
-                    url: url.to_string(),
-                });
-            }
-
-            start = abs_start + url_end;
-        } else {
-            break;
-        }
-    }
-
-    spans
-}
-
-fn find_url_start(text: &str) -> Option<usize> {
-    text.find("https://").or_else(|| text.find("http://"))
-}
-
-fn find_url_end(text: &str) -> usize {
-    let url_chars: &[char] = &[
-        ' ', '\t', '\n', '"', '\'', '<', '>', '{', '}', '|', '\\', '^', '[', ']', '`',
-    ];
-    text.find(url_chars).unwrap_or(text.len())
+    static REGISTRY: OnceLock<PatternRegistry> = OnceLock::new();
+    let registry = REGISTRY.get_or_init(PatternRegistry::new);
+    registry
+        .detect_line(0, line_text)
+        .into_iter()
+        .filter_map(|candidate| {
+            matches!(candidate.pattern_type, PatternType::Url).then(|| UrlSpan {
+                col_start: candidate.col_start as u16,
+                col_end: candidate.col_end as u16,
+                url: candidate.text,
+            })
+        })
+        .collect()
 }
 
 /// Open a URL in the default browser.

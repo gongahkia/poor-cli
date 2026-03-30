@@ -27,6 +27,7 @@ pub mod bell;
 pub mod clipboard;
 pub mod layout;
 pub mod links;
+pub mod quick_select;
 pub mod search;
 pub mod selection;
 pub mod splits;

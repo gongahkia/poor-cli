@@ -25,7 +25,7 @@ use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
-use walk_app::scripting::{ThemeRequest, TriggerRequest};
+use walk_app::scripting::{QuickSelectPatternRequest, ThemeRequest, TriggerRequest};
 use walk_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
     history_entry_to_state, load_session, named_session_path, save_session, split_node_from_state,
@@ -52,6 +52,7 @@ use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::background::BackgroundRenderer;
 use walk_ui::layout::Rect;
+use walk_ui::quick_select::{PatternRegistry, QuickSelectScope};
 use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::splits::SplitManager;
@@ -225,6 +226,7 @@ struct PaneRuntime {
 struct WalkHandler {
     config: WalkConfig,
     trigger_engine: TriggerEngine,
+    pattern_registry: PatternRegistry,
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
@@ -251,6 +253,7 @@ impl WalkHandler {
         let (workspace, _) = WorkspaceState::new("Walk");
         let plugins = PluginHost::new(&WalkConfig::config_dir());
         let trigger_engine = trigger_engine_from_config(&config);
+        let pattern_registry = PatternRegistry::new();
         let background = {
             let mut background = BackgroundRenderer::new();
             if let Some(path) = resolve_background_image_path(&config) {
@@ -269,6 +272,7 @@ impl WalkHandler {
         let handler = Self {
             config,
             trigger_engine,
+            pattern_registry,
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
@@ -966,6 +970,20 @@ impl WalkHandler {
                     );
                 }
             }
+
+            if focused && pane.app.quick_select.active {
+                render_quick_select_overlay(
+                    render,
+                    &mut self.font,
+                    theme,
+                    pane.ui_rects.viewport,
+                    pane.terminal.state.visible_start_row(),
+                    pane.terminal.state.screen_lines(),
+                    &pane.app.quick_select.matches,
+                    pane.app.quick_select.typed_label.as_str(),
+                    window_opacity,
+                );
+            }
         }
     }
 
@@ -1328,6 +1346,9 @@ impl WalkHandler {
         for request in effects.trigger_requests {
             self.apply_trigger_request(request);
         }
+        for request in effects.quick_select_pattern_requests {
+            self.apply_quick_select_pattern_request(request);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
     }
@@ -1352,6 +1373,22 @@ impl WalkHandler {
                 if self.trigger_engine.remove_trigger(&name) {
                     self.status_message = Some(format!("removed trigger '{name}'"));
                 }
+            }
+        }
+    }
+
+    fn apply_quick_select_pattern_request(&mut self, request: QuickSelectPatternRequest) {
+        match request {
+            QuickSelectPatternRequest::Add { name, regex } => {
+                if let Err(error) = self.pattern_registry.add_pattern(&name, &regex) {
+                    warn!("failed to register quick-select pattern '{name}': {error}");
+                } else {
+                    self.status_message = Some(format!("registered quick-select pattern '{name}'"));
+                }
+            }
+            QuickSelectPatternRequest::Remove { name } => {
+                self.pattern_registry.remove_pattern(&name);
+                self.status_message = Some(format!("removed quick-select pattern '{name}'"));
             }
         }
     }
@@ -2071,6 +2108,7 @@ impl WalkHandler {
                     active_pane.app.close_command_palette();
                     active_pane.app.command_search = None;
                     active_pane.app.block_query = None;
+                    active_pane.app.quick_select.dismiss();
                     active_pane.app.global_search.activate();
                 }
                 if let Some(window) = &self.window {
@@ -2092,6 +2130,7 @@ impl WalkHandler {
                     active_pane.app.global_search.deactivate();
                     active_pane.app.command_search = None;
                     active_pane.app.block_query = None;
+                    active_pane.app.quick_select.dismiss();
                     active_pane.app.open_command_palette();
                 }
                 if let Some(window) = &self.window {
@@ -2122,6 +2161,7 @@ impl WalkHandler {
                 if let Some(active_pane) = self.active_pane_mut() {
                     active_pane.app.global_search.deactivate();
                     active_pane.app.block_query = None;
+                    active_pane.app.quick_select.dismiss();
                     if active_pane.app.input_mode == InputMode::CommandPalette {
                         active_pane.app.close_command_palette();
                     }
@@ -2148,6 +2188,17 @@ impl WalkHandler {
                     self.sync_owned_input_state_for_pane(active_pane_id);
                 }
             }
+            OverlayEffect::OpenQuickSelect => {
+                self.open_quick_select(QuickSelectScope::Viewport);
+            }
+            OverlayEffect::OpenQuickSelectBlock => {
+                self.open_quick_select(QuickSelectScope::SelectedBlock);
+            }
+            OverlayEffect::CloseQuickSelect => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.quick_select.dismiss();
+                }
+            }
             OverlayEffect::OpenBlockQuery {
                 mode,
                 target_block_id,
@@ -2165,6 +2216,7 @@ impl WalkHandler {
                     active_pane.app.close_command_palette();
                     active_pane.app.global_search.deactivate();
                     active_pane.app.command_search = None;
+                    active_pane.app.quick_select.dismiss();
                     active_pane.app.block_query = Some(BlockQueryState::new(mode, target_block_id));
                     if let Some(block_query) = active_pane.app.block_query.as_mut() {
                         block_query.search("", &output_lines);
@@ -2289,6 +2341,91 @@ impl WalkHandler {
 
         self.needs_redraw = true;
         true
+    }
+
+    fn open_quick_select(&mut self, scope: QuickSelectScope) {
+        let Some(active_pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let Some(rows) = self
+            .panes
+            .get(&active_pane_id)
+            .map(|pane| quick_select_rows_for_scope(pane, scope))
+        else {
+            return;
+        };
+
+        if let Some(active_pane) = self.panes.get_mut(&active_pane_id) {
+            active_pane
+                .app
+                .quick_select
+                .activate(scope, &rows, &self.pattern_registry);
+            if active_pane.app.quick_select.matches.is_empty() {
+                active_pane.app.quick_select.dismiss();
+                self.status_message = Some("No quick-select matches in scope".to_string());
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn handle_quick_select_input(&mut self, event: &InputEvent) -> bool {
+        if !matches!(self.active_pane(), Some(pane) if pane.app.quick_select.active) {
+            return false;
+        }
+
+        match event.action {
+            KeyAction::Escape => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.quick_select.dismiss();
+                }
+                self.needs_redraw = true;
+                true
+            }
+            KeyAction::Enter => {
+                let copied = self
+                    .active_pane()
+                    .and_then(|pane| pane.app.quick_select.selected())
+                    .map(|selected| selected.text.clone());
+                if let Some(text) = copied {
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        if let Err(error) = active_pane.app.clipboard.copy(&text) {
+                            warn!("failed to copy quick-select match: {error}");
+                        }
+                        active_pane.app.quick_select.dismiss();
+                    }
+                    self.status_message = Some("Copied quick-select match".to_string());
+                }
+                self.needs_redraw = true;
+                true
+            }
+            KeyAction::Char(ch)
+                if !event.modifiers.ctrl
+                    && !event.modifiers.alt
+                    && !event.modifiers.meta
+                    && !event.modifiers.shift =>
+            {
+                let copied = if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane
+                        .app
+                        .quick_select
+                        .handle_label_char(ch)
+                        .map(|selected| selected.text)
+                } else {
+                    None
+                };
+                if let Some(text) = copied {
+                    if let Some(active_pane) = self.active_pane_mut() {
+                        if let Err(error) = active_pane.app.clipboard.copy(&text) {
+                            warn!("failed to copy quick-select match: {error}");
+                        }
+                    }
+                    self.status_message = Some("Copied quick-select match".to_string());
+                }
+                self.needs_redraw = true;
+                true
+            }
+            _ => true,
+        }
     }
 
     fn handle_command_search_input(&mut self, event: &InputEvent) -> bool {
@@ -3065,6 +3202,10 @@ impl AppHandler for WalkHandler {
         }
 
         if self.handle_block_query_input(&event) {
+            return;
+        }
+
+        if self.handle_quick_select_input(&event) {
             return;
         }
 
@@ -3870,6 +4011,90 @@ fn render_search_overlay(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_quick_select_overlay(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    visible_start_row: usize,
+    visible_screen_lines: usize,
+    matches: &[walk_ui::quick_select::QuickSelectMatch],
+    typed_label: &str,
+    surface_opacity: f32,
+) {
+    if visible_screen_lines == 0 {
+        return;
+    }
+
+    for candidate in matches {
+        if candidate.row < visible_start_row {
+            continue;
+        }
+        let viewport_row = candidate.row - visible_start_row;
+        if viewport_row >= visible_screen_lines {
+            continue;
+        }
+
+        let row_y = viewport.y + viewport_row as f32 * font.metrics.cell_height;
+        let x = viewport.x + candidate.col_start as f32 * font.metrics.cell_width;
+        let width = (candidate.col_end.saturating_sub(candidate.col_start) as f32).max(1.0)
+            * font.metrics.cell_width;
+        let active = !typed_label.is_empty() && candidate.label.starts_with(typed_label);
+        let fill = if active {
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.55,
+            ]
+        } else {
+            [
+                theme.highlight_match.r,
+                theme.highlight_match.g,
+                theme.highlight_match.b,
+                0.35,
+            ]
+        };
+        render.batch.push_bg_quad(
+            x,
+            row_y,
+            width,
+            font.metrics.cell_height,
+            with_opacity(fill, surface_opacity),
+        );
+
+        let label_x = x;
+        let label_y = row_y;
+        render.batch.push_bg_quad(
+            label_x,
+            label_y,
+            candidate.label.chars().count() as f32 * font.metrics.cell_width + 4.0,
+            font.metrics.cell_height,
+            with_opacity(
+                [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.85],
+                surface_opacity,
+            ),
+        );
+        push_text(
+            render,
+            font,
+            label_x + 2.0,
+            label_y,
+            &candidate.label,
+            with_opacity(
+                [
+                    theme.background.r,
+                    theme.background.g,
+                    theme.background.b,
+                    0.95,
+                ],
+                surface_opacity,
+            ),
+        );
+    }
+}
+
 fn render_block_query_overlay(
     render: &mut RenderState,
     font: &mut FontSystem,
@@ -4373,6 +4598,30 @@ fn collect_search_lines(
     }
 
     lines
+}
+
+fn quick_select_rows_for_scope(
+    pane: &PaneRuntime,
+    scope: QuickSelectScope,
+) -> Vec<(usize, String)> {
+    match scope {
+        QuickSelectScope::Viewport => pane
+            .terminal
+            .state
+            .visible_rows()
+            .into_iter()
+            .map(|absolute_row| (absolute_row, pane.terminal.state.row_text(absolute_row)))
+            .collect(),
+        QuickSelectScope::SelectedBlock => pane
+            .app
+            .selected_or_latest_block()
+            .map(|block| {
+                (block.output_start_row..=block.output_end_row)
+                    .map(|absolute_row| (absolute_row, pane.terminal.state.row_text(absolute_row)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
 }
 
 fn extract_selection_text(terminal: &Terminal, start: CellPos, end: CellPos) -> String {
@@ -5002,6 +5251,8 @@ fn parse_lua_action(action: &str) -> Option<Action> {
         "search_global" | "toggle_search" | "search" => Some(Action::SearchGlobal),
         "command_palette" | "palette" => Some(Action::CommandPalette),
         "command_search" | "history_search" => Some(Action::CommandSearch),
+        "quick_select" => Some(Action::QuickSelect),
+        "quick_select_block" => Some(Action::QuickSelectBlock),
         "block_prev" => Some(Action::BlockPrev),
         "block_next" => Some(Action::BlockNext),
         "block_copy" | "copy_block" => Some(Action::BlockCopy),
@@ -5104,6 +5355,14 @@ fn built_in_palette_commands() -> Vec<(String, String)> {
         (
             "command_search".to_string(),
             "Search pane-local and global command history".to_string(),
+        ),
+        (
+            "quick_select".to_string(),
+            "Label viewport links, paths, hashes, and copy by key".to_string(),
+        ),
+        (
+            "quick_select_block".to_string(),
+            "Quick select scoped to selected block output".to_string(),
         ),
         (
             "zoom_reset".to_string(),
