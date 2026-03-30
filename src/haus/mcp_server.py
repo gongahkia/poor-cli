@@ -1620,6 +1620,132 @@ def apply_simulated_option(option_index: int = 1) -> str:
     return f"Applied simulated option {option_index}. Added {len(items_to_add)} object(s)."
 
 
+@mcp.tool()
+def score_doorway_accessibility(
+    door_x: float,
+    door_z: float,
+    door_width: float = 0.9,
+    required_clearance: float = 0.9,
+) -> str:
+    """Score accessibility around a doorway/opening at a given position.
+
+    Checks both sides of the door for furniture clearance and returns a
+    0-1 score.  *required_clearance* is the minimum free radius (metres)
+    expected on each side — 0.9 m is a common wheelchair-accessible
+    standard.
+    """
+    data = _load_layout()
+    items = data["items"]
+    if door_width <= 0 or required_clearance <= 0:
+        return "Error: door_width and required_clearance must be > 0."
+
+    half_w = door_width / 2
+    check_radius = required_clearance + half_w
+    min_clearance = float("inf")
+    blocking: list[str] = []
+
+    for i, item in enumerate(items):
+        if not item.get("visible", True):
+            continue
+        poly = _item_polygon(item)
+        for corner in poly:
+            dist = math.hypot(corner[0] - door_x, corner[1] - door_z)
+            if dist < min_clearance:
+                min_clearance = dist
+        edge_dist = _polygon_distance(
+            [(door_x - half_w, door_z), (door_x + half_w, door_z)], poly
+        )
+        if edge_dist < required_clearance:
+            blocking.append(f"[{i}] {_item_label(item)} ({edge_dist:.2f}m)")
+
+    effective = min(min_clearance, check_radius)
+    score = round(min(effective / check_radius, 1.0), 3)
+
+    lines = [
+        f"Doorway at ({door_x:.2f}, {door_z:.2f}), width={door_width:.2f}m",
+        f"Required clearance: {required_clearance:.2f}m",
+        f"Nearest furniture distance: {min_clearance:.2f}m" if min_clearance < float("inf") else "No nearby furniture",
+        f"Accessibility score: {score}",
+    ]
+    if blocking:
+        lines.append(f"Objects within clearance zone ({len(blocking)}):")
+        for b in blocking:
+            lines.append(f"  {b}")
+    else:
+        lines.append("Clearance zone is free.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def score_walkway(
+    x1: float,
+    z1: float,
+    x2: float,
+    z2: float,
+    min_width: float = 0.9,
+) -> str:
+    """Score a walkway/corridor between two points.
+
+    Casts a line from (x1,z1) to (x2,z2) and measures the narrowest gap
+    on either side.  Returns a 0-1 score based on whether *min_width* is
+    maintained along the full path.
+    """
+    data = _load_layout()
+    items = data["items"]
+    if min_width <= 0:
+        return "Error: min_width must be > 0."
+
+    dx = x2 - x1
+    dz = z2 - z1
+    length = math.hypot(dx, dz)
+    if length < 0.01:
+        return "Error: walkway start and end are the same point."
+
+    steps = max(2, int(length / 0.25))
+    narrowest = float("inf")
+    narrowest_pos: tuple[float, float] = (x1, z1)
+    obstructions: list[str] = []
+
+    half_w = min_width / 2
+    for s in range(steps + 1):
+        t = s / steps
+        px = x1 + dx * t
+        pz = z1 + dz * t
+        local_min = float("inf")
+        for i, item in enumerate(items):
+            if not item.get("visible", True):
+                continue
+            poly = _item_polygon(item)
+            for edge_a, edge_b in _polygon_edges(poly):
+                d = _distance_point_to_segment((px, pz), edge_a, edge_b)
+                if d < local_min:
+                    local_min = d
+            if local_min < half_w:
+                label = f"[{i}] {_item_label(item)}"
+                if label not in obstructions:
+                    obstructions.append(label)
+        if local_min < narrowest:
+            narrowest = local_min
+            narrowest_pos = (px, pz)
+
+    effective_width = narrowest * 2
+    score = round(min(effective_width / min_width, 1.0), 3) if narrowest < float("inf") else 1.0
+
+    lines = [
+        f"Walkway ({x1:.2f},{z1:.2f}) -> ({x2:.2f},{z2:.2f}), length={length:.2f}m",
+        f"Required width: {min_width:.2f}m",
+        f"Narrowest gap: {effective_width:.2f}m at ({narrowest_pos[0]:.2f}, {narrowest_pos[1]:.2f})" if narrowest < float("inf") else "No obstructions detected",
+        f"Walkway score: {score}",
+    ]
+    if obstructions:
+        lines.append(f"Encroaching objects ({len(obstructions)}):")
+        for o in obstructions:
+            lines.append(f"  {o}")
+    else:
+        lines.append("Walkway is clear.")
+    return "\n".join(lines)
+
+
 def run_server() -> None:
     """Start the MCP server on stdio."""
     mcp.run()
