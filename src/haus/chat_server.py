@@ -2,32 +2,38 @@
 
 """Combined static file server + AI chat API for the haus editor.
 
-Serves the viewer files and provides a /api/chat endpoint that uses
-configurable LLM providers (Anthropic, OpenAI, Gemini) with tool use.
+Serves viewer files and provides `/api/chat` with tool-using LLM providers.
 """
+
 from __future__ import annotations
 
-import json
 import importlib
-import logging
+import json
 import mimetypes
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route, Mount
+from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 import uvicorn
 
+from .logging_utils import configure_logging, new_request_id
 from .mcp_server import (
+    _save_layout,
     add_furniture,
     add_wall,
     align_objects,
+    apply_simulated_option,
+    auto_place_furniture,
     batch_move,
     check_overlap,
+    check_sightline,
     clear_layout,
     compute_room_area,
     distribute_objects,
@@ -49,14 +55,18 @@ from .mcp_server import (
     rotate_object,
     set_color,
     set_visibility,
+    simulate_layout_options,
     snap_to_grid,
+    suggest_furniture_placement,
     swap_furniture,
     tag_room,
 )
 
-log = logging.getLogger("haus.chat")
+log = configure_logging("haus.chat")
 
 mimetypes.add_type("model/gltf-binary", ".glb")
+
+_MAX_TOOL_STEPS = 12
 
 _SYSTEM = (
     "You are an AI assistant for the haus floor plan editor. "
@@ -67,170 +77,413 @@ _SYSTEM = (
     "Typical room sizes: bedrooms ~3x3m, living rooms ~4x5m, bathrooms ~2x2m, kitchens ~2.5x3m.\n\n"
     "IMPORTANT RULES:\n"
     "- Before any DESTRUCTIVE action (removing, clearing, or replacing objects), "
-    "FIRST describe what you plan to do and ASK for confirmation. "
-    "Only proceed after the user confirms. Examples of destructive actions: "
-    "remove_object, remove_objects_by_type, clear_layout.\n"
-    "- For adding, moving, resizing, recoloring, or hiding objects, proceed directly.\n"
-    "- When removing multiple objects, use remove_objects_by_type instead of "
-    "calling remove_object in a loop (indices shift after each removal).\n"
-    "- batch_move uses RELATIVE offsets (dx, dz), not absolute positions.\n\n"
-    "- align_objects, distribute_objects, snap_to_grid, tag_room modify multiple objects "
-    "— confirm with user before applying to large groups.\n\n"
+    "FIRST describe what you plan to do and ASK for confirmation.\n"
+    "- For vague intents (e.g., best sofa placement with clear TV view), "
+    "use simulation tools: suggest_furniture_placement, auto_place_furniture, "
+    "simulate_layout_options, apply_simulated_option, and check_sightline.\n"
+    "- remove_objects_by_type is safer than repeated remove_object when deleting many.\n"
+    "- batch_move uses relative offsets (dx, dz), not absolute positions.\n\n"
     "Workflow:\n"
-    "1. Call get_layout_summary() for a quick overview of the current layout\n"
-    "2. Use measure_distance, find_nearest, check_overlap, find_objects_in_area "
-    "for spatial reasoning before placing furniture\n"
-    "3. Call list_objects() or get_object_details(index) for specifics\n"
-    "4. Call list_furniture_catalog() if you need available furniture types\n"
-    "5. Make changes with add_furniture, add_wall, move_object, rotate_object, "
-    "remove_object, remove_objects_by_type, resize_object, set_color, "
-    "set_visibility, duplicate_object, batch_move\n"
-    "6. Use align_objects and distribute_objects to tidy arrangements\n"
-    "7. Use rename_object and tag_room to label objects/rooms; "
-    "use find_by_name and list_rooms to query by label\n"
-    "8. Use swap_furniture to change types while keeping position\n"
-    "9. snap_to_grid snaps positions to nearest grid point\n"
-    "10. Confirm what you did briefly\n"
-    "Keep responses concise. The editor auto-syncs with your changes."
+    "1. get_layout_summary() for high-level state\n"
+    "2. list_objects() / get_object_details(index) for specifics\n"
+    "3. Spatial checks: measure_distance, find_nearest, check_overlap, find_objects_in_area\n"
+    "4. For intent-driven placement, simulate first then apply\n"
+    "5. Confirm exactly what changed\n"
+    "Keep responses concise."
 )
 
 _TOOLS_SPEC = [
-    {"name": "list_furniture_catalog", "description": "List all available furniture types with dimensions.",
-     "parameters": {"type": "object", "properties": {}}},
-    {"name": "list_objects", "description": "List all objects in the current layout with index, type, position.",
-     "parameters": {"type": "object", "properties": {}}},
-    {"name": "add_furniture", "description": "Add a furniture item at a position.",
-     "parameters": {"type": "object", "properties": {
-         "furniture_type": {"type": "string", "description": "Type from catalog (e.g. bed_queen, sofa_3, desk)"},
-         "x": {"type": "number", "description": "X position in meters", "default": 0},
-         "z": {"type": "number", "description": "Z position in meters", "default": 0},
-         "rotation_deg": {"type": "number", "description": "Rotation in degrees", "default": 0},
-     }, "required": ["furniture_type"]}},
-    {"name": "add_wall", "description": "Add a wall segment between two points.",
-     "parameters": {"type": "object", "properties": {
-         "x1": {"type": "number"}, "z1": {"type": "number"},
-         "x2": {"type": "number"}, "z2": {"type": "number"},
-         "height": {"type": "number", "default": 2.6},
-         "thickness": {"type": "number", "default": 0.15},
-     }, "required": ["x1", "z1", "x2", "z2"]}},
-    {"name": "move_object", "description": "Move an object to a new XZ position.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index from list_objects"},
-         "x": {"type": "number"}, "z": {"type": "number"},
-     }, "required": ["index", "x", "z"]}},
-    {"name": "rotate_object", "description": "Set an object's rotation in degrees.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer"}, "rotation_deg": {"type": "number"},
-     }, "required": ["index", "rotation_deg"]}},
-    {"name": "remove_object", "description": "Remove an object by index.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer"},
-     }, "required": ["index"]}},
-    {"name": "remove_objects_by_type", "description": "Remove all objects of a given type (e.g. 'wall', 'model_part', or a furniture type).",
-     "parameters": {"type": "object", "properties": {
-         "object_type": {"type": "string", "description": "Type to remove: 'wall', 'model_part', or furniture type like 'bed_queen'"},
-     }, "required": ["object_type"]}},
-    {"name": "clear_layout", "description": "Remove all objects.",
-     "parameters": {"type": "object", "properties": {}}},
-    {"name": "get_object_details", "description": "Get full details for one object: type, position, rotation, dimensions, color, visibility.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index from list_objects"},
-     }, "required": ["index"]}},
-    {"name": "get_layout_summary", "description": "Get layout summary: object counts by type, furniture breakdown, hidden count, XZ bounding box.",
-     "parameters": {"type": "object", "properties": {}}},
-    {"name": "resize_object", "description": "Resize an object. Only provided dimensions are changed. Min 0.05m.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index"},
-         "width": {"type": "number", "description": "New width in meters (X axis)"},
-         "height": {"type": "number", "description": "New height in meters (Y axis)"},
-         "depth": {"type": "number", "description": "New depth in meters (Z axis)"},
-     }, "required": ["index"]}},
-    {"name": "set_color", "description": "Set an object's color via hex string (e.g. '#ff0000').",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index"},
-         "color": {"type": "string", "description": "Hex color string like '#ff0000'"},
-     }, "required": ["index", "color"]}},
-    {"name": "set_visibility", "description": "Show or hide an object.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index"},
-         "visible": {"type": "boolean", "description": "True to show, false to hide"},
-     }, "required": ["index", "visible"]}},
-    {"name": "duplicate_object", "description": "Duplicate an object to a new position, preserving all properties.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index to duplicate"},
-         "x": {"type": "number", "description": "X position for the copy"},
-         "z": {"type": "number", "description": "Z position for the copy"},
-     }, "required": ["index", "x", "z"]}},
-    {"name": "batch_move", "description": "Move multiple objects by a relative offset. Validates all indices before applying.",
-     "parameters": {"type": "object", "properties": {
-         "indices": {"type": "array", "items": {"type": "integer"}, "description": "List of object indices to move"},
-         "dx": {"type": "number", "description": "Relative X offset in meters"},
-         "dz": {"type": "number", "description": "Relative Z offset in meters"},
-     }, "required": ["indices", "dx", "dz"]}},
-    {"name": "measure_distance", "description": "XZ Euclidean distance between two object centers.",
-     "parameters": {"type": "object", "properties": {
-         "index1": {"type": "integer", "description": "First object index"},
-         "index2": {"type": "integer", "description": "Second object index"},
-     }, "required": ["index1", "index2"]}},
-    {"name": "find_objects_in_area", "description": "Find all objects whose center falls within an XZ bounding box.",
-     "parameters": {"type": "object", "properties": {
-         "x_min": {"type": "number"}, "z_min": {"type": "number"},
-         "x_max": {"type": "number"}, "z_max": {"type": "number"},
-     }, "required": ["x_min", "z_min", "x_max", "z_max"]}},
-    {"name": "check_overlap", "description": "AABB overlap check on XZ plane between two objects. Accounts for rotation.",
-     "parameters": {"type": "object", "properties": {
-         "index1": {"type": "integer", "description": "First object index"},
-         "index2": {"type": "integer", "description": "Second object index"},
-     }, "required": ["index1", "index2"]}},
-    {"name": "find_nearest", "description": "Find N nearest objects by XZ distance, sorted.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Reference object index"},
-         "count": {"type": "integer", "description": "Number of nearest neighbors (default 3)", "default": 3},
-     }, "required": ["index"]}},
-    {"name": "align_objects", "description": "Align objects along an axis ('x' or 'z'). Reference: 'min', 'max', or 'center'.",
-     "parameters": {"type": "object", "properties": {
-         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices to align"},
-         "axis": {"type": "string", "description": "'x' or 'z'"},
-         "reference": {"type": "string", "description": "'min', 'max', or 'center' (default 'center')", "default": "center"},
-     }, "required": ["indices", "axis"]}},
-    {"name": "distribute_objects", "description": "Evenly space objects along an axis. First/last stay as anchors. Requires >= 3 objects.",
-     "parameters": {"type": "object", "properties": {
-         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices (>= 3)"},
-         "axis": {"type": "string", "description": "'x' or 'z'"},
-     }, "required": ["indices", "axis"]}},
-    {"name": "snap_to_grid", "description": "Round object positions to nearest grid multiple.",
-     "parameters": {"type": "object", "properties": {
-         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices to snap"},
-         "grid_size": {"type": "number", "description": "Grid cell size in meters (default 0.25)", "default": 0.25},
-     }, "required": ["indices"]}},
-    {"name": "rename_object", "description": "Assign a human-readable label to an object. Empty string removes it.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index"},
-         "name": {"type": "string", "description": "Label to assign (empty to remove)"},
-     }, "required": ["index", "name"]}},
-    {"name": "find_by_name", "description": "Case-insensitive substring search on object names.",
-     "parameters": {"type": "object", "properties": {
-         "name": {"type": "string", "description": "Search string"},
-     }, "required": ["name"]}},
-    {"name": "tag_room", "description": "Assign a room label to objects.",
-     "parameters": {"type": "object", "properties": {
-         "indices": {"type": "array", "items": {"type": "integer"}, "description": "Object indices to tag"},
-         "room_name": {"type": "string", "description": "Room name to assign"},
-     }, "required": ["indices", "room_name"]}},
-    {"name": "list_rooms", "description": "List all room labels with their object indices and types.",
-     "parameters": {"type": "object", "properties": {}}},
-    {"name": "swap_furniture", "description": "Replace furniture type keeping position, rotation, visibility, name, room.",
-     "parameters": {"type": "object", "properties": {
-         "index": {"type": "integer", "description": "Object index"},
-         "new_type": {"type": "string", "description": "New furniture type from catalog"},
-     }, "required": ["index", "new_type"]}},
-    {"name": "compute_room_area", "description": "Compute bounding-box area of a room from its tagged objects' extents.",
-     "parameters": {"type": "object", "properties": {
-         "room_name": {"type": "string", "description": "Room name from tag_room/list_rooms"},
-     }, "required": ["room_name"]}},
+    {
+        "name": "list_furniture_catalog",
+        "description": "List all available furniture types with dimensions.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_objects",
+        "description": "List all objects in the current layout with index, type, position.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "add_furniture",
+        "description": "Add a furniture item at a position.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "furniture_type": {
+                    "type": "string",
+                    "description": "Type from catalog (e.g. bed_queen, sofa_3, desk)",
+                },
+                "x": {"type": "number", "default": 0},
+                "z": {"type": "number", "default": 0},
+                "rotation_deg": {"type": "number", "default": 0},
+            },
+            "required": ["furniture_type"],
+        },
+    },
+    {
+        "name": "add_wall",
+        "description": "Add a wall segment between two points.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x1": {"type": "number"},
+                "z1": {"type": "number"},
+                "x2": {"type": "number"},
+                "z2": {"type": "number"},
+                "height": {"type": "number", "default": 2.6},
+                "thickness": {"type": "number", "default": 0.15},
+            },
+            "required": ["x1", "z1", "x2", "z2"],
+        },
+    },
+    {
+        "name": "move_object",
+        "description": "Move an object to a new XZ position.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "x": {"type": "number"},
+                "z": {"type": "number"},
+            },
+            "required": ["index", "x", "z"],
+        },
+    },
+    {
+        "name": "rotate_object",
+        "description": "Set an object's rotation in degrees.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "rotation_deg": {"type": "number"},
+            },
+            "required": ["index", "rotation_deg"],
+        },
+    },
+    {
+        "name": "remove_object",
+        "description": "Remove an object by index.",
+        "parameters": {
+            "type": "object",
+            "properties": {"index": {"type": "integer"}},
+            "required": ["index"],
+        },
+    },
+    {
+        "name": "remove_objects_by_type",
+        "description": "Remove all objects of a given type.",
+        "parameters": {
+            "type": "object",
+            "properties": {"object_type": {"type": "string"}},
+            "required": ["object_type"],
+        },
+    },
+    {
+        "name": "clear_layout",
+        "description": "Remove all objects.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_object_details",
+        "description": "Get full details for one object.",
+        "parameters": {
+            "type": "object",
+            "properties": {"index": {"type": "integer"}},
+            "required": ["index"],
+        },
+    },
+    {
+        "name": "get_layout_summary",
+        "description": "Get object counts and layout bounding box.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "resize_object",
+        "description": "Resize an object. Only provided dimensions are changed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "width": {"type": "number"},
+                "height": {"type": "number"},
+                "depth": {"type": "number"},
+            },
+            "required": ["index"],
+        },
+    },
+    {
+        "name": "set_color",
+        "description": "Set object color using hex string.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "color": {"type": "string"},
+            },
+            "required": ["index", "color"],
+        },
+    },
+    {
+        "name": "set_visibility",
+        "description": "Show or hide an object.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "visible": {"type": "boolean"},
+            },
+            "required": ["index", "visible"],
+        },
+    },
+    {
+        "name": "duplicate_object",
+        "description": "Duplicate an object to a new position.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "x": {"type": "number"},
+                "z": {"type": "number"},
+            },
+            "required": ["index", "x", "z"],
+        },
+    },
+    {
+        "name": "batch_move",
+        "description": "Move multiple objects by a relative offset.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "indices": {"type": "array", "items": {"type": "integer"}},
+                "dx": {"type": "number"},
+                "dz": {"type": "number"},
+            },
+            "required": ["indices", "dx", "dz"],
+        },
+    },
+    {
+        "name": "measure_distance",
+        "description": "XZ distance between two object centers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index1": {"type": "integer"},
+                "index2": {"type": "integer"},
+            },
+            "required": ["index1", "index2"],
+        },
+    },
+    {
+        "name": "find_objects_in_area",
+        "description": "Find objects whose centers are inside an XZ bounding box.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x_min": {"type": "number"},
+                "z_min": {"type": "number"},
+                "x_max": {"type": "number"},
+                "z_max": {"type": "number"},
+            },
+            "required": ["x_min", "z_min", "x_max", "z_max"],
+        },
+    },
+    {
+        "name": "check_overlap",
+        "description": "AABB overlap check on XZ plane.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index1": {"type": "integer"},
+                "index2": {"type": "integer"},
+            },
+            "required": ["index1", "index2"],
+        },
+    },
+    {
+        "name": "find_nearest",
+        "description": "Find nearest objects by XZ distance.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "count": {"type": "integer", "default": 3},
+            },
+            "required": ["index"],
+        },
+    },
+    {
+        "name": "align_objects",
+        "description": "Align multiple objects along X or Z.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "indices": {"type": "array", "items": {"type": "integer"}},
+                "axis": {"type": "string"},
+                "reference": {"type": "string", "default": "center"},
+            },
+            "required": ["indices", "axis"],
+        },
+    },
+    {
+        "name": "distribute_objects",
+        "description": "Evenly space objects along X or Z.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "indices": {"type": "array", "items": {"type": "integer"}},
+                "axis": {"type": "string"},
+            },
+            "required": ["indices", "axis"],
+        },
+    },
+    {
+        "name": "snap_to_grid",
+        "description": "Snap positions to the nearest grid multiple.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "indices": {"type": "array", "items": {"type": "integer"}},
+                "grid_size": {"type": "number", "default": 0.25},
+            },
+            "required": ["indices"],
+        },
+    },
+    {
+        "name": "rename_object",
+        "description": "Assign a human-readable label to an object.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "name": {"type": "string"},
+            },
+            "required": ["index", "name"],
+        },
+    },
+    {
+        "name": "find_by_name",
+        "description": "Case-insensitive search on object names.",
+        "parameters": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "tag_room",
+        "description": "Assign room label to objects.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "indices": {"type": "array", "items": {"type": "integer"}},
+                "room_name": {"type": "string"},
+            },
+            "required": ["indices", "room_name"],
+        },
+    },
+    {
+        "name": "list_rooms",
+        "description": "List room labels and associated objects.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "swap_furniture",
+        "description": "Swap furniture type while keeping placement metadata.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer"},
+                "new_type": {"type": "string"},
+            },
+            "required": ["index", "new_type"],
+        },
+    },
+    {
+        "name": "compute_room_area",
+        "description": "Compute room area from tagged-object bounds.",
+        "parameters": {
+            "type": "object",
+            "properties": {"room_name": {"type": "string"}},
+            "required": ["room_name"],
+        },
+    },
+    {
+        "name": "check_sightline",
+        "description": "Check whether line-of-sight between two objects is blocked.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index_from": {"type": "integer"},
+                "index_to": {"type": "integer"},
+                "safety_margin": {"type": "number", "default": 0.05},
+                "include_hidden": {"type": "boolean", "default": False},
+            },
+            "required": ["index_from", "index_to"],
+        },
+    },
+    {
+        "name": "suggest_furniture_placement",
+        "description": "Simulate and return ranked placement candidates for furniture.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "furniture_type": {"type": "string"},
+                "near_index": {"type": "integer"},
+                "face_index": {"type": "integer"},
+                "room_name": {"type": "string"},
+                "min_distance": {"type": "number", "default": 1.0},
+                "max_distance": {"type": "number", "default": 4.0},
+                "require_clear_sightline": {"type": "boolean", "default": False},
+                "max_candidates": {"type": "integer", "default": 5},
+                "grid_size": {"type": "number", "default": 0.25},
+            },
+            "required": ["furniture_type"],
+        },
+    },
+    {
+        "name": "auto_place_furniture",
+        "description": "Auto-place a furniture item from best simulation candidate.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "furniture_type": {"type": "string"},
+                "near_index": {"type": "integer"},
+                "face_index": {"type": "integer"},
+                "room_name": {"type": "string"},
+                "min_distance": {"type": "number", "default": 1.0},
+                "max_distance": {"type": "number", "default": 4.0},
+                "require_clear_sightline": {"type": "boolean", "default": False},
+                "candidate_rank": {"type": "integer", "default": 1},
+                "grid_size": {"type": "number", "default": 0.25},
+            },
+            "required": ["furniture_type"],
+        },
+    },
+    {
+        "name": "simulate_layout_options",
+        "description": "Generate multi-object simulated options from vague requirement text.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "requirement": {"type": "string"},
+                "room_name": {"type": "string", "default": ""},
+                "max_options": {"type": "integer", "default": 3},
+            },
+            "required": ["requirement"],
+        },
+    },
+    {
+        "name": "apply_simulated_option",
+        "description": "Apply one previously simulated option into the live layout.",
+        "parameters": {
+            "type": "object",
+            "properties": {"option_index": {"type": "integer", "default": 1}},
+        },
+    },
 ]
 
-_DISPATCH_RAW = {
+_DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
     "list_furniture_catalog": lambda a: list_furniture_catalog(),
     "list_objects": lambda a: list_objects(),
     "add_furniture": lambda a: add_furniture(**a),
@@ -260,39 +513,49 @@ _DISPATCH_RAW = {
     "list_rooms": lambda a: list_rooms(),
     "swap_furniture": lambda a: swap_furniture(**a),
     "compute_room_area": lambda a: compute_room_area(**a),
+    "check_sightline": lambda a: check_sightline(**a),
+    "suggest_furniture_placement": lambda a: suggest_furniture_placement(**a),
+    "auto_place_furniture": lambda a: auto_place_furniture(**a),
+    "simulate_layout_options": lambda a: simulate_layout_options(**a),
+    "apply_simulated_option": lambda a: apply_simulated_option(**a),
 }
 
-_tool_log: list[dict] = []  # collects tool calls per request
 
-
-def _dispatch(name: str, args: dict) -> str:
+def _dispatch(
+    name: str,
+    args: dict[str, Any],
+    *,
+    request_id: str,
+    tool_log: list[dict[str, Any]],
+) -> str:
     fn = _DISPATCH_RAW.get(name)
-    if not fn:
-        return f"Unknown tool: {name}"
-    result = fn(args)
-    entry = {"tool": name, "args": args, "result": result}
-    _tool_log.append(entry)
-    log.info("tool %s(%s) -> %s", name, json.dumps(args), result[:200] if len(result) > 200 else result)
+    start = time.perf_counter()
+
+    if fn is None:
+        result = f"Error: unknown tool '{name}'."
+    else:
+        try:
+            result = fn(args)
+        except Exception as exc:  # pragma: no cover - defensive for runtime tool failures
+            log.exception("[%s] tool failure: %s", request_id, name)
+            result = f"Error: tool '{name}' failed: {exc}"
+
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    entry = {
+        "tool": name,
+        "args": args,
+        "result": result,
+        "elapsed_ms": elapsed_ms,
+    }
+    tool_log.append(entry)
+
+    preview = result[:200] + "..." if len(result) > 200 else result
+    log.info("[%s] tool %s(%s) -> %s (%sms)", request_id, name, json.dumps(args), preview, elapsed_ms)
     return result
-
-# --- provider detection ---
-
-def _detect_provider() -> tuple[str, str]:
-    """Return (provider_name, api_key) from env vars. Checks in order: Anthropic, OpenAI, Gemini."""
-    for env, name in [
-        ("ANTHROPIC_API_KEY", "anthropic"),
-        ("OPENAI_API_KEY", "openai"),
-        ("GEMINI_API_KEY", "gemini"),
-    ]:
-        key = os.environ.get(env)
-        if key:
-            return name, key
-    return "", ""
 
 
 def _provider_available() -> list[str]:
-    """Check which providers are available."""
-    providers = []
+    providers: list[str] = []
     if os.environ.get("ANTHROPIC_API_KEY"):
         providers.append("anthropic")
     if os.environ.get("OPENAI_API_KEY"):
@@ -307,26 +570,29 @@ def _load_provider_module(module_name: str, provider_name: str) -> Any:
         return importlib.import_module(module_name)
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            f"{provider_name} support requires the optional dependency '{module_name}'. "
-            f"Install the corresponding extra before using this provider."
+            f"{provider_name} support requires optional dependency '{module_name}'. "
+            "Install the provider extra before using this model."
         ) from exc
 
 
-# --- Anthropic provider ---
-
-def _anthropic_tools():
-    """Convert tool specs to Anthropic format (input_schema)."""
-    return [
-        {**t, "input_schema": t["parameters"]}
-        for t in [{k: v for k, v in tool.items() if k != "parameters"} | {"parameters": tool["parameters"]} for tool in _TOOLS_SPEC]
-    ]
-
-
-def _chat_anthropic(api_key: str, messages: list, model: str) -> tuple[str, list]:
+def _chat_anthropic(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
     anthropic = _load_provider_module("anthropic", "Anthropic")
     client = anthropic.Anthropic(api_key=api_key)
-    tools = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in _TOOLS_SPEC]
-    for _ in range(10):
+    tools = [
+        {
+            "name": t["name"],
+            "description": t["description"],
+            "input_schema": t["parameters"],
+        }
+        for t in _TOOLS_SPEC
+    ]
+
+    for _ in range(_MAX_TOOL_STEPS):
         response = client.messages.create(
             model=model,
             max_tokens=1024,
@@ -334,160 +600,272 @@ def _chat_anthropic(api_key: str, messages: list, model: str) -> tuple[str, list
             tools=cast(Any, tools),
             messages=messages,
         )
-        content = []
+
+        content: list[dict[str, Any]] = []
         for block in response.content:
             if block.type == "text":
                 content.append({"type": "text", "text": block.text})
             elif block.type == "tool_use":
-                content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": dict(block.input),
+                    }
+                )
+
         messages.append({"role": "assistant", "content": content})
+
         tool_uses = [b for b in response.content if b.type == "tool_use"]
         if not tool_uses:
             text = "".join(b.text for b in response.content if b.type == "text")
             return text, messages
-        results = []
+
+        results: list[dict[str, Any]] = []
         for tu in tool_uses:
-            result = _dispatch(tu.name, tu.input)
+            result = dispatch(tu.name, dict(tu.input))
             results.append({"type": "tool_result", "tool_use_id": tu.id, "content": result})
         messages.append({"role": "user", "content": results})
+
     raise RuntimeError("Too many tool iterations")
 
 
-# --- OpenAI provider ---
+def _openai_tools() -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["parameters"],
+            },
+        }
+        for t in _TOOLS_SPEC
+    ]
 
-def _openai_tools():
-    """Convert tool specs to OpenAI function calling format."""
-    return [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}} for t in _TOOLS_SPEC]
 
+def _to_oai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    oai: list[dict[str, Any]] = [{"role": "system", "content": _SYSTEM}]
 
-def _to_oai_messages(messages: list) -> list:
-    """Convert internal message format to OpenAI format."""
-    oai = [{"role": "system", "content": _SYSTEM}]
-    for m in messages:
-        role = m["role"]
-        content = m.get("content")
+    for msg in messages:
+        role = str(msg.get("role", "user"))
+        content = msg.get("content")
+
         if isinstance(content, str):
             oai.append({"role": role, "content": content})
             continue
+
         if not isinstance(content, list):
             continue
-        # assistant message: group text + tool_calls into one message
+
         if role == "assistant":
-            texts = [b["text"] for b in content if b.get("type") == "text"]
-            tus = [b for b in content if b.get("type") == "tool_use"]
-            entry = {"role": "assistant", "content": "\n".join(texts) if texts else None}
-            if tus:
+            texts = [b.get("text", "") for b in content if b.get("type") == "text"]
+            tool_uses = [b for b in content if b.get("type") == "tool_use"]
+            entry: dict[str, Any] = {
+                "role": "assistant",
+                "content": "\n".join(texts) if texts else None,
+            }
+            if tool_uses:
                 entry["tool_calls"] = [
-                    {"id": tu["id"], "type": "function", "function": {"name": tu["name"], "arguments": json.dumps(tu["input"])}}
-                    for tu in tus
+                    {
+                        "id": tu["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tu["name"],
+                            "arguments": json.dumps(tu.get("input", {})),
+                        },
+                    }
+                    for tu in tool_uses
                 ]
             oai.append(entry)
-        # user message with tool_results: each becomes a separate tool message
-        elif role == "user" and content and content[0].get("type") == "tool_result":
-            for b in content:
-                oai.append({"role": "tool", "tool_call_id": b["tool_use_id"], "content": b["content"]})
-        else:
-            texts = [b.get("text", "") for b in content if b.get("type") == "text"]
-            oai.append({"role": role, "content": "\n".join(texts) if texts else ""})
+            continue
+
+        if role == "user" and content and content[0].get("type") == "tool_result":
+            for block in content:
+                oai.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": block["tool_use_id"],
+                        "content": block["content"],
+                    }
+                )
+            continue
+
+        texts = [b.get("text", "") for b in content if b.get("type") == "text"]
+        oai.append({"role": role, "content": "\n".join(texts) if texts else ""})
+
     return oai
 
 
-def _chat_openai(api_key: str, messages: list, model: str) -> tuple[str, list]:
+def _chat_openai(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
     openai = _load_provider_module("openai", "OpenAI")
     client = openai.OpenAI(api_key=api_key)
     tools = _openai_tools()
     oai_messages = _to_oai_messages(messages)
 
-    for _ in range(10):
+    for _ in range(_MAX_TOOL_STEPS):
         response = client.chat.completions.create(
             model=model,
             messages=oai_messages,
             tools=cast(Any, tools),
             max_tokens=1024,
         )
+
         msg = response.choices[0].message
         tool_calls = cast(list[Any], msg.tool_calls or [])
+
         if not tool_calls:
             text = msg.content or ""
             messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
             return text, messages
-        # build assistant message for both formats
-        assistant_content = []
-        oai_entry = {"role": "assistant", "content": msg.content, "tool_calls": [
-            {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-            for tc in tool_calls
-        ]}
-        oai_messages.append(oai_entry)
+
+        assistant_content: list[dict[str, Any]] = []
+        oai_messages.append(
+            {
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            }
+        )
+
         if msg.content:
             assistant_content.append({"type": "text", "text": msg.content})
-        tool_results = []
+
+        tool_results: list[dict[str, Any]] = []
         for tc in tool_calls:
-            args = json.loads(tc.function.arguments)
-            result = _dispatch(tc.function.name, args)
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+
+            result = dispatch(tc.function.name, args)
             oai_messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            assistant_content.append({"type": "tool_use", "id": tc.id, "name": tc.function.name, "input": args})
+
+            assistant_content.append(
+                {
+                    "type": "tool_use",
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "input": args,
+                }
+            )
             tool_results.append({"type": "tool_result", "tool_use_id": tc.id, "content": result})
+
         messages.append({"role": "assistant", "content": assistant_content})
         messages.append({"role": "user", "content": tool_results})
+
     raise RuntimeError("Too many tool iterations")
 
 
-# --- Gemini provider ---
-
-def _chat_gemini(api_key: str, messages: list, model: str) -> tuple[str, list]:
+def _chat_gemini(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
     genai = _load_provider_module("google.generativeai", "Google Gemini")
     genai.configure(api_key=api_key)
-    # build function declarations
+
     func_decls = []
-    for t in _TOOLS_SPEC:
-        params = t["parameters"].get("properties", {})
-        required = t["parameters"].get("required", [])
-        schema_params = {}
-        for pname, pspec in params.items():
+    for tool in _TOOLS_SPEC:
+        params = tool["parameters"].get("properties", {})
+        required = tool["parameters"].get("required", [])
+
+        schema_params: dict[str, Any] = {}
+        for name, spec in params.items():
             gtype = "STRING"
-            if pspec.get("type") == "number":
+            ptype = spec.get("type")
+            if ptype == "number":
                 gtype = "NUMBER"
-            elif pspec.get("type") == "integer":
+            elif ptype == "integer":
                 gtype = "INTEGER"
-            schema_params[pname] = {"type_": gtype, "description": pspec.get("description", "")}
-        func_decls.append(genai.protos.FunctionDeclaration(
-            name=t["name"], description=t["description"],
-            parameters=genai.protos.Schema(type_=genai.protos.Type.OBJECT, properties={
-                k: genai.protos.Schema(type_=getattr(genai.protos.Type, v["type_"]), description=v["description"])
-                for k, v in schema_params.items()
-            }, required=required) if schema_params else None,
-        ))
+            elif ptype == "boolean":
+                gtype = "BOOLEAN"
+            elif ptype == "array":
+                gtype = "ARRAY"
+
+            schema_params[name] = {
+                "type_": gtype,
+                "description": spec.get("description", ""),
+            }
+
+        schema = None
+        if schema_params:
+            schema = genai.protos.Schema(
+                type_=genai.protos.Type.OBJECT,
+                properties={
+                    k: genai.protos.Schema(
+                        type_=getattr(genai.protos.Type, v["type_"]),
+                        description=v["description"],
+                    )
+                    for k, v in schema_params.items()
+                },
+                required=required,
+            )
+
+        func_decls.append(
+            genai.protos.FunctionDeclaration(
+                name=tool["name"],
+                description=tool["description"],
+                parameters=schema,
+            )
+        )
+
     tool_config = genai.protos.Tool(function_declarations=func_decls)
     gmodel = genai.GenerativeModel(model, system_instruction=_SYSTEM, tools=[tool_config])
-    # convert messages to gemini content format
-    contents = []
-    for m in messages:
-        role = "user" if m["role"] == "user" else "model"
-        if isinstance(m.get("content"), str):
-            contents.append({"role": role, "parts": [m["content"]]})
-    chat = gmodel.start_chat(history=contents[:-1] if len(contents) > 1 else [])
-    last_msg = contents[-1]["parts"][0] if contents else ""
-    for _ in range(10):
+
+    history = []
+    for msg in messages:
+        if isinstance(msg.get("content"), str):
+            history.append({"role": "user" if msg["role"] == "user" else "model", "parts": [msg["content"]]})
+
+    chat = gmodel.start_chat(history=history[:-1] if len(history) > 1 else [])
+    last_msg = history[-1]["parts"][0] if history else ""
+
+    for _ in range(_MAX_TOOL_STEPS):
         response = chat.send_message(last_msg)
         candidate = response.candidates[0]
         parts = candidate.content.parts
-        func_calls = [p for p in parts if p.function_call.name]
+
+        func_calls = [part for part in parts if part.function_call and part.function_call.name]
         if not func_calls:
-            text = "".join(p.text for p in parts if p.text)
+            text = "".join(part.text for part in parts if part.text)
             messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
             return text, messages
-        # execute tool calls
+
         func_responses = []
-        for fc in func_calls:
-            args = dict(fc.function_call.args)
-            result = _dispatch(fc.function_call.name, args)
-            func_responses.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
-                name=fc.function_call.name, response={"result": result})))
+        for call in func_calls:
+            args = dict(call.function_call.args)
+            result = dispatch(call.function_call.name, args)
+            func_responses.append(
+                genai.protos.Part(
+                    function_response=genai.protos.FunctionResponse(
+                        name=call.function_call.name,
+                        response={"result": result},
+                    )
+                )
+            )
+
         last_msg = func_responses
+
     raise RuntimeError("Too many tool iterations")
 
-
-# --- provider router ---
 
 _DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-20250514",
@@ -495,14 +873,14 @@ _DEFAULT_MODELS = {
     "gemini": "gemini-2.0-flash",
 }
 
-_CHAT_FNS = {
+_CHAT_FNS: dict[
+    str,
+    Callable[[str, list[dict[str, Any]], str, Callable[[str, dict[str, Any]], str]], tuple[str, list[dict[str, Any]]]],
+] = {
     "anthropic": _chat_anthropic,
     "openai": _chat_openai,
     "gemini": _chat_gemini,
 }
-
-
-# --- endpoints ---
 
 _ENV_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -511,67 +889,132 @@ _ENV_KEYS = {
 }
 
 
-async def _chat_status(request: Request):
-    """Status endpoint — always available since keys can come from the client."""
+def _sanitize_history(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for msg in raw:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role", "user"))
+        content = msg.get("content")
+        if isinstance(content, (str, list)):
+            out.append({"role": role, "content": content})
+    return out
+
+
+async def _chat_status(request: Request) -> JSONResponse:
     providers = _provider_available()
-    return JSONResponse({"available": True, "providers": providers})
+    return JSONResponse(
+        {
+            "available": True,
+            "providers_with_env_keys": providers,
+            "supported_providers": list(_CHAT_FNS.keys()),
+            "default_models": _DEFAULT_MODELS,
+        }
+    )
 
 
-async def _chat(request: Request):
-    body = await request.json()
-    user_msg = body.get("message", "")
-    history = body.get("history", [])
-    preferred = body.get("provider", "")
-    model_override = body.get("model", "")
-    client_key = body.get("api_key", "")
+async def _chat(request: Request) -> JSONResponse:
+    request_id = new_request_id("chat")
 
-    if not preferred:
-        return JSONResponse({"error": "No provider specified."}, 400)
-
-    # client-provided key takes priority, then env var
-    api_key = client_key or os.environ.get(_ENV_KEYS.get(preferred, ""), "")
-    if not api_key:
-        return JSONResponse({"error": f"No API key for {preferred}. Add one in chat settings."}, 400)
-
-    provider = preferred
-    model = model_override or _DEFAULT_MODELS.get(provider, "")
-    chat_fn = _CHAT_FNS.get(provider)
-    if not chat_fn:
-        return JSONResponse({"error": f"Provider '{provider}' not supported"}, 400)
-
-    messages = history + [{"role": "user", "content": user_msg}]
-    _tool_log.clear()
-    log.info("chat request: provider=%s model=%s msg=%s", provider, model, user_msg[:100])
     try:
-        text, messages = chat_fn(api_key, messages, model)
-        actions = list(_tool_log)
-        _tool_log.clear()
-        return JSONResponse({"response": text, "history": messages, "provider": provider, "model": model, "actions": actions})
-    except Exception as e:
-        log.exception("chat error")
-        return JSONResponse({"error": str(e)}, 500)
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body.", "request_id": request_id}, 400)
+
+    user_msg = str(body.get("message", "")).strip()
+    history = _sanitize_history(body.get("history", []))
+    provider = str(body.get("provider", "")).strip().lower()
+    model_override = str(body.get("model", "")).strip()
+    client_key = str(body.get("api_key", "")).strip()
+
+    if not user_msg:
+        return JSONResponse({"error": "Message must not be empty.", "request_id": request_id}, 400)
+
+    if provider not in _CHAT_FNS:
+        return JSONResponse(
+            {
+                "error": f"Provider '{provider}' not supported.",
+                "supported": list(_CHAT_FNS.keys()),
+                "request_id": request_id,
+            },
+            400,
+        )
+
+    api_key = client_key or os.environ.get(_ENV_KEYS[provider], "")
+    if not api_key:
+        return JSONResponse(
+            {
+                "error": f"No API key for {provider}. Add one in chat settings.",
+                "request_id": request_id,
+            },
+            400,
+        )
+
+    model = model_override or _DEFAULT_MODELS[provider]
+    tool_log: list[dict[str, Any]] = []
+    messages = history + [{"role": "user", "content": user_msg}]
+
+    dispatch = lambda name, args: _dispatch(name, args, request_id=request_id, tool_log=tool_log)
+
+    log.info("[%s] chat request provider=%s model=%s", request_id, provider, model)
+
+    try:
+        text, updated_history = _CHAT_FNS[provider](api_key, messages, model, dispatch)
+        return JSONResponse(
+            {
+                "response": text,
+                "history": updated_history,
+                "provider": provider,
+                "model": model,
+                "actions": tool_log,
+                "request_id": request_id,
+            }
+        )
+    except Exception as exc:
+        log.exception("[%s] chat error", request_id)
+        return JSONResponse({"error": str(exc), "request_id": request_id}, 500)
 
 
-async def _sync_layout(request: Request):
-    """Receive full layout from editor so MCP tools see all objects."""
-    body = await request.json()
-    if body.get("items") is not None:
-        from .mcp_server import _save_layout
-        _save_layout(body)
-    return JSONResponse({"ok": True})
+async def _sync_layout(request: Request) -> JSONResponse:
+    request_id = new_request_id("sync")
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body.", "request_id": request_id}, 400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "Layout payload must be a JSON object.", "request_id": request_id}, 400)
+
+    if "items" not in body:
+        return JSONResponse({"ok": False, "error": "Missing 'items' in layout payload.", "request_id": request_id}, 400)
+
+    err = _save_layout(body)
+    if err:
+        log.error("[%s] sync failed: %s", request_id, err)
+        return JSONResponse({"ok": False, "error": err, "request_id": request_id}, 500)
+
+    log.info("[%s] layout synced (%s items)", request_id, len(body.get("items", [])))
+    return JSONResponse({"ok": True, "request_id": request_id})
 
 
 def create_app(root_dir: str) -> Starlette:
-    return Starlette(routes=[
-        Route("/api/chat/status", _chat_status, methods=["GET"]),
-        Route("/api/chat", _chat, methods=["POST"]),
-        Route("/api/sync-layout", _sync_layout, methods=["POST"]),
-        Mount("/", StaticFiles(directory=root_dir, html=True)),
-    ])
+    return Starlette(
+        routes=[
+            Route("/api/chat/status", _chat_status, methods=["GET"]),
+            Route("/api/chat", _chat, methods=["POST"]),
+            Route("/api/sync-layout", _sync_layout, methods=["POST"]),
+            Mount("/", StaticFiles(directory=root_dir, html=True)),
+        ]
+    )
 
 
 def run_server(root_dir: str, port: int = 8080) -> None:
     os.environ["_HAUS_ROOT"] = root_dir
+    configure_logging("haus.chat")
     uvicorn.run(
         "haus.chat_server:_reload_app",
         factory=True,
