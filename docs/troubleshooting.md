@@ -88,3 +88,11 @@ If verification still fails:
 4. run `npm run verify`
 
 Stop on first failing stage and fix forward rather than skipping checks.
+
+If your environment blocks nested process spawning (for example hardened sandboxes), run:
+
+```bash
+SG_APIS_SKIP_PACKAGING_SMOKE=1 npm run verify
+```
+
+Use this only for constrained local environments; keep packaging smoke enabled in CI or release workflows.
