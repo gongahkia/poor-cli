@@ -1,10 +1,11 @@
 //! Lua scripting runtime for user configuration and extensions.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
 use serde::Serialize;
@@ -122,6 +123,38 @@ pub struct LuaState {
     pub runtime_snapshot: Arc<Mutex<JsonValue>>,
 }
 
+/// Scheduled Lua timer callback entry.
+struct TimerEntry {
+    id: u64,
+    fire_at: Instant,
+    callback: RegistryKey,
+    interval: Option<Duration>,
+}
+
+impl PartialEq for TimerEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.fire_at == other.fire_at
+    }
+}
+
+impl Eq for TimerEntry {}
+
+impl PartialOrd for TimerEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TimerEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reverse ordering so BinaryHeap pops the earliest fire time first.
+        other
+            .fire_at
+            .cmp(&self.fire_at)
+            .then_with(|| other.id.cmp(&self.id))
+    }
+}
+
 /// Lua scripting runtime for Walk.
 pub struct LuaRuntime {
     lua: Lua,
@@ -129,6 +162,9 @@ pub struct LuaRuntime {
     /// Shared state accessible from Lua callbacks.
     pub state: LuaState,
     hooks: Rc<RefCell<HashMap<String, Vec<RegistryKey>>>>,
+    timers: Rc<RefCell<BinaryHeap<TimerEntry>>>,
+    cancelled_timers: Rc<RefCell<HashSet<u64>>>,
+    next_timer_id: Rc<RefCell<u64>>,
 }
 
 impl LuaRuntime {
@@ -145,6 +181,9 @@ impl LuaRuntime {
             init_path: None,
             state,
             hooks: Rc::new(RefCell::new(HashMap::new())),
+            timers: Rc::new(RefCell::new(BinaryHeap::new())),
+            cancelled_timers: Rc::new(RefCell::new(HashSet::new())),
+            next_timer_id: Rc::new(RefCell::new(1)),
         })
     }
 
@@ -440,6 +479,66 @@ impl LuaRuntime {
         status_bar_table.set("set_refresh_interval", set_interval_fn)?;
         walk.set("status_bar", status_bar_table)?;
 
+        // walk.set_timeout(ms, callback)
+        let timers = self.timers.clone();
+        let cancelled_timers = self.cancelled_timers.clone();
+        let next_timer_id = self.next_timer_id.clone();
+        let set_timeout_fn = self
+            .lua
+            .create_function(move |lua, (ms, callback): (u64, Function)| {
+                let duration = Duration::from_millis(ms.max(1));
+                let id = {
+                    let mut next = next_timer_id.borrow_mut();
+                    let id = *next;
+                    *next = next.saturating_add(1);
+                    id
+                };
+                let key = lua.create_registry_value(callback)?;
+                timers.borrow_mut().push(TimerEntry {
+                    id,
+                    fire_at: Instant::now() + duration,
+                    callback: key,
+                    interval: None,
+                });
+                cancelled_timers.borrow_mut().remove(&id);
+                Ok(id)
+            })?;
+        walk.set("set_timeout", set_timeout_fn)?;
+
+        // walk.set_interval(ms, callback)
+        let timers = self.timers.clone();
+        let cancelled_timers = self.cancelled_timers.clone();
+        let next_timer_id = self.next_timer_id.clone();
+        let set_interval_fn = self
+            .lua
+            .create_function(move |lua, (ms, callback): (u64, Function)| {
+                let duration = Duration::from_millis(ms.max(1));
+                let id = {
+                    let mut next = next_timer_id.borrow_mut();
+                    let id = *next;
+                    *next = next.saturating_add(1);
+                    id
+                };
+                let key = lua.create_registry_value(callback)?;
+                timers.borrow_mut().push(TimerEntry {
+                    id,
+                    fire_at: Instant::now() + duration,
+                    callback: key,
+                    interval: Some(duration),
+                });
+                cancelled_timers.borrow_mut().remove(&id);
+                Ok(id)
+            })?;
+        walk.set("set_interval", set_interval_fn)?;
+
+        // walk.clear_timer(id)
+        let cancelled_timers = self.cancelled_timers.clone();
+        let clear_timer_fn = self.lua.create_function(move |_, id: u64| {
+            cancelled_timers.borrow_mut().insert(id);
+            Ok(())
+        })?;
+        walk.set("clear_timer", clear_timer_fn)?;
+
         // walk.run_action(action) — queue a built-in runtime action
         let action_state = self.state.action_requests.clone();
         let run_action_fn = self.lua.create_function(move |_, action: String| {
@@ -563,6 +662,54 @@ impl LuaRuntime {
             .borrow()
             .get(event)
             .map_or(0, std::vec::Vec::len)
+    }
+
+    /// Execute due timers, up to `max_fires` callbacks.
+    ///
+    /// # Errors
+    ///
+    /// Returns a Lua error if any callback raises an error.
+    pub fn run_due_timers(&self, max_fires: usize) -> LuaResult<usize> {
+        let mut fired = 0usize;
+        let now = Instant::now();
+
+        while fired < max_fires {
+            let due = self
+                .timers
+                .borrow()
+                .peek()
+                .is_some_and(|entry| entry.fire_at <= now);
+            if !due {
+                break;
+            }
+
+            let Some(mut entry) = self.timers.borrow_mut().pop() else {
+                break;
+            };
+
+            if self.cancelled_timers.borrow_mut().remove(&entry.id) {
+                self.lua.remove_registry_value(entry.callback)?;
+                continue;
+            }
+
+            let callback: Function = self.lua.registry_value(&entry.callback)?;
+            callback.call::<()>(())?;
+            fired = fired.saturating_add(1);
+
+            if self.cancelled_timers.borrow_mut().remove(&entry.id) {
+                self.lua.remove_registry_value(entry.callback)?;
+                continue;
+            }
+
+            if let Some(interval) = entry.interval {
+                entry.fire_at = Instant::now() + interval;
+                self.timers.borrow_mut().push(entry);
+            } else {
+                self.lua.remove_registry_value(entry.callback)?;
+            }
+        }
+
+        Ok(fired)
     }
 
     /// Drain pending shell commands queued from Lua.
@@ -787,5 +934,65 @@ mod tests {
         assert!(matches!(requests[0], StatusBarRequest::SetRight(_)));
         assert!(matches!(requests[1], StatusBarRequest::SetLeft(_)));
         assert_eq!(requests[2], StatusBarRequest::SetRefreshInterval(2500));
+    }
+
+    #[test]
+    fn test_set_timeout_fires() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                walk.set_timeout(1, function()
+                    walk.notify("timeout")
+                end)
+            "#,
+            )
+            .expect("timeout should register");
+        std::thread::sleep(Duration::from_millis(5));
+        runtime.run_due_timers(64).expect("timer should run");
+        assert_eq!(runtime.take_notifications(), vec!["timeout".to_string()]);
+    }
+
+    #[test]
+    fn test_set_interval_and_clear_timer() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                local id = walk.set_interval(1, function()
+                    walk.notify("tick")
+                end)
+                walk.clear_timer(id)
+            "#,
+            )
+            .expect("interval should register");
+        std::thread::sleep(Duration::from_millis(5));
+        runtime.run_due_timers(64).expect("timer loop should run");
+        assert!(runtime.take_notifications().is_empty());
+    }
+
+    #[test]
+    fn test_timer_execution_cap() {
+        let mut runtime = LuaRuntime::new().expect("lua runtime");
+        runtime.init(&std::env::temp_dir()).expect("lua init");
+        runtime
+            .exec(
+                r#"
+                for i = 1, 100 do
+                    walk.set_timeout(1, function()
+                        walk.notify("fire")
+                    end)
+                end
+            "#,
+            )
+            .expect("timers should register");
+
+        std::thread::sleep(Duration::from_millis(5));
+        let first = runtime.run_due_timers(64).expect("first timer pass");
+        let second = runtime.run_due_timers(64).expect("second timer pass");
+        assert_eq!(first, 64);
+        assert_eq!(second, 36);
     }
 }

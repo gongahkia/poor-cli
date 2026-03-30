@@ -3868,6 +3868,9 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_frame_tick(&mut self) -> bool {
+        if let Some(plugins) = &self.plugins {
+            plugins.pump_timers(64);
+        }
         self.drain_plugin_side_effects();
 
         if self.last_status_bar_refresh.elapsed() >= self.status_bar_refresh_interval {

@@ -110,6 +110,15 @@ impl PluginHost {
         }
     }
 
+    /// Execute due plugin timers with a per-frame callback cap.
+    pub fn pump_timers(&self, max_fires_per_tick: usize) {
+        if let Err(error) = self.runtime.run_due_timers(max_fires_per_tick) {
+            warn!("plugin timer callback failed: {error}");
+            self.runtime
+                .push_notification(format!("plugin timer callback failed: {error}"));
+        }
+    }
+
     /// Return whether any listener exists for a given hook.
     pub fn has_hook_listener(&self, hook: &str) -> bool {
         self.runtime.hook_listener_count(hook) > 0

@@ -2054,10 +2054,10 @@
 4. Safety: limit the number of timer fires per frame tick to 64 to prevent runaway intervals from starving the render loop.
 
 **DONE WHEN**
-- [ ] `walk.set_timeout(5000, function() walk.notify("5 seconds elapsed") end)` fires the notification after 5 seconds.
-- [ ] `local id = walk.set_interval(1000, function() print("tick") end)` prints "tick" every second. `walk.clear_timer(id)` stops it.
-- [ ] 100 simultaneous intervals at 100ms each do not cause frame drops (per-frame cap works).
-- [ ] Timer callbacks can call any other `walk.*` API (run_action, notify, status_bar, etc.).
+- [x] `walk.set_timeout(5000, function() walk.notify("5 seconds elapsed") end)` fires the notification after 5 seconds.
+- [x] `local id = walk.set_interval(1000, function() print("tick") end)` prints "tick" every second. `walk.clear_timer(id)` stops it.
+- [x] 100 simultaneous intervals at 100ms each do not cause frame drops (per-frame cap works).
+- [x] Timer callbacks can call any other `walk.*` API (run_action, notify, status_bar, etc.).
 
 ---
 
