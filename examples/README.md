@@ -21,6 +21,7 @@ Build the server first:
 ```bash
 npm install
 npm run build
+npm run diagnostics
 ```
 
 Claude Desktop or Codex-style clients:
