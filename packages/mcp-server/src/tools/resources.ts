@@ -4,6 +4,7 @@ import type { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js"
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import {
   BENCHMARK_CATALOG,
+  OPS_TAXONOMY_CATALOG,
   RESOURCE_URIS,
   RUNTIME_CATALOG,
 } from "./catalog.js";
@@ -332,6 +333,13 @@ export const registerResources = (
     mimeType: JSON_MIME_TYPE,
     annotations: DEFAULT_RESOURCE_ANNOTATIONS,
   }, async () => toJsonContents(RESOURCE_URIS.benchmarks, BENCHMARK_CATALOG));
+
+  server.registerResource("sg-ops-taxonomy", RESOURCE_URIS.opsTaxonomy, {
+    title: "Operations Taxonomy",
+    description: "Machine-readable error, retryability, and severity taxonomy for operational handling.",
+    mimeType: JSON_MIME_TYPE,
+    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+  }, async () => toJsonContents(RESOURCE_URIS.opsTaxonomy, OPS_TAXONOMY_CATALOG));
 
   registerAppResource(server, "Singapore Map Preview UI", MAP_UI_RESOURCE_URI, {
     title: "Singapore Map Preview UI",

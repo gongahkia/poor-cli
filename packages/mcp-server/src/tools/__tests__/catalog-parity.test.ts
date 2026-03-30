@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   API_CATALOG,
   BENCHMARK_CATALOG,
+  OPS_TAXONOMY_CATALOG,
   PLAYBOOK_CATALOG,
   RECIPE_CATALOG,
   RESOURCE_URIS,
@@ -248,6 +249,13 @@ describe("resource catalog parity", () => {
     expect(JSON.parse(result.contents[0]!.text!)).toEqual(BENCHMARK_CATALOG);
   });
 
+  it("serves the operations taxonomy through sg://ops-taxonomy", async () => {
+    const { resourceHandlers } = collectSurface();
+    const result = await resourceHandlers.get(RESOURCE_URIS.opsTaxonomy)!();
+
+    expect(JSON.parse(result.contents[0]!.text!)).toEqual(OPS_TAXONOMY_CATALOG);
+  });
+
   it("enriches workflow and recipe catalogs with trust metadata", () => {
     expect(WORKFLOW_CATALOG).toEqual(
       expect.arrayContaining([
@@ -335,6 +343,12 @@ describe("resource catalog parity", () => {
           workflow: "Property And Regulatory Due Diligence",
           primaryCacheTier: "DAILY",
         }),
+      ]),
+    );
+    expect(OPS_TAXONOMY_CATALOG.errorCodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "VALIDATION_ERROR", retryable: false, severity: "low" }),
+        expect.objectContaining({ code: "INTERNAL_ERROR", retryable: false, severity: "high" }),
       ]),
     );
   });
