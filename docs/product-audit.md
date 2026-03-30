@@ -62,3 +62,13 @@ This repo already has real utility for developers building Singapore-focused age
 ## Recommendation
 
 Keep positioning the repo as the honest Singapore public-data MCP server for developers. Expand breadth through adjacent high-demand public datasets, not by turning `sg_query` into a fake general planner.
+
+## Expansion Outcome (2026-03-30)
+
+The value proposition is now materially stronger for agent developers because operational trust has been deepened, not just feature count:
+
+- source and workflow failures now emit richer structured logs for faster debugging
+- a fast `npm run diagnostics` path now complements the heavier verify gate
+- troubleshooting and market-convention alignment are now documented as explicit adoption assets
+
+This keeps the repo aligned with real MCP ecosystem expectations: deterministic interfaces plus operational transparency.
