@@ -133,6 +133,99 @@ def test_simulate_and_apply_option_adds_objects(isolated_layout: Path) -> None:
     assert "sofa" in objects.lower()
 
 
+def test_score_doorway_accessibility_reports_clear(isolated_layout: Path) -> None:
+    layout = {"version": 1, "items": []}
+    assert mcp_server._save_layout(layout) is None
+    result = mcp_server.score_doorway_accessibility(door_x=0.0, door_z=0.0)
+    assert "Accessibility score: 1.0" in result
+    assert "free" in result.lower()
+
+
+def test_score_doorway_accessibility_detects_obstruction(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "items": [
+            _obj(item_type="furniture", furniture_type="wardrobe", x=0.5, z=0.0, w=1.8, h=2.0, d=0.6),
+        ],
+    }
+    assert mcp_server._save_layout(layout) is None
+    result = mcp_server.score_doorway_accessibility(door_x=0.0, door_z=0.0, required_clearance=0.9)
+    assert "wardrobe" in result.lower()
+    assert "Accessibility score:" in result
+
+
+def test_score_walkway_detects_narrow_gap(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "items": [
+            _obj(item_type="furniture", furniture_type="wardrobe", x=0.4, z=1.0, w=1.8, h=2.0, d=0.6),
+        ],
+    }
+    assert mcp_server._save_layout(layout) is None
+    result = mcp_server.score_walkway(x1=0.0, z1=0.0, x2=0.0, z2=3.0, min_width=1.5)
+    assert "Walkway score:" in result
+    assert "Encroaching" in result
+
+
+def test_list_room_templates_returns_all() -> None:
+    result = mcp_server.list_room_templates()
+    assert "work_from_home" in result
+    assert "family_living" in result
+    assert "rental_bedroom" in result
+
+
+def test_apply_room_template_places_furniture(isolated_layout: Path) -> None:
+    layout = {"version": 1, "items": []}
+    assert mcp_server._save_layout(layout) is None
+    result = mcp_server.apply_room_template(template_name="work_from_home", origin_x=0.0, origin_z=0.0)
+    assert "desk" in result.lower()
+    assert "chair" in result.lower()
+    objects = mcp_server.list_objects()
+    assert "desk" in objects.lower()
+
+
+def test_apply_room_template_tags_room(isolated_layout: Path) -> None:
+    layout = {"version": 1, "items": []}
+    assert mcp_server._save_layout(layout) is None
+    mcp_server.apply_room_template(template_name="work_from_home", room_name="Office")
+    rooms = mcp_server.list_rooms()
+    assert "Office" in rooms
+
+
+def test_apply_room_template_rejects_unknown(isolated_layout: Path) -> None:
+    result = mcp_server.apply_room_template(template_name="nonexistent")
+    assert "Error" in result
+
+
+def test_suggest_placement_json_returns_structured(isolated_layout: Path) -> None:
+    import json
+
+    layout = {
+        "version": 1,
+        "items": [
+            _obj(item_type="furniture", furniture_type="tv_console", x=0.0, z=0.0, w=1.5, h=0.5, d=0.4),
+        ],
+    }
+    assert mcp_server._save_layout(layout) is None
+    raw = mcp_server.suggest_placement_json(
+        furniture_type="sofa_3",
+        near_index=0,
+        face_index=0,
+        min_distance=1.6,
+        max_distance=3.5,
+        max_candidates=2,
+    )
+    result = json.loads(raw)
+    assert "candidates" in result
+    assert len(result["candidates"]) > 0
+    cand = result["candidates"][0]
+    assert "breakdown" in cand
+    bd = cand["breakdown"]
+    assert "distance_component" in bd
+    assert "sightline_component" in bd
+    assert "accessibility_component" in bd
+
+
 def test_corrupt_layout_is_recovered_without_crash(isolated_layout: Path) -> None:
     isolated_layout.write_text("{ this is invalid json", encoding="utf-8")
 
