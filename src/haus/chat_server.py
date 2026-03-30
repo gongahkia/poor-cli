@@ -1002,12 +1002,29 @@ async def _sync_layout(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "request_id": request_id})
 
 
+async def _mcp_clear_layout(_: Request) -> JSONResponse:
+    request_id = new_request_id("mcp-clear")
+    result = clear_layout()
+    ok = not result.startswith("Error")
+
+    if ok:
+        log.info("[%s] mcp clear_layout -> %s", request_id, result)
+    else:
+        log.error("[%s] mcp clear_layout failed -> %s", request_id, result)
+
+    return JSONResponse(
+        {"ok": ok, "result": result, "request_id": request_id},
+        200 if ok else 500,
+    )
+
+
 def create_app(root_dir: str) -> Starlette:
     return Starlette(
         routes=[
             Route("/api/chat/status", _chat_status, methods=["GET"]),
             Route("/api/chat", _chat, methods=["POST"]),
             Route("/api/sync-layout", _sync_layout, methods=["POST"]),
+            Route("/api/mcp/clear-layout", _mcp_clear_layout, methods=["POST"]),
             Mount("/", StaticFiles(directory=root_dir, html=True)),
         ]
     )

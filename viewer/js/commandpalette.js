@@ -50,7 +50,7 @@ function buildCommands() {
     { name: 'Load GLB', run: () => document.getElementById('glb-input').click() },
     { name: 'Load JSON', run: () => document.getElementById('json-input').click() },
     { name: 'Load Floor Plan', run: () => document.getElementById('overlay-input').click() },
-    { name: 'Clear Layout', run: () => { /* call MCP clear if available */ } },
+    { name: 'Clear Layout', run: () => runClearLayoutCommand() },
     { name: 'Toggle Chat', run: () => fn.toggleChat() },
     { name: 'Help', keys: '?', run: () => document.getElementById('help-modal').classList.toggle('open') },
     // furniture placement
@@ -121,7 +121,16 @@ function move(dir, rows) {
 }
 function execute(cmd) {
   close();
-  cmd.run();
+  try {
+    const maybePromise = cmd.run();
+    if (maybePromise && typeof maybePromise.then === 'function') {
+      maybePromise.catch((err) => {
+        console.error('Command failed', err);
+      });
+    }
+  } catch (err) {
+    console.error('Command failed', err);
+  }
 }
 function open() {
   overlayEl.classList.add('open');
@@ -136,4 +145,26 @@ function toggle(id) {
   const cb = document.getElementById(id);
   cb.checked = !cb.checked;
   cb.dispatchEvent(new Event('change'));
+}
+async function runClearLayoutCommand() {
+  const count = S.draggables.length;
+  const msg = count > 0
+    ? `Clear ${count} object(s) from layout? This can be undone once.`
+    : 'Layout is already empty. Re-sync empty layout anyway?';
+  if (!window.confirm(msg)) return;
+
+  if (!fn.clearLayoutAndSync) {
+    console.warn('Clear workflow unavailable: fn.clearLayoutAndSync missing');
+    return;
+  }
+
+  const result = await fn.clearLayoutAndSync({ confirmWithMcp: true });
+  if (!result?.ok) {
+    window.alert(`Clear layout failed: ${result?.error || 'unknown error'}`);
+    return;
+  }
+
+  if (result.mcp && result.mcp.ok === false) {
+    console.warn('Local clear succeeded but MCP clear confirmation failed', result.mcp.error || '');
+  }
 }

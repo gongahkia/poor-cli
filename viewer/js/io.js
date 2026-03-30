@@ -32,6 +32,7 @@ export function initIO() {
   document.getElementById('export-glb-btn').addEventListener('click', exportGLB);
   document.getElementById('export-json-btn').addEventListener('click', exportJSON);
   document.getElementById('json-input').addEventListener('change', importJSON);
+  fn.clearLayoutAndSync = clearLayoutAndSync;
   startMcpSync();
 }
 function clearModelParts() {
@@ -149,13 +150,66 @@ async function pushLayoutToServer() {
     const stamp = Date.now();
     data._stamp = stamp;
     lastPushStamp = stamp;
-    await fetch('/api/sync-layout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
+    await pushLayoutPayload(data);
   } catch (err) {
     console.warn('MCP layout push failed', err);
+  }
+}
+async function pushLayoutPayload(data) {
+  const res = await fetch('/api/sync-layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    throw new Error(`sync failed with HTTP ${res.status}`);
+  }
+}
+function clearLocalLayout({ recordUndo = true } = {}) {
+  const snapshot = serializeLayout();
+  if (recordUndo && snapshot.items.length > 0) {
+    fn.pushUndo({ type: 'mcp_sync', snapshot });
+  }
+
+  fn.deselectFurniture();
+  clearModelParts();
+  while (S.draggables.length) S.scene.remove(S.draggables.pop());
+  S.userWalls.length = 0;
+  S.hiddenObjects.length = 0;
+  S.redoStack.length = 0;
+  fn.refreshSceneList();
+
+  return snapshot;
+}
+async function clearLayoutAndSync({ confirmWithMcp = true } = {}) {
+  const snapshot = clearLocalLayout({ recordUndo: true });
+
+  const payload = { version: 1, items: [] };
+  const stamp = Date.now();
+  payload._stamp = stamp;
+  lastPushStamp = stamp;
+
+  try {
+    await pushLayoutPayload(payload);
+  } catch (err) {
+    console.warn('Clear layout sync failed, restoring previous local scene', err);
+    applyLayoutData(snapshot);
+    return { ok: false, error: err.message || String(err) };
+  }
+
+  if (!confirmWithMcp) {
+    return { ok: true, mcp: { ok: true, skipped: true } };
+  }
+
+  try {
+    const res = await fetch('/api/mcp/clear-layout', { method: 'POST' });
+    if (!res.ok) {
+      return { ok: true, mcp: { ok: false, error: `HTTP ${res.status}` } };
+    }
+    const body = await res.json();
+    return { ok: true, mcp: { ok: body.ok !== false, result: body.result || '' } };
+  } catch (err) {
+    return { ok: true, mcp: { ok: false, error: err.message || String(err) } };
   }
 }
 function applyLayoutData(data) {
