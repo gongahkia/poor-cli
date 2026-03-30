@@ -7,6 +7,7 @@ import {
   PropertyBriefBaseSchema,
   PropertyBriefSchema,
   TransportBriefSchema,
+  createLogger,
   formatResponse,
   resolveOutputFormat,
   validateInput,
@@ -42,6 +43,8 @@ import { fetchNormalizedMasRecords } from "./mas-tools.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { lookupPlanningArea } from "./ura-tools.js";
 import { z } from "zod";
+
+const logger = createLogger("brief-tools");
 
 const TransportBriefInputSchema = {
   busStopCode: z.string().min(5).optional(),
@@ -183,11 +186,19 @@ const safeRead = async <T>(
   message: string,
   read: () => Promise<T>,
   gaps: EvidenceGap[],
+  context?: Readonly<Record<string, unknown>>,
 ): Promise<T | null> => {
   try {
     return await read();
   } catch (error) {
-    gaps.push(toGap(code, `${message}: ${error instanceof Error ? error.message : String(error)}`));
+    const renderedError = error instanceof Error ? error.message : String(error);
+    logger.warn("brief source read failed", {
+      gapCode: code,
+      sourceMessage: message,
+      error,
+      ...(context ?? {}),
+    });
+    gaps.push(toGap(code, `${message}: ${renderedError}`));
     return null;
   }
 };
