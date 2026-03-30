@@ -7,6 +7,12 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const root = resolve(import.meta.dirname, "..");
 const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-smoke-"));
+const npmCacheDir = join(tempDir, "npm-cache");
+const smokeEnv = {
+  ...process.env,
+  NPM_CONFIG_CACHE: npmCacheDir,
+  npm_config_cache: npmCacheDir,
+};
 const tarballs = [];
 let mockServer = null;
 const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/"];
@@ -98,6 +104,7 @@ const toValueMap = (items) => {
 const run = (args, cwd = root) => {
   return execFileSync("npm", args, {
     cwd,
+    env: smokeEnv,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
   }).trim();
@@ -107,7 +114,7 @@ const startMockServer = async () => {
   return new Promise((resolveMock, reject) => {
     const child = spawn("npm", ["run", "mock-server"], {
       cwd: root,
-      env: { ...process.env, MOCK_PORT: "0" },
+      env: { ...smokeEnv, MOCK_PORT: "0" },
       stdio: ["ignore", "ignore", "pipe"],
     });
 
