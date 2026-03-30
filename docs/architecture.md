@@ -141,6 +141,7 @@ The runtime combines:
 - config-driven TTLs
 - upstream-specific rate limiting
 - cache and dedup layers
+- structured logging and workflow-level tracing
 - structured error handling
 
 Why:
@@ -151,6 +152,7 @@ Why:
 Consequence:
 
 - the server favors explicit failure over silent fallback
+- partial-source failures are surfaced in artifact gaps and logged with structured source context
 - OneMap credential behavior now matches the documented contract
 - the data.gov.sg warm-cache path is explicit and non-blocking
 
