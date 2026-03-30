@@ -195,14 +195,24 @@ impl ViModeState {
 
     /// Jump to the previous block boundary.
     pub fn prev_boundary(&mut self, boundaries: &[usize]) {
-        if let Some(row) = boundaries.iter().copied().filter(|row| *row < self.cursor_row).max() {
+        if let Some(row) = boundaries
+            .iter()
+            .copied()
+            .filter(|row| *row < self.cursor_row)
+            .max()
+        {
             self.cursor_row = row;
         }
     }
 
     /// Jump to the next block boundary.
     pub fn next_boundary(&mut self, boundaries: &[usize]) {
-        if let Some(row) = boundaries.iter().copied().filter(|row| *row > self.cursor_row).min() {
+        if let Some(row) = boundaries
+            .iter()
+            .copied()
+            .filter(|row| *row > self.cursor_row)
+            .min()
+        {
             self.cursor_row = row;
         }
     }

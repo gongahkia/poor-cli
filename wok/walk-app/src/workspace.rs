@@ -294,7 +294,8 @@ impl WorkspaceState {
 
     /// Return all pane ids in the currently active workspace tab.
     pub fn all_pane_ids(&self) -> Vec<PaneId> {
-        self.active_tab().map_or_else(Vec::new, collect_tab_pane_ids)
+        self.active_tab()
+            .map_or_else(Vec::new, collect_tab_pane_ids)
     }
 
     /// Find the index of the tab containing the given pane.
@@ -460,8 +461,14 @@ impl WorkspaceState {
         };
         pane.rect.w = (pane.rect.w + dw).clamp(320.0, bounds.w.max(320.0));
         pane.rect.h = (pane.rect.h + dh).clamp(200.0, bounds.h.max(200.0));
-        pane.rect.x = pane.rect.x.clamp(bounds.x, bounds.x + bounds.w - pane.rect.w);
-        pane.rect.y = pane.rect.y.clamp(bounds.y, bounds.y + bounds.h - pane.rect.h);
+        pane.rect.x = pane
+            .rect
+            .x
+            .clamp(bounds.x, bounds.x + bounds.w - pane.rect.w);
+        pane.rect.y = pane
+            .rect
+            .y
+            .clamp(bounds.y, bounds.y + bounds.h - pane.rect.h);
         true
     }
 
@@ -482,9 +489,9 @@ impl WorkspaceState {
         }
 
         let split_rects = tab.split_manager.compute_rects(available);
-        split_rects.into_iter().find_map(|(pane_id, rect)| {
-            contains_point(rect, x, y).then_some(pane_id)
-        })
+        split_rects
+            .into_iter()
+            .find_map(|(pane_id, rect)| contains_point(rect, x, y).then_some(pane_id))
     }
 
     /// Close the focused floating pane when one is focused.

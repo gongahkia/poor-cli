@@ -461,10 +461,7 @@ impl Default for KeybindingConfig {
         bindings.insert(
             KeyCombo {
                 key: KeyAction::Char('l'),
-                modifiers: Modifiers {
-                    shift: true,
-                    ..pma
-                },
+                modifiers: Modifiers { shift: true, ..pma },
             },
             Action::PrevLayout,
         );

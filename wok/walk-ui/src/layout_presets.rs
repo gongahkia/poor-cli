@@ -46,7 +46,10 @@ pub fn default_layout_presets() -> Vec<LayoutPreset> {
             tree: PresetNode::Split {
                 direction: SplitDirection::Horizontal,
                 ratio: 0.5,
-                children: vec![PresetNode::Leaf { weight: 1.0 }, PresetNode::Leaf { weight: 1.0 }],
+                children: vec![
+                    PresetNode::Leaf { weight: 1.0 },
+                    PresetNode::Leaf { weight: 1.0 },
+                ],
             },
         },
         LayoutPreset {
@@ -55,7 +58,10 @@ pub fn default_layout_presets() -> Vec<LayoutPreset> {
             tree: PresetNode::Split {
                 direction: SplitDirection::Horizontal,
                 ratio: 0.7,
-                children: vec![PresetNode::Leaf { weight: 1.0 }, PresetNode::Leaf { weight: 1.0 }],
+                children: vec![
+                    PresetNode::Leaf { weight: 1.0 },
+                    PresetNode::Leaf { weight: 1.0 },
+                ],
             },
         },
         LayoutPreset {
@@ -64,7 +70,10 @@ pub fn default_layout_presets() -> Vec<LayoutPreset> {
             tree: PresetNode::Split {
                 direction: SplitDirection::Vertical,
                 ratio: 0.7,
-                children: vec![PresetNode::Leaf { weight: 1.0 }, PresetNode::Leaf { weight: 1.0 }],
+                children: vec![
+                    PresetNode::Leaf { weight: 1.0 },
+                    PresetNode::Leaf { weight: 1.0 },
+                ],
             },
         },
         LayoutPreset {

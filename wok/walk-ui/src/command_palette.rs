@@ -148,8 +148,13 @@ impl CommandPaletteState {
                     return Some((index, 0.0, category_rank(entry.category, workflow_priority)));
                 }
                 let haystack = format!("{} {}", entry.label, entry.description);
-                fuzzy_score(&haystack, &query_lower)
-                    .map(|score| (index, score, category_rank(entry.category, workflow_priority)))
+                fuzzy_score(&haystack, &query_lower).map(|score| {
+                    (
+                        index,
+                        score,
+                        category_rank(entry.category, workflow_priority),
+                    )
+                })
             })
             .collect::<Vec<_>>();
 
@@ -242,7 +247,10 @@ mod tests {
         ]);
         state.set_query(">split");
         assert_eq!(state.filtered.len(), 1);
-        assert_eq!(state.selected().map(|entry| entry.label.as_str()), Some("Split Vertical"));
+        assert_eq!(
+            state.selected().map(|entry| entry.label.as_str()),
+            Some("Split Vertical")
+        );
     }
 
     #[test]

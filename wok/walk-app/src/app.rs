@@ -312,7 +312,9 @@ impl WalkApp {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewFloatingPane));
             }
             Action::ToggleFloatingPane => {
-                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ToggleFloatingPane));
+                effects.push(RuntimeEffect::Workspace(
+                    WorkspaceEffect::ToggleFloatingPane,
+                ));
             }
             Action::CloseFloatingPane => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::CloseFloatingPane));

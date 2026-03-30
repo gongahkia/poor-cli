@@ -463,7 +463,10 @@ impl LuaRuntime {
 
         let status_bar_state = self.state.status_bar_requests.clone();
         let clear_fn = self.lua.create_function(move |_, ()| {
-            status_bar_state.lock().unwrap().push(StatusBarRequest::Clear);
+            status_bar_state
+                .lock()
+                .unwrap()
+                .push(StatusBarRequest::Clear);
             Ok(())
         })?;
         status_bar_table.set("clear", clear_fn)?;
@@ -483,52 +486,52 @@ impl LuaRuntime {
         let timers = self.timers.clone();
         let cancelled_timers = self.cancelled_timers.clone();
         let next_timer_id = self.next_timer_id.clone();
-        let set_timeout_fn = self
-            .lua
-            .create_function(move |lua, (ms, callback): (u64, Function)| {
-                let duration = Duration::from_millis(ms.max(1));
-                let id = {
-                    let mut next = next_timer_id.borrow_mut();
-                    let id = *next;
-                    *next = next.saturating_add(1);
-                    id
-                };
-                let key = lua.create_registry_value(callback)?;
-                timers.borrow_mut().push(TimerEntry {
-                    id,
-                    fire_at: Instant::now() + duration,
-                    callback: key,
-                    interval: None,
-                });
-                cancelled_timers.borrow_mut().remove(&id);
-                Ok(id)
-            })?;
+        let set_timeout_fn =
+            self.lua
+                .create_function(move |lua, (ms, callback): (u64, Function)| {
+                    let duration = Duration::from_millis(ms.max(1));
+                    let id = {
+                        let mut next = next_timer_id.borrow_mut();
+                        let id = *next;
+                        *next = next.saturating_add(1);
+                        id
+                    };
+                    let key = lua.create_registry_value(callback)?;
+                    timers.borrow_mut().push(TimerEntry {
+                        id,
+                        fire_at: Instant::now() + duration,
+                        callback: key,
+                        interval: None,
+                    });
+                    cancelled_timers.borrow_mut().remove(&id);
+                    Ok(id)
+                })?;
         walk.set("set_timeout", set_timeout_fn)?;
 
         // walk.set_interval(ms, callback)
         let timers = self.timers.clone();
         let cancelled_timers = self.cancelled_timers.clone();
         let next_timer_id = self.next_timer_id.clone();
-        let set_interval_fn = self
-            .lua
-            .create_function(move |lua, (ms, callback): (u64, Function)| {
-                let duration = Duration::from_millis(ms.max(1));
-                let id = {
-                    let mut next = next_timer_id.borrow_mut();
-                    let id = *next;
-                    *next = next.saturating_add(1);
-                    id
-                };
-                let key = lua.create_registry_value(callback)?;
-                timers.borrow_mut().push(TimerEntry {
-                    id,
-                    fire_at: Instant::now() + duration,
-                    callback: key,
-                    interval: Some(duration),
-                });
-                cancelled_timers.borrow_mut().remove(&id);
-                Ok(id)
-            })?;
+        let set_interval_fn =
+            self.lua
+                .create_function(move |lua, (ms, callback): (u64, Function)| {
+                    let duration = Duration::from_millis(ms.max(1));
+                    let id = {
+                        let mut next = next_timer_id.borrow_mut();
+                        let id = *next;
+                        *next = next.saturating_add(1);
+                        id
+                    };
+                    let key = lua.create_registry_value(callback)?;
+                    timers.borrow_mut().push(TimerEntry {
+                        id,
+                        fire_at: Instant::now() + duration,
+                        callback: key,
+                        interval: Some(duration),
+                    });
+                    cancelled_timers.borrow_mut().remove(&id);
+                    Ok(id)
+                })?;
         walk.set("set_interval", set_interval_fn)?;
 
         // walk.clear_timer(id)
@@ -658,10 +661,7 @@ impl LuaRuntime {
 
     /// Return number of listeners registered for a hook name.
     pub fn hook_listener_count(&self, event: &str) -> usize {
-        self.hooks
-            .borrow()
-            .get(event)
-            .map_or(0, std::vec::Vec::len)
+        self.hooks.borrow().get(event).map_or(0, std::vec::Vec::len)
     }
 
     /// Execute due timers, up to `max_fires` callbacks.

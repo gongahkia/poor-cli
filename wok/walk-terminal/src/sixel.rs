@@ -124,9 +124,8 @@ impl SixelParser {
     }
 
     fn parse_color_definition(&mut self, bytes: &[u8], idx: &mut usize) -> Result<(), String> {
-        let color_index = read_number(bytes, idx).ok_or_else(|| {
-            "missing color index after sixel '#' introducer".to_string()
-        })?;
+        let color_index = read_number(bytes, idx)
+            .ok_or_else(|| "missing color index after sixel '#' introducer".to_string())?;
         self.current_color = color_index;
 
         if *idx >= bytes.len() || bytes[*idx] != b';' {
@@ -215,7 +214,11 @@ impl SixelParser {
         }
 
         for ((x, y), color_index) in self.pixels {
-            let rgb = self.palette.get(&color_index).copied().unwrap_or([255, 255, 255]);
+            let rgb = self
+                .palette
+                .get(&color_index)
+                .copied()
+                .unwrap_or([255, 255, 255]);
             let idx = (y * width + x) * 4;
             pixels[idx] = rgb[0];
             pixels[idx + 1] = rgb[1];

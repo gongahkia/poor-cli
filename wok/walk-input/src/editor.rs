@@ -536,11 +536,14 @@ impl InputEditor {
                     (start_row, start_col, end_col)
                 })
             }),
-            completion_popup: self.completion_popup.is_visible.then(|| CompletionPopupRenderData {
-                items: self.completion_popup.items.clone(),
-                selected: self.completion_popup.selected,
-                anchor_col: self.completion_popup.anchor_col,
-            }),
+            completion_popup: self
+                .completion_popup
+                .is_visible
+                .then(|| CompletionPopupRenderData {
+                    items: self.completion_popup.items.clone(),
+                    selected: self.completion_popup.selected,
+                    anchor_col: self.completion_popup.anchor_col,
+                }),
         }
     }
 
