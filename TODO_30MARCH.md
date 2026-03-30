@@ -3,7 +3,7 @@
 ## Remaining Verification Work
 
 - [x] Run full `npm run verify` with packaging smoke enabled in an unrestricted environment (no `SG_APIS_SKIP_PACKAGING_SMOKE=1`), since this sandbox blocks nested `npm` spawning (`spawnSync npm EPERM`).
-- [ ] Run `npm run test:smoke:registry` after the latest reliability/docs changes and record baseline output.
+- [x] Run `npm run test:smoke:registry` after the latest reliability/docs changes and record baseline output.
 - [ ] Confirm packaging smoke behavior in CI/release runner where npm cache and child-process permissions are fully available.
 
 ## Remaining Implementation Candidates
