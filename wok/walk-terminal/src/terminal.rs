@@ -298,8 +298,7 @@ impl Terminal {
                 if let Some((payload_end, terminator_len)) = find_apc_terminator(bytes, i + 2) {
                     let payload = &bytes[i + 2..payload_end];
                     if let Ok(payload) = std::str::from_utf8(payload) {
-                        if let Some(inline_event) =
-                            self.parse_kitty_apc(payload, absolute_row, col)
+                        if let Some(inline_event) = self.parse_kitty_apc(payload, absolute_row, col)
                         {
                             self.events.push(SemanticEvent::InlineImage(inline_event));
                         }
@@ -321,17 +320,19 @@ impl Terminal {
                                     self.next_inline_image_id.saturating_add(1);
                                 let (display_cols, display_rows) =
                                     sixel_display_size(image.width, image.height);
-                                self.events.push(SemanticEvent::InlineImage(InlineImageEvent::Put {
-                                    image_id,
-                                    width: image.width,
-                                    height: image.height,
-                                    pixels: image.pixels,
-                                    row: absolute_row,
-                                    col,
-                                    display_cols,
-                                    display_rows,
-                                    placement_id: 0,
-                                }));
+                                self.events.push(SemanticEvent::InlineImage(
+                                    InlineImageEvent::Put {
+                                        image_id,
+                                        width: image.width,
+                                        height: image.height,
+                                        pixels: image.pixels,
+                                        row: absolute_row,
+                                        col,
+                                        display_cols,
+                                        display_rows,
+                                        placement_id: 0,
+                                    },
+                                ));
                                 col = col.saturating_add(display_cols as usize);
                             }
                             Err(error) => {
@@ -342,6 +343,35 @@ impl Terminal {
                         warn!("ignoring non-utf8 DCS payload");
                     }
                     i = payload_end + terminator_len;
+                    continue;
+                }
+            }
+            if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'[') {
+                if let Some(csi_end) = find_csi_terminator(bytes, i + 2) {
+                    if bytes[csi_end] == b'u' {
+                        match std::str::from_utf8(&bytes[i + 2..csi_end]) {
+                            Ok(params) => match parse_kitty_keyboard_control(params) {
+                                Some(KittyKeyboardControl::Query) => {
+                                    let reply =
+                                        format!("\x1b[?{}u", self.state.kitty_keyboard_flags());
+                                    if let Err(error) = self.send_input(reply.as_bytes()) {
+                                        warn!("failed to reply to kitty keyboard query: {error}");
+                                    }
+                                }
+                                Some(KittyKeyboardControl::Push(flags)) => {
+                                    self.state.push_kitty_keyboard_flags(flags);
+                                }
+                                Some(KittyKeyboardControl::Pop) => {
+                                    self.state.pop_kitty_keyboard_flags();
+                                }
+                                None => {}
+                            },
+                            Err(error) => {
+                                warn!("ignoring non-utf8 kitty keyboard CSI payload: {error}");
+                            }
+                        }
+                    }
+                    i = csi_end + 1;
                     continue;
                 }
             }
@@ -619,6 +649,47 @@ fn find_dcs_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
     None
 }
 
+fn find_csi_terminator(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut idx = start;
+    while idx < bytes.len() {
+        let byte = bytes[idx];
+        if (0x40..=0x7e).contains(&byte) {
+            return Some(idx);
+        }
+        idx += 1;
+    }
+    None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KittyKeyboardControl {
+    Query,
+    Push(u32),
+    Pop,
+}
+
+fn parse_kitty_keyboard_control(params: &str) -> Option<KittyKeyboardControl> {
+    let trimmed = params.trim();
+    match trimmed {
+        "?" => Some(KittyKeyboardControl::Query),
+        "<" => Some(KittyKeyboardControl::Pop),
+        _ => {
+            let rest = trimmed.strip_prefix('>')?;
+            let flags_text = rest.split(';').next().unwrap_or_default().trim();
+            if flags_text.is_empty() {
+                return Some(KittyKeyboardControl::Push(0));
+            }
+            match flags_text.parse::<u32>() {
+                Ok(flags) => Some(KittyKeyboardControl::Push(flags)),
+                Err(error) => {
+                    warn!("ignoring invalid kitty keyboard flags '{flags_text}': {error}");
+                    None
+                }
+            }
+        }
+    }
+}
+
 fn decode_kitty_image_data(
     format: u32,
     transmission: char,
@@ -723,7 +794,10 @@ fn sixel_display_size(width: u32, height: u32) -> (u16, u16) {
 
     let cols = width.div_ceil(CELL_PIXEL_WIDTH).max(1);
     let rows = height.div_ceil(CELL_PIXEL_HEIGHT).max(1);
-    (cols.min(u16::MAX as u32) as u16, rows.min(u16::MAX as u32) as u16)
+    (
+        cols.min(u16::MAX as u32) as u16,
+        rows.min(u16::MAX as u32) as u16,
+    )
 }
 
 #[cfg(test)]
@@ -760,5 +834,31 @@ mod tests {
         let encoded = base64::engine::general_purpose::STANDARD.encode("/tmp/b.png");
         let decoded = parse_kitty_file_path(&encoded).expect("base64 path");
         assert_eq!(decoded, PathBuf::from("/tmp/b.png"));
+    }
+
+    #[test]
+    fn test_parse_kitty_keyboard_control_variants() {
+        assert_eq!(
+            parse_kitty_keyboard_control("?"),
+            Some(KittyKeyboardControl::Query)
+        );
+        assert_eq!(
+            parse_kitty_keyboard_control("<"),
+            Some(KittyKeyboardControl::Pop)
+        );
+        assert_eq!(
+            parse_kitty_keyboard_control(">5"),
+            Some(KittyKeyboardControl::Push(5))
+        );
+        assert_eq!(
+            parse_kitty_keyboard_control(">5;1"),
+            Some(KittyKeyboardControl::Push(5))
+        );
+    }
+
+    #[test]
+    fn test_parse_kitty_keyboard_control_rejects_invalid_flags() {
+        assert_eq!(parse_kitty_keyboard_control(">abc"), None);
+        assert_eq!(parse_kitty_keyboard_control(""), None);
     }
 }

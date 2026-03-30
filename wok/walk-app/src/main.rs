@@ -55,9 +55,7 @@ use walk_terminal::state::{CellColor, CellRenderData};
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::background::BackgroundRenderer;
-use walk_ui::command_palette::{
-    CommandPaletteState, PaletteAction, PaletteCategory, PaletteEntry,
-};
+use walk_ui::command_palette::{CommandPaletteState, PaletteAction, PaletteCategory, PaletteEntry};
 use walk_ui::layout::Rect;
 use walk_ui::layout_presets::{
     append_panes_to_last_leaf, build_tree_for_panes, default_layout_presets, leaf_count,
@@ -438,7 +436,10 @@ impl WalkHandler {
 
         let mut right = state.custom_right.clone();
         let zoom_percent = (pane.app.zoom.current_size() / self.config.font_size * 100.0).round();
-        right.push(StatusSegment::plain(format!("Zoom {}%", zoom_percent as i32)));
+        right.push(StatusSegment::plain(format!(
+            "Zoom {}%",
+            zoom_percent as i32
+        )));
 
         StatusBarSegments {
             left,
@@ -964,20 +965,12 @@ impl WalkHandler {
                     0.9,
                 ]
             };
-            render.batch.push_bg_quad(
-                viewport.x,
-                viewport.y,
-                viewport.w,
-                1.0,
-                border_color,
-            );
-            render.batch.push_bg_quad(
-                viewport.x,
-                viewport.y,
-                1.0,
-                viewport.h,
-                border_color,
-            );
+            render
+                .batch
+                .push_bg_quad(viewport.x, viewport.y, viewport.w, 1.0, border_color);
+            render
+                .batch
+                .push_bg_quad(viewport.x, viewport.y, 1.0, viewport.h, border_color);
             if focused {
                 render.batch.push_bg_quad(
                     viewport.x,
@@ -999,12 +992,7 @@ impl WalkHandler {
                     viewport.y,
                     viewport.w,
                     title_height,
-                    [
-                        theme.input_bg.r,
-                        theme.input_bg.g,
-                        theme.input_bg.b,
-                        0.92,
-                    ],
+                    [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.92],
                 );
                 push_text(
                     render,
@@ -2629,7 +2617,9 @@ impl WalkHandler {
             WorkspaceEffect::NewFloatingPane => {
                 let cell_w = self.font.metrics.cell_width.max(8.0);
                 let cell_h = self.font.metrics.cell_height.max(16.0);
-                let pane_w = (80.0 * cell_w).min(self.chrome_rects.content.w - 24.0).max(320.0);
+                let pane_w = (80.0 * cell_w)
+                    .min(self.chrome_rects.content.w - 24.0)
+                    .max(320.0);
                 let pane_h = (24.0 * cell_h + 22.0)
                     .min(self.chrome_rects.content.h - 24.0)
                     .max(220.0);
@@ -3206,7 +3196,9 @@ impl WalkHandler {
                             }
                         }
                         PaletteAction::Workflow(workflow_name) => {
-                            if let Some(workflow) = self.workflow_store.by_name(&workflow_name).cloned() {
+                            if let Some(workflow) =
+                                self.workflow_store.by_name(&workflow_name).cloned()
+                            {
                                 if let Some(active_pane) = self.active_pane_mut() {
                                     active_pane.app.close_command_palette();
                                     active_pane.app.input_mode = InputMode::OwnedInput;
@@ -3227,12 +3219,7 @@ impl WalkHandler {
                         }
                         PaletteAction::FilePath(path) => {
                             if let Some(active_pane) = self.active_pane_mut() {
-                                active_pane
-                                    .app
-                                    .input_editor
-                                    .buffer
-                                    .insert_at(0, &path)
-                                    .ok();
+                                active_pane.app.input_editor.buffer.insert_at(0, &path).ok();
                                 active_pane
                                     .app
                                     .command_palette
@@ -3260,7 +3247,8 @@ impl WalkHandler {
                 };
                 let mut send_eof = false;
                 if let Some(active_pane) = self.active_pane_mut() {
-                    if let EditorAction::SendEof = active_pane.app.input_editor.handle_key(editor_key)
+                    if let EditorAction::SendEof =
+                        active_pane.app.input_editor.handle_key(editor_key)
                     {
                         send_eof = true;
                     }
@@ -3401,8 +3389,10 @@ impl WalkHandler {
                                 vi.down(max_row, next_line.chars().count().max(1));
                             }
                             'k' => {
-                                let prev_line =
-                                    pane.terminal.state.row_text(vi.cursor_row.saturating_sub(1));
+                                let prev_line = pane
+                                    .terminal
+                                    .state
+                                    .row_text(vi.cursor_row.saturating_sub(1));
                                 vi.up(min_row, prev_line.chars().count().max(1));
                             }
                             'w' => vi.word_forward(&line),
@@ -3443,7 +3433,10 @@ impl WalkHandler {
                     vi.right(line.chars().count().max(1));
                 }
                 KeyAction::ArrowUp => {
-                    let prev_line = pane.terminal.state.row_text(vi.cursor_row.saturating_sub(1));
+                    let prev_line = pane
+                        .terminal
+                        .state
+                        .row_text(vi.cursor_row.saturating_sub(1));
                     vi.up(min_row, prev_line.chars().count().max(1));
                 }
                 KeyAction::ArrowDown => {
@@ -3488,10 +3481,12 @@ impl WalkHandler {
         }
 
         self.ensure_vi_cursor_visible(pane_id);
-        self.status_message = self
-            .panes
-            .get(&pane_id)
-            .and_then(|pane| pane.app.vi_mode.as_ref().map(|vi| vi.mode_label().to_string()));
+        self.status_message = self.panes.get(&pane_id).and_then(|pane| {
+            pane.app
+                .vi_mode
+                .as_ref()
+                .map(|vi| vi.mode_label().to_string())
+        });
         self.needs_redraw = true;
         true
     }
@@ -3973,9 +3968,9 @@ impl WalkHandler {
     }
 
     fn focus_pane_at_point(&mut self, x: f64, y: f64) -> bool {
-        let Some(pane_id) = self
-            .workspace
-            .pane_at_point(self.chrome_rects.content, x as f32, y as f32)
+        let Some(pane_id) =
+            self.workspace
+                .pane_at_point(self.chrome_rects.content, x as f32, y as f32)
         else {
             return false;
         };
@@ -4324,7 +4319,10 @@ impl AppHandler for WalkHandler {
             return;
         }
 
-        if let Some(data) = input_event_to_pty_bytes(&event) {
+        let kitty_flags = self
+            .active_pane()
+            .map_or(0, |pane| pane.terminal.state.kitty_keyboard_flags());
+        if let Some(data) = input_event_to_pty_bytes(&event, kitty_flags) {
             self.send_raw_input_to_pty(&data);
             self.needs_redraw = true;
         }
@@ -4926,7 +4924,10 @@ fn render_owned_input(
             popup_y,
             popup_width,
             popup_height,
-            with_opacity([theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98], surface_opacity),
+            with_opacity(
+                [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98],
+                surface_opacity,
+            ),
         );
         render.batch.push_bg_quad(
             popup_x,
@@ -4971,14 +4972,18 @@ fn render_owned_input(
                     row_y - 1.0,
                     popup_width - 8.0,
                     font.metrics.cell_height + 2.0,
-                    with_opacity([theme.selection.r, theme.selection.g, theme.selection.b, 0.24], surface_opacity),
+                    with_opacity(
+                        [
+                            theme.selection.r,
+                            theme.selection.g,
+                            theme.selection.b,
+                            0.24,
+                        ],
+                        surface_opacity,
+                    ),
                 );
             }
-            let label = format!(
-                "{} {}",
-                completion_kind_token(&item.kind),
-                item.text
-            );
+            let label = format!("{} {}", completion_kind_token(&item.kind), item.text);
             push_text(
                 render,
                 font,
@@ -6152,7 +6157,16 @@ fn input_event_to_editor_key(event: &InputEvent) -> Option<EditorKey> {
     }
 }
 
-fn input_event_to_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
+fn input_event_to_pty_bytes(event: &InputEvent, kitty_keyboard_flags: u32) -> Option<Vec<u8>> {
+    if kitty_keyboard_flags > 0 {
+        if let Some(encoded) = input_event_to_kitty_keyboard_bytes(event, kitty_keyboard_flags) {
+            return Some(encoded);
+        }
+    }
+    input_event_to_legacy_pty_bytes(event)
+}
+
+fn input_event_to_legacy_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
     match &event.action {
         KeyAction::Char(c) => {
             if event.modifiers.ctrl && !event.modifiers.alt {
@@ -6187,6 +6201,60 @@ fn input_event_to_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
         KeyAction::PageDown => Some(b"\x1b[6~".to_vec()),
         _ => None,
     }
+}
+
+fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option<Vec<u8>> {
+    let key_code = match &event.action {
+        KeyAction::Char(c) => *c as u32,
+        KeyAction::Enter => 13,
+        KeyAction::Tab => 9,
+        KeyAction::Backspace => 127,
+        KeyAction::Escape => 27,
+        KeyAction::ArrowUp => 57362,
+        KeyAction::ArrowDown => 57364,
+        KeyAction::ArrowRight => 57363,
+        KeyAction::ArrowLeft => 57361,
+        KeyAction::Home => 57352,
+        KeyAction::End => 57353,
+        KeyAction::Delete => 57357,
+        KeyAction::PageUp => 57354,
+        KeyAction::PageDown => 57355,
+        KeyAction::FunctionKey(index) => 57375 + u32::from(*index),
+        _ => return None,
+    };
+
+    let mut modifier_bits = 0u32;
+    if event.modifiers.shift {
+        modifier_bits |= 1;
+    }
+    if event.modifiers.alt {
+        modifier_bits |= 2;
+    }
+    if event.modifiers.ctrl {
+        modifier_bits |= 4;
+    }
+    if event.modifiers.meta {
+        modifier_bits |= 8;
+    }
+    let modifier_bits = modifier_bits + 1;
+    let event_type = if event.is_repeat { 2 } else { 1 };
+    let key_code_repr = if flags & 0x4 != 0 {
+        if let KeyAction::Char(c) = &event.action {
+            let alt = c.to_lowercase().next().unwrap_or(*c) as u32;
+            format!("{key_code}:{alt}")
+        } else {
+            key_code.to_string()
+        }
+    } else {
+        key_code.to_string()
+    };
+
+    let payload = if flags & 0x2 != 0 {
+        format!("\x1b[{key_code_repr};{modifier_bits};{event_type}u")
+    } else {
+        format!("\x1b[{key_code_repr};{modifier_bits}u")
+    };
+    Some(payload.into_bytes())
 }
 
 fn collect_search_lines(
@@ -6289,7 +6357,11 @@ fn extract_absolute_selection_text(
         return String::new();
     }
 
-    let (start, end) = if start <= end { (start, end) } else { (end, start) };
+    let (start, end) = if start <= end {
+        (start, end)
+    } else {
+        (end, start)
+    };
     let start_row = start.0.min(total_rows.saturating_sub(1));
     let end_row = end.0.min(total_rows.saturating_sub(1));
     let mut lines = Vec::new();
@@ -7341,5 +7413,46 @@ mod tests {
         assert!(combo.modifiers.ctrl);
         assert!(combo.modifiers.shift);
         assert!(!combo.modifiers.alt);
+    }
+
+    #[test]
+    fn test_kitty_keyboard_encoding_uses_event_type_when_enabled() {
+        let event = InputEvent {
+            action: KeyAction::Char('P'),
+            modifiers: walk_app::input::Modifiers {
+                ctrl: true,
+                shift: true,
+                ..Default::default()
+            },
+            is_repeat: true,
+        };
+        let encoded =
+            input_event_to_pty_bytes(&event, 0x2 | 0x4).expect("kitty-encoded bytes should exist");
+        assert_eq!(
+            String::from_utf8(encoded).expect("utf8"),
+            "\u{1b}[80:112;6;2u"
+        );
+    }
+
+    #[test]
+    fn test_kitty_keyboard_encoding_uses_base_modifier_value() {
+        let event = InputEvent {
+            action: KeyAction::Tab,
+            modifiers: Default::default(),
+            is_repeat: false,
+        };
+        let encoded = input_event_to_pty_bytes(&event, 0x1).expect("kitty-encoded bytes");
+        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[9;1u");
+    }
+
+    #[test]
+    fn test_legacy_encoding_unchanged_without_kitty_flags() {
+        let event = InputEvent {
+            action: KeyAction::Enter,
+            modifiers: Default::default(),
+            is_repeat: false,
+        };
+        let encoded = input_event_to_pty_bytes(&event, 0).expect("legacy bytes should exist");
+        assert_eq!(encoded, b"\r".to_vec());
     }
 }

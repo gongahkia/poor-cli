@@ -99,6 +99,10 @@ pub struct TerminalState {
     current_hyperlink: Option<HyperlinkInfo>,
     /// Explicit OSC 8 hyperlink spans anchored to absolute rows.
     explicit_links: Vec<ExplicitHyperlinkSpan>,
+    /// Active kitty keyboard protocol flags.
+    kitty_keyboard_flags: u32,
+    /// Flag stack for kitty keyboard push/pop operations.
+    kitty_keyboard_stack: Vec<u32>,
 }
 
 /// Hyperlink metadata from OSC 8 sequences.
@@ -143,6 +147,8 @@ impl TerminalState {
             listener,
             current_hyperlink: None,
             explicit_links: Vec::new(),
+            kitty_keyboard_flags: 0,
+            kitty_keyboard_stack: Vec::new(),
         }
     }
 
@@ -323,6 +329,22 @@ impl TerminalState {
         self.current_hyperlink.as_ref()
     }
 
+    /// Return current kitty keyboard protocol flags.
+    pub fn kitty_keyboard_flags(&self) -> u32 {
+        self.kitty_keyboard_flags
+    }
+
+    /// Push current kitty keyboard flags and set a new value.
+    pub fn push_kitty_keyboard_flags(&mut self, flags: u32) {
+        self.kitty_keyboard_stack.push(self.kitty_keyboard_flags);
+        self.kitty_keyboard_flags = flags;
+    }
+
+    /// Pop previously pushed kitty keyboard flags.
+    pub fn pop_kitty_keyboard_flags(&mut self) {
+        self.kitty_keyboard_flags = self.kitty_keyboard_stack.pop().unwrap_or(0);
+    }
+
     /// Record one OSC 8 span in absolute terminal coordinates.
     pub fn record_hyperlink_span(
         &mut self,
@@ -405,5 +427,31 @@ fn color_to_rgba(color: &Color) -> CellColor {
         Color::Named(named) => CellColor::Named(*named as u8),
         Color::Indexed(idx) => CellColor::Indexed(*idx),
         Color::Spec(rgb) => CellColor::Rgb(rgb.r, rgb.g, rgb.b),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kitty_keyboard_flag_stack_round_trips() {
+        let mut state = TerminalState::new(80, 24, 1000);
+        assert_eq!(state.kitty_keyboard_flags(), 0);
+
+        state.push_kitty_keyboard_flags(2);
+        assert_eq!(state.kitty_keyboard_flags(), 2);
+
+        state.push_kitty_keyboard_flags(5);
+        assert_eq!(state.kitty_keyboard_flags(), 5);
+
+        state.pop_kitty_keyboard_flags();
+        assert_eq!(state.kitty_keyboard_flags(), 2);
+
+        state.pop_kitty_keyboard_flags();
+        assert_eq!(state.kitty_keyboard_flags(), 0);
+
+        state.pop_kitty_keyboard_flags();
+        assert_eq!(state.kitty_keyboard_flags(), 0);
     }
 }

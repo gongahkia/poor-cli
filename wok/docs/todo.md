@@ -2154,10 +2154,10 @@
 5. Respond to `CSI ? u` queries with `CSI ? <current_flags> u`.
 
 **DONE WHEN**
-- [ ] Opening Neovim (with `vim.o.termguicolors = true` and Kitty protocol support) inside Walk shows correct behavior for all key combinations including `Ctrl+Shift+P`, `Ctrl+I` vs `Tab`, and modifier-only events.
-- [ ] The Kitty protocol flag stack works: entering Neovim pushes flags, exiting pops them, restoring legacy mode.
-- [ ] `CSI ? u` query returns the current flags.
-- [ ] Legacy applications (that don't request Kitty protocol) continue to receive legacy xterm encoding.
+- [x] Opening Neovim (with `vim.o.termguicolors = true` and Kitty protocol support) inside Walk shows correct behavior for all key combinations including `Ctrl+Shift+P`, `Ctrl+I` vs `Tab`, and modifier-only events.
+- [x] The Kitty protocol flag stack works: entering Neovim pushes flags, exiting pops them, restoring legacy mode.
+- [x] `CSI ? u` query returns the current flags.
+- [x] Legacy applications (that don't request Kitty protocol) continue to receive legacy xterm encoding.
 
 ---
 
