@@ -41,7 +41,7 @@ use walk_blocks::triggers::{
 };
 use walk_input::editor::{EditorAction, EditorKey};
 use walk_input::history::{prefix_matches, CommandHistory, HistoryEntry};
-use walk_input::workflows::{Workflow, WorkflowStore};
+use walk_input::workflows::WorkflowStore;
 use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::damage::DirtyRegion;
 use walk_renderer::font::FontSystem;
@@ -54,6 +54,9 @@ use walk_terminal::state::{CellColor, CellRenderData};
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
 use walk_ui::background::BackgroundRenderer;
+use walk_ui::command_palette::{
+    CommandPaletteState, PaletteAction, PaletteCategory, PaletteEntry,
+};
 use walk_ui::layout::Rect;
 use walk_ui::links::detect_links;
 use walk_ui::quick_select::{PatternRegistry, QuickSelectScope};
@@ -665,11 +668,6 @@ impl WalkHandler {
         let full_height =
             self.chrome_rects.content.y + self.chrome_rects.content.h + self.chrome_rects.status.h;
         let full_rect = Rect::new(0.0, 0.0, self.chrome_rects.content.w, full_height);
-        let plugin_palette_aliases = self
-            .plugins
-            .as_ref()
-            .map(PluginHost::command_aliases)
-            .unwrap_or_default();
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -896,18 +894,13 @@ impl WalkHandler {
             }
 
             if focused && pane.app.input_mode == InputMode::CommandPalette {
-                let palette_commands = available_palette_commands(
-                    &plugin_palette_aliases,
-                    self.workflow_store.workflows(),
-                    &pane.app.input_editor.buffer.text(),
-                );
                 render_command_palette(
                     render,
                     &mut self.font,
                     theme,
-                    pane.ui_rects.input,
+                    pane.ui_rects.viewport,
                     &pane.app.input_editor.render_data(),
-                    &palette_commands,
+                    &pane.app.command_palette,
                     cursor_shape,
                     cursor_visible,
                     window_opacity,
@@ -2159,6 +2152,7 @@ impl WalkHandler {
                     active_pane.app.quick_select.dismiss();
                     active_pane.app.open_command_palette();
                 }
+                self.refresh_command_palette();
                 if let Some(window) = &self.window {
                     self.sync_workspace_layout(window.inner_size());
                 }
@@ -2599,39 +2593,136 @@ impl WalkHandler {
             return false;
         }
 
-        let Some(editor_key) = input_event_to_editor_key(event) else {
-            return false;
-        };
+        match event.action {
+            KeyAction::Escape => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.close_command_palette();
+                }
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+                self.needs_redraw = true;
+                true
+            }
+            KeyAction::ArrowDown => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.command_palette.select_next();
+                }
+                self.needs_redraw = true;
+                true
+            }
+            KeyAction::ArrowUp => {
+                if let Some(active_pane) = self.active_pane_mut() {
+                    active_pane.app.command_palette.select_prev();
+                }
+                self.needs_redraw = true;
+                true
+            }
+            KeyAction::Enter => {
+                let selected = self.active_pane().and_then(|pane| {
+                    pane.app
+                        .command_palette
+                        .selected()
+                        .map(|entry| entry.action.clone())
+                });
 
-        let mut submitted = None;
-        let mut send_eof = false;
-        if let Some(active_pane) = self.active_pane_mut() {
-            match active_pane.app.input_editor.handle_key(editor_key) {
-                EditorAction::Submit(command) => {
-                    submitted = Some(command);
+                if let Some(selected) = selected {
+                    match selected {
+                        PaletteAction::BuiltInAction(action_name) => {
+                            if let Some(action) = parse_palette_action(&action_name) {
+                                if let Some(active_pane) = self.active_pane_mut() {
+                                    active_pane.app.close_command_palette();
+                                }
+                                self.handle_action(action);
+                            }
+                        }
+                        PaletteAction::LuaCommand(command) => {
+                            if let Some(action_name) = self
+                                .plugins
+                                .as_ref()
+                                .and_then(|plugins| plugins.resolve_command_action(&command))
+                            {
+                                if let Some(action) = parse_palette_action(&action_name) {
+                                    if let Some(active_pane) = self.active_pane_mut() {
+                                        active_pane.app.close_command_palette();
+                                    }
+                                    self.handle_action(action);
+                                }
+                            }
+                        }
+                        PaletteAction::Workflow(workflow_name) => {
+                            if let Some(workflow) = self.workflow_store.by_name(&workflow_name).cloned() {
+                                if let Some(active_pane) = self.active_pane_mut() {
+                                    active_pane.app.close_command_palette();
+                                    active_pane.app.input_mode = InputMode::OwnedInput;
+                                    active_pane.app.input_editor.is_active = true;
+                                    active_pane.app.input_editor.load_workflow(&workflow);
+                                }
+                                self.status_message =
+                                    Some(format!("Loaded workflow '{}'", workflow.name));
+                            }
+                        }
+                        PaletteAction::RecentCommand(command) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane.app.close_command_palette();
+                                active_pane.app.input_mode = InputMode::OwnedInput;
+                                active_pane.app.input_editor.is_active = true;
+                                active_pane.app.input_editor.buffer.set_text(&command);
+                            }
+                        }
+                        PaletteAction::FilePath(path) => {
+                            if let Some(active_pane) = self.active_pane_mut() {
+                                active_pane
+                                    .app
+                                    .input_editor
+                                    .buffer
+                                    .insert_at(0, &path)
+                                    .ok();
+                                active_pane
+                                    .app
+                                    .command_palette
+                                    .set_query(&active_pane.app.input_editor.buffer.text());
+                            }
+                        }
+                    }
+                } else {
+                    let query = self
+                        .active_pane()
+                        .map(|pane| pane.app.input_editor.buffer.text())
+                        .unwrap_or_default();
+                    self.handle_command_palette_submit(query);
                 }
-                EditorAction::SendEof => {
-                    send_eof = true;
+
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
                 }
-                EditorAction::None => {}
+                self.needs_redraw = true;
+                true
+            }
+            _ => {
+                let Some(editor_key) = input_event_to_editor_key(event) else {
+                    return false;
+                };
+                let mut send_eof = false;
+                if let Some(active_pane) = self.active_pane_mut() {
+                    if let EditorAction::SendEof = active_pane.app.input_editor.handle_key(editor_key)
+                    {
+                        send_eof = true;
+                    }
+                    let query = active_pane.app.input_editor.buffer.text();
+                    active_pane.app.command_palette.set_query(&query);
+                }
+                if send_eof {
+                    self.send_to_pty(b"\x04");
+                }
+                self.refresh_command_palette();
+                if let Some(window) = &self.window {
+                    self.sync_workspace_layout(window.inner_size());
+                }
+                self.needs_redraw = true;
+                true
             }
         }
-
-        if let Some(command) = submitted {
-            self.handle_command_palette_submit(command);
-        }
-        if send_eof {
-            self.send_to_pty(b"\x04");
-            if let Some(active_pane) = self.active_pane_mut() {
-                active_pane.app.close_command_palette();
-            }
-        }
-
-        if let Some(window) = &self.window {
-            self.sync_workspace_layout(window.inner_size());
-        }
-        self.needs_redraw = true;
-        true
     }
 
     fn apply_zoom(&mut self, target_size: f32) {
@@ -2803,6 +2894,124 @@ impl WalkHandler {
                 command_search.search(&query, &pane_entries, &global_entries);
             }
         }
+    }
+
+    fn refresh_command_palette(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let entries = self.build_palette_entries(pane_id);
+        let query = self
+            .panes
+            .get(&pane_id)
+            .map(|pane| pane.app.input_editor.buffer.text())
+            .unwrap_or_default();
+
+        if let Some(active_pane) = self.panes.get_mut(&pane_id) {
+            if !active_pane.app.command_palette.is_open {
+                active_pane.app.command_palette.open(entries);
+            } else {
+                active_pane.app.command_palette.entries = entries;
+                active_pane.app.command_palette.set_query(&query);
+            }
+        }
+    }
+
+    fn build_palette_entries(&self, pane_id: PaneId) -> Vec<PaletteEntry> {
+        let mut entries = Vec::new();
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return entries;
+        };
+
+        let mut action_bindings = HashMap::new();
+        for (combo, action) in &pane.app.keybindings.bindings {
+            action_bindings
+                .entry(action.clone())
+                .or_insert_with(|| key_combo_label(combo));
+        }
+
+        for (action, keybinding) in action_bindings {
+            if let Some(action_id) = action_to_palette_id(&action) {
+                entries.push(PaletteEntry {
+                    label: action_display_label(&action),
+                    description: if keybinding.is_empty() {
+                        "Action".to_string()
+                    } else {
+                        format!("Keybinding: {keybinding}")
+                    },
+                    category: PaletteCategory::Action,
+                    score: 0.0,
+                    action: PaletteAction::BuiltInAction(action_id),
+                });
+            }
+        }
+
+        if let Some(plugins) = &self.plugins {
+            for (name, action) in plugins.command_aliases() {
+                entries.push(PaletteEntry {
+                    label: name.clone(),
+                    description: format!("Lua command -> {action}"),
+                    category: PaletteCategory::LuaCommand,
+                    score: 0.0,
+                    action: PaletteAction::LuaCommand(name),
+                });
+            }
+        }
+
+        for workflow in self.workflow_store.workflows() {
+            entries.push(PaletteEntry {
+                label: workflow.name.clone(),
+                description: if workflow.description.is_empty() {
+                    workflow.template.clone()
+                } else {
+                    workflow.description.clone()
+                },
+                category: PaletteCategory::Workflow,
+                score: 0.0,
+                action: PaletteAction::Workflow(workflow.name.clone()),
+            });
+        }
+
+        let mut seen_recent = HashSet::new();
+        for command in pane
+            .pane_history
+            .iter()
+            .rev()
+            .chain(self.global_history.entries().iter().rev())
+            .filter_map(|entry| {
+                (!entry.command.trim().is_empty() && seen_recent.insert(entry.command.clone()))
+                    .then(|| entry.command.clone())
+            })
+            .take(50)
+        {
+            entries.push(PaletteEntry {
+                label: command.clone(),
+                description: "Recent command".to_string(),
+                category: PaletteCategory::RecentCommand,
+                score: 0.0,
+                action: PaletteAction::RecentCommand(command),
+            });
+        }
+
+        if pane.current_cwd.is_dir() {
+            if let Ok(read_dir) = std::fs::read_dir(&pane.current_cwd) {
+                for path in read_dir.flatten().take(50).map(|entry| entry.path()) {
+                    entries.push(PaletteEntry {
+                        label: path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        description: path.display().to_string(),
+                        category: PaletteCategory::FilePath,
+                        score: 0.0,
+                        action: PaletteAction::FilePath(path.display().to_string()),
+                    });
+                }
+            }
+        }
+
+        entries
     }
 
     fn scroll_to_current_block_query_match(&mut self) {
@@ -3379,6 +3588,19 @@ impl AppHandler for WalkHandler {
         }
     }
 
+    fn on_focus_change(&mut self, focused: bool) {
+        if focused {
+            return;
+        }
+
+        if let Some(active_pane) = self.active_pane_mut() {
+            if active_pane.app.input_mode == InputMode::CommandPalette {
+                active_pane.app.close_command_palette();
+            }
+        }
+        self.needs_redraw = true;
+    }
+
     fn on_close_requested(&mut self) -> bool {
         if self.config.confirm_close_with_running_process && self.has_running_processes() {
             let confirmed = self
@@ -3685,13 +3907,29 @@ fn render_command_palette(
     render: &mut RenderState,
     font: &mut FontSystem,
     theme: &Theme,
-    rect: Rect,
+    viewport: Rect,
     input: &walk_input::editor::InputRenderData,
-    commands: &[(String, String)],
+    palette: &CommandPaletteState,
     cursor_shape: CursorShape,
     cursor_visible: bool,
     surface_opacity: f32,
 ) {
+    let panel_width = (viewport.w * 0.78).clamp(520.0, 980.0);
+    let panel_height = (viewport.h * 0.72).clamp(220.0, 560.0);
+    let rect = Rect::new(
+        viewport.x + (viewport.w - panel_width) * 0.5,
+        viewport.y + (viewport.h - panel_height) * 0.5,
+        panel_width,
+        panel_height,
+    );
+
+    render.batch.push_bg_quad(
+        viewport.x,
+        viewport.y,
+        viewport.w,
+        viewport.h,
+        with_opacity([0.0, 0.0, 0.0, 0.32], surface_opacity),
+    );
     render.batch.push_bg_quad(
         rect.x,
         rect.y,
@@ -3718,17 +3956,33 @@ fn render_command_palette(
         ),
     );
 
-    let padding_x = 12.0;
-    let padding_y = 8.0;
+    let padding_x = 14.0;
+    let padding_y = 10.0;
     let base_x = rect.x + padding_x;
     let base_y = rect.y + padding_y;
     let input_line = input.lines.first().cloned().unwrap_or_default();
-    let prefix = "Palette: ";
+    let prefix = "Command Palette: ";
     push_text(
         render,
         font,
         base_x,
         base_y,
+        "Run an action, workflow, alias, or recent command",
+        with_opacity(
+            [
+                theme.status_bar_text.r,
+                theme.status_bar_text.g,
+                theme.status_bar_text.b,
+                0.9,
+            ],
+            surface_opacity,
+        ),
+    );
+    push_text(
+        render,
+        font,
+        base_x,
+        base_y + font.metrics.cell_height + 2.0,
         &format!("{prefix}{input_line}"),
         with_opacity(
             [
@@ -3741,14 +3995,26 @@ fn render_command_palette(
         ),
     );
 
-    let mut row_y = base_y + font.metrics.cell_height + 6.0;
-    if commands.is_empty() {
+    let entries_max = 15usize;
+    let available_entries = &palette.filtered;
+    let mut start_idx = 0usize;
+    if !available_entries.is_empty() {
+        start_idx = palette.selected_index.saturating_sub(entries_max / 2);
+        if start_idx + entries_max > available_entries.len() {
+            start_idx = available_entries.len().saturating_sub(entries_max);
+        }
+    }
+    let end_idx = (start_idx + entries_max).min(available_entries.len());
+    let query = palette_query_content(&palette.query);
+    let mut row_y = base_y + font.metrics.cell_height * 2.0 + 8.0;
+
+    if available_entries.is_empty() {
         push_text(
             render,
             font,
             base_x,
             row_y,
-            "No matching commands. Press Enter to send the text to the shell.",
+            "No matching entries. Press Enter to run raw command input.",
             with_opacity(
                 [
                     theme.status_bar_text.r,
@@ -3760,8 +4026,35 @@ fn render_command_palette(
             ),
         );
     } else {
-        for (index, (name, description)) in commands.iter().enumerate() {
-            if index == 0 {
+        let mut last_category = None;
+        for (visible_offset, filtered_idx) in
+            available_entries[start_idx..end_idx].iter().enumerate()
+        {
+            let absolute_idx = start_idx + visible_offset;
+            let Some(entry) = palette.entries.get(*filtered_idx) else {
+                continue;
+            };
+            if last_category != Some(entry.category) {
+                push_text(
+                    render,
+                    font,
+                    base_x,
+                    row_y,
+                    palette_category_label(entry.category),
+                    with_opacity(
+                        [
+                            theme.status_bar_text.r,
+                            theme.status_bar_text.g,
+                            theme.status_bar_text.b,
+                            0.95,
+                        ],
+                        surface_opacity,
+                    ),
+                );
+                row_y += font.metrics.cell_height + 2.0;
+                last_category = Some(entry.category);
+            }
+            if absolute_idx == palette.selected_index {
                 render.batch.push_bg_quad(
                     rect.x + 8.0,
                     row_y - 2.0,
@@ -3773,12 +4066,29 @@ fn render_command_palette(
                     ),
                 );
             }
+            for column in palette_highlight_columns(&entry.label, query) {
+                render.batch.push_bg_quad(
+                    base_x + column as f32 * font.metrics.cell_width,
+                    row_y - 1.0,
+                    font.metrics.cell_width,
+                    font.metrics.cell_height + 2.0,
+                    with_opacity(
+                        [
+                            theme.highlight_current_match.r,
+                            theme.highlight_current_match.g,
+                            theme.highlight_current_match.b,
+                            0.22,
+                        ],
+                        surface_opacity,
+                    ),
+                );
+            }
             push_text(
                 render,
                 font,
                 base_x,
                 row_y,
-                name,
+                &entry.label,
                 with_opacity(
                     [
                         theme.foreground.r,
@@ -3794,7 +4104,7 @@ fn render_command_palette(
                 font,
                 base_x + 220.0,
                 row_y,
-                description,
+                &entry.description,
                 with_opacity(
                     [
                         theme.status_bar_text.r,
@@ -3807,6 +4117,30 @@ fn render_command_palette(
             );
             row_y += font.metrics.cell_height + 4.0;
         }
+        if available_entries.len() > entries_max {
+            let indicator = format!(
+                "{}-{} of {}",
+                start_idx + 1,
+                end_idx,
+                available_entries.len()
+            );
+            push_text(
+                render,
+                font,
+                rect.x + rect.w - 130.0,
+                rect.y + rect.h - font.metrics.cell_height - 8.0,
+                &indicator,
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        0.85,
+                    ],
+                    surface_opacity,
+                ),
+            );
+        }
     }
 
     if cursor_visible {
@@ -3814,7 +4148,10 @@ fn render_command_palette(
             let cursor_x = base_x
                 + prefix.chars().count() as f32 * font.metrics.cell_width
                 + cursor_col as f32 * font.metrics.cell_width;
-            let cursor_y = base_y + cursor_row as f32 * font.metrics.cell_height;
+            let cursor_y = base_y
+                + font.metrics.cell_height
+                + 2.0
+                + cursor_row as f32 * font.metrics.cell_height;
             render.batch.push_cursor(
                 cursor_x,
                 cursor_y,
@@ -3828,6 +4165,55 @@ fn render_command_palette(
             );
         }
     }
+}
+
+fn palette_category_label(category: PaletteCategory) -> &'static str {
+    match category {
+        PaletteCategory::Action => "Actions",
+        PaletteCategory::LuaCommand => "Lua Commands",
+        PaletteCategory::Workflow => "Workflows",
+        PaletteCategory::RecentCommand => "Recent Commands",
+        PaletteCategory::FilePath => "File Paths",
+    }
+}
+
+fn palette_query_content(query: &str) -> &str {
+    let trimmed = query.trim();
+    if let Some(stripped) = trimmed.strip_prefix('>') {
+        return stripped.trim_start();
+    }
+    if let Some(stripped) = trimmed.strip_prefix('@') {
+        return stripped.trim_start();
+    }
+    trimmed
+}
+
+fn palette_highlight_columns(label: &str, query: &str) -> Vec<usize> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    let label_chars = label.chars().collect::<Vec<_>>();
+    let query_chars = query.to_ascii_lowercase().chars().collect::<Vec<_>>();
+    let mut columns = Vec::new();
+    let mut cursor = 0usize;
+
+    for query_char in query_chars {
+        let mut matched = None;
+        for (idx, label_char) in label_chars.iter().enumerate().skip(cursor) {
+            if label_char.to_ascii_lowercase() == query_char {
+                matched = Some(idx);
+                break;
+            }
+        }
+        let Some(idx) = matched else {
+            return Vec::new();
+        };
+        columns.push(idx);
+        cursor = idx + 1;
+    }
+
+    columns
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5495,108 +5881,135 @@ fn parse_lua_key_combo(key: &str) -> Option<walk_app::keybindings::KeyCombo> {
 
 fn parse_palette_action(action: &str) -> Option<Action> {
     let normalized = action.trim().replace(' ', "_").to_ascii_lowercase();
+    if let Some(index) = normalized.strip_prefix("switch_to_tab_") {
+        return index
+            .parse::<u8>()
+            .ok()
+            .filter(|value| *value > 0)
+            .map(Action::SwitchToTab);
+    }
     parse_lua_action(&normalized)
 }
 
-fn built_in_palette_commands() -> Vec<(String, String)> {
-    vec![
-        (
-            "new_tab".to_string(),
-            "Open a fresh workspace tab".to_string(),
-        ),
-        ("close_tab".to_string(), "Close the active tab".to_string()),
-        (
-            "split_vertical".to_string(),
-            "Split the active pane side-by-side".to_string(),
-        ),
-        (
-            "split_horizontal".to_string(),
-            "Split the active pane top/bottom".to_string(),
-        ),
-        (
-            "search_global".to_string(),
-            "Search across panes, scrollback, and block commands".to_string(),
-        ),
-        (
-            "block_find".to_string(),
-            "Search within the selected or latest block".to_string(),
-        ),
-        (
-            "block_filter".to_string(),
-            "Filter the selected or latest block down to matching lines".to_string(),
-        ),
-        (
-            "block_toggle_bookmark".to_string(),
-            "Bookmark or unbookmark the selected or latest block".to_string(),
-        ),
-        (
-            "block_rerun".to_string(),
-            "Rerun the selected or latest completed block command".to_string(),
-        ),
-        (
-            "command_palette".to_string(),
-            "Open the command palette overlay".to_string(),
-        ),
-        (
-            "command_search".to_string(),
-            "Search pane-local and global command history".to_string(),
-        ),
-        (
-            "quick_select".to_string(),
-            "Label viewport links, paths, hashes, and copy by key".to_string(),
-        ),
-        (
-            "quick_select_block".to_string(),
-            "Quick select scoped to selected block output".to_string(),
-        ),
-        (
-            "zoom_reset".to_string(),
-            "Reset the current font size".to_string(),
-        ),
-        (
-            "clear_screen".to_string(),
-            "Clear the active terminal viewport".to_string(),
-        ),
-    ]
+fn action_to_palette_id(action: &Action) -> Option<String> {
+    let id = match action {
+        Action::NewTab => "new_tab".to_string(),
+        Action::CloseTab => "close_tab".to_string(),
+        Action::NextTab => "next_tab".to_string(),
+        Action::PrevTab => "prev_tab".to_string(),
+        Action::SwitchToTab(index) => format!("switch_to_tab_{index}"),
+        Action::SplitVertical => "split_vertical".to_string(),
+        Action::SplitHorizontal => "split_horizontal".to_string(),
+        Action::CloseSplit => "close_split".to_string(),
+        Action::FocusLeft => "focus_left".to_string(),
+        Action::FocusRight => "focus_right".to_string(),
+        Action::FocusUp => "focus_up".to_string(),
+        Action::FocusDown => "focus_down".to_string(),
+        Action::ResizeSplitLeft => "resize_split_left".to_string(),
+        Action::ResizeSplitRight => "resize_split_right".to_string(),
+        Action::ResizeSplitUp => "resize_split_up".to_string(),
+        Action::ResizeSplitDown => "resize_split_down".to_string(),
+        Action::Copy => "copy".to_string(),
+        Action::Paste => "paste".to_string(),
+        Action::SelectAll => "select_all".to_string(),
+        Action::ScrollUp => "scroll_up".to_string(),
+        Action::ScrollDown => "scroll_down".to_string(),
+        Action::ScrollPageUp => "scroll_page_up".to_string(),
+        Action::ScrollPageDown => "scroll_page_down".to_string(),
+        Action::ScrollToTop => "scroll_to_top".to_string(),
+        Action::ScrollToBottom => "scroll_to_bottom".to_string(),
+        Action::BlockPrev => "block_prev".to_string(),
+        Action::BlockNext => "block_next".to_string(),
+        Action::BlockCopy => "block_copy".to_string(),
+        Action::BlockCopyCommand => "block_copy_command".to_string(),
+        Action::BlockCopyOutput => "block_copy_output".to_string(),
+        Action::BlockCollapse => "block_collapse".to_string(),
+        Action::BlockToggleBookmark => "block_toggle_bookmark".to_string(),
+        Action::BlockPrevBookmark => "block_prev_bookmark".to_string(),
+        Action::BlockNextBookmark => "block_next_bookmark".to_string(),
+        Action::BlockFind => "block_find".to_string(),
+        Action::BlockFilter => "block_filter".to_string(),
+        Action::BlockRerun => "block_rerun".to_string(),
+        Action::SearchGlobal => "search_global".to_string(),
+        Action::CommandPalette => "command_palette".to_string(),
+        Action::CommandSearch => "command_search".to_string(),
+        Action::QuickSelect => "quick_select".to_string(),
+        Action::QuickSelectBlock => "quick_select_block".to_string(),
+        Action::ToggleInputPosition => "toggle_input_position".to_string(),
+        Action::ZoomIn => "zoom_in".to_string(),
+        Action::ZoomOut => "zoom_out".to_string(),
+        Action::ZoomReset => "zoom_reset".to_string(),
+        Action::ClearScreen => "clear_screen".to_string(),
+        Action::SendEof => "send_eof".to_string(),
+        Action::SaveSession(name) => format!("save_session:{name}"),
+        Action::LoadSession(name) => format!("load_session:{name}"),
+    };
+    Some(id)
 }
 
-fn available_palette_commands(
-    plugin_aliases: &[(String, String)],
-    workflows: &[Workflow],
-    query: &str,
-) -> Vec<(String, String)> {
-    let mut commands = built_in_palette_commands();
-    for (name, action) in plugin_aliases {
-        commands.push((name.clone(), format!("Plugin alias -> {action}")));
+fn action_display_label(action: &Action) -> String {
+    match action {
+        Action::SwitchToTab(index) => format!("Switch To Tab {index}"),
+        Action::SaveSession(name) => format!("Save Session ({name})"),
+        Action::LoadSession(name) => format!("Load Session ({name})"),
+        _ => action_to_palette_id(action)
+            .unwrap_or_default()
+            .replace('_', " ")
+            .split_whitespace()
+            .map(|token| {
+                let mut chars = token.chars();
+                match chars.next() {
+                    Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
     }
-    for workflow in workflows {
-        let label = format!("@{}", workflow.name);
-        let description = if workflow.description.is_empty() {
-            format!("Workflow template: {}", workflow.template)
-        } else {
-            format!("Workflow: {}", workflow.description)
-        };
-        commands.push((label, description));
-    }
+}
 
-    let query = query.trim().to_ascii_lowercase();
-    if query.is_empty() {
-        commands.truncate(6);
-        return commands;
+fn key_combo_label(combo: &walk_app::keybindings::KeyCombo) -> String {
+    let mut parts = Vec::new();
+    if combo.modifiers.ctrl {
+        parts.push("Ctrl".to_string());
     }
+    if combo.modifiers.alt {
+        parts.push("Alt".to_string());
+    }
+    if combo.modifiers.shift {
+        parts.push("Shift".to_string());
+    }
+    if combo.modifiers.meta {
+        parts.push("Cmd".to_string());
+    }
+    parts.push(key_action_label(&combo.key));
+    parts.join("+")
+}
 
-    let mut filtered = commands
-        .into_iter()
-        .filter(|(name, description)| {
-            name.to_ascii_lowercase().contains(&query)
-                || description.to_ascii_lowercase().contains(&query)
-        })
-        .collect::<Vec<_>>();
-    if query.starts_with('@') {
-        filtered.sort_by_key(|(name, _)| !name.starts_with('@'));
+fn key_action_label(action: &KeyAction) -> String {
+    match action {
+        KeyAction::Char(ch) => ch.to_ascii_uppercase().to_string(),
+        KeyAction::Enter => "Enter".to_string(),
+        KeyAction::Tab => "Tab".to_string(),
+        KeyAction::Backspace => "Backspace".to_string(),
+        KeyAction::Delete => "Delete".to_string(),
+        KeyAction::Escape => "Escape".to_string(),
+        KeyAction::ArrowUp => "Up".to_string(),
+        KeyAction::ArrowDown => "Down".to_string(),
+        KeyAction::ArrowLeft => "Left".to_string(),
+        KeyAction::ArrowRight => "Right".to_string(),
+        KeyAction::Home => "Home".to_string(),
+        KeyAction::End => "End".to_string(),
+        KeyAction::PageUp => "PageUp".to_string(),
+        KeyAction::PageDown => "PageDown".to_string(),
+        KeyAction::FunctionKey(index) => format!("F{index}"),
+        KeyAction::Copy => "Copy".to_string(),
+        KeyAction::Paste => "Paste".to_string(),
+        KeyAction::Cut => "Cut".to_string(),
+        KeyAction::SelectAll => "SelectAll".to_string(),
+        KeyAction::Undo => "Undo".to_string(),
+        KeyAction::Redo => "Redo".to_string(),
     }
-    filtered.truncate(6);
-    filtered
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

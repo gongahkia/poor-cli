@@ -1878,11 +1878,11 @@
 6. Keybindings in `Context::CommandPalette`: typing filters, Up/Down navigates, Enter selects, Escape closes. `>` prefix filters to actions only, `@` prefix filters to workflows only.
 
 **DONE WHEN**
-- [ ] `Mod+P` opens a centered dropdown listing all actions with their keybindings.
-- [ ] Typing `split` narrows to split-related actions. Pressing Enter on "Split Vertical" executes `Action::SplitVertical`.
-- [ ] Typing `@deploy` shows the deploy workflow. Selecting it enters parameter fill mode (Task 77).
-- [ ] The palette shows category headers ("Actions", "Workflows", "Recent Commands") with visual separation.
-- [ ] The palette renders on top of all other content and dismisses on Escape or focus loss.
+- [x] `Mod+P` opens a centered dropdown listing all actions with their keybindings.
+- [x] Typing `split` narrows to split-related actions. Pressing Enter on "Split Vertical" executes `Action::SplitVertical`.
+- [x] Typing `@deploy` shows the deploy workflow. Selecting it enters parameter fill mode (Task 77).
+- [x] The palette shows category headers ("Actions", "Workflows", "Recent Commands") with visual separation.
+- [x] The palette renders on top of all other content and dismisses on Escape or focus loss.
 
 ---
 

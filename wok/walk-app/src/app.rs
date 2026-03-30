@@ -10,6 +10,7 @@ use walk_blocks::block_nav::BlockNavigator;
 use walk_input::editor::{EditorKey, InputEditor, InputPosition};
 use walk_terminal::terminal::SemanticEvent;
 use walk_ui::clipboard::ClipboardManager;
+use walk_ui::command_palette::CommandPaletteState;
 use walk_ui::quick_select::QuickSelectState;
 use walk_ui::search::GlobalSearch;
 use walk_ui::selection::SelectionManager;
@@ -53,6 +54,8 @@ pub struct WalkApp {
     pub global_search: GlobalSearch,
     /// Command-history search overlay.
     pub command_search: Option<CommandSearchState>,
+    /// Rich command palette state.
+    pub command_palette: CommandPaletteState,
     /// Quick-select overlay.
     pub quick_select: QuickSelectState,
     /// Block-local find/filter overlay state.
@@ -106,6 +109,7 @@ impl WalkApp {
             selection: SelectionManager::new(),
             global_search: GlobalSearch::new(),
             command_search: None,
+            command_palette: CommandPaletteState::new(),
             quick_select: QuickSelectState::new(),
             block_query: None,
             saved_draft: None,
@@ -408,6 +412,7 @@ impl WalkApp {
         }
         self.input_mode = InputMode::CommandPalette;
         self.input_editor.is_active = true;
+        self.command_palette.is_open = true;
     }
 
     /// Close the command palette input mode.
@@ -426,6 +431,7 @@ impl WalkApp {
         } else {
             self.input_editor.buffer.clear();
         }
+        self.command_palette.close();
     }
 
     /// Return the selected block when present, otherwise the latest block.
