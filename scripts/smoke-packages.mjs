@@ -106,7 +106,7 @@ const run = (args, cwd = root) => {
     cwd,
     env: smokeEnv,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
+    maxBuffer: 10 * 1024 * 1024,
   }).trim();
 };
 
