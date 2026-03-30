@@ -7,7 +7,7 @@ import { handleHdbResalePrices } from "./tools/hdb-tools.js";
 import { handleLtaBusArrivals } from "./tools/lta-tools.js";
 import { handleNeaForecast2Hr } from "./tools/nea-tools.js";
 
-const printResult = (result: { content: readonly { type: string; text: string }[] }) => {
+const printResult = (result: ToolResult) => {
   for (const item of result.content) {
     if (item.type === "text") process.stdout.write(item.text + "\n");
   }

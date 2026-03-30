@@ -1568,10 +1568,12 @@ export const BENCHMARK_CATALOG = {
 
 export const RESOURCE_URIS = {
   apis: "sg://apis",
+  artifacts: "sg://artifacts",
   tools: "sg://tools",
   workflows: "sg://workflows",
   recipes: "sg://recipes",
   runtime: "sg://runtime",
   playbooks: "sg://playbooks",
   benchmarks: "sg://benchmarks",
+  mapPreviewUi: "ui://sg/map-preview",
 } as const;

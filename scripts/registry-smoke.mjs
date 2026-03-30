@@ -92,6 +92,16 @@ try {
   try {
     await client.connect(transport);
 
+    const prompts = await client.listPrompts();
+    if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-postal_route")) {
+      throw new Error("Registry-installed server did not expose recipe prompts.");
+    }
+
+    const templates = await client.listResourceTemplates();
+    if (!(templates.resourceTemplates ?? []).some((template) => template.uriTemplate === "sg://recipes/{id}")) {
+      throw new Error("Registry-installed server did not expose recipe resource templates.");
+    }
+
     const resource = await client.readResource({ uri: "sg://workflows" });
     const resourceText = resource.contents.find((content) => "text" in content && typeof content.text === "string")?.text;
     if (resourceText === undefined) {

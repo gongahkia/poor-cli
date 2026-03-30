@@ -1,5 +1,6 @@
 import { resolveAlias } from "./aliases.js";
 import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
+import { PLANNING_AREAS, REGIONS, ROUTE_MODES, toTitleCase } from "./domain-constants.js";
 
 const BUSINESS_DILIGENCE_PATTERN = /\bdiligence\b|regulatory|registration\s*check|registry\s*check|registry\s*diligence|business\s*diligence|counterparty\s*diligence|licen[cs]e\s*check|business\s*dossier|company\s*dossier/i;
 
@@ -12,20 +13,7 @@ export type IntentResult = {
   readonly extractedParams: Readonly<Record<string, unknown>>;
 };
 
-const PLANNING_AREAS = [
-  "ang mo kio", "bedok", "bishan", "bukit batok", "bukit merah", "bukit panjang",
-  "bukit timah", "central water catchment", "changi", "changi bay", "choa chu kang",
-  "clementi", "downtown core", "geylang", "hougang", "jurong east", "jurong west",
-  "kallang", "lim chu kang", "mandai", "marine parade", "museum", "newton", "novena",
-  "orchard", "outram", "pasir ris", "paya lebar", "pioneer", "punggol", "queenstown",
-  "river valley", "rochor", "seletar", "sembawang", "sengkang", "serangoon",
-  "simpang", "singapore river", "southern islands", "sungei kadut", "tampines",
-  "tanglin", "tengah", "toa payoh", "tuas", "western islands", "western water catchment",
-  "woodlands", "yishun",
-] as const;
-
 const CURRENCY_STOPWORDS = new Set(["GDP", "CPI", "MRT", "HDB", "LTA", "NEA", "CEA", "BCA", "ACRA"]);
-const REGIONS = ["north", "south", "east", "west", "central"] as const;
 const SINGSTAT_CATEGORY_MATCHERS = [
   { category: "Economy & Prices", pattern: /\beconomy|prices|gdp|cpi|inflation|national accounts\b/i },
   { category: "Population & Land Area", pattern: /\bpopulation|land area|demographic\b/i },
@@ -77,10 +65,10 @@ const extractSvy21Pair = (query: string): { x: number; y: number } | null => {
 };
 
 const extractRouteType = (query: string): "walk" | "drive" | "pt" | "cycle" | null => {
-  if (/\bwalk|walking\b/i.test(query)) return "walk";
-  if (/\bdrive|driving\b/i.test(query)) return "drive";
-  if (/\bcycle|cycling\b/i.test(query)) return "cycle";
-  if (/\bpublic transport|train|mrt|bus\b/i.test(query)) return "pt";
+  if (/\bwalk|walking\b/i.test(query)) return ROUTE_MODES[0];
+  if (/\bdrive|driving\b/i.test(query)) return ROUTE_MODES[1];
+  if (/\bcycle|cycling\b/i.test(query)) return ROUTE_MODES[3];
+  if (/\bpublic transport|train|mrt|bus\b/i.test(query)) return ROUTE_MODES[2];
   return null;
 };
 
@@ -98,7 +86,7 @@ const extractPlanningArea = (query: string): string | null => {
   const lower = query.toLowerCase();
   for (const area of PLANNING_AREAS) {
     if (lower.includes(area)) {
-      return area.split(" ").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+      return toTitleCase(area);
     }
   }
   return null;
@@ -174,7 +162,7 @@ const extractRegion = (query: string): string | null => {
   const lower = query.toLowerCase();
   for (const region of REGIONS) {
     if (lower.includes(region)) {
-      return region.charAt(0).toUpperCase() + region.slice(1);
+      return toTitleCase(region);
     }
   }
   return null;

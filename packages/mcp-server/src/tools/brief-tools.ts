@@ -39,9 +39,12 @@ import { normalizeTransactions } from "../apis/ura/normalizer.js";
 import { getPropertyTransactions } from "../apis/ura/client.js";
 import { buildBusinessDossierArtifact } from "../diligence/business-dossier.js";
 import { fetchNormalizedMasRecords } from "./mas-tools.js";
+import { buildMapPayloadFromPoints, withMapUiMetadata } from "./map-payload.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { lookupPlanningArea } from "./ura-tools.js";
 import { z } from "zod";
+
+const MAP_TOOL_META = withMapUiMetadata(undefined);
 
 const TransportBriefInputSchema = {
   busStopCode: z.string().min(5).optional(),
@@ -160,6 +163,10 @@ const renderBriefMarkdown = (payload: BriefArtifact): string => {
 const toToolResult = (
   payload: BriefArtifact,
   format: "json" | "markdown",
+  options?: {
+    readonly structuredContent?: Readonly<Record<string, unknown>>;
+    readonly _meta?: Readonly<Record<string, unknown>>;
+  },
 ): ToolResult => {
   const validated = BriefArtifactSchema.parse(payload) as BriefArtifact;
   return {
@@ -171,7 +178,9 @@ const toToolResult = (
     }],
     structuredContent: {
       record: validated,
+      ...(options?.structuredContent ?? {}),
     },
+    ...(options?._meta === undefined ? {} : { _meta: options._meta }),
   };
 };
 
@@ -1293,7 +1302,19 @@ export const handlePropertyBrief = async (
     nextChecks: propertyNextChecks,
   };
 
-  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown");
+  const mapPayload = firstGeocode === null
+    ? null
+    : buildMapPayloadFromPoints("sg_property_brief", [{
+      lat: firstGeocode.lat,
+      lng: firstGeocode.lng,
+      label: firstGeocode.building || firstGeocode.address || firstGeocode.postal || planningArea || "Resolved location",
+      description: firstGeocode.address,
+    }]);
+
+  return toToolResult(payload, resolveOutputFormat(params.format) === "json" ? "json" : "markdown", {
+    ...(mapPayload === null ? {} : { structuredContent: { mapPayload } }),
+    ...(mapPayload === null ? {} : { _meta: MAP_TOOL_META }),
+  });
 };
 
 export const handleMacroBrief = async (
@@ -1802,6 +1823,7 @@ export const briefToolDefinitions: readonly RegisteredToolDefinition[] = [
     description: "Build a location and property brief for one Singapore planning area, postal code, or address across OneMap, URA, HDB, and optional live context.",
     surface: "canonical",
     positioning: "High-value additive brief over the direct property, map, and environment tools.",
+    _meta: MAP_TOOL_META,
     inputSchema: PropertyBriefBaseSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> =>
       handlePropertyBrief(validateInput(PropertyBriefSchema, input)),

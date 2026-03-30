@@ -24,11 +24,18 @@ export const keystoreToolDefinitions: readonly RegisteredToolDefinition[] = [
     inputSchema: {},
     handler: async (_input: unknown): Promise<ToolResult> => {
       const keys = keystore.listKeys();
+      const structuredContent = { records: keys as unknown as Record<string, unknown>[] };
       if (keys.length === 0) {
-        return { content: [{ type: "text", text: "No API keys stored." }] };
+        return {
+          content: [{ type: "text", text: "No API keys stored." }],
+          structuredContent,
+        };
       }
       const text = formatResponse(keys as unknown as Record<string, unknown>[], "markdown");
-      return { content: [{ type: "text", text }] };
+      return {
+        content: [{ type: "text", text }],
+        structuredContent,
+      };
     },
   },
 

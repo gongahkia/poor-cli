@@ -4,6 +4,25 @@ Operational guidance for teams deploying sg-apis-mcp in production.
 
 The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs. Adoption-oriented latency, cache-tier, and credibility expectations for the headline workflows are also exposed through `sg://benchmarks`.
 
+Remote HTTP deployments now support three auth modes:
+
+- `none`: local development or localhost-only binds
+- `mixed`: unauthenticated sessions expose `public,briefs,query,health`; authenticated sessions expose the full configured toolsets
+- `all`: every HTTP MCP session requires a valid bearer token before initialization
+
+Relevant env vars:
+
+- `SG_APIS_HTTP_AUTH_MODE`
+- `SG_APIS_REMOTE_BASE_URL`
+- `SG_APIS_ARTIFACT_DB_PATH`
+- `SG_APIS_OIDC_ISSUER`
+- `SG_APIS_OIDC_AUDIENCE`
+- `SG_APIS_OIDC_JWKS_URI`
+- `SG_APIS_OIDC_REQUIRED_SCOPES`
+- `SG_APIS_OIDC_CLOCK_SKEW_SEC`
+
+Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp`.
+
 ## Latency Expectations
 
 | API Family | Timeout (ms) | Typical Latency | Notes |
@@ -112,3 +131,33 @@ Use `sg_health_check` to probe all release-blocking API families. OneMap, URA, a
 Use `npm run test:smoke:live` when you want the full release-blocking live smoke flow over the MCP server, including representative API and workflow checks.
 
 Use `sg_cache_stats` to inspect cache hit/miss rates and storage size.
+
+## Artifact Resources
+
+Large row, table, and routed query results now promote themselves into persisted JSON artifacts instead of forcing every host to render oversized inline payloads.
+
+- Resource template: `sg://artifacts/{kind}/{id}`
+- Inline threshold: more than 12 KB of rendered text or more than 50 returned rows
+- Default TTL: 15 minutes
+- Realtime TTL: 5 minutes for transport or environment artifacts
+- Storage: SQLite at `~/.sg-apis/artifacts.db` by default, or `SG_APIS_ARTIFACT_DB_PATH` when overridden
+- Cleanup: on startup and once per hour
+
+When artifact mode is used, the tool result keeps:
+
+- a short text preview
+- `structuredContent.preview`
+- a `resource_link` pointing to the artifact resource
+
+For the Docker VPS deployment bundle, the artifact database lives at `/var/lib/sg-apis/artifacts.db` inside the container and is backed by a persistent Docker volume. See [deployment.md](./deployment.md) for inspection and manual cleanup commands.
+
+## Map Preview
+
+Geospatial outputs now expose:
+
+- `structuredContent.mapPayload`
+- `_meta.ui.resourceUri = "ui://sg/map-preview"`
+
+The UI resource is additive only. Text-only hosts still receive the same direct and routed outputs without needing MCP App support.
+
+The current routing payload does not expose exact route geometry from OneMap, so route overlays remain explicitly marked as approximate in both the payload legend and the UI.

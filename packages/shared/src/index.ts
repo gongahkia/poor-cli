@@ -15,7 +15,8 @@ export type { HttpOptions } from "./http-client.js";
 export { httpGetText } from "./http-client.js";
 export { Keystore } from "./keystore.js";
 export { createLogger } from "./logger.js";
-export type { Logger } from "./logger.js";
+export { subscribeLogEntries } from "./logger.js";
+export type { LogEntry, LogLevel, Logger } from "./logger.js";
 export { getRateLimiter, RateLimiter } from "./rate-limiter.js";
 export { resetRateLimiters } from "./rate-limiter.js";
 export { validateInput } from "./schemas/index.js";
@@ -178,6 +179,9 @@ export type {
   OutputFormat,
   CredentialSource,
   ToolErrorPayload,
+  ToolResultContent,
+  ToolResultResourceLinkContent,
+  ToolResultTextContent,
   ToolResult,
   QueryBlocker,
   QueryPlannedStep,

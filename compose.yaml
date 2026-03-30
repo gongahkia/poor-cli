@@ -1,0 +1,44 @@
+services:
+  sg-apis-mcp:
+    image: ghcr.io/gongahkia/sg-apis-mcp:${SG_APIS_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      SG_APIS_HTTP_AUTH_MODE: ${SG_APIS_HTTP_AUTH_MODE:-mixed}
+      SG_APIS_REMOTE_BASE_URL: https://${PUBLIC_HOSTNAME}/mcp
+      SG_APIS_OIDC_ISSUER: ${SG_APIS_OIDC_ISSUER}
+      SG_APIS_OIDC_AUDIENCE: ${SG_APIS_OIDC_AUDIENCE}
+      SG_APIS_OIDC_JWKS_URI: ${SG_APIS_OIDC_JWKS_URI:-}
+      SG_APIS_OIDC_REQUIRED_SCOPES: ${SG_APIS_OIDC_REQUIRED_SCOPES:-}
+      SG_APIS_OIDC_CLOCK_SKEW_SEC: ${SG_APIS_OIDC_CLOCK_SKEW_SEC:-60}
+      SG_APIS_TOOLSETS: ${SG_APIS_TOOLSETS:-public,briefs,query,health,ops}
+      SG_APIS_LOG_LEVEL: ${SG_APIS_LOG_LEVEL:-info}
+      SG_APIS_ARTIFACT_DB_PATH: /var/lib/sg-apis/artifacts.db
+      SG_API_ONEMAP_EMAIL: ${SG_API_ONEMAP_EMAIL:-}
+      SG_API_ONEMAP_PASSWORD: ${SG_API_ONEMAP_PASSWORD:-}
+      SG_API_URA_KEY: ${SG_API_URA_KEY:-}
+      SG_API_LTA_KEY: ${SG_API_LTA_KEY:-}
+    command: ["--transport", "http", "--host", "0.0.0.0", "--port", "3000"]
+    volumes:
+      - sg_apis_state:/var/lib/sg-apis
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - sg-apis-mcp
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  sg_apis_state:
+  caddy_data:
+  caddy_config:

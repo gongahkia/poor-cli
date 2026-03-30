@@ -17,6 +17,7 @@ import {
   getDatasetRows,
   listCollections,
 } from "../apis/datagov/client.js";
+import { buildArtifactResult, shouldUseArtifact } from "./artifacts.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 export const handleDatagovSearch = async (
@@ -37,7 +38,13 @@ export const handleDatagovGet = async (
 ): Promise<ToolResult> => {
   const result = await getDataset(params.datasetId);
   if (result === null) {
-    return { content: [{ type: "text", text: "Dataset not found." }] };
+    return {
+      content: [{ type: "text", text: "Dataset not found." }],
+      structuredContent: {
+        datasetId: params.datasetId,
+        record: null,
+      },
+    };
   }
   const fmt = resolveOutputFormat(params.format);
   const text = formatResponse(result as unknown as Record<string, unknown>, fmt);
@@ -54,7 +61,13 @@ export const handleDatagovResources = async (
 ): Promise<ToolResult> => {
   const result = await getDatasetResources(params.datasetId);
   if (result === null) {
-    return { content: [{ type: "text", text: "Dataset not found." }] };
+    return {
+      content: [{ type: "text", text: "Dataset not found." }],
+      structuredContent: {
+        datasetId: params.datasetId,
+        record: null,
+      },
+    };
   }
 
   const fmt = resolveOutputFormat(params.format);
@@ -140,6 +153,50 @@ export const handleDatagovRows = async (
     : fmt === "json"
       ? formatResponse(result as unknown as Record<string, unknown>, "json")
       : formatResponse(result.records as unknown as Record<string, unknown>[], fmt);
+
+  if (shouldUseArtifact(text, result.records.length)) {
+    return buildArtifactResult({
+      toolName: "sg_datagov_rows",
+      input: {
+        ...(params.datasetId === undefined ? {} : { datasetId: params.datasetId }),
+        ...(params.resourceId === undefined ? {} : { resourceId: params.resourceId }),
+        ...(params.filters === undefined ? {} : { filters: params.filters }),
+        ...(params.limit === undefined ? {} : { limit: params.limit }),
+        ...(params.offset === undefined ? {} : { offset: params.offset }),
+        ...(params.sort === undefined ? {} : { sort: params.sort }),
+        format: fmt,
+      },
+      kind: "rows",
+      title: `data.gov.sg rows for ${result.resourceId}`,
+      description: "Large datastore row result promoted to a transient artifact resource.",
+      fullText: text,
+      payload: {
+        ...(result.datasetId === undefined ? {} : { datasetId: result.datasetId }),
+        ...(result.datasetName === undefined ? {} : { datasetName: result.datasetName }),
+        resourceId: result.resourceId,
+        total: result.total,
+        offset: result.offset,
+        limit: result.limit,
+        fields: result.fields,
+        records: result.records,
+      },
+      preview: {
+        returned: result.records.length,
+        total: result.total,
+        fields: result.fields,
+        records: result.records.slice(0, 10),
+      },
+      structuredContentBase: {
+        ...(result.datasetId === undefined ? {} : { datasetId: result.datasetId }),
+        ...(result.datasetName === undefined ? {} : { datasetName: result.datasetName }),
+        resourceId: result.resourceId,
+        total: result.total,
+        offset: result.offset,
+        limit: result.limit,
+        fields: result.fields,
+      },
+    });
+  }
 
   return {
     content: [{ type: "text", text }],

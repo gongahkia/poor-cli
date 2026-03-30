@@ -4,9 +4,20 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Published GHCR image tag to deploy"
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +42,71 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/gongahkia/sg-apis-mcp
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push container
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+
+      - name: Container smoke
+        run: npm run test:smoke:container
+        env:
+          SG_APIS_CONTAINER_IMAGE: ghcr.io/gongahkia/sg-apis-mcp:${{ steps.docker_meta.outputs.version }}
+          SG_APIS_LOG_LEVEL: error
+
       - name: Registry smoke
         run: npm run test:smoke:registry
         env:
           SG_APIS_LOG_LEVEL: error
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' '${{ secrets.DEPLOY_SSH_KEY }}' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${{ secrets.DEPLOY_SSH_PORT || '22' }}" "${{ secrets.DEPLOY_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync deployment files
+        run: |
+          ssh -p "${{ secrets.DEPLOY_SSH_PORT || '22' }}" "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" "mkdir -p '${{ secrets.DEPLOY_APP_DIR }}'"
+          scp -P "${{ secrets.DEPLOY_SSH_PORT || '22' }}" compose.yaml Caddyfile "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}:${{ secrets.DEPLOY_APP_DIR }}/"
+
+      - name: Deploy requested image tag
+        run: |
+          ssh -p "${{ secrets.DEPLOY_SSH_PORT || '22' }}" "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" "
+            set -eu
+            cd '${{ secrets.DEPLOY_APP_DIR }}'
+            if [ ! -f .env.deploy ]; then
+              echo '.env.deploy is missing on the VPS' >&2
+              exit 1
+            fi
+            SG_APIS_IMAGE_TAG='${{ inputs.image_tag }}' docker compose --env-file .env.deploy pull
+            SG_APIS_IMAGE_TAG='${{ inputs.image_tag }}' docker compose --env-file .env.deploy up -d --remove-orphans
+          "

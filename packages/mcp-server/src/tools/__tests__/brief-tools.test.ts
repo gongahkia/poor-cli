@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BriefArtifactSchema, MasDataset } from "@sg-apis/shared";
+import { BriefArtifactSchema, MasDataset, type ToolResult } from "@sg-apis/shared";
 
 vi.mock("../../apis/acra/client.js", () => ({
   getAcraEntities: vi.fn(),
@@ -104,6 +104,10 @@ const parseBrief = (resultText: string) => {
   return BriefArtifactSchema.parse(JSON.parse(resultText));
 };
 
+const getText = (result: ToolResult): string => {
+  return result.content.find((item): item is Extract<ToolResult["content"][number], { type: "text" }> => item.type === "text")?.text ?? "";
+};
+
 const expectMarkdownSections = (text: string) => {
   expect(text).toContain("### Sources");
   expect(text).toContain("### Freshness");
@@ -161,7 +165,7 @@ describe("brief tools", () => {
       entityName: "ABC CONSTRUCTION PTE LTD",
       format: "json",
     });
-    const jsonText = jsonResult.content[0]?.text ?? "";
+    const jsonText = getText(jsonResult);
     const payload = parseBrief(jsonText);
 
     expect(payload.title).toBe("Business Dossier");
@@ -173,7 +177,7 @@ describe("brief tools", () => {
       entityName: "ABC CONSTRUCTION PTE LTD",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("supports explicit module selection, sector hints, and unmatched module reporting", async () => {
@@ -202,7 +206,7 @@ describe("brief tools", () => {
       sectorHints: ["architecture", "procurement"],
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const resolution = payload.records["resolution"] as Record<string, unknown>;
 
     expect(resolution).toMatchObject({
@@ -251,7 +255,7 @@ describe("brief tools", () => {
       sectorHints: ["hospitality"],
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.riskFlags ?? []).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "NO_ACRA_MATCH" })]),
@@ -290,7 +294,7 @@ describe("brief tools", () => {
       uen: "201912345K",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.riskFlags ?? []).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "ENTITY_NOT_ACTIVE" })]),
@@ -334,7 +338,7 @@ describe("brief tools", () => {
       includeEnvironment: true,
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Property Brief");
     expect(payload.provenance.length).toBeGreaterThanOrEqual(6);
@@ -359,7 +363,7 @@ describe("brief tools", () => {
       includeEnvironment: true,
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns the expanded macro brief envelope", async () => {
@@ -431,7 +435,7 @@ describe("brief tools", () => {
       currency: "USD",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const summaryByLabel = new Map(payload.summary.map((item) => [item.label, item.value]));
     const evidenceByLabel = new Map(payload.evidence.map((item) => [item.label, item.value]));
 
@@ -464,7 +468,7 @@ describe("brief tools", () => {
       currency: "USD",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns the expanded transport brief envelope", async () => {
@@ -489,7 +493,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Transport Brief");
     expect(payload.provenance).toHaveLength(3);
@@ -516,7 +520,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns advisory transport status when only traffic incidents are active", async () => {
@@ -531,7 +535,7 @@ describe("brief tools", () => {
     const jsonResult = await handleTransportBrief({
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const status = payload.records["status"] as Record<string, unknown>;
     const network = payload.records["network"] as Record<string, unknown>;
 
@@ -563,7 +567,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const status = payload.records["status"] as Record<string, unknown>;
     const followups = payload.records["followups"] as readonly Record<string, unknown>[];
     const stop = payload.records["stop"] as Record<string, unknown>;
@@ -598,7 +602,7 @@ describe("brief tools", () => {
       serviceNo: "851",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const status = payload.records["status"] as Record<string, unknown>;
 
     expect(status["level"]).toBe("normal");
@@ -636,7 +640,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect(payload.title).toBe("Environment Brief");
     expect(payload.provenance).toHaveLength(3);
@@ -663,7 +667,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "markdown",
     });
-    expectMarkdownSections(markdownResult.content[0]?.text ?? "");
+    expectMarkdownSections(getText(markdownResult));
   });
 
   it("returns caution environment status for thundery or heavy-rain forecasts", async () => {
@@ -696,7 +700,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("caution");
     expect((payload.records["thresholds"] as Record<string, unknown>)["forecastRisk"]).toBe("caution");
@@ -733,7 +737,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
     const followups = payload.records["followups"] as readonly Record<string, unknown>[];
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("watch");
@@ -773,7 +777,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("clear");
     expect((payload.records["thresholds"] as Record<string, unknown>)["rainfallBand"]).toBe("clear");
@@ -790,7 +794,7 @@ describe("brief tools", () => {
       stationId: "S107",
       format: "json",
     });
-    const payload = parseBrief(jsonResult.content[0]?.text ?? "");
+    const payload = parseBrief(getText(jsonResult));
 
     expect((payload.records["status"] as Record<string, unknown>)["level"]).toBe("unknown");
     expect(payload.gaps).toHaveLength(3);

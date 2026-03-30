@@ -141,6 +141,7 @@ try {
 
   JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "package.json"), "utf8"));
   JSON.parse(readFileSync(join(tempDir, "node_modules", "@sg-apis", "shared", "package.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "sg-apis-mcp", "openapi.json"), "utf8"));
 
   const transport = new StdioClientTransport({
     command: join(tempDir, "node_modules", ".bin", "sg-apis-mcp"),
@@ -179,6 +180,8 @@ try {
 
     const toolsResult = await client.listTools();
     const resourcesResult = await client.listResources();
+    const promptsResult = await client.listPrompts();
+    const templatesResult = await client.listResourceTemplates();
 
     const toolNames = new Set((toolsResult.tools ?? []).map((tool) => tool.name));
     for (const toolName of EXPECTED_TOOL_NAMES) {
@@ -191,6 +194,18 @@ try {
     for (const uri of EXPECTED_RESOURCE_URIS) {
       if (!resourceUris.has(uri)) {
         throw new Error(`Packaged MCP server is missing resource: ${uri}${formatServerLogs()}`);
+      }
+    }
+
+    for (const promptName of ["recipe-postal_route", "playbook-relocation_neighbourhood_brief"]) {
+      if (!(promptsResult.prompts ?? []).some((prompt) => prompt.name === promptName)) {
+        throw new Error(`Packaged MCP server is missing prompt: ${promptName}${formatServerLogs()}`);
+      }
+    }
+
+    for (const uriTemplate of ["sg://apis/{name}", "sg://tools/{name}", "sg://workflows/{id}", "sg://recipes/{id}"]) {
+      if (!(templatesResult.resourceTemplates ?? []).some((template) => template.uriTemplate === uriTemplate)) {
+        throw new Error(`Packaged MCP server is missing resource template: ${uriTemplate}${formatServerLogs()}`);
       }
     }
 

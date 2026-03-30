@@ -19,6 +19,7 @@ const testEnv = {
 
 run("lint", ["run", "lint"]);
 run("build", ["run", "build"]);
+run("server metadata parity", ["exec", "--", "node", "./scripts/check-server-metadata.mjs"]);
 run("live surface check", ["exec", "--", "node", "./scripts/check-live-surface.mjs"]);
 run("openapi parity", ["exec", "--", "node", "./scripts/check-openapi.mjs"]);
 run("docs parity", ["exec", "--", "node", "./scripts/check-docs-parity.mjs"]);

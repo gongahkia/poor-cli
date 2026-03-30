@@ -31,9 +31,10 @@ import { stbToolDefinitions } from "./stb-tools.js";
 import { onemapToolDefinitions } from "./onemap-tools.js";
 import { queryToolDefinitions } from "./query-tool.js";
 import { singstatToolDefinitions } from "./singstat-tools.js";
+import { hydrateToolDefinition } from "./tool-metadata.js";
 import { uraToolDefinitions } from "./ura-tools.js";
 
-export const ALL_TOOL_DEFINITIONS = [
+const RAW_TOOL_DEFINITIONS = [
   ...singstatToolDefinitions,
   ...masToolDefinitions,
   ...onemapToolDefinitions,
@@ -68,3 +69,7 @@ export const ALL_TOOL_DEFINITIONS = [
   ...configToolDefinitions,
   ...queryToolDefinitions,
 ] as const satisfies readonly RegisteredToolDefinition[];
+
+export const ALL_TOOL_DEFINITIONS: readonly RegisteredToolDefinition[] = RAW_TOOL_DEFINITIONS.map((definition) =>
+  hydrateToolDefinition(definition),
+);

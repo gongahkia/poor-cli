@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -26,6 +27,13 @@ const output = execFileSync("node", ["./scripts/generate-openapi.mjs"], {
 
 const spec = JSON.parse(output);
 const toolDefinitions = await loadToolDefinitions();
+const publishedArtifact = JSON.parse(
+  readFileSync(resolve(root, "packages/mcp-server/openapi.json"), "utf8"),
+);
+
+if (JSON.stringify(spec) !== JSON.stringify(publishedArtifact)) {
+  throw new Error("Generated OpenAPI does not match packages/mcp-server/openapi.json.");
+}
 
 for (const definition of toolDefinitions) {
   const pathKey = `/api/v1/${definition.name}`;

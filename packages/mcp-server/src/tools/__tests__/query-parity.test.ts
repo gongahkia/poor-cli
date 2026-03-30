@@ -677,9 +677,12 @@ describe("sg_query parity", () => {
 
     const input = { area: "Tampines", format: "json" } as const;
 
-    await expect(executeQueryStep("sg_nea_forecast_2hr", input)).resolves.toEqual(
-      await handleNeaForecast2Hr(input),
-    );
+    const [queryResult, directResult] = await Promise.all([
+      executeQueryStep("sg_nea_forecast_2hr", input),
+      handleNeaForecast2Hr(input),
+    ]);
+
+    expect(normalizeBriefResult(queryResult)).toEqual(normalizeBriefResult(directResult));
   });
 
   it("matches the direct HDB resale handler", async () => {

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gongahkia/sg-apis-mcp",
+  "title": "Singapore Public Data",
+  "description": "Official Singapore public-data MCP server for bounded workflow planning and direct sg_* access across SingStat, MAS, OneMap, URA, LTA DataMall, NEA, HDB, CEA, BCA, BOA, ACRA, PA, SportSG, ECDA, MSF, GeBIZ, MOE, MOH, HSA, SFA, NParks, PUB, MOM, STB, HLB, and data.gov.sg.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/gongahkia/sg-skills",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "sg-apis-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/gongahkia/sg-apis-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
