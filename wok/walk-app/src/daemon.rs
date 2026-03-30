@@ -257,6 +257,64 @@ mod imp {
         let _: ServerMessage = read_frame(&mut stream)?;
         Ok(())
     }
+
+    /// Send raw input bytes to a session pane.
+    pub fn send_input(
+        name: &str,
+        pane_id: u64,
+        data: &[u8],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let socket = session_socket_path(name);
+        let mut stream = UnixStream::connect(&socket)?;
+        write_frame(
+            &mut stream,
+            &ClientMessage::Input {
+                pane_id,
+                data: data.to_vec(),
+            },
+        )?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// Resize a session pane.
+    pub fn resize_pane(
+        name: &str,
+        pane_id: u64,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let socket = session_socket_path(name);
+        let mut stream = UnixStream::connect(&socket)?;
+        write_frame(
+            &mut stream,
+            &ClientMessage::Resize {
+                pane_id,
+                cols,
+                rows,
+            },
+        )?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// Fetch a snapshot payload for one session.
+    pub fn snapshot_session(name: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let socket = session_socket_path(name);
+        let mut stream = UnixStream::connect(&socket)?;
+        write_frame(&mut stream, &ClientMessage::Snapshot)?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Snapshot { payload } => Ok(payload),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
 }
 
 #[cfg(not(unix))]
@@ -509,6 +567,73 @@ mod imp {
         let _: ServerMessage = read_frame(&mut stream)?;
         Ok(())
     }
+
+    /// Send raw input bytes to a session pane.
+    pub fn send_input(
+        name: &str,
+        pane_id: u64,
+        data: &[u8],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let metadata = session_socket_path(name);
+        let Some(port) = read_port(&metadata) else {
+            return Err("session not found".into());
+        };
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        write_frame(
+            &mut stream,
+            &ClientMessage::Input {
+                pane_id,
+                data: data.to_vec(),
+            },
+        )?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// Resize a session pane.
+    pub fn resize_pane(
+        name: &str,
+        pane_id: u64,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let metadata = session_socket_path(name);
+        let Some(port) = read_port(&metadata) else {
+            return Err("session not found".into());
+        };
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        write_frame(
+            &mut stream,
+            &ClientMessage::Resize {
+                pane_id,
+                cols,
+                rows,
+            },
+        )?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Ack => Ok(()),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
+
+    /// Fetch a snapshot payload for one session.
+    pub fn snapshot_session(name: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let metadata = session_socket_path(name);
+        let Some(port) = read_port(&metadata) else {
+            return Err("session not found".into());
+        };
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        write_frame(&mut stream, &ClientMessage::Snapshot)?;
+        match read_frame::<ServerMessage>(&mut stream)? {
+            ServerMessage::Snapshot { payload } => Ok(payload),
+            ServerMessage::Error { message } => Err(message.into()),
+            _ => Err("unexpected daemon response".into()),
+        }
+    }
 }
 
 /// Return the socket path for a named session.
@@ -544,4 +669,28 @@ pub fn attach_session(name: &str) -> Result<SessionSummary, Box<dyn std::error::
 /// Detach from a named session.
 pub fn detach_session(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     imp::detach_session(name)
+}
+
+/// Send input bytes to a daemon pane.
+pub fn send_input(
+    session: &str,
+    pane_id: u64,
+    data: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    imp::send_input(session, pane_id, data)
+}
+
+/// Resize a daemon pane.
+pub fn resize_pane(
+    session: &str,
+    pane_id: u64,
+    cols: u16,
+    rows: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    imp::resize_pane(session, pane_id, cols, rows)
+}
+
+/// Fetch one daemon snapshot payload.
+pub fn snapshot_session(session: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    imp::snapshot_session(session)
 }

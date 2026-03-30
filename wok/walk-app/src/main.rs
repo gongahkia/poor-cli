@@ -274,6 +274,7 @@ struct PaneRuntime {
     replay_store: ReplayStore,
     replay_mode: Option<ReplayModeState>,
     pending_replay_block_marker: bool,
+    daemon_last_synced_row: Option<usize>,
     inline_images: InlineImageStore,
     last_output_line_row: Option<usize>,
 }
@@ -314,6 +315,7 @@ struct WalkHandler {
     plugins: Option<PluginHost>,
     remote_control: Option<RemoteControlServer>,
     remote_socket_path: Option<PathBuf>,
+    attached_session: Option<String>,
     status_message: Option<String>,
     status_bar_state: StatusBarState,
     status_bar_refresh_interval: Duration,
@@ -385,6 +387,7 @@ impl WalkHandler {
             plugins,
             remote_control,
             remote_socket_path,
+            attached_session: None,
             status_message: None,
             status_bar_state: StatusBarState::default(),
             status_bar_refresh_interval: Duration::from_secs(5),
@@ -604,6 +607,7 @@ impl WalkHandler {
                     replay_store: ReplayStore::default(),
                     replay_mode: None,
                     pending_replay_block_marker: false,
+                    daemon_last_synced_row: None,
                     inline_images: InlineImageStore::new(),
                     last_output_line_row: None,
                 };
@@ -675,6 +679,12 @@ impl WalkHandler {
             if pane.cols != cols || pane.rows != rows {
                 if let Err(error) = pane.terminal.resize(cols, rows) {
                     warn!("failed to resize pane terminal: {error}");
+                }
+                if let Some(session) = self.attached_session.as_deref() {
+                    if let Err(error) = walk_app::daemon::resize_pane(session, pane_id, cols, rows)
+                    {
+                        warn!("failed to resize daemon pane for session '{session}': {error}");
+                    }
                 }
                 pane.cols = cols;
                 pane.rows = rows;
@@ -1967,6 +1977,15 @@ impl WalkHandler {
     }
 
     fn send_to_pty(&mut self, data: &[u8]) {
+        if let Some(session) = self.attached_session.as_deref() {
+            if let Some(pane_id) = self.active_pane_id() {
+                if let Err(error) = walk_app::daemon::send_input(session, pane_id, data) {
+                    warn!("failed to send daemon input for session '{session}': {error}");
+                }
+            }
+            return;
+        }
+
         if let Some(active_pane) = self.active_pane() {
             if let Err(error) = active_pane.terminal.send_input(data) {
                 warn!("failed to send to PTY: {error}");
@@ -1986,6 +2005,51 @@ impl WalkHandler {
                     warn!("failed to broadcast PTY input to pane {pane_id}: {error}");
                 }
             }
+        }
+    }
+
+    fn sync_attached_session_snapshot(&mut self) {
+        let Some(session) = self.attached_session.as_deref() else {
+            return;
+        };
+
+        let snapshot = match walk_app::daemon::snapshot_session(session) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                warn!("failed to fetch daemon snapshot for session '{session}': {error}");
+                return;
+            }
+        };
+
+        let Some(rows) = snapshot.get("rows").and_then(Value::as_array) else {
+            return;
+        };
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+
+        let mut latest_row = pane.daemon_last_synced_row;
+        let mut new_lines = Vec::new();
+        for row in rows {
+            let Some(absolute_row) = row.get("absolute_row").and_then(Value::as_u64) else {
+                continue;
+            };
+            let Some(text) = row.get("text").and_then(Value::as_str) else {
+                continue;
+            };
+            if latest_row.map_or(true, |latest| absolute_row as usize > latest) {
+                new_lines.push(text.to_string());
+                latest_row = Some(absolute_row as usize);
+            }
+        }
+
+        if !new_lines.is_empty() {
+            pane.terminal.restore_scrollback(&new_lines);
+            pane.daemon_last_synced_row = latest_row;
+            self.needs_redraw = true;
         }
     }
 
@@ -4546,6 +4610,7 @@ impl AppHandler for WalkHandler {
             plugins.pump_timers(64);
         }
         self.drain_plugin_side_effects();
+        self.sync_attached_session_snapshot();
         self.pump_remote_control();
 
         if self.last_status_bar_refresh.elapsed() >= self.status_bar_refresh_interval {
@@ -8085,6 +8150,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let mut handler = WalkHandler::new(config);
     if let Some(session) = attached_session {
+        handler.attached_session = Some(session.clone());
         handler.status_message = Some(format!("Attached session '{session}'"));
     }
 
