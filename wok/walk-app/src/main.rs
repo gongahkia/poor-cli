@@ -3885,6 +3885,118 @@ fn render_owned_input(
         );
     }
 
+    if let Some(popup) = input.completion_popup.as_ref() {
+        let max_visible = 10usize;
+        let mut start = popup.selected.saturating_sub(max_visible / 2);
+        if start + max_visible > popup.items.len() {
+            start = popup.items.len().saturating_sub(max_visible);
+        }
+        let end = (start + max_visible).min(popup.items.len());
+        let visible = popup.items[start..end].len();
+        let popup_height = (visible as f32 + 1.0) * (font.metrics.cell_height + 2.0) + 8.0;
+        let popup_width = (rect.w * 0.72).clamp(260.0, 680.0);
+        let anchor_x = base_x + popup.anchor_col as f32 * font.metrics.cell_width;
+        let popup_x = anchor_x.clamp(rect.x + 8.0, rect.x + rect.w - popup_width - 8.0);
+        let popup_y = if matches!(input.position, walk_input::editor::InputPosition::Bottom) {
+            (rect.y - popup_height - 6.0).max(0.0)
+        } else {
+            rect.y + rect.h + 6.0
+        };
+
+        render.batch.push_bg_quad(
+            popup_x,
+            popup_y,
+            popup_width,
+            popup_height,
+            with_opacity([theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.98], surface_opacity),
+        );
+        render.batch.push_bg_quad(
+            popup_x,
+            popup_y,
+            popup_width,
+            1.0,
+            with_opacity(
+                [
+                    theme.highlight_current_match.r,
+                    theme.highlight_current_match.g,
+                    theme.highlight_current_match.b,
+                    0.95,
+                ],
+                surface_opacity,
+            ),
+        );
+
+        let mut row_y = popup_y + 5.0;
+        push_text(
+            render,
+            font,
+            popup_x + 8.0,
+            row_y,
+            "Completions",
+            with_opacity(
+                [
+                    theme.status_bar_text.r,
+                    theme.status_bar_text.g,
+                    theme.status_bar_text.b,
+                    0.92,
+                ],
+                surface_opacity,
+            ),
+        );
+        row_y += font.metrics.cell_height + 2.0;
+
+        for (visible_offset, item) in popup.items[start..end].iter().enumerate() {
+            let absolute = start + visible_offset;
+            if absolute == popup.selected {
+                render.batch.push_bg_quad(
+                    popup_x + 4.0,
+                    row_y - 1.0,
+                    popup_width - 8.0,
+                    font.metrics.cell_height + 2.0,
+                    with_opacity([theme.selection.r, theme.selection.g, theme.selection.b, 0.24], surface_opacity),
+                );
+            }
+            let label = format!(
+                "{} {}",
+                completion_kind_token(&item.kind),
+                item.text
+            );
+            push_text(
+                render,
+                font,
+                popup_x + 8.0,
+                row_y,
+                &label,
+                with_opacity(
+                    [
+                        theme.foreground.r,
+                        theme.foreground.g,
+                        theme.foreground.b,
+                        theme.foreground.a,
+                    ],
+                    surface_opacity,
+                ),
+            );
+            push_text(
+                render,
+                font,
+                popup_x + popup_width * 0.45,
+                row_y,
+                &item.description,
+                with_opacity(
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        0.9,
+                    ],
+                    surface_opacity,
+                ),
+            );
+            row_y += font.metrics.cell_height + 2.0;
+        }
+    }
+
     if cursor_visible {
         if let Some((cursor_row, cursor_col)) = input.cursors.first().copied() {
             render.batch.push_cursor(
@@ -3899,6 +4011,15 @@ fn render_owned_input(
                 ),
             );
         }
+    }
+}
+
+fn completion_kind_token(kind: &walk_input::completion::CompletionKind) -> &'static str {
+    match kind {
+        walk_input::completion::CompletionKind::Command => "[cmd]",
+        walk_input::completion::CompletionKind::FilePath => "[path]",
+        walk_input::completion::CompletionKind::EnvVar => "[env]",
+        walk_input::completion::CompletionKind::Argument => "[arg]",
     }
 }
 

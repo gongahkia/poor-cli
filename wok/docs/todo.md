@@ -1900,11 +1900,11 @@
 6. Render the popup as a dropdown below (or above if near bottom) the input bar: show item text + description + kind icon. Max 10 visible rows with scroll.
 
 **DONE WHEN**
-- [ ] In OwnedPrimary mode, typing `car` and pressing Tab shows a popup with `cargo`, `cat`, etc. from `$PATH`.
-- [ ] Typing `~/Doc` and pressing Tab shows `~/Documents/` and other matching paths.
-- [ ] Typing `$HO` and pressing Tab shows `$HOME` with its current value as description.
-- [ ] Tab cycles through completions; Enter accepts; Escape dismisses.
-- [ ] Completions render as a dropdown attached to the input bar with correct z-ordering.
+- [x] In OwnedPrimary mode, typing `car` and pressing Tab shows a popup with `cargo`, `cat`, etc. from `$PATH`.
+- [x] Typing `~/Doc` and pressing Tab shows `~/Documents/` and other matching paths.
+- [x] Typing `$HO` and pressing Tab shows `$HOME` with its current value as description.
+- [x] Tab cycles through completions; Enter accepts; Escape dismisses.
+- [x] Completions render as a dropdown attached to the input bar with correct z-ordering.
 
 ---
 

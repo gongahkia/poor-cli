@@ -24,6 +24,7 @@
 
 pub mod brackets;
 pub mod buffer;
+pub mod completion;
 pub mod cursor_ops;
 pub mod editor;
 pub mod highlighter;
