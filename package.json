@@ -13,6 +13,7 @@
     "test": "vitest run",
     "lint": "eslint packages/*/src/**/*.ts",
     "verify": "node ./scripts/verify.mjs",
+    "diagnostics": "node ./scripts/dev-diagnostics.mjs",
     "dev": "tsc --build --watch",
     "mock-server": "tsx packages/mcp-server/src/__tests__/mock-server/index.ts",
     "test:smoke:packaging": "node ./scripts/smoke-packages.mjs",
