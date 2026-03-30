@@ -499,7 +499,7 @@ impl WalkApp {
 mod tests {
     use super::*;
     use crate::config::{CommandEntryMode, WalkConfig};
-    use crate::input::KeyAction;
+    use crate::input::{InputEventType, KeyAction};
 
     #[test]
     fn test_resolve_action_uses_active_context() {
@@ -514,6 +514,7 @@ mod tests {
                 ..crate::input::Modifiers::default()
             },
             is_repeat: false,
+            event_type: InputEventType::Press,
         });
 
         assert_eq!(action, Some(Action::SearchGlobal));
@@ -553,8 +554,10 @@ mod tests {
 
     #[test]
     fn test_owned_primary_mode_starts_in_owned_input() {
-        let mut config = WalkConfig::default();
-        config.command_entry_mode = CommandEntryMode::OwnedPrimary;
+        let config = WalkConfig {
+            command_entry_mode: CommandEntryMode::OwnedPrimary,
+            ..WalkConfig::default()
+        };
 
         let app = WalkApp::new(config);
 
@@ -575,8 +578,10 @@ mod tests {
 
     #[test]
     fn test_command_search_action_emits_overlay_effect() {
-        let mut config = WalkConfig::default();
-        config.command_entry_mode = CommandEntryMode::OwnedPrimary;
+        let config = WalkConfig {
+            command_entry_mode: CommandEntryMode::OwnedPrimary,
+            ..WalkConfig::default()
+        };
         let mut app = WalkApp::new(config);
         let effects = app.handle_action(&Action::CommandSearch);
 

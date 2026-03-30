@@ -22,10 +22,12 @@ use walk_app::command_search::{CommandSearchScope, CommandSearchState};
 use walk_app::config::{TriggerScopeConfig, WalkConfig};
 use walk_app::event_loop::run_event_loop;
 use walk_app::handler::AppHandler;
-use walk_app::input::{InputEvent, KeyAction};
+use walk_app::input::{InputEvent, InputEventType, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
-use walk_app::remote_control::{error_response, result_response, RemoteControlServer, RemoteRequest};
+use walk_app::remote_control::{
+    error_response, result_response, RemoteControlServer, RemoteRequest,
+};
 use walk_app::scripting::{
     QuickSelectPatternRequest, StatusBarRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
 };
@@ -51,8 +53,8 @@ use walk_renderer::inline_images::{ImagePlacement, InlineImageStore};
 use walk_renderer::pipeline::CursorShape;
 use walk_renderer::pipeline::QuadBatch;
 use walk_renderer::render_pipeline::TerminalRenderPipeline;
-use walk_terminal::shell::ShellType;
 use walk_terminal::replay::{ReplaySnapshot, ReplayStore};
+use walk_terminal::shell::ShellType;
 use walk_terminal::state::{CellColor, CellRenderData};
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
@@ -107,6 +109,11 @@ struct Cli {
 enum CliCommand {
     /// Attach to a running named session.
     Attach {
+        /// Session name.
+        name: String,
+    },
+    /// Detach from a running named session.
+    Detach {
         /// Session name.
         name: String,
     },
@@ -551,10 +558,7 @@ impl WalkHandler {
             .grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
         let mut env = HashMap::new();
         if let Some(socket_path) = self.remote_socket_path.as_ref() {
-            env.insert(
-                "WALK_SOCKET".to_string(),
-                socket_path.display().to_string(),
-            );
+            env.insert("WALK_SOCKET".to_string(), socket_path.display().to_string());
         }
         let initial_cwd = restore.as_ref().and_then(|pane_state| {
             (!pane_state.cwd.as_os_str().is_empty()).then_some(pane_state.cwd.as_path())
@@ -4032,10 +4036,8 @@ impl WalkHandler {
             .map(|pane| {
                 prefix_matches(&pane.pane_history, &base_query)
                     .into_iter()
-                    .filter_map(|entry| {
-                        seen.insert(entry.command.clone())
-                            .then(|| entry.command.clone())
-                    })
+                    .filter(|entry| seen.insert(entry.command.clone()))
+                    .map(|entry| entry.command.clone())
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -4043,10 +4045,8 @@ impl WalkHandler {
         candidates.extend(
             prefix_matches(self.global_history.entries(), &base_query)
                 .into_iter()
-                .filter_map(|entry| {
-                    seen.insert(entry.command.clone())
-                        .then(|| entry.command.clone())
-                }),
+                .filter(|entry| seen.insert(entry.command.clone()))
+                .map(|entry| entry.command.clone()),
         );
 
         if let Some(pane) = self.panes.get_mut(&pane_id) {
@@ -4216,10 +4216,10 @@ impl WalkHandler {
             .iter()
             .rev()
             .chain(self.global_history.entries().iter().rev())
-            .filter_map(|entry| {
-                (!entry.command.trim().is_empty() && seen_recent.insert(entry.command.clone()))
-                    .then(|| entry.command.clone())
+            .filter(|entry| {
+                !entry.command.trim().is_empty() && seen_recent.insert(entry.command.clone())
             })
+            .map(|entry| entry.command.clone())
             .take(50)
         {
             entries.push(PaletteEntry {
@@ -4746,45 +4746,50 @@ impl AppHandler for WalkHandler {
             return;
         }
 
-        if self.handle_vi_mode_input(&event) {
-            return;
-        }
-
-        if let Some(action) = self
-            .active_pane()
-            .and_then(|pane| pane.app.resolve_action(&event))
-        {
-            self.handle_action(action);
-            return;
-        }
-
-        if self.handle_search_input(&event) {
-            return;
-        }
-
-        if self.handle_block_query_input(&event) {
-            return;
-        }
-
-        if self.handle_quick_select_input(&event) {
-            return;
-        }
-
-        if self.handle_command_search_input(&event) {
-            return;
-        }
-
-        if self.handle_owned_input(&event) {
-            return;
-        }
-
-        if self.handle_editor_input(&event) {
-            return;
-        }
-
         let kitty_flags = self
             .active_pane()
             .map_or(0, |pane| pane.terminal.state.kitty_keyboard_flags());
+        if event.event_type == InputEventType::Release && kitty_flags == 0 {
+            return;
+        }
+
+        if event.event_type != InputEventType::Release {
+            if self.handle_vi_mode_input(&event) {
+                return;
+            }
+
+            if let Some(action) = self
+                .active_pane()
+                .and_then(|pane| pane.app.resolve_action(&event))
+            {
+                self.handle_action(action);
+                return;
+            }
+
+            if self.handle_search_input(&event) {
+                return;
+            }
+
+            if self.handle_block_query_input(&event) {
+                return;
+            }
+
+            if self.handle_quick_select_input(&event) {
+                return;
+            }
+
+            if self.handle_command_search_input(&event) {
+                return;
+            }
+
+            if self.handle_owned_input(&event) {
+                return;
+            }
+
+            if self.handle_editor_input(&event) {
+                return;
+            }
+        }
         if let Some(data) = input_event_to_pty_bytes(&event, kitty_flags) {
             self.send_raw_input_to_pty(&data);
             self.needs_redraw = true;
@@ -5285,6 +5290,7 @@ fn render_debug_overlay(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_owned_input(
     render: &mut RenderState,
     font: &mut FontSystem,
@@ -6224,7 +6230,9 @@ fn render_replay_snapshot(
                 bg[3] *= terminal_surface_alpha;
             }
 
-            render.batch.push_bg_quad(x, row_y, cell_width, cell_height, bg);
+            render
+                .batch
+                .push_bg_quad(x, row_y, cell_width, cell_height, bg);
             if cell.character != ' ' && cell.character != '\0' {
                 push_glyph(render, font, x, row_y, cell.character, fg);
             }
@@ -6301,7 +6309,12 @@ fn render_replay_snapshot(
         bar_y,
         bar_w,
         2.0,
-        [theme.status_bar_text.r, theme.status_bar_text.g, theme.status_bar_text.b, 0.35],
+        [
+            theme.status_bar_text.r,
+            theme.status_bar_text.g,
+            theme.status_bar_text.b,
+            0.35,
+        ],
     );
     for marker in timeline.marker_positions() {
         render.batch.push_bg_quad(
@@ -6768,6 +6781,10 @@ fn input_event_to_pty_bytes(event: &InputEvent, kitty_keyboard_flags: u32) -> Op
 }
 
 fn input_event_to_legacy_pty_bytes(event: &InputEvent) -> Option<Vec<u8>> {
+    if event.event_type == InputEventType::Release {
+        return None;
+    }
+
     match &event.action {
         KeyAction::Char(c) => {
             if event.modifiers.ctrl && !event.modifiers.alt {
@@ -6821,6 +6838,10 @@ fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option
         KeyAction::PageUp => 57354,
         KeyAction::PageDown => 57355,
         KeyAction::FunctionKey(index) => 57375 + u32::from(*index),
+        KeyAction::ModifierShift => 57441,
+        KeyAction::ModifierControl => 57442,
+        KeyAction::ModifierAlt => 57443,
+        KeyAction::ModifierMeta => 57444,
         _ => return None,
     };
 
@@ -6838,7 +6859,11 @@ fn input_event_to_kitty_keyboard_bytes(event: &InputEvent, flags: u32) -> Option
         modifier_bits |= 8;
     }
     let modifier_bits = modifier_bits + 1;
-    let event_type = if event.is_repeat { 2 } else { 1 };
+    let event_type = match event.event_type {
+        InputEventType::Press => 1,
+        InputEventType::Repeat => 2,
+        InputEventType::Release => 3,
+    };
     let key_code_repr = if flags & 0x4 != 0 {
         if let KeyAction::Char(c) = &event.action {
             let alt = c.to_lowercase().next().unwrap_or(*c) as u32;
@@ -7699,11 +7724,7 @@ fn jsonrpc_string_param(params: &Value, index: usize, key: &str) -> Result<Strin
     Err(format!("missing or invalid '{key}' parameter"))
 }
 
-fn jsonrpc_optional_string_param(
-    params: &Value,
-    index: usize,
-    key: &str,
-) -> Option<String> {
+fn jsonrpc_optional_string_param(params: &Value, index: usize, key: &str) -> Option<String> {
     params
         .as_array()
         .and_then(|items| items.get(index))
@@ -7719,7 +7740,7 @@ fn jsonrpc_optional_string_param(
 }
 
 fn normalize_remote_action_name(action_name: &str) -> String {
-    let normalized = action_name.trim().replace('-', "_").replace(' ', "_");
+    let normalized = action_name.trim().replace(['-', ' '], "_");
     if normalized.contains('_') {
         return normalized.to_ascii_lowercase();
     }
@@ -7958,6 +7979,10 @@ fn key_action_label(action: &KeyAction) -> String {
         KeyAction::PageUp => "PageUp".to_string(),
         KeyAction::PageDown => "PageDown".to_string(),
         KeyAction::FunctionKey(index) => format!("F{index}"),
+        KeyAction::ModifierShift => "Shift".to_string(),
+        KeyAction::ModifierControl => "Control".to_string(),
+        KeyAction::ModifierAlt => "Alt".to_string(),
+        KeyAction::ModifierMeta => "Meta".to_string(),
         KeyAction::Copy => "Copy".to_string(),
         KeyAction::Paste => "Paste".to_string(),
         KeyAction::Cut => "Cut".to_string(),
@@ -8020,6 +8045,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(CliCommand::Kill { name }) => {
             walk_app::daemon::kill_session(&name)?;
             println!("terminated session '{name}'");
+            return Ok(());
+        }
+        Some(CliCommand::Detach { name }) => {
+            walk_app::daemon::detach_session(&name)?;
+            println!("detached session '{name}'");
             return Ok(());
         }
         Some(CliCommand::Attach { name }) => {
@@ -8108,6 +8138,7 @@ mod tests {
                 ..Default::default()
             },
             is_repeat: true,
+            event_type: InputEventType::Repeat,
         };
         let encoded =
             input_event_to_pty_bytes(&event, 0x2 | 0x4).expect("kitty-encoded bytes should exist");
@@ -8123,6 +8154,7 @@ mod tests {
             action: KeyAction::Tab,
             modifiers: Default::default(),
             is_repeat: false,
+            event_type: InputEventType::Press,
         };
         let encoded = input_event_to_pty_bytes(&event, 0x1).expect("kitty-encoded bytes");
         assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[9;1u");
@@ -8134,8 +8166,41 @@ mod tests {
             action: KeyAction::Enter,
             modifiers: Default::default(),
             is_repeat: false,
+            event_type: InputEventType::Press,
         };
         let encoded = input_event_to_pty_bytes(&event, 0).expect("legacy bytes should exist");
         assert_eq!(encoded, b"\r".to_vec());
+    }
+
+    #[test]
+    fn test_kitty_keyboard_release_event_encodes_type_three() {
+        let event = InputEvent {
+            action: KeyAction::Char('a'),
+            modifiers: Default::default(),
+            is_repeat: false,
+            event_type: InputEventType::Release,
+        };
+        let encoded =
+            input_event_to_pty_bytes(&event, 0x2).expect("kitty-encoded release should exist");
+        assert_eq!(String::from_utf8(encoded).expect("utf8"), "\u{1b}[97;1;3u");
+    }
+
+    #[test]
+    fn test_kitty_keyboard_modifier_only_events_are_encoded() {
+        let event = InputEvent {
+            action: KeyAction::ModifierControl,
+            modifiers: walk_app::input::Modifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+            is_repeat: false,
+            event_type: InputEventType::Press,
+        };
+        let encoded =
+            input_event_to_pty_bytes(&event, 0x2).expect("kitty modifier event should encode");
+        assert_eq!(
+            String::from_utf8(encoded).expect("utf8"),
+            "\u{1b}[57442;5;1u"
+        );
     }
 }

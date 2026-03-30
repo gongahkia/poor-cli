@@ -15,6 +15,10 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::struct_excessive_bools)]
 #![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::or_fun_call)]
+#![allow(clippy::option_if_let_else)]
+#![allow(clippy::trivial_regex)]
 
 pub mod block;
 pub mod block_nav;

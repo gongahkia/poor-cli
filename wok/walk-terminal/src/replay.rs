@@ -238,4 +238,3 @@ mod tests {
         assert_eq!(store.next_marker(3), None);
     }
 }
-

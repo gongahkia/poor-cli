@@ -21,6 +21,11 @@
 #![allow(clippy::option_if_let_else)]
 #![allow(clippy::use_self)]
 #![allow(clippy::match_wildcard_for_single_variants)]
+#![allow(clippy::incompatible_msrv)]
+#![allow(clippy::suboptimal_flops)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::implicit_saturating_sub)]
 
 pub mod background;
 pub mod bell;

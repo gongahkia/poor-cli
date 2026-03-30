@@ -12,7 +12,7 @@ use crate::input::{InputEvent, MouseEvent};
 /// All methods have default no-op implementations so handlers can
 /// selectively override only the events they care about.
 pub trait AppHandler {
-    /// Called when the window is first created (provides Arc<Window> for GPU surface).
+    /// Called when the window is first created (provides `Arc<Window>` for GPU surface).
     fn on_init(&mut self, _window: Arc<Window>) {}
 
     /// Called on the frame clock cadence before any redraw is requested.

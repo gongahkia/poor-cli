@@ -21,6 +21,9 @@
 #![allow(clippy::option_if_let_else)]
 #![allow(clippy::map_unwrap_or)]
 #![allow(clippy::assign_op_pattern)]
+#![allow(clippy::branches_sharing_code)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::incompatible_msrv)]
 
 pub mod brackets;
 pub mod buffer;

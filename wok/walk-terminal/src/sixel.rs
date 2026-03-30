@@ -264,30 +264,30 @@ fn is_sixel_char(byte: u8) -> bool {
 }
 
 fn percent_to_byte(value: u16) -> u8 {
-    ((value.min(100) as f32 / 100.0) * 255.0).round() as u8
+    ((f32::from(value.min(100)) / 100.0) * 255.0).round() as u8
 }
 
 fn hls_to_rgb(hue: u16, lightness: u16, saturation: u16) -> [u8; 3] {
-    let h = (hue as f32 % 360.0) / 360.0;
-    let l = (lightness.min(100) as f32) / 100.0;
-    let s = (saturation.min(100) as f32) / 100.0;
+    let hue_ratio = (f32::from(hue) % 360.0) / 360.0;
+    let lightness_ratio = f32::from(lightness.min(100)) / 100.0;
+    let saturation_ratio = f32::from(saturation.min(100)) / 100.0;
 
-    if s == 0.0 {
-        let gray = (l * 255.0).round() as u8;
+    if saturation_ratio == 0.0 {
+        let gray = (lightness_ratio * 255.0).round() as u8;
         return [gray, gray, gray];
     }
 
-    let q = if l < 0.5 {
-        l * (1.0 + s)
+    let q_component = if lightness_ratio < 0.5 {
+        lightness_ratio * (1.0 + saturation_ratio)
     } else {
-        l + s - l * s
+        lightness_ratio + saturation_ratio - lightness_ratio * saturation_ratio
     };
-    let p = 2.0 * l - q;
+    let p_component = 2.0f32.mul_add(lightness_ratio, -q_component);
 
     [
-        (hue_to_rgb(p, q, h + 1.0 / 3.0) * 255.0).round() as u8,
-        (hue_to_rgb(p, q, h) * 255.0).round() as u8,
-        (hue_to_rgb(p, q, h - 1.0 / 3.0) * 255.0).round() as u8,
+        (hue_to_rgb(p_component, q_component, hue_ratio + 1.0 / 3.0) * 255.0).round() as u8,
+        (hue_to_rgb(p_component, q_component, hue_ratio) * 255.0).round() as u8,
+        (hue_to_rgb(p_component, q_component, hue_ratio - 1.0 / 3.0) * 255.0).round() as u8,
     ]
 }
 
@@ -299,13 +299,13 @@ fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
         t -= 1.0;
     }
     if t < 1.0 / 6.0 {
-        return p + (q - p) * 6.0 * t;
+        return ((q - p) * 6.0).mul_add(t, p);
     }
     if t < 1.0 / 2.0 {
         return q;
     }
     if t < 2.0 / 3.0 {
-        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+        return ((q - p) * (2.0 / 3.0 - t)).mul_add(6.0, p);
     }
     p
 }

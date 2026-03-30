@@ -430,7 +430,7 @@ impl LuaRuntime {
 
         let status_bar_state = self.state.status_bar_requests.clone();
         let set_left_fn = self.lua.create_function(move |_, segments: Table| {
-            let segments = parse_status_segments(segments)?;
+            let segments = parse_status_segments(&segments)?;
             status_bar_state
                 .lock()
                 .unwrap()
@@ -441,7 +441,7 @@ impl LuaRuntime {
 
         let status_bar_state = self.state.status_bar_requests.clone();
         let set_center_fn = self.lua.create_function(move |_, segments: Table| {
-            let segments = parse_status_segments(segments)?;
+            let segments = parse_status_segments(&segments)?;
             status_bar_state
                 .lock()
                 .unwrap()
@@ -452,7 +452,7 @@ impl LuaRuntime {
 
         let status_bar_state = self.state.status_bar_requests.clone();
         let set_right_fn = self.lua.create_function(move |_, segments: Table| {
-            let segments = parse_status_segments(segments)?;
+            let segments = parse_status_segments(&segments)?;
             status_bar_state
                 .lock()
                 .unwrap()
@@ -797,7 +797,7 @@ impl LuaRuntime {
     }
 }
 
-fn parse_status_segments(table: Table) -> LuaResult<Vec<StatusSegment>> {
+fn parse_status_segments(table: &Table) -> LuaResult<Vec<StatusSegment>> {
     table
         .sequence_values::<Table>()
         .map(|item| {

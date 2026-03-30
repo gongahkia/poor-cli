@@ -125,10 +125,10 @@ impl InlineImageStore {
 
                 let relative_row = absolute_row.saturating_sub(row_start);
                 let relative_col = col.saturating_sub(col_start);
-                let px = ((relative_col as f32 / placement.display_cols.max(1) as f32)
+                let px = ((relative_col as f32 / f32::from(placement.display_cols.max(1)))
                     * image.width as f32)
                     .floor() as u32;
-                let py = ((relative_row as f32 / placement.display_rows.max(1) as f32)
+                let py = ((relative_row as f32 / f32::from(placement.display_rows.max(1)))
                     * image.height as f32)
                     .floor() as u32;
                 let px = px.min(image.width.saturating_sub(1));

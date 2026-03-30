@@ -36,6 +36,14 @@ pub enum KeyAction {
     PageDown,
     /// Function key F1-F12.
     FunctionKey(u8),
+    /// Shift modifier key.
+    ModifierShift,
+    /// Control modifier key.
+    ModifierControl,
+    /// Alt modifier key.
+    ModifierAlt,
+    /// Meta/Super modifier key.
+    ModifierMeta,
     /// Copy action (Cmd+C / Ctrl+C).
     Copy,
     /// Paste action (Cmd+V / Ctrl+V).
@@ -72,6 +80,19 @@ pub struct InputEvent {
     pub modifiers: Modifiers,
     /// Whether this is a key repeat event.
     pub is_repeat: bool,
+    /// Key event transition type.
+    pub event_type: InputEventType,
+}
+
+/// Key event transition type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputEventType {
+    /// Key press transition.
+    Press,
+    /// Repeated key press while held.
+    Repeat,
+    /// Key release transition.
+    Release,
 }
 
 /// Mouse event types for the application.
@@ -136,21 +157,20 @@ fn has_platform_modifier(mods: &Modifiers) -> bool {
 }
 
 /// Translate a raw winit key event into a Walk `InputEvent`.
-///
-/// Returns `None` for modifier-only presses and unrecognized keys.
 pub fn translate_key_event(
     event: &winit::event::KeyEvent,
     modifiers: &ModifiersState,
 ) -> Option<InputEvent> {
-    if event.state != ElementState::Pressed {
-        return None;
-    }
-
     let mods = convert_modifiers(modifiers);
     let is_repeat = event.repeat;
+    let event_type = match (event.state, event.repeat) {
+        (ElementState::Released, _) => InputEventType::Release,
+        (ElementState::Pressed, true) => InputEventType::Repeat,
+        (ElementState::Pressed, false) => InputEventType::Press,
+    };
 
     // Check for platform modifier combos first
-    if has_platform_modifier(&mods) {
+    if has_platform_modifier(&mods) && event_type != InputEventType::Release {
         let action = match &event.logical_key {
             Key::Character(c) => match c.as_str() {
                 "c" => Some(KeyAction::Copy),
@@ -168,6 +188,7 @@ pub fn translate_key_event(
                 action,
                 modifiers: mods,
                 is_repeat,
+                event_type,
             });
         }
     }
@@ -199,6 +220,10 @@ pub fn translate_key_event(
             NamedKey::F10 => Some(KeyAction::FunctionKey(10)),
             NamedKey::F11 => Some(KeyAction::FunctionKey(11)),
             NamedKey::F12 => Some(KeyAction::FunctionKey(12)),
+            NamedKey::Shift => Some(KeyAction::ModifierShift),
+            NamedKey::Control => Some(KeyAction::ModifierControl),
+            NamedKey::Alt => Some(KeyAction::ModifierAlt),
+            NamedKey::Meta | NamedKey::Super => Some(KeyAction::ModifierMeta),
             _ => None,
         },
         Key::Character(c) => {
@@ -212,5 +237,6 @@ pub fn translate_key_event(
         action,
         modifiers: mods,
         is_repeat,
+        event_type,
     })
 }

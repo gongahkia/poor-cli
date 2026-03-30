@@ -226,6 +226,7 @@ impl Terminal {
     /// Scan raw bytes for OSC 133 semantic markers.
     ///
     /// Looks for `\x1b]133;X\x07` patterns where X is A, B, C, or D.
+    #[allow(clippy::too_many_lines)]
     fn scan_osc_markers(&mut self, bytes: &[u8]) {
         let mut i = 0;
         let mut absolute_row = self.state.absolute_cursor_row();
@@ -407,6 +408,7 @@ impl Terminal {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_kitty_apc(
         &mut self,
         payload: &str,
@@ -428,15 +430,13 @@ impl Terminal {
 
         let action = params
             .get("a")
-            .map(String::as_str)
-            .unwrap_or("t")
+            .map_or("t", String::as_str)
             .chars()
             .next()
             .unwrap_or('t');
         let transmission = params
             .get("t")
-            .map(String::as_str)
-            .unwrap_or("d")
+            .map_or("d", String::as_str)
             .chars()
             .next()
             .unwrap_or('d');
@@ -703,8 +703,12 @@ fn decode_kitty_image_data(
             .map_err(|error| format!("invalid kitty base64 payload: {error}"))?,
         'f' | 't' => {
             let path = parse_kitty_file_path(encoded)?;
-            let bytes = fs::read(&path)
-                .map_err(|error| format!("failed to read kitty image file {path:?}: {error}"))?;
+            let bytes = fs::read(&path).map_err(|error| {
+                format!(
+                    "failed to read kitty image file {}: {error}",
+                    path.display()
+                )
+            })?;
             if transmission == 't' {
                 if let Err(error) = fs::remove_file(&path) {
                     warn!("failed to remove kitty temp image {path:?}: {error}");
@@ -795,8 +799,8 @@ fn sixel_display_size(width: u32, height: u32) -> (u16, u16) {
     let cols = width.div_ceil(CELL_PIXEL_WIDTH).max(1);
     let rows = height.div_ceil(CELL_PIXEL_HEIGHT).max(1);
     (
-        cols.min(u16::MAX as u32) as u16,
-        rows.min(u16::MAX as u32) as u16,
+        cols.min(u32::from(u16::MAX)) as u16,
+        rows.min(u32::from(u16::MAX)) as u16,
     )
 }
 

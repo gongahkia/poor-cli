@@ -1,6 +1,5 @@
 //! JSON-RPC remote control server for external automation.
 
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -34,8 +33,9 @@ struct RawRequest {
 
 #[cfg(unix)]
 mod imp {
-    use super::*;
+    use super::{warn, Path, PathBuf, RawRequest, RemoteRequest, Value, MAX_CLIENTS};
     use std::fs;
+    use std::io::{Read, Write};
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
 
@@ -94,7 +94,10 @@ mod imp {
                 match Self::read_client(client, &mut requests) {
                     Ok(()) => {}
                     Err(error) => {
-                        warn!("remote control read error for client {}: {error}", client.id);
+                        warn!(
+                            "remote control read error for client {}: {error}",
+                            client.id
+                        );
                         remove_ids.push(client.id);
                     }
                 }
@@ -105,7 +108,8 @@ mod imp {
             }
 
             if !remove_ids.is_empty() {
-                self.clients.retain(|client| !remove_ids.contains(&client.id));
+                self.clients
+                    .retain(|client| !remove_ids.contains(&client.id));
             }
 
             requests
@@ -115,7 +119,11 @@ mod imp {
         pub fn send_response(&mut self, client_id: u64, payload: &Value) {
             let mut remove = false;
 
-            if let Some(client) = self.clients.iter_mut().find(|client| client.id == client_id) {
+            if let Some(client) = self
+                .clients
+                .iter_mut()
+                .find(|client| client.id == client_id)
+            {
                 match serde_json::to_vec(payload) {
                     Ok(mut bytes) => {
                         bytes.push(b'\n');
@@ -204,9 +212,9 @@ mod imp {
             }
 
             while let Some(newline_idx) = client.buffer.iter().position(|byte| *byte == b'\n') {
-                let raw = client.buffer.drain(..=newline_idx).collect::<Vec<_>>();
-                let line = raw
-                    .into_iter()
+                let line = client
+                    .buffer
+                    .drain(..=newline_idx)
                     .filter(|byte| *byte != b'\n' && *byte != b'\r')
                     .collect::<Vec<_>>();
                 if line.is_empty() {
@@ -241,7 +249,11 @@ mod imp {
         fn decode_request(client_id: u64, line: &[u8], requests: &mut Vec<RemoteRequest>) {
             match serde_json::from_slice::<RawRequest>(line) {
                 Ok(request) => {
-                    if request.jsonrpc.as_deref().is_some_and(|version| version != "2.0") {
+                    if request
+                        .jsonrpc
+                        .as_deref()
+                        .is_some_and(|version| version != "2.0")
+                    {
                         return;
                     }
                     requests.push(RemoteRequest {
@@ -313,10 +325,10 @@ mod imp {
 pub use imp::PlatformServer as RemoteControlServer;
 
 /// Build a successful JSON-RPC response.
-pub fn result_response(id: Option<Value>, result: Value) -> Value {
+pub fn result_response(id: Option<Value>, result: impl Into<Value>) -> Value {
     json!({
         "jsonrpc": "2.0",
-        "result": result,
+        "result": result.into(),
         "id": id.unwrap_or(Value::Null)
     })
 }

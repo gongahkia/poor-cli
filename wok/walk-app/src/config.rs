@@ -30,20 +30,15 @@ pub enum CommandEntryMode {
 }
 
 /// Trigger scope loaded from config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TriggerScopeConfig {
     /// Evaluate trigger against command output.
+    #[default]
     Output,
     /// Evaluate trigger against command text.
     Command,
     /// Evaluate trigger against both command and output.
     Both,
-}
-
-impl Default for TriggerScopeConfig {
-    fn default() -> Self {
-        Self::Output
-    }
 }
 
 /// A regex trigger loaded from configuration.

@@ -50,4 +50,3 @@ mod tests {
         assert_eq!(timeline.cursor_position(), 0.5);
     }
 }
-
