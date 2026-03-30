@@ -30,6 +30,7 @@ pub mod layout;
 pub mod layout_presets;
 pub mod links;
 pub mod quick_select;
+pub mod replay_overlay;
 pub mod search;
 pub mod selection;
 pub mod splits;

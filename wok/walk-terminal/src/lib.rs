@@ -22,6 +22,7 @@ pub mod async_io;
 pub mod config;
 pub mod prompt;
 pub mod pty;
+pub mod replay;
 pub mod shell;
 pub mod shell_integration;
 pub mod sixel;

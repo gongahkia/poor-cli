@@ -52,6 +52,7 @@ use walk_renderer::pipeline::CursorShape;
 use walk_renderer::pipeline::QuadBatch;
 use walk_renderer::render_pipeline::TerminalRenderPipeline;
 use walk_terminal::shell::ShellType;
+use walk_terminal::replay::{ReplaySnapshot, ReplayStore};
 use walk_terminal::state::{CellColor, CellRenderData};
 use walk_terminal::terminal::SemanticEvent;
 use walk_terminal::terminal::Terminal;
@@ -64,6 +65,7 @@ use walk_ui::layout_presets::{
 };
 use walk_ui::links::detect_links;
 use walk_ui::quick_select::{PatternRegistry, QuickSelectScope};
+use walk_ui::replay_overlay::ReplayTimeline;
 use walk_ui::search::SearchLine;
 use walk_ui::selection::{CellPos, SelectionState};
 use walk_ui::splits::SplitManager;
@@ -244,6 +246,11 @@ struct HistoryNavigationState {
     current: Option<usize>,
 }
 
+#[derive(Debug, Clone)]
+struct ReplayModeState {
+    snapshot_index: usize,
+}
+
 struct PaneRuntime {
     app: WalkApp,
     terminal: Terminal,
@@ -257,6 +264,9 @@ struct PaneRuntime {
     pane_history: Vec<HistoryEntry>,
     pending_history: Option<HistoryEntry>,
     history_nav: HistoryNavigationState,
+    replay_store: ReplayStore,
+    replay_mode: Option<ReplayModeState>,
+    pending_replay_block_marker: bool,
     inline_images: InlineImageStore,
     last_output_line_row: Option<usize>,
 }
@@ -442,6 +452,18 @@ impl WalkHandler {
                 bold: true,
             });
         }
+        if let Some(replay) = pane.replay_mode.as_ref().and_then(|replay| {
+            pane.replay_store
+                .snapshot(replay.snapshot_index)
+                .map(|snapshot| format_replay_age(snapshot.timestamp.elapsed()))
+        }) {
+            center.push(StatusSegment {
+                text: format!("REPLAY {replay}"),
+                fg: Some("#f3c969".to_string()),
+                bg: None,
+                bold: true,
+            });
+        }
         if let Some(mode) = pane.app.vi_mode.as_ref().map(ViModeState::mode_label) {
             center.push(StatusSegment::plain(mode));
         }
@@ -575,6 +597,9 @@ impl WalkHandler {
                         .unwrap_or_default(),
                     pending_history: None,
                     history_nav: HistoryNavigationState::default(),
+                    replay_store: ReplayStore::default(),
+                    replay_mode: None,
+                    pending_replay_block_marker: false,
                     inline_images: InlineImageStore::new(),
                     last_output_line_row: None,
                 };
@@ -906,6 +931,51 @@ impl WalkHandler {
                     terminal_surface_alpha,
                 ),
             );
+
+            if let Some(replay_mode) = pane.replay_mode.as_ref() {
+                if let Some(snapshot) = pane.replay_store.snapshot(replay_mode.snapshot_index) {
+                    pane.row_cache.invalidate();
+                    render_replay_snapshot(
+                        render,
+                        &mut self.font,
+                        theme,
+                        viewport,
+                        snapshot,
+                        &pane.replay_store,
+                        replay_mode.snapshot_index,
+                        cursor_shape,
+                        cursor_visible,
+                        focused,
+                        self.workspace.broadcast_input,
+                        window_opacity,
+                        terminal_surface_alpha,
+                    );
+                    if let Some(floating) = floating.as_ref() {
+                        let title_height = 18.0;
+                        render.batch.push_bg_quad(
+                            viewport.x,
+                            viewport.y,
+                            viewport.w,
+                            title_height,
+                            [theme.input_bg.r, theme.input_bg.g, theme.input_bg.b, 0.92],
+                        );
+                        push_text(
+                            render,
+                            &mut self.font,
+                            viewport.x + 8.0,
+                            viewport.y + 2.0,
+                            &floating.title,
+                            [
+                                theme.status_bar_text.r,
+                                theme.status_bar_text.g,
+                                theme.status_bar_text.b,
+                                0.95,
+                            ],
+                        );
+                    }
+                    continue;
+                }
+            }
 
             let search = workspace_search.as_ref().unwrap_or(&pane.app.global_search);
             let block_query = pane.app.block_query.as_ref();
@@ -2139,6 +2209,131 @@ impl WalkHandler {
             "ok": true,
             "message": message
         }))
+    }
+
+    fn capture_replay_snapshot_for_pane(&mut self, pane_id: PaneId, force_marker: bool) {
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        let capture = pane.replay_store.capture_snapshot(
+            &pane.terminal.state,
+            pane.app.block_manager.blocks.len(),
+            50,
+            force_marker,
+            force_marker,
+        );
+        if !capture.captured {
+            return;
+        }
+
+        if let Some(mode) = pane.replay_mode.as_mut() {
+            if capture.dropped_oldest && mode.snapshot_index > 0 {
+                mode.snapshot_index = mode.snapshot_index.saturating_sub(1);
+            }
+            if let Some(newest) = pane.replay_store.newest_index() {
+                mode.snapshot_index = mode.snapshot_index.min(newest);
+            }
+        }
+    }
+
+    fn toggle_replay_mode(&mut self) {
+        let Some(pane_id) = self.active_pane_id() else {
+            return;
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+
+        if pane.replay_mode.is_some() {
+            pane.replay_mode = None;
+            pane.row_cache.invalidate();
+            self.status_message = Some("Exited replay mode".to_string());
+            self.needs_redraw = true;
+            return;
+        }
+
+        if pane.replay_store.is_empty() {
+            let _ = pane.replay_store.capture_snapshot(
+                &pane.terminal.state,
+                pane.app.block_manager.blocks.len(),
+                50,
+                false,
+                true,
+            );
+        }
+
+        let Some(newest) = pane.replay_store.newest_index() else {
+            self.status_message = Some("Replay history is empty".to_string());
+            return;
+        };
+
+        pane.replay_mode = Some(ReplayModeState {
+            snapshot_index: newest,
+        });
+        pane.row_cache.invalidate();
+        self.status_message = Some("Replay mode active".to_string());
+        self.needs_redraw = true;
+    }
+
+    fn handle_replay_input(&mut self, event: &InputEvent) -> bool {
+        let is_toggle = matches!(event.action, KeyAction::Char('r') | KeyAction::Char('R'))
+            && platform_modifier_active(event.modifiers)
+            && event.modifiers.alt
+            && event.modifiers.shift;
+        if is_toggle {
+            self.toggle_replay_mode();
+            return true;
+        }
+
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return false;
+        };
+        let Some(mode) = pane.replay_mode.as_mut() else {
+            return false;
+        };
+
+        let Some(newest) = pane.replay_store.newest_index() else {
+            pane.replay_mode = None;
+            return true;
+        };
+        let oldest = 0usize;
+
+        match event.action {
+            KeyAction::Escape => {
+                pane.replay_mode = None;
+                pane.row_cache.invalidate();
+                self.status_message = Some("Exited replay mode".to_string());
+            }
+            KeyAction::ArrowLeft => {
+                mode.snapshot_index = mode.snapshot_index.saturating_sub(1);
+            }
+            KeyAction::ArrowRight => {
+                mode.snapshot_index = (mode.snapshot_index + 1).min(newest);
+            }
+            KeyAction::Home => {
+                mode.snapshot_index = oldest;
+            }
+            KeyAction::End => {
+                mode.snapshot_index = newest;
+            }
+            KeyAction::Char('[') => {
+                if let Some(previous) = pane.replay_store.previous_marker(mode.snapshot_index) {
+                    mode.snapshot_index = previous;
+                }
+            }
+            KeyAction::Char(']') => {
+                if let Some(next) = pane.replay_store.next_marker(mode.snapshot_index) {
+                    mode.snapshot_index = next;
+                }
+            }
+            _ => {}
+        }
+
+        self.needs_redraw = true;
+        true
     }
 
     fn evaluate_triggers_for_latest_block(&mut self, pane_id: PaneId) {
@@ -4427,6 +4622,21 @@ impl AppHandler for WalkHandler {
                     .any(|event| matches!(event, SemanticEvent::CommandEnd { .. }));
                 self.handle_semantic_events(pane_id, semantic_events);
             }
+            if command_ended {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    pane.pending_replay_block_marker = true;
+                }
+            }
+            let force_marker = self
+                .panes
+                .get(&pane_id)
+                .is_some_and(|pane| pane.pending_replay_block_marker);
+            self.capture_replay_snapshot_for_pane(pane_id, force_marker);
+            if force_marker {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    pane.pending_replay_block_marker = false;
+                }
+            }
             self.sync_owned_input_state_for_pane(pane_id);
             if output_line_hooks_enabled {
                 output_line_events
@@ -4532,6 +4742,10 @@ impl AppHandler for WalkHandler {
     }
 
     fn on_key_event(&mut self, event: InputEvent) {
+        if self.handle_replay_input(&event) {
+            return;
+        }
+
         if self.handle_vi_mode_input(&event) {
             return;
         }
@@ -5974,6 +6188,144 @@ fn render_quick_select_overlay(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_replay_snapshot(
+    render: &mut RenderState,
+    font: &mut FontSystem,
+    theme: &Theme,
+    viewport: Rect,
+    snapshot: &ReplaySnapshot,
+    replay_store: &ReplayStore,
+    snapshot_index: usize,
+    cursor_shape: CursorShape,
+    cursor_visible: bool,
+    focused: bool,
+    broadcast_input: bool,
+    window_opacity: f32,
+    terminal_surface_alpha: f32,
+) {
+    let rows = snapshot.visible_rows();
+    if rows.is_empty() {
+        return;
+    }
+
+    let cell_width = font.metrics.cell_width;
+    let cell_height = font.metrics.cell_height;
+    for (row_idx, row) in rows.iter().enumerate() {
+        let row_y = viewport.y + row_idx as f32 * cell_height;
+        for (col_idx, cell) in row.iter().enumerate() {
+            let x = viewport.x + col_idx as f32 * cell_width;
+            let mut bg = resolve_cell_color(&cell.bg, theme, true);
+            let mut fg = resolve_cell_color(&cell.fg, theme, false);
+            if cell.is_inverse {
+                std::mem::swap(&mut bg, &mut fg);
+            }
+            if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
+                bg[3] *= terminal_surface_alpha;
+            }
+
+            render.batch.push_bg_quad(x, row_y, cell_width, cell_height, bg);
+            if cell.character != ' ' && cell.character != '\0' {
+                push_glyph(render, font, x, row_y, cell.character, fg);
+            }
+        }
+    }
+
+    if cursor_visible {
+        let visible_start = snapshot.visible_start_row();
+        let visible_end = visible_start + rows.len();
+        if (visible_start..visible_end).contains(&snapshot.cursor_row) {
+            let cursor_row = snapshot.cursor_row - visible_start;
+            render.batch.push_cursor(
+                viewport.x + snapshot.cursor_col as f32 * cell_width,
+                viewport.y + cursor_row as f32 * cell_height,
+                cell_width,
+                cell_height,
+                cursor_shape,
+                [
+                    theme.cursor.r,
+                    theme.cursor.g,
+                    theme.cursor.b,
+                    0.7 * window_opacity,
+                ],
+            );
+        }
+    }
+
+    let border_color = if broadcast_input {
+        [
+            theme.block_error_accent.r,
+            theme.block_error_accent.g,
+            theme.block_error_accent.b,
+            0.95,
+        ]
+    } else {
+        [
+            theme.block_separator.r,
+            theme.block_separator.g,
+            theme.block_separator.b,
+            0.9,
+        ]
+    };
+    render
+        .batch
+        .push_bg_quad(viewport.x, viewport.y, viewport.w, 1.0, border_color);
+    render
+        .batch
+        .push_bg_quad(viewport.x, viewport.y, 1.0, viewport.h, border_color);
+    if focused {
+        render.batch.push_bg_quad(
+            viewport.x,
+            viewport.y,
+            viewport.w,
+            2.0,
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.8,
+            ],
+        );
+    }
+
+    let timeline = ReplayTimeline {
+        snapshot_count: replay_store.len(),
+        current_index: snapshot_index,
+        marker_indices: replay_store.marker_indices(),
+    };
+    let bar_x = viewport.x + 10.0;
+    let bar_w = (viewport.w - 20.0).max(24.0);
+    let bar_y = viewport.y + viewport.h - 6.0;
+    render.batch.push_bg_quad(
+        bar_x,
+        bar_y,
+        bar_w,
+        2.0,
+        [theme.status_bar_text.r, theme.status_bar_text.g, theme.status_bar_text.b, 0.35],
+    );
+    for marker in timeline.marker_positions() {
+        render.batch.push_bg_quad(
+            bar_x + marker * bar_w,
+            bar_y - 2.0,
+            1.5,
+            6.0,
+            [
+                theme.highlight_current_match.r,
+                theme.highlight_current_match.g,
+                theme.highlight_current_match.b,
+                0.85,
+            ],
+        );
+    }
+    render.batch.push_bg_quad(
+        bar_x + timeline.cursor_position() * bar_w,
+        bar_y - 3.0,
+        2.0,
+        8.0,
+        [theme.cursor.r, theme.cursor.g, theme.cursor.b, 0.92],
+    );
+}
+
 fn render_block_query_overlay(
     render: &mut RenderState,
     font: &mut FontSystem,
@@ -7289,6 +7641,17 @@ fn trigger_highlight_color_at_cell(
         }
     }
     None
+}
+
+fn format_replay_age(elapsed: Duration) -> String {
+    let total_seconds = elapsed.as_secs();
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    if minutes == 0 {
+        format!("{seconds}s ago")
+    } else {
+        format!("{minutes}m{seconds:02}s ago")
+    }
 }
 
 fn parse_shell_type(value: &str) -> ShellType {
