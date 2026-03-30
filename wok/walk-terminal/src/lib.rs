@@ -24,5 +24,6 @@ pub mod prompt;
 pub mod pty;
 pub mod shell;
 pub mod shell_integration;
+pub mod sixel;
 pub mod state;
 pub mod terminal;

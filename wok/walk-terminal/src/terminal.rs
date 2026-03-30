@@ -12,6 +12,7 @@ use tracing::{debug, instrument, warn};
 use crate::async_io::{PtyEvent, PtyIoHandle};
 use crate::pty::{PtyError, PtyManager};
 use crate::shell::ShellType;
+use crate::sixel;
 use crate::state::{AbsoluteRow, HyperlinkInfo, TermEvent, TerminalState};
 
 /// Errors from terminal operations.
@@ -309,6 +310,41 @@ impl Terminal {
                     continue;
                 }
             }
+            if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'P') {
+                if let Some((payload_end, terminator_len)) = find_dcs_terminator(bytes, i + 2) {
+                    let payload = &bytes[i + 2..payload_end];
+                    if let Ok(payload) = std::str::from_utf8(payload) {
+                        match sixel::parse_sixel_dcs(payload) {
+                            Ok(image) => {
+                                let image_id = self.next_inline_image_id;
+                                self.next_inline_image_id =
+                                    self.next_inline_image_id.saturating_add(1);
+                                let (display_cols, display_rows) =
+                                    sixel_display_size(image.width, image.height);
+                                self.events.push(SemanticEvent::InlineImage(InlineImageEvent::Put {
+                                    image_id,
+                                    width: image.width,
+                                    height: image.height,
+                                    pixels: image.pixels,
+                                    row: absolute_row,
+                                    col,
+                                    display_cols,
+                                    display_rows,
+                                    placement_id: 0,
+                                }));
+                                col = col.saturating_add(display_cols as usize);
+                            }
+                            Err(error) => {
+                                warn!("failed to parse sixel payload: {error}");
+                            }
+                        }
+                    } else {
+                        warn!("ignoring non-utf8 DCS payload");
+                    }
+                    i = payload_end + terminator_len;
+                    continue;
+                }
+            }
 
             if bytes[i] == b'\n' {
                 absolute_row = absolute_row.saturating_add(1);
@@ -569,6 +605,20 @@ fn find_apc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
     None
 }
 
+fn find_dcs_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
+    let mut idx = start;
+    while idx < bytes.len() {
+        if bytes[idx] == 0x1b && bytes.get(idx + 1) == Some(&b'\\') {
+            return Some((idx, 2));
+        }
+        if bytes[idx] == 0x9c {
+            return Some((idx, 1));
+        }
+        idx += 1;
+    }
+    None
+}
+
 fn decode_kitty_image_data(
     format: u32,
     transmission: char,
@@ -667,6 +717,15 @@ fn parse_osc8_params(params: &str) -> HashMap<String, String> {
     parsed
 }
 
+fn sixel_display_size(width: u32, height: u32) -> (u16, u16) {
+    const CELL_PIXEL_WIDTH: u32 = 8;
+    const CELL_PIXEL_HEIGHT: u32 = 16;
+
+    let cols = width.div_ceil(CELL_PIXEL_WIDTH).max(1);
+    let rows = height.div_ceil(CELL_PIXEL_HEIGHT).max(1);
+    (cols.min(u16::MAX as u32) as u16, rows.min(u16::MAX as u32) as u16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -684,6 +743,13 @@ mod tests {
         let st = b"\x1b]8;;https://example.com\x1b\\";
         assert_eq!(find_osc_terminator(bel, 2), Some((24, 1)));
         assert_eq!(find_osc_terminator(st, 2), Some((24, 2)));
+    }
+
+    #[test]
+    fn test_sixel_display_size_rounds_up_cells() {
+        assert_eq!(sixel_display_size(1, 1), (1, 1));
+        assert_eq!(sixel_display_size(16, 32), (2, 2));
+        assert_eq!(sixel_display_size(17, 33), (3, 3));
     }
 
     #[test]

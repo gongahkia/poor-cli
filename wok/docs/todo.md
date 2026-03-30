@@ -1992,11 +1992,11 @@
 5. Calculate the cell dimensions: width = pixel_width / cell_pixel_width, height = pixel_height / cell_pixel_height (round up).
 
 **DONE WHEN**
-- [ ] `img2sixel image.png` (from `libsixel`) displays the image inline in the terminal.
-- [ ] The image occupies the correct number of cell rows and columns.
-- [ ] Sixel color palettes (both HLS and RGB definitions) render correctly.
-- [ ] Scrolling past a Sixel image works correctly.
-- [ ] Sixel and Kitty protocol images can coexist in the same scrollback.
+- [x] `img2sixel image.png` (from `libsixel`) displays the image inline in the terminal.
+- [x] The image occupies the correct number of cell rows and columns.
+- [x] Sixel color palettes (both HLS and RGB definitions) render correctly.
+- [x] Scrolling past a Sixel image works correctly.
+- [x] Sixel and Kitty protocol images can coexist in the same scrollback.
 
 ---
 
