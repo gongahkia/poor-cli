@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use clap::{Parser, Subcommand};
 use regex::Regex;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use tracing::{info, warn};
 use walk_app::action_effects::{
     ActionEffects, ClipboardEffect, OverlayEffect, RuntimeEffect, ViewportEffect, WorkspaceEffect,
@@ -25,6 +25,7 @@ use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
+use walk_app::remote_control::{error_response, result_response, RemoteControlServer, RemoteRequest};
 use walk_app::scripting::{
     QuickSelectPatternRequest, StatusBarRequest, ThemeRequest, TriggerRequest, WorkflowRequest,
 };
@@ -294,6 +295,8 @@ struct WalkHandler {
     pending_pane_restore: HashMap<PaneId, PaneState>,
     global_history: CommandHistory,
     plugins: Option<PluginHost>,
+    remote_control: Option<RemoteControlServer>,
+    remote_socket_path: Option<PathBuf>,
     status_message: Option<String>,
     status_bar_state: StatusBarState,
     status_bar_refresh_interval: Duration,
@@ -339,6 +342,17 @@ impl WalkHandler {
         let global_history = CommandHistory::load(&CommandHistory::default_path(), 10_000);
         let mut layout_presets = default_layout_presets();
         layout_presets.extend(config.layout_presets.clone());
+        let (remote_control, remote_socket_path) = match RemoteControlServer::bind_default() {
+            Ok(server) => {
+                let path = server.socket_path().to_path_buf();
+                std::env::set_var("WALK_SOCKET", &path);
+                (Some(server), Some(path))
+            }
+            Err(error) => {
+                warn!("failed to initialize remote control socket: {error}");
+                (None, None)
+            }
+        };
 
         let handler = Self {
             config,
@@ -352,6 +366,8 @@ impl WalkHandler {
             pending_pane_restore: HashMap::new(),
             global_history,
             plugins,
+            remote_control,
+            remote_socket_path,
             status_message: None,
             status_bar_state: StatusBarState::default(),
             status_bar_refresh_interval: Duration::from_secs(5),
@@ -511,7 +527,13 @@ impl WalkHandler {
         let (cols, rows) = self
             .font
             .grid_dimensions(ui_rects.viewport.w, ui_rects.viewport.h);
-        let env = HashMap::new();
+        let mut env = HashMap::new();
+        if let Some(socket_path) = self.remote_socket_path.as_ref() {
+            env.insert(
+                "WALK_SOCKET".to_string(),
+                socket_path.display().to_string(),
+            );
+        }
         let initial_cwd = restore.as_ref().and_then(|pane_state| {
             (!pane_state.cwd.as_os_str().is_empty()).then_some(pane_state.cwd.as_path())
         });
@@ -1891,6 +1913,232 @@ impl WalkHandler {
                 }
             }
         }
+    }
+
+    fn pump_remote_control(&mut self) {
+        let requests = self
+            .remote_control
+            .as_mut()
+            .map_or_else(Vec::new, RemoteControlServer::poll_requests);
+
+        for request in requests {
+            let response = self.handle_remote_request(&request);
+            if let Some(payload) = response {
+                if let Some(server) = self.remote_control.as_mut() {
+                    server.send_response(request.client_id, &payload);
+                }
+            }
+        }
+    }
+
+    fn handle_remote_request(&mut self, request: &RemoteRequest) -> Option<Value> {
+        let response_id = request.id.clone();
+        let result = match request.method.as_str() {
+            "walk.get_panes" => Ok(self.remote_get_panes()),
+            "walk.send_text" => self.remote_send_text(&request.params),
+            "walk.run_action" => self.remote_run_action(&request.params),
+            "walk.get_blocks" => self.remote_get_blocks(&request.params),
+            "walk.get_text" => self.remote_get_text(&request.params),
+            "walk.create_pane" => self.remote_create_pane(&request.params),
+            "walk.close_pane" => self.remote_close_pane(&request.params),
+            "walk.set_theme" => self.remote_set_theme(&request.params),
+            "walk.notify" => self.remote_notify(&request.params),
+            _ => Err(format!("unknown method '{}'", request.method)),
+        };
+
+        response_id.as_ref()?;
+
+        Some(match result {
+            Ok(payload) => result_response(response_id, payload),
+            Err(error) => error_response(response_id, -32000, error),
+        })
+    }
+
+    fn remote_get_panes(&self) -> Value {
+        let mut pane_ids = self.panes.keys().copied().collect::<Vec<_>>();
+        pane_ids.sort_unstable();
+        let active_pane = self.active_pane_id();
+        Value::Array(
+            pane_ids
+                .into_iter()
+                .filter_map(|pane_id| {
+                    let pane = self.panes.get(&pane_id)?;
+                    let tab_index = self.workspace.find_tab_index_for_pane(pane_id);
+                    let tab = tab_index.and_then(|index| self.workspace.tabs.get(index));
+                    Some(json!({
+                        "pane_id": pane_id,
+                        "tab_id": tab.map(|tab| tab.id),
+                        "tab_index": tab_index,
+                        "tab_title": tab.map(|tab| tab.title.clone()),
+                        "active": active_pane == Some(pane_id),
+                        "title": pane.terminal.title,
+                        "shell": pane.app.config.shell.to_string(),
+                        "cwd": pane.current_cwd.display().to_string(),
+                        "cols": pane.cols,
+                        "rows": pane.rows
+                    }))
+                })
+                .collect(),
+        )
+    }
+
+    fn remote_send_text(&mut self, params: &Value) -> Result<Value, String> {
+        let pane_id = jsonrpc_u64_param(params, 0, "pane_id")?;
+        let text = jsonrpc_string_param(params, 1, "text")?;
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(format!("pane {pane_id} not found"));
+        };
+        pane.terminal
+            .send_input(text.as_bytes())
+            .map_err(|error| format!("failed to write to pane {pane_id}: {error}"))?;
+        self.needs_redraw = true;
+        Ok(json!({
+            "ok": true,
+            "pane_id": pane_id
+        }))
+    }
+
+    fn remote_run_action(&mut self, params: &Value) -> Result<Value, String> {
+        let action_name = jsonrpc_string_param(params, 0, "action_name")
+            .or_else(|_| jsonrpc_string_param(params, 0, "action"))?;
+        let normalized = normalize_remote_action_name(&action_name);
+        let Some(action) = parse_lua_action(&normalized) else {
+            return Err(format!("unknown action '{action_name}'"));
+        };
+        self.handle_action(action);
+        Ok(json!({
+            "ok": true,
+            "action": normalized
+        }))
+    }
+
+    fn remote_get_blocks(&self, params: &Value) -> Result<Value, String> {
+        let pane_id = jsonrpc_u64_param(params, 0, "pane_id")?;
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(format!("pane {pane_id} not found"));
+        };
+
+        Ok(Value::Array(
+            pane.app
+                .block_manager
+                .blocks
+                .iter()
+                .map(|block| {
+                    json!({
+                        "id": block.id,
+                        "command_text": block.command_text,
+                        "output_start_row": block.output_start_row,
+                        "output_end_row": block.output_end_row,
+                        "exit_code": block.exit_code,
+                        "duration_ms": block.duration.map(|duration| duration.as_millis() as u64),
+                        "is_collapsed": block.is_collapsed,
+                        "is_bookmarked": block.is_bookmarked,
+                        "cwd": block.cwd.display().to_string(),
+                        "git_branch": block.git_branch
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    fn remote_get_text(&self, params: &Value) -> Result<Value, String> {
+        let pane_id = jsonrpc_u64_param(params, 0, "pane_id")?;
+        let start_row = jsonrpc_u64_param(params, 1, "start_row")? as usize;
+        let end_row = jsonrpc_u64_param(params, 2, "end_row")? as usize;
+        if start_row > end_row {
+            return Err("start_row must be <= end_row".to_string());
+        }
+
+        let Some(pane) = self.panes.get(&pane_id) else {
+            return Err(format!("pane {pane_id} not found"));
+        };
+        let total_rows = pane.terminal.state.total_rows();
+        if total_rows == 0 {
+            return Ok(Value::Array(Vec::new()));
+        }
+
+        let max_row = total_rows.saturating_sub(1);
+        let start = start_row.min(max_row);
+        let end = end_row.min(max_row);
+        Ok(Value::Array(
+            (start..=end)
+                .map(|row| {
+                    json!({
+                        "row": row,
+                        "text": pane.terminal.state.row_text(row)
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    fn remote_create_pane(&mut self, params: &Value) -> Result<Value, String> {
+        if self.window.is_none() {
+            return Err("window is not initialized yet".to_string());
+        }
+
+        let direction = jsonrpc_optional_string_param(params, 0, "direction")
+            .unwrap_or_else(|| "vertical".to_string());
+        let action = match direction.to_ascii_lowercase().as_str() {
+            "vertical" => Action::SplitVertical,
+            "horizontal" => Action::SplitHorizontal,
+            "floating" => Action::NewFloatingPane,
+            _ => return Err(format!("unsupported pane direction '{direction}'")),
+        };
+
+        let before = self.panes.keys().copied().collect::<HashSet<_>>();
+        self.handle_action(action);
+        let created = self
+            .panes
+            .keys()
+            .copied()
+            .find(|pane_id| !before.contains(pane_id));
+        let Some(pane_id) = created else {
+            return Err("failed to create pane".to_string());
+        };
+
+        Ok(json!({
+            "pane_id": pane_id
+        }))
+    }
+
+    fn remote_close_pane(&mut self, params: &Value) -> Result<Value, String> {
+        let pane_id = jsonrpc_u64_param(params, 0, "pane_id")?;
+        if !self.panes.contains_key(&pane_id) {
+            return Err(format!("pane {pane_id} not found"));
+        }
+        if !self.workspace.focus_pane(pane_id) {
+            return Err(format!("failed to focus pane {pane_id}"));
+        }
+        let before = self.panes.len();
+        self.handle_action(Action::CloseSplit);
+        if self.panes.len() >= before {
+            return Err("unable to close pane (likely last remaining pane)".to_string());
+        }
+
+        Ok(json!({
+            "closed": pane_id
+        }))
+    }
+
+    fn remote_set_theme(&mut self, params: &Value) -> Result<Value, String> {
+        let theme = jsonrpc_string_param(params, 0, "theme")
+            .or_else(|_| jsonrpc_string_param(params, 0, "theme_name_or_path"))?;
+        self.apply_theme_request(ThemeRequest::Load(theme.clone()));
+        Ok(json!({
+            "ok": true,
+            "theme": theme
+        }))
+    }
+
+    fn remote_notify(&mut self, params: &Value) -> Result<Value, String> {
+        let message = jsonrpc_string_param(params, 0, "message")?;
+        self.status_message = Some(message.clone());
+        self.needs_redraw = true;
+        Ok(json!({
+            "ok": true,
+            "message": message
+        }))
     }
 
     fn evaluate_triggers_for_latest_block(&mut self, pane_id: PaneId) {
@@ -4103,6 +4351,7 @@ impl AppHandler for WalkHandler {
             plugins.pump_timers(64);
         }
         self.drain_plugin_side_effects();
+        self.pump_remote_control();
 
         if self.last_status_bar_refresh.elapsed() >= self.status_bar_refresh_interval {
             self.last_status_bar_refresh = Instant::now();
@@ -7053,6 +7302,77 @@ fn parse_shell_type(value: &str) -> ShellType {
         "powershell" => ShellType::PowerShell,
         _ => ShellType::Bash,
     }
+}
+
+fn jsonrpc_u64_param(params: &Value, index: usize, key: &str) -> Result<u64, String> {
+    if let Some(value) = params
+        .as_array()
+        .and_then(|items| items.get(index))
+        .and_then(Value::as_u64)
+    {
+        return Ok(value);
+    }
+    if let Some(value) = params.as_object().and_then(|items| items.get(key)) {
+        if let Some(value) = value.as_u64() {
+            return Ok(value);
+        }
+    }
+    Err(format!("missing or invalid '{key}' parameter"))
+}
+
+fn jsonrpc_string_param(params: &Value, index: usize, key: &str) -> Result<String, String> {
+    if let Some(value) = params
+        .as_array()
+        .and_then(|items| items.get(index))
+        .and_then(Value::as_str)
+    {
+        return Ok(value.to_string());
+    }
+    if let Some(value) = params.as_object().and_then(|items| items.get(key)) {
+        if let Some(value) = value.as_str() {
+            return Ok(value.to_string());
+        }
+    }
+    Err(format!("missing or invalid '{key}' parameter"))
+}
+
+fn jsonrpc_optional_string_param(
+    params: &Value,
+    index: usize,
+    key: &str,
+) -> Option<String> {
+    params
+        .as_array()
+        .and_then(|items| items.get(index))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            params
+                .as_object()
+                .and_then(|items| items.get(key))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+}
+
+fn normalize_remote_action_name(action_name: &str) -> String {
+    let normalized = action_name.trim().replace('-', "_").replace(' ', "_");
+    if normalized.contains('_') {
+        return normalized.to_ascii_lowercase();
+    }
+
+    let mut snake = String::new();
+    for (index, ch) in normalized.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if index > 0 {
+                snake.push('_');
+            }
+            snake.push(ch.to_ascii_lowercase());
+        } else {
+            snake.push(ch.to_ascii_lowercase());
+        }
+    }
+    snake
 }
 
 fn parse_lua_action(action: &str) -> Option<Action> {

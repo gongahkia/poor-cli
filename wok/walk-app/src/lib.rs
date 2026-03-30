@@ -41,6 +41,7 @@ pub mod input;
 pub mod ipc;
 pub mod keybindings;
 pub mod plugin_host;
+pub mod remote_control;
 pub mod scripting;
 pub mod session;
 pub mod window;
