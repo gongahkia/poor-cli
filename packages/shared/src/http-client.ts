@@ -74,6 +74,7 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
+    const startedAt = Date.now();
 
     try {
       logger.debug("request", { url, attempt, apiName: options.apiName });
@@ -87,6 +88,13 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
       clearTimeout(timer);
 
       if (response.ok) {
+        logger.debug("response", {
+          url,
+          apiName: options.apiName,
+          attempt,
+          status: response.status,
+          latencyMs: Date.now() - startedAt,
+        });
         return (await response.json()) as T;
       }
 
@@ -109,6 +117,14 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
 
       const body = await response.text();
       const parsedError = parseErrorPayload(body);
+      logger.error("request failed", {
+        url,
+        apiName: options.apiName,
+        attempt,
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        code: parsedError.code ?? `HTTP_${response.status}`,
+      });
       throw new ApiError({
         apiName: options.apiName,
         source: options.apiName,
@@ -145,12 +161,24 @@ export const httpGet = async <T>(url: string, options: HttpOptions): Promise<T> 
       }
 
       if (attempt < retries) {
+        logger.warn("network error, retrying", {
+          url,
+          apiName: options.apiName,
+          attempt,
+          error,
+        });
         const jitter = Math.random() * MAX_JITTER;
         const waitMs = Math.min(BASE_DELAY * Math.pow(2, attempt) + jitter, MAX_DELAY);
         await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
 
+      logger.error("network error, giving up", {
+        url,
+        apiName: options.apiName,
+        attempt,
+        error,
+      });
       throw new ApiError({
         apiName: options.apiName,
         source: options.apiName,
@@ -184,6 +212,7 @@ export const httpGetText = async (url: string, options: HttpOptions): Promise<st
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
+    const startedAt = Date.now();
 
     try {
       logger.debug("request", { url, attempt, apiName: options.apiName });
@@ -197,6 +226,13 @@ export const httpGetText = async (url: string, options: HttpOptions): Promise<st
       clearTimeout(timer);
 
       if (response.ok) {
+        logger.debug("response", {
+          url,
+          apiName: options.apiName,
+          attempt,
+          status: response.status,
+          latencyMs: Date.now() - startedAt,
+        });
         return await response.text();
       }
 
@@ -219,6 +255,14 @@ export const httpGetText = async (url: string, options: HttpOptions): Promise<st
 
       const body = await response.text();
       const parsedError = parseErrorPayload(body);
+      logger.error("request failed", {
+        url,
+        apiName: options.apiName,
+        attempt,
+        status: response.status,
+        latencyMs: Date.now() - startedAt,
+        code: parsedError.code ?? `HTTP_${response.status}`,
+      });
       throw new ApiError({
         apiName: options.apiName,
         source: options.apiName,
@@ -255,12 +299,24 @@ export const httpGetText = async (url: string, options: HttpOptions): Promise<st
       }
 
       if (attempt < retries) {
+        logger.warn("network error, retrying", {
+          url,
+          apiName: options.apiName,
+          attempt,
+          error,
+        });
         const jitter = Math.random() * MAX_JITTER;
         const waitMs = Math.min(BASE_DELAY * Math.pow(2, attempt) + jitter, MAX_DELAY);
         await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
 
+      logger.error("network error, giving up", {
+        url,
+        apiName: options.apiName,
+        attempt,
+        error,
+      });
       throw new ApiError({
         apiName: options.apiName,
         source: options.apiName,
