@@ -182,6 +182,26 @@ describe("sg_query workflows", () => {
     expect(vi.mocked(masQuery)).not.toHaveBeenCalled();
   });
 
+  it("returns optional context IDs when requested", async () => {
+    const result = await runQuery({
+      query: "Give me a macro snapshot of Singapore",
+      mode: "plan",
+      includeContextIds: true,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      status: "planned",
+      contextIds: {
+        traceId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+      },
+    });
+  });
+
   it("executes a demographic profile workflow from a postal code", async () => {
     vi.mocked(geocode).mockResolvedValue([
       {

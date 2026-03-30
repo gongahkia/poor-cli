@@ -69,7 +69,7 @@ Build your client around those outcomes:
 5. Treat `blocked` and `unsupported` as non-error control-flow outcomes; only `failed` is an execution error.
 6. Keep the direct tool names visible in logs and traces so developers can debug routing decisions.
 
-The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts). A minimal stdlib-only Python variant lives in [`examples/integration/basic-client.py`](../examples/integration/basic-client.py).
+The runnable reference implementation for this pattern is [`examples/integration/basic-client.ts`](../examples/integration/basic-client.ts). A minimal stdlib-only Python variant lives in [`examples/integration/basic-client.py`](../examples/integration/basic-client.py). For production-oriented patterns, start from [`examples/integration/backend-worker-template.ts`](../examples/integration/backend-worker-template.ts) and [`examples/integration/ui-state-template.ts`](../examples/integration/ui-state-template.ts), which both demonstrate explicit blocked/unsupported/failed handling.
 
 ## Operational Defaults For Teams
 

@@ -435,6 +435,9 @@
                       ]
                     }
                   },
+                  "includeContextIds": {
+                    "type": "boolean"
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
@@ -1057,6 +1060,9 @@
                   },
                   "date": {
                     "type": "string"
+                  },
+                  "includeContextIds": {
+                    "type": "boolean"
                   },
                   "format": {
                     "type": "string",
@@ -1870,6 +1876,9 @@
                   },
                   "endDate": {
                     "type": "string"
+                  },
+                  "includeContextIds": {
+                    "type": "boolean"
                   },
                   "format": {
                     "type": "string",
@@ -3139,6 +3148,9 @@
                   "includeEnvironment": {
                     "type": "boolean"
                   },
+                  "includeContextIds": {
+                    "type": "boolean"
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
@@ -3256,6 +3268,9 @@
                       "execute",
                       "plan"
                     ]
+                  },
+                  "includeContextIds": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -3780,6 +3795,9 @@
                   },
                   "serviceNo": {
                     "type": "string"
+                  },
+                  "includeContextIds": {
+                    "type": "boolean"
                   },
                   "format": {
                     "type": "string",

@@ -207,6 +207,11 @@ export type QueryResultSummary = {
   readonly headline: string;
 };
 
+export type QueryContextIds = {
+  readonly traceId: string;
+  readonly requestId: string;
+};
+
 export type QueryPlannedResult = {
   readonly status: "planned";
   readonly mode: "plan";
@@ -216,6 +221,7 @@ export type QueryPlannedResult = {
   readonly confidence: number;
   readonly toolsUsed: readonly string[];
   readonly steps: readonly QueryPlannedStep[];
+  readonly contextIds?: QueryContextIds;
 };
 
 export type QueryCompletedResult = {
@@ -231,6 +237,7 @@ export type QueryCompletedResult = {
   readonly continuationHints?: readonly string[];
   readonly resultSummary?: QueryResultSummary;
   readonly nextActions?: readonly NextCheck[];
+  readonly contextIds?: QueryContextIds;
 };
 
 export type QueryBlockedResult = {
@@ -246,6 +253,7 @@ export type QueryBlockedResult = {
   readonly reason: string;
   readonly suggestion: string;
   readonly routingExplanation: string;
+  readonly contextIds?: QueryContextIds;
 };
 
 export type QueryUnsupportedResult = {
@@ -259,6 +267,7 @@ export type QueryUnsupportedResult = {
   readonly confidence?: number;
   readonly toolsUsed?: readonly string[];
   readonly steps?: readonly QueryPlannedStep[];
+  readonly contextIds?: QueryContextIds;
 };
 
 export type QueryFailedResult = {
@@ -274,6 +283,7 @@ export type QueryFailedResult = {
   readonly resultSummary?: QueryResultSummary;
   readonly nextActions?: readonly NextCheck[];
   readonly failedStep: QueryExecutedStep | null;
+  readonly contextIds?: QueryContextIds;
 };
 
 export type QueryOutcome =

@@ -7,7 +7,7 @@ import type { ToolResult } from "@sg-apis/shared";
 import { wrapHandler } from "../middleware/error-handler.js";
 
 export type ToolSurface = "canonical" | "operational" | "experimental";
-export type ToolSet = "public" | "briefs" | "query" | "health" | "ops";
+export type ToolSet = "public" | "briefs" | "query" | "health" | "ops" | "diligence" | "property";
 
 export type ToolCatalogEntry = {
   readonly name: string;

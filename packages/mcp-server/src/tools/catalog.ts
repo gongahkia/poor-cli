@@ -1491,6 +1491,34 @@ export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
   },
 ];
 
+export type BenchmarkEvidenceSnapshot = {
+  readonly schemaVersion: "1.0";
+  readonly generatedAt: string;
+  readonly source: "repository-baseline" | "github-actions" | "local";
+  readonly commitSha: string;
+  readonly runUrl: string | null;
+  readonly checks: readonly {
+    readonly name: string;
+    readonly status: "passed" | "skipped";
+    readonly notes: string;
+  }[];
+};
+
+export const BENCHMARK_EVIDENCE_SNAPSHOT: BenchmarkEvidenceSnapshot = {
+  schemaVersion: "1.0",
+  generatedAt: "2026-03-30T00:00:00.000Z",
+  source: "repository-baseline",
+  commitSha: "baseline",
+  runUrl: null,
+  checks: [
+    {
+      name: "npm run verify",
+      status: "passed",
+      notes: "Baseline repository expectations before CI-specific evidence overlays.",
+    },
+  ],
+};
+
 export const BENCHMARK_CATALOG = {
   summary: [
     "Adoption targets are framed for agent developers, not consumer chat products.",
@@ -1559,6 +1587,7 @@ export const BENCHMARK_CATALOG = {
       evidence: "Use sg://runtime plus npm run test:smoke:live in the release environment.",
     },
   ],
+  latestEvidenceSnapshot: BENCHMARK_EVIDENCE_SNAPSHOT,
   releaseBlockingChecks: [
     "A failing authenticated health probe blocks release until credentials and the live runtime path both work.",
     "A failing workflow smoke case blocks release until the workflow is fixed or removed from public discovery.",
@@ -1566,9 +1595,133 @@ export const BENCHMARK_CATALOG = {
   ],
 } as const;
 
+export const buildBenchmarkCatalog = (
+  snapshot: BenchmarkEvidenceSnapshot = BENCHMARK_EVIDENCE_SNAPSHOT,
+) => ({
+  ...BENCHMARK_CATALOG,
+  latestEvidenceSnapshot: snapshot,
+} as const);
+
+export const OPS_TAXONOMY_CATALOG = {
+  summary: [
+    "Machine-readable operations taxonomy for error handling, severity, and retry guidance.",
+    "Use this with sg://runtime and sg://benchmarks to build predictable operational behavior.",
+  ],
+  severities: [
+    {
+      level: "low",
+      meaning: "Non-critical input or contract issue. Caller can typically recover immediately.",
+      escalation: "No pager alert. Surface actionable validation hints to the caller.",
+    },
+    {
+      level: "medium",
+      meaning: "Recoverable runtime failure or transient upstream instability.",
+      escalation: "Warn-level telemetry and retry policy should apply.",
+    },
+    {
+      level: "high",
+      meaning: "Critical failure mode requiring operator attention or dependency intervention.",
+      escalation: "Error-level telemetry and incident triage.",
+    },
+  ],
+  errorCodes: [
+    {
+      code: "VALIDATION_ERROR",
+      source: "validation",
+      retryable: false,
+      severity: "low",
+      statusCode: 400,
+      category: "client_input",
+      suggestedAction: "Fix parameters against the tool schema and retry.",
+    },
+    {
+      code: "WORKFLOW_DEPENDENCY_ERROR",
+      source: "planner",
+      retryable: false,
+      severity: "low",
+      statusCode: 422,
+      category: "workflow_dependency",
+      suggestedAction: "Run the prerequisite tool step first, then continue the workflow.",
+    },
+    {
+      code: "TOOL_RESULT_ERROR",
+      source: "query",
+      retryable: true,
+      severity: "medium",
+      statusCode: 502,
+      category: "workflow_execution",
+      suggestedAction: "Inspect failedStep details and retry only after fixing the upstream input or dependency.",
+    },
+    {
+      code: "AUTH_MISSING",
+      source: "LTA",
+      retryable: false,
+      severity: "high",
+      statusCode: 401,
+      category: "credential_configuration",
+      suggestedAction: "Set the required credential in env or keystore and rerun.",
+    },
+    {
+      code: "TIMEOUT",
+      source: "http-client",
+      retryable: true,
+      severity: "medium",
+      statusCode: 408,
+      category: "upstream_timeout",
+      suggestedAction: "Retry later or increase timeout for the impacted API family.",
+    },
+    {
+      code: "NETWORK_ERROR",
+      source: "http-client",
+      retryable: true,
+      severity: "medium",
+      statusCode: 503,
+      category: "network_path",
+      suggestedAction: "Check network reachability and upstream status, then retry.",
+    },
+    {
+      code: "RETRY_EXHAUSTED",
+      source: "http-client",
+      retryable: true,
+      severity: "high",
+      statusCode: 503,
+      category: "upstream_reliability",
+      suggestedAction: "Escalate to operator workflow if repeated over multiple attempts.",
+    },
+    {
+      code: "RESOURCE_ID_REQUIRED",
+      source: "data.gov.sg",
+      retryable: false,
+      severity: "low",
+      statusCode: 400,
+      category: "dataset_contract",
+      suggestedAction: "Provide a machine-readable resourceId from sg_datagov_resources.",
+    },
+    {
+      code: "RESOURCE_NOT_MACHINE_READABLE",
+      source: "data.gov.sg",
+      retryable: false,
+      severity: "low",
+      statusCode: 422,
+      category: "dataset_contract",
+      suggestedAction: "Choose a CSV/GeoJSON/JSON resource before running row reads.",
+    },
+    {
+      code: "INTERNAL_ERROR",
+      source: "internal",
+      retryable: false,
+      severity: "high",
+      statusCode: 500,
+      category: "server_fault",
+      suggestedAction: "Check server logs and trace/request IDs before retrying.",
+    },
+  ],
+} as const;
+
 export const RESOURCE_URIS = {
   apis: "sg://apis",
   artifacts: "sg://artifacts",
+  opsTaxonomy: "sg://ops-taxonomy",
   tools: "sg://tools",
   workflows: "sg://workflows",
   recipes: "sg://recipes",

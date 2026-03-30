@@ -180,6 +180,37 @@ describe("brief tools", () => {
     expectMarkdownSections(getText(markdownResult));
   });
 
+  it("returns optional context IDs when requested", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+        noOfOfficers: 3,
+        annualReturnDate: "2026-03-01",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([] as never);
+
+    const result = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      format: "json",
+      includeContextIds: true,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      contextIds: {
+        traceId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+      },
+    });
+  });
+
   it("supports explicit module selection, sector hints, and unmatched module reporting", async () => {
     vi.mocked(getAcraEntities).mockResolvedValue([
       {

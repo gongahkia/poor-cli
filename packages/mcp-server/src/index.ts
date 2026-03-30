@@ -13,7 +13,7 @@ type TransportMode = "stdio" | "http";
 
 const logger = createLogger("server");
 const SHUTDOWN_TIMEOUT = 5000;
-const ALL_TOOLSETS = ["public", "briefs", "query", "health", "ops"] as const satisfies readonly ToolSet[];
+const ALL_TOOLSETS = ["public", "briefs", "query", "health", "ops", "diligence", "property"] as const satisfies readonly ToolSet[];
 
 const readOption = (name: string): string | undefined => {
   const direct = process.argv.find((arg) => arg.startsWith(`--${name}=`));

@@ -355,6 +355,7 @@ export const BusinessDossierBaseSchema = z.object({
   grade: z.string().min(1).optional(),
   modules: z.array(z.enum(["acra", "bca", "cea", "gebiz", "boa", "hsa", "hlb"])).min(1).optional(),
   sectorHints: z.array(z.enum(["construction", "real_estate", "architecture", "healthcare", "hospitality", "procurement"])).min(1).optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 
@@ -392,6 +393,7 @@ export const PropertyBriefBaseSchema = z.object({
   propertyType: z.enum(["residential", "commercial", "industrial"]).optional(),
   includeTransport: z.boolean().optional(),
   includeEnvironment: z.boolean().optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 
@@ -408,12 +410,14 @@ export const MacroBriefSchema = z.object({
   date: IsoDateSchema.optional(),
   startDate: IsoDateSchema.optional(),
   endDate: IsoDateSchema.optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 
 export const TransportBriefBaseSchema = z.object({
   busStopCode: z.string().min(5).optional(),
   serviceNo: z.string().min(1).optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 
@@ -429,6 +433,7 @@ export const EnvironmentBriefBaseSchema = z.object({
   region: z.string().min(1).optional(),
   stationId: z.string().min(1).optional(),
   date: z.string().min(1).optional(),
+  includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
 }).strict();
 
@@ -719,6 +724,12 @@ export const QuerySchema = z.object({
   query: z.string().min(1),
   format: OutputFormatSchema.optional(),
   mode: z.enum(["execute", "plan"]).optional(),
+  includeContextIds: z.boolean().optional(),
+}).strict();
+
+const QueryContextIdsSchema = z.object({
+  traceId: z.string().uuid(),
+  requestId: z.string().uuid(),
 }).strict();
 
 export const QueryPlannedResultSchema = z.object({
@@ -730,6 +741,7 @@ export const QueryPlannedResultSchema = z.object({
   confidence: z.number().min(0).max(1),
   toolsUsed: z.array(z.string().min(1)),
   steps: z.array(QueryPlannedStepSchema),
+  contextIds: QueryContextIdsSchema.optional(),
 }).strict();
 
 export const QueryCompletedResultSchema = z.object({
@@ -745,6 +757,7 @@ export const QueryCompletedResultSchema = z.object({
   continuationHints: z.array(z.string().min(1)).optional(),
   resultSummary: QueryResultSummarySchema.optional(),
   nextActions: z.array(NextCheckSchema).optional(),
+  contextIds: QueryContextIdsSchema.optional(),
 }).strict();
 
 export const QueryBlockedResultSchema = z.object({
@@ -760,6 +773,7 @@ export const QueryBlockedResultSchema = z.object({
   reason: z.string().min(1),
   suggestion: z.string().min(1),
   routingExplanation: z.string().min(1),
+  contextIds: QueryContextIdsSchema.optional(),
 }).strict();
 
 export const QueryUnsupportedResultSchema = z.object({
@@ -773,6 +787,7 @@ export const QueryUnsupportedResultSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   toolsUsed: z.array(z.string().min(1)).optional(),
   steps: z.array(QueryPlannedStepSchema).optional(),
+  contextIds: QueryContextIdsSchema.optional(),
 }).strict();
 
 export const QueryFailedResultSchema = z.object({
@@ -788,6 +803,7 @@ export const QueryFailedResultSchema = z.object({
   resultSummary: QueryResultSummarySchema.optional(),
   nextActions: z.array(NextCheckSchema).optional(),
   failedStep: QueryExecutedStepSchema.nullable(),
+  contextIds: QueryContextIdsSchema.optional(),
 }).strict();
 
 export const QueryOutcomeSchema = z.discriminatedUnion("status", [
