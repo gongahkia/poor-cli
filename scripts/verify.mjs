@@ -32,4 +32,9 @@ run("build", ["run", "build"]);
 runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 run("test", ["test"], testEnv);
-run("packaging smoke", ["run", "test:smoke:packaging"], testEnv);
+
+if (process.env.SG_APIS_SKIP_PACKAGING_SMOKE === "1") {
+  process.stdout.write("\n==> packaging smoke (skipped via SG_APIS_SKIP_PACKAGING_SMOKE=1)\n");
+} else {
+  run("packaging smoke", ["run", "test:smoke:packaging"], testEnv);
+}
