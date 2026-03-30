@@ -5,8 +5,11 @@ import json
 import sys
 from pathlib import Path
 
+from .logging_utils import configure_logging
 from .pipeline import run_vectorize
 from .types import VectorizeConfig
+
+log = configure_logging("haus.cli")
 
 
 def _build_manifest(out_dir: Path, project_root: Path) -> list[dict]:
@@ -36,7 +39,7 @@ def _build_manifest(out_dir: Path, project_root: Path) -> list[dict]:
                     entry["scale"] = f"{m_per_px:.4f}"
                 entry["source"] = meta.get("source_image", "")
             except (json.JSONDecodeError, KeyError):
-                pass
+                log.warning("Skipping malformed metadata file: %s", meta_file)
         manifest.append(entry)
     return manifest
 
@@ -142,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:
+        log.exception("CLI command failed")
         print(f"error: {e}", file=sys.stderr)
         return 1
 
