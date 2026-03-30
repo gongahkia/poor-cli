@@ -31,10 +31,10 @@ use walk_app::scripting::{
 use walk_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
     history_entry_to_state, load_session, named_session_path, save_session, split_node_from_state,
-    split_node_to_state, PaneState, WorkspaceSessionState, WorkspaceTabState,
+    split_node_to_state, FloatingPaneState, PaneState, WorkspaceSessionState, WorkspaceTabState,
 };
 use walk_app::window::WindowConfig;
-use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
+use walk_app::workspace::{FloatingPane, FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
 use walk_blocks::block::{Block, OutputLineEvent};
 use walk_blocks::triggers::{
     Trigger, TriggerAction, TriggerEngine, TriggerHighlight, TriggerMatch, TriggerScope,
@@ -241,6 +241,20 @@ struct StatusBarSegments {
     right: Vec<StatusSegment>,
 }
 
+#[derive(Clone, Copy)]
+enum FloatingDragMode {
+    Move,
+    Resize,
+}
+
+#[derive(Clone, Copy)]
+struct FloatingDragState {
+    pane_id: PaneId,
+    mode: FloatingDragMode,
+    last_x: f64,
+    last_y: f64,
+}
+
 /// Walk application handler.
 struct WalkHandler {
     config: WalkConfig,
@@ -269,6 +283,7 @@ struct WalkHandler {
     pending_close_confirmation: Option<Instant>,
     redraw_history_ms: VecDeque<f32>,
     theme_overrides: HashMap<String, String>,
+    floating_drag: Option<FloatingDragState>,
 }
 
 impl WalkHandler {
@@ -322,6 +337,7 @@ impl WalkHandler {
             pending_close_confirmation: None,
             redraw_history_ms: VecDeque::with_capacity(60),
             theme_overrides: HashMap::new(),
+            floating_drag: None,
         };
         handler.refresh_plugin_config();
         handler.refresh_plugin_snapshot();
@@ -644,7 +660,19 @@ impl WalkHandler {
                 id: tab.id,
                 title: tab.title.clone(),
                 focused_pane: tab.split_manager.focused_leaf,
+                focused_floating: tab.focused_floating,
                 split_tree: split_node_to_state(&tab.split_manager.root),
+                floating_panes: tab
+                    .floating_panes
+                    .iter()
+                    .map(|pane| FloatingPaneState {
+                        pane_id: pane.pane_id,
+                        rect: (pane.rect.x, pane.rect.y, pane.rect.w, pane.rect.h),
+                        z_order: pane.z_order,
+                        is_visible: pane.is_visible,
+                        title: pane.title.clone(),
+                    })
+                    .collect(),
             })
             .collect();
 
@@ -679,6 +707,18 @@ impl WalkHandler {
                     root: split_node_from_state(&tab.split_tree),
                     focused_leaf: tab.focused_pane,
                 },
+                floating_panes: tab
+                    .floating_panes
+                    .into_iter()
+                    .map(|pane| FloatingPane {
+                        pane_id: pane.pane_id,
+                        rect: Rect::new(pane.rect.0, pane.rect.1, pane.rect.2, pane.rect.3),
+                        z_order: pane.z_order,
+                        is_visible: pane.is_visible,
+                        title: pane.title,
+                    })
+                    .collect(),
+                focused_floating: tab.focused_floating,
             })
             .collect();
         self.workspace = WorkspaceState::from_tabs(tabs, active_tab);
@@ -768,6 +808,7 @@ impl WalkHandler {
         let pane_ids = self.workspace.active_pane_ids();
         for pane_id in pane_ids {
             let focused = active_pane_id == Some(pane_id);
+            let floating = self.workspace.active_floating_pane(pane_id).cloned();
             let Some(pane) = self.panes.get_mut(&pane_id) else {
                 continue;
             };
@@ -914,6 +955,58 @@ impl WalkHandler {
                         theme.highlight_current_match.g,
                         theme.highlight_current_match.b,
                         0.8,
+                    ],
+                );
+            }
+            if let Some(floating) = floating.as_ref() {
+                let title_height = 18.0;
+                render.batch.push_bg_quad(
+                    viewport.x,
+                    viewport.y,
+                    viewport.w,
+                    title_height,
+                    [
+                        theme.input_bg.r,
+                        theme.input_bg.g,
+                        theme.input_bg.b,
+                        0.92,
+                    ],
+                );
+                push_text(
+                    render,
+                    &mut self.font,
+                    viewport.x + 8.0,
+                    viewport.y + 2.0,
+                    &floating.title,
+                    [
+                        theme.status_bar_text.r,
+                        theme.status_bar_text.g,
+                        theme.status_bar_text.b,
+                        0.95,
+                    ],
+                );
+                render.batch.push_bg_quad(
+                    viewport.x + viewport.w - 1.0,
+                    viewport.y,
+                    1.0,
+                    viewport.h,
+                    [
+                        theme.block_separator.r,
+                        theme.block_separator.g,
+                        theme.block_separator.b,
+                        0.9,
+                    ],
+                );
+                render.batch.push_bg_quad(
+                    viewport.x,
+                    viewport.y + viewport.h - 1.0,
+                    viewport.w,
+                    1.0,
+                    [
+                        theme.block_separator.r,
+                        theme.block_separator.g,
+                        theme.block_separator.b,
+                        0.9,
                     ],
                 );
             }
@@ -2458,6 +2551,50 @@ impl WalkHandler {
                     "BROADCAST disabled".to_string()
                 });
             }
+            WorkspaceEffect::NewFloatingPane => {
+                let cell_w = self.font.metrics.cell_width.max(8.0);
+                let cell_h = self.font.metrics.cell_height.max(16.0);
+                let pane_w = (80.0 * cell_w).min(self.chrome_rects.content.w - 24.0).max(320.0);
+                let pane_h = (24.0 * cell_h + 22.0)
+                    .min(self.chrome_rects.content.h - 24.0)
+                    .max(220.0);
+                let rect = Rect::new(
+                    self.chrome_rects.content.x + (self.chrome_rects.content.w - pane_w) * 0.5,
+                    self.chrome_rects.content.y + (self.chrome_rects.content.h - pane_h) * 0.5,
+                    pane_w,
+                    pane_h,
+                );
+                if let Some(pane_id) = self.workspace.new_floating_pane(rect, "Floating") {
+                    if let Some(window) = &self.window {
+                        self.sync_workspace_layout(window.inner_size());
+                    }
+                    let mut payload = self.pane_hook_payload(pane_id);
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert("direction".to_string(), json!("floating"));
+                    }
+                    self.run_plugin_hook("pane_opened", &payload);
+                }
+            }
+            WorkspaceEffect::ToggleFloatingPane => {
+                if let Some(visible) = self.workspace.toggle_floating_panes() {
+                    self.status_message = Some(if visible {
+                        "Floating panes shown".to_string()
+                    } else {
+                        "Floating panes hidden".to_string()
+                    });
+                    if let Some(window) = &self.window {
+                        self.sync_workspace_layout(window.inner_size());
+                    }
+                }
+            }
+            WorkspaceEffect::CloseFloatingPane => {
+                if let Some(pane_id) = self.workspace.close_focused_floating_pane() {
+                    self.panes.remove(&pane_id);
+                    if let Some(window) = &self.window {
+                        self.sync_workspace_layout(window.inner_size());
+                    }
+                }
+            }
         }
     }
 
@@ -3758,8 +3895,30 @@ impl WalkHandler {
         }
     }
 
+    fn focus_pane_at_point(&mut self, x: f64, y: f64) -> bool {
+        let Some(pane_id) = self
+            .workspace
+            .pane_at_point(self.chrome_rects.content, x as f32, y as f32)
+        else {
+            return false;
+        };
+        let changed = self.active_pane_id() != Some(pane_id) && self.workspace.focus_pane(pane_id);
+        if changed {
+            if let Some(window) = &self.window {
+                self.sync_workspace_layout(window.inner_size());
+            }
+            self.needs_redraw = true;
+        }
+        changed
+    }
+
     fn pixel_to_cell(&self, x: f64, y: f64) -> Option<CellPos> {
-        let active_pane = self.active_pane()?;
+        let pane_id = self.active_pane_id()?;
+        self.pixel_to_cell_in_pane(pane_id, x, y)
+    }
+
+    fn pixel_to_cell_in_pane(&self, pane_id: PaneId, x: f64, y: f64) -> Option<CellPos> {
+        let active_pane = self.panes.get(&pane_id)?;
         if active_pane.cols == 0 || active_pane.rows == 0 {
             return None;
         }
@@ -4102,6 +4261,39 @@ impl AppHandler for WalkHandler {
                 y,
                 modifiers,
             } => {
+                self.focus_pane_at_point(x, y);
+                if modifiers.alt && platform_modifier_active(modifiers) {
+                    if let Some(pane_id) = self.active_pane_id() {
+                        if let Some(floating) = self.workspace.active_floating_pane(pane_id) {
+                            let rect = floating.rect;
+                            let near_right = x >= f64::from(rect.x + rect.w - 10.0)
+                                && x <= f64::from(rect.x + rect.w);
+                            let near_bottom = y >= f64::from(rect.y + rect.h - 10.0)
+                                && y <= f64::from(rect.y + rect.h);
+                            let in_title = y >= f64::from(rect.y)
+                                && y <= f64::from(rect.y + 18.0)
+                                && x >= f64::from(rect.x)
+                                && x <= f64::from(rect.x + rect.w);
+                            let mode = if near_right || near_bottom {
+                                Some(FloatingDragMode::Resize)
+                            } else if in_title {
+                                Some(FloatingDragMode::Move)
+                            } else {
+                                None
+                            };
+                            if let Some(mode) = mode {
+                                self.floating_drag = Some(FloatingDragState {
+                                    pane_id,
+                                    mode,
+                                    last_x: x,
+                                    last_y: y,
+                                });
+                                self.needs_redraw = true;
+                                return;
+                            }
+                        }
+                    }
+                }
                 if let Some(cell) = self.pixel_to_cell(x, y) {
                     let should_open_link = self.active_pane().is_some_and(|pane| {
                         let absolute_row = pane
@@ -4139,6 +4331,7 @@ impl AppHandler for WalkHandler {
                 button: MouseButton::Left,
                 ..
             } => {
+                self.floating_drag = None;
                 let was_selecting = self.active_pane().is_some_and(|pane| {
                     matches!(pane.app.selection.state, SelectionState::Selecting { .. })
                 });
@@ -4155,6 +4348,33 @@ impl AppHandler for WalkHandler {
                 self.needs_redraw = true;
             }
             walk_app::input::MouseEvent::Move { x, y } => {
+                if let Some(drag) = self.floating_drag.as_mut() {
+                    let dx = (x - drag.last_x) as f32;
+                    let dy = (y - drag.last_y) as f32;
+                    let moved = match drag.mode {
+                        FloatingDragMode::Move => self.workspace.move_floating_pane(
+                            drag.pane_id,
+                            dx,
+                            dy,
+                            self.chrome_rects.content,
+                        ),
+                        FloatingDragMode::Resize => self.workspace.resize_floating_pane(
+                            drag.pane_id,
+                            dx,
+                            dy,
+                            self.chrome_rects.content,
+                        ),
+                    };
+                    drag.last_x = x;
+                    drag.last_y = y;
+                    if moved {
+                        if let Some(window) = &self.window {
+                            self.sync_workspace_layout(window.inner_size());
+                        }
+                        self.needs_redraw = true;
+                    }
+                    return;
+                }
                 if self.active_pane().is_some_and(|pane| {
                     matches!(pane.app.selection.state, SelectionState::Selecting { .. })
                 }) {
@@ -6713,6 +6933,11 @@ fn parse_lua_action(action: &str) -> Option<Action> {
         "quick_select" => Some(Action::QuickSelect),
         "quick_select_block" => Some(Action::QuickSelectBlock),
         "toggle_broadcast" | "broadcast_toggle" => Some(Action::ToggleBroadcast),
+        "new_floating_pane" | "floating_new" => Some(Action::NewFloatingPane),
+        "toggle_floating_pane" | "toggle_floating" | "floating_toggle" => {
+            Some(Action::ToggleFloatingPane)
+        }
+        "close_floating_pane" | "floating_close" => Some(Action::CloseFloatingPane),
         "block_prev" => Some(Action::BlockPrev),
         "block_next" => Some(Action::BlockNext),
         "block_copy" | "copy_block" => Some(Action::BlockCopy),
@@ -6826,6 +7051,9 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::QuickSelect => "quick_select".to_string(),
         Action::QuickSelectBlock => "quick_select_block".to_string(),
         Action::ToggleBroadcast => "toggle_broadcast".to_string(),
+        Action::NewFloatingPane => "new_floating_pane".to_string(),
+        Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
+        Action::CloseFloatingPane => "close_floating_pane".to_string(),
         Action::ToggleInputPosition => "toggle_input_position".to_string(),
         Action::ZoomIn => "zoom_in".to_string(),
         Action::ZoomOut => "zoom_out".to_string(),
@@ -6900,6 +7128,17 @@ fn key_action_label(action: &KeyAction) -> String {
         KeyAction::SelectAll => "SelectAll".to_string(),
         KeyAction::Undo => "Undo".to_string(),
         KeyAction::Redo => "Redo".to_string(),
+    }
+}
+
+fn platform_modifier_active(modifiers: walk_app::input::Modifiers) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        modifiers.meta
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        modifiers.ctrl
     }
 }
 

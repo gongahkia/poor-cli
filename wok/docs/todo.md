@@ -2077,12 +2077,12 @@
 6. Floating panes participate in session persistence: save/restore their position, size, visibility, and content.
 
 **DONE WHEN**
-- [ ] `Mod+Alt+N` creates a new floating pane centered in the window with a default size of 80x24 cells.
-- [ ] The floating pane renders on top of split panes with a visible border and title bar.
-- [ ] Clicking the floating pane focuses it. Clicking a split pane behind it focuses the split pane.
-- [ ] `Mod+Alt+T` toggles visibility of all floating panes.
-- [ ] Floating panes are saved and restored with sessions.
-- [ ] Multiple floating panes can coexist with independent z-ordering.
+- [x] `Mod+Alt+N` creates a new floating pane centered in the window with a default size of 80x24 cells.
+- [x] The floating pane renders on top of split panes with a visible border and title bar.
+- [x] Clicking the floating pane focuses it. Clicking a split pane behind it focuses the split pane.
+- [x] `Mod+Alt+T` toggles visibility of all floating panes.
+- [x] Floating panes are saved and restored with sessions.
+- [x] Multiple floating panes can coexist with independent z-ordering.
 
 ---
 

@@ -87,6 +87,12 @@ pub enum Action {
     EnterViMode,
     /// Toggle pane input broadcast mode.
     ToggleBroadcast,
+    /// Create a new floating pane.
+    NewFloatingPane,
+    /// Toggle visibility for floating panes.
+    ToggleFloatingPane,
+    /// Close the focused floating pane.
+    CloseFloatingPane,
     /// Open the command palette.
     CommandPalette,
     /// Open pane-local command history search.
@@ -419,6 +425,27 @@ impl Default for KeybindingConfig {
                 modifiers: pma,
             },
             Action::ToggleBroadcast,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('n'),
+                modifiers: pma,
+            },
+            Action::NewFloatingPane,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('t'),
+                modifiers: pma,
+            },
+            Action::ToggleFloatingPane,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('w'),
+                modifiers: pma,
+            },
+            Action::CloseFloatingPane,
         );
         bindings.insert(
             KeyCombo {

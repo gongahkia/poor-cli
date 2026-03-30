@@ -112,6 +112,12 @@ pub enum WorkspaceEffect {
     ResizeSplitDown,
     /// Toggle raw input broadcast mode for the active tab.
     ToggleBroadcast,
+    /// Create a new floating pane.
+    NewFloatingPane,
+    /// Toggle visibility of floating panes.
+    ToggleFloatingPane,
+    /// Close the focused floating pane.
+    CloseFloatingPane,
     /// Save a named workspace snapshot.
     SaveSession(String),
     /// Load a named workspace snapshot.

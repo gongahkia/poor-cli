@@ -308,6 +308,15 @@ impl WalkApp {
             Action::ToggleBroadcast => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ToggleBroadcast));
             }
+            Action::NewFloatingPane => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NewFloatingPane));
+            }
+            Action::ToggleFloatingPane => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::ToggleFloatingPane));
+            }
+            Action::CloseFloatingPane => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::CloseFloatingPane));
+            }
             Action::CommandPalette => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandPalette));
             }

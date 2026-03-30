@@ -138,8 +138,29 @@ pub struct WorkspaceTabState {
     pub title: String,
     /// Focused pane in the tab.
     pub focused_pane: PaneId,
+    /// Focused floating pane id when one is focused.
+    #[serde(default)]
+    pub focused_floating: Option<PaneId>,
     /// Split tree for the tab.
     pub split_tree: SplitNodeState,
+    /// Floating panes overlaid on the split tree.
+    #[serde(default)]
+    pub floating_panes: Vec<FloatingPaneState>,
+}
+
+/// Saved floating pane metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FloatingPaneState {
+    /// Backing pane id.
+    pub pane_id: PaneId,
+    /// Pane rectangle in logical pixels.
+    pub rect: (f32, f32, f32, f32),
+    /// Z ordering for overlap.
+    pub z_order: u32,
+    /// Visibility state.
+    pub is_visible: bool,
+    /// User-facing title.
+    pub title: String,
 }
 
 /// Complete saved workspace session.
@@ -348,7 +369,9 @@ mod tests {
                 id: 1,
                 title: "Shell".to_string(),
                 focused_pane: 7,
+                focused_floating: None,
                 split_tree: SplitNodeState::Leaf { pane_id: 7 },
+                floating_panes: Vec::new(),
             }],
             panes: vec![PaneState {
                 id: 7,
