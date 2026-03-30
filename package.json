@@ -14,6 +14,7 @@
     "lint": "eslint packages/*/src/**/*.ts",
     "verify": "node ./scripts/verify.mjs",
     "diagnostics": "node ./scripts/dev-diagnostics.mjs",
+    "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",
     "dev": "tsc --build --watch",
     "test:smoke:packaging": "node ./scripts/smoke-packages.mjs",
     "test:smoke:container": "node ./scripts/smoke-container.mjs",

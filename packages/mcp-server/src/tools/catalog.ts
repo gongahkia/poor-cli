@@ -1491,6 +1491,34 @@ export const PLAYBOOK_CATALOG: readonly PlaybookCatalogEntry[] = [
   },
 ];
 
+export type BenchmarkEvidenceSnapshot = {
+  readonly schemaVersion: "1.0";
+  readonly generatedAt: string;
+  readonly source: "repository-baseline" | "github-actions" | "local";
+  readonly commitSha: string;
+  readonly runUrl: string | null;
+  readonly checks: readonly {
+    readonly name: string;
+    readonly status: "passed" | "skipped";
+    readonly notes: string;
+  }[];
+};
+
+export const BENCHMARK_EVIDENCE_SNAPSHOT: BenchmarkEvidenceSnapshot = {
+  schemaVersion: "1.0",
+  generatedAt: "2026-03-30T00:00:00.000Z",
+  source: "repository-baseline",
+  commitSha: "baseline",
+  runUrl: null,
+  checks: [
+    {
+      name: "npm run verify",
+      status: "passed",
+      notes: "Baseline repository expectations before CI-specific evidence overlays.",
+    },
+  ],
+};
+
 export const BENCHMARK_CATALOG = {
   summary: [
     "Adoption targets are framed for agent developers, not consumer chat products.",
@@ -1559,12 +1587,20 @@ export const BENCHMARK_CATALOG = {
       evidence: "Use sg://runtime plus npm run test:smoke:live in the release environment.",
     },
   ],
+  latestEvidenceSnapshot: BENCHMARK_EVIDENCE_SNAPSHOT,
   releaseBlockingChecks: [
     "A failing authenticated health probe blocks release until credentials and the live runtime path both work.",
     "A failing workflow smoke case blocks release until the workflow is fixed or removed from public discovery.",
     "Packaging smoke must confirm the published tarballs exclude tests, fixtures, mock servers, and internal audit artifacts.",
   ],
 } as const;
+
+export const buildBenchmarkCatalog = (
+  snapshot: BenchmarkEvidenceSnapshot = BENCHMARK_EVIDENCE_SNAPSHOT,
+) => ({
+  ...BENCHMARK_CATALOG,
+  latestEvidenceSnapshot: snapshot,
+} as const);
 
 export const OPS_TAXONOMY_CATALOG = {
   summary: [

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   API_CATALOG,
@@ -247,6 +250,43 @@ describe("resource catalog parity", () => {
     const result = await resourceHandlers.get(RESOURCE_URIS.benchmarks)!();
 
     expect(JSON.parse(result.contents[0]!.text!)).toEqual(BENCHMARK_CATALOG);
+  });
+
+  it("overlays sg://benchmarks with a CI snapshot override when configured", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "sg-apis-benchmarks-"));
+    const snapshotPath = join(tempDir, "snapshot.json");
+    const snapshot = {
+      schemaVersion: "1.0",
+      generatedAt: "2026-03-30T12:00:00.000Z",
+      source: "github-actions",
+      commitSha: "abc123",
+      runUrl: "https://github.com/example/repo/actions/runs/123",
+      checks: [
+        {
+          name: "npm run verify",
+          status: "passed",
+          notes: "verify completed",
+        },
+      ],
+    };
+
+    writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+    const previous = process.env["SG_APIS_BENCHMARK_SNAPSHOT_PATH"];
+    process.env["SG_APIS_BENCHMARK_SNAPSHOT_PATH"] = snapshotPath;
+
+    try {
+      const { resourceHandlers } = collectSurface();
+      const result = await resourceHandlers.get(RESOURCE_URIS.benchmarks)!();
+      const payload = JSON.parse(result.contents[0]!.text!);
+      expect(payload.latestEvidenceSnapshot).toEqual(snapshot);
+    } finally {
+      if (previous === undefined) {
+        delete process.env["SG_APIS_BENCHMARK_SNAPSHOT_PATH"];
+      } else {
+        process.env["SG_APIS_BENCHMARK_SNAPSHOT_PATH"] = previous;
+      }
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("serves the operations taxonomy through sg://ops-taxonomy", async () => {

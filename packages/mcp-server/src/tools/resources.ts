@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import {
   BENCHMARK_CATALOG,
+  buildBenchmarkCatalog,
+  type BenchmarkEvidenceSnapshot,
   OPS_TAXONOMY_CATALOG,
   RESOURCE_URIS,
   RUNTIME_CATALOG,
@@ -54,6 +57,64 @@ const toJsonContents = (uri: string, payload: unknown) => ({
     },
   ],
 });
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => {
+  return typeof value === "object" && value !== null;
+};
+
+const toBenchmarkSnapshot = (value: unknown): BenchmarkEvidenceSnapshot | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value["schemaVersion"] !== "1.0") {
+    return null;
+  }
+
+  if (typeof value["generatedAt"] !== "string" || typeof value["source"] !== "string" || typeof value["commitSha"] !== "string") {
+    return null;
+  }
+
+  if (value["source"] !== "repository-baseline" && value["source"] !== "github-actions" && value["source"] !== "local") {
+    return null;
+  }
+
+  if (value["runUrl"] !== null && typeof value["runUrl"] !== "string") {
+    return null;
+  }
+
+  if (!Array.isArray(value["checks"])) {
+    return null;
+  }
+
+  const checks = value["checks"].every((entry) => (
+    isRecord(entry)
+    && typeof entry["name"] === "string"
+    && typeof entry["notes"] === "string"
+    && (entry["status"] === "passed" || entry["status"] === "skipped")
+  ));
+
+  return checks ? value as BenchmarkEvidenceSnapshot : null;
+};
+
+const readBenchmarkSnapshotOverride = (): BenchmarkEvidenceSnapshot | null => {
+  const snapshotPath = process.env["SG_APIS_BENCHMARK_SNAPSHOT_PATH"];
+  if (snapshotPath === undefined || snapshotPath.trim() === "") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(snapshotPath, "utf8")) as unknown;
+    return toBenchmarkSnapshot(parsed);
+  } catch {
+    return null;
+  }
+};
+
+const getBenchmarkCatalogPayload = () => {
+  const override = readBenchmarkSnapshotOverride();
+  return override === null ? BENCHMARK_CATALOG : buildBenchmarkCatalog(override);
+};
 
 const buildVariableCompletion = (values: readonly string[]) => {
   return (value: string): string[] => values.filter((candidate) => candidate.startsWith(value));
@@ -332,7 +393,7 @@ export const registerResources = (
     description: "Integration and release-readiness expectations for the public MCP surface.",
     mimeType: JSON_MIME_TYPE,
     annotations: DEFAULT_RESOURCE_ANNOTATIONS,
-  }, async () => toJsonContents(RESOURCE_URIS.benchmarks, BENCHMARK_CATALOG));
+  }, async () => toJsonContents(RESOURCE_URIS.benchmarks, getBenchmarkCatalogPayload()));
 
   server.registerResource("sg-ops-taxonomy", RESOURCE_URIS.opsTaxonomy, {
     title: "Operations Taxonomy",
