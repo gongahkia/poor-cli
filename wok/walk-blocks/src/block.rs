@@ -4,7 +4,20 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::triggers::TriggerHighlight;
-use walk_terminal::terminal::SemanticEvent;
+use walk_terminal::terminal::{SemanticEvent, Terminal};
+
+/// One streaming output line emitted from a block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputLineEvent {
+    /// Pane id that produced this line.
+    pub pane_id: u64,
+    /// Block id that produced this line.
+    pub block_id: u64,
+    /// Line number relative to block output start.
+    pub line_number: usize,
+    /// Output text content for this line.
+    pub text: String,
+}
 
 /// A single command block: prompt + command + output.
 #[derive(Debug, Clone)]
@@ -224,6 +237,40 @@ impl BlockManager {
         let block = self.get_block_mut(block_id)?;
         block.is_bookmarked = !block.is_bookmarked;
         Some(block.is_bookmarked)
+    }
+
+    /// Return the currently active output block id while command output is streaming.
+    pub fn active_output_block_id(&self) -> Option<u64> {
+        match self.state {
+            BlockBuildState::InOutput { block_id } => Some(block_id),
+            _ => None,
+        }
+    }
+
+    /// Build output-line events for one block across an absolute row range.
+    pub fn output_line_events_for_range(
+        &self,
+        terminal: &Terminal,
+        pane_id: u64,
+        block_id: u64,
+        row_start: usize,
+        row_end: usize,
+    ) -> Vec<OutputLineEvent> {
+        let Some(block) = self.blocks.iter().find(|block| block.id == block_id) else {
+            return Vec::new();
+        };
+        if row_start > row_end {
+            return Vec::new();
+        }
+
+        (row_start..=row_end)
+            .map(|absolute_row| OutputLineEvent {
+                pane_id,
+                block_id,
+                line_number: absolute_row.saturating_sub(block.output_start_row),
+                text: terminal.state.row_text(absolute_row),
+            })
+            .collect()
     }
 
     /// Return the next bookmarked block id, wrapping when needed.

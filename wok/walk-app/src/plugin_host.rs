@@ -110,6 +110,11 @@ impl PluginHost {
         }
     }
 
+    /// Return whether any listener exists for a given hook.
+    pub fn has_hook_listener(&self, hook: &str) -> bool {
+        self.runtime.hook_listener_count(hook) > 0
+    }
+
     /// Update the latest runtime snapshot visible to plugin accessors.
     pub fn update_snapshot(&self, snapshot: Value) {
         self.runtime.set_runtime_snapshot(snapshot);

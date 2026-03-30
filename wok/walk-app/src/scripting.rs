@@ -557,6 +557,14 @@ impl LuaRuntime {
         Ok(())
     }
 
+    /// Return number of listeners registered for a hook name.
+    pub fn hook_listener_count(&self, event: &str) -> usize {
+        self.hooks
+            .borrow()
+            .get(event)
+            .map_or(0, std::vec::Vec::len)
+    }
+
     /// Drain pending shell commands queued from Lua.
     pub fn take_exec_requests(&self) -> Vec<String> {
         std::mem::take(&mut *self.state.exec_requests.lock().unwrap())

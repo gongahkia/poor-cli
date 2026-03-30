@@ -35,7 +35,7 @@ use walk_app::session::{
 };
 use walk_app::window::WindowConfig;
 use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
-use walk_blocks::block::Block;
+use walk_blocks::block::{Block, OutputLineEvent};
 use walk_blocks::triggers::{
     Trigger, TriggerAction, TriggerEngine, TriggerHighlight, TriggerMatch, TriggerScope,
 };
@@ -231,6 +231,7 @@ struct PaneRuntime {
     pending_history: Option<HistoryEntry>,
     history_nav: HistoryNavigationState,
     inline_images: InlineImageStore,
+    last_output_line_row: Option<usize>,
 }
 
 #[derive(Clone, Default)]
@@ -502,6 +503,7 @@ impl WalkHandler {
                     pending_history: None,
                     history_nav: HistoryNavigationState::default(),
                     inline_images: InlineImageStore::new(),
+                    last_output_line_row: None,
                 };
                 self.panes.insert(pane_id, pane_runtime);
                 self.sync_owned_input_state_for_pane(pane_id);
@@ -1463,6 +1465,98 @@ impl WalkHandler {
         self.drain_plugin_side_effects();
     }
 
+    fn output_line_hooks_enabled(&self) -> bool {
+        self.plugins
+            .as_ref()
+            .is_some_and(|plugins| plugins.has_hook_listener("output_line"))
+    }
+
+    fn collect_output_line_events_for_pane(
+        &mut self,
+        pane_id: PaneId,
+        include_current_row: bool,
+    ) -> Vec<OutputLineEvent> {
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return Vec::new();
+        };
+        let Some(block_id) = pane.app.block_manager.active_output_block_id().or_else(|| {
+            include_current_row
+                .then(|| pane.app.block_manager.blocks.last().map(|block| block.id))
+                .flatten()
+        }) else {
+            return Vec::new();
+        };
+        let Some(block) = pane
+            .app
+            .block_manager
+            .blocks
+            .iter()
+            .find(|block| block.id == block_id)
+        else {
+            return Vec::new();
+        };
+
+        let start_row = pane
+            .last_output_line_row
+            .map_or(block.output_start_row, |row| row.saturating_add(1));
+        let end_row = if include_current_row {
+            block.output_end_row
+        } else {
+            pane.terminal.state.absolute_cursor_row().saturating_sub(1)
+        };
+        if end_row < start_row {
+            return Vec::new();
+        }
+
+        pane.last_output_line_row = Some(end_row);
+        pane.app.block_manager.output_line_events_for_range(
+            &pane.terminal,
+            pane_id,
+            block_id,
+            start_row,
+            end_row,
+        )
+    }
+
+    fn dispatch_output_line_hooks(&mut self, events: Vec<OutputLineEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        let Some(plugins) = &self.plugins else {
+            return;
+        };
+
+        self.refresh_plugin_snapshot();
+        for chunk in events.chunks(100) {
+            if chunk.len() == 1 {
+                let event = &chunk[0];
+                plugins.trigger_hook(
+                    "output_line",
+                    &json!({
+                        "pane_id": event.pane_id,
+                        "block_id": event.block_id,
+                        "line_number": event.line_number,
+                        "text": event.text,
+                    }),
+                );
+            } else {
+                let payload: Vec<_> = chunk
+                    .iter()
+                    .map(|event| {
+                        json!({
+                            "pane_id": event.pane_id,
+                            "block_id": event.block_id,
+                            "line_number": event.line_number,
+                            "text": event.text,
+                        })
+                    })
+                    .collect();
+                plugins.trigger_hook("output_line", &payload);
+            }
+        }
+        self.drain_plugin_side_effects();
+    }
+
     fn drain_plugin_side_effects(&mut self) {
         let Some(plugins) = &self.plugins else {
             return;
@@ -1857,9 +1951,16 @@ impl WalkHandler {
                     }
                     relayout = true;
                 }
-                SemanticEvent::CommandStart { .. } | SemanticEvent::OutputStart { .. } => {
+                SemanticEvent::CommandStart { .. } => {
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
                         pane.prompt_ready = false;
+                    }
+                    relayout = true;
+                }
+                SemanticEvent::OutputStart { row } => {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        pane.prompt_ready = false;
+                        pane.last_output_line_row = row.checked_sub(1);
                     }
                     relayout = true;
                 }
@@ -1910,6 +2011,7 @@ impl WalkHandler {
                         entry.mark_completed(exit_code, duration, cwd);
                         if !entry.command.is_empty() {
                             pane.pane_history.push(entry.clone());
+                            pane.last_output_line_row = None;
                             Some(entry)
                         } else {
                             None
@@ -3811,9 +3913,12 @@ impl AppHandler for WalkHandler {
 
         let pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
         let mut relayout = false;
+        let output_line_hooks_enabled = self.output_line_hooks_enabled();
+        let mut output_line_events = Vec::new();
         for pane_id in pane_ids {
             let mut semantic_events = Vec::new();
             let mut is_dirty = false;
+            let mut command_ended = false;
             let previous_input_active = self
                 .panes
                 .get(&pane_id)
@@ -3834,9 +3939,16 @@ impl AppHandler for WalkHandler {
                 is_dirty |= pane.viewport.needs_render();
             }
             if !semantic_events.is_empty() {
+                command_ended = semantic_events
+                    .iter()
+                    .any(|event| matches!(event, SemanticEvent::CommandEnd { .. }));
                 self.handle_semantic_events(pane_id, semantic_events);
             }
             self.sync_owned_input_state_for_pane(pane_id);
+            if output_line_hooks_enabled {
+                output_line_events
+                    .extend(self.collect_output_line_events_for_pane(pane_id, command_ended));
+            }
             let input_active = self
                 .panes
                 .get(&pane_id)
@@ -3852,6 +3964,10 @@ impl AppHandler for WalkHandler {
                 self.refresh_block_query_for_pane(pane_id);
             }
             self.needs_redraw |= is_dirty;
+        }
+
+        if output_line_hooks_enabled {
+            self.dispatch_output_line_hooks(output_line_events);
         }
 
         if relayout {

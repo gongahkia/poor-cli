@@ -2035,10 +2035,10 @@
 5. Rate limiting: if output arrives faster than Lua can process (e.g., `cat /dev/urandom | hexdump`), batch lines into groups of up to 100 and pass as a single array to the callback. This prevents Lua from becoming a bottleneck.
 
 **DONE WHEN**
-- [ ] `walk.on("output_line", function(e) if e.text:match("FAIL") then walk.notify("Test failure detected!") end end)` shows a notification the instant a failing test line appears, before the command completes.
-- [ ] Output of `seq 1 10000` does not cause noticeable frame drops (rate limiting works).
-- [ ] When no `output_line` hooks are registered, there is zero overhead on normal terminal output processing.
-- [ ] The hook fires for all panes, with `pane_id` included in the event context.
+- [x] `walk.on("output_line", function(e) if e.text:match("FAIL") then walk.notify("Test failure detected!") end end)` shows a notification the instant a failing test line appears, before the command completes.
+- [x] Output of `seq 1 10000` does not cause noticeable frame drops (rate limiting works).
+- [x] When no `output_line` hooks are registered, there is zero overhead on normal terminal output processing.
+- [x] The hook fires for all panes, with `pane_id` included in the event context.
 
 ---
 
