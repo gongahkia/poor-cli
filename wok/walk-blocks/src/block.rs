@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::triggers::TriggerHighlight;
 use walk_terminal::terminal::SemanticEvent;
 
 /// A single command block: prompt + command + output.
@@ -38,6 +39,8 @@ pub struct Block {
     pub git_dirty: Option<bool>,
     /// Whether the block is bookmarked for quick navigation.
     pub is_bookmarked: bool,
+    /// Trigger-derived highlight regions anchored to absolute rows.
+    pub trigger_highlights: Vec<TriggerHighlight>,
 }
 
 /// State machine for building blocks from semantic events.
@@ -132,6 +135,7 @@ impl BlockManager {
                         git_branch: None,
                         git_dirty: None,
                         is_bookmarked: false,
+                        trigger_highlights: Vec::new(),
                     };
                     self.blocks.push(block);
                     self.active_block = Some(id);

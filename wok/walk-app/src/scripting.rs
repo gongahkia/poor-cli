@@ -31,6 +31,25 @@ pub enum ThemeRequest {
     Override(HashMap<String, String>),
 }
 
+/// Trigger work requested by Lua.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TriggerRequest {
+    /// Add or replace a trigger.
+    Add {
+        /// Trigger name.
+        name: String,
+        /// Regex pattern.
+        pattern: String,
+        /// Action descriptors.
+        actions: Vec<String>,
+    },
+    /// Remove a trigger by name.
+    Remove {
+        /// Trigger name.
+        name: String,
+    },
+}
+
 /// Shared state for Lua callbacks to write to.
 #[derive(Default, Clone)]
 pub struct LuaState {
@@ -46,6 +65,8 @@ pub struct LuaState {
     pub exec_requests: Arc<Mutex<Vec<String>>>,
     /// Pending built-in action requests requested by Lua.
     pub action_requests: Arc<Mutex<Vec<String>>>,
+    /// Pending trigger registration requests requested by Lua.
+    pub trigger_requests: Arc<Mutex<Vec<TriggerRequest>>>,
     /// Named commands registered from Lua as action aliases.
     pub commands: Arc<Mutex<HashMap<String, String>>>,
     /// Latest runtime snapshot exposed to plugin callbacks.
@@ -200,6 +221,37 @@ impl LuaRuntime {
                 })?;
         walk.set("register_command", register_command_fn)?;
 
+        // walk.add_trigger(name, pattern, actions)
+        let trigger_request_state = self.state.trigger_requests.clone();
+        let add_trigger_fn = self.lua.create_function(
+            move |_, (name, pattern, actions): (String, String, Table)| {
+                let actions = actions
+                    .sequence_values::<String>()
+                    .collect::<LuaResult<Vec<_>>>()?;
+                trigger_request_state
+                    .lock()
+                    .unwrap()
+                    .push(TriggerRequest::Add {
+                        name,
+                        pattern,
+                        actions,
+                    });
+                Ok(())
+            },
+        )?;
+        walk.set("add_trigger", add_trigger_fn)?;
+
+        // walk.remove_trigger(name)
+        let trigger_request_state = self.state.trigger_requests.clone();
+        let remove_trigger_fn = self.lua.create_function(move |_, name: String| {
+            trigger_request_state
+                .lock()
+                .unwrap()
+                .push(TriggerRequest::Remove { name });
+            Ok(())
+        })?;
+        walk.set("remove_trigger", remove_trigger_fn)?;
+
         // walk.run_action(action) — queue a built-in runtime action
         let action_state = self.state.action_requests.clone();
         let run_action_fn = self.lua.create_function(move |_, action: String| {
@@ -330,6 +382,11 @@ impl LuaRuntime {
     /// Drain pending theme requests queued from Lua.
     pub fn take_theme_requests(&self) -> Vec<ThemeRequest> {
         std::mem::take(&mut *self.state.theme_requests.lock().unwrap())
+    }
+
+    /// Drain pending trigger requests queued from Lua.
+    pub fn take_trigger_requests(&self) -> Vec<TriggerRequest> {
+        std::mem::take(&mut *self.state.trigger_requests.lock().unwrap())
     }
 
     /// Resolve a named command alias registered from Lua to an action string.

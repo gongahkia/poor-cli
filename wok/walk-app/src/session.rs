@@ -230,6 +230,7 @@ pub fn block_from_state(block: &BlockState) -> Block {
         git_branch: block.git_branch.clone(),
         git_dirty: block.git_dirty,
         is_bookmarked: block.is_bookmarked,
+        trigger_highlights: Vec::new(),
     }
 }
 
@@ -422,6 +423,12 @@ mod tests {
             git_branch: Some("main".to_string()),
             git_dirty: Some(true),
             is_bookmarked: true,
+            trigger_highlights: vec![walk_blocks::triggers::TriggerHighlight {
+                absolute_row: 11,
+                col_start: 2,
+                col_end: 7,
+                color: "#ff0000".to_string(),
+            }],
         };
 
         let state = block_to_state(&runtime_block);

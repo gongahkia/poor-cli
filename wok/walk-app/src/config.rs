@@ -27,6 +27,36 @@ pub enum CommandEntryMode {
     OwnedPrimary,
 }
 
+/// Trigger scope loaded from config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerScopeConfig {
+    /// Evaluate trigger against command output.
+    Output,
+    /// Evaluate trigger against command text.
+    Command,
+    /// Evaluate trigger against both command and output.
+    Both,
+}
+
+impl Default for TriggerScopeConfig {
+    fn default() -> Self {
+        Self::Output
+    }
+}
+
+/// A regex trigger loaded from configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerConfig {
+    /// Trigger display name.
+    pub name: String,
+    /// Regex pattern.
+    pub pattern: String,
+    /// Action descriptors.
+    pub actions: Vec<String>,
+    /// Trigger evaluation scope.
+    pub scope: TriggerScopeConfig,
+}
+
 /// Complete Walk configuration.
 #[derive(Debug, Clone)]
 pub struct WalkConfig {
@@ -64,6 +94,8 @@ pub struct WalkConfig {
     pub restore_session: bool,
     /// Whether to show the internal debug overlay.
     pub debug_overlay: bool,
+    /// Regex triggers loaded from config.
+    pub triggers: Vec<TriggerConfig>,
 }
 
 /// Input editor position.
@@ -95,6 +127,16 @@ struct ConfigToml {
     confirm_close_with_running_process: Option<bool>,
     restore_session: Option<bool>,
     debug_overlay: Option<bool>,
+    triggers: Option<Vec<TriggerToml>>,
+}
+
+/// TOML trigger section.
+#[derive(Debug, Default, Deserialize)]
+struct TriggerToml {
+    name: Option<String>,
+    pattern: Option<String>,
+    actions: Option<Vec<String>>,
+    scope: Option<String>,
 }
 
 impl Default for WalkConfig {
@@ -117,6 +159,7 @@ impl Default for WalkConfig {
             confirm_close_with_running_process: true,
             restore_session: false,
             debug_overlay: false,
+            triggers: Vec::new(),
         }
     }
 }
@@ -206,6 +249,36 @@ impl WalkConfig {
         }
         if let Some(debug_overlay) = toml_config.debug_overlay {
             config.debug_overlay = debug_overlay;
+        }
+        if let Some(triggers) = toml_config.triggers {
+            config.triggers = triggers
+                .into_iter()
+                .filter_map(|trigger| {
+                    let name = trigger.name?.trim().to_string();
+                    let pattern = trigger.pattern?.trim().to_string();
+                    if name.is_empty() || pattern.is_empty() {
+                        return None;
+                    }
+                    let actions = trigger.actions.unwrap_or_default();
+                    let scope = match trigger
+                        .scope
+                        .as_deref()
+                        .map(str::trim)
+                        .map(str::to_ascii_lowercase)
+                        .as_deref()
+                    {
+                        Some("command") => TriggerScopeConfig::Command,
+                        Some("both") => TriggerScopeConfig::Both,
+                        _ => TriggerScopeConfig::Output,
+                    };
+                    Some(TriggerConfig {
+                        name,
+                        pattern,
+                        actions,
+                        scope,
+                    })
+                })
+                .collect();
         }
 
         Ok(config)

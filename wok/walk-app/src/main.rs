@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::Parser;
+use regex::Regex;
 use serde::Serialize;
 use serde_json::json;
 use tracing::{info, warn};
@@ -18,13 +19,13 @@ use walk_app::action_effects::{
 use walk_app::app::{InputMode, WalkApp};
 use walk_app::block_query::{BlockQueryMode, BlockQueryState};
 use walk_app::command_search::{CommandSearchScope, CommandSearchState};
-use walk_app::config::WalkConfig;
+use walk_app::config::{TriggerScopeConfig, WalkConfig};
 use walk_app::event_loop::run_event_loop;
 use walk_app::handler::AppHandler;
 use walk_app::input::{InputEvent, KeyAction};
 use walk_app::keybindings::Action;
 use walk_app::plugin_host::PluginHost;
-use walk_app::scripting::ThemeRequest;
+use walk_app::scripting::{ThemeRequest, TriggerRequest};
 use walk_app::session::{
     block_from_state, block_to_state, default_session_path, history_entry_from_state,
     history_entry_to_state, load_session, named_session_path, save_session, split_node_from_state,
@@ -33,6 +34,9 @@ use walk_app::session::{
 use walk_app::window::WindowConfig;
 use walk_app::workspace::{FocusDirection, PaneId, WorkspaceState, WorkspaceTab};
 use walk_blocks::block::Block;
+use walk_blocks::triggers::{
+    Trigger, TriggerAction, TriggerEngine, TriggerHighlight, TriggerMatch, TriggerScope,
+};
 use walk_input::editor::{EditorAction, EditorKey};
 use walk_input::history::{prefix_matches, CommandHistory, HistoryEntry};
 use walk_renderer::atlas::GlyphAtlas;
@@ -220,6 +224,7 @@ struct PaneRuntime {
 /// Walk application handler.
 struct WalkHandler {
     config: WalkConfig,
+    trigger_engine: TriggerEngine,
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
@@ -245,6 +250,7 @@ impl WalkHandler {
         let font = FontSystem::new(&config.font_family, config.font_size);
         let (workspace, _) = WorkspaceState::new("Walk");
         let plugins = PluginHost::new(&WalkConfig::config_dir());
+        let trigger_engine = trigger_engine_from_config(&config);
         let background = {
             let mut background = BackgroundRenderer::new();
             if let Some(path) = resolve_background_image_path(&config) {
@@ -262,6 +268,7 @@ impl WalkHandler {
 
         let handler = Self {
             config,
+            trigger_engine,
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
@@ -1212,6 +1219,7 @@ impl WalkHandler {
             "window_opacity": self.config.window_opacity,
             "restore_session": self.config.restore_session,
             "debug_overlay": self.config.debug_overlay,
+            "trigger_count": self.trigger_engine.len(),
         })
     }
 
@@ -1317,8 +1325,35 @@ impl WalkHandler {
         for request in effects.theme_requests {
             self.apply_theme_request(request);
         }
+        for request in effects.trigger_requests {
+            self.apply_trigger_request(request);
+        }
         self.refresh_plugin_config();
         self.refresh_plugin_snapshot();
+    }
+
+    fn apply_trigger_request(&mut self, request: TriggerRequest) {
+        match request {
+            TriggerRequest::Add {
+                name,
+                pattern,
+                actions,
+            } => match trigger_from_descriptor(name.clone(), pattern.clone(), actions) {
+                Ok(trigger) => {
+                    self.trigger_engine.add_trigger(trigger);
+                    self.status_message = Some(format!("registered trigger '{name}'"));
+                }
+                Err(error) => {
+                    warn!("failed to register trigger '{name}': {error}");
+                    self.status_message = Some(format!("failed to add trigger '{name}'"));
+                }
+            },
+            TriggerRequest::Remove { name } => {
+                if self.trigger_engine.remove_trigger(&name) {
+                    self.status_message = Some(format!("removed trigger '{name}'"));
+                }
+            }
+        }
     }
 
     fn apply_theme_request(&mut self, request: ThemeRequest) {
@@ -1424,6 +1459,155 @@ impl WalkHandler {
         }
     }
 
+    fn evaluate_triggers_for_latest_block(&mut self, pane_id: PaneId) {
+        if self.trigger_engine.is_empty() {
+            return;
+        }
+
+        let Some((block_id, output_start_row, command_text, output_lines, matches)) =
+            self.panes.get(&pane_id).and_then(|pane| {
+                let block = pane.app.block_manager.blocks.last()?;
+                let output_lines = collect_block_output_lines(&pane.terminal, block);
+                let output_text = output_lines.join("\n");
+                let mut matches =
+                    self.trigger_engine
+                        .evaluate(block, &output_text, TriggerScope::Output);
+                if !block.command_text.trim().is_empty() {
+                    matches.extend(self.trigger_engine.evaluate(
+                        block,
+                        &block.command_text,
+                        TriggerScope::Command,
+                    ));
+                }
+
+                Some((
+                    block.id,
+                    block.output_start_row,
+                    block.command_text.clone(),
+                    output_lines,
+                    matches,
+                ))
+            })
+        else {
+            return;
+        };
+
+        if matches.is_empty() {
+            return;
+        }
+
+        self.apply_trigger_matches(
+            pane_id,
+            block_id,
+            output_start_row,
+            &command_text,
+            &output_lines,
+            matches,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_trigger_matches(
+        &mut self,
+        pane_id: PaneId,
+        block_id: u64,
+        output_start_row: usize,
+        command_text: &str,
+        output_lines: &[String],
+        matches: Vec<TriggerMatch>,
+    ) {
+        let mut urls_to_open = Vec::new();
+        let mut hook_invocations = Vec::new();
+        let mut latest_notification = None;
+
+        let Some(pane) = self.panes.get_mut(&pane_id) else {
+            return;
+        };
+        let Some(block) = pane.app.block_manager.get_block_mut(block_id) else {
+            return;
+        };
+
+        for trigger_match in matches {
+            for action in &trigger_match.actions {
+                match action {
+                    TriggerAction::Highlight { color } => match trigger_match.scope {
+                        TriggerScope::Output => {
+                            let highlights = trigger_highlights_for_output_range(
+                                output_lines,
+                                output_start_row,
+                                trigger_match.byte_range,
+                                color,
+                            );
+                            block.trigger_highlights.extend(highlights);
+                        }
+                        TriggerScope::Command => {
+                            if let Some((col_start, col_end)) =
+                                char_span_for_single_line(command_text, trigger_match.byte_range)
+                            {
+                                block.trigger_highlights.push(TriggerHighlight {
+                                    absolute_row: output_start_row,
+                                    col_start,
+                                    col_end,
+                                    color: normalize_trigger_color(color),
+                                });
+                            }
+                        }
+                        TriggerScope::Both => {}
+                    },
+                    TriggerAction::Notify { message } => {
+                        let notification = if message.trim().is_empty() {
+                            format!(
+                                "trigger '{}' matched '{}'",
+                                trigger_match.trigger_name, trigger_match.matched_text
+                            )
+                        } else {
+                            format!("{message}: {}", trigger_match.matched_text)
+                        };
+                        latest_notification = Some(notification);
+                    }
+                    TriggerAction::BookmarkBlock => {
+                        block.is_bookmarked = true;
+                    }
+                    TriggerAction::OpenUrl => {
+                        urls_to_open.push(trigger_match.matched_text.clone());
+                    }
+                    TriggerAction::CopyMatch => {
+                        if let Err(error) = pane.app.clipboard.copy(&trigger_match.matched_text) {
+                            warn!("failed to copy trigger match to clipboard: {error}");
+                        }
+                    }
+                    TriggerAction::LuaHook { hook_name } => {
+                        hook_invocations.push((
+                            hook_name.clone(),
+                            json!({
+                                "pane_id": pane_id,
+                                "block_id": block_id,
+                                "trigger_name": trigger_match.trigger_name,
+                                "scope": match trigger_match.scope {
+                                    TriggerScope::Output => "output",
+                                    TriggerScope::Command => "command",
+                                    TriggerScope::Both => "both",
+                                },
+                                "matched_text": trigger_match.matched_text,
+                                "byte_range": [trigger_match.byte_range.0, trigger_match.byte_range.1],
+                            }),
+                        ));
+                    }
+                }
+            }
+        }
+
+        if let Some(notification) = latest_notification {
+            self.status_message = Some(notification);
+        }
+        for url in urls_to_open {
+            walk_ui::links::open_url(&url);
+        }
+        for (hook, payload) in hook_invocations {
+            self.run_plugin_hook(&hook, &payload);
+        }
+    }
+
     fn handle_semantic_events(&mut self, pane_id: PaneId, events: Vec<SemanticEvent>) {
         let mut relayout = false;
 
@@ -1512,6 +1696,7 @@ impl WalkHandler {
                     if let Some(entry) = completed_entry {
                         self.global_history.record_completed(entry);
                     }
+                    self.evaluate_triggers_for_latest_block(pane_id);
                     let payload = self.block_hook_payload(pane_id, exit_code);
                     self.run_plugin_hook("block_finished", &payload);
                     relayout = true;
@@ -4427,6 +4612,16 @@ fn rebuild_visible_row_batch(
                 [highlight.r, highlight.g, highlight.b, highlight.a * 0.9],
             );
         }
+        if let Some(trigger_color) = trigger_highlight_color_at_cell(blocks, absolute_row, col_idx)
+        {
+            batch.push_bg_quad(
+                x,
+                row_y,
+                cell_width,
+                cell_height,
+                [trigger_color[0], trigger_color[1], trigger_color[2], 0.36],
+            );
+        }
 
         if cell.character != ' ' && cell.character != '\0' {
             push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
@@ -4586,6 +4781,189 @@ fn resolve_cell_color(color: &CellColor, theme: &Theme, is_bg: bool) -> [f32; 4]
             }
         }
     }
+}
+
+fn trigger_engine_from_config(config: &WalkConfig) -> TriggerEngine {
+    let mut engine = TriggerEngine::new();
+    for trigger in &config.triggers {
+        match trigger_from_descriptor(
+            trigger.name.clone(),
+            trigger.pattern.clone(),
+            trigger.actions.clone(),
+        ) {
+            Ok(mut parsed) => {
+                parsed.scope = trigger_scope_from_config(trigger.scope);
+                engine.add_trigger(parsed);
+            }
+            Err(error) => {
+                warn!("failed to load trigger '{}': {error}", trigger.name);
+            }
+        }
+    }
+    engine
+}
+
+fn trigger_scope_from_config(scope: TriggerScopeConfig) -> TriggerScope {
+    match scope {
+        TriggerScopeConfig::Output => TriggerScope::Output,
+        TriggerScopeConfig::Command => TriggerScope::Command,
+        TriggerScopeConfig::Both => TriggerScope::Both,
+    }
+}
+
+fn trigger_from_descriptor(
+    name: String,
+    pattern: String,
+    actions: Vec<String>,
+) -> Result<Trigger, regex::Error> {
+    let pattern = Regex::new(&pattern)?;
+    let actions = actions
+        .iter()
+        .filter_map(|descriptor| parse_trigger_action_descriptor(descriptor))
+        .collect::<Vec<_>>();
+    Ok(Trigger {
+        name,
+        pattern,
+        actions,
+        scope: TriggerScope::Output,
+    })
+}
+
+fn parse_trigger_action_descriptor(descriptor: &str) -> Option<TriggerAction> {
+    let trimmed = descriptor.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    match lower.as_str() {
+        "bookmark" | "bookmark_block" => Some(TriggerAction::BookmarkBlock),
+        "open_url" | "open" => Some(TriggerAction::OpenUrl),
+        "copy_match" | "copy" => Some(TriggerAction::CopyMatch),
+        "highlight_red" => Some(TriggerAction::Highlight {
+            color: "#ff4d4f".to_string(),
+        }),
+        "highlight_green" => Some(TriggerAction::Highlight {
+            color: "#4caf50".to_string(),
+        }),
+        "highlight_yellow" => Some(TriggerAction::Highlight {
+            color: "#ffcc00".to_string(),
+        }),
+        _ => {
+            if let Some(color) = lower.strip_prefix("highlight_") {
+                return Some(TriggerAction::Highlight {
+                    color: normalize_trigger_color(color),
+                });
+            }
+            if lower == "highlight" {
+                return Some(TriggerAction::Highlight {
+                    color: "#ff4d4f".to_string(),
+                });
+            }
+            if let Some(message) = trimmed.strip_prefix("notify:") {
+                return Some(TriggerAction::Notify {
+                    message: message.trim().to_string(),
+                });
+            }
+            if lower == "notify" {
+                return Some(TriggerAction::Notify {
+                    message: String::new(),
+                });
+            }
+            if let Some(hook) = trimmed
+                .strip_prefix("lua_hook:")
+                .or_else(|| trimmed.strip_prefix("lua:"))
+            {
+                return Some(TriggerAction::LuaHook {
+                    hook_name: hook.trim().to_string(),
+                });
+            }
+            None
+        }
+    }
+}
+
+fn normalize_trigger_color(color: &str) -> String {
+    let normalized = color.trim();
+    if normalized.is_empty() {
+        return "#ff4d4f".to_string();
+    }
+    if normalized.starts_with('#') {
+        return normalized.to_string();
+    }
+
+    match normalized.to_ascii_lowercase().as_str() {
+        "red" => "#ff4d4f".to_string(),
+        "green" => "#4caf50".to_string(),
+        "blue" => "#4f83ff".to_string(),
+        "yellow" => "#ffcc00".to_string(),
+        "magenta" => "#d85bd8".to_string(),
+        "cyan" => "#33c9dc".to_string(),
+        _ => "#ff4d4f".to_string(),
+    }
+}
+
+fn char_span_for_single_line(text: &str, byte_range: (usize, usize)) -> Option<(usize, usize)> {
+    let len = text.len();
+    let start = byte_range.0.min(len);
+    let end = byte_range.1.min(len);
+    if end <= start {
+        return None;
+    }
+    Some((text[..start].chars().count(), text[..end].chars().count()))
+}
+
+fn trigger_highlights_for_output_range(
+    lines: &[String],
+    output_start_row: usize,
+    byte_range: (usize, usize),
+    color: &str,
+) -> Vec<TriggerHighlight> {
+    let mut highlights = Vec::new();
+    let mut cursor = 0usize;
+    let normalized_color = normalize_trigger_color(color);
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        let line_start = cursor;
+        let line_end = line_start + line.len();
+        let overlap_start = byte_range.0.max(line_start);
+        let overlap_end = byte_range.1.min(line_end);
+
+        if overlap_start < overlap_end {
+            let local_start = overlap_start - line_start;
+            let local_end = overlap_end - line_start;
+            let col_start = line[..local_start].chars().count();
+            let col_end = line[..local_end].chars().count();
+            highlights.push(TriggerHighlight {
+                absolute_row: output_start_row + line_idx,
+                col_start,
+                col_end,
+                color: normalized_color.clone(),
+            });
+        }
+
+        cursor = line_end.saturating_add(1);
+    }
+
+    highlights
+}
+
+fn trigger_highlight_color_at_cell(
+    blocks: &[Block],
+    absolute_row: usize,
+    col: usize,
+) -> Option<[f32; 4]> {
+    for block in blocks {
+        for highlight in &block.trigger_highlights {
+            if highlight.absolute_row == absolute_row
+                && (highlight.col_start..highlight.col_end).contains(&col)
+            {
+                let parsed = walk_ui::theme_loader::parse_hex_color(&highlight.color).ok()?;
+                return Some([parsed.r, parsed.g, parsed.b, parsed.a]);
+            }
+        }
+    }
+    None
 }
 
 fn parse_shell_type(value: &str) -> ShellType {

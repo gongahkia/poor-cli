@@ -1757,3 +1757,457 @@
 - [x] Split pane layout is restored.
 - [x] Scrollback text from the previous session is visible (even without original styling).
 - [x] `restore_session = false` in config prevents auto-restore.
+
+---
+
+## Phase 20: Output Intelligence (+blocks, +ui)
+
+### Task 74 (A) +blocks
+**blockedBy:** [46, 47]
+
+**PURPOSE** — Regex triggers turn passive terminal output into an actionable surface. When a pattern matches block output, Walk fires an action: highlight, notify, bookmark the block, open a URL, or invoke a Lua hook. This is the highest-impact power-user feature across iTerm2 and Kitty, and it deepens Walk's block paradigm from "view output" to "react to output."
+
+**WHAT TO DO**
+1. Create `walk-blocks/src/triggers.rs`. Define `TriggerAction` enum: `Highlight { color: String }`, `Notify { message: String }`, `BookmarkBlock`, `OpenUrl`, `CopyMatch`, `LuaHook { hook_name: String }`. Define `Trigger` struct: `{ name: String, pattern: Regex, actions: Vec<TriggerAction>, scope: TriggerScope }` where `TriggerScope` is `Output | Command | Both`.
+2. Define `TriggerEngine` struct holding `Vec<Trigger>`. Implement `TriggerEngine::evaluate(&self, block: &Block, text: &str) -> Vec<TriggerMatch>` where `TriggerMatch` holds the trigger name, matched text, byte range, and actions to fire.
+3. In `walk-blocks/src/block.rs`, call `TriggerEngine::evaluate` when `BlockManager` transitions out of `InOutput` state (i.e., on `SemanticEvent::CommandEnd`). Collect `TriggerMatch` results and emit them as a new `SemanticEvent::TriggersFired(Vec<TriggerMatch>)`.
+4. In `walk-app/src/config.rs`, add a `[[triggers]]` TOML config section: `name`, `pattern` (regex string), `actions` (array of action descriptors), `scope` (default `"output"`).
+5. In `walk-app/src/scripting.rs`, expose `walk.add_trigger(name, pattern, actions_table)` and `walk.remove_trigger(name)` in the Lua API. Actions table mirrors the TOML structure.
+6. In `walk-app/src/action_effects.rs`, handle `TriggersFired` by dispatching each action: highlights are stored on the block for rendering, notifications go through `RuntimeEffect::Notify`, bookmarks toggle the block's bookmark flag, URLs open via `open::that()`, copies go to clipboard, Lua hooks invoke the registered callback.
+
+**DONE WHEN**
+- [x] A trigger configured as `pattern = "ERROR"`, `actions = ["highlight_red", "bookmark"]` causes all blocks containing "ERROR" in their output to be bookmarked and have the matching text highlighted in red.
+- [x] `walk.add_trigger("ip", "\\d+\\.\\d+\\.\\d+\\.\\d+", { "copy_match" })` in `init.lua` works at runtime.
+- [x] Triggers defined in `config.toml` and via Lua coexist without conflict.
+- [x] A block with no trigger matches has zero performance overhead from the trigger engine.
+
+---
+
+### Task 75 (A) +ui
+**blockedBy:** [74]
+
+**PURPOSE** — Quick Select mode lets users grab text from terminal output without the mouse. A modal overlay detects patterns (URLs, file paths, git hashes, IP addresses, hex values) in visible output, assigns each a short label (a, s, d, f, j, k, l...), and lets the user type the label to copy or act on the match. This eliminates the "reach for mouse to select that hash" workflow and directly leverages blocks — quick select can scope to a single block's output.
+
+**WHAT TO DO**
+1. Create `walk-ui/src/quick_select.rs`. Define `QuickSelectState` struct: `{ matches: Vec<QuickSelectMatch>, active: bool, scope: QuickSelectScope }` where `QuickSelectScope` is `Viewport | SelectedBlock`. `QuickSelectMatch` holds `label: String`, `text: String`, `row: usize`, `col_start: usize`, `col_end: usize`, `pattern_type: PatternType`. `PatternType` enum: `Url`, `FilePath`, `GitHash`, `IpAddress`, `HexValue`, `Custom(String)`.
+2. Extract the URL detection logic from `walk-ui/src/links.rs` into a shared `PatternRegistry` struct that holds `Vec<(PatternType, Regex)>`. Add default patterns for file paths (`/[\w./~-]+`), short git hashes (`[a-f0-9]{7,40}`), IP addresses (`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`), and hex values (`0x[a-fA-F0-9]+`). Allow custom patterns via config and Lua.
+3. Implement label assignment: use home-row keys `a, s, d, f, j, k, l` for single-char labels, then two-char combinations (`aa, as, ad...`) for overflow. Labels assigned top-to-bottom, left-to-right.
+4. In `walk-app/src/keybindings.rs`, add `Action::QuickSelect` and `Action::QuickSelectBlock`. Add `Context::QuickSelect` with bindings: typing a label character narrows/selects, `Escape` cancels, `Enter` copies the selected match.
+5. Render the overlay: for each match, draw a colored background highlight over the matched text and overlay the label characters in a contrasting color. Use the existing `QuadBatch` system.
+6. On selection: default action is copy to clipboard. If triggers (Task 74) define an action for the pattern type, offer that as an alternative (e.g., open URL).
+
+**DONE WHEN**
+- [ ] Pressing `Mod+Shift+Q` activates quick select mode. All URLs, file paths, and git hashes in the viewport are labeled.
+- [ ] Typing `a` copies the first match to the clipboard and exits the overlay.
+- [ ] `Mod+Alt+Q` activates quick select scoped to the currently selected block only.
+- [ ] Custom patterns can be added via `walk.quick_select.add_pattern(name, regex)` in Lua.
+- [ ] The overlay renders correctly with block decorations and does not interfere with existing search highlights.
+
+---
+
+### Task 76 (B) +terminal
+**blockedBy:** [13]
+
+**PURPOSE** — OSC 8 hyperlink support. Modern CLI tools (`ls --hyperlink`, `cargo`, `rustc`, `grep --hyperlink`, `gcc`) emit OSC 8 escape sequences to mark text as clickable links. Without support, Walk either swallows the escapes silently or renders garbage. This is table-stakes for a modern terminal.
+
+**WHAT TO DO**
+1. In `walk-terminal/src/terminal.rs`, extend `scan_osc_markers` (or the equivalent OSC dispatch) to detect OSC 8 sequences: `\e]8;params;uri\e\\` (link start) and `\e]8;;\e\\` (link end). Parse `params` as semicolon-separated `key=value` pairs (the `id` param groups non-contiguous link spans).
+2. Maintain a `HyperlinkState` in `walk-terminal/src/state.rs`: `current_hyperlink: Option<HyperlinkInfo>` where `HyperlinkInfo { uri: String, id: Option<String>, params: HashMap<String, String> }`. When a link-start OSC 8 is received, set `current_hyperlink`. When link-end is received, clear it. All cells written while `current_hyperlink` is `Some` inherit the hyperlink reference.
+3. Store hyperlink data on cells. If `alacritty_terminal` already stores hyperlink info on `Cell`, use it. Otherwise, maintain a side-map `HashMap<(Row, Column), HyperlinkInfo>` in `TerminalState`.
+4. In `walk-ui/src/links.rs`, unify the hyperlink model: `DetectedLink` (regex-found URLs) and `ExplicitLink` (OSC 8) both implement a `Linkable` trait with `fn uri(&self) -> &str` and `fn span(&self) -> CellRange`.
+5. Render hyperlinked text with underline decoration and a distinct color (theme-configurable: `theme.hyperlink_color`). On hover (mouse over hyperlinked cells), show the URI in the status bar.
+6. On click (or Mod+click), open the URI via `open::that()`.
+
+**DONE WHEN**
+- [ ] Running `ls --hyperlink=auto` (on a system with coreutils 8.28+) displays file names as underlined, colored links. Clicking opens the file URI.
+- [ ] `printf '\e]8;;https://example.com\e\\Click me\e]8;;\e\\'` renders "Click me" as a clickable hyperlink.
+- [ ] Non-contiguous link spans with the same `id` parameter are treated as a single logical link.
+- [ ] The status bar shows the URL when hovering over a hyperlinked cell.
+- [ ] Hyperlink colors are theme-configurable.
+
+---
+
+## Phase 21: Input Power (+input, +ui)
+
+### Task 77 (A) +input
+**blockedBy:** [55, 56]
+
+**PURPOSE** — Workflows are named, parameterized command templates that the user fills in interactively before execution. This is Warp's second-most-popular feature, delivered local-first with zero cloud dependency. Example: a workflow named "deploy" expands to `git push origin $1 && ssh $2 'cd /app && ./deploy.sh'`, prompting the user to fill `$1` (branch) and `$2` (host).
+
+**WHAT TO DO**
+1. Create `walk-input/src/workflows.rs`. Define `Workflow` struct: `{ name: String, description: String, template: String, params: Vec<WorkflowParam> }` where `WorkflowParam` is `{ name: String, placeholder: String, default: Option<String>, description: String }`. The template uses `$1`, `$2`, etc. or named `${branch}`, `${host}` placeholders.
+2. Define `WorkflowStore` struct holding `Vec<Workflow>` with methods: `load_from_dir(dir: &Path)` (reads `~/.config/walk/workflows/*.toml`), `add(workflow)`, `remove(name)`, `find(query: &str) -> Vec<&Workflow>` (fuzzy match on name + description).
+3. TOML format for workflow files:
+   ```toml
+   name = "deploy"
+   description = "Push and deploy to a remote server"
+   template = "git push origin ${branch} && ssh ${host} 'cd /app && ./deploy.sh'"
+   [[params]]
+   name = "branch"
+   placeholder = "main"
+   default = "main"
+   description = "Git branch to push"
+   [[params]]
+   name = "host"
+   placeholder = "prod.example.com"
+   description = "Target server hostname"
+   ```
+4. In `walk-input/src/editor.rs`, add a `ParameterFillMode` state: when active, the input editor highlights the next unfilled `${...}` placeholder, Tab advances to the next placeholder, Shift+Tab goes back, Enter submits when all are filled.
+5. In `walk-app/src/scripting.rs`, expose `walk.register_workflow(table)` and `walk.workflows()` in the Lua API.
+6. Integrate workflows into the command palette (Task 78) as a dedicated section.
+
+**DONE WHEN**
+- [ ] A TOML file in `~/.config/walk/workflows/deploy.toml` appears in the command palette under "Workflows".
+- [ ] Selecting it fills the input editor with the template, highlighting `${branch}`. Typing replaces the placeholder. Tab moves to `${host}`. Enter submits the fully filled command.
+- [ ] `walk.register_workflow({ name = "quick-test", template = "cargo test $1", params = {{ name = "filter" }} })` in `init.lua` registers a workflow at runtime.
+- [ ] Workflows with default values auto-fill those defaults; the user can override by typing.
+
+---
+
+### Task 78 (A) +ui
+**blockedBy:** [59]
+
+**PURPOSE** — Transform the command palette from a simple input mode into a full fuzzy-searchable dropdown showing all bindable actions, Lua-registered commands, workflows, recent commands, and file paths. This is the discoverability surface for Walk's entire feature set.
+
+**WHAT TO DO**
+1. Create `walk-ui/src/command_palette.rs`. Define `PaletteEntry` struct: `{ label: String, description: String, category: PaletteCategory, score: f64, action: PaletteAction }`. `PaletteCategory` enum: `Action`, `LuaCommand`, `Workflow`, `RecentCommand`, `FilePath`. `PaletteAction` enum mirrors what happens on selection.
+2. Define `CommandPaletteState` struct: `{ query: String, entries: Vec<PaletteEntry>, filtered: Vec<usize>, selected_index: usize, is_open: bool }`.
+3. Populate the palette index on open: iterate all `Action` enum variants (with their default keybinding as description), all Lua-registered commands, all workflows (Task 77), and the 50 most recent commands from history.
+4. Fuzzy scoring: reuse `fuzzy_score` from `walk-input/src/history.rs`. Score against `label` and `description`. Sort by category priority (workflows first if query matches, then actions, then recent commands) with score as tiebreaker.
+5. Render as a centered dropdown overlay: max 15 visible rows, scroll indicator, category headers, highlighted matching characters in each entry. Use the existing `QuadBatch` for rendering.
+6. Keybindings in `Context::CommandPalette`: typing filters, Up/Down navigates, Enter selects, Escape closes. `>` prefix filters to actions only, `@` prefix filters to workflows only.
+
+**DONE WHEN**
+- [ ] `Mod+P` opens a centered dropdown listing all actions with their keybindings.
+- [ ] Typing `split` narrows to split-related actions. Pressing Enter on "Split Vertical" executes `Action::SplitVertical`.
+- [ ] Typing `@deploy` shows the deploy workflow. Selecting it enters parameter fill mode (Task 77).
+- [ ] The palette shows category headers ("Actions", "Workflows", "Recent Commands") with visual separation.
+- [ ] The palette renders on top of all other content and dismisses on Escape or focus loss.
+
+---
+
+### Task 79 (B) +input
+**blockedBy:** [55, 56]
+
+**PURPOSE** — Tab completions with descriptions for the owned input editor. Without completions, users stay in ShellNative mode because zsh/fish completions are too valuable to give up. This makes OwnedPrimary mode competitive.
+
+**WHAT TO DO**
+1. Create `walk-input/src/completion.rs`. Define a `CompletionProvider` trait: `fn complete(&self, context: &CompletionContext) -> Vec<CompletionItem>` where `CompletionContext` has the current input text, cursor position, and the word being completed. `CompletionItem` has `text: String`, `description: String`, `kind: CompletionKind` (Command, FilePath, EnvVar, Argument).
+2. Implement `PathCompletionProvider`: splits the word at cursor, treats it as a partial path, lists matching files/directories using `std::fs::read_dir`. Descriptions show file type and size.
+3. Implement `CommandCompletionProvider`: on first invocation, scan all directories in `$PATH` and cache binary names. Match the word at cursor against cached names. Descriptions show the binary's path.
+4. Implement `EnvVarCompletionProvider`: when the word starts with `$`, list matching environment variable names from `std::env::vars()`. Descriptions show current values (truncated to 40 chars).
+5. In `walk-input/src/editor.rs`, add `CompletionPopupState`: `{ items: Vec<CompletionItem>, selected: usize, is_visible: bool, anchor_col: usize }`. Tab triggers completion (or cycles if popup is visible), Escape dismisses, Enter/Tab accepts the selected item.
+6. Render the popup as a dropdown below (or above if near bottom) the input bar: show item text + description + kind icon. Max 10 visible rows with scroll.
+
+**DONE WHEN**
+- [ ] In OwnedPrimary mode, typing `car` and pressing Tab shows a popup with `cargo`, `cat`, etc. from `$PATH`.
+- [ ] Typing `~/Doc` and pressing Tab shows `~/Documents/` and other matching paths.
+- [ ] Typing `$HO` and pressing Tab shows `$HOME` with its current value as description.
+- [ ] Tab cycles through completions; Enter accepts; Escape dismisses.
+- [ ] Completions render as a dropdown attached to the input bar with correct z-ordering.
+
+---
+
+## Phase 22: Terminal Navigation (+ui, +app)
+
+### Task 80 (A) +ui
+**blockedBy:** [46, 47]
+
+**PURPOSE** — Vi mode for terminal output navigation. Walk already has block navigation; Vi mode fills the gap for character-level output navigation that power users expect. Block-aware custom motions (`[b` / `]b`) make this uniquely Walk's.
+
+**WHAT TO DO**
+1. Create `walk-ui/src/vi_mode.rs`. Define `ViModeState` struct: `{ cursor_row: usize, cursor_col: usize, mode: ViSubMode, visual_anchor: Option<(usize, usize)> }` where `ViSubMode` is `Normal | Visual | VisualLine | VisualBlock`.
+2. Implement core motions: `h/l` (char left/right), `j/k` (line up/down), `w/b/e` (word forward/back/end), `0/$` (line start/end), `gg/G` (buffer start/end), `H/M/L` (viewport top/middle/bottom), `Ctrl+D/Ctrl+U` (half-page down/up), `f<char>/F<char>` (find char forward/backward), `n/N` (next/prev search match).
+3. Implement Walk-specific block motions: `[b` (jump to previous block start), `]b` (jump to next block start), `[e` (jump to previous block end), `]e` (jump to next block end). These use `BlockManager::blocks()` to find block boundaries by absolute row.
+4. Visual mode: entering `v` sets `visual_anchor` to current cursor position. Motion commands extend the selection. `V` enters line-visual mode. `Ctrl+V` enters block-visual mode. `y` copies the visual selection to clipboard and exits vi mode. `Escape` returns to normal vi mode.
+5. In `walk-app/src/keybindings.rs`, add `Context::ViMode` with all the motion bindings. Add `Action::EnterViMode` (default binding: `Mod+Shift+V` or configurable). Exiting: `Escape` in normal vi mode, or `q`, or `i` (returns to shell input).
+6. Render the vi cursor as a distinct block cursor (different color from the PTY cursor, theme-configurable: `theme.vi_cursor_color`). In visual mode, render selection highlight using `SelectionManager` from `walk-ui/src/selection.rs`. Show a mode indicator in the status bar ("-- VI --", "-- VISUAL --", etc.).
+
+**DONE WHEN**
+- [ ] `Mod+Shift+V` enters vi mode. `hjkl` moves a visible cursor through the terminal output. `w/b` jump by word. `gg/G` jump to top/bottom.
+- [ ] `[b` / `]b` jump between block boundaries. The viewport auto-scrolls to keep the vi cursor visible.
+- [ ] `v` enters visual mode; moving extends the selection. `y` copies the selection and exits.
+- [ ] `/ ` opens search; `n/N` jumps between matches with the vi cursor.
+- [ ] The status bar shows the current vi mode. The vi cursor is visually distinct from the shell cursor.
+- [ ] `Escape` or `q` exits vi mode cleanly, restoring normal terminal interaction.
+
+---
+
+### Task 81 (A) +app
+**blockedBy:** [32]
+
+**PURPOSE** — Pane broadcast input sends keystrokes to all panes simultaneously. This is a highly-valued tmux feature for running the same command on multiple servers or test environments. Trivial to implement given Walk's workspace architecture.
+
+**WHAT TO DO**
+1. In `walk-app/src/workspace.rs`, add a `broadcast_input: bool` field to `WorkspaceState` (default `false`).
+2. In `walk-app/src/keybindings.rs`, add `Action::ToggleBroadcast` with default binding `Mod+Shift+B` (note: check for conflict with block bookmark toggle — if conflict, use `Mod+Alt+B` instead).
+3. In the key event handler (where input is written to the focused pane's PTY), check `workspace.broadcast_input`. If true, iterate all pane IDs via `workspace.all_pane_ids()` and call `send_input()` on each pane's terminal, not just the focused one.
+4. Show a visual indicator when broadcast is active: a colored badge or icon in the status bar ("BROADCAST" in a warning color), and a subtle border color change on all panes.
+5. Broadcast only applies to raw input (keystrokes, paste). Walk-internal actions (block navigation, search, tab switching) remain pane-local — they should NOT be broadcast.
+
+**DONE WHEN**
+- [ ] `Mod+Alt+B` toggles broadcast mode. The status bar shows "BROADCAST" when active.
+- [ ] With two split panes open, typing `ls` in broadcast mode runs `ls` in both panes.
+- [ ] Walk-internal keybindings (Mod+Up for block nav, Mod+F for search) are NOT broadcast.
+- [ ] Disabling broadcast returns to normal single-pane input.
+
+---
+
+## Phase 23: Inline Graphics (+renderer, +terminal)
+
+### Task 82 (A) +terminal +renderer
+**blockedBy:** [6, 9]
+
+**PURPOSE** — Kitty graphics protocol support for inline image display. The Kitty protocol is becoming the de facto standard for terminal images. Tools like `timg`, `viu`, `ranger`, `matplotlib` kitty backend, and many TUI applications use it. Walk's GPU renderer with existing `tex_kind: 2.0` image quad support makes this a natural fit.
+
+**WHAT TO DO**
+1. In `walk-terminal/src/terminal.rs`, extend the escape sequence parser to detect APC (Application Program Command) sequences: `\e_G<payload>\e\\`. Parse the payload as semicolon-separated `key=value` pairs per the Kitty protocol spec. Key fields: `a` (action: transmit/display/delete), `f` (format: 24=RGB, 32=RGBA, 100=PNG), `t` (transmission: direct/file/temp), `s`/`v` (source width/height), `c`/`r` (display columns/rows), `i` (image ID), `p` (placement ID), `m` (more chunks flag).
+2. Create `walk-renderer/src/inline_images.rs`. Define `InlineImageStore` struct managing a `HashMap<u32, InlineImage>` keyed by image ID. `InlineImage` holds `texture: wgpu::Texture`, `width: u32`, `height: u32`, `placements: Vec<ImagePlacement>`. `ImagePlacement` holds `row: usize`, `col: usize`, `display_cols: u16`, `display_rows: u16`, `placement_id: u32`.
+3. Handle chunked transmission: the `m=1` flag means more data follows. Buffer chunks until `m=0`, then decode the complete payload (base64 for direct, file path for file-based).
+4. For `f=100` (PNG) and `f=32` (RGBA): decode pixels, create a `wgpu::Texture` with `RGBA8Unorm` format, upload the pixel data.
+5. Render inline images: during the viewport render pass, for each visible `ImagePlacement`, emit image quads with `tex_kind: 2.0` spanning the placement's cell rectangle. The texture bind group must support multiple active textures (extend the current glyph-atlas-only setup).
+6. Handle the `a=d` (delete) action: remove images/placements by ID. Handle the `a=p` (display) action: add a placement for an already-transmitted image.
+7. Images are anchored to absolute row positions (consistent with block model). They scroll with text.
+
+**DONE WHEN**
+- [ ] `timg --pixelation=kitty image.png` (or `viu -t kitty image.png`) displays an inline image in the terminal.
+- [ ] The image occupies the correct number of cell rows and columns.
+- [ ] Scrolling past the image works correctly — the image scrolls with the text.
+- [ ] Multiple images can coexist in the scrollback.
+- [ ] Chunked image transmission (large images sent in multiple APC sequences) works correctly.
+- [ ] `a=d` (delete) removes the image from display.
+
+---
+
+### Task 83 (B) +terminal
+**blockedBy:** [82]
+
+**PURPOSE** — Sixel image protocol support. Sixel is the oldest and most broadly supported inline image format. Tools like `libsixel` (`img2sixel`), `gnuplot`, `w3m`, and `mlterm` output Sixel. This was planned as Task 72 but not yet shipped.
+
+**WHAT TO DO**
+1. Create `walk-terminal/src/sixel.rs`. Implement a Sixel parser: detect DCS (Device Control String) sequences starting with `\ePq` (or the full `\eP<params>q` form). Parse Sixel parameters: `Pn1` (aspect ratio), `Pn2` (background), `Pn3` (grid size).
+2. Parse the Sixel data body: color palette definitions (`#<color_number>;<type>;<params>`), repeat introducer (`!<count><data>`), graphics new line (`-`), graphics carriage return (`$`), and sixel data characters (? through ~, representing 6 vertical pixels each).
+3. Build an RGBA pixel buffer from the parsed Sixel data. Each Sixel character encodes a 1x6 pixel column; accumulate into a contiguous pixel buffer.
+4. Reuse the `InlineImageStore` from Task 82 to create a wgpu texture from the decoded pixels and place it at the cursor position.
+5. Calculate the cell dimensions: width = pixel_width / cell_pixel_width, height = pixel_height / cell_pixel_height (round up).
+
+**DONE WHEN**
+- [ ] `img2sixel image.png` (from `libsixel`) displays the image inline in the terminal.
+- [ ] The image occupies the correct number of cell rows and columns.
+- [ ] Sixel color palettes (both HLS and RGB definitions) render correctly.
+- [ ] Scrolling past a Sixel image works correctly.
+- [ ] Sixel and Kitty protocol images can coexist in the same scrollback.
+
+---
+
+## Phase 24: Lua Ecosystem Deepening (+app, +blocks)
+
+### Task 84 (A) +app
+**blockedBy:** [63, 64]
+
+**PURPOSE** — Status bar customization via Lua. WezTerm's most popular Lua feature. Lets users define custom status bar segments with arbitrary text, colors, and formatting — showing battery level, Kubernetes context, Docker status, git info, custom counters, etc. Makes the status bar a first-class extension point.
+
+**WHAT TO DO**
+1. In `walk-ui/src/status_bar.rs`, extend `StatusBarState` (or the equivalent) with `custom_left: Vec<StatusSegment>`, `custom_center: Vec<StatusSegment>`, `custom_right: Vec<StatusSegment>` where `StatusSegment` is `{ text: String, fg: Option<String>, bg: Option<String>, bold: bool }`.
+2. Modify the status bar renderer to concatenate custom segments with built-in segments. Custom segments on the left appear after the shell indicator, custom center segments appear between left and right, custom right segments appear before the zoom indicator.
+3. In `walk-app/src/scripting.rs`, expose a `walk.status_bar` Lua table with methods: `set_left(segments_table)`, `set_center(segments_table)`, `set_right(segments_table)`, and `clear()`. Each segment in the table is `{ text = "...", fg = "#rrggbb", bg = "#rrggbb", bold = true/false }`.
+4. Add a new hook `status_bar_refresh` that fires every 5 seconds (configurable) so Lua scripts can update dynamic status bar content. The hook receives the current pane state as context.
+5. In `walk-app/src/plugin_host.rs`, drain status bar effects from the Lua runtime each frame tick so updates appear immediately, not on the next hook fire.
+
+**DONE WHEN**
+- [ ] In `init.lua`: `walk.status_bar.set_right({{ text = " K8s: prod ", fg = "#00ff00" }})` shows a green "K8s: prod" segment on the right side of the status bar.
+- [ ] `walk.on("status_bar_refresh", function() walk.status_bar.set_left({{ text = os.date("%H:%M") }}) end)` shows a live-updating clock.
+- [ ] Multiple segments with different colors render correctly side-by-side.
+- [ ] `walk.status_bar.clear()` removes all custom segments.
+
+---
+
+### Task 85 (A) +blocks
+**blockedBy:** [46, 64]
+
+**PURPOSE** — Streaming output hooks let Lua receive output lines from the active block in real time, not just on block completion. This enables building progress parsers, error detectors, live dashboards, and custom trigger logic entirely in Lua — turning Walk into a programmable terminal surface.
+
+**WHAT TO DO**
+1. In `walk-blocks/src/block.rs`, when `BlockManager` is in the `InOutput` state and processes new terminal lines, emit a new event type. Define it as a variant in the event pipeline (e.g., extend `SemanticEvent` or use a separate callback channel).
+2. The event payload: `{ block_id: u64, line_number: usize, text: String }` where `line_number` is relative to the block's output start.
+3. In `walk-app/src/scripting.rs`, add a new hook `output_line`. Document that this hook fires for every line of output as it arrives. The callback receives `{ block_id, line_number, text }`.
+4. Performance guard: in `walk-app/src/plugin_host.rs`, only invoke the Lua callback if at least one listener is registered for `output_line`. Track registration count. If zero listeners, skip the entire output line processing path.
+5. Rate limiting: if output arrives faster than Lua can process (e.g., `cat /dev/urandom | hexdump`), batch lines into groups of up to 100 and pass as a single array to the callback. This prevents Lua from becoming a bottleneck.
+
+**DONE WHEN**
+- [ ] `walk.on("output_line", function(e) if e.text:match("FAIL") then walk.notify("Test failure detected!") end end)` shows a notification the instant a failing test line appears, before the command completes.
+- [ ] Output of `seq 1 10000` does not cause noticeable frame drops (rate limiting works).
+- [ ] When no `output_line` hooks are registered, there is zero overhead on normal terminal output processing.
+- [ ] The hook fires for all panes, with `pane_id` included in the event context.
+
+---
+
+### Task 86 (B) +app
+**blockedBy:** [63, 64]
+
+**PURPOSE** — Lua timers (`set_timeout` and `set_interval`) enable proactive behavior in Lua scripts. Without timers, Lua can only react to user actions and terminal events. Timers enable: polling external APIs, rotating status bar segments, auto-refreshing dashboards, periodic notifications, and scheduled actions.
+
+**WHAT TO DO**
+1. In `walk-app/src/scripting.rs`, add `walk.set_timeout(ms, callback)` returning a `timer_id: u64`, and `walk.set_interval(ms, callback)` also returning a `timer_id`. Add `walk.clear_timer(timer_id)` to cancel either type.
+2. Store timer state in the Lua runtime state as a `BinaryHeap<TimerEntry>` (min-heap by next fire time). `TimerEntry`: `{ id: u64, fire_at: Instant, callback: RegistryKey, interval: Option<Duration> }`. Timeouts have `interval: None`; intervals have `interval: Some(duration)`.
+3. In `walk-app/src/plugin_host.rs`, each frame tick (already running at 60fps), drain all due timers from the heap: pop entries where `fire_at <= Instant::now()`, invoke their callbacks. For intervals, re-insert with `fire_at = now + interval`. For timeouts, drop the `RegistryKey`.
+4. Safety: limit the number of timer fires per frame tick to 64 to prevent runaway intervals from starving the render loop.
+
+**DONE WHEN**
+- [ ] `walk.set_timeout(5000, function() walk.notify("5 seconds elapsed") end)` fires the notification after 5 seconds.
+- [ ] `local id = walk.set_interval(1000, function() print("tick") end)` prints "tick" every second. `walk.clear_timer(id)` stops it.
+- [ ] 100 simultaneous intervals at 100ms each do not cause frame drops (per-frame cap works).
+- [ ] Timer callbacks can call any other `walk.*` API (run_action, notify, status_bar, etc.).
+
+---
+
+## Phase 25: Advanced Workspace (+app, +ui)
+
+### Task 87 (A) +ui +app
+**blockedBy:** [32, 33]
+
+**PURPOSE** — Floating panes hover above the split tree and can be moved, resized, and toggled on/off. This eliminates the rigidity of binary split trees and is Zellij's most distinctive UI feature. Floating panes are ideal for reference terminals, monitoring output, scratch pads, or quick one-off commands.
+
+**WHAT TO DO**
+1. In `walk-app/src/workspace.rs`, extend `WorkspaceTab` with `floating_panes: Vec<FloatingPane>` where `FloatingPane` has `{ pane_id: PaneId, rect: Rect, z_order: u32, is_visible: bool, title: String }`. `Rect` uses logical pixel coordinates relative to the window.
+2. Add `Action::NewFloatingPane`, `Action::ToggleFloatingPane`, `Action::CloseFloatingPane`. Default bindings: `Mod+Alt+N` (new), `Mod+Alt+T` (toggle visibility of all floating panes).
+3. Layout: floating panes render on top of the split tree. During layout computation in `walk-ui/src/layout.rs`, floating pane rects are overlaid after split tree rects are computed. Floating panes clip to the window bounds.
+4. Focus: clicking a floating pane brings it to the front (highest `z_order`). Keyboard focus follows the same rules as split panes. `Mod+Alt+Arrow` should also cycle through floating panes after exhausting split panes.
+5. Moving and resizing: while holding `Mod+Alt`, clicking and dragging a floating pane's title bar moves it; dragging its edges resizes it. Alternatively, add `Action::MoveFloatingPane(dx, dy)` and `Action::ResizeFloatingPane(dw, dh)` for keyboard-driven control.
+6. Floating panes participate in session persistence: save/restore their position, size, visibility, and content.
+
+**DONE WHEN**
+- [ ] `Mod+Alt+N` creates a new floating pane centered in the window with a default size of 80x24 cells.
+- [ ] The floating pane renders on top of split panes with a visible border and title bar.
+- [ ] Clicking the floating pane focuses it. Clicking a split pane behind it focuses the split pane.
+- [ ] `Mod+Alt+T` toggles visibility of all floating panes.
+- [ ] Floating panes are saved and restored with sessions.
+- [ ] Multiple floating panes can coexist with independent z-ordering.
+
+---
+
+### Task 88 (B) +ui
+**blockedBy:** [32, 33]
+
+**PURPOSE** — Swap layouts let users cycle through predefined pane arrangements with a single keybinding. Instead of manually splitting and arranging, the user defines layouts like "main+side", "three-column", or "dashboard" and switches between them, with existing panes redistributed into the new topology.
+
+**WHAT TO DO**
+1. Create `walk-ui/src/layout_presets.rs`. Define `LayoutPreset` struct: `{ name: String, description: String, tree: PresetNode }` where `PresetNode` is either `Leaf { weight: f64 }` or `Split { direction: Direction, ratio: f64, children: Vec<PresetNode> }`.
+2. Ship default presets: `single` (one pane), `side-by-side` (50/50 vertical), `main-right` (70/30 vertical), `main-bottom` (70/30 horizontal), `three-column` (33/33/33 vertical), `quad` (2x2 grid), `dashboard` (one large top, two small bottom).
+3. Allow custom presets in TOML config:
+   ```toml
+   [[layouts]]
+   name = "my-layout"
+   description = "Custom layout"
+   tree = { split = "vertical", ratio = 0.6, children = [{ leaf = true }, { split = "horizontal", ratio = 0.5, children = [{ leaf = true }, { leaf = true }] }] }
+   ```
+4. Implement `apply_preset(workspace: &mut WorkspaceState, preset: &LayoutPreset)`: collect all existing pane IDs, build the new `SplitNode` tree from the preset, and assign pane IDs to leaves in order. If there are more panes than leaves, stack extras in the last leaf. If fewer, create new panes for empty leaves.
+5. In `walk-app/src/keybindings.rs`, add `Action::NextLayout` and `Action::PrevLayout`. Default bindings: `Mod+Alt+L` (next), `Mod+Alt+Shift+L` (prev). Cycle through the preset list wrapping around.
+6. Show the current layout name briefly in the status bar when switching.
+
+**DONE WHEN**
+- [ ] `Mod+Alt+L` cycles through built-in layouts. Existing panes rearrange to fit the new topology.
+- [ ] With 2 panes, switching from "side-by-side" to "main-right" changes the ratio to 70/30.
+- [ ] With 1 pane, switching to "three-column" creates 2 additional panes.
+- [ ] Custom layouts from TOML config appear in the cycle.
+- [ ] The status bar briefly shows the layout name on switch.
+
+---
+
+### Task 89 (A) +app
+**blockedBy:** [17, 32, 73]
+
+**PURPOSE** — Named sessions with attach/detach decouple the terminal workspace from the window. This is tmux's core value proposition. Walk can run as a background daemon keeping PTYs alive, and the window becomes a thin client that connects via Unix socket. Users can close the window and reconnect later without losing their work. This eliminates the need for tmux inside Walk.
+
+**WHAT TO DO**
+1. Create `walk-app/src/daemon.rs`. The daemon is a headless Walk process that owns all PTY lifetimes, workspace state, and block managers. It listens on a Unix socket (Linux/macOS: `$XDG_RUNTIME_DIR/walk/<session-name>.sock`) or named pipe (Windows).
+2. Create `walk-app/src/ipc.rs`. Define a message protocol: `ClientMessage` (key events, resize, paste, action requests, detach) and `ServerMessage` (terminal grid updates, block events, state snapshots, render instructions). Use length-prefixed JSON or MessagePack frames.
+3. CLI changes: `walk` (no args) starts in standalone mode (current behavior). `walk --daemon <name>` starts a named daemon. `walk attach <name>` connects a window client to a running daemon. `walk list` shows running sessions. `walk kill <name>` terminates a session.
+4. Refactor PTY ownership: in daemon mode, `walk-terminal::Terminal` lives in the daemon process. The client receives rendered grid state, not raw PTY output. The daemon processes PTY output, updates `TerminalState`, runs `BlockManager`, evaluates triggers, and sends diffs to the client.
+5. Client rendering: the client receives cell grid updates (dirty rows + cell data) and renders them. The client handles windowing, GPU rendering, input events, and sends input back to the daemon.
+6. Session naming: unnamed sessions auto-name as `walk-<pid>`. Named sessions persist across daemon restarts if the daemon is gracefully stopped (serialize state, respawn PTYs on restart).
+7. Signal handling: `SIGHUP` causes the daemon to detach all clients but keep running. `SIGTERM` saves state and exits gracefully.
+
+**DONE WHEN**
+- [ ] `walk --daemon work` starts a background daemon named "work" with a shell.
+- [ ] `walk attach work` opens a window connected to the "work" session. Commands typed in the window execute in the daemon's PTY.
+- [ ] Closing the window (or `walk detach`) disconnects without killing the shell. The daemon keeps running.
+- [ ] `walk attach work` reconnects and shows the full terminal state including scrollback and blocks.
+- [ ] `walk list` shows `work (1 pane, attached)` or `work (1 pane, detached)`.
+- [ ] Multiple clients can attach to the same session (read-only viewers or collaborative input based on config).
+- [ ] `walk` with no args still works in standalone mode (no daemon).
+
+---
+
+## Phase 26: Protocol & Ecosystem Integration (+app, +terminal)
+
+### Task 90 (A) +terminal +app
+**blockedBy:** [3, 13]
+
+**PURPOSE** — Kitty keyboard protocol (progressive enhancement) disambiguates all key events, including modifier-only presses, key release events, and alternate keycodes. Increasingly adopted by Neovim, Helix, Zellij, and other TUI applications. Without it, these applications fall back to legacy encoding with key ambiguities.
+
+**WHAT TO DO**
+1. In `walk-terminal/src/state.rs`, add `kitty_keyboard_flags: u32` to `TerminalState`. The Kitty protocol defines flag bits: `0x1` (disambiguate escape codes), `0x2` (report event types), `0x4` (report alternate keys), `0x8` (report all keys as escape codes), `0x10` (report associated text).
+2. In `walk-terminal/src/terminal.rs`, detect the mode query sequence `CSI ? u` (query current flags) and mode set `CSI > <flags> u` (push flags) and `CSI < u` (pop flags). Maintain a flag stack (applications push on enter, pop on exit).
+3. In `walk-app/src/input.rs`, when `kitty_keyboard_flags > 0`, encode key events using the Kitty format instead of legacy xterm encoding: `CSI <unicode-key-code> ; <modifiers> u` for normal keys, with extensions for `event_type` (press=1, repeat=2, release=3) when flag `0x2` is set. Modifiers encoding: `shift=1, alt=2, ctrl=4, super=8`.
+4. Handle special keys: `Enter` = 13, `Tab` = 9, `Backspace` = 127, `Escape` = 27, function keys use their standard codes. When flag `0x4` is set, include the shifted/alternate key in the encoding.
+5. Respond to `CSI ? u` queries with `CSI ? <current_flags> u`.
+
+**DONE WHEN**
+- [ ] Opening Neovim (with `vim.o.termguicolors = true` and Kitty protocol support) inside Walk shows correct behavior for all key combinations including `Ctrl+Shift+P`, `Ctrl+I` vs `Tab`, and modifier-only events.
+- [ ] The Kitty protocol flag stack works: entering Neovim pushes flags, exiting pops them, restoring legacy mode.
+- [ ] `CSI ? u` query returns the current flags.
+- [ ] Legacy applications (that don't request Kitty protocol) continue to receive legacy xterm encoding.
+
+---
+
+### Task 91 (B) +app
+**blockedBy:** [63]
+
+**PURPOSE** — Remote control protocol lets external scripts control Walk programmatically: create panes, send text, query state, change themes, trigger actions. This enables editor integration (Neovim `:terminal`), CI pipelines, and automation that goes beyond what Lua can do from inside Walk.
+
+**WHAT TO DO**
+1. Create `walk-app/src/remote_control.rs`. On startup, create a Unix socket at `$XDG_RUNTIME_DIR/walk-<pid>.sock` (or `$TMPDIR/walk-<pid>.sock` as fallback). On Windows, use a named pipe `\\.\pipe\walk-<pid>`.
+2. Define a JSON-RPC 2.0 protocol. Methods map to the existing `Action`/`RuntimeEffect` bus:
+   - `walk.run_action(action_name, params)` — dispatch any action
+   - `walk.send_text(pane_id, text)` — write text to a pane's PTY
+   - `walk.get_panes()` — list all panes with metadata
+   - `walk.get_blocks(pane_id)` — list blocks for a pane
+   - `walk.get_text(pane_id, start_row, end_row)` — read terminal text
+   - `walk.create_pane(options)` — create a new pane
+   - `walk.close_pane(pane_id)` — close a pane
+   - `walk.set_theme(theme_name_or_path)` — change theme
+   - `walk.notify(message)` — show a notification
+3. Implement a non-blocking socket server on the main thread: check for incoming connections and messages via `try_recv` pattern during each frame tick (similar to PTY event draining). Max 8 concurrent client connections.
+4. Set `$WALK_SOCKET` environment variable in spawned shells so child processes can discover the socket path.
+5. Security: the socket is user-readable only (`chmod 600`). No authentication beyond filesystem permissions.
+
+**DONE WHEN**
+- [ ] `echo '{"jsonrpc":"2.0","method":"walk.get_panes","id":1}' | socat - UNIX-CONNECT:$WALK_SOCKET` returns a JSON list of panes.
+- [ ] `walk.send_text(pane_id, "ls\n")` from an external script executes `ls` in the target pane.
+- [ ] `walk.run_action("SplitVertical")` creates a new vertical split from an external script.
+- [ ] The `$WALK_SOCKET` variable is available in spawned shells.
+- [ ] Multiple external scripts can connect simultaneously without interference.
+
+---
+
+### Task 92 (B) +terminal +ui
+**blockedBy:** [17, 46]
+
+**PURPOSE** — Instant replay records terminal state snapshots at regular intervals and lets the user scrub backward through time. This is iTerm2's most beloved feature for debugging — "what was that error that scrolled by?" Walk's block model makes this even more powerful: replay can jump between block completion timestamps.
+
+**WHAT TO DO**
+1. Create `walk-terminal/src/replay.rs`. Define `ReplayStore` struct: `{ snapshots: VecDeque<ReplaySnapshot>, max_snapshots: usize, interval: Duration }` where `ReplaySnapshot` is `{ timestamp: Instant, grid: Vec<Vec<Cell>>, cursor_row: usize, cursor_col: usize, viewport_offset: usize, block_count: usize }`. Default: snapshot every 2 seconds, keep last 300 snapshots (10 minutes of history).
+2. In the main event loop, take a snapshot every `interval` by cloning the visible grid state from `TerminalState`. Use a dedicated method `TerminalState::snapshot()` that efficiently copies only the visible viewport plus a configurable margin (e.g., 50 rows above/below viewport).
+3. Create `walk-ui/src/replay_overlay.rs`. When replay mode is active, render from the selected snapshot instead of live terminal state. Show a timeline scrubber at the bottom: a horizontal bar with block completion markers as tick marks. The user scrubs with left/right arrow keys or clicks on the timeline.
+4. Keybindings: `Mod+Alt+R` enters replay mode (note: check for conflict with existing restore session — may need `Mod+Alt+Shift+R` or repurpose). In replay mode: Left/Right to scrub frame by frame, `[` / `]` to jump between block timestamps, `Home/End` for oldest/newest, `Escape` to exit.
+5. While in replay mode, the terminal is read-only (input is not sent to PTY). Show a "REPLAY" indicator in the status bar with the snapshot timestamp.
+6. Memory management: snapshots store only the viewport-visible cells (not full scrollback) to keep memory bounded. At 80x24 cells * 300 snapshots, this is approximately 15MB.
+
+**DONE WHEN**
+- [ ] `Mod+Alt+Shift+R` enters replay mode. Left/Right arrow scrubs through past terminal states.
+- [ ] Block completion timestamps appear as markers on the timeline. `[` / `]` jumps between them.
+- [ ] The status bar shows "REPLAY 2m30s ago" with the timestamp of the current snapshot.
+- [ ] Exiting replay mode returns to the live terminal state.
+- [ ] Memory usage does not grow unbounded — old snapshots are discarded.
+- [ ] Replay works correctly with split panes (each pane has its own replay store).
