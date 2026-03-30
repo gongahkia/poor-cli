@@ -317,6 +317,12 @@ impl WalkApp {
             Action::CloseFloatingPane => {
                 effects.push(RuntimeEffect::Workspace(WorkspaceEffect::CloseFloatingPane));
             }
+            Action::NextLayout => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::NextLayout));
+            }
+            Action::PrevLayout => {
+                effects.push(RuntimeEffect::Workspace(WorkspaceEffect::PrevLayout));
+            }
             Action::CommandPalette => {
                 effects.push(RuntimeEffect::Overlay(OverlayEffect::OpenCommandPalette));
             }

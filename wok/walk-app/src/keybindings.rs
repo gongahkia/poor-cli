@@ -93,6 +93,10 @@ pub enum Action {
     ToggleFloatingPane,
     /// Close the focused floating pane.
     CloseFloatingPane,
+    /// Cycle to the next layout preset.
+    NextLayout,
+    /// Cycle to the previous layout preset.
+    PrevLayout,
     /// Open the command palette.
     CommandPalette,
     /// Open pane-local command history search.
@@ -446,6 +450,23 @@ impl Default for KeybindingConfig {
                 modifiers: pma,
             },
             Action::CloseFloatingPane,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('l'),
+                modifiers: pma,
+            },
+            Action::NextLayout,
+        );
+        bindings.insert(
+            KeyCombo {
+                key: KeyAction::Char('l'),
+                modifiers: Modifiers {
+                    shift: true,
+                    ..pma
+                },
+            },
+            Action::PrevLayout,
         );
         bindings.insert(
             KeyCombo {

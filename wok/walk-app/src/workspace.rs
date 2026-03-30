@@ -346,6 +346,28 @@ impl WorkspaceState {
             .sum()
     }
 
+    /// Return split-tree pane ids for the active tab (excluding floating panes).
+    pub fn active_split_pane_ids(&self) -> Vec<PaneId> {
+        self.active_tab()
+            .map_or_else(Vec::new, |tab| collect_leaf_ids(&tab.split_manager.root))
+    }
+
+    /// Reserve and return a new pane id.
+    pub fn allocate_pane_id(&mut self) -> PaneId {
+        let pane_id = self.next_pane_id;
+        self.next_pane_id = self.next_pane_id.saturating_add(1);
+        pane_id
+    }
+
+    /// Replace the active tab split tree and focused split pane.
+    pub fn set_active_split_tree(&mut self, root: SplitNode, focused_leaf: PaneId) {
+        if let Some(tab) = self.active_tab_mut() {
+            tab.split_manager.root = root;
+            tab.split_manager.focused_leaf = focused_leaf;
+            tab.focused_floating = None;
+        }
+    }
+
     /// Create a new floating pane in the active tab.
     pub fn new_floating_pane(&mut self, bounds: Rect, title: &str) -> Option<PaneId> {
         let pane_id = self.next_pane_id;

@@ -27,6 +27,7 @@ pub mod bell;
 pub mod clipboard;
 pub mod command_palette;
 pub mod layout;
+pub mod layout_presets;
 pub mod links;
 pub mod quick_select;
 pub mod search;

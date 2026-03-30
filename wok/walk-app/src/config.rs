@@ -6,6 +6,8 @@ use serde::Deserialize;
 use tracing::warn;
 
 use walk_terminal::shell::ShellType;
+use walk_ui::layout_presets::{LayoutPreset, PresetNode};
+use walk_ui::splits::SplitDirection;
 
 /// Cursor display style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -96,6 +98,8 @@ pub struct WalkConfig {
     pub debug_overlay: bool,
     /// Regex triggers loaded from config.
     pub triggers: Vec<TriggerConfig>,
+    /// Custom layout presets loaded from config.
+    pub layout_presets: Vec<LayoutPreset>,
 }
 
 /// Input editor position.
@@ -128,6 +132,7 @@ struct ConfigToml {
     restore_session: Option<bool>,
     debug_overlay: Option<bool>,
     triggers: Option<Vec<TriggerToml>>,
+    layouts: Option<Vec<LayoutToml>>,
 }
 
 /// TOML trigger section.
@@ -137,6 +142,28 @@ struct TriggerToml {
     pattern: Option<String>,
     actions: Option<Vec<String>>,
     scope: Option<String>,
+}
+
+/// TOML layout preset section.
+#[derive(Debug, Deserialize)]
+struct LayoutToml {
+    name: String,
+    description: Option<String>,
+    tree: PresetNodeToml,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum PresetNodeToml {
+    Leaf {
+        leaf: Option<bool>,
+        weight: Option<f64>,
+    },
+    Split {
+        split: String,
+        ratio: Option<f64>,
+        children: Vec<PresetNodeToml>,
+    },
 }
 
 impl Default for WalkConfig {
@@ -160,6 +187,7 @@ impl Default for WalkConfig {
             restore_session: false,
             debug_overlay: false,
             triggers: Vec::new(),
+            layout_presets: Vec::new(),
         }
     }
 }
@@ -280,6 +308,23 @@ impl WalkConfig {
                 })
                 .collect();
         }
+        if let Some(layouts) = toml_config.layouts {
+            config.layout_presets = layouts
+                .into_iter()
+                .filter_map(|layout| {
+                    let name = layout.name.trim().to_string();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    let tree = preset_node_from_toml(layout.tree)?;
+                    Some(LayoutPreset {
+                        name,
+                        description: layout.description.unwrap_or_default(),
+                        tree,
+                    })
+                })
+                .collect();
+        }
 
         Ok(config)
     }
@@ -331,6 +376,42 @@ fn parse_shell_config(value: &str, fallback: &ShellType) -> ShellType {
         "fish" => ShellType::Fish,
         "powershell" => ShellType::PowerShell,
         _ => fallback.clone(),
+    }
+}
+
+fn preset_node_from_toml(node: PresetNodeToml) -> Option<PresetNode> {
+    match node {
+        PresetNodeToml::Leaf { leaf, weight } => {
+            if leaf.is_some_and(|value| !value) {
+                return None;
+            }
+            Some(PresetNode::Leaf {
+                weight: weight.unwrap_or(1.0),
+            })
+        }
+        PresetNodeToml::Split {
+            split,
+            ratio,
+            children,
+        } => {
+            let direction = match split.trim().to_ascii_lowercase().as_str() {
+                "vertical" => SplitDirection::Horizontal,
+                "horizontal" => SplitDirection::Vertical,
+                _ => return None,
+            };
+            let children = children
+                .into_iter()
+                .filter_map(preset_node_from_toml)
+                .collect::<Vec<_>>();
+            if children.is_empty() {
+                return None;
+            }
+            Some(PresetNode::Split {
+                direction,
+                ratio: ratio.unwrap_or(0.5),
+                children,
+            })
+        }
     }
 }
 

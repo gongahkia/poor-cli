@@ -59,6 +59,10 @@ use walk_ui::command_palette::{
     CommandPaletteState, PaletteAction, PaletteCategory, PaletteEntry,
 };
 use walk_ui::layout::Rect;
+use walk_ui::layout_presets::{
+    append_panes_to_last_leaf, build_tree_for_panes, default_layout_presets, leaf_count,
+    LayoutPreset,
+};
 use walk_ui::links::detect_links;
 use walk_ui::quick_select::{PatternRegistry, QuickSelectScope};
 use walk_ui::search::SearchLine;
@@ -261,6 +265,8 @@ struct WalkHandler {
     trigger_engine: TriggerEngine,
     pattern_registry: PatternRegistry,
     workflow_store: WorkflowStore,
+    layout_presets: Vec<LayoutPreset>,
+    layout_index: usize,
     workspace: WorkspaceState,
     panes: HashMap<PaneId, PaneRuntime>,
     pending_pane_restore: HashMap<PaneId, PaneState>,
@@ -309,12 +315,16 @@ impl WalkHandler {
             .as_ref()
             .and_then(|path| ThemeWatcher::new(path).ok());
         let global_history = CommandHistory::load(&CommandHistory::default_path(), 10_000);
+        let mut layout_presets = default_layout_presets();
+        layout_presets.extend(config.layout_presets.clone());
 
         let handler = Self {
             config,
             trigger_engine,
             pattern_registry,
             workflow_store,
+            layout_presets,
+            layout_index: 0,
             workspace,
             panes: HashMap::new(),
             pending_pane_restore: HashMap::new(),
@@ -2346,6 +2356,47 @@ impl WalkHandler {
             .set_display_offset(active_pane.viewport.display_offset());
     }
 
+    fn apply_layout_preset_cycle(&mut self, forward: bool) {
+        if self.layout_presets.is_empty() {
+            return;
+        }
+        if forward {
+            self.layout_index = (self.layout_index + 1) % self.layout_presets.len();
+        } else if self.layout_index == 0 {
+            self.layout_index = self.layout_presets.len().saturating_sub(1);
+        } else {
+            self.layout_index = self.layout_index.saturating_sub(1);
+        }
+
+        let preset = self.layout_presets[self.layout_index].clone();
+        let mut pane_ids = self.workspace.active_split_pane_ids();
+        let needed = leaf_count(&preset.tree);
+        while pane_ids.len() < needed {
+            pane_ids.push(self.workspace.allocate_pane_id());
+        }
+        if pane_ids.is_empty() {
+            return;
+        }
+        let assigned = pane_ids.iter().copied().take(needed).collect::<Vec<_>>();
+        let extras = pane_ids.iter().copied().skip(needed).collect::<Vec<_>>();
+        let Some(mut root) = build_tree_for_panes(&preset.tree, &assigned) else {
+            return;
+        };
+        if !extras.is_empty() {
+            root = append_panes_to_last_leaf(root, &extras);
+        }
+        let focused = self
+            .workspace
+            .active_pane_id()
+            .filter(|pane_id| pane_ids.contains(pane_id))
+            .unwrap_or_else(|| pane_ids[0]);
+        self.workspace.set_active_split_tree(root, focused);
+        self.status_message = Some(format!("Layout: {}", preset.name));
+        if let Some(window) = &self.window {
+            self.sync_workspace_layout(window.inner_size());
+        }
+    }
+
     fn apply_workspace_effect(&mut self, effect: WorkspaceEffect) {
         match effect {
             WorkspaceEffect::SaveSession(name) => {
@@ -2595,6 +2646,8 @@ impl WalkHandler {
                     }
                 }
             }
+            WorkspaceEffect::NextLayout => self.apply_layout_preset_cycle(true),
+            WorkspaceEffect::PrevLayout => self.apply_layout_preset_cycle(false),
         }
     }
 
@@ -6938,6 +6991,8 @@ fn parse_lua_action(action: &str) -> Option<Action> {
             Some(Action::ToggleFloatingPane)
         }
         "close_floating_pane" | "floating_close" => Some(Action::CloseFloatingPane),
+        "next_layout" | "layout_next" => Some(Action::NextLayout),
+        "prev_layout" | "layout_prev" | "previous_layout" => Some(Action::PrevLayout),
         "block_prev" => Some(Action::BlockPrev),
         "block_next" => Some(Action::BlockNext),
         "block_copy" | "copy_block" => Some(Action::BlockCopy),
@@ -7054,6 +7109,8 @@ fn action_to_palette_id(action: &Action) -> Option<String> {
         Action::NewFloatingPane => "new_floating_pane".to_string(),
         Action::ToggleFloatingPane => "toggle_floating_pane".to_string(),
         Action::CloseFloatingPane => "close_floating_pane".to_string(),
+        Action::NextLayout => "next_layout".to_string(),
+        Action::PrevLayout => "prev_layout".to_string(),
         Action::ToggleInputPosition => "toggle_input_position".to_string(),
         Action::ZoomIn => "zoom_in".to_string(),
         Action::ZoomOut => "zoom_out".to_string(),

@@ -2106,11 +2106,11 @@
 6. Show the current layout name briefly in the status bar when switching.
 
 **DONE WHEN**
-- [ ] `Mod+Alt+L` cycles through built-in layouts. Existing panes rearrange to fit the new topology.
-- [ ] With 2 panes, switching from "side-by-side" to "main-right" changes the ratio to 70/30.
-- [ ] With 1 pane, switching to "three-column" creates 2 additional panes.
-- [ ] Custom layouts from TOML config appear in the cycle.
-- [ ] The status bar briefly shows the layout name on switch.
+- [x] `Mod+Alt+L` cycles through built-in layouts. Existing panes rearrange to fit the new topology.
+- [x] With 2 panes, switching from "side-by-side" to "main-right" changes the ratio to 70/30.
+- [x] With 1 pane, switching to "three-column" creates 2 additional panes.
+- [x] Custom layouts from TOML config appear in the cycle.
+- [x] The status bar briefly shows the layout name on switch.
 
 ---
 

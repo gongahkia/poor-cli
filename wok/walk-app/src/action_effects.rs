@@ -118,6 +118,10 @@ pub enum WorkspaceEffect {
     ToggleFloatingPane,
     /// Close the focused floating pane.
     CloseFloatingPane,
+    /// Cycle to the next layout preset.
+    NextLayout,
+    /// Cycle to the previous layout preset.
+    PrevLayout,
     /// Save a named workspace snapshot.
     SaveSession(String),
     /// Load a named workspace snapshot.
