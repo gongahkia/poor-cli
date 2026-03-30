@@ -85,7 +85,7 @@ const quietLogger = {
   error: () => undefined,
   child: () => quietLogger,
 };
-const ALL_HTTP_TOOLSETS = new Set(["public", "briefs", "query", "health", "ops"] as const);
+const ALL_HTTP_TOOLSETS = new Set(["public", "briefs", "query", "health", "ops", "diligence", "property"] as const);
 
 const getTextResourceContent = (result: Awaited<ReturnType<Client["readResource"]>>): string => {
   const first = result.contents[0];

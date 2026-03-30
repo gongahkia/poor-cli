@@ -16,12 +16,19 @@ Relevant env vars:
 
 - `SG_APIS_HTTP_AUTH_MODE`
 - `SG_APIS_REMOTE_BASE_URL`
+- `SG_APIS_TOOLSETS`
 - `SG_APIS_ARTIFACT_DB_PATH`
 - `SG_APIS_OIDC_ISSUER`
 - `SG_APIS_OIDC_AUDIENCE`
 - `SG_APIS_OIDC_JWKS_URI`
 - `SG_APIS_OIDC_REQUIRED_SCOPES`
 - `SG_APIS_OIDC_CLOCK_SKEW_SEC`
+
+`SG_APIS_TOOLSETS` accepts comma-separated toolset names. In addition to the base sets (`public`, `briefs`, `query`, `health`, `ops`), profile subsets are available for least-privilege hosts:
+
+- `diligence`: registry/compliance and dossier-focused tools
+- `property`: property, map, transport, and environment-focused tools
+- `ops`: cache, config, and keystore mutation tools
 
 Protected-resource metadata is served at `/.well-known/oauth-protected-resource/mcp`.
 

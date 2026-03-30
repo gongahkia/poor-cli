@@ -10,7 +10,7 @@
 
 - [x] Add optional trace/request IDs to selected structured tool outputs (not just logs) for easier cross-system correlation.
 - [x] Publish a small machine-readable operations taxonomy (error codes, retryability, severity) via resource catalog.
-- [ ] Add profile-based toolset subsets (for example `diligence`, `property`, `ops`) to support least-privilege agent setups.
+- [x] Add profile-based toolset subsets (for example `diligence`, `property`, `ops`) to support least-privilege agent setups.
 - [ ] Add one backend-worker and one UI-oriented integration template demonstrating blocked/unsupported/failed handling.
 - [ ] Wire `sg://benchmarks` to CI-generated evidence snapshots for stronger adoption credibility.
 

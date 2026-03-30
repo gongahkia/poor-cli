@@ -28,6 +28,45 @@ const BRIEF_TOOL_NAMES = new Set([
   "sg_environment_brief",
 ]);
 
+const DILIGENCE_PROFILE_TOOL_NAMES = new Set([
+  "sg_query",
+  "sg_business_dossier",
+]);
+
+const PROPERTY_PROFILE_TOOL_NAMES = new Set([
+  "sg_query",
+  "sg_property_brief",
+  "sg_transport_brief",
+  "sg_environment_brief",
+]);
+
+const DILIGENCE_PROFILE_PREFIXES = [
+  "sg_acra_",
+  "sg_bca_",
+  "sg_boa_",
+  "sg_cea_",
+  "sg_gebiz_",
+  "sg_hsa_",
+  "sg_hlb_",
+] as const;
+
+const PROPERTY_PROFILE_PREFIXES = [
+  "sg_ura_",
+  "sg_hdb_",
+  "sg_onemap_",
+  "sg_lta_",
+  "sg_nea_",
+  "sg_pa_",
+  "sg_sportsg_",
+  "sg_hawker_",
+  "sg_moe_",
+  "sg_moh_",
+  "sg_nparks_",
+  "sg_pub_",
+  "sg_msf_",
+  "sg_ecda_",
+] as const;
+
 const OUTPUT_SCHEMAS: Readonly<Record<string, z.ZodTypeAny>> = {
   sg_business_dossier: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
   sg_property_brief: BRIEF_ARTIFACT_OUTPUT_SCHEMA,
@@ -87,20 +126,41 @@ export const inferToolTitle = (name: string): string => {
     .join(" ");
 };
 
+const matchesAnyPrefix = (name: string, prefixes: readonly string[]): boolean => {
+  return prefixes.some((prefix) => name.startsWith(prefix));
+};
+
+const isDiligenceProfileTool = (name: string): boolean => {
+  return DILIGENCE_PROFILE_TOOL_NAMES.has(name) || matchesAnyPrefix(name, DILIGENCE_PROFILE_PREFIXES);
+};
+
+const isPropertyProfileTool = (name: string): boolean => {
+  return PROPERTY_PROFILE_TOOL_NAMES.has(name) || matchesAnyPrefix(name, PROPERTY_PROFILE_PREFIXES);
+};
+
 export const inferToolSets = (name: string): readonly ToolSet[] => {
+  const toolsets: ToolSet[] = [];
+
   if (name === "sg_query") {
-    return ["query"];
+    toolsets.push("query");
+  } else if (name === "sg_health_check") {
+    toolsets.push("health");
+  } else if (BRIEF_TOOL_NAMES.has(name)) {
+    toolsets.push("briefs");
+  } else if (name.startsWith("sg_cache_") || name.startsWith("sg_key_") || name.startsWith("sg_config_")) {
+    toolsets.push("ops");
+  } else {
+    toolsets.push("public");
   }
-  if (name === "sg_health_check") {
-    return ["health"];
+
+  if (isDiligenceProfileTool(name)) {
+    toolsets.push("diligence");
   }
-  if (BRIEF_TOOL_NAMES.has(name)) {
-    return ["briefs"];
+  if (isPropertyProfileTool(name)) {
+    toolsets.push("property");
   }
-  if (name.startsWith("sg_cache_") || name.startsWith("sg_key_") || name.startsWith("sg_config_")) {
-    return ["ops"];
-  }
-  return ["public"];
+
+  return [...new Set(toolsets)];
 };
 
 export const inferToolOutputSchema = (name: string): z.ZodTypeAny | undefined => {
