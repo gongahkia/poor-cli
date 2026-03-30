@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // sg-data CLI: quick lookups without full MCP setup
 // usage: sg-data <command> [args]
+import { createLogger } from "@sg-apis/shared";
 import type { ToolResult } from "@sg-apis/shared";
 import { handleBusinessDossier, handleEnvironmentBrief, handleMacroBrief, handlePropertyBrief, handleTransportBrief } from "./tools/brief-tools.js";
 import { handleHdbResalePrices } from "./tools/hdb-tools.js";
 import { handleLtaBusArrivals } from "./tools/lta-tools.js";
 import { handleNeaForecast2Hr } from "./tools/nea-tools.js";
+
+const logger = createLogger("sg-data-cli");
 
 const printResult = (result: { content: readonly { type: string; text: string }[] }) => {
   for (const item of result.content) {
@@ -17,7 +20,10 @@ const parseArgs = (args: string[]): Record<string, string> => {
   const parsed: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    if (arg.startsWith("--") && i + 1 < args.length) {
+    if (arg.startsWith("--")) {
+      if (i + 1 >= args.length) {
+        throw new Error(`missing value for ${arg}`);
+      }
       parsed[arg.slice(2)] = args[++i]!;
     }
   }
@@ -102,7 +108,16 @@ commands:
   }
   const handler = commands[cmd];
   if (!handler) { console.error(`unknown command: ${cmd}. run 'sg-data help'`); process.exit(1); }
+  logger.info("command start", { command: cmd, args });
   await handler(args);
+  logger.info("command finished", { command: cmd });
 };
 
-main().catch((err) => { console.error(err.message); process.exit(1); });
+main().catch((err) => {
+  logger.error("command failed", {
+    error: err instanceof Error ? err.message : String(err),
+    ...(err instanceof Error && err.stack !== undefined ? { stack: err.stack } : {}),
+  });
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});
