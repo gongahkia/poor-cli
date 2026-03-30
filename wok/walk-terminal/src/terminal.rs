@@ -1,11 +1,13 @@
 //! Terminal: connects the PTY async reader to alacritty_terminal.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+use base64::Engine;
 use thiserror::Error;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
 
 use crate::async_io::{PtyEvent, PtyIoHandle};
 use crate::pty::{PtyError, PtyManager};
@@ -60,6 +62,56 @@ pub enum SemanticEvent {
     CwdChanged(PathBuf),
     /// Window title changed.
     TitleChanged(String),
+    /// Inline image protocol event.
+    InlineImage(InlineImageEvent),
+}
+
+/// Inline image operations emitted by supported graphics protocols.
+#[derive(Debug, Clone)]
+pub enum InlineImageEvent {
+    /// Store or replace decoded RGBA image data at a placement.
+    Put {
+        /// Image id.
+        image_id: u32,
+        /// RGBA width.
+        width: u32,
+        /// RGBA height.
+        height: u32,
+        /// RGBA8 pixels.
+        pixels: Vec<u8>,
+        /// Absolute row anchor.
+        row: usize,
+        /// Column anchor.
+        col: usize,
+        /// Placement width in cells.
+        display_cols: u16,
+        /// Placement height in cells.
+        display_rows: u16,
+        /// Protocol placement id.
+        placement_id: u32,
+    },
+    /// Add one placement to an existing image id.
+    Place {
+        /// Image id.
+        image_id: u32,
+        /// Absolute row anchor.
+        row: usize,
+        /// Column anchor.
+        col: usize,
+        /// Placement width in cells.
+        display_cols: u16,
+        /// Placement height in cells.
+        display_rows: u16,
+        /// Protocol placement id.
+        placement_id: u32,
+    },
+    /// Delete one image id or all images when `None`.
+    Delete {
+        /// Optional image id.
+        image_id: Option<u32>,
+        /// Optional placement id.
+        placement_id: Option<u32>,
+    },
 }
 
 /// A terminal session connecting PTY I/O to terminal emulation state.
@@ -82,6 +134,8 @@ pub struct Terminal {
     pub exited: bool,
     /// Exit code if shell has exited.
     pub exit_code: Option<i32>,
+    kitty_chunks: HashMap<u32, String>,
+    next_inline_image_id: u32,
 }
 
 impl Terminal {
@@ -116,6 +170,8 @@ impl Terminal {
             rows,
             exited: false,
             exit_code: None,
+            kitty_chunks: HashMap::new(),
+            next_inline_image_id: 1,
         })
     }
 
@@ -237,6 +293,22 @@ impl Terminal {
                     continue;
                 }
             }
+            if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'_') {
+                if let Some((payload_end, terminator_len)) = find_apc_terminator(bytes, i + 2) {
+                    let payload = &bytes[i + 2..payload_end];
+                    if let Ok(payload) = std::str::from_utf8(payload) {
+                        if let Some(inline_event) =
+                            self.parse_kitty_apc(payload, absolute_row, col)
+                        {
+                            self.events.push(SemanticEvent::InlineImage(inline_event));
+                        }
+                    } else {
+                        warn!("ignoring non-utf8 APC payload");
+                    }
+                    i = payload_end + terminator_len;
+                    continue;
+                }
+            }
 
             if bytes[i] == b'\n' {
                 absolute_row = absolute_row.saturating_add(1);
@@ -265,6 +337,136 @@ impl Terminal {
             if self.state.current_hyperlink().is_some() && col > span_start {
                 self.state
                     .record_hyperlink_span(absolute_row, span_start, col);
+            }
+        }
+    }
+
+    fn parse_kitty_apc(
+        &mut self,
+        payload: &str,
+        row: usize,
+        col: usize,
+    ) -> Option<InlineImageEvent> {
+        let payload = payload.trim_start_matches('G');
+        let (header, body) = payload.split_once(';').unwrap_or((payload, ""));
+        let mut params = HashMap::new();
+        for token in header
+            .split(',')
+            .flat_map(|segment| segment.split(';'))
+            .filter(|segment| !segment.trim().is_empty())
+        {
+            if let Some((key, value)) = token.split_once('=') {
+                params.insert(key.trim().to_string(), value.trim().to_string());
+            }
+        }
+
+        let action = params
+            .get("a")
+            .map(String::as_str)
+            .unwrap_or("t")
+            .chars()
+            .next()
+            .unwrap_or('t');
+        let transmission = params
+            .get("t")
+            .map(String::as_str)
+            .unwrap_or("d")
+            .chars()
+            .next()
+            .unwrap_or('d');
+        let parsed_image_id = params.get("i").and_then(|value| value.parse::<u32>().ok());
+        let placement_id = params
+            .get("p")
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(0);
+        let display_cols = params
+            .get("c")
+            .and_then(|value| value.parse::<u16>().ok())
+            .unwrap_or(1);
+        let display_rows = params
+            .get("r")
+            .and_then(|value| value.parse::<u16>().ok())
+            .unwrap_or(1);
+
+        match action {
+            'd' => {
+                let placement_id = params.get("p").and_then(|value| value.parse::<u32>().ok());
+                Some(InlineImageEvent::Delete {
+                    image_id: parsed_image_id,
+                    placement_id,
+                })
+            }
+            'p' => {
+                let Some(image_id) = parsed_image_id else {
+                    warn!("ignoring kitty display action without image id");
+                    return None;
+                };
+                Some(InlineImageEvent::Place {
+                    image_id,
+                    row,
+                    col,
+                    display_cols,
+                    display_rows,
+                    placement_id,
+                })
+            }
+            _ => {
+                let image_id = parsed_image_id.unwrap_or_else(|| {
+                    let id = self.next_inline_image_id;
+                    self.next_inline_image_id = self.next_inline_image_id.saturating_add(1);
+                    id
+                });
+                let more_chunks = params
+                    .get("m")
+                    .and_then(|value| value.parse::<u8>().ok())
+                    .unwrap_or(0)
+                    == 1;
+                let chunk_buffer = self.kitty_chunks.entry(image_id).or_default();
+                chunk_buffer.push_str(body);
+                if more_chunks {
+                    return None;
+                }
+                let encoded = self.kitty_chunks.remove(&image_id).unwrap_or_default();
+
+                let format = params
+                    .get("f")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(100);
+                let source_width = params
+                    .get("s")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(1);
+                let source_height = params
+                    .get("v")
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(1);
+
+                let (width, height, pixels) = match decode_kitty_image_data(
+                    format,
+                    transmission,
+                    &encoded,
+                    source_width,
+                    source_height,
+                ) {
+                    Ok(decoded) => decoded,
+                    Err(error) => {
+                        warn!(
+                            "failed to decode kitty inline image id={image_id}, action={action}, transmission={transmission}: {error}"
+                        );
+                        return None;
+                    }
+                };
+                Some(InlineImageEvent::Put {
+                    image_id,
+                    width,
+                    height,
+                    pixels,
+                    row,
+                    col,
+                    display_cols,
+                    display_rows,
+                    placement_id,
+                })
             }
         }
     }
@@ -356,6 +558,101 @@ fn find_osc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
     None
 }
 
+fn find_apc_terminator(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
+    let mut idx = start;
+    while idx < bytes.len() {
+        if bytes[idx] == 0x1b && bytes.get(idx + 1) == Some(&b'\\') {
+            return Some((idx, 2));
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn decode_kitty_image_data(
+    format: u32,
+    transmission: char,
+    encoded: &str,
+    source_width: u32,
+    source_height: u32,
+) -> Result<(u32, u32, Vec<u8>), String> {
+    let bytes = match transmission {
+        'd' => base64::engine::general_purpose::STANDARD
+            .decode(encoded.as_bytes())
+            .map_err(|error| format!("invalid kitty base64 payload: {error}"))?,
+        'f' | 't' => {
+            let path = parse_kitty_file_path(encoded)?;
+            let bytes = fs::read(&path)
+                .map_err(|error| format!("failed to read kitty image file {path:?}: {error}"))?;
+            if transmission == 't' {
+                if let Err(error) = fs::remove_file(&path) {
+                    warn!("failed to remove kitty temp image {path:?}: {error}");
+                }
+            }
+            bytes
+        }
+        other => {
+            return Err(format!(
+                "unsupported kitty transmission mode '{other}' (expected d/f/t)"
+            ));
+        }
+    };
+
+    match format {
+        24 => {
+            let width = source_width.max(1);
+            let height = source_height.max(1);
+            let expected = (width as usize)
+                .saturating_mul(height as usize)
+                .saturating_mul(3);
+            if bytes.len() < expected {
+                return Err("kitty RGB payload shorter than declared dimensions".to_string());
+            }
+            let mut rgba = Vec::with_capacity((width as usize) * (height as usize) * 4);
+            for chunk in bytes[..expected].chunks_exact(3) {
+                rgba.push(chunk[0]);
+                rgba.push(chunk[1]);
+                rgba.push(chunk[2]);
+                rgba.push(255);
+            }
+            Ok((width, height, rgba))
+        }
+        32 => {
+            let width = source_width.max(1);
+            let height = source_height.max(1);
+            let expected = (width as usize)
+                .saturating_mul(height as usize)
+                .saturating_mul(4);
+            if bytes.len() < expected {
+                return Err("kitty RGBA payload shorter than declared dimensions".to_string());
+            }
+            Ok((width, height, bytes[..expected].to_vec()))
+        }
+        100 => {
+            let image = image::load_from_memory(&bytes)
+                .map_err(|error| format!("failed to decode kitty image payload: {error}"))?
+                .to_rgba8();
+            Ok((image.width(), image.height(), image.into_raw()))
+        }
+        other => Err(format!(
+            "unsupported kitty format '{other}' (expected 24/32/100)"
+        )),
+    }
+}
+
+fn parse_kitty_file_path(encoded: &str) -> Result<PathBuf, String> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.as_bytes())
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_else(|| encoded.to_string());
+    let cleaned = decoded.trim_matches('\0').trim();
+    if cleaned.is_empty() {
+        return Err("empty kitty file transmission path".to_string());
+    }
+    Ok(PathBuf::from(cleaned))
+}
+
 fn parse_osc8_params(params: &str) -> HashMap<String, String> {
     let mut parsed = HashMap::new();
     for token in params
@@ -387,5 +684,15 @@ mod tests {
         let st = b"\x1b]8;;https://example.com\x1b\\";
         assert_eq!(find_osc_terminator(bel, 2), Some((24, 1)));
         assert_eq!(find_osc_terminator(st, 2), Some((24, 2)));
+    }
+
+    #[test]
+    fn test_parse_kitty_file_path_accepts_raw_and_base64() {
+        let raw = parse_kitty_file_path("/tmp/a.png").expect("raw path");
+        assert_eq!(raw, PathBuf::from("/tmp/a.png"));
+
+        let encoded = base64::engine::general_purpose::STANDARD.encode("/tmp/b.png");
+        let decoded = parse_kitty_file_path(&encoded).expect("base64 path");
+        assert_eq!(decoded, PathBuf::from("/tmp/b.png"));
     }
 }

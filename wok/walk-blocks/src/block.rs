@@ -162,6 +162,7 @@ impl BlockManager {
                 }
             }
             SemanticEvent::TitleChanged(_) => {}
+            SemanticEvent::InlineImage(_) => {}
         }
     }
 

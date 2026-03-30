@@ -1970,12 +1970,12 @@
 7. Images are anchored to absolute row positions (consistent with block model). They scroll with text.
 
 **DONE WHEN**
-- [ ] `timg --pixelation=kitty image.png` (or `viu -t kitty image.png`) displays an inline image in the terminal.
-- [ ] The image occupies the correct number of cell rows and columns.
-- [ ] Scrolling past the image works correctly — the image scrolls with the text.
-- [ ] Multiple images can coexist in the scrollback.
-- [ ] Chunked image transmission (large images sent in multiple APC sequences) works correctly.
-- [ ] `a=d` (delete) removes the image from display.
+- [x] `timg --pixelation=kitty image.png` (or `viu -t kitty image.png`) displays an inline image in the terminal.
+- [x] The image occupies the correct number of cell rows and columns.
+- [x] Scrolling past the image works correctly — the image scrolls with the text.
+- [x] Multiple images can coexist in the scrollback.
+- [x] Chunked image transmission (large images sent in multiple APC sequences) works correctly.
+- [x] `a=d` (delete) removes the image from display.
 
 ---
 

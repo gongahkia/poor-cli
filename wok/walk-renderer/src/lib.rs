@@ -25,6 +25,7 @@ pub mod atlas;
 pub mod damage;
 pub mod font;
 pub mod gpu;
+pub mod inline_images;
 pub mod pipeline;
 pub mod render_pipeline;
 pub mod text_layout;

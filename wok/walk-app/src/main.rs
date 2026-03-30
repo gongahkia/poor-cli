@@ -46,6 +46,7 @@ use walk_renderer::atlas::GlyphAtlas;
 use walk_renderer::damage::DirtyRegion;
 use walk_renderer::font::FontSystem;
 use walk_renderer::gpu::GpuContext;
+use walk_renderer::inline_images::{ImagePlacement, InlineImageStore};
 use walk_renderer::pipeline::CursorShape;
 use walk_renderer::pipeline::QuadBatch;
 use walk_renderer::render_pipeline::TerminalRenderPipeline;
@@ -228,6 +229,7 @@ struct PaneRuntime {
     pane_history: Vec<HistoryEntry>,
     pending_history: Option<HistoryEntry>,
     history_nav: HistoryNavigationState,
+    inline_images: InlineImageStore,
 }
 
 /// Walk application handler.
@@ -430,6 +432,7 @@ impl WalkHandler {
                         .unwrap_or_default(),
                     pending_history: None,
                     history_nav: HistoryNavigationState::default(),
+                    inline_images: InlineImageStore::new(),
                 };
                 self.panes.insert(pane_id, pane_runtime);
                 self.sync_owned_input_state_for_pane(pane_id);
@@ -825,6 +828,7 @@ impl WalkHandler {
                         pane.app.block_query.as_ref(),
                         pane_id,
                         terminal,
+                        &pane.inline_images,
                         absolute_row,
                         row_positions.get(row_idx).copied().flatten(),
                         total_cols,
@@ -1887,6 +1891,62 @@ impl WalkHandler {
                         object.insert("path".to_string(), json!(path.display().to_string()));
                     }
                     self.run_plugin_hook("cwd_changed", &payload);
+                }
+                SemanticEvent::InlineImage(image_event) => {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        match image_event {
+                            walk_terminal::terminal::InlineImageEvent::Put {
+                                image_id,
+                                width,
+                                height,
+                                pixels,
+                                row,
+                                col,
+                                display_cols,
+                                display_rows,
+                                placement_id,
+                            } => {
+                                pane.inline_images.upsert_image(
+                                    image_id,
+                                    width,
+                                    height,
+                                    pixels,
+                                    ImagePlacement {
+                                        row,
+                                        col,
+                                        display_cols,
+                                        display_rows,
+                                        placement_id,
+                                    },
+                                );
+                            }
+                            walk_terminal::terminal::InlineImageEvent::Place {
+                                image_id,
+                                row,
+                                col,
+                                display_cols,
+                                display_rows,
+                                placement_id,
+                            } => {
+                                pane.inline_images.place_existing(
+                                    image_id,
+                                    ImagePlacement {
+                                        row,
+                                        col,
+                                        display_cols,
+                                        display_rows,
+                                        placement_id,
+                                    },
+                                );
+                            }
+                            walk_terminal::terminal::InlineImageEvent::Delete {
+                                image_id,
+                                placement_id,
+                            } => {
+                                pane.inline_images.delete(image_id, placement_id);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -5891,6 +5951,7 @@ fn rebuild_visible_row_batch(
     block_query: Option<&BlockQueryState>,
     pane_id: PaneId,
     terminal: &Terminal,
+    inline_images: &InlineImageStore,
     absolute_row: usize,
     render_row: Option<usize>,
     total_cols: usize,
@@ -5911,6 +5972,7 @@ fn rebuild_visible_row_batch(
         let x = viewport.x + col_idx as f32 * cell_width;
         let mut bg = resolve_cell_color(&cell.bg, theme, true);
         let mut fg = resolve_cell_color(&cell.fg, theme, false);
+        let inline_color = inline_images.sample_cell_color(absolute_row, col_idx);
         let is_hyperlink_cell = row_links
             .iter()
             .any(|link| (link.col_start..link.col_end).contains(&col_idx));
@@ -5920,6 +5982,9 @@ fn rebuild_visible_row_batch(
         }
         if matches!(cell.bg, CellColor::Named(idx) if idx >= 16) {
             bg[3] *= terminal_surface_alpha;
+        }
+        if let Some(color) = inline_color {
+            bg = color;
         }
         if is_hyperlink_cell {
             fg = [
@@ -5974,7 +6039,7 @@ fn rebuild_visible_row_batch(
             );
         }
 
-        if cell.character != ' ' && cell.character != '\0' {
+        if inline_color.is_none() && cell.character != ' ' && cell.character != '\0' {
             push_glyph_to_batch(render, batch, font, x, row_y, cell.character, fg);
         }
         if is_hyperlink_cell {
