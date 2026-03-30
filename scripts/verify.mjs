@@ -29,6 +29,7 @@ const testEnv = {
 
 run("lint", ["run", "lint"]);
 run("build", ["run", "build"]);
+runNodeScript("diagnostics", "./scripts/dev-diagnostics.mjs");
 runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 run("test", ["test"], testEnv);
