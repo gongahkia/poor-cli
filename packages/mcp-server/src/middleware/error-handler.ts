@@ -22,6 +22,23 @@ const formatErrorText = (payload: ToolErrorPayload): string => {
   return lines.join("\n");
 };
 
+const logHandledToolError = (payload: ToolErrorPayload): void => {
+  const level = payload.code === "VALIDATION_ERROR"
+    ? "warn"
+    : payload.retryable
+      ? "warn"
+      : "error";
+  logger[level]("tool invocation failed", {
+    tool: payload.tool,
+    source: payload.source,
+    code: payload.code,
+    retryable: payload.retryable,
+    statusCode: payload.statusCode,
+    message: payload.message,
+    ...(payload.suggestedAction === undefined ? {} : { suggestedAction: payload.suggestedAction }),
+  });
+};
+
 export const toToolErrorPayload = (error: unknown, tool: string): ToolErrorPayload => {
   if (error instanceof ValidationError) {
     return {
@@ -71,6 +88,7 @@ export const wrapHandler = (tool: string, handler: ToolHandler): ToolHandler => 
       return await handler(input);
     } catch (error) {
       const payload = toToolErrorPayload(error, tool);
+      logHandledToolError(payload);
       return {
         isError: true,
         content: [{ type: "text", text: formatErrorText(payload) }],
