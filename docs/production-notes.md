@@ -4,6 +4,8 @@ Operational guidance for teams deploying sg-apis-mcp in production.
 
 The same runtime contract is also exposed as the machine-readable `sg://runtime` resource for MCP clients that want to cache operational assumptions instead of scraping docs. Adoption-oriented latency, cache-tier, and credibility expectations for the headline workflows are also exposed through `sg://benchmarks`.
 
+Run `npm run diagnostics` after every build to validate catalog/resource integrity before deployment.
+
 ## Latency Expectations
 
 | API Family | Timeout (ms) | Typical Latency | Notes |
@@ -110,3 +112,5 @@ Override any default via environment variables:
 Use `sg_health_check` to probe all API families. Returns per-family: reachable status, latency, auth status, and errors.
 
 Use `sg_cache_stats` to inspect cache hit/miss rates and storage size.
+
+Structured JSON logs now include request or workflow context fields such as `traceId`, `requestId`, `workflow`, `tool`, and `stepId` where applicable. Set `SG_APIS_LOG_LEVEL=debug` in non-production environments to capture step-level routing and retry behavior.
